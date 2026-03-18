@@ -147,7 +147,8 @@ class SandpackErrorBoundary extends Component<
 
 function resolvePreviewIframe(root: HTMLDivElement | null): HTMLIFrameElement | null {
   if (!root) return null;
-  return root.querySelector('iframe');
+  // Target Sandpack's preview iframe specifically — avoid the hidden bundler/manager iframe
+  return root.querySelector('iframe.sp-preview-iframe') || root.querySelector('.sp-preview-container iframe') || root.querySelector('iframe');
 }
 
 function nodesToFileMap(nodes: VirtualNode[]): Record<string, string> {

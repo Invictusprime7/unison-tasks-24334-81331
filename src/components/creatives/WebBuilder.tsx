@@ -60,7 +60,8 @@ import { EditorTabs } from "./code-editor/EditorTabs";
 import { ModernEditorTabs } from "./code-editor/ModernEditorTabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { templateToVFSFiles, elementToVFSPatch } from "@/utils/templateToVFS";
-import { htmlToJsx } from "@/utils/htmlToJsx";
+import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
+import { htmlToJsx } from '@/utils/htmlToJsx';
 import { setDefaultBusinessId, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
 import { buildRedirectPageContext } from "@/utils/redirectPageGenerator";
 import { scaffoldMultiPageVFS } from "@/utils/multiPageScaffolder";
@@ -2659,22 +2660,19 @@ export default function ${componentName}Page() {
           .trim();
       }
 
-      // Strip any leaked HTML document wrapper (AI sometimes wraps in <!DOCTYPE>)
+      // Reject HTML document output — AI must produce React/TSX components
       if (pageCode.includes('<!DOCTYPE') || pageCode.includes('<html')) {
-        console.warn('[WebBuilder] AI returned HTML document instead of React component, extracting body');
-        const bodyMatch = pageCode.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-        if (bodyMatch) {
-          // Wrap extracted body in a React component
-          pageCode = `import { Link } from 'react-router-dom';
+        console.warn('[WebBuilder] AI returned HTML document instead of React component — rejecting');
+        pageCode = `import React from 'react';
+import { Link } from 'react-router-dom';
 
 export default function ${componentName}Page() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      ${bodyMatch[1].replace(/ class="/g, ' className="').replace(/<br>/gi, '<br />').replace(/<hr>/gi, '<hr />').replace(/<img([^>]*?)(?<!\/)>/gi, '<img$1 />')}
+    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+      <p className="text-muted-foreground">Page generation failed — please retry.</p>
     </div>
   );
 }`;
-        }
       }
 
       // Ensure the code has a default export
@@ -2899,18 +2897,13 @@ export default ${componentName}Page;`;
         }
       }, 300);
       
-      // Ensure code is pure React/TSX — wrap any remaining HTML as safety net
+      // Reject raw HTML output — AI must produce React/TSX
       const isRawHTML = !generatedCode.includes('import ') && !generatedCode.includes('export default') &&
         (generatedCode.trim().startsWith('<!DOCTYPE') || generatedCode.trim().startsWith('<html') ||
         generatedCode.includes('<!-- ') || (generatedCode.includes('class=') && !generatedCode.includes('className=')));
       if (isRawHTML) {
-        const result = getTemplateReactCodeWithCSS({ code: generatedCode, title: templateName || 'Template' });
-        setEditorCode(result.code);
-        setPreviewCode(result.code);
-        // Ensure template.css exists in VFS when component imports it
-        if (result.css) {
-          vfsImportFiles({ '/src/template.css': result.css });
-        }
+        console.warn('[WebBuilder] Rejected raw HTML output from AI — expecting React/TSX');
+        toast.error('AI returned HTML instead of React/TypeScript. Please try again.');
       } else {
         // Extract any legacy TEMPLATE_STYLES/TEMPLATE_CSS from React code
         const { cleanCode, css } = extractEmbeddedCSS(generatedCode);
@@ -3030,38 +3023,7 @@ ${sectionsJsx}
     });
   };
 
-  // Helper to integrate CSS into HTML document
-  const integrateCSSIntoHTML = useCallback((html: string, css: string): string => {
-    if (!css || !css.trim()) return html;
-    
-    const styleTag = `<style>\n${css}\n</style>`;
-    
-    // Check if it's a full HTML document
-    if (html.includes('</head>')) {
-      // Insert CSS before </head>
-      return html.replace('</head>', `${styleTag}\n</head>`);
-    } else if (html.includes('<html') || html.includes('<!DOCTYPE')) {
-      // Has HTML but no head - add before body or at start
-      if (html.includes('<body')) {
-        return html.replace('<body', `<head>${styleTag}</head>\n<body`);
-      }
-      return html.replace(/<html[^>]*>/i, (match) => `${match}\n<head>${styleTag}</head>`);
-    } else {
-      // Fragment - wrap in full document with CSS
-      return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"></script>
-  ${styleTag}
-</head>
-<body>
-${html}
-</body>
-</html>`;
-    }
-  }, []);
+  // CSS is now handled via VFS files, not HTML injection
 
   // Handle loading a saved template
   const handleLoadTemplate = useCallback((template: {
@@ -3070,34 +3032,28 @@ ${html}
     description?: string;
     canvas_data: { html?: string; css?: string; previewCode?: string; js?: string };
   }) => {
-    // Get the base HTML - prefer previewCode as it's the most complete
-    let code = template.canvas_data?.previewCode || template.canvas_data?.html || '';
+    // Get the base code - prefer previewCode as it's the most complete (should be React/TSX)
+    const code = template.canvas_data?.previewCode || template.canvas_data?.html || '';
     
     if (!code) {
       toast.error('Template has no content');
       return;
     }
     
-    // If there's separate CSS that's not in previewCode, integrate it
-    const separateCss = template.canvas_data?.css || '';
-    if (separateCss && !code.includes(separateCss.substring(0, 50))) {
-      code = integrateCSSIntoHTML(code, separateCss);
-    }
-    
-    // If there's separate JS that's not in previewCode, integrate it
-    const separateJs = template.canvas_data?.js || '';
-    if (separateJs && !code.includes(separateJs.substring(0, 50))) {
-      const scriptTag = `<script>\n${separateJs}\n</script>`;
-      if (code.includes('</body>')) {
-        code = code.replace('</body>', `${scriptTag}\n</body>`);
-      } else {
-        code = code + `\n${scriptTag}`;
-      }
-    }
-    
     // Set the code in both editor and preview
     setEditorCode(code);
     setPreviewCode(code);
+    
+    // Import to VFS for Sandpack preview
+    const files = templateToVFSFiles(code, template.name);
+    
+    // If there's separate CSS, add it as a VFS file
+    const separateCss = template.canvas_data?.css || '';
+    if (separateCss && !code.includes(separateCss.substring(0, 50))) {
+      files['/src/template.css'] = separateCss;
+    }
+    
+    vfsImportFiles(files);
     
     // Track the current template ID and name for re-save
     templateFiles.setCurrentTemplateId(template.id);
@@ -3111,7 +3067,7 @@ ${html}
     toast.success(`Opened "${template.name}"`, {
       description: 'Template loaded - you can continue editing',
     });
-  }, [templateFiles, integrateCSSIntoHTML]);
+  }, [templateFiles, vfsImportFiles]);
 
   // Handle template selection from LayoutTemplatesPanel (used by FloatingDock)
   const handleSelectTemplate = useCallback((

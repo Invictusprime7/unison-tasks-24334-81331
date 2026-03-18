@@ -3,17 +3,18 @@
  * 
  * A preview component that supports three modes:
  * 1. Runtime: ECS Vite container with true HMR (primary)
- * 2. Sandpack: Browser-based bundling (fallback)
- * 3. HTML: Static HTML conversion (last resort)
+ * 2. Sandpack: Browser-based React/TypeScript bundling (fallback)
+ * 3. CodeSandbox: Cloud-based React preview
  * 
  * Features:
  * - ECS Vite runtime with real HMR via iframe
  * - Direct VirtualFileSystem → FileMap → Preview Session
- * - Automatic fallback to Sandpack/HTML when runtime unavailable
+ * - Automatic fallback to Sandpack when runtime unavailable
  * - Debounced file patching for live updates
  * - Session keepalive with 30-second pings
  * - Pre-bundled common dependencies for Sandpack fallback
  * - Tailwind CSS support via CDN
+ * - HTML content auto-converted to React/TSX components
  */
 
 import React, { useMemo, useState, forwardRef, useImperativeHandle, useCallback, useEffect, useRef } from 'react';
@@ -25,7 +26,7 @@ import {
   SandpackConsole
 } from '@codesandbox/sandpack-react';
 import { cn } from '@/lib/utils';
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Terminal, X, ChevronDown, ChevronUp, Code2, Globe, Server, Zap } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Terminal, X, ChevronDown, ChevronUp, Code2, Server, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   type FileMap,
@@ -44,7 +45,7 @@ import { getDependenciesForSandpack, type ExtractedDependencies } from '@/utils/
 // Types
 // ============================================================================
 
-type PreviewMode = 'runtime' | 'sandpack' | 'codesandbox' | 'html' | 'loading';
+type PreviewMode = 'runtime' | 'sandpack' | 'codesandbox' | 'loading';
 
 interface SimplePreviewProps {
   /** Files from VirtualFileSystem - Record<path, content> */
@@ -64,7 +65,7 @@ interface SimplePreviewProps {
   /** Show file navigator in preview */
   showNavigator?: boolean;
   /** Force a specific preview mode */
-  forceMode?: 'runtime' | 'sandpack' | 'codesandbox' | 'html';
+  forceMode?: 'runtime' | 'sandpack' | 'codesandbox';
   /** Disable runtime mode — hardened Sandpack will be used as primary */
   disableRuntime?: boolean;
   /** Enable runtime mode (default: true — Vercel preview API with Docker runtime) */
@@ -747,6 +748,13 @@ function prepareFiles(files: Record<string, string>): Record<string, string> {
       continue;
     }
 
+    // Skip .html/.htm files (except index.html which is the Vite entry point)
+    if ((normalizedPath.endsWith('.html') || normalizedPath.endsWith('.htm')) &&
+        normalizedPath !== '/index.html' && normalizedPath !== '/src/index.html') {
+      console.log(`[SimplePreview] Skipping non-entry HTML file: ${normalizedPath}`);
+      continue;
+    }
+
     // Flatten /src/ paths to root for Sandpack compatibility
     // e.g., /src/App.tsx -> /App.tsx, /src/components/ui/Button.tsx -> /components/ui/Button.tsx
     if (normalizedPath.startsWith('/src/')) {
@@ -1034,16 +1042,8 @@ const PreviewInner: React.FC<{
 };
 
 // ============================================================================
-// HTML Fallback Preview
+// Smart Navigation Script (injected into Sandpack index.html)
 // ============================================================================
-
-/**
- * Check if content is a complete HTML document
- */
-function isCompleteHTML(content: string): boolean {
-  return content.trim().toLowerCase().startsWith('<!doctype html') || 
-         content.trim().toLowerCase().startsWith('<html');
-}
 
 /**
  * Smart Navigation System - Intercepts navigation and shows themed redirect pages
@@ -2340,187 +2340,6 @@ const SMART_NAVIGATION_SCRIPT = `
 </script>
 `;
 
-/**
- * Inject smart navigation script into HTML content
- */
-function injectNavigationPrevention(html: string): string {
-  // Try to inject before </body> for proper DOM access
-  if (html.includes('</body>')) {
-    return html.replace('</body>', SMART_NAVIGATION_SCRIPT + '</body>');
-  }
-  // Try to inject before </html>
-  if (html.includes('</html>')) {
-    return html.replace('</html>', SMART_NAVIGATION_SCRIPT + '</html>');
-  }
-  // Fallback: append to end
-  return html + SMART_NAVIGATION_SCRIPT;
-}
-
-/**
- * Convert React JSX to static HTML for fallback preview
- * Also handles pure HTML files directly
- */
-function convertToStaticHTML(files: Record<string, string>): string {
-  // First check if any file is already a complete HTML document
-  const htmlFile = Object.entries(files).find(([path, content]) => 
-    (path.endsWith('.html') || path.endsWith('.htm')) && isCompleteHTML(content)
-  );
-  
-  if (htmlFile) {
-    return injectNavigationPrevention(htmlFile[1]); // Inject script and return
-  }
-
-  // Check if the App file or any main file is actually HTML
-  const appFile = Object.entries(files).find(([path]) => 
-    path.includes('App.tsx') || path.includes('App.jsx') || path.includes('App.ts') || path.includes('App.js')
-  );
-  
-  if (appFile && isCompleteHTML(appFile[1])) {
-    return injectNavigationPrevention(appFile[1]); // Inject script and return
-  }
-
-  // Check if there's any file that's complete HTML
-  const anyHtmlFile = Object.entries(files).find(([_, content]) => isCompleteHTML(content));
-  if (anyHtmlFile) {
-    return injectNavigationPrevention(anyHtmlFile[1]); // Inject script and return
-  }
-
-  const appContent = appFile?.[1] || '';
-  
-  // Extract JSX from the return statement
-  const returnMatch = appContent.match(/return\s*\(\s*([\s\S]*?)\s*\);?\s*\}?\s*$/);
-  let jsx = returnMatch?.[1] || '<div class="p-8 text-center text-gray-500">Preview unavailable - no content found</div>';
-  
-  // Clean up JSX for HTML
-  // Convert className to class
-  jsx = jsx.replace(/className=/g, 'class=');
-  
-  // Remove React-specific attributes
-  jsx = jsx.replace(/\s(onClick|onChange|onSubmit|onFocus|onBlur|ref)=\{[^}]+\}/g, '');
-  
-  // Convert self-closing tags to HTML
-  jsx = jsx.replace(/<(\w+)([^>]*)\s*\/>/g, '<$1$2></$1>');
-  
-  // Remove {expressions} - replace with placeholder or remove
-  jsx = jsx.replace(/\{[^}]+\}/g, '');
-  
-  // Find CSS content
-  const cssFile = Object.entries(files).find(([path]) => path.includes('.css'));
-  const cssContent = cssFile?.[1] || '';
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Preview</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    ${cssContent}
-    
-    :root {
-      --background: 0 0% 100%;
-      --foreground: 222.2 84% 4.9%;
-      --card: 0 0% 100%;
-      --card-foreground: 222.2 84% 4.9%;
-      --primary: 221.2 83.2% 53.3%;
-      --primary-foreground: 210 40% 98%;
-      --secondary: 210 40% 96.1%;
-      --secondary-foreground: 222.2 47.4% 11.2%;
-      --muted: 210 40% 96.1%;
-      --muted-foreground: 215.4 16.3% 46.9%;
-      --destructive: 0 84.2% 60.2%;
-      --border: 214.3 31.8% 91.4%;
-      --radius: 0.75rem;
-    }
-    
-    * { border-color: hsl(var(--border)); }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: hsl(var(--background));
-      color: hsl(var(--foreground));
-      margin: 0;
-      padding: 0;
-    }
-  </style>
-</head>
-<body>
-  <div id="root">
-    ${jsx}
-  </div>
-  ${SMART_NAVIGATION_SCRIPT}
-</body>
-</html>`;
-}
-
-const HTMLFallbackPreview: React.FC<{
-  files: Record<string, string>;
-  onRetry: () => void;
-  isPureHTML?: boolean;
-}> = ({ files, onRetry, isPureHTML = false }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  
-  const htmlContent = useMemo(() => {
-    const content = convertToStaticHTML(files);
-    console.log('[HTMLFallbackPreview] Generated HTML length:', content.length);
-    console.log('[HTMLFallbackPreview] HTML preview (first 500 chars):', content.substring(0, 500));
-    return content;
-  }, [files]);
-
-
-  useEffect(() => {
-    if (iframeRef.current && htmlContent) {
-      console.log('[HTMLFallbackPreview] Setting iframe content via Blob URL');
-      // Use Blob URL to ensure inline scripts execute
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      iframeRef.current.src = url;
-      // Cleanup Blob URL on unmount or content change
-      return () => {
-        URL.revokeObjectURL(url);
-      };
-    }
-  }, [htmlContent]);
-
-  return (
-    <div className="relative w-full h-full flex flex-col">
-      {/* Banner - different for pure HTML vs fallback */}
-      {isPureHTML ? (
-        <div className="bg-blue-50 border-b border-blue-200 px-3 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-blue-800">
-            <Globe className="w-4 h-4" />
-            <span className="text-xs font-medium">HTML Preview</span>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-amber-50 border-b border-amber-200 px-3 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-amber-800">
-            <Globe className="w-4 h-4" />
-            <span className="text-xs font-medium">Static HTML Preview (Sandpack unavailable)</span>
-          </div>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={onRetry}
-            className="h-6 px-2 text-xs text-amber-700 hover:text-amber-900"
-          >
-            <RefreshCw className="w-3 h-3 mr-1" />
-            Retry Sandpack
-          </Button>
-        </div>
-      )}
-      
-      <iframe
-        ref={iframeRef}
-        className="flex-1 w-full border-0 bg-white"
-        sandbox="allow-scripts allow-same-origin allow-forms"
-        title="HTML Preview"
-        style={{ minHeight: '300px' }}
-      />
-    </div>
-  );
-};
-
 // ============================================================================
 // CodeSandbox Preview Component
 // ============================================================================
@@ -2801,25 +2620,10 @@ export const SimplePreview = forwardRef<SimplePreviewHandle, SimplePreviewProps>
 }, ref) => {
   const [key, setKey] = useState(0);
   
-  // Check if any file is a complete HTML document (not React)
-  const hasPureHTML = useMemo(() => {
-    const result = Object.entries(files).some(([path, content]) => {
-      const isHtml = path.endsWith('.html') || path.endsWith('.htm') || isCompleteHTML(content);
-      if (isHtml) {
-        console.log('[SimplePreview] Detected pure HTML in:', path);
-      }
-      return isHtml;
-    });
-    console.log('[SimplePreview] hasPureHTML:', result, 'Files:', Object.keys(files));
-    return result;
-  }, [files]);
-  
-  // Determine the best mode: runtime > codesandbox > sandpack > html (for pure HTML)
+  // Determine the best mode: runtime > codesandbox > sandpack
   const useRuntimeMode = enableRuntime && !disableRuntime;
   const getDefaultMode = (): PreviewMode => {
     if (forceMode) return forceMode;
-    // If content is pure HTML, use HTML mode directly
-    if (hasPureHTML) return 'html';
     if (useRuntimeMode) return 'runtime';
     if (useCodeSandbox) return 'codesandbox';
     return 'sandpack';
@@ -2859,32 +2663,21 @@ export const SimplePreview = forwardRef<SimplePreviewHandle, SimplePreviewProps>
     };
   }, []);
 
-  // Update mode when content type changes (e.g., from React to HTML)
-  useEffect(() => {
-    if (hasPureHTML && mode !== 'html' && !forceMode) {
-      setMode('html');
-    } else if (!hasPureHTML && mode === 'html' && !forceMode) {
-      setMode(getDefaultMode());
-    }
-  }, [hasPureHTML, forceMode]);
 
-  // Prepare files for Sandpack (only when not in HTML mode)
+
+  // Prepare files for Sandpack
   const sandpackFiles = useMemo(() => {
-    if (hasPureHTML) return files; // Pass through for HTML mode
     return prepareFiles(files);
-  }, [files, hasPureHTML]);
+  }, [files]);
 
   // Extract and resolve dependencies from VFS files dynamically
   const { extractedDependencies, dependencyInfo } = useMemo(() => {
-    if (hasPureHTML) {
-      return { extractedDependencies: BUNDLED_DEPENDENCIES, dependencyInfo: null };
-    }
     const result = getDependenciesForSandpack(sandpackFiles, BUNDLED_DEPENDENCIES);
     return {
       extractedDependencies: result.dependencies,
       dependencyInfo: result.extractionInfo,
     };
-  }, [sandpackFiles, hasPureHTML]);
+  }, [sandpackFiles]);
 
   // Track if we have unresolved/new dependencies that need attention
   const hasNewDependencies = dependencyInfo?.detected.length ?? 0;
@@ -2966,18 +2759,7 @@ export const SimplePreview = forwardRef<SimplePreviewHandle, SimplePreviewProps>
     );
   }
 
-  // HTML fallback mode (also used for pure HTML content)
-  if (mode === 'html') {
-    return (
-      <div className={cn('w-full h-full flex flex-col min-h-0 bg-background', className)}>
-        <HTMLFallbackPreview 
-          files={hasPureHTML ? files : sandpackFiles} 
-          onRetry={handleRetry} 
-          isPureHTML={hasPureHTML}
-        />
-      </div>
-    );
-  }
+
 
   // Sandpack mode (primary preview — hardened with Docker runtime deps)
   return (

@@ -598,9 +598,9 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
     const htmlCommentCount = (cleaned.match(/<!--/g) || []).length;
     const rawClassCount = (cleaned.match(/ class="/g) || []).length;
 
-    // If it's predominantly raw HTML, convert to proper React JSX
+    // If it's predominantly raw HTML, auto-convert to React JSX
     if ((hasDoctype || hasHtmlTag || hasBodyTag) || (htmlCommentCount > 3 && rawClassCount > 5)) {
-      console.warn(`[systems-build] File ${path} contains raw HTML, converting to native JSX`);
+      console.warn(`[systems-build] File ${path} contains raw HTML — converting to React/TSX`);
       result[path] = htmlToReactComponent(cleaned);
       continue;
     }
@@ -633,6 +633,11 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
     sanitized = sanitized.replace(/\btabindex="/g, 'tabIndex="');
     sanitized = sanitized.replace(/\bcolspan="/g, 'colSpan="');
     sanitized = sanitized.replace(/\browspan="/g, 'rowSpan="');
+    
+    // Self-close void HTML elements for JSX (<br> → <br />, <img ...> → <img ... />, etc.)
+    const VOID_ELS = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
+    const voidRe = new RegExp(`<(${VOID_ELS.join('|')})(\\b[^>]*?)(?<!/)>`, 'gi');
+    sanitized = sanitized.replace(voidRe, '<$1$2 />');
     
     result[path] = sanitized;
   }

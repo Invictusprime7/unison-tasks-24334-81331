@@ -3,13 +3,13 @@
  * Shared helpers for template generation
  * 
  * REACT-ONLY: All templates output native React/JSX component strings (.tsx)
- * No dangerouslySetInnerHTML — uses htmlToJsx converter for HTML→JSX.
+ * TypeScript/React from start to finish — no HTML conversion.
  */
 
 import { getCompositionById } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
 import { ensureReactImports } from '@/utils/aiCodeCleaner';
-import { htmlToJsx, htmlDocToReactComponentWithCSS, isHtmlDocument } from '@/utils/htmlToJsx';
+import { htmlDocToReactComponentWithCSS } from '@/utils/htmlToJsx';
 
 /**
  * Extracts <style> block content from HTML body strings
@@ -49,8 +49,9 @@ function extractScripts(body: string): { scripts: string; cleanBody: string } {
  * No DOM style injection — CSS is meant for a .css file import.
  */
 export const wrapInReactComponentWithCSS = (body: string, title: string = "Template"): { code: string; css: string } => {
-  // If it's a full HTML document, delegate to the document converter
-  if (isHtmlDocument(body)) {
+  // Legacy HTML documents — auto-migrate to React component
+  if (body.includes('<!DOCTYPE') || body.includes('<html')) {
+    console.warn('[wrapInReactComponentWithCSS] Migrating legacy HTML document to React/TSX');
     return htmlDocToReactComponentWithCSS(body, 'App');
   }
 
@@ -73,8 +74,11 @@ details > summary::-webkit-details-marker { display: none; }
   
   const css = baseStyles + '\n' + extractedStyles;
 
-  // Convert HTML body to valid JSX
-  const jsxBody = htmlToJsx(finalBody);
+  // Body content should already be JSX — minimal attribute normalization for safety
+  const jsxBody = finalBody
+    .replace(/\bclass=/g, 'className=')
+    .replace(/\bfor=/g, 'htmlFor=')
+    .replace(/<!--[\s\S]*?-->/g, '{/* comment */}');
   
   const titleJson = JSON.stringify(title);
 
@@ -282,12 +286,13 @@ export const getTemplateReactCodeWithCSS = (template: { code: string; id?: strin
     return { code: ensureReactImports(code), css: '' };
   }
 
-  // Full HTML document → convert to native JSX component + CSS
-  if (isHtmlDocument(code)) {
+  // Legacy HTML documents — auto-migrate to React component
+  if (code.includes('<!DOCTYPE') || code.includes('<html')) {
+    console.warn('[getTemplateReactCodeWithCSS] Migrating legacy HTML document to React/TSX');
     return htmlDocToReactComponentWithCSS(code, 'App');
   }
 
-  // Raw HTML fragment → wrap in React component with native JSX + CSS
+  // Raw JSX fragment → wrap in React component
   return wrapInReactComponentWithCSS(code, template.title || template.name || 'Template');
 };
 

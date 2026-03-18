@@ -5,7 +5,7 @@
  * This module flattens VFS paths, processes imports, and ensures essential files exist.
  */
 
-import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
+import { ensureReactImports, sanitizeSvgElements, fixJsxVoidElements, fixJsxStyleStrings } from '@/utils/aiCodeCleaner';
 
 const ALLOWED_IMPORTS = new Set([
   'react',
@@ -548,6 +548,14 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
       continue;
     }
 
+    // Skip .html/.htm files (except index.html which is the Vite entry point)
+    // All content should be React/TypeScript — no HTML page files
+    if ((normalizedPath.endsWith('.html') || normalizedPath.endsWith('.htm')) &&
+        normalizedPath !== '/index.html' && normalizedPath !== '/src/index.html') {
+      console.log(`[sandpackFilePrep] Skipping non-entry HTML file: ${normalizedPath}`);
+      continue;
+    }
+
     // Flatten /src/ paths to root for Sandpack compatibility
     if (normalizedPath.startsWith('/src/')) {
       normalizedPath = normalizedPath.replace('/src/', '/');
@@ -572,6 +580,10 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
       processedContent = ensureReactImports(processedContent);
       // Fix broken SVG elements (dc.path, svg.circle, etc.)
       processedContent = sanitizeSvgElements(processedContent);
+      // Self-close void elements (<br> → <br />, <img ...> → <img ... />, etc.)
+      processedContent = fixJsxVoidElements(processedContent);
+      // Convert style="..." strings to style={{...}} objects
+      processedContent = fixJsxStyleStrings(processedContent);
     }
 
     processedContent = processedContent

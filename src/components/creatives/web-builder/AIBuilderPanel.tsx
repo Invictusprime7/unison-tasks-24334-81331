@@ -51,7 +51,6 @@ import type { BusinessSystemType } from '@/data/templates/types';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
-import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
 
 // ============================================================================
 /**
@@ -103,51 +102,6 @@ function stripModuleExportsBlocks(code: string): string {
  */
 function stripInlineCodeRefs(content: string): string {
   return content.replace(/`[^`]*`/g, 'CODE_REF');
-}
-
-/**
- * Extract HTML from AI response that mixes reasoning text with raw HTML.
- * Handles cases like: "I will generate...<!DOCTYPE html><html>...</html>"
- * Returns the extracted HTML or null if no HTML found.
- * 
- * IMPORTANT: Ignores HTML tags mentioned inside backtick code references
- * in reasoning text (e.g. "`<html>`", "`<style>`").
- */
-function extractRawHtmlFromMixed(content: string): string | null {
-  // Strip inline code refs so `<html>` in reasoning doesn't trigger false match
-  const cleaned = stripInlineCodeRefs(content);
-
-  // Case 1: Content contains <!DOCTYPE html> — extract everything from there
-  const doctypeIdx = cleaned.indexOf('<!DOCTYPE');
-  if (doctypeIdx >= 0) {
-    // Use the index from cleaned to slice from the ORIGINAL content
-    const originalDoctypeIdx = content.indexOf('<!DOCTYPE', Math.max(0, doctypeIdx - 50));
-    if (originalDoctypeIdx >= 0) {
-      return content.slice(originalDoctypeIdx).trim();
-    }
-  }
-  
-  // Case 2: Content contains <html — but only if it looks like an actual tag (not inside prose)
-  // Match <html followed by > or whitespace+attributes, NOT inside backticks
-  const htmlTagRegex = /<html[\s>]/gi;
-  let match: RegExpExecArray | null;
-  while ((match = htmlTagRegex.exec(cleaned)) !== null) {
-    // Find the corresponding position in original content
-    const originalIdx = content.indexOf('<html', Math.max(0, match.index - 50));
-    if (originalIdx >= 0) {
-      const extracted = content.slice(originalIdx).trim();
-      if (extracted.includes('</html>')) return extracted;
-    }
-  }
-  
-  return null;
-}
-
-/**
- * Convert raw HTML into a proper React component with native JSX.
- */
-function wrapHtmlInReactComponent(html: string): string {
-  return htmlDocToReactComponentFn(html, 'App');
 }
 
 // Types
@@ -1188,40 +1142,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               generatedCode = `import React, { useEffect } from 'react';\n\nconst CSS_CONTENT = ${cssJsonStr};\n\nexport default function App() {\n  useEffect(() => {\n    const s = document.createElement('style');\n    s.textContent = CSS_CONTENT;\n    document.head.appendChild(s);\n    return () => { s.remove(); };\n  }, []);\n\n  return (\n    <div style={{ minHeight: '100vh' }}><p>Styles applied.</p></div>\n  );\n}`;
               console.log('[AIBuilderPanel] Extracted CSS from fence, wrapped in React component');
             } else if (hasHtmlStructure) {
-              generatedCode = wrapHtmlInReactComponent(bestBlock);
-              console.log('[AIBuilderPanel] Extracted HTML from fence, wrapped in React component');
+              // Reject raw HTML — AI should output React/TSX
+              console.warn('[AIBuilderPanel] Rejected HTML output from fence — expecting React/TSX');
             }
           }
         }
 
-        // Strategy 4: Raw HTML mixed with reasoning text (e.g. "I will generate...<!DOCTYPE html>...")
-        if (!multiFileOutput && !generatedCode) {
-          const rawHtml = extractRawHtmlFromMixed(trimmed);
-          if (rawHtml) {
-            console.log('[AIBuilderPanel] Extracted raw HTML from mixed content, wrapping in React component');
-            generatedCode = wrapHtmlInReactComponent(rawHtml);
-            // Extract explanation from the text before the HTML
-            const doctypeIdx = trimmed.indexOf('<!DOCTYPE');
-            const htmlIdx = doctypeIdx >= 0 ? doctypeIdx : trimmed.indexOf('<html');
-            if (htmlIdx > 0) {
-              explanationText = trimmed.slice(0, htmlIdx).trim();
-            }
-            if (!explanationText) {
-              explanationText = '✅ HTML site generated and wrapped for preview.';
-            }
-          }
-        }
-
-        // Strategy 5: Content is purely raw HTML (starts with <!DOCTYPE or <html)
-        if (!multiFileOutput && !generatedCode) {
-          if (/^\s*<!DOCTYPE/i.test(trimmed) || /^\s*<html[\s>]/i.test(trimmed)) {
-            console.log('[AIBuilderPanel] Content is raw HTML, wrapping in React component');
-            generatedCode = wrapHtmlInReactComponent(trimmed);
-            explanationText = '✅ HTML site generated and wrapped for preview.';
-          }
-        }
-
-        // Strategy 6 (surgical edit fallback): Extract JSON {"files": {...}} from prose
+        // Strategy 4 (surgical edit fallback): Extract JSON {"files": {...}} from prose
         // AI may return: "Here's the change:\n```json\n{\"files\": {...}}\n```\nI changed X"
         if (!multiFileOutput && !generatedCode && isSurgicalEdit) {
           // Try to find {"files": embedded anywhere in the content
@@ -1284,10 +1211,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         }
       }
 
-      // SAFETY NET 1: If generatedCode is still raw HTML (not wrapped in React), wrap it now
+      // SAFETY NET 1: If generatedCode is raw HTML, reject it — AI must output React/TSX
       if (generatedCode && (/^\s*<!DOCTYPE/i.test(generatedCode) || /^\s*<html[\s>]/i.test(generatedCode))) {
-        console.warn('[AIBuilderPanel] Safety net: wrapping raw HTML that escaped extraction strategies');
-        generatedCode = wrapHtmlInReactComponent(generatedCode);
+        console.warn('[AIBuilderPanel] Rejected: AI returned raw HTML instead of React/TSX');
+        generatedCode = null;
+        explanationText = '⚠️ AI returned raw HTML instead of React/TypeScript. Please try again — all output must be React components.';
       }
 
       // SAFETY NET 2: If generatedCode is raw CSS (:root, body {, @import, etc.), wrap in React component
@@ -1380,8 +1308,7 @@ export default function App() {
           generatedCode.includes('function ') ||
           generatedCode.includes('dangerouslySetInnerHTML') ||
           generatedCode.includes('return (') ||
-          /^\s*<!DOCTYPE/i.test(generatedCode) ||
-          /^\s*<html[\s>]/i.test(generatedCode);
+          generatedCode.includes('className=');
         
         const looksLikeProse = /\b(I will|I need to|I'll|Let me|inspired|simplified|Here's my|I'm going to)\b/i.test(generatedCode.slice(0, 300));
         

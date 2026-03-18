@@ -48,6 +48,7 @@ export interface SimplePreviewProps {
   showToolbar?: boolean;
   device?: 'desktop' | 'tablet' | 'mobile';
   enableSelection?: boolean;
+  selectionActivationKey?: number;
   onElementSelect?: (elementData: any) => void;
   businessId?: string;
   siteId?: string;
@@ -64,6 +65,7 @@ export const SimplePreview = React.memo(forwardRef<SimplePreviewHandle, SimplePr
   showToolbar = true,
   device = 'desktop',
   enableSelection = false,
+  selectionActivationKey = 0,
   onElementSelect,
   businessId,
   siteId,
@@ -252,11 +254,19 @@ export const SimplePreview = React.memo(forwardRef<SimplePreviewHandle, SimplePr
 
   // Element selection handlers for Edit mode
   useEffect(() => {
-    if (!enableSelection || !iframeRef.current || !iframeReady) return;
+    if (!iframeRef.current || !iframeReady) return;
 
     const iframe = iframeRef.current;
     const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!iframeDoc) return;
+
+    if (!enableSelection) {
+      if (hoveredElement) removeHighlight(hoveredElement);
+      if (selectedElementRef.current) removeHighlight(selectedElementRef.current);
+      setHoveredElement(null);
+      selectedElementRef.current = null;
+      return;
+    }
 
     const handleMouseOver = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -280,40 +290,34 @@ export const SimplePreview = React.memo(forwardRef<SimplePreviewHandle, SimplePr
     const handleClick = (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      
+
       const target = e.target as HTMLElement;
       if (target && target !== iframeDoc.body && target !== iframeDoc.documentElement) {
-        // Remove previous selection highlight
         if (selectedElementRef.current && selectedElementRef.current !== target) {
           removeHighlight(selectedElementRef.current);
         }
-        
+
         const elementData = getSelectedElementData(target);
         console.log('[SimplePreview] Element selected:', elementData);
         onElementSelect?.(elementData);
-        
-        // Store reference to selected element and keep it highlighted
+
         selectedElementRef.current = target;
         highlightElement(target, '#10b981');
       }
     };
 
-    // Add event listeners to iframe document
     iframeDoc.addEventListener('mouseover', handleMouseOver);
     iframeDoc.addEventListener('mouseout', handleMouseOut);
     iframeDoc.addEventListener('click', handleClick, true);
 
     return () => {
-      if (iframeDoc) {
-        iframeDoc.removeEventListener('mouseover', handleMouseOver);
-        iframeDoc.removeEventListener('mouseout', handleMouseOut);
-        iframeDoc.removeEventListener('click', handleClick, true);
-      }
-      // Clean up highlights
+      iframeDoc.removeEventListener('mouseover', handleMouseOver);
+      iframeDoc.removeEventListener('mouseout', handleMouseOut);
+      iframeDoc.removeEventListener('click', handleClick, true);
       if (hoveredElement) removeHighlight(hoveredElement);
       if (selectedElementRef.current) removeHighlight(selectedElementRef.current);
     };
-  }, [enableSelection, iframeReady, onElementSelect, hoveredElement]);
+  }, [enableSelection, selectionActivationKey, iframeReady, onElementSelect, hoveredElement]);
 
   useImperativeHandle(ref, () => ({
     getIframe: () => iframeRef.current,

@@ -80,6 +80,8 @@ export interface VFSPreviewProps {
   device?: 'desktop' | 'tablet' | 'mobile';
   /** Enable element selection (edit mode) */
   enableSelection?: boolean;
+  /** Bump this to explicitly re-arm edit mode in the preview */
+  selectionActivationKey?: number;
   /** Callback when an element is selected */
   onElementSelect?: (elementData: any) => void;
 }
@@ -182,6 +184,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   siteId,
   device = 'desktop',
   enableSelection = false,
+  selectionActivationKey = 0,
   onElementSelect,
 }, ref) => {
   // State - default to 'sandpack' — no HTML fallback
@@ -288,7 +291,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   // Attach edit-mode selection via postMessage bridge (works cross-origin with Sandpack)
   useEffect(() => {
     if (!enableSelection) {
-      // Tell iframe to disable edit mode
       const iframe = backend === 'sandpack'
         ? resolvePreviewIframe(previewRootRef.current)
         : iframeRef.current;
@@ -299,7 +301,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       return;
     }
 
-    // Tell iframe to enable edit mode
     const sendEnable = () => {
       const iframe = backend === 'sandpack'
         ? resolvePreviewIframe(previewRootRef.current)
@@ -310,22 +311,19 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     };
 
     sendEnable();
+    setTimeout(sendEnable, 60);
 
-    // Re-send on iframe load / Sandpack remount
     let observer: MutationObserver | null = null;
     if (backend === 'sandpack' && previewRootRef.current) {
       observer = new MutationObserver(() => {
-        // Small delay to let new iframe initialize
         setTimeout(sendEnable, 200);
       });
       observer.observe(previewRootRef.current, { childList: true, subtree: true });
     }
 
-    // Also re-send periodically until confirmed (handles race with Sandpack boot)
     const interval = setInterval(sendEnable, 800);
     const stopInterval = setTimeout(() => clearInterval(interval), 8000);
 
-    // Listen for element selection messages from the iframe bridge
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'ELEMENT_SELECTED' && event.data.elementData) {
         onElementSelect?.(event.data.elementData);
@@ -338,7 +336,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       clearInterval(interval);
       clearTimeout(stopInterval);
       window.removeEventListener('message', handleMessage);
-      // Disable edit mode in iframe on cleanup
       const iframe = backend === 'sandpack'
         ? resolvePreviewIframe(previewRootRef.current)
         : iframeRef.current;
@@ -346,7 +343,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         iframe.contentWindow.postMessage({ type: 'EDIT_MODE_TOGGLE', enabled: false }, '*');
       }
     };
-  }, [enableSelection, backend, sandpackKey, onElementSelect, clearPreviewHighlights]);
+  }, [enableSelection, selectionActivationKey, backend, sandpackKey, onElementSelect, clearPreviewHighlights]);
   
   // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {

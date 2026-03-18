@@ -869,6 +869,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [selectedObject, setSelectedObject] = useState<FabricCanvas['_objects'][0] | null>(null);
   const [activeMode, setActiveMode] = useState<"insert" | "layout" | "text" | "vector">("insert");
   const [builderMode, setBuilderMode] = useState<SimpleBuilderMode>('select');
+  const [editActivationKey, setEditActivationKey] = useState(0);
   const [useReactPreview, setUseReactPreview] = useState(true); // React/VFS preview mode (Docker + HTML blob fallback)
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [zoom, setZoom] = useState(0.5);
@@ -4084,6 +4085,9 @@ ${html}
           <SimpleModeToggle
             currentMode={builderMode}
             onModeChange={(mode) => {
+              if (mode === 'select') {
+                setEditActivationKey(prev => prev + 1);
+              }
               setBuilderMode(mode);
               setIsInteractiveMode(mode === 'preview');
               if (mode === 'preview') {
@@ -4704,6 +4708,7 @@ ${html}
                       showBackendIndicator={false}
                       device={device}
                       enableSelection={builderMode === 'select'}
+                      selectionActivationKey={editActivationKey}
                       onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
                       onNavigate={(path) => {
                         const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
@@ -4736,6 +4741,7 @@ ${html}
                       showToolbar={false}
                       device={device}
                       enableSelection={builderMode === 'select'}
+                      selectionActivationKey={editActivationKey}
                       onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
                     />
                   )}
@@ -4897,6 +4903,7 @@ ${html}
                         showBackendIndicator={false}
                         device={device}
                         enableSelection={builderMode === 'select'}
+                        selectionActivationKey={editActivationKey}
                         onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
                         onNavigate={(path) => {
                           const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
@@ -4929,6 +4936,7 @@ ${html}
                         showToolbar={false}
                         device={device}
                         enableSelection={builderMode === 'select'}
+                        selectionActivationKey={editActivationKey}
                         onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
                       />
                     )}

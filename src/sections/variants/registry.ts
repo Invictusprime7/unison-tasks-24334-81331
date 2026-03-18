@@ -14,6 +14,10 @@ import {
   heroCenteredJSX, heroSplitImageJSX, heroFullBleedJSX,
   ctaCenteredJSX, ctaGradientBannerJSX, ctaSplitCardJSX,
   navbarStandardJSX, navbarCenteredLogoJSX, navbarMinimalDarkJSX,
+  featuresGridJSX, featuresIconLeftJSX, featuresMinimalCenteredJSX,
+  servicesCardGridJSX, servicesAlternatingJSX, servicesCompactListJSX,
+  contactCenteredJSX, contactSplitCardJSX, contactMinimalInlineJSX,
+  footerColumnsJSX, footerCenteredMinimalJSX, footerDarkBandJSX,
 } from './jsxTemplates';
 
 // Hero variants
@@ -30,6 +34,26 @@ import { CTASplitCard } from './cta/CTASplitCard';
 import { NavbarStandard } from './navbar/NavbarStandard';
 import { NavbarCenteredLogo } from './navbar/NavbarCenteredLogo';
 import { NavbarMinimalDark } from './navbar/NavbarMinimalDark';
+
+// Features variants
+import { FeaturesGrid } from './features/FeaturesGrid';
+import { FeaturesIconLeft } from './features/FeaturesIconLeft';
+import { FeaturesMinimalCentered } from './features/FeaturesMinimalCentered';
+
+// Services variants
+import { ServicesCardGrid } from './services/ServicesCardGrid';
+import { ServicesAlternating } from './services/ServicesAlternating';
+import { ServicesCompactList } from './services/ServicesCompactList';
+
+// Contact variants
+import { ContactCentered } from './contact/ContactCentered';
+import { ContactSplitCard } from './contact/ContactSplitCard';
+import { ContactMinimalInline } from './contact/ContactMinimalInline';
+
+// Footer variants
+import { FooterColumns } from './footer/FooterColumns';
+import { FooterCenteredMinimal } from './footer/FooterCenteredMinimal';
+import { FooterDarkBand } from './footer/FooterDarkBand';
 
 // ============================================================================
 // Registry Definition
@@ -144,6 +168,154 @@ const VARIANT_REGISTRY: VariantRegistry = {
       thumbnail: '/variants/navbar-minimal-dark.svg',
       tags: ['dark', 'modern', 'minimal'],
       renderJSX: navbarMinimalDarkJSX,
+    },
+  ],
+
+  features: [
+    {
+      id: 'features:grid',
+      sectionType: 'features',
+      slug: 'grid',
+      name: 'Grid',
+      description: 'Classic card grid with icons and descriptions',
+      component: FeaturesGrid,
+      thumbnail: '/variants/features-grid.svg',
+      tags: ['classic', 'clean', 'cards'],
+      isDefault: true,
+      renderJSX: featuresGridJSX,
+    },
+    {
+      id: 'features:icon-left',
+      sectionType: 'features',
+      slug: 'icon-left',
+      name: 'Icon Left',
+      description: 'Horizontal rows with icons on the left',
+      component: FeaturesIconLeft,
+      thumbnail: '/variants/features-icon-left.svg',
+      tags: ['horizontal', 'list', 'compact'],
+      renderJSX: featuresIconLeftJSX,
+    },
+    {
+      id: 'features:minimal-centered',
+      sectionType: 'features',
+      slug: 'minimal-centered',
+      name: 'Minimal Centered',
+      description: 'Clean centered layout with icon circles',
+      component: FeaturesMinimalCentered,
+      thumbnail: '/variants/features-minimal-centered.svg',
+      tags: ['minimal', 'centered', 'elegant'],
+      renderJSX: featuresMinimalCenteredJSX,
+    },
+  ],
+
+  services: [
+    {
+      id: 'services:card-grid',
+      sectionType: 'services',
+      slug: 'card-grid',
+      name: 'Card Grid',
+      description: 'Service cards with badge, price, and CTA',
+      component: ServicesCardGrid,
+      thumbnail: '/variants/services-card-grid.svg',
+      tags: ['cards', 'pricing', 'detailed'],
+      isDefault: true,
+      renderJSX: servicesCardGridJSX,
+    },
+    {
+      id: 'services:alternating',
+      sectionType: 'services',
+      slug: 'alternating',
+      name: 'Alternating',
+      description: 'Alternating left-right rows with images',
+      component: ServicesAlternating,
+      thumbnail: '/variants/services-alternating.svg',
+      tags: ['alternating', 'showcase', 'image'],
+      renderJSX: servicesAlternatingJSX,
+    },
+    {
+      id: 'services:compact-list',
+      sectionType: 'services',
+      slug: 'compact-list',
+      name: 'Compact List',
+      description: 'Stacked list rows with icon and price',
+      component: ServicesCompactList,
+      thumbnail: '/variants/services-compact-list.svg',
+      tags: ['list', 'compact', 'minimal'],
+      renderJSX: servicesCompactListJSX,
+    },
+  ],
+
+  contact: [
+    {
+      id: 'contact:centered',
+      sectionType: 'contact',
+      slug: 'centered',
+      name: 'Centered',
+      description: 'Classic centered contact form',
+      component: ContactCentered,
+      thumbnail: '/variants/contact-centered.svg',
+      tags: ['classic', 'clean', 'form'],
+      isDefault: true,
+      renderJSX: contactCenteredJSX,
+    },
+    {
+      id: 'contact:split-card',
+      sectionType: 'contact',
+      slug: 'split-card',
+      name: 'Split Card',
+      description: 'Form on the left, contact info card on the right',
+      component: ContactSplitCard,
+      thumbnail: '/variants/contact-split-card.svg',
+      tags: ['split', 'card', 'modern'],
+      renderJSX: contactSplitCardJSX,
+    },
+    {
+      id: 'contact:minimal-inline',
+      sectionType: 'contact',
+      slug: 'minimal-inline',
+      name: 'Minimal Inline',
+      description: 'Compact inline form with contact pills',
+      component: ContactMinimalInline,
+      thumbnail: '/variants/contact-minimal-inline.svg',
+      tags: ['minimal', 'inline', 'compact'],
+      renderJSX: contactMinimalInlineJSX,
+    },
+  ],
+
+  footer: [
+    {
+      id: 'footer:columns',
+      sectionType: 'footer',
+      slug: 'columns',
+      name: 'Columns',
+      description: 'Multi-column footer with brand and link groups',
+      component: FooterColumns,
+      thumbnail: '/variants/footer-columns.svg',
+      tags: ['classic', 'multi-column'],
+      isDefault: true,
+      renderJSX: footerColumnsJSX,
+    },
+    {
+      id: 'footer:centered-minimal',
+      sectionType: 'footer',
+      slug: 'centered-minimal',
+      name: 'Centered Minimal',
+      description: 'Simple centered footer with inline links',
+      component: FooterCenteredMinimal,
+      thumbnail: '/variants/footer-centered-minimal.svg',
+      tags: ['minimal', 'centered', 'simple'],
+      renderJSX: footerCenteredMinimalJSX,
+    },
+    {
+      id: 'footer:dark-band',
+      sectionType: 'footer',
+      slug: 'dark-band',
+      name: 'Dark Band',
+      description: 'Full-width dark footer with newsletter',
+      component: FooterDarkBand,
+      thumbnail: '/variants/footer-dark-band.svg',
+      tags: ['dark', 'bold', 'newsletter'],
+      renderJSX: footerDarkBandJSX,
     },
   ],
 };

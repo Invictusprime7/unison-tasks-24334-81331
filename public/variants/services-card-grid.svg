@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140" fill="none">
+  <rect width="240" height="140" rx="8" fill="#0f0f1a"/>
+  <!-- Section heading -->
+  <rect x="70" y="10" width="100" height="8" rx="3" fill="#ffffff" opacity="0.8"/>
+  <rect x="85" y="24" width="70" height="5" rx="2" fill="#ffffff" opacity="0.25"/>
+  <!-- 3-column service cards -->
+  <rect x="14" y="40" width="64" height="55" rx="4" fill="#a78bfa" opacity="0.06" stroke="#a78bfa" stroke-opacity="0.15" stroke-width="1"/>
+  <rect x="88" y="40" width="64" height="55" rx="4" fill="#a78bfa" opacity="0.06" stroke="#a78bfa" stroke-opacity="0.15" stroke-width="1"/>
+  <rect x="162" y="40" width="64" height="55" rx="4" fill="#a78bfa" opacity="0.06" stroke="#a78bfa" stroke-opacity="0.15" stroke-width="1"/>
+  <!-- Card 1 content -->
+  <rect x="20" y="47" width="22" height="4" rx="2" fill="#a78bfa" opacity="0.5"/>
+  <rect x="20" y="55" width="50" height="4" rx="2" fill="#ffffff" opacity="0.5"/>
+  <rect x="20" y="62" width="46" height="3" rx="1" fill="#ffffff" opacity="0.2"/>
+  <rect x="20" y="74" width="16" height="5" rx="2" fill="#a78bfa" opacity="0.6"/>
+  <rect x="20" y="82" width="30" height="8" rx="4" fill="#a78bfa"/>
+  <!-- Card 2 content -->
+  <rect x="94" y="47" width="22" height="4" rx="2" fill="#a78bfa" opacity="0.5"/>
+  <rect x="94" y="55" width="50" height="4" rx="2" fill="#ffffff" opacity="0.5"/>
+  <rect x="94" y="62" width="46" height="3" rx="1" fill="#ffffff" opacity="0.2"/>
+  <rect x="94" y="74" width="16" height="5" rx="2" fill="#a78bfa" opacity="0.6"/>
+  <rect x="94" y="82" width="30" height="8" rx="4" fill="#a78bfa"/>
+  <!-- Card 3 content -->
+  <rect x="168" y="47" width="22" height="4" rx="2" fill="#a78bfa" opacity="0.5"/>
+  <rect x="168" y="55" width="50" height="4" rx="2" fill="#ffffff" opacity="0.5"/>
+  <rect x="168" y="62" width="46" height="3" rx="1" fill="#ffffff" opacity="0.2"/>
+  <rect x="168" y="74" width="16" height="5" rx="2" fill="#a78bfa" opacity="0.6"/>
+  <rect x="168" y="82" width="30" height="8" rx="4" fill="#a78bfa"/>
+</svg>

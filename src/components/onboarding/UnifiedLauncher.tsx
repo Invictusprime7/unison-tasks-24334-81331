@@ -543,7 +543,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
         const fallbackVfsFiles: Record<string, string> = {
           "/src/App.tsx": reactResult.code,
           "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-          "/src/index.css": `:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n}\n`,
+          "/src/index.css": buildThemeCSS(aestheticParams.aestheticId),
         };
         if (reactResult.css) fallbackVfsFiles["/src/template.css"] = reactResult.css;
 

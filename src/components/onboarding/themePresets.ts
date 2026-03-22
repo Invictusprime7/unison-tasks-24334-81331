@@ -1,5 +1,5 @@
 /**
- * Theme Presets for SystemLauncher — Derived from Canonical Themes
+ * Theme Presets for UnifiedLauncher — Derived from Canonical Themes
  *
  * VISUAL-ONLY: These presets control colors, typography, and layout formatting.
  * They must NEVER influence industry content, text copy, or business language.

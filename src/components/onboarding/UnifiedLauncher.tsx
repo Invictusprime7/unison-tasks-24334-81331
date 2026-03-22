@@ -378,7 +378,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
 
       const businessId = data.data.businessId as string;
 
-      const baseCSS = `:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n}\n`;
+      const baseCSS = buildThemeCSS(selectedTheme?.id);
       const vfsFiles = editedTemplateFiles || {
         "/src/App.tsx": effectiveResult.code,
         "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,

@@ -17,7 +17,7 @@ export const restaurantBooking: TemplateComposition = {
       id: 'nav',
       type: 'navbar',
       props: {
-        brand: 'The Table',
+        brand: '{{business_name}}',
         links: [
           { label: 'Menu', href: '#services' },
           { label: 'Reviews', href: '#testimonials' },
@@ -91,7 +91,7 @@ export const restaurantBooking: TemplateComposition = {
       id: 'footer',
       type: 'footer',
       props: {
-        brand: 'The Table',
+        brand: '{{business_name}}',
         columns: [
           { title: 'Menu', links: [{ label: 'Appetizers', href: '#' }, { label: 'Entrées', href: '#' }, { label: 'Drinks', href: '#' }] },
           { title: 'Visit', links: [{ label: 'Hours', href: '#' }, { label: 'Location', href: '#' }, { label: 'Private Events', href: '#' }] },

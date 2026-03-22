@@ -17,7 +17,7 @@ export const coachingBooking: TemplateComposition = {
       id: 'nav',
       type: 'navbar',
       props: {
-        brand: 'Clarity Coach',
+        brand: '{{business_name}}',
         links: [
           { label: 'Programs', href: '#services' },
           { label: 'Testimonials', href: '#testimonials' },
@@ -91,7 +91,7 @@ export const coachingBooking: TemplateComposition = {
       id: 'footer',
       type: 'footer',
       props: {
-        brand: 'Clarity Coach',
+        brand: '{{business_name}}',
         columns: [
           { title: 'Programs', links: [{ label: '1-on-1', href: '#' }, { label: 'Group', href: '#' }, { label: 'Strategy', href: '#' }] },
           { title: 'Connect', links: [{ label: 'About', href: '#' }, { label: 'Contact', href: '#contact' }, { label: 'Blog', href: '#' }] },

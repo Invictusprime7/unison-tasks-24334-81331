@@ -16,7 +16,7 @@ export const salonBooking: TemplateComposition = {
       id: 'nav',
       type: 'navbar',
       props: {
-        brand: 'Studio Bloom',
+        brand: '{{business_name}}',
         links: [
           { label: 'Services', href: '#services' },
           { label: 'Reviews', href: '#testimonials' },
@@ -90,7 +90,7 @@ export const salonBooking: TemplateComposition = {
       id: 'footer',
       type: 'footer',
       props: {
-        brand: 'Studio Bloom',
+        brand: '{{business_name}}',
         columns: [
           { title: 'Services', links: [{ label: 'Haircuts', href: '#' }, { label: 'Color', href: '#' }, { label: 'Facials', href: '#' }] },
           { title: 'Info', links: [{ label: 'About', href: '#' }, { label: 'Contact', href: '#contact' }, { label: 'Careers', href: '#' }] },

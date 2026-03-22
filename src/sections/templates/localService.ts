@@ -17,7 +17,7 @@ export const localServiceBooking: TemplateComposition = {
       id: 'nav',
       type: 'navbar',
       props: {
-        brand: 'ProFix Services',
+        brand: '{{business_name}}',
         links: [
           { label: 'Services', href: '#services' },
           { label: 'Reviews', href: '#testimonials' },
@@ -96,7 +96,7 @@ export const localServiceBooking: TemplateComposition = {
       id: 'footer',
       type: 'footer',
       props: {
-        brand: 'ProFix Services',
+        brand: '{{business_name}}',
         columns: [
           { title: 'Services', links: [{ label: 'Plumbing', href: '#' }, { label: 'Electrical', href: '#' }, { label: 'Repairs', href: '#' }] },
           { title: 'Company', links: [{ label: 'About', href: '#' }, { label: 'Contact', href: '#contact' }, { label: 'Careers', href: '#' }] },

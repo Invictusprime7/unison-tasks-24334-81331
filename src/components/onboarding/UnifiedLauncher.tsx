@@ -109,6 +109,53 @@ function buildAestheticParams(theme: ThemePreset | null) {
   };
 }
 
+/**
+ * Build theme-aware CSS :root variables + design system from canonical theme.
+ * Replaces hardcoded dark-theme fallback CSS with the actual selected aesthetic.
+ */
+function buildThemeCSS(themeId?: string): string {
+  const id = themeId || "modern";
+  const theme = getCanonicalTheme(id);
+  const c = theme.tokens.colors;
+  const t = theme.tokens.typography;
+  const cssDesignSystem = getThemeCSSDirective(id);
+
+  return `:root {
+  --background: ${c.background};
+  --foreground: ${c.foreground};
+  --primary: ${c.primary};
+  --primary-foreground: ${c.primaryForeground};
+  --secondary: ${c.secondary};
+  --secondary-foreground: ${c.secondaryForeground};
+  --accent: ${c.accent};
+  --accent-foreground: ${c.accentForeground};
+  --muted: ${c.muted};
+  --muted-foreground: ${c.mutedForeground};
+  --card: ${c.card};
+  --card-foreground: ${c.cardForeground};
+  --border: ${c.border};
+  --radius: ${theme.tokens.radius};
+}
+
+body {
+  margin: 0;
+  font-family: ${t.bodyFont};
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: ${t.headingFont};
+  font-weight: ${t.headingWeight};
+}
+
+${cssDesignSystem}
+
+/* THEME ANIMATIONS */
+${theme.animations.keyframes}
+`;
+}
+
 // ============================================================================
 // Category Labels
 // ============================================================================
@@ -277,6 +324,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
       // Apply theme via AI if a theme is selected and no pre-edited files exist
       if (selectedTheme && !editedTemplateFiles) {
         try {
+          const aestheticParams = buildAestheticParams(selectedTheme);
           toast("Applying theme…", { description: selectedTheme.label });
           const { data: aiData, error: aiError } = await supabase.functions.invoke("ai-code-assistant", {
             body: {
@@ -284,7 +332,8 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
                 role: "user",
                 content:
                   `Apply the "${selectedTheme.label}" aesthetic to this template.\n\n` +
-                  `${selectedTheme.styleDirective}\n\n` +
+                  `## MANDATORY DESIGN RULES:\n${aestheticParams.aestheticGenerationDirective}\n\n` +
+                  `## Style Directive:\n${aestheticParams.aestheticStyleDirective}\n\n` +
                   `STRICT RULES:\n` +
                   `1. ONLY modify: font families, font sizes, font weights, colors, color schemes, text styling, backgrounds, border-radius, shadows\n` +
                   `2. DO NOT change: text content, copy, headlines, descriptions, service names, industry-specific language\n` +
@@ -329,7 +378,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
 
       const businessId = data.data.businessId as string;
 
-      const baseCSS = `:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n}\n`;
+      const baseCSS = buildThemeCSS(selectedTheme?.id);
       const vfsFiles = editedTemplateFiles || {
         "/src/App.tsx": effectiveResult.code,
         "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
@@ -494,7 +543,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
         const fallbackVfsFiles: Record<string, string> = {
           "/src/App.tsx": reactResult.code,
           "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-          "/src/index.css": `:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n}\n`,
+          "/src/index.css": buildThemeCSS(aestheticParams.aestheticId),
         };
         if (reactResult.css) fallbackVfsFiles["/src/template.css"] = reactResult.css;
 

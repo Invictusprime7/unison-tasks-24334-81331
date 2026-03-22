@@ -324,6 +324,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
       // Apply theme via AI if a theme is selected and no pre-edited files exist
       if (selectedTheme && !editedTemplateFiles) {
         try {
+          const aestheticParams = buildAestheticParams(selectedTheme);
           toast("Applying theme…", { description: selectedTheme.label });
           const { data: aiData, error: aiError } = await supabase.functions.invoke("ai-code-assistant", {
             body: {
@@ -331,7 +332,8 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
                 role: "user",
                 content:
                   `Apply the "${selectedTheme.label}" aesthetic to this template.\n\n` +
-                  `${selectedTheme.styleDirective}\n\n` +
+                  `## MANDATORY DESIGN RULES:\n${aestheticParams.aestheticGenerationDirective}\n\n` +
+                  `## Style Directive:\n${aestheticParams.aestheticStyleDirective}\n\n` +
                   `STRICT RULES:\n` +
                   `1. ONLY modify: font families, font sizes, font weights, colors, color schemes, text styling, backgrounds, border-radius, shadows\n` +
                   `2. DO NOT change: text content, copy, headlines, descriptions, service names, industry-specific language\n` +

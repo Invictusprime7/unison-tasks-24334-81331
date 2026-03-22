@@ -109,6 +109,53 @@ function buildAestheticParams(theme: ThemePreset | null) {
   };
 }
 
+/**
+ * Build theme-aware CSS :root variables + design system from canonical theme.
+ * Replaces hardcoded dark-theme fallback CSS with the actual selected aesthetic.
+ */
+function buildThemeCSS(themeId?: string): string {
+  const id = themeId || "modern";
+  const theme = getCanonicalTheme(id);
+  const c = theme.tokens.colors;
+  const t = theme.tokens.typography;
+  const cssDesignSystem = getThemeCSSDirective(id);
+
+  return `:root {
+  --background: ${c.background};
+  --foreground: ${c.foreground};
+  --primary: ${c.primary};
+  --primary-foreground: ${c.primaryForeground};
+  --secondary: ${c.secondary};
+  --secondary-foreground: ${c.secondaryForeground};
+  --accent: ${c.accent};
+  --accent-foreground: ${c.accentForeground};
+  --muted: ${c.muted};
+  --muted-foreground: ${c.mutedForeground};
+  --card: ${c.card};
+  --card-foreground: ${c.cardForeground};
+  --border: ${c.border};
+  --radius: ${theme.tokens.radius};
+}
+
+body {
+  margin: 0;
+  font-family: ${t.bodyFont};
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: ${t.headingFont};
+  font-weight: ${t.headingWeight};
+}
+
+${cssDesignSystem}
+
+/* THEME ANIMATIONS */
+${theme.animations.keyframes}
+`;
+}
+
 // ============================================================================
 // Category Labels
 // ============================================================================

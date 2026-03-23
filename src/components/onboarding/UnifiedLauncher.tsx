@@ -499,7 +499,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
           templateId: referenceId,
           templateHtml: referenceCode,
           variantMode: true,
-          variationSeed: variation.seed,
+          variationSeed,
           outputFormat: "react",
           // Full aesthetic pipeline — ensures images, animations, theme CSS
           ...aestheticParams,

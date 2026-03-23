@@ -1,8 +1,8 @@
 /**
- * Design Variation Generator — Canonical Theme-Aware
+ * Design Variation Generator — Launcher-Driven
  *
- * Delegates to the canonical theme registry for deterministic design profiles.
- * When no theme is selected, falls back to the 'modern' profile.
+ * All design variations are resolved by the system/business launcher.
+ * This module provides typed accessors but requires a themeId from the launcher path.
  */
 
 import { getCanonicalTheme, type DesignProfile } from '@/themes/canonical';
@@ -11,17 +11,15 @@ import { getCanonicalTheme, type DesignProfile } from '@/themes/canonical';
 export type DesignVariation = DesignProfile;
 
 /**
- * Generate a design variation.
- * If a themeId is provided, returns the deterministic profile for that aesthetic.
- * Falls back to 'modern' for unknown/missing themes (no more random generation).
+ * Generate a design variation for a given themeId.
+ * The themeId MUST be provided by the launcher generation path.
  */
-export function generateDesignVariation(themeId?: string): DesignVariation {
-  return getCanonicalTheme(themeId || 'modern').profile;
+export function generateDesignVariation(themeId: string): DesignVariation {
+  return getCanonicalTheme(themeId).profile;
 }
 
 /**
  * Get CSS design system directive for a theme.
- * Returns the theme-specific CSS patterns + animation keyframes.
  */
 export function getThemeCSSDirective(themeId: string): string {
   const theme = getCanonicalTheme(themeId);
@@ -30,30 +28,7 @@ export function getThemeCSSDirective(themeId: string): string {
 
 /**
  * Get the detailed generation directive for a theme.
- * Returns prescriptive rules the AI must follow for faithful theme output.
  */
 export function getThemeGenerationDirective(themeId: string): string {
   return getCanonicalTheme(themeId).generationDirective;
-}
-
-/**
- * Pick a font pairing from the theme's canonical typography.
- */
-export function randomFontPairing(currentHeading?: string): { heading: string; body: string } {
-  // Use curated pairings that complement each theme
-  const FONT_PAIRINGS = [
-    { heading: 'Plus Jakarta Sans', body: 'Inter' },
-    { heading: 'Space Grotesk', body: 'DM Sans' },
-    { heading: 'Manrope', body: 'Inter' },
-    { heading: 'Outfit', body: 'Nunito' },
-    { heading: 'Sora', body: 'Inter' },
-    { heading: 'Playfair Display', body: 'Source Sans 3' },
-    { heading: 'Montserrat', body: 'Open Sans' },
-    { heading: 'Raleway', body: 'Lato' },
-  ];
-
-  const candidates = currentHeading
-    ? FONT_PAIRINGS.filter(p => p.heading !== currentHeading)
-    : FONT_PAIRINGS;
-  return candidates[Math.floor(Math.random() * candidates.length)] || FONT_PAIRINGS[0];
 }

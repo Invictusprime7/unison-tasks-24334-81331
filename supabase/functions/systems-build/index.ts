@@ -697,6 +697,14 @@ serve(async (req) => {
       console.log(`[systems-build] Industry palette override: ${industryPalette.name} (${industryPalette.id}) for ${aestheticId}×${blueprint.identity.industry}`);
     }
 
+    // Industry layout matrix: determine layout, styling, and elements per industry
+    const industryLayout = pickIndustryLayout(
+      blueprint.identity.industry,
+      variationSeed || Date.now().toString(36)
+    );
+    const industryLayoutDirective = buildLayoutDirective(industryLayout);
+    console.log(`[systems-build] Industry layout: ${industryLayout.id} for ${blueprint.identity.industry}`);
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     // Build design profile context string for AI prompts

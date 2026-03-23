@@ -504,8 +504,9 @@ const ALIASES: Record<string, string> = {
   healthcare: 'healthcare', medical: 'healthcare', clinic: 'healthcare', dental: 'healthcare', therapy: 'healthcare',
   technology: 'technology', saas: 'technology', software: 'technology', tech: 'technology', startup: 'technology',
   localservice: 'localservice', local_service: 'localservice', plumber: 'localservice', hvac: 'localservice', electrician: 'localservice', contractor: 'localservice',
-  creator: 'creator', portfolio: 'creator', artist: 'creator', designer: 'creator', photographer: 'creator',
+  creator: 'creator', creator_portfolio: 'creator', portfolio: 'creator', artist: 'creator', designer: 'creator', photographer: 'creator',
   nonprofit: 'nonprofit', charity: 'nonprofit', foundation: 'nonprofit', ngo: 'nonprofit',
+  other: 'consulting',
 };
 
 function resolveIndustry(industry: string): string {

@@ -1409,16 +1409,17 @@ Learn from every bug fix to become better at prevention!`
       // ================================================================
       console.log(`[ai-code-assistant] Caller-managed template-react mode — deferring all design tokens to user message`);
 
-      // Build reference template block if provided
+      // Build reference template block if provided — CONTENT INSPIRATION ONLY
       const referenceTemplateBlock = currentCode && templateAction === 'use-as-schema' ? `
 
-## 🏆 PREMIUM REFERENCE TEMPLATE (QUALITY BASELINE)
-Below is a reference template. Your React output must match or exceed its quality, section count, and content density.
-Preserve all intent wiring (convert data-ut-intent to onClick handlers or form actions).
+## 📝 CONTENT REFERENCE (INSPIRATION ONLY — DO NOT COPY LAYOUT)
+Below is a reference for CONTENT DIRECTION ONLY (what services to mention, copy tone, industry terminology).
+DO NOT copy its layout, color scheme, section order, or visual structure.
+Your layout, colors, and structure MUST come from the user message specifications.
 
-**REFERENCE TEMPLATE (analyze structure):**
-\`\`\`html
-${currentCode.substring(0, 30000)}
+**Reference content (for terminology and copy direction only):**
+\`\`\`
+${currentCode.substring(0, 8000)}
 \`\`\`
 ` : '';
 
@@ -1700,35 +1701,23 @@ ${variation.industry.unsplashIds.map(id => `https://images.unsplash.com/${id}?w=
 OUTPUT: Return ONLY the complete, self-contained HTML document. No markdown, no explanations.`;
       } else {
         // template-react mode - FULLSTACK REACT APPLICATION
-        // Build reference template block if provided (for quality baseline)
+        // Build reference template block if provided (for content baseline — NOT layout copying)
         const referenceTemplateBlock = currentCode && templateAction === 'use-as-schema' ? `
 
-## 🏆 PREMIUM REFERENCE TEMPLATE (QUALITY BASELINE - CRITICAL!)
+## 📝 CONTENT REFERENCE (INSPIRATION ONLY — DO NOT COPY LAYOUT OR COLORS)
+Use this reference for CONTENT DIRECTION ONLY (what services to mention, copy tone, industry terminology).
+DO NOT copy its layout, section order, color scheme, or visual structure.
+Your colors come from the CSS variables above. Your layout comes from the variation context.
 
-Below is a HANDCRAFTED, PREMIUM HTML template that represents the EXACT quality standard you must match or exceed.
-Your React output must have THE SAME section structure, content density, and visual sophistication.
-
-**ABSOLUTE REQUIREMENTS FROM REFERENCE:**
-1. **Match Section Count**: If reference has 8 sections, generate 8 React section components
-2. **Match Content Density**: Same number of cards, testimonials, service items, team members
-3. **Preserve All Intent Wiring**: Convert data-ut-intent to onClick handlers or form actions
-4. **Match Visual Quality**: Same level of gradients, animations, hover effects, glassmorphism
-5. **Match Image Usage**: Same number and types of images (hero, gallery, team photos)
-6. **Match Typography Hierarchy**: Eyebrow → Headline → Body → Caption pattern
-
-**REFERENCE TEMPLATE HTML (analyze structure and content):**
-\`\`\`html
-${currentCode.substring(0, 30000)}
-\`\`\`
-${currentCode.length > 30000 ? `\n[Template continues for ${currentCode.length} total characters — maintain this quality throughout]` : ''}
-
-**INTENT WIRING CONVERSION:**
+**Intent wiring conversion:**
 - \`data-ut-intent="booking.create"\` → \`onClick={() => handleBooking()}\` + form with onSubmit
 - \`data-ut-intent="contact.submit"\` → Contact form with onSubmit handler
 - \`data-ut-intent="newsletter.subscribe"\` → Newsletter form component
-- \`data-ut-intent="nav.anchor"\` → Smooth scroll with id targeting
-- \`data-ut-cta="cta.primary"\` → Primary action button with prominent styling
 
+**Reference content (for terminology/copy only):**
+\`\`\`
+${currentCode.substring(0, 8000)}
+\`\`\`
 ` : '';
 
         systemPrompt = `You are an ELITE React fullstack developer producing PREMIUM, PRODUCTION-READY React applications. Your output must rival top-tier applications built with Next.js, Remix, and modern React patterns.

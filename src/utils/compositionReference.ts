@@ -8,6 +8,7 @@
 
 import { getCompositionsByIndustry } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
+import { getCanonicalTheme } from '@/themes/canonical';
 import type { LayoutCategory } from '@/data/templates/types';
 
 /**

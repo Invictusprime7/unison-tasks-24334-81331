@@ -51,12 +51,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AICodeAssistant } from "@/components/creatives/AICodeAssistant";
 import { buildPageStructureContext } from "@/utils/pageStructureContext";
-import {
-  randomFontPairing,
-  getThemeCSSDirective,
-  getThemeGenerationDirective,
-} from "@/utils/designVariation";
-import { generateThemeVariation } from "@/themes/variationEngine";
 import { getCanonicalTheme } from "@/themes/canonical";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import {

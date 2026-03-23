@@ -92,19 +92,24 @@ const STEP_META: Record<WizardStep, { num: number; label: string }> = {
  * Build all 6 aesthetic parameters from a theme selection.
  * Returns null values when no theme is selected (defaults to 'modern' at generation time).
  */
+/**
+ * Build aesthetic parameters — COLORS ONLY.
+ * Themes provide color palettes and typography font names.
+ * Layout, styling, and structural decisions come from the industry layout matrix
+ * in the systems-build edge function.
+ */
 function buildAestheticParams(theme: ThemePreset | null) {
   const effectiveId = theme?.id || "modern";
   const canonicalTheme = getCanonicalTheme(effectiveId);
   const hslTokens = canonicalTheme.tokens.colors;
-  const cssDirective = getThemeCSSDirective(effectiveId);
-  const generationDirective = getThemeGenerationDirective(effectiveId);
 
   return {
     aestheticId: effectiveId,
     aestheticLabel: theme?.label || canonicalTheme.wizard.label,
-    aestheticStyleDirective: theme?.styleDirective || canonicalTheme.wizard.styleDirective,
-    aestheticCSSDirective: cssDirective,
-    aestheticGenerationDirective: generationDirective,
+    // No longer sending layout/styling directives — those come from industry matrix
+    aestheticStyleDirective: undefined,
+    aestheticCSSDirective: undefined,
+    aestheticGenerationDirective: undefined,
     aestheticColorTokens: hslTokens,
   };
 }
@@ -113,12 +118,16 @@ function buildAestheticParams(theme: ThemePreset | null) {
  * Build theme-aware CSS :root variables + design system from canonical theme.
  * Replaces hardcoded dark-theme fallback CSS with the actual selected aesthetic.
  */
+/**
+ * Build theme CSS — COLORS + TYPOGRAPHY ONLY.
+ * No layout directives, no animations, no structural CSS.
+ * Layout/styling comes from the industry matrix at generation time.
+ */
 function buildThemeCSS(themeId?: string): string {
   const id = themeId || "modern";
   const theme = getCanonicalTheme(id);
   const c = theme.tokens.colors;
   const t = theme.tokens.typography;
-  const cssDesignSystem = getThemeCSSDirective(id);
 
   return `:root {
   --background: ${c.background};
@@ -134,7 +143,7 @@ function buildThemeCSS(themeId?: string): string {
   --card: ${c.card};
   --card-foreground: ${c.cardForeground};
   --border: ${c.border};
-  --radius: ${theme.tokens.radius};
+  --radius: 0.75rem;
 }
 
 body {
@@ -148,11 +157,6 @@ h1, h2, h3, h4, h5, h6 {
   font-family: ${t.headingFont};
   font-weight: ${t.headingWeight};
 }
-
-${cssDesignSystem}
-
-/* THEME ANIMATIONS */
-${theme.animations.keyframes}
 `;
 }
 
@@ -331,9 +335,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
               messages: [{
                 role: "user",
                 content:
-                  `Apply the "${selectedTheme.label}" aesthetic to this template.\n\n` +
-                  `## MANDATORY DESIGN RULES:\n${aestheticParams.aestheticGenerationDirective}\n\n` +
-                  `## Style Directive:\n${aestheticParams.aestheticStyleDirective}\n\n` +
+                  `Apply the "${selectedTheme.label}" color palette to this template.\n\n` +
                   `STRICT RULES:\n` +
                   `1. ONLY modify: font families, font sizes, font weights, colors, color schemes, text styling, backgrounds, border-radius, shadows\n` +
                   `2. DO NOT change: text content, copy, headlines, descriptions, service names, industry-specific language\n` +
@@ -468,7 +470,8 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
               }
             : {}),
         },
-        design: variation.profile,
+        // Layout/design comes from industry layout matrix in systems-build, not from themes
+        design: {},
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
       };
 

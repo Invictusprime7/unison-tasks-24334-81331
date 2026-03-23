@@ -857,6 +857,7 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
         body: JSON.stringify({
           messages: [{ role: "user", content: reactPrompt }],
           mode: "template-react",
+          callerManaged: true,
           variationSeed: variationSeed || `react-${Date.now().toString(36)}`,
           templateName: blueprint.brand.business_name,
           aesthetic: aestheticId || blueprint.brand.tone || "modern professional",

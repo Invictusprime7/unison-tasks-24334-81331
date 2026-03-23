@@ -1409,16 +1409,17 @@ Learn from every bug fix to become better at prevention!`
       // ================================================================
       console.log(`[ai-code-assistant] Caller-managed template-react mode — deferring all design tokens to user message`);
 
-      // Build reference template block if provided
+      // Build reference template block if provided — CONTENT INSPIRATION ONLY
       const referenceTemplateBlock = currentCode && templateAction === 'use-as-schema' ? `
 
-## 🏆 PREMIUM REFERENCE TEMPLATE (QUALITY BASELINE)
-Below is a reference template. Your React output must match or exceed its quality, section count, and content density.
-Preserve all intent wiring (convert data-ut-intent to onClick handlers or form actions).
+## 📝 CONTENT REFERENCE (INSPIRATION ONLY — DO NOT COPY LAYOUT)
+Below is a reference for CONTENT DIRECTION ONLY (what services to mention, copy tone, industry terminology).
+DO NOT copy its layout, color scheme, section order, or visual structure.
+Your layout, colors, and structure MUST come from the user message specifications.
 
-**REFERENCE TEMPLATE (analyze structure):**
-\`\`\`html
-${currentCode.substring(0, 30000)}
+**Reference content (for terminology and copy direction only):**
+\`\`\`
+${currentCode.substring(0, 8000)}
 \`\`\`
 ` : '';
 

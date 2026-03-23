@@ -8,6 +8,7 @@
 
 import { getCompositionsByIndustry } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
+import { getCanonicalTheme } from '@/themes/canonical';
 import type { LayoutCategory } from '@/data/templates/types';
 
 /**
@@ -36,7 +37,12 @@ export function getCompositionReactCode(category: LayoutCategory | string, _them
   const compositions = getCompositionsByIndustry(industry);
   if (!compositions.length) return null;
 
-  return compositionToReactCode(compositions[0]);
+  // Always inject a theme so THEME is never undefined in generated code
+  const themeId = _themeId || 'modern';
+  const fallbackTheme = getCanonicalTheme(themeId).tokens;
+  const theme = compositions[0].theme || fallbackTheme;
+
+  return compositionToReactCode(compositions[0], theme, themeId);
 }
 
 /**

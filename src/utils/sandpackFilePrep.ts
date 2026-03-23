@@ -207,6 +207,120 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
 }
 `;
 
+const INTENT_BRIDGE_IIFE = `function __initLovableIntentBridge() {
+  const bw = window as Window & { __lovableIntentBridgeInstalled?: boolean };
+  if (bw.__lovableIntentBridgeInstalled) return;
+  bw.__lovableIntentBridgeInstalled = true;
+
+  function findClickable(el: HTMLElement): HTMLElement | null {
+    return el.closest('a, button, [role="button"], [data-ut-intent], [data-intent]') as HTMLElement | null;
+  }
+
+  function resolveIntent(el: HTMLElement): { intent: string; payload: Record<string, any> } | null {
+    const explicit = el.getAttribute('data-ut-intent') || el.getAttribute('data-intent');
+    if (explicit && explicit !== 'none' && explicit !== 'ignore') return { intent: explicit, payload: {} };
+
+    const href = el.getAttribute('href');
+    if (href) {
+      if (href.startsWith('#')) return { intent: 'nav.anchor', payload: { anchor: href.slice(1) } };
+      if (href.startsWith('http')) return { intent: 'nav.external', payload: { url: href } };
+      if (href.startsWith('mailto:')) return { intent: 'comm.email', payload: { email: href.replace('mailto:', '').split('?')[0] } };
+      if (href.startsWith('tel:')) return { intent: 'comm.call', payload: { phone: href.replace('tel:', '') } };
+    }
+
+    const text = (el.textContent || '').trim().toLowerCase();
+    const patterns: [RegExp, string][] = [
+      [/book|reserve|appointment|schedule/i, 'booking.create'],
+      [/contact|get in touch|reach out|send message/i, 'contact.submit'],
+      [/subscribe|newsletter|stay updated/i, 'newsletter.subscribe'],
+      [/quote|estimate|free quote/i, 'quote.request'],
+      [/sign ?in|log ?in/i, 'auth.signin'],
+      [/sign ?up|register|create account|get started/i, 'auth.signup'],
+      [/buy|add to cart|purchase|shop|order/i, 'pay.checkout'],
+      [/donate|give|support/i, 'pay.checkout'],
+      [/learn more|read more|view|explore|discover/i, 'nav.anchor'],
+    ];
+    for (const [re, intent] of patterns) {
+      if (re.test(text)) return { intent, payload: { buttonLabel: text } };
+    }
+
+    if (el.closest('nav, header') && text) {
+      return { intent: 'nav.goto', payload: { path: '/' + text.replace(/\\s+/g, '-').replace(/[^\\w-]/g, '') } };
+    }
+    return null;
+  }
+
+  document.addEventListener('click', function(e: MouseEvent) {
+    const bWin = window as Window & { __lovableEditModeEnabled?: boolean };
+    if (bWin.__lovableEditModeEnabled) return;
+    const target = e.target as HTMLElement;
+    const clickable = findClickable(target);
+    if (!clickable) return;
+    if (clickable.getAttribute('data-ut-intent') === 'none' || clickable.hasAttribute('data-no-intent') || clickable.hasAttribute('disabled')) return;
+
+    const resolved = resolveIntent(clickable);
+    if (!resolved) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Anchor nav handled locally
+    if (resolved.intent === 'nav.anchor' && resolved.payload.anchor) {
+      const section = document.querySelector('#' + resolved.payload.anchor + ', [data-section="' + resolved.payload.anchor + '"]');
+      if (section) { (section as HTMLElement).scrollIntoView({ behavior: 'smooth' }); return; }
+    }
+
+    // Collect data attributes as payload
+    const payload: Record<string, any> = { ...resolved.payload };
+    for (let i = 0; i < clickable.attributes.length; i++) {
+      const attr = clickable.attributes[i];
+      if (attr.name.startsWith('data-') && attr.name !== 'data-ut-intent' && attr.name !== 'data-intent') {
+        payload[attr.name.slice(5).replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase())] = attr.value;
+      }
+    }
+
+    clickable.classList.add('intent-loading');
+    window.parent.postMessage({ type: 'INTENT_TRIGGER', intent: resolved.intent, payload, timestamp: Date.now() }, '*');
+    setTimeout(() => {
+      clickable.classList.remove('intent-loading');
+      clickable.classList.add('intent-success');
+      setTimeout(() => clickable.classList.remove('intent-success'), 2000);
+    }, 300);
+  }, true);
+
+  document.addEventListener('submit', function(e: Event) {
+    const form = e.target as HTMLFormElement;
+    if (!form || form.tagName !== 'FORM') return;
+    let intent = form.getAttribute('data-ut-intent') || form.getAttribute('data-intent');
+    if (!intent) {
+      const btn = form.querySelector('button[type="submit"], button:not([type])') as HTMLElement | null;
+      if (btn) { const r = resolveIntent(btn); if (r) intent = r.intent; }
+    }
+    if (!intent) {
+      const id = (form.id || '').toLowerCase();
+      if (/contact/.test(id)) intent = 'contact.submit';
+      else if (/newsletter|subscribe/.test(id)) intent = 'newsletter.subscribe';
+      else if (/booking|reservation/.test(id)) intent = 'booking.create';
+      else if (/quote/.test(id)) intent = 'quote.request';
+    }
+    if (!intent) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const payload: Record<string, string> = {};
+    const fd = new FormData(form);
+    fd.forEach((v, k) => { if (typeof v === 'string') payload[k] = v; });
+    window.parent.postMessage({ type: 'INTENT_TRIGGER', intent, payload }, '*');
+    form.reset();
+  }, true);
+}
+`;
+
+const INTENT_BRIDGE_STYLES = `
+const __intentStyles = document.createElement('style');
+__intentStyles.textContent = '.intent-loading{opacity:0.6;pointer-events:none;cursor:wait}.intent-success{animation:intent-pulse .3s ease-out}@keyframes intent-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}';
+document.head.appendChild(__intentStyles);
+`;
+
 const DEFAULT_MAIN = `import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -217,6 +331,11 @@ __initLovablePreviewNavBridge();
 
 ${EDIT_MODE_SELECTION_BRIDGE}
 __initLovableEditModeBridge();
+
+${INTENT_BRIDGE_IIFE}
+__initLovableIntentBridge();
+
+${INTENT_BRIDGE_STYLES}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

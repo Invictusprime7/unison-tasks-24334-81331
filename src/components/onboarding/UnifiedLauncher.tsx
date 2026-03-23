@@ -54,8 +54,6 @@ import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import { getCanonicalTheme } from "@/themes/canonical";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import {
-  createBlueprintFromIndustry,
-  compileContract,
   getIndustryForCategory,
   getAllowedIntents,
 } from "@/contracts";
@@ -138,6 +136,10 @@ function buildThemeCSS(themeId?: string): string {
   --card-foreground: ${c.cardForeground};
   --border: ${c.border};
   --radius: 0.75rem;
+}
+
+function getCanonicalIndustryForLaunch(category: LayoutCategory): string {
+  return getIndustryForCategory(category)?.industry ?? category;
 }
 
 body {

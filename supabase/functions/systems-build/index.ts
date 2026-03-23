@@ -1,6 +1,7 @@
 import { serve } from "serve";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
+import { pickIndustryPalette, paletteToColorTokens } from "../_shared/industryThemeMatrix.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -681,7 +682,20 @@ serve(async (req) => {
       );
     }
 
-    const { blueprint, userPrompt, enhanceWithAI: _enhanceWithAI, templateId, templateHtml, variantMode, variationSeed, outputFormat, aestheticId, aestheticLabel, aestheticStyleDirective, aestheticCSSDirective, aestheticGenerationDirective, aestheticColorTokens, userDesignProfile } = parsed.data;
+    const { blueprint, userPrompt, enhanceWithAI: _enhanceWithAI, templateId, templateHtml, variantMode, variationSeed, outputFormat, aestheticId, aestheticLabel, aestheticStyleDirective, aestheticCSSDirective, aestheticGenerationDirective, aestheticColorTokens: rawColorTokens, userDesignProfile } = parsed.data;
+
+    // Industry-aware color variation: override static theme tokens with
+    // industry-specific palette when both aestheticId and industry are known
+    const industryPalette = aestheticId && blueprint.identity?.industry
+      ? pickIndustryPalette(aestheticId, blueprint.identity.industry, variationSeed || Date.now().toString(36))
+      : undefined;
+    const aestheticColorTokens = industryPalette
+      ? paletteToColorTokens(industryPalette)
+      : rawColorTokens;
+    if (industryPalette) {
+      console.log(`[systems-build] Industry palette override: ${industryPalette.name} (${industryPalette.id}) for ${aestheticId}×${blueprint.identity.industry}`);
+    }
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     // Build design profile context string for AI prompts

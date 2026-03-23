@@ -317,11 +317,14 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
     const industryContextBlock = contentContext
       ? `\n\n📋 INDUSTRY CONTENT CONTEXT (USE THIS AS YOUR CONTENT BASELINE — do NOT invent services/items from other industries):\n${contentContext}\n`
       : "";
-    const userPrompt = `Create a unique, premium ${canonicalIndustry.replace(/_/g, " ")} website inspired by but NOT identical to the reference template. Preserve the industry category and content direction from the reference, but let the backend choose layout and structural styling from the industry matrix.${industryContextBlock}${themeInstruction}${customInstruction}`;
+    const userPrompt = `Create a UNIQUE, premium ${canonicalIndustry.replace(/_/g, " ")} website for "${businessName}". Do NOT copy the reference template layout or color scheme — the industry matrix and color palette below are your ONLY design authority. The reference is for CONTENT INSPIRATION only (e.g. what services to list, what copy tone to use). Generate a COMPLETELY DIFFERENT visual structure each time.${industryContextBlock}${themeInstruction}${customInstruction}`;
 
     const compositionCode = getCompositionReactCode(selectedTemplate.category, selectedTheme?.id);
     const compositionMetaData = getCompositionMeta(selectedTemplate.category);
+    // Send only a truncated content summary, NOT the full template code
+    // This prevents the AI from copying the template layout verbatim
     const referenceCode = compositionCode || selectedTemplate.code;
+    const contentSummary = referenceCode.length > 5000 ? referenceCode.substring(0, 5000) : referenceCode;
     const referenceId = compositionMetaData?.compositionId || selectedTemplate.id;
     const aestheticParams = buildAestheticParams(selectedTheme);
 
@@ -331,7 +334,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
         userPrompt,
         enhanceWithAI: true,
         templateId: referenceId,
-        templateHtml: referenceCode,
+        templateHtml: contentSummary,
         variantMode: true,
         variationSeed,
         outputFormat: "react",

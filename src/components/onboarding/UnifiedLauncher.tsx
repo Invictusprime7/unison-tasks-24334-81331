@@ -264,6 +264,125 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
   const selectedSystemData = selectedSystem ? businessSystems.find((s) => s.id === selectedSystem) : null;
   const effectiveTemplateCode = selectedTemplate ? (editedTemplateCode ?? getTemplateReactCode(selectedTemplate)) : null;
 
+  const generateBuilderFiles = async (system: { name: string; intents: string[] }) => {
+    if (!selectedTemplate) throw new Error("No template selected");
+
+    const canonicalIndustry = getCanonicalIndustryForLaunch(selectedTemplate.category);
+    const industryProfile = getIndustryForCategory(selectedTemplate.category);
+    const effectiveTheme = getCanonicalTheme(selectedTheme?.id || "modern");
+    const fonts = {
+      heading: selectedTheme?.typography.headingFont || effectiveTheme.tokens.typography.headingFont,
+      body: selectedTheme?.typography.bodyFont || effectiveTheme.tokens.typography.bodyFont,
+    };
+    const variationSeed = `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const canonicalIntents = industryProfile
+      ? getAllowedIntents(industryProfile.defaultCapabilities)
+      : system.intents;
+    const businessName = `${system.name} Business`;
+
+    const blueprint: Record<string, unknown> = {
+      version: "1.0",
+      identity: {
+        industry: canonicalIndustry,
+        primary_goal: industryProfile
+          ? (industryProfile.defaultCapabilities.includes("booking") ? "bookings" : "leads")
+          : "Generate leads and grow the business",
+      },
+      brand: {
+        business_name: businessName,
+        tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
+        tone: "professional and friendly",
+        typography: fonts,
+        ...(selectedTheme
+          ? {
+              palette: {
+                primary: selectedTheme.palette.accent,
+                secondary: selectedTheme.palette.accent2 || selectedTheme.palette.accent,
+                background: selectedTheme.palette.bg,
+                foreground: selectedTheme.palette.fg,
+                accent: selectedTheme.palette.accent,
+              },
+            }
+          : {}),
+      },
+      design: {},
+      intents: canonicalIntents.map((intent: string) => ({ intent })),
+    };
+
+    const themeInstruction = selectedTheme
+      ? `\n\n🎨 VISUAL AESTHETIC (color palette + typography ONLY — do NOT change layout, component styling system, section structure, or industry copy): ${selectedTheme.label}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ""}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
+      : "";
+    const customInstruction = customPrompt.trim() ? `\n\nADDITIONAL INSTRUCTIONS: ${customPrompt.trim()}\n` : "";
+    const contentContext = getCompositionContentContext(selectedTemplate.category);
+    const industryContextBlock = contentContext
+      ? `\n\n📋 INDUSTRY CONTENT CONTEXT (USE THIS AS YOUR CONTENT BASELINE — do NOT invent services/items from other industries):\n${contentContext}\n`
+      : "";
+    const userPrompt = `Create a unique, premium ${canonicalIndustry.replace(/_/g, " ")} website inspired by but NOT identical to the reference template. Preserve the industry category and content direction from the reference, but let the backend choose layout and structural styling from the industry matrix.${industryContextBlock}${themeInstruction}${customInstruction}`;
+
+    const compositionCode = getCompositionReactCode(selectedTemplate.category, selectedTheme?.id);
+    const compositionMetaData = getCompositionMeta(selectedTemplate.category);
+    const referenceCode = compositionCode || selectedTemplate.code;
+    const referenceId = compositionMetaData?.compositionId || selectedTemplate.id;
+    const aestheticParams = buildAestheticParams(selectedTheme);
+
+    const { data, error } = await supabase.functions.invoke("systems-build", {
+      body: {
+        blueprint,
+        userPrompt,
+        enhanceWithAI: true,
+        templateId: referenceId,
+        templateHtml: referenceCode,
+        variantMode: true,
+        variationSeed,
+        outputFormat: "react",
+        ...aestheticParams,
+      },
+    });
+
+    if (error) {
+      if (error.message?.includes("429")) throw new Error("Rate limit exceeded. Please try again shortly.");
+      if (error.message?.includes("402")) throw new Error("Credits required. Please add credits to continue.");
+      throw error;
+    }
+
+    const generatedFiles = data?.files;
+    const generatedCode = generatedFiles?.["src/App.tsx"] || generatedFiles?.["App.tsx"] || data?.code;
+
+    if (generatedFiles && typeof generatedFiles === "object" && Object.keys(generatedFiles).length > 0) {
+      return {
+        vfsFiles: generatedFiles as Record<string, string>,
+        businessName,
+        aestheticId: aestheticParams.aestheticId,
+        preloadedIntents: canonicalIntents,
+      };
+    }
+
+    if (generatedCode && typeof generatedCode === "string" && generatedCode.length >= 100) {
+      const cleaned = extractCleanCode(generatedCode);
+      if (!cleaned || !looksLikeCode(cleaned)) throw new Error("AI generation produced invalid output. Try again.");
+
+      const reactResult = (cleaned.includes("import ") || cleaned.includes("export default"))
+        ? { code: cleaned, css: "" }
+        : getTemplateReactCodeWithCSS({ code: cleaned, title: selectedTemplate.name });
+
+      const fallbackVfsFiles: Record<string, string> = {
+        "/src/App.tsx": reactResult.code,
+        "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
+        "/src/index.css": buildThemeCSS(aestheticParams.aestheticId),
+      };
+      if (reactResult.css) fallbackVfsFiles["/src/template.css"] = reactResult.css;
+
+      return {
+        vfsFiles: fallbackVfsFiles,
+        businessName,
+        aestheticId: aestheticParams.aestheticId,
+        preloadedIntents: canonicalIntents,
+      };
+    }
+
+    throw new Error("No usable code returned. Try again.");
+  };
+
   // ─── Handlers ───
 
   const handleSystemSelect = (systemId: BusinessSystemType) => {
@@ -317,46 +436,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
       }
 
       const manifest = getTemplateManifest(selectedTemplate.id) || getDefaultManifestForSystem(selectedSystem);
-      let effectiveResult = editedTemplateCode
-        ? { code: editedTemplateCode, css: "" }
-        : getTemplateReactCodeWithCSS(selectedTemplate, selectedTheme?.id);
-
-      // Apply theme via AI if a theme is selected and no pre-edited files exist
-      if (selectedTheme && !editedTemplateFiles) {
-        try {
-          const aestheticParams = buildAestheticParams(selectedTheme);
-          toast("Applying theme…", { description: selectedTheme.label });
-          const { data: aiData, error: aiError } = await supabase.functions.invoke("ai-code-assistant", {
-            body: {
-              messages: [{
-                role: "user",
-                content:
-                  `Apply the "${selectedTheme.label}" color palette to this template.\n\n` +
-                  `STRICT RULES:\n` +
-                  `1. ONLY modify: font families, font sizes, font weights, colors, color schemes, text styling, backgrounds, border-radius, shadows\n` +
-                  `2. DO NOT change: text content, copy, headlines, descriptions, service names, industry-specific language\n` +
-                  `3. DO NOT change: layout structure, section order, images, icons, button positions, navigation structure\n` +
-                  `4. PRESERVE ALL: data-ut-intent, data-intent, data-ut-cta, data-no-intent attributes exactly as-is\n` +
-                  `5. PRESERVE ALL: form inputs, interactive elements, and their functionality\n\n` +
-                  `Output ONLY the complete updated code. No markdown, no explanations.`,
-              }],
-              mode: "design",
-              currentCode: effectiveResult.code.length > 20_000 ? effectiveResult.code.slice(0, 20_000) : effectiveResult.code,
-              editMode: true,
-              templateAction: "apply-design-preset",
-              aesthetic: selectedTheme.id,
-            },
-          });
-          if (!aiError && aiData?.content) {
-            const cleanedThemeCode = extractCleanCode(aiData.content);
-            if (cleanedThemeCode && looksLikeCode(cleanedThemeCode)) {
-              effectiveResult = getTemplateReactCodeWithCSS({ code: cleanedThemeCode, title: selectedTemplate.name });
-            }
-          }
-        } catch (e) {
-          console.warn("[UnifiedLauncher] theme application failed", e);
-        }
-      }
+      const generated = await generateBuilderFiles(system);
 
       // Provision backend
       const { data, error } = await supabase.functions.invoke("install-system", {
@@ -364,7 +444,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
           systemType: selectedSystem,
           templateId: selectedTemplate.id,
           templateName: selectedTemplate.name,
-          businessName: `${system.name} Business`,
+          businessName: generated.businessName,
           templateCategory: selectedTemplate.category,
           designPreset: selectedTheme?.id || null,
         },
@@ -376,24 +456,16 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
 
       const businessId = data.data.businessId as string;
 
-      const baseCSS = buildThemeCSS(selectedTheme?.id);
-      const vfsFiles = editedTemplateFiles || {
-        "/src/App.tsx": effectiveResult.code,
-        "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-        "/src/index.css": baseCSS,
-        ...(effectiveResult.css ? { "/src/template.css": effectiveResult.css } : {}),
-      };
-
       navigate("/web-builder", {
         state: {
-          vfsFiles,
+          vfsFiles: generated.vfsFiles,
           templateName: selectedTemplate.name,
-          aesthetic: selectedTheme?.id || "modern",
-          designPreset: selectedTheme?.id || "modern",
+          aesthetic: generated.aestheticId,
+          designPreset: generated.aestheticId,
           templateCategory: selectedTemplate.category,
           systemType: selectedSystem,
           systemName: system.name,
-          preloadedIntents: system.intents,
+          preloadedIntents: generated.preloadedIntents,
           businessId,
           manifestId: manifest.id,
           isProvisioned: true,
@@ -423,145 +495,21 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
 
     setIsAIGenerating(true);
     try {
-      const industry = selectedTemplate.category;
-      const effectiveTheme = getCanonicalTheme(selectedTheme?.id || "modern");
-      const fonts = {
-        heading: selectedTheme?.typography.headingFont || effectiveTheme.tokens.typography.headingFont,
-        body: selectedTheme?.typography.bodyFont || effectiveTheme.tokens.typography.bodyFont,
-      };
+      const generated = await generateBuilderFiles(system);
 
-      // Unique generation seed for industry palette/layout selection in systems-build
-      const variationSeed = `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-
-      // Contract-validated intents
-      const industryProfile = getIndustryForCategory(industry as LayoutCategory);
-      const canonicalIntents = industryProfile
-        ? getAllowedIntents(industryProfile.defaultCapabilities)
-        : system.intents;
-
-      // Build blueprint with contract validation
-      const blueprint: Record<string, unknown> = {
-        version: "1.0",
-        identity: {
-          industry,
-          primary_goal: industryProfile
-            ? (industryProfile.defaultCapabilities.includes("booking") ? "bookings" : "leads")
-            : "Generate leads and grow the business",
-        },
-        brand: {
-          business_name: `${system.name} Business`,
-          tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
-          tone: "professional and friendly",
-          typography: fonts,
-          ...(selectedTheme
-            ? {
-                palette: {
-                  primary: selectedTheme.palette.accent,
-                  secondary: selectedTheme.palette.accent2 || selectedTheme.palette.accent,
-                  background: selectedTheme.palette.bg,
-                  foreground: selectedTheme.palette.fg,
-                  accent: selectedTheme.palette.accent,
-                },
-              }
-            : {}),
-        },
-        // Layout/design comes from industry layout matrix in systems-build, not from themes
-        design: {},
-        intents: canonicalIntents.map((i: string) => ({ intent: i })),
-      };
-
-      // Theme instruction for prompt
-      const themeInstruction = selectedTheme
-        ? `\n\n🎨 VISUAL AESTHETIC (color palette + typography ONLY — do NOT change layout, component styling system, section structure, or industry copy): ${selectedTheme.label}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ""}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
-        : "";
-      const customInstruction = customPrompt.trim() ? `\n\nADDITIONAL INSTRUCTIONS: ${customPrompt.trim()}\n` : "";
-
-      // Industry content context
-      const contentContext = getCompositionContentContext(selectedTemplate.category);
-      const industryContextBlock = contentContext
-        ? `\n\n📋 INDUSTRY CONTENT CONTEXT (USE THIS AS YOUR CONTENT BASELINE — do NOT invent services/items from other industries):\n${contentContext}\n`
-        : "";
-
-      const userPrompt = `Create a unique, premium ${industry} website inspired by but NOT identical to the reference template. Preserve the industry category and content direction from the reference, but let the backend choose layout and structural styling from the industry matrix.${industryContextBlock}${themeInstruction}${customInstruction}`;
-
-      // Template reference
-      const compositionCode = getCompositionReactCode(selectedTemplate.category, selectedTheme?.id);
-      const compositionMetaData = getCompositionMeta(selectedTemplate.category);
-      const referenceCode = compositionCode || selectedTemplate.code;
-      const referenceId = compositionMetaData?.compositionId || selectedTemplate.id;
-
-      // *** THE KEY FIX: Build all 6 aesthetic parameters ***
-      const aestheticParams = buildAestheticParams(selectedTheme);
-
-      const { data, error } = await supabase.functions.invoke("systems-build", {
-        body: {
-          blueprint,
-          userPrompt,
-          enhanceWithAI: true,
-          templateId: referenceId,
-          templateHtml: referenceCode,
-          variantMode: true,
-          variationSeed,
-          outputFormat: "react",
-          // Full aesthetic pipeline — ensures images, animations, theme CSS
-          ...aestheticParams,
+      navigate("/web-builder", {
+        state: {
+          vfsFiles: generated.vfsFiles,
+          templateName: `AI ${selectedTemplate.name}`,
+          aesthetic: generated.aestheticId,
+          designPreset: generated.aestheticId,
+          templateCategory: selectedTemplate.category,
+          systemType: selectedSystem,
+          systemName: system.name,
+          preloadedIntents: generated.preloadedIntents,
+          startInPreview: true,
         },
       });
-
-      if (error) {
-        if (error.message?.includes("429")) { toast.error("Rate limit exceeded. Please try again shortly."); return; }
-        if (error.message?.includes("402")) { toast.error("Credits required. Please add credits to continue."); return; }
-        throw error;
-      }
-
-      // Process output
-      const generatedFiles = data?.files;
-      const generatedCode = generatedFiles?.["src/App.tsx"] || generatedFiles?.["App.tsx"] || data?.code;
-
-      if (generatedFiles && typeof generatedFiles === "object" && Object.keys(generatedFiles).length > 0) {
-        navigate("/web-builder", {
-          state: {
-            vfsFiles: generatedFiles,
-            templateName: `AI ${selectedTemplate.name}`,
-            aesthetic: aestheticParams.aestheticId,
-            designPreset: aestheticParams.aestheticId,
-            templateCategory: selectedTemplate.category,
-            systemType: selectedSystem,
-            systemName: system.name,
-            preloadedIntents: system.intents,
-            startInPreview: true,
-          },
-        });
-      } else if (generatedCode && typeof generatedCode === "string" && generatedCode.length >= 100) {
-        const cleaned = extractCleanCode(generatedCode);
-        if (!cleaned || !looksLikeCode(cleaned)) { toast.error("AI generation produced invalid output. Try again."); return; }
-        const reactResult = (cleaned.includes("import ") || cleaned.includes("export default"))
-          ? { code: cleaned, css: "" }
-          : getTemplateReactCodeWithCSS({ code: cleaned, title: selectedTemplate.name });
-        const fallbackVfsFiles: Record<string, string> = {
-          "/src/App.tsx": reactResult.code,
-          "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-          "/src/index.css": buildThemeCSS(aestheticParams.aestheticId),
-        };
-        if (reactResult.css) fallbackVfsFiles["/src/template.css"] = reactResult.css;
-
-        navigate("/web-builder", {
-          state: {
-            vfsFiles: fallbackVfsFiles,
-            templateName: `AI ${selectedTemplate.name}`,
-            aesthetic: aestheticParams.aestheticId,
-            designPreset: aestheticParams.aestheticId,
-            templateCategory: selectedTemplate.category,
-            systemType: selectedSystem,
-            systemName: system.name,
-            preloadedIntents: system.intents,
-            startInPreview: true,
-          },
-        });
-      } else {
-        toast.error("No usable code returned. Try again.");
-        return;
-      }
 
       onOpenChange(false);
       resetState();

@@ -1,19 +1,24 @@
 /**
- * Canonical Theme Registry — Single Source of Truth
+ * Canonical Theme Registry
  *
- * Consolidates all 5 fragmented theme systems into one canonical registry.
+ * Consolidates design tokens, profiles, animations, and directives.
+ * Wizard metadata (label, icon, palette, styleDirective) is sourced from
+ * `@/components/onboarding/themePresets.ts` — the main theme reference.
+ *
  * Every theme is a complete `CanonicalTheme` that carries:
  *   1. Design tokens (HSL colors, typography, radius, spacing)
  *   2. Design profile (layout, effects, buttons, images, content rules)
  *   3. Animation directives (per-theme motion language)
  *   4. Image treatment rules (aspect, overlay, style)
  *   5. CSS design system (injectable utility classes)
- *   6. Wizard metadata (label, icon, palette preview in HEX)
+ *   6. Wizard metadata (derived from themePresets.ts)
  *
  * Usage:
  *   import { getCanonicalTheme, CANONICAL_THEMES } from '@/themes/canonical';
  *   const theme = getCanonicalTheme('futuristic');
  */
+
+import { getThemePreset } from '@/components/onboarding/themePresets';
 
 // ============================================================================
 // Core Token Interface (HSL-based, Tailwind/shadcn compatible)
@@ -192,6 +197,21 @@ export interface CanonicalTheme {
 }
 
 // ============================================================================
+// Wizard Metadata — derived from themePresets.ts (main theme reference)
+// ============================================================================
+
+function getWizardMeta(themeId: string): WizardMeta {
+  const preset = getThemePreset(themeId);
+  return {
+    label: preset.label,
+    description: preset.description,
+    icon: preset.icon,
+    palette: { ...preset.palette },
+    styleDirective: preset.styleDirective,
+  };
+}
+
+// ============================================================================
 // Theme Definitions
 // ============================================================================
 
@@ -297,13 +317,7 @@ IMAGES:
 .section-alt { background: linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted)/0.3) 100%); }
 h1, h2, h3 { letter-spacing: -0.025em; line-height: 1.2; }
 `,
-  wizard: {
-    label: 'Modern',
-    description: 'Clean lines, vibrant gradients, contemporary energy',
-    icon: '✦',
-    palette: { bg: '#0F172A', fg: '#F8FAFC', accent: '#3B82F6', accent2: '#8B5CF6' },
-    styleDirective: 'VISUAL STYLING ONLY: Clean sans-serif typography (Inter, DM Sans), bold gradients, generous whitespace, card-based layouts, subtle shadows, vibrant accent colors.',
-  },
+  wizard: getWizardMeta('modern'),
 };
 
 const EDITORIAL: CanonicalTheme = {
@@ -411,13 +425,7 @@ p.lead { font-size: 1.25rem; line-height: 1.8; max-width: 42ch; }
 .section-divider { border-top: 1px solid hsl(var(--border)); margin: 4rem auto; max-width: 120px; }
 .pullquote { font-size: 1.5rem; font-style: italic; border-left: 3px solid hsl(var(--primary)); padding-left: 1.5rem; }
 `,
-  wizard: {
-    label: 'Editorial',
-    description: 'Refined serifs, magazine layouts, quiet elegance',
-    icon: '◈',
-    palette: { bg: '#FDFCFA', fg: '#1A1A1A', accent: '#8B7355', accent2: '#C4A882' },
-    styleDirective: 'VISUAL STYLING ONLY: Elegant serif headings (Playfair Display), refined body text, asymmetric layouts, muted elegant color palette, generous typography scale.',
-  },
+  wizard: getWizardMeta('editorial'),
 };
 
 const FUTURISTIC: CanonicalTheme = {
@@ -524,13 +532,7 @@ IMAGES:
 .grid-bg { background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 60px 60px; }
 .nav-glass { background: rgba(10,10,20,0.85); backdrop-filter: blur(16px); border-bottom: 1px solid rgba(255,255,255,0.08); }
 `,
-  wizard: {
-    label: 'Futuristic',
-    description: 'Neon glow, dark panels, sci-fi atmosphere',
-    icon: '◉',
-    palette: { bg: '#0A0A14', fg: '#E0E0FF', accent: '#00F0FF', accent2: '#FF00FF' },
-    styleDirective: 'VISUAL STYLING ONLY: Dark backgrounds, neon accent colors (cyan, magenta), glassmorphism effects, monospace or geometric sans-serif fonts, grid-based layouts, glow effects.',
-  },
+  wizard: getWizardMeta('futuristic'),
 };
 
 const MINIMALIST: CanonicalTheme = {
@@ -631,13 +633,7 @@ section { padding: 6rem 0; }
 .btn-minimal { border: 1.5px solid hsl(var(--foreground)); color: hsl(var(--foreground)); background: transparent; padding: 0.75rem 2rem; transition: all 0.2s; }
 .btn-minimal:hover { background: hsl(var(--foreground)); color: hsl(var(--background)); }
 `,
-  wizard: {
-    label: 'Minimalist',
-    description: 'Maximum whitespace, monochrome precision',
-    icon: '○',
-    palette: { bg: '#FFFFFF', fg: '#111111', accent: '#555555', accent2: '#999999' },
-    styleDirective: 'VISUAL STYLING ONLY: Maximum whitespace, monochromatic or two-tone color scheme, thin typography weights, minimal decoration, clean geometric shapes.',
-  },
+  wizard: getWizardMeta('minimalist'),
 };
 
 const BOLD: CanonicalTheme = {
@@ -744,13 +740,7 @@ h2 { font-size: clamp(2rem, 4vw, 3.5rem); font-weight: 800; text-transform: uppe
 .btn-bold:hover { transform: scale(1.05); }
 .full-bleed { margin-left: calc(-50vw + 50%); margin-right: calc(-50vw + 50%); padding: 6rem 2rem; }
 `,
-  wizard: {
-    label: 'Bold',
-    description: 'Oversized type, high contrast, raw power',
-    icon: '■',
-    palette: { bg: '#000000', fg: '#FFFFFF', accent: '#FF3333', accent2: '#FF6633' },
-    styleDirective: 'VISUAL STYLING ONLY: Oversized typography with heavy weights (900, 800), high contrast black-and-white with one vivid accent color, uppercase headings, raw graphic energy.',
-  },
+  wizard: getWizardMeta('bold'),
 };
 
 const ORGANIC: CanonicalTheme = {
@@ -858,13 +848,7 @@ h1, h2 { line-height: 1.25; }
 p { line-height: 1.75; }
 .blob { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
 `,
-  wizard: {
-    label: 'Organic',
-    description: 'Warm earth tones, soft shapes, natural comfort',
-    icon: '◠',
-    palette: { bg: '#FAF5F0', fg: '#2D2418', accent: '#C4703F', accent2: '#7C9A5E' },
-    styleDirective: 'VISUAL STYLING ONLY: Warm earth tones (terracotta, sage, cream, clay), rounded corners and soft shapes, humanist fonts, gentle gradients, cozy spacing, inviting warmth.',
-  },
+  wizard: getWizardMeta('organic'),
 };
 
 // ============================================================================

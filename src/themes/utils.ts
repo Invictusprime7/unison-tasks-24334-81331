@@ -94,3 +94,43 @@ export const cardStyle = (theme: ThemeTokens): React.CSSProperties => ({
   overflow: 'hidden',
   transition: 'all 0.3s ease',
 });
+
+/**
+ * Convert ThemeTokens into a CSS :root block with all custom properties.
+ * Produces Tailwind/shadcn-compatible variable names.
+ */
+export function themeTokensToCSSRoot(theme: ThemeTokens): string {
+  return `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: ${theme.colors.background};
+  --foreground: ${theme.colors.foreground};
+  --card: ${theme.colors.card};
+  --card-foreground: ${theme.colors.cardForeground};
+  --primary: ${theme.colors.primary};
+  --primary-foreground: ${theme.colors.primaryForeground};
+  --secondary: ${theme.colors.secondary};
+  --secondary-foreground: ${theme.colors.secondaryForeground};
+  --muted: ${theme.colors.muted};
+  --muted-foreground: ${theme.colors.mutedForeground};
+  --accent: ${theme.colors.accent};
+  --accent-foreground: ${theme.colors.accentForeground};
+  --border: ${theme.colors.border};
+  --radius: ${theme.radius};
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  font-family: ${theme.typography.bodyFont};
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  margin: 0;
+  padding: 0;
+}
+`;
+}

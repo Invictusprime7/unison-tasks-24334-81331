@@ -766,7 +766,8 @@ Generate a site that matches the user's established design preferences while bei
 
 ## 🎨 COLOR PALETTE: "${aestheticLabel || aestheticId || 'default'}" (MANDATORY)
 Use the exact CSS color variables below. Do NOT substitute with different colors.
-
+${aestheticGenerationDirective ? `\n## 🎨 THEME DESIGN RULES ("${aestheticLabel || aestheticId}"):\n${aestheticGenerationDirective}\n` : ''}
+${aestheticCSSDirective ? `### Theme CSS Utilities (INJECT INTO index.css alongside layout CSS):\n\`\`\`css\n${aestheticCSSDirective}\n\`\`\`\n` : ''}
 ## 📐 LAYOUT & STRUCTURE (FROM INDUSTRY MATRIX — FOLLOW EXACTLY):
 ${industryLayoutDirective}
 

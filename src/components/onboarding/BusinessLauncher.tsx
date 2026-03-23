@@ -33,6 +33,7 @@ import { getCompositionReactCode, getCompositionMeta } from "@/utils/composition
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation } from "@/utils/designVariation";
 import { getCanonicalTheme } from "@/themes/canonical";
+import { getThemePreset } from "./themePresets";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -59,6 +60,24 @@ const industryChips = [
 function getCanonicalIndustry(chipId: string): string {
   const chip = industryChips.find(c => c.id === chipId);
   return chip?.canonicalIndustry || 'agency';
+}
+
+/**
+ * Suggest the best theme preset for an industry chip.
+ * Uses themePresets.ts IDs as the vocabulary.
+ */
+function suggestThemeForIndustry(chipId: string): string {
+  const map: Record<string, string> = {
+    local_service: 'bold',
+    salon_spa: 'organic',
+    restaurant: 'organic',
+    ecommerce: 'modern',
+    creator_portfolio: 'editorial',
+    coaching_consulting: 'modern',
+    real_estate: 'minimalist',
+    nonprofit: 'modern',
+  };
+  return map[chipId] || 'modern';
 }
 
 /**
@@ -135,7 +154,7 @@ function buildBlueprintFromChip(chipId: string, prompt: string, businessName?: s
     }
 
     // Convert to the edge function's expected format (SystemsBuildContext shape)
-    const themeId = 'modern';
+    const themeId = suggestThemeForIndustry(chipId);
     const themeData = getCanonicalTheme(themeId);
     const fonts = { heading: themeData.tokens.typography.headingFont, body: themeData.tokens.typography.bodyFont };
     const design = generateDesignVariation(themeId);
@@ -166,9 +185,10 @@ function buildBlueprintFromChip(chipId: string, prompt: string, businessName?: s
   } catch (e) {
     // Fallback if industry not found in contracts
     console.warn(`[BusinessLauncher] Contract creation failed for "${canonicalIndustry}", using fallback`, e);
-    const fallbackTheme = getCanonicalTheme('modern');
+    const fallbackThemeId = suggestThemeForIndustry(chipId);
+    const fallbackTheme = getCanonicalTheme(fallbackThemeId);
     const fonts = { heading: fallbackTheme.tokens.typography.headingFont, body: fallbackTheme.tokens.typography.bodyFont };
-    const design = generateDesignVariation('modern');
+    const design = generateDesignVariation(fallbackThemeId);
     return {
       version: "1.0",
       identity: { industry: canonicalIndustry, primary_goal: "Generate leads and grow the business" },
@@ -381,9 +401,10 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
    * Build generic blueprint for free-form prompts
    */
   const buildGenericBlueprint = (text: string, businessName?: string) => {
-    const themeData = getCanonicalTheme('modern');
+    const genericThemeId = 'modern';
+    const themeData = getCanonicalTheme(genericThemeId);
     const fonts = { heading: themeData.tokens.typography.headingFont, body: themeData.tokens.typography.bodyFont };
-    const design = generateDesignVariation('modern');
+    const design = generateDesignVariation(genericThemeId);
 
     return {
       version: "1.0",
@@ -420,7 +441,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
           generatedCode: vfsFiles ? undefined : generatedCode,
           vfsFiles: vfsFiles,
           templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
-          aesthetic: "modern",
+          aesthetic: selectedChip ? suggestThemeForIndustry(selectedChip) : "modern",
           startInPreview: true,
         },
       });

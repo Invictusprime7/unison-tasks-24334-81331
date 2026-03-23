@@ -13,16 +13,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
+import { THEME_PRESETS as PRESETS } from '@/components/onboarding/themePresets';
 import { Loader2, Sparkles, Plus, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
-const THEME_PRESETS = {
-  noir: 'Dark, elegant black and white with high contrast',
-  warm: 'Warm beige, editorial serif headings, spacious',
-  vibrant: 'Bold, colorful, playful with bright accents',
-  minimal: 'Clean, minimal, lots of whitespace',
-  luxury: 'Premium, gold accents, sophisticated'
-};
+const THEME_PRESETS: Record<string, string> = Object.fromEntries(
+  PRESETS.map(t => [t.id, t.description])
+);
 
 export const AIPageGenerator: React.FC = () => {
   const { loading, generatedPage, generatePage, generateSection, savePage } = usePageGenerator();
@@ -107,11 +104,9 @@ export const AIPageGenerator: React.FC = () => {
                     <SelectValue placeholder="Select theme" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="noir">Noir (Black & White)</SelectItem>
-                    <SelectItem value="warm">Warm Editorial</SelectItem>
-                    <SelectItem value="vibrant">Vibrant & Playful</SelectItem>
-                    <SelectItem value="minimal">Minimal</SelectItem>
-                    <SelectItem value="luxury">Luxury</SelectItem>
+                    {PRESETS.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.icon} {t.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

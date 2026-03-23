@@ -45,7 +45,8 @@ import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import {
   generateDesignVariation,
 } from "@/utils/designVariation";
-import { getCanonicalTheme } from "@/themes/canonical";
+import { getCanonicalTheme, getGenerationDirective, getFullCSSDirective } from "@/themes/canonical";
+import { themeTokensToCSSRoot } from "@/themes/utils";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import {
   createBlueprintFromIndustry,
@@ -305,7 +306,9 @@ export const SystemLauncher = ({
       const businessId = data.data.businessId as string;
 
       // Always pass as VFS files for multi-file React project support
-      const baseCSS = `:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n}\n`;
+      const themeId = selectedTheme?.id || 'modern';
+      const resolvedTokens = getCanonicalTheme(themeId).tokens;
+      const baseCSS = themeTokensToCSSRoot(resolvedTokens);
       const vfsFiles = editedTemplateFiles || {
         '/src/App.tsx': effectiveResult.code,
         '/src/main.tsx': `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
@@ -412,6 +415,25 @@ export const SystemLauncher = ({
       const referenceCode = compositionCode || selectedTemplate.code;
       const referenceId = compositionMetaData?.compositionId || selectedTemplate.id;
 
+      // Resolve the full 13-colour canonical token set for the selected theme
+      const canonicalTheme = getCanonicalTheme(themeId);
+      const canonicalTokens = canonicalTheme.tokens;
+      const aestheticColorTokens = {
+        primary: canonicalTokens.colors.primary,
+        primaryForeground: canonicalTokens.colors.primaryForeground,
+        secondary: canonicalTokens.colors.secondary,
+        secondaryForeground: canonicalTokens.colors.secondaryForeground,
+        accent: canonicalTokens.colors.accent,
+        accentForeground: canonicalTokens.colors.accentForeground,
+        background: canonicalTokens.colors.background,
+        foreground: canonicalTokens.colors.foreground,
+        muted: canonicalTokens.colors.muted,
+        mutedForeground: canonicalTokens.colors.mutedForeground,
+        card: canonicalTokens.colors.card,
+        cardForeground: canonicalTokens.colors.cardForeground,
+        border: canonicalTokens.colors.border,
+      };
+
       const { data, error } = await supabase.functions.invoke(
         "systems-build",
         {
@@ -426,6 +448,12 @@ export const SystemLauncher = ({
               .toString(36)
               .slice(2, 8)}`,
             outputFormat: "react",
+            aestheticId: themeId,
+            aestheticLabel: selectedTheme?.label || canonicalTheme.wizard.label,
+            aestheticStyleDirective: selectedTheme?.styleDirective || canonicalTheme.wizard.styleDirective,
+            aestheticCSSDirective: canonicalTheme.cssDirective,
+            aestheticGenerationDirective: canonicalTheme.generationDirective,
+            aestheticColorTokens,
           },
         }
       );
@@ -447,6 +475,11 @@ export const SystemLauncher = ({
       const generatedCode = generatedFiles?.["src/App.tsx"] || generatedFiles?.["App.tsx"] || data?.code;
 
       if (generatedFiles && typeof generatedFiles === "object" && Object.keys(generatedFiles).length > 0) {
+        // Ensure VFS has themed index.css — AI may omit it
+        const hasCSS = Object.keys(generatedFiles).some(p => p.endsWith('.css'));
+        if (!hasCSS) {
+          generatedFiles['src/index.css'] = themeTokensToCSSRoot(canonicalTokens);
+        }
         // React VFS mode — pass VFS files as source of truth to WebBuilder
         navigate("/web-builder", {
           state: {
@@ -472,10 +505,11 @@ export const SystemLauncher = ({
         const reactResult = (cleaned.includes('import ') || cleaned.includes('export default'))
           ? { code: cleaned, css: '' }
           : getTemplateReactCodeWithCSS({ code: cleaned, title: selectedTemplate.name });
+        const fallbackCSS = themeTokensToCSSRoot(canonicalTokens);
         const fallbackVfsFiles: Record<string, string> = {
           '/src/App.tsx': reactResult.code,
           '/src/main.tsx': `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-          '/src/index.css': `:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n}\n`,
+          '/src/index.css': fallbackCSS,
         };
         if (reactResult.css) {
           fallbackVfsFiles['/src/template.css'] = reactResult.css;

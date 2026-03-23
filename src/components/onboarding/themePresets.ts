@@ -1,7 +1,10 @@
 // ============================================================================
-// Theme Presets for SystemLauncher
+// Theme Presets — MAIN THEME REFERENCE (Single Source of Truth)
 // VISUAL-ONLY: These presets control colors, typography, and layout formatting.
 // They must NEVER influence industry content, text copy, or business language.
+//
+// All other theme systems (canonical.ts, AIPageGenerator, useTemplateCustomizer)
+// should derive their wizard/UI metadata from this file.
 // ============================================================================
 
 export interface ThemePreset {
@@ -77,3 +80,13 @@ export const THEME_PRESETS: ThemePreset[] = [
     typography: { headingFont: "Libre Baskerville", bodyFont: "Nunito", headingWeight: "700" },
   },
 ];
+
+/** Lookup a theme preset by id. Falls back to 'modern'. */
+export function getThemePreset(id: string): ThemePreset {
+  return THEME_PRESETS.find(t => t.id === id) || THEME_PRESETS[0];
+}
+
+/** Map of theme preset ids to their presets for fast lookup. */
+export const THEME_PRESET_MAP: Record<string, ThemePreset> = Object.fromEntries(
+  THEME_PRESETS.map(t => [t.id, t])
+);

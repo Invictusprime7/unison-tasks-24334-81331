@@ -10,6 +10,7 @@
 
 import { useState, useCallback, useRef, useMemo } from 'react';
 import type { VariantId, ActiveVariantMap } from '@/sections/variants';
+import { THEME_PRESETS as CANONICAL_PRESETS } from '@/components/onboarding/themePresets';
 
 // ============================================================================
 // Types
@@ -117,89 +118,25 @@ const DEFAULT_SPACING: SpacingConfig = {
   elementGap: '24px',
 };
 
-export const THEME_PRESETS: ThemePreset[] = [
-  {
-    id: 'modern-light',
-    name: 'Modern Light',
-    colors: { ...DEFAULT_COLORS },
-    typography: { headingFont: 'Inter, system-ui, sans-serif', bodyFont: 'Inter, system-ui, sans-serif' },
+export const THEME_PRESETS: ThemePreset[] = CANONICAL_PRESETS.map(t => ({
+  id: t.id,
+  name: t.label,
+  colors: {
+    primary: t.palette.accent,
+    secondary: t.palette.accent2 || t.palette.accent,
+    accent: t.palette.accent2 || t.palette.accent,
+    background: t.palette.bg,
+    surface: t.palette.bg,
+    text: t.palette.fg,
+    textMuted: t.palette.fg + '99',
+    border: t.palette.fg + '22',
   },
-  {
-    id: 'dark-elegance',
-    name: 'Dark Elegance',
-    colors: {
-      primary: '#a78bfa',
-      secondary: '#f472b6',
-      accent: '#fbbf24',
-      background: '#0f172a',
-      surface: '#1e293b',
-      text: '#f1f5f9',
-      textMuted: '#94a3b8',
-      border: '#334155',
-    },
-    typography: { headingFont: 'Playfair Display, serif', bodyFont: 'Source Sans 3, sans-serif' },
+  typography: {
+    headingFont: `${t.typography.headingFont}, sans-serif`,
+    bodyFont: `${t.typography.bodyFont}, sans-serif`,
+    headingWeight: t.typography.headingWeight,
   },
-  {
-    id: 'warm-minimal',
-    name: 'Warm Minimal',
-    colors: {
-      primary: '#d97706',
-      secondary: '#92400e',
-      accent: '#dc2626',
-      background: '#fefce8',
-      surface: '#fef9c3',
-      text: '#422006',
-      textMuted: '#78716c',
-      border: '#e7e5e4',
-    },
-    typography: { headingFont: 'DM Serif Display, serif', bodyFont: 'DM Sans, sans-serif' },
-  },
-  {
-    id: 'ocean-breeze',
-    name: 'Ocean Breeze',
-    colors: {
-      primary: '#0891b2',
-      secondary: '#0e7490',
-      accent: '#06b6d4',
-      background: '#ecfeff',
-      surface: '#cffafe',
-      text: '#164e63',
-      textMuted: '#6b7280',
-      border: '#a5f3fc',
-    },
-    typography: { headingFont: 'Outfit, sans-serif', bodyFont: 'Outfit, sans-serif' },
-  },
-  {
-    id: 'brutalist',
-    name: 'Brutalist',
-    colors: {
-      primary: '#000000',
-      secondary: '#ff0000',
-      accent: '#ffff00',
-      background: '#ffffff',
-      surface: '#f0f0f0',
-      text: '#000000',
-      textMuted: '#555555',
-      border: '#000000',
-    },
-    typography: { headingFont: 'Space Grotesk, monospace', bodyFont: 'Space Mono, monospace', headingWeight: '900' },
-  },
-  {
-    id: 'editorial',
-    name: 'Editorial',
-    colors: {
-      primary: '#1a1a1a',
-      secondary: '#c0392b',
-      accent: '#e74c3c',
-      background: '#faf9f7',
-      surface: '#f5f0eb',
-      text: '#1a1a1a',
-      textMuted: '#7f8c8d',
-      border: '#ddd',
-    },
-    typography: { headingFont: 'Playfair Display, serif', bodyFont: 'Lora, serif', lineHeight: '1.8' },
-  },
-];
+}));
 
 const GOOGLE_FONTS = [
   'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Raleway',

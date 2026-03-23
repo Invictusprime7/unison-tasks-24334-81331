@@ -14,6 +14,7 @@ import { getSectionComponent } from './registry';
 import { themeToCSS, hsl } from './themeUtils';
 import { resolveVariantComponent } from './variants';
 import type { ActiveVariantMap } from './variants';
+import { getCanonicalTheme } from '@/themes/canonical';
 
 import { getThemeLayoutProfile, genCardStyleCode, genNavbarCode, genHeroCode, genCTACode } from './themeVariantGen';
 
@@ -85,8 +86,7 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
  * for the VFS. This generates code that imports from the sections library.
  */
 export const compositionToReactCode = (template: TemplateComposition, themeOverride?: ThemeTokens, themeId?: string): string => {
-  const baseTheme = themeOverride || template.theme;
-  const effectiveTheme = baseTheme;
+  const effectiveTheme = themeOverride || template.theme || getCanonicalTheme(themeId || 'modern').tokens;
   const profile = themeId ? getThemeLayoutProfile(themeId) : undefined;
   const sectionsJson = JSON.stringify(template.sections, null, 2);
   const themeJson = JSON.stringify(effectiveTheme, null, 2);

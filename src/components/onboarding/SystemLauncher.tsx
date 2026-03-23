@@ -44,8 +44,8 @@ import { AICodeAssistant } from "@/components/creatives/AICodeAssistant";
 import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import {
   generateDesignVariation,
-  randomFontPairing,
 } from "@/utils/designVariation";
+import { getCanonicalTheme } from "@/themes/canonical";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import {
   createBlueprintFromIndustry,
@@ -351,10 +351,11 @@ export const SystemLauncher = ({
       const industry = selectedTemplate.category;
 
       // Use selected theme's typography/palette when available; fall back to random
+      const themeId = selectedTheme?.id || 'modern';
       const fonts = selectedTheme
         ? { heading: selectedTheme.typography.headingFont, body: selectedTheme.typography.bodyFont }
-        : randomFontPairing();
-      const design = generateDesignVariation();
+        : (() => { const t = getCanonicalTheme('modern'); return { heading: t.tokens.typography.headingFont, body: t.tokens.typography.bodyFont }; })();
+      const design = generateDesignVariation(themeId);
 
       // Use contracts system for canonical intent resolution
       const industryProfile = getIndustryForCategory(industry as LayoutCategory);

@@ -41,7 +41,8 @@ import { cn } from "@/lib/utils";
 import { templateToVFSFiles } from "@/utils/templateToVFS";
 import { fixJsxVoidElements, fixJsxStyleStrings } from "@/utils/aiCodeCleaner";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
-import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
+import { generateDesignVariation } from "@/utils/designVariation";
+import { getCanonicalTheme } from "@/themes/canonical";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 
 // Dropped file type
@@ -166,8 +167,9 @@ function buildBlueprintFromChip(chipId: string, prompt: string) {
 
   const defaults = INDUSTRY_DEFAULTS[chipId] || { palette: { primary: "#0EA5E9" }, intents: ["contact.submit"] };
 
-  const fonts = randomFontPairing();
-  const design = generateDesignVariation();
+  const themeData = getCanonicalTheme('modern');
+  const fonts = { heading: themeData.tokens.typography.headingFont, body: themeData.tokens.typography.bodyFont };
+  const design = generateDesignVariation('modern');
 
   return {
     version: "1.0",

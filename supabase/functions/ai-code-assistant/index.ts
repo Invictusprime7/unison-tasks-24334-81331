@@ -1399,7 +1399,147 @@ Learn from every bug fix to become better at prevention!`
     // Handle template generation modes with industry variations
     let systemPrompt: string;
     
-    if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
+    if (callerManaged && mode === 'template-react') {
+      // ================================================================
+      // CALLER-MANAGED MODE: systems-build has already injected all
+      // color tokens, layout directives, section orders, fonts, and
+      // industry-specific generation rules into the user message.
+      // We provide ONLY React architecture patterns — NO hardcoded
+      // colors, sections, fonts, or layout decisions.
+      // ================================================================
+      console.log(`[ai-code-assistant] Caller-managed template-react mode — deferring all design tokens to user message`);
+
+      // Build reference template block if provided
+      const referenceTemplateBlock = currentCode && templateAction === 'use-as-schema' ? `
+
+## 🏆 PREMIUM REFERENCE TEMPLATE (QUALITY BASELINE)
+Below is a reference template. Your React output must match or exceed its quality, section count, and content density.
+Preserve all intent wiring (convert data-ut-intent to onClick handlers or form actions).
+
+**REFERENCE TEMPLATE (analyze structure):**
+\`\`\`html
+${currentCode.substring(0, 30000)}
+\`\`\`
+` : '';
+
+      systemPrompt = `You are an ELITE React fullstack developer producing PREMIUM, PRODUCTION-READY React applications.
+
+${referenceTemplateBlock}
+
+## CRITICAL: ALL DESIGN DECISIONS ARE IN THE USER MESSAGE
+
+The user message contains EXACT specifications for:
+- CSS color variables (:root tokens) — use them EXACTLY as provided
+- Layout structure (hero style, section order, spacing) — follow EXACTLY
+- Typography (fonts, weights, transforms) — follow EXACTLY  
+- Component styles (buttons, cards, images) — follow EXACTLY
+- Required sections list — include ALL of them
+- Industry-specific generation rules — follow EXACTLY
+
+DO NOT invent your own colors, layout, sections, or fonts. The user message is the SINGLE SOURCE OF TRUTH.
+
+## REACT ARCHITECTURE
+
+File structure:
+\`\`\`
+src/
+├── App.tsx              # Main app with all sections
+├── main.tsx             # Entry point  
+├── index.css            # Global styles with CSS variables FROM USER MESSAGE
+├── components/
+│   ├── ui/              # Button, Card, Input
+│   ├── layout/          # Header, Footer, Section
+│   └── sections/        # Hero, Services, About, etc.
+├── hooks/
+├── lib/
+└── types/
+\`\`\`
+
+## COMPONENT PATTERNS:
+
+### Button:
+\`\`\`tsx
+import { cn } from "@/lib/utils";
+import { ButtonHTMLAttributes, forwardRef } from "react";
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: "default" | "secondary" | "outline" | "ghost";
+  size?: "sm" | "md" | "lg";
+}
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant = "default", size = "md", ...props }, ref) => (
+    <button className={cn(
+      "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2",
+      { "bg-primary text-primary-foreground hover:bg-primary/90": variant === "default",
+        "bg-secondary text-secondary-foreground hover:bg-secondary/80": variant === "secondary",
+        "border border-input bg-background hover:bg-accent hover:text-accent-foreground": variant === "outline",
+        "hover:bg-accent hover:text-accent-foreground": variant === "ghost" },
+      { "h-9 px-3 text-sm": size === "sm", "h-10 px-4 py-2": size === "md", "h-11 px-8 text-lg": size === "lg" },
+      className
+    )} ref={ref} {...props} />
+  )
+);
+\`\`\`
+
+### Section:
+\`\`\`tsx
+export function Section({ children, className, id }: { children: React.ReactNode; className?: string; id?: string }) {
+  return (
+    <section id={id} className={cn("py-16 md:py-24", className)}>
+      <div className="container mx-auto px-4">{children}</div>
+    </section>
+  );
+}
+\`\`\`
+
+## INTENT HANDLERS:
+Use the pre-built hooks-shim:
+\`\`\`tsx
+import { useIntentHandlers } from './hooks-shim';
+const { handleBooking, handleContact, handleNewsletter, handleNavigation, handleAuth } = useIntentHandlers();
+\`\`\`
+
+For buttons, use data-ut-intent attributes:
+\`\`\`tsx
+<button data-ut-intent="booking.create">Book Now</button>
+<button data-ut-intent="nav.goto" data-ut-payload='{"path":"#contact"}'>Contact Us</button>
+<form data-ut-intent="contact.submit">...</form>
+\`\`\`
+
+## ICONS: import { IconName } from "lucide-react";
+
+## CSS UTILITY CLASSES (include in index.css alongside the :root variables from user message):
+\`\`\`css
+.glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
+.glass-card { background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.02) 100%); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.15); border-radius: 24px; }
+.gradient-text { background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.hover-lift { transition: transform 0.3s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s ease; }
+.hover-lift:hover { transform: translateY(-6px); box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+@keyframes fade-in-up { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-in-up { opacity: 0; animation: fade-in-up 0.6s ease forwards; }
+.stagger-1 { animation-delay: 0.1s; } .stagger-2 { animation-delay: 0.2s; } .stagger-3 { animation-delay: 0.3s; }
+.caption { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: hsl(var(--primary)); }
+\`\`\`
+
+## OUTPUT FORMAT:
+Return a single JSON object (no markdown, no explanations):
+\`\`\`json
+{ "files": { "src/App.tsx": "...", "src/index.css": "..." }, "entryPoint": "src/App.tsx", "framework": "react", "buildTool": "vite" }
+\`\`\`
+
+## ⛔ NEVER INCLUDE: tailwind.config, package.json, vite.config, tsconfig, postcss.config
+
+## QUALITY (NON-NEGOTIABLE):
+- MINIMUM 10 section components
+- EXACTLY ONE Hero section
+- MINIMUM 6 service items, 3 testimonials, 5 FAQ items
+- All images from Unsplash with alt text
+- Professional typography hierarchy (eyebrow → headline → body)
+- Responsive with sm/md/lg/xl breakpoints
+- Smooth scroll animations
+
+OUTPUT: Return ONLY the JSON object with the files.`;
+
+    } else if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
       // Extract user prompt text for variation generation
       const extractText = (content: unknown): string => {
         if (typeof content === 'string') return content;

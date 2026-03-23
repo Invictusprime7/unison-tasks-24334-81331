@@ -26,19 +26,17 @@ const CATEGORY_TO_INDUSTRY: Record<string, string> = {
 
 /**
  * Get the best React composition reference code for a given category.
- * Returns the first (premium/dark) composition's serialized React code,
+ * Returns the first composition's serialized React code,
  * or null if no composition exists for this category.
  */
-export function getCompositionReactCode(category: LayoutCategory | string, themeId?: string): string | null {
+export function getCompositionReactCode(category: LayoutCategory | string, _themeId?: string): string | null {
   const industry = CATEGORY_TO_INDUSTRY[category];
   if (!industry) return null;
 
   const compositions = getCompositionsByIndustry(industry);
   if (!compositions.length) return null;
 
-  // Resolve structured theme tokens when a preset id is provided
-  const themeOverride: ThemeTokens | undefined = themeId ? getTheme(themeId) : undefined;
-  return compositionToReactCode(compositions[0], themeOverride, themeId);
+  return compositionToReactCode(compositions[0]);
 }
 
 /**

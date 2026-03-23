@@ -2,6 +2,7 @@ import { serve } from "serve";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { pickIndustryPalette, paletteToColorTokens } from "../_shared/industryThemeMatrix.ts";
+import { pickIndustryLayout, buildLayoutDirective } from "../_shared/industryLayoutMatrix.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

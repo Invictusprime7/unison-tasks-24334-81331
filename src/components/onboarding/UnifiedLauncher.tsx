@@ -51,12 +51,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AICodeAssistant } from "@/components/creatives/AICodeAssistant";
 import { buildPageStructureContext } from "@/utils/pageStructureContext";
-import {
-  randomFontPairing,
-  getThemeCSSDirective,
-  getThemeGenerationDirective,
-} from "@/utils/designVariation";
-import { generateThemeVariation } from "@/themes/variationEngine";
 import { getCanonicalTheme } from "@/themes/canonical";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import {
@@ -428,15 +422,14 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
     setIsAIGenerating(true);
     try {
       const industry = selectedTemplate.category;
+      const effectiveTheme = getCanonicalTheme(selectedTheme?.id || "modern");
+      const fonts = {
+        heading: selectedTheme?.typography.headingFont || effectiveTheme.tokens.typography.headingFont,
+        body: selectedTheme?.typography.bodyFont || effectiveTheme.tokens.typography.bodyFont,
+      };
 
-      // Typography from theme or random
-      const fonts = selectedTheme
-        ? { heading: selectedTheme.typography.headingFont, body: selectedTheme.typography.bodyFont }
-        : randomFontPairing();
-
-      // Unique variation seed
+      // Unique generation seed for industry palette/layout selection in systems-build
       const variationSeed = `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-      const variation = generateThemeVariation(selectedTheme?.id || "modern", variationSeed);
 
       // Contract-validated intents
       const industryProfile = getIndustryForCategory(industry as LayoutCategory);
@@ -477,7 +470,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
 
       // Theme instruction for prompt
       const themeInstruction = selectedTheme
-        ? `\n\n🎨 VISUAL AESTHETIC (colors/typography/formatting ONLY — do NOT change industry content or text copy): ${selectedTheme.label}\n${selectedTheme.styleDirective}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ""}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
+        ? `\n\n🎨 VISUAL AESTHETIC (color palette + typography ONLY — do NOT change layout, component styling system, section structure, or industry copy): ${selectedTheme.label}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ""}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
         : "";
       const customInstruction = customPrompt.trim() ? `\n\nADDITIONAL INSTRUCTIONS: ${customPrompt.trim()}\n` : "";
 
@@ -487,7 +480,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
         ? `\n\n📋 INDUSTRY CONTENT CONTEXT (USE THIS AS YOUR CONTENT BASELINE — do NOT invent services/items from other industries):\n${contentContext}\n`
         : "";
 
-      const userPrompt = `Create a unique, premium ${industry} website inspired by but NOT identical to the reference template. Use different color schemes, layout variations, and original copy while maintaining the same quality level.${industryContextBlock}${themeInstruction}${customInstruction}\n\n${variation.variationSummary}`;
+      const userPrompt = `Create a unique, premium ${industry} website inspired by but NOT identical to the reference template. Preserve the industry category and content direction from the reference, but let the backend choose layout and structural styling from the industry matrix.${industryContextBlock}${themeInstruction}${customInstruction}`;
 
       // Template reference
       const compositionCode = getCompositionReactCode(selectedTemplate.category, selectedTheme?.id);
@@ -506,7 +499,7 @@ export function UnifiedLauncher({ open, onOpenChange }: UnifiedLauncherProps) {
           templateId: referenceId,
           templateHtml: referenceCode,
           variantMode: true,
-          variationSeed: variation.seed,
+          variationSeed,
           outputFormat: "react",
           // Full aesthetic pipeline — ensures images, animations, theme CSS
           ...aestheticParams,

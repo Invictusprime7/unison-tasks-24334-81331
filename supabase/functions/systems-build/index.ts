@@ -761,49 +761,40 @@ Generate a site that matches the user's established design preferences while bei
       const sectionStructure = templateHtml ? extractSectionStructure(templateHtml) : '';
       const intentWiring = templateHtml ? extractIntents(templateHtml) : '';
       
-      // Build aesthetic context block for deep theme integration
-      const aestheticBlock = aestheticId ? `
+      // Build aesthetic context — COLORS ONLY from theme, LAYOUT from industry matrix
+      const aestheticBlock = `
 
-## 🎨 AESTHETIC IDENTITY: "${aestheticLabel || aestheticId}" (MANDATORY)
+## 🎨 COLOR PALETTE: "${aestheticLabel || aestheticId || 'default'}" (MANDATORY)
+Use the exact CSS color variables below. Do NOT substitute with different colors.
 
-This site MUST embody the "${aestheticLabel || aestheticId}" aesthetic throughout every component.
-This is NOT optional — the entire visual language must be consistent with this identity.
+## 📐 LAYOUT & STRUCTURE (FROM INDUSTRY MATRIX — FOLLOW EXACTLY):
+${industryLayoutDirective}
 
-${aestheticGenerationDirective ? `### MANDATORY DESIGN RULES (FOLLOW EXACTLY):
-${aestheticGenerationDirective}
-
-` : ''}### Style Directive:
-${aestheticStyleDirective || ''}
-
-### Design System CSS (INJECT INTO index.css ALONGSIDE THE CSS VARIABLES):
+### Industry Layout CSS (INJECT INTO index.css):
 \`\`\`css
-${aestheticCSSDirective || ''}
+${industryLayout.cssDirective}
 \`\`\`
 
-### Design Parameters (from blueprint.design):
-- Hero Layout: ${blueprint.design?.layout?.hero_style || 'centered'}
-- Section Spacing: ${blueprint.design?.layout?.section_spacing || 'normal'}
-- Max Width: ${blueprint.design?.layout?.max_width || 'normal'}
-- Navigation: ${blueprint.design?.layout?.navigation_style || 'sticky'}
-- Shadows: ${blueprint.design?.effects?.shadows || 'normal'}
-- Glassmorphism: ${blueprint.design?.effects?.glassmorphism ? 'YES — use glass-card pattern' : 'NO'}
-- Gradient Backgrounds: ${blueprint.design?.effects?.gradient_backgrounds ? 'YES' : 'NO'}
-- Scroll Animations: ${blueprint.design?.effects?.scroll_animations ? 'YES' : 'NO'}
-- Button Style: ${blueprint.design?.buttons?.style || 'rounded'} / Size: ${blueprint.design?.buttons?.size || 'medium'}
-- Button Hover: ${blueprint.design?.buttons?.hover_effect || 'lift'}
-- Image Style: ${blueprint.design?.images?.style || 'rounded'}
-- Content Density: ${blueprint.design?.content?.density || 'balanced'}
-- Writing Style: ${blueprint.design?.content?.writing_style || 'professional'}
-- Sections to include: ${Object.entries(blueprint.design?.sections || {}).filter(([, v]) => v === true).map(([k]) => k.replace('include_', '')).join(', ') || 'testimonials, cta_banner, faq'}
+### Design Parameters (from industry matrix — NOT from theme):
+- Hero Layout: ${industryLayout.heroStyle}
+- Navigation: ${industryLayout.navStyle}
+- Section Spacing: ${industryLayout.sectionSpacing}
+- Max Width: ${industryLayout.maxWidth}
+- Shadows: ${industryLayout.shadows}
+- Glassmorphism: ${industryLayout.glassmorphism ? 'YES — use glass-card pattern' : 'NO'}
+- Gradients: ${industryLayout.gradients ? 'YES' : 'NO'}
+- Scroll Animations: ${industryLayout.scrollAnimations ? 'YES' : 'NO'}
+- Button Style: ${industryLayout.buttonStyle} / Size: ${industryLayout.buttonSize}
+- Image Style: ${industryLayout.imageStyle}
+- Content Density: ${industryLayout.contentDensity}
+- Heading Weight: ${industryLayout.headingWeight}
+- Heading Transform: ${industryLayout.headingTransform}
+- Required Sections: ${industryLayout.requiredSections.join(', ')}
 
-CRITICAL: The CSS design system directive above MUST be included in your index.css output.
-Components must use the utility classes defined there (.card, .glass-card, .btn-*, etc.).
-Do NOT fall back to generic styling — every visual decision must align with "${aestheticLabel || aestheticId}".
-The MANDATORY DESIGN RULES section above is your primary style reference — follow every rule exactly.
-IMPORTANT: The Design Parameters above represent a UNIQUE layout variation for this generation.
-Use the EXACT hero layout, button style, section spacing, and structural choices specified — do NOT default to a standard layout.
-Each generation must look structurally different while maintaining the "${aestheticLabel || aestheticId}" visual identity.
-` : '';
+CRITICAL: Layout and structural decisions come from the INDUSTRY MATRIX above, NOT from the color theme.
+The theme ONLY provides the color palette. Follow the industry-specific layout rules EXACTLY.
+Each generation must look structurally different based on the industry layout variation selected.
+`;
 
       // Build enhanced prompt from blueprint WITH template reference
       const reactPrompt = `Create a ${blueprint.brand.business_name} website for ${blueprint.identity.industry.replace(/_/g, " ")} industry.

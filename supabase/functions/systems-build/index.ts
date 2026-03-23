@@ -863,8 +863,8 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
           aesthetic: aestheticId || blueprint.brand.tone || "modern professional",
           source: blueprint.identity.industry,
           savePattern: true,
-          // Pass template reference for quality baseline
-          currentCode: templateHtml ? templateHtml.substring(0, 80000) : undefined,
+          // Pass truncated template reference for CONTENT inspiration only (not layout copying)
+          currentCode: templateHtml ? templateHtml.substring(0, 8000) : undefined,
           templateAction: templateHtml ? "use-as-schema" : undefined,
         }),
       });

@@ -360,6 +360,10 @@ serve(async (req: Request) => {
       surgicalEdit: z.boolean().optional(),
       // VFS project files for multi-file surgical edit context
       vfsFiles: z.record(z.string(), z.string().max(100_000)).optional(),
+      // When true, the caller (e.g. systems-build) has already injected all color tokens,
+      // layout directives, section orders, and font choices into the user message.
+      // The system prompt should NOT hardcode its own variation — defer to user message.
+      callerManaged: z.boolean().optional(),
     });
 
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
@@ -398,6 +402,7 @@ serve(async (req: Request) => {
       siteElementsLibraryContext,
       surgicalEdit = false,
       vfsFiles,
+      callerManaged = false,
     } = parsed.data;
     
     // Suppress unused variable warnings - these are used in specific modes

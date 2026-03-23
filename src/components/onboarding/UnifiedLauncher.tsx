@@ -142,6 +142,10 @@ function getCanonicalIndustryForLaunch(category: LayoutCategory): string {
   return getIndustryForCategory(category)?.industry ?? category;
 }
 
+function getCanonicalIndustryForLaunch(category: LayoutCategory): string {
+  return getIndustryForCategory(category)?.industry ?? category;
+}
+
 body {
   margin: 0;
   font-family: ${t.bodyFont};

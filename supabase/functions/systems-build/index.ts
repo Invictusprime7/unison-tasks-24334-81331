@@ -870,10 +870,31 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
       });
 
       if (!reactResponse.ok) {
-        console.error("[systems-build] ai-code-assistant call failed:", reactResponse.status);
+        const upstreamError = await reactResponse.text();
+        console.error("[systems-build] ai-code-assistant call failed:", reactResponse.status, upstreamError.substring(0, 300));
+
+        const fallbackHtml = generateFallbackHTML(blueprint);
+        const fallbackFiles = {
+          "src/App.tsx": htmlToReactComponent(fallbackHtml),
+        };
+
         return new Response(
-          JSON.stringify({ error: "React generation failed", status: reactResponse.status }),
-          { status: reactResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({
+            files: fallbackFiles,
+            entryPoint: "src/App.tsx",
+            framework: "react",
+            buildTool: "vite",
+            _meta: {
+              ai_generated: false,
+              outputFormat: "react",
+              fallback: true,
+              upstream_status: reactResponse.status,
+              upstream_error: upstreamError.substring(0, 300),
+              template: templateId,
+              variation_seed: variationSeed,
+            },
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 

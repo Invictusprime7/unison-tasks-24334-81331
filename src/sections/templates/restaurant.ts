@@ -1,17 +1,16 @@
 /**
- * Restaurant Booking Template — Minimal aesthetic
+ * Restaurant Booking Template
+ * Theme is deferred to the user's selected aesthetic via the launcher.
  */
 import type { TemplateComposition } from '../types';
-import { THEME_MINIMAL_LIGHT } from '../themes';
 
 export const restaurantBooking: TemplateComposition = {
   id: 'restaurant-booking',
   name: 'Restaurant',
   category: 'restaurant',
   industry: 'restaurant',
-  description: 'Clean, minimal booking template for restaurants and dining',
+  description: 'Booking template for restaurants and dining',
   systemType: 'booking',
-  theme: THEME_MINIMAL_LIGHT,
   sections: [
     {
       id: 'nav',

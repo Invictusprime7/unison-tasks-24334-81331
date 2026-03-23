@@ -51,7 +51,6 @@ export interface CompilerOptions {
   canvasHeight?: number;
   validateAssets?: boolean;
   strictMode?: boolean;
-  defaultTheme?: string;
 }
 
 const DEFAULT_OPTIONS: Required<CompilerOptions> = {
@@ -59,7 +58,6 @@ const DEFAULT_OPTIONS: Required<CompilerOptions> = {
   canvasHeight: 900,
   validateAssets: true,
   strictMode: false,
-  defaultTheme: 'light-minimal',
 };
 
 // ============================================

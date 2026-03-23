@@ -1,17 +1,16 @@
 /**
- * Coaching Booking Template — Minimal aesthetic
+ * Coaching Booking Template
+ * Theme is deferred to the user's selected aesthetic via the launcher.
  */
 import type { TemplateComposition } from '../types';
-import { THEME_MINIMAL_LIGHT } from '../themes';
 
 export const coachingBooking: TemplateComposition = {
   id: 'coaching-booking',
   name: 'Coaching & Consulting',
   category: 'coaching',
   industry: 'coaching',
-  description: 'Clean, minimal booking template for coaches and consultants',
+  description: 'Booking template for coaches and consultants',
   systemType: 'booking',
-  theme: THEME_MINIMAL_LIGHT,
   sections: [
     {
       id: 'nav',

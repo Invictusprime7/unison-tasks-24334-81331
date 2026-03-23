@@ -3,12 +3,12 @@
  * 
  * Usage:
  *   import { PageRenderer, getCompositionById } from '@/sections';
- *   const template = getCompositionById('salon-dark-luxury');
+ *   const template = getCompositionById('salon-booking');
  *   <PageRenderer template={template} />
  * 
  * For VFS serialization:
  *   import { compositionToReactCode, getCompositionById } from '@/sections';
- *   const code = compositionToReactCode(getCompositionById('salon-dark-luxury'));
+ *   const code = compositionToReactCode(getCompositionById('salon-booking'));
  */
 
 // Types
@@ -34,12 +34,8 @@ export type {
 // Registry
 export { getSection, getSectionComponent, getAllSections, getSectionsByCategory } from './registry';
 
-// Themes
-export {
-  THEME_REGISTRY, getTheme,
-  THEME_MINIMAL_LIGHT, THEME_MODERN, THEME_EDITORIAL,
-  THEME_FUTURISTIC, THEME_MINIMALIST, THEME_BOLD, THEME_ORGANIC,
-} from './themes';
+// Themes — dynamic resolution only (no hardcoded constants)
+export { getTheme } from './themes';
 
 // PageRenderer
 export { PageRenderer, compositionToReactCode } from './PageRenderer';

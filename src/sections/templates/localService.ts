@@ -1,17 +1,16 @@
 /**
- * Local Service / Contractor Booking Template — Minimal aesthetic
+ * Local Service / Contractor Booking Template
+ * Theme is deferred to the user's selected aesthetic via the launcher.
  */
 import type { TemplateComposition } from '../types';
-import { THEME_MINIMAL_LIGHT } from '../themes';
 
 export const localServiceBooking: TemplateComposition = {
   id: 'local-service-booking',
   name: 'Local Service',
   category: 'contractor',
   industry: 'local-service',
-  description: 'Clean, minimal booking template for contractors and local services',
+  description: 'Booking template for contractors and local services',
   systemType: 'booking',
-  theme: THEME_MINIMAL_LIGHT,
   sections: [
     {
       id: 'nav',

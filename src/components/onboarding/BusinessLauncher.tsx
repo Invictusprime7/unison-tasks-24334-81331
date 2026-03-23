@@ -31,7 +31,8 @@ import { getTemplatesByCategory } from "@/data/templates";
 import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types";
 import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
-import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
+import { generateDesignVariation } from "@/utils/designVariation";
+import { getCanonicalTheme } from "@/themes/canonical";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -134,8 +135,10 @@ function buildBlueprintFromChip(chipId: string, prompt: string, businessName?: s
     }
 
     // Convert to the edge function's expected format (SystemsBuildContext shape)
-    const fonts = randomFontPairing();
-    const design = generateDesignVariation();
+    const themeId = 'modern';
+    const themeData = getCanonicalTheme(themeId);
+    const fonts = { heading: themeData.tokens.typography.headingFont, body: themeData.tokens.typography.bodyFont };
+    const design = generateDesignVariation(themeId);
 
     return {
       version: "1.0",
@@ -163,8 +166,9 @@ function buildBlueprintFromChip(chipId: string, prompt: string, businessName?: s
   } catch (e) {
     // Fallback if industry not found in contracts
     console.warn(`[BusinessLauncher] Contract creation failed for "${canonicalIndustry}", using fallback`, e);
-    const fonts = randomFontPairing();
-    const design = generateDesignVariation();
+    const fallbackTheme = getCanonicalTheme('modern');
+    const fonts = { heading: fallbackTheme.tokens.typography.headingFont, body: fallbackTheme.tokens.typography.bodyFont };
+    const design = generateDesignVariation('modern');
     return {
       version: "1.0",
       identity: { industry: canonicalIndustry, primary_goal: "Generate leads and grow the business" },
@@ -377,8 +381,9 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
    * Build generic blueprint for free-form prompts
    */
   const buildGenericBlueprint = (text: string, businessName?: string) => {
-    const fonts = randomFontPairing();
-    const design = generateDesignVariation();
+    const themeData = getCanonicalTheme('modern');
+    const fonts = { heading: themeData.tokens.typography.headingFont, body: themeData.tokens.typography.bodyFont };
+    const design = generateDesignVariation('modern');
 
     return {
       version: "1.0",

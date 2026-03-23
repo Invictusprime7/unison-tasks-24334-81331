@@ -8,7 +8,6 @@
 
 import { getCompositionById } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
-import { getTheme } from '@/sections/themes';
 import { ensureReactImports } from '@/utils/aiCodeCleaner';
 import { htmlDocToReactComponentWithCSS } from '@/utils/htmlToJsx';
 
@@ -270,8 +269,8 @@ export const getTemplateReactCodeWithCSS = (template: { code: string; id?: strin
   if (template.id) {
     const composition = getCompositionById(template.id);
     if (composition) {
-      const themeOverride = themeId ? getTheme(themeId) : undefined;
-      return { code: compositionToReactCode(composition, themeOverride, themeId), css: '' };
+      // Theme is resolved by the launcher path — no hardcoded fallback
+      return { code: compositionToReactCode(composition, undefined, themeId), css: '' };
     }
   }
 

@@ -45,7 +45,7 @@ import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import {
   generateDesignVariation,
 } from "@/utils/designVariation";
-import { getCanonicalTheme } from "@/themes/canonical";
+import { getCanonicalTheme, getGenerationDirective, getFullCSSDirective } from "@/themes/canonical";
 import { themeTokensToCSSRoot, themeTokensToTemplateCSS } from "@/themes/utils";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import {
@@ -452,8 +452,8 @@ export const SystemLauncher = ({
             aestheticId: themeId,
             aestheticLabel: selectedTheme?.label || canonicalTheme.wizard.label,
             aestheticStyleDirective: selectedTheme?.styleDirective || canonicalTheme.wizard.styleDirective,
-            aestheticCSSDirective: "",
-            aestheticGenerationDirective: "",
+            aestheticCSSDirective: canonicalTheme.cssDirective,
+            aestheticGenerationDirective: canonicalTheme.generationDirective,
             aestheticColorTokens,
           },
         }

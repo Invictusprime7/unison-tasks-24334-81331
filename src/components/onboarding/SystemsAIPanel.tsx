@@ -169,8 +169,8 @@ function buildBlueprintFromChip(chipId: string, prompt: string) {
 
   const themeData = getCanonicalTheme('modern');
   const fonts = { heading: themeData.tokens.typography.headingFont, body: themeData.tokens.typography.bodyFont };
-  // Design layout/sections are determined by the industry matrix in systems-build,
-  // NOT by themes. We pass minimal defaults; the edge function handles structure.
+  const design = generateDesignVariation('modern');
+
   return {
     version: "1.0",
     identity: {
@@ -185,9 +185,9 @@ function buildBlueprintFromChip(chipId: string, prompt: string) {
       typography: { heading: fonts.heading, body: fonts.body },
     },
     design: {
-      layout: {},
-      effects: { animations: true, scroll_animations: true, hover_effects: true, gradient_backgrounds: true },
-      sections: {},
+      layout: { hero_style: design.layout.hero_style, section_spacing: design.layout.section_spacing, navigation_style: design.layout.navigation_style },
+      effects: { animations: true, scroll_animations: true, hover_effects: true, gradient_backgrounds: true, glassmorphism: design.effects.glassmorphism, shadows: design.effects.shadows },
+      sections: { include_stats: design.sections.include_stats, include_testimonials: design.sections.include_testimonials, include_faq: design.sections.include_faq, include_cta_banner: design.sections.include_cta_banner, include_newsletter: design.sections.include_newsletter, include_social_proof: design.sections.include_social_proof },
     },
     intents: defaults.intents.map(i => ({ intent: i })),
   };
@@ -226,16 +226,29 @@ function buildSystemsBuildContextFromChip(chipId: string): SystemsBuildContext {
       typography: blueprint.brand.typography,
     },
     design: {
-      layout: blueprint.design?.layout || undefined,
+      layout: blueprint.design?.layout
+        ? { hero_style: blueprint.design.layout.hero_style as string | undefined }
+        : undefined,
       effects: blueprint.design?.effects
         ? {
             animations: blueprint.design.effects.animations,
             scroll_animations: blueprint.design.effects.scroll_animations,
             hover_effects: blueprint.design.effects.hover_effects,
             gradient_backgrounds: blueprint.design.effects.gradient_backgrounds,
+            glassmorphism: blueprint.design.effects.glassmorphism,
+            shadows: blueprint.design.effects.shadows as string | undefined,
           }
         : undefined,
-      sections: blueprint.design?.sections || undefined,
+      sections: blueprint.design?.sections
+        ? {
+            include_stats: blueprint.design.sections.include_stats,
+            include_testimonials: blueprint.design.sections.include_testimonials,
+            include_faq: blueprint.design.sections.include_faq,
+            include_cta_banner: blueprint.design.sections.include_cta_banner,
+            include_newsletter: blueprint.design.sections.include_newsletter,
+            include_social_proof: blueprint.design.sections.include_social_proof,
+          }
+        : undefined,
     },
     intents: blueprint.intents,
     template_sections: template_sections.slice(0, 20),

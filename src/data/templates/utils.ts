@@ -10,6 +10,8 @@ import { getCompositionById } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
 import { ensureReactImports } from '@/utils/aiCodeCleaner';
 import { htmlDocToReactComponentWithCSS } from '@/utils/htmlToJsx';
+import { getCanonicalTheme } from '@/themes/canonical';
+import { themeTokensToTemplateCSS } from '@/themes/utils';
 
 /**
  * Extracts <style> block content from HTML body strings

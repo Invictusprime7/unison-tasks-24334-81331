@@ -481,6 +481,12 @@ export const SystemLauncher = ({
         if (!hasCSS) {
           generatedFiles['src/index.css'] = themeTokensToCSSRoot(canonicalTokens);
         }
+        // Always inject template.css with theme tokens for consistent rendering
+        if (!generatedFiles['src/template.css']) {
+          generatedFiles['src/template.css'] = themeTokensToTemplateCSS(canonicalTokens);
+        } else {
+          generatedFiles['src/template.css'] = themeTokensToTemplateCSS(canonicalTokens) + '\n' + generatedFiles['src/template.css'];
+        }
         // React VFS mode — pass VFS files as source of truth to WebBuilder
         navigate("/web-builder", {
           state: {

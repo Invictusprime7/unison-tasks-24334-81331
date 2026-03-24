@@ -309,11 +309,12 @@ export const SystemLauncher = ({
       const themeId = selectedTheme?.id || 'modern';
       const resolvedTokens = getCanonicalTheme(themeId).tokens;
       const baseCSS = themeTokensToCSSRoot(resolvedTokens);
+      const templateCSS = themeTokensToTemplateCSS(resolvedTokens);
       const vfsFiles = editedTemplateFiles || {
         '/src/App.tsx': effectiveResult.code,
         '/src/main.tsx': `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
         '/src/index.css': baseCSS,
-        ...(effectiveResult.css ? { '/src/template.css': effectiveResult.css } : {}),
+        '/src/template.css': (effectiveResult.css ? templateCSS + '\n' + effectiveResult.css : templateCSS),
       };
 
       navigate("/web-builder", {

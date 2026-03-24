@@ -226,29 +226,16 @@ function buildSystemsBuildContextFromChip(chipId: string): SystemsBuildContext {
       typography: blueprint.brand.typography,
     },
     design: {
-      layout: blueprint.design?.layout
-        ? { hero_style: blueprint.design.layout.hero_style as string | undefined }
-        : undefined,
+      layout: blueprint.design?.layout || undefined,
       effects: blueprint.design?.effects
         ? {
             animations: blueprint.design.effects.animations,
             scroll_animations: blueprint.design.effects.scroll_animations,
             hover_effects: blueprint.design.effects.hover_effects,
             gradient_backgrounds: blueprint.design.effects.gradient_backgrounds,
-            glassmorphism: blueprint.design.effects.glassmorphism,
-            shadows: blueprint.design.effects.shadows as string | undefined,
           }
         : undefined,
-      sections: blueprint.design?.sections
-        ? {
-            include_stats: blueprint.design.sections.include_stats,
-            include_testimonials: blueprint.design.sections.include_testimonials,
-            include_faq: blueprint.design.sections.include_faq,
-            include_cta_banner: blueprint.design.sections.include_cta_banner,
-            include_newsletter: blueprint.design.sections.include_newsletter,
-            include_social_proof: blueprint.design.sections.include_social_proof,
-          }
-        : undefined,
+      sections: blueprint.design?.sections || undefined,
     },
     intents: blueprint.intents,
     template_sections: template_sections.slice(0, 20),

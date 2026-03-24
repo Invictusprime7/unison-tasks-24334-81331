@@ -96,6 +96,49 @@ export const cardStyle = (theme: ThemeTokens): React.CSSProperties => ({
 });
 
 /**
+ * Generate a standalone CSS block with theme custom properties + typography.
+ * Designed for template.css — no Tailwind directives.
+ */
+export function themeTokensToTemplateCSS(theme: ThemeTokens): string {
+  return `/* Theme design tokens — auto-injected from selected aesthetic */
+:root {
+  --background: ${theme.colors.background};
+  --foreground: ${theme.colors.foreground};
+  --card: ${theme.colors.card};
+  --card-foreground: ${theme.colors.cardForeground};
+  --primary: ${theme.colors.primary};
+  --primary-foreground: ${theme.colors.primaryForeground};
+  --secondary: ${theme.colors.secondary};
+  --secondary-foreground: ${theme.colors.secondaryForeground};
+  --muted: ${theme.colors.muted};
+  --muted-foreground: ${theme.colors.mutedForeground};
+  --accent: ${theme.colors.accent};
+  --accent-foreground: ${theme.colors.accentForeground};
+  --border: ${theme.colors.border};
+  --radius: ${theme.radius};
+  --font-heading: '${theme.typography.headingFont}', system-ui, sans-serif;
+  --font-body: '${theme.typography.bodyFont}', system-ui, sans-serif;
+  --font-heading-weight: ${theme.typography.headingWeight};
+  --font-body-weight: ${theme.typography.bodyWeight};
+  --section-padding: ${theme.sectionPadding};
+  --container-width: ${theme.containerWidth};
+}
+
+body {
+  font-family: var(--font-body);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  margin: 0; padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+}
+`;
+}
+
+/**
  * Convert ThemeTokens into a CSS :root block with all custom properties.
  * Produces Tailwind/shadcn-compatible variable names.
  */

@@ -46,7 +46,7 @@ import {
   generateDesignVariation,
 } from "@/utils/designVariation";
 import { getCanonicalTheme, getGenerationDirective, getFullCSSDirective } from "@/themes/canonical";
-import { themeTokensToCSSRoot } from "@/themes/utils";
+import { themeTokensToCSSRoot, themeTokensToTemplateCSS } from "@/themes/utils";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import {
   createBlueprintFromIndustry,
@@ -309,11 +309,12 @@ export const SystemLauncher = ({
       const themeId = selectedTheme?.id || 'modern';
       const resolvedTokens = getCanonicalTheme(themeId).tokens;
       const baseCSS = themeTokensToCSSRoot(resolvedTokens);
+      const templateCSS = themeTokensToTemplateCSS(resolvedTokens);
       const vfsFiles = editedTemplateFiles || {
         '/src/App.tsx': effectiveResult.code,
         '/src/main.tsx': `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
         '/src/index.css': baseCSS,
-        ...(effectiveResult.css ? { '/src/template.css': effectiveResult.css } : {}),
+        '/src/template.css': (effectiveResult.css ? templateCSS + '\n' + effectiveResult.css : templateCSS),
       };
 
       navigate("/web-builder", {
@@ -480,6 +481,12 @@ export const SystemLauncher = ({
         if (!hasCSS) {
           generatedFiles['src/index.css'] = themeTokensToCSSRoot(canonicalTokens);
         }
+        // Always inject template.css with theme tokens for consistent rendering
+        if (!generatedFiles['src/template.css']) {
+          generatedFiles['src/template.css'] = themeTokensToTemplateCSS(canonicalTokens);
+        } else {
+          generatedFiles['src/template.css'] = themeTokensToTemplateCSS(canonicalTokens) + '\n' + generatedFiles['src/template.css'];
+        }
         // React VFS mode — pass VFS files as source of truth to WebBuilder
         navigate("/web-builder", {
           state: {
@@ -504,16 +511,15 @@ export const SystemLauncher = ({
         // Ensure it's React-compatible (wrap HTML if needed)
         const reactResult = (cleaned.includes('import ') || cleaned.includes('export default'))
           ? { code: cleaned, css: '' }
-          : getTemplateReactCodeWithCSS({ code: cleaned, title: selectedTemplate.name });
+          : getTemplateReactCodeWithCSS({ code: cleaned, title: selectedTemplate.name }, themeId);
         const fallbackCSS = themeTokensToCSSRoot(canonicalTokens);
+        const themeTemplateCSS = themeTokensToTemplateCSS(canonicalTokens);
         const fallbackVfsFiles: Record<string, string> = {
           '/src/App.tsx': reactResult.code,
           '/src/main.tsx': `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
           '/src/index.css': fallbackCSS,
+          '/src/template.css': reactResult.css ? themeTemplateCSS + '\n' + reactResult.css : themeTemplateCSS,
         };
-        if (reactResult.css) {
-          fallbackVfsFiles['/src/template.css'] = reactResult.css;
-        }
         navigate("/web-builder", {
           state: {
             vfsFiles: fallbackVfsFiles,

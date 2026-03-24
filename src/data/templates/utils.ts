@@ -10,6 +10,8 @@ import { getCompositionById } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
 import { ensureReactImports } from '@/utils/aiCodeCleaner';
 import { htmlDocToReactComponentWithCSS } from '@/utils/htmlToJsx';
+import { getCanonicalTheme } from '@/themes/canonical';
+import { themeTokensToTemplateCSS } from '@/themes/utils';
 
 /**
  * Extracts <style> block content from HTML body strings
@@ -269,8 +271,11 @@ export const getTemplateReactCodeWithCSS = (template: { code: string; id?: strin
   if (template.id) {
     const composition = getCompositionById(template.id);
     if (composition) {
-      // Theme is resolved by the launcher path — no hardcoded fallback
-      return { code: compositionToReactCode(composition, undefined, themeId), css: '' };
+      // Resolve canonical theme tokens for CSS injection
+      const resolvedThemeId = themeId || 'modern';
+      const tokens = getCanonicalTheme(resolvedThemeId).tokens;
+      const css = themeTokensToTemplateCSS(tokens);
+      return { code: compositionToReactCode(composition, tokens, resolvedThemeId), css };
     }
   }
 

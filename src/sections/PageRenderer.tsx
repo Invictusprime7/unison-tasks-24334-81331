@@ -16,7 +16,8 @@ import { resolveVariantComponent } from './variants';
 import type { ActiveVariantMap } from './variants';
 import { getCanonicalTheme } from '@/themes/canonical';
 
-import { getThemeLayoutProfile, genCardStyleCode, genNavbarCode, genHeroCode, genCTACode } from './themeVariantGen';
+// Theme-variant layout bindings removed — themes only inject colors.
+// Layouts are determined by industry matrix, not theme selection.
 
 interface PageRendererProps {
   template: TemplateComposition;
@@ -87,11 +88,9 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
  */
 export const compositionToReactCode = (template: TemplateComposition, themeOverride?: ThemeTokens, themeId?: string): string => {
   const effectiveTheme = themeOverride || template.theme || getCanonicalTheme(themeId || 'modern').tokens;
-  const profile = themeId ? getThemeLayoutProfile(themeId) : undefined;
   const sectionsJson = JSON.stringify(template.sections, null, 2);
   const themeJson = JSON.stringify(effectiveTheme, null, 2);
   const globalStylesJson = JSON.stringify(template.globalStyles || '');
-  const headingExtra = profile?.uppercaseHeadings ? ", textTransform: 'uppercase', letterSpacing: '0.05em'" : '';
 
   return `import React, { useEffect, useState } from 'react';
 
@@ -116,7 +115,7 @@ const GLOBAL_STYLES = ${globalStylesJson};
 const hsl = (t) => \`hsl(\${t})\`;
 const hsla = (t, a) => \`hsla(\${t}, \${a})\`;
 
-const headingStyle = { fontFamily: THEME.typography.headingFont, fontWeight: THEME.typography.headingWeight, color: hsl(THEME.colors.foreground)${headingExtra} };
+const headingStyle = { fontFamily: THEME.typography.headingFont, fontWeight: THEME.typography.headingWeight, color: hsl(THEME.colors.foreground) };
 const bodyStyle = { fontFamily: THEME.typography.bodyFont, fontWeight: THEME.typography.bodyWeight, color: hsl(THEME.colors.mutedForeground) };
 const containerStyle = { maxWidth: THEME.containerWidth, margin: '0 auto', padding: '0 1rem' };
 const sectionPad = { padding: THEME.sectionPadding };
@@ -135,15 +134,45 @@ const outlineBtnStyle = {
   fontFamily: THEME.typography.bodyFont, transition: 'all 0.2s ease', textDecoration: 'none', display: 'inline-block',
 };
 
-${genCardStyleCode(profile?.cardStyle)}
+const cardStyle = {
+  background: hsl(THEME.colors.card), color: hsl(THEME.colors.cardForeground),
+  borderRadius: THEME.radius, border: \\\`1px solid \\\${hsla(THEME.colors.border, 1)}\\\`,
+  overflow: 'hidden', transition: 'all 0.3s ease',
+};
 
 // ============================================================================
-// Section Components (variant-aware for theme-specific layouts)
+// Section Components
 // ============================================================================
 
-${genNavbarCode(profile?.navbar)}
+function Navbar({ props }) {
+  const { brand, links = [], cta } = props;
+  return (
+    <header style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: hsla(THEME.colors.background, 0.85), backdropFilter: 'blur(12px)', borderBottom: \\\`1px solid \\\${hsla(THEME.colors.border, 0.5)}\\\` }}>
+      <div style={{ ...containerStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '5rem' }}>
+        <a href="#" style={{ ...headingStyle, fontSize: '1.5rem', textDecoration: 'none' }}>{brand}</a>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+          {links.map((l, i) => <a key={i} href={l.href} style={{ ...bodyStyle, fontSize: '0.9rem', textDecoration: 'none' }}>{l.label}</a>)}
+          {cta && <a href={cta.href || '#'} data-intent={cta.intent} style={{ ...primaryBtnStyle, fontSize: '0.875rem', padding: '0.5rem 1.25rem' }}>{cta.label}</a>}
+        </nav>
+      </div>
+    </header>
+  );
+}
 
-${genHeroCode(profile?.hero, profile?.heroDecoration)}
+function Hero({ props }) {
+  const { headline, subheadline, ctas = [], badge, stats } = props;
+  return (
+    <section style={{ ...sectionPad, paddingTop: '8rem', background: hsl(THEME.colors.background), position: 'relative', overflow: 'hidden' }}>
+      <div style={{ ...containerStyle, textAlign: 'center', position: 'relative' }}>
+        {badge && <span style={{ display: 'inline-block', padding: '0.35rem 1rem', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: '600', background: hsla(THEME.colors.primary, 0.12), color: hsl(THEME.colors.primary), border: \\\`1px solid \\\${hsla(THEME.colors.primary, 0.25)}\\\`, marginBottom: '1.5rem' }}>{badge}</span>}
+        <h1 style={{ ...headingStyle, fontSize: 'clamp(2.5rem, 5vw, 4rem)', lineHeight: 1.1, marginBottom: '1.5rem' }}>{headline}</h1>
+        {subheadline && <p style={{ ...bodyStyle, fontSize: '1.25rem', lineHeight: 1.6, maxWidth: '640px', margin: '0 auto', marginBottom: '2rem' }}>{subheadline}</p>}
+        {ctas.length > 0 && <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>{ctas.map((c, i) => <a key={i} href={c.href||'#'} data-intent={c.intent} style={c.variant === 'outline' ? outlineBtnStyle : primaryBtnStyle}>{c.label}</a>)}</div>}
+        {stats && stats.length > 0 && <div style={{ display: 'flex', gap: '2.5rem', marginTop: '3rem', justifyContent: 'center' }}>{stats.map((s, i) => <div key={i} style={{ textAlign: 'center' }}><div style={{ ...headingStyle, fontSize: '2rem', color: hsl(THEME.colors.primary) }}>{s.value}</div><div style={{ ...bodyStyle, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{s.label}</div></div>)}</div>}
+      </div>
+    </section>
+  );
+}
 
 function Services({ props }) {
   const { headline, subheadline, items = [], columns = 3 } = props;
@@ -188,7 +217,18 @@ function Testimonials({ props }) {
   );
 }
 
-${genCTACode(profile?.cta)}
+function CTA({ props }) {
+  const { headline, description, ctas = [] } = props;
+  return (
+    <section style={{ ...sectionPad, background: \\\`linear-gradient(135deg, hsl(\\\${THEME.colors.primary}), hsl(\\\${THEME.colors.secondary}))\\\` }}>
+      <div style={{ ...containerStyle, maxWidth: '48rem', textAlign: 'center' }}>
+        <h2 style={{ fontFamily: THEME.typography.headingFont, fontWeight: THEME.typography.headingWeight, fontSize: '2.5rem', color: hsl(THEME.colors.primaryForeground), marginBottom: '1rem' }}>{headline}</h2>
+        {description && <p style={{ fontFamily: THEME.typography.bodyFont, fontSize: '1.15rem', maxWidth: '600px', margin: '0 auto 2rem', color: hsla(THEME.colors.primaryForeground, 0.85), lineHeight: 1.7 }}>{description}</p>}
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>{ctas.map((c, i) => <a key={i} href={c.href||'#'} data-intent={c.intent} style={c.variant === 'outline' ? outlineBtnStyle : primaryBtnStyle}>{c.label}</a>)}</div>
+      </div>
+    </section>
+  );
+}
 
 function Contact({ props }) {
   const { headline, description, submitLabel = 'Send Message', phone, email, address } = props;

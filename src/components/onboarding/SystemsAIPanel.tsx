@@ -41,8 +41,7 @@ import { cn } from "@/lib/utils";
 import { templateToVFSFiles } from "@/utils/templateToVFS";
 import { fixJsxVoidElements, fixJsxStyleStrings } from "@/utils/aiCodeCleaner";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
-import { generateDesignVariation } from "@/utils/designVariation";
-import { getCanonicalTheme } from "@/themes/canonical";
+import { getCanonicalTheme, getThemeTokens } from "@/themes/canonical";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 
 // Dropped file type
@@ -149,27 +148,28 @@ function getTemplateReference(chipId: string): { templateId: string; templateHtm
 /**
  * Build a minimal BusinessBlueprint from a chip selection for systems-build
  */
-function buildBlueprintFromChip(chipId: string, prompt: string) {
+function buildBlueprintFromChip(chipId: string, prompt: string, themeId: string = 'modern') {
   const chip = codePromptChips.find(c => c.id === chipId);
   const industry = CHIP_TO_INDUSTRY[chipId] || "other";
   
-  // Industry-specific defaults
-  const INDUSTRY_DEFAULTS: Record<string, { palette: Record<string, string>; intents: string[] }> = {
-    salon_spa: { palette: { primary: "#D4A574", secondary: "#8B6F4E", accent: "#E8D5C4", background: "#1A1A2E", foreground: "#F5F5F5" }, intents: ["booking.create", "contact.submit", "newsletter.subscribe"] },
-    restaurant: { palette: { primary: "#D4A574", secondary: "#8B4513", accent: "#FFD700", background: "#1A1A1A", foreground: "#FFFFFF" }, intents: ["booking.create", "contact.submit", "newsletter.subscribe"] },
-    local_service: { palette: { primary: "#0EA5E9", secondary: "#22D3EE", accent: "#F59E0B", background: "#0F172A", foreground: "#F8FAFC" }, intents: ["quote.request", "contact.submit", "booking.create"] },
-    ecommerce: { palette: { primary: "#8B5CF6", secondary: "#A78BFA", accent: "#F59E0B", background: "#0F0F0F", foreground: "#FFFFFF" }, intents: ["newsletter.subscribe", "contact.submit"] },
-    creator: { palette: { primary: "#6366F1", secondary: "#818CF8", accent: "#F472B6", background: "#0A0A0A", foreground: "#FAFAFA" }, intents: ["contact.submit", "quote.request"] },
-    coaching: { palette: { primary: "#10B981", secondary: "#34D399", accent: "#F59E0B", background: "#0F172A", foreground: "#F8FAFC" }, intents: ["booking.create", "contact.submit", "newsletter.subscribe", "quote.request"] },
-    real_estate: { palette: { primary: "#D4AF37", secondary: "#C9B037", accent: "#1E3A5F", background: "#0A0A0A", foreground: "#FFFFFF" }, intents: ["contact.submit", "quote.request", "newsletter.subscribe"] },
-    nonprofit: { palette: { primary: "#E11D48", secondary: "#FB7185", accent: "#F59E0B", background: "#FFFFFF", foreground: "#1E293B" }, intents: ["contact.submit", "newsletter.subscribe"] },
+  // Resolve ALL colors and typography from the canonical theme — no hardcoded palettes
+  const canonicalTheme = getCanonicalTheme(themeId);
+  const tokens = canonicalTheme.tokens;
+  const fonts = { heading: tokens.typography.headingFont, body: tokens.typography.bodyFont };
+
+  // Industry-specific intents (content-only, no colors)
+  const INDUSTRY_INTENTS: Record<string, string[]> = {
+    salon_spa: ["booking.create", "contact.submit", "newsletter.subscribe"],
+    restaurant: ["booking.create", "contact.submit", "newsletter.subscribe"],
+    local_service: ["quote.request", "contact.submit", "booking.create"],
+    ecommerce: ["newsletter.subscribe", "contact.submit"],
+    creator: ["contact.submit", "quote.request"],
+    coaching: ["booking.create", "contact.submit", "newsletter.subscribe", "quote.request"],
+    real_estate: ["contact.submit", "quote.request", "newsletter.subscribe"],
+    nonprofit: ["contact.submit", "newsletter.subscribe"],
   };
 
-  const defaults = INDUSTRY_DEFAULTS[chipId] || { palette: { primary: "#0EA5E9" }, intents: ["contact.submit"] };
-
-  const themeData = getCanonicalTheme('modern');
-  const fonts = { heading: themeData.tokens.typography.headingFont, body: themeData.tokens.typography.bodyFont };
-  const design = generateDesignVariation('modern');
+  const intents = INDUSTRY_INTENTS[chipId] || ["contact.submit"];
 
   return {
     version: "1.0",
@@ -181,15 +181,16 @@ function buildBlueprintFromChip(chipId: string, prompt: string) {
       business_name: chip?.label || "My Business",
       tagline: `Professional ${chip?.label || "business"} services you can trust`,
       tone: "professional and friendly",
-      palette: defaults.palette,
+      palette: {
+        primary: `hsl(${tokens.colors.primary})`,
+        secondary: `hsl(${tokens.colors.secondary})`,
+        accent: `hsl(${tokens.colors.accent})`,
+        background: `hsl(${tokens.colors.background})`,
+        foreground: `hsl(${tokens.colors.foreground})`,
+      },
       typography: { heading: fonts.heading, body: fonts.body },
     },
-    design: {
-      layout: { hero_style: design.layout.hero_style, section_spacing: design.layout.section_spacing, navigation_style: design.layout.navigation_style },
-      effects: { animations: true, scroll_animations: true, hover_effects: true, gradient_backgrounds: true, glassmorphism: design.effects.glassmorphism, shadows: design.effects.shadows },
-      sections: { include_stats: design.sections.include_stats, include_testimonials: design.sections.include_testimonials, include_faq: design.sections.include_faq, include_cta_banner: design.sections.include_cta_banner, include_newsletter: design.sections.include_newsletter, include_social_proof: design.sections.include_social_proof },
-    },
-    intents: defaults.intents.map(i => ({ intent: i })),
+    intents: intents.map(i => ({ intent: i })),
   };
 }
 
@@ -211,7 +212,6 @@ function buildSystemsBuildContextFromChip(chipId: string): SystemsBuildContext {
     for (const m of ref.templateHtml.matchAll(/data-ut-intent="([^"]+)"/g)) intentSet.add(m[1]);
   }
 
-  // Return the blueprint as-is (snake_case matches SystemsBuildContext exactly) plus template metadata
   return {
     version: blueprint.version,
     identity: {
@@ -224,31 +224,6 @@ function buildSystemsBuildContextFromChip(chipId: string): SystemsBuildContext {
       tone: blueprint.brand.tone,
       palette: blueprint.brand.palette,
       typography: blueprint.brand.typography,
-    },
-    design: {
-      layout: blueprint.design?.layout
-        ? { hero_style: blueprint.design.layout.hero_style as string | undefined }
-        : undefined,
-      effects: blueprint.design?.effects
-        ? {
-            animations: blueprint.design.effects.animations,
-            scroll_animations: blueprint.design.effects.scroll_animations,
-            hover_effects: blueprint.design.effects.hover_effects,
-            gradient_backgrounds: blueprint.design.effects.gradient_backgrounds,
-            glassmorphism: blueprint.design.effects.glassmorphism,
-            shadows: blueprint.design.effects.shadows as string | undefined,
-          }
-        : undefined,
-      sections: blueprint.design?.sections
-        ? {
-            include_stats: blueprint.design.sections.include_stats,
-            include_testimonials: blueprint.design.sections.include_testimonials,
-            include_faq: blueprint.design.sections.include_faq,
-            include_cta_banner: blueprint.design.sections.include_cta_banner,
-            include_newsletter: blueprint.design.sections.include_newsletter,
-            include_social_proof: blueprint.design.sections.include_social_proof,
-          }
-        : undefined,
     },
     intents: blueprint.intents,
     template_sections: template_sections.slice(0, 20),

@@ -169,8 +169,8 @@ function buildBlueprintFromChip(chipId: string, prompt: string) {
 
   const themeData = getCanonicalTheme('modern');
   const fonts = { heading: themeData.tokens.typography.headingFont, body: themeData.tokens.typography.bodyFont };
-  const design = generateDesignVariation('modern');
-
+  // Design layout/sections are determined by the industry matrix in systems-build,
+  // NOT by themes. We pass minimal defaults; the edge function handles structure.
   return {
     version: "1.0",
     identity: {
@@ -185,9 +185,9 @@ function buildBlueprintFromChip(chipId: string, prompt: string) {
       typography: { heading: fonts.heading, body: fonts.body },
     },
     design: {
-      layout: { hero_style: design.layout.hero_style, section_spacing: design.layout.section_spacing, navigation_style: design.layout.navigation_style },
-      effects: { animations: true, scroll_animations: true, hover_effects: true, gradient_backgrounds: true, glassmorphism: design.effects.glassmorphism, shadows: design.effects.shadows },
-      sections: { include_stats: design.sections.include_stats, include_testimonials: design.sections.include_testimonials, include_faq: design.sections.include_faq, include_cta_banner: design.sections.include_cta_banner, include_newsletter: design.sections.include_newsletter, include_social_proof: design.sections.include_social_proof },
+      layout: {},
+      effects: { animations: true, scroll_animations: true, hover_effects: true, gradient_backgrounds: true },
+      sections: {},
     },
     intents: defaults.intents.map(i => ({ intent: i })),
   };

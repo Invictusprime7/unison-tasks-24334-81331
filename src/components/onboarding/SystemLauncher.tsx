@@ -46,7 +46,7 @@ import {
   generateDesignVariation,
 } from "@/utils/designVariation";
 import { getCanonicalTheme, getGenerationDirective, getFullCSSDirective } from "@/themes/canonical";
-import { themeTokensToCSSRoot } from "@/themes/utils";
+import { themeTokensToCSSRoot, themeTokensToTemplateCSS } from "@/themes/utils";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import {
   createBlueprintFromIndustry,

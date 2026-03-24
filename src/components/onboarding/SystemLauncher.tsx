@@ -511,16 +511,15 @@ export const SystemLauncher = ({
         // Ensure it's React-compatible (wrap HTML if needed)
         const reactResult = (cleaned.includes('import ') || cleaned.includes('export default'))
           ? { code: cleaned, css: '' }
-          : getTemplateReactCodeWithCSS({ code: cleaned, title: selectedTemplate.name });
+          : getTemplateReactCodeWithCSS({ code: cleaned, title: selectedTemplate.name }, themeId);
         const fallbackCSS = themeTokensToCSSRoot(canonicalTokens);
+        const themeTemplateCSS = themeTokensToTemplateCSS(canonicalTokens);
         const fallbackVfsFiles: Record<string, string> = {
           '/src/App.tsx': reactResult.code,
           '/src/main.tsx': `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
           '/src/index.css': fallbackCSS,
+          '/src/template.css': reactResult.css ? themeTemplateCSS + '\n' + reactResult.css : themeTemplateCSS,
         };
-        if (reactResult.css) {
-          fallbackVfsFiles['/src/template.css'] = reactResult.css;
-        }
         navigate("/web-builder", {
           state: {
             vfsFiles: fallbackVfsFiles,

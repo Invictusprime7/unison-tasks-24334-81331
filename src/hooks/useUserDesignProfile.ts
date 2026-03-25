@@ -7,13 +7,28 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import {
-  UserDesignProfile,
-  buildUserDesignProfile,
-  designProfileToPromptContext,
-  extractDesignPatterns,
-  DesignPattern,
-} from '@/utils/designPatternExtractor';
+// Inline type stubs (designPatternExtractor infrastructure stripped for rebuild)
+interface DesignPattern {
+  type: string;
+  value: string;
+  frequency: number;
+}
+
+interface UserDesignProfile {
+  dominantStyle: 'light' | 'dark' | 'mixed' | 'minimal' | 'colorful';
+  colorPreferences: string[];
+  fontPreferences: string[];
+  layoutPreferences: string[];
+  industryHints: string[];
+  patterns: DesignPattern[];
+  projectCount: number;
+}
+
+function extractDesignPatterns(_html: string): DesignPattern[] { return []; }
+function buildUserDesignProfile(_projects: { html: string; name: string }[]): UserDesignProfile {
+  return { dominantStyle: 'mixed', colorPreferences: [], fontPreferences: [], layoutPreferences: [], industryHints: [], patterns: [], projectCount: _projects.length };
+}
+function designProfileToPromptContext(_profile: UserDesignProfile): string { return ''; }
 
 // Local storage keys
 const LOCAL_TEMPLATES_KEY = 'webbuilder_templates';

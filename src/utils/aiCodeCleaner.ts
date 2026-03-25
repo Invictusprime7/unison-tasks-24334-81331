@@ -33,18 +33,18 @@ export function extractCleanCode(input: string): string {
       (a[1]?.length ?? 0) >= (b[1]?.length ?? 0) ? a : b
     );
     const code = best[1]?.trim();
-    if (code && code.length > 20) return stripMarkdownArtifacts(code);
+    if (code && code.length > 20) return fixTripleBraces(stripMarkdownArtifacts(code));
   }
 
   // 2. If content contains a full HTML document, strip everything before it
   const doctypeIdx = trimmed.search(/<!DOCTYPE\s+html/i);
   if (doctypeIdx >= 0) {
-    return trimmed.slice(doctypeIdx).trim();
+    return fixTripleBraces(trimmed.slice(doctypeIdx).trim());
   }
 
   const htmlTagIdx = trimmed.search(/<html[\s>]/i);
   if (htmlTagIdx >= 0) {
-    return trimmed.slice(htmlTagIdx).trim();
+    return fixTripleBraces(trimmed.slice(htmlTagIdx).trim());
   }
 
   // 3. If content starts with non-code text before a React import statement
@@ -52,7 +52,7 @@ export function extractCleanCode(input: string): string {
   if (importIdx > 0) {
     const textBefore = trimmed.slice(0, importIdx);
     if (looksLikeProse(textBefore)) {
-      return trimmed.slice(importIdx).trim();
+      return fixTripleBraces(trimmed.slice(importIdx).trim());
     }
   }
 
@@ -62,7 +62,7 @@ export function extractCleanCode(input: string): string {
     const textBefore = trimmed.slice(0, exportIdx);
     // Keep legitimate code preambles (imports/constants/types/comments)
     if (looksLikeProse(textBefore) && !hasCodePreamble(textBefore)) {
-      return trimmed.slice(exportIdx).trim();
+      return fixTripleBraces(trimmed.slice(exportIdx).trim());
     }
   }
 
@@ -73,7 +73,15 @@ export function extractCleanCode(input: string): string {
   }
 
   // 6. Already starts with code — strip any trailing markdown artifacts
-  return stripMarkdownArtifacts(trimmed);
+  return fixTripleBraces(stripMarkdownArtifacts(trimmed));
+}
+
+/**
+ * Fix triple-brace JSX: style={{{ ... }}} → style={{ ... }}
+ * AI models commonly generate an extra brace layer in JSX style/expression props.
+ */
+function fixTripleBraces(code: string): string {
+  return code.replace(/\{\{\{/g, '{{').replace(/\}\}\}/g, '}}');
 }
 
 /**

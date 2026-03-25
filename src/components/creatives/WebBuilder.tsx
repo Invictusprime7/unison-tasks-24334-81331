@@ -59,7 +59,6 @@ import { ModernFileExplorer } from "./code-editor/ModernFileExplorer";
 import { EditorTabs } from "./code-editor/EditorTabs";
 import { ModernEditorTabs } from "./code-editor/ModernEditorTabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { templateToVFSFiles, elementToVFSPatch } from "@/utils/templateToVFS";
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { htmlToJsx } from '@/utils/htmlToJsx';
 import { setDefaultBusinessId, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
@@ -70,19 +69,14 @@ import { IntentPipelineOverlay, type PipelineConfig } from "./web-builder/Intent
 import { DemoIntentOverlay, type DemoIntentOverlayConfig } from "./web-builder/DemoIntentOverlay";
 import { ResearchOverlay, type ResearchOverlayPayload } from "./web-builder/ResearchOverlay";
 import { decideIntentUx } from "@/runtime/intentUx";
-import SystemHealthPanel from "@/components/web-builder/SystemHealthPanel";
 import type { BusinessSystemType } from "@/data/templates/types";
 import { normalizeTemplateForCtaContract, type TemplateCtaAnalysis } from "@/utils/ctaContract";
 import { supabase } from "@/integrations/supabase/client";
-import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import { extractCleanCode, looksLikeCode, ensureReactImports } from "@/utils/aiCodeCleaner";
 import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
-import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';
-import { swapSectionVariant } from '@/utils/sectionSwapper';
-import type { VariantId } from '@/sections/variants/types';
 import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
@@ -90,12 +84,34 @@ import { generateUUID } from "@/utils/uuid";
 import { extractPageTabs, type PageTab } from "./web-builder/PageNavigationBar";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { BusinessSetupSuggestions } from "@/components/onboarding/BusinessSetupSuggestions";
-import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilder";
 import { useAIVFS } from '@/hooks/useAIVFS';
 import { getTemplateReactCodeWithCSS } from '@/data/templates/utils';
-import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
+
+// Inline stubs for stripped infrastructure (themes/variants/contracts removed)
+function extractEmbeddedCSS(code: string): { cleanCode: string; css: string } {
+  const styleMatch = code.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+  const css = styleMatch?.[1]?.trim() || '';
+  const cleanCode = code.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').trim();
+  return { cleanCode, css };
+}
+function templateToVFSFiles(code: string, _name: string): Record<string, string> {
+  return { '/src/App.tsx': code, '/src/template.css': '' };
+}
+function elementToVFSPatch(
+  currentFiles: Record<string, string>,
+  jsx: string,
+  _name: string
+): Record<string, string> {
+  const appKey = Object.keys(currentFiles).find(k => k.endsWith('App.tsx')) || '/src/App.tsx';
+  const appContent = currentFiles[appKey] || '';
+  const insertIdx = appContent.lastIndexOf('</div>');
+  const patched = insertIdx >= 0
+    ? appContent.slice(0, insertIdx) + jsx + '\n' + appContent.slice(insertIdx)
+    : appContent + '\n' + jsx;
+  return { ...currentFiles, [appKey]: patched };
+}
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -1304,7 +1320,12 @@ export default function App() {
   const publishStatusFromState = (location.state as { publishStatus?: string })?.publishStatus;
   const customDomainFromState = (location.state as { customDomain?: string })?.customDomain;
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
-  const systemsBuildContextFromState = (location.state as { systemsBuildContext?: SystemsBuildContext })?.systemsBuildContext ?? null;
+  const systemsBuildContextFromState = (location.state as { systemsBuildContext?: Record<string, unknown> })?.systemsBuildContext ?? null;
+  
+  // System Launcher VFS payload (generated site from 3-layer config)
+  const launchVFS = (location.state as { launchVFS?: Record<string, string> })?.launchVFS ?? null;
+  const launchBusinessName = (location.state as { launchBusinessName?: string })?.launchBusinessName ?? null;
+  const launchAIGenerated = (location.state as { launchAIGenerated?: boolean })?.launchAIGenerated ?? false;
   
   // Virtual file system for code editor
   const virtualFS = useVirtualFileSystem();
@@ -1401,55 +1422,7 @@ export default function App() {
     }
   }, [pageManifest]);
 
-  // Apply variant section swaps — replace section JSX blocks in VFS source code
-  useEffect(() => {
-    const activeVariants = templateCustomizer.activeVariants;
-    if (!activeVariants || Object.keys(activeVariants).length === 0) return;
-
-    const pageNode = vfsNodes.find(
-      (n: { type: string; path?: string }) => n.type === 'file' && n.path === activePagePath
-    ) as { id: string; content: string } | undefined;
-    if (!pageNode) return;
-
-    let source = pageNode.content;
-    let modified = false;
-
-    for (const [sectionId, variantId] of Object.entries(activeVariants)) {
-      try {
-        const variant = getVariantById(variantId);
-        if (!variant?.renderJSX) continue;
-
-        // Skip if this variant is already applied in source
-        if (source.includes(`data-variant="${variantId}"`)) continue;
-
-        const sectionInfo = templateCustomizer.sections.find(s => s.id === sectionId);
-        if (!sectionInfo) continue;
-        const tagName = sectionInfo.tagName || 'section';
-        const idx = sectionInfo.order ?? parseInt(sectionId.replace(/^\D+-/, ''), 10);
-        if (isNaN(idx)) continue;
-
-        // Find section boundaries in the JSX source
-        const bounds = findSectionBounds(source, tagName, idx);
-        if (!bounds) continue;
-
-        // Extract content and render the new variant JSX
-        const sectionJSX = source.substring(bounds.start, bounds.end);
-        const content = extractSectionContentFromJSX(sectionJSX);
-        const newJSX = variant.renderJSX(content);
-
-        // Splice the replacement into the source
-        source = source.substring(0, bounds.start) + newJSX + source.substring(bounds.end);
-        modified = true;
-        console.log('[WebBuilder] VFS variant swap applied:', sectionId, '→', variantId);
-      } catch (e) {
-        console.warn('[WebBuilder] VFS variant swap failed for', sectionId, e);
-      }
-    }
-
-    if (modified) {
-      vfsUpdateFileContent(pageNode.id, source);
-    }
-  }, [templateCustomizer.activeVariants, templateCustomizer.sections, vfsNodes, vfsUpdateFileContent, activePagePath]);
+  // Variant section swaps — disabled (infrastructure stripped for rebuild)
   
   // Re-sync manifest when preview code changes (iframe reloads)
   useEffect(() => {
@@ -1622,6 +1595,41 @@ export default function ${componentName}Page() {
   //   previewCode→Effect A→importFiles→nodes change→Effect B→setPreviewCode→repeat
   // Instead, code editor edits update VFS directly (which SimplePreview reads from VFS),
   // and explicit callbacks (onSave, file selection) update previewCode when needed.
+
+  // Hydrate VFS from System Launcher generated site (passed via router state)
+  const launchVFSLoadedRef = useRef(false);
+  useEffect(() => {
+    if (launchVFSLoadedRef.current || !launchVFS || Object.keys(launchVFS).length === 0) return;
+    launchVFSLoadedRef.current = true;
+
+    console.log('[WebBuilder] Hydrating VFS from System Launcher:', Object.keys(launchVFS), 'AI:', launchAIGenerated);
+
+    if (launchAIGenerated) {
+      // AI-generated files — use aiVFS orchestrator for dependency resolution
+      aiVFS.applyCode(launchVFS);
+    } else {
+      // Deterministic template — direct VFS import (no dep resolution needed)
+      vfsImportFiles(launchVFS);
+    }
+
+    const appCode = launchVFS['/src/App.tsx'] || '';
+    if (appCode) {
+      setEditorCode(appCode);
+      setPreviewCode(appCode);
+      lastSyncedCodeRef.current = appCode;
+    }
+
+    if (systemType) {
+      setActiveSystemType(systemType as BusinessSystemType);
+    }
+    if (launchBusinessName) {
+      setCurrentTemplateName(launchBusinessName);
+      setSaveProjectName(launchBusinessName);
+    }
+
+    setBuilderMode('preview');
+    toast.success(launchAIGenerated ? 'AI-generated system launched — your unique site is ready to edit' : 'System launched — your site is ready to edit');
+  }, [launchVFS]); // eslint-disable-line react-hooks/exhaustive-deps
   
   // Auto-save functionality
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -1852,7 +1860,7 @@ export default function ${componentName}Page() {
   });
 
   // AI context (page structure + backend state + business data + redirect pages)
-  const pageStructureContext = useMemo(() => buildPageStructureContext(previewCode), [previewCode]);
+  const pageStructureContext = useMemo(() => '', []);
   
   // Build redirect page context from VFS for in-builder AI awareness (React pages)
   const redirectPageContext = useMemo(() => {
@@ -2801,8 +2809,11 @@ export default ${componentName}Page;`;
       generatedTemplate?: any;
       templateName?: string;
       aesthetic?: string;
+      designPreset?: string;
       startInPreview?: boolean;
       systemType?: string;
+      preloadedIntents?: { intent: string }[];
+      businessId?: string;
     } | null;
 
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
@@ -2833,6 +2844,9 @@ export default ${componentName}Page;`;
 
         // Keep builder metadata in sync for VFS-first launches
         if (navState.templateName) setCurrentTemplateName(navState.templateName);
+        if (navState.designPreset || navState.aesthetic) {
+          setCurrentDesignPreset(navState.designPreset || navState.aesthetic || null);
+        }
         if (navState.systemType && !activeSystemType) {
           setActiveSystemType(navState.systemType as BusinessSystemType);
           console.log('[WebBuilder] Set active system type from VFS generation:', navState.systemType);
@@ -3105,33 +3119,10 @@ ${sectionsJsx}
     });
   }, [systemType, manifestIdFromState, vfsImportFiles]);
 
-  // Handle section layout swap from SectionLayoutPicker
-  const handleSwapSection = useCallback((sectionId: string, variantId: string) => {
-    console.log('[WebBuilder] Section swap:', sectionId, '→', variantId);
-    const currentCode = previewCode;
-    if (!currentCode) {
-      toast.error('No template loaded to swap sections');
-      return;
-    }
-
-    const swappedCode = swapSectionVariant(currentCode, sectionId, variantId as VariantId);
-    if (swappedCode === currentCode) {
-      toast.error('Could not swap section — variant or section not found');
-      return;
-    }
-
-    setEditorCode(swappedCode);
-    setPreviewCode(swappedCode);
-
-    // Sync to VFS
-    const files = templateToVFSFiles(swappedCode, currentTemplateName || 'Untitled');
-    vfsImportFiles(files);
-
-    const variant = getVariantById(variantId as VariantId);
-    toast.success(`Swapped ${sectionId} → ${variant?.name || variantId}`, {
-      description: 'Section layout updated, theme preserved',
-    });
-  }, [previewCode, currentTemplateName, vfsImportFiles]);
+  // Handle section layout swap — disabled (infrastructure stripped for rebuild)
+  const handleSwapSection = useCallback((_sectionId: string, _variantId: string) => {
+    toast.error('Section swap unavailable — infrastructure being rebuilt');
+  }, []);
 
   // Handle saving current template
   // Helper to get final TSX with customizer overrides baked in

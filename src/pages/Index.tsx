@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 import { AlertCircle, Zap } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/use-toast";
-import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
 import { 
   NavigationBar,
   HeroSection, 
@@ -17,6 +16,10 @@ import {
   FooterSection,
   type RecentProject
 } from "@/components/home/sections";
+import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
+import type { LaunchConfig } from "@/types/launchConfig";
+import { generateSiteVFS, getBusinessName } from "@/utils/siteGenerator";
+import { generateAILaunchSite } from "@/services/aiLaunchService";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -125,6 +128,52 @@ const Index = () => {
   const handleStartLauncher = () => {
     setLauncherOpen(true);
   };
+
+  const handleLaunch = useCallback(async (config: LaunchConfig) => {
+    console.log('[SystemLauncher] Launch config:', config);
+
+    if (config.buildMode === 'ai-enhanced') {
+      // AI-enhanced path — call systems-build edge function
+      console.log('[SystemLauncher] AI-enhanced mode — calling AI generation');
+      try {
+        const result = await generateAILaunchSite(config, (progress) => {
+          console.log('[SystemLauncher] AI progress:', progress.stage, progress.message);
+        });
+
+        setLauncherOpen(false);
+
+        navigate('/web-builder', {
+          state: {
+            launchVFS: result.files,
+            launchSystemType: config.blueprint.systemType,
+            launchBusinessName: result.businessName,
+            launchAIGenerated: result.aiGenerated,
+            systemType: config.blueprint.systemType,
+            systemName: result.businessName,
+          },
+        });
+      } catch (err) {
+        // Re-throw so SystemLauncher shows the error
+        throw err;
+      }
+    } else {
+      // Fast-launch path — deterministic template generation
+      setLauncherOpen(false);
+
+      const launchVFS = generateSiteVFS(config);
+      const businessName = getBusinessName(config.blueprint.industry);
+
+      navigate('/web-builder', {
+        state: {
+          launchVFS,
+          launchSystemType: config.blueprint.systemType,
+          launchBusinessName: businessName,
+          systemType: config.blueprint.systemType,
+          systemName: businessName,
+        },
+      });
+    }
+  }, [navigate]);
 
   const handleConnectIntegration = async (integrationId: string, apiKey: string) => {
     if (!user) {
@@ -290,8 +339,12 @@ const Index = () => {
       {/* Footer */}
       <FooterSection />
 
-      {/* System Launcher Wizard — Industry → Template → Theme */}
-      <SystemLauncher open={launcherOpen} onOpenChange={setLauncherOpen} />
+      {/* System Launcher Wizard */}
+      <SystemLauncher
+        open={launcherOpen}
+        onClose={() => setLauncherOpen(false)}
+        onLaunch={handleLaunch}
+      />
     </div>
   );
 };

@@ -149,6 +149,7 @@ const BodySchema = z.object({
     cardForeground: z.string(),
     border: z.string(),
   }).optional(),
+  sectionVariantDirective: z.string().max(50000).optional(),
   // User Design Profile
   userDesignProfile: z.object({
     projectCount: z.number().optional(),
@@ -630,6 +631,9 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
     
     // Light sanitization for mostly-valid JSX
     let sanitized = cleaned;
+    // Fix triple-brace JSX: style={{{ ... }}} → style={{ ... }}
+    sanitized = sanitized.replace(/\{\{\{/g, '{{');
+    sanitized = sanitized.replace(/\}\}\}/g, '}}');
     sanitized = sanitized.replace(/<!--([\s\S]*?)-->/g, '{/* $1 */}');
     sanitized = sanitized.replace(/\bclass="/g, 'className="');
     sanitized = sanitized.replace(/\bfor="/g, 'htmlFor="');
@@ -683,7 +687,7 @@ serve(async (req) => {
       );
     }
 
-    const { blueprint, userPrompt, enhanceWithAI: _enhanceWithAI, templateId, templateHtml, variantMode, variationSeed, outputFormat, aestheticId, aestheticLabel, aestheticStyleDirective, aestheticCSSDirective, aestheticGenerationDirective, aestheticColorTokens: rawColorTokens, userDesignProfile } = parsed.data;
+    const { blueprint, userPrompt, enhanceWithAI: _enhanceWithAI, templateId, templateHtml, variantMode, variationSeed, outputFormat, aestheticId, aestheticLabel, aestheticStyleDirective, aestheticCSSDirective, aestheticGenerationDirective, aestheticColorTokens: rawColorTokens, sectionVariantDirective, userDesignProfile } = parsed.data;
 
     // Industry-aware color variation: override static theme tokens with
     // industry-specific palette when both aestheticId and industry are known
@@ -766,6 +770,7 @@ Generate a site that matches the user's established design preferences while bei
 
 ## 🎨 COLOR PALETTE: "${aestheticLabel || aestheticId || 'default'}" (MANDATORY)
 Use the exact CSS color variables below. Do NOT substitute with different colors.
+${aestheticStyleDirective ? `\n## 🎨 AESTHETIC STYLE DIRECTIVE ("${aestheticLabel || aestheticId}"):\n${aestheticStyleDirective}\n` : ''}
 ${aestheticGenerationDirective ? `\n## 🎨 THEME DESIGN RULES ("${aestheticLabel || aestheticId}"):\n${aestheticGenerationDirective}\n` : ''}
 ${aestheticCSSDirective ? `### Theme CSS Utilities (INJECT INTO index.css alongside layout CSS):\n\`\`\`css\n${aestheticCSSDirective}\n\`\`\`\n` : ''}
 ## 📐 LAYOUT & STRUCTURE (FROM INDUSTRY MATRIX — FOLLOW EXACTLY):
@@ -835,7 +840,7 @@ Typography (LOAD VIA GOOGLE FONTS):
 - Body: ${blueprint.brand.typography?.body || "Inter"} (weight: normal)
 
 ${aestheticBlock}
-
+${sectionVariantDirective ? `\n${sectionVariantDirective}\n` : ''}
 ${sectionStructure ? `\n${sectionStructure}` : ''}
 ${intentWiring ? `\n${intentWiring}` : ''}
 
@@ -935,22 +940,34 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
         // If JSON parsing fails, try to extract JSON from mixed content
         console.warn("[systems-build] Failed to parse React JSON, attempting extraction:", parseError);
         
-        // Try to find JSON in the response
-        const jsonMatch = filesJson.match(/\{[\s\S]*"files"\s*:\s*\{[\s\S]*\}[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            const extracted = JSON.parse(jsonMatch[0]);
-            return new Response(
-              JSON.stringify({
-                files: extracted.files,
-                entryPoint: extracted.entryPoint || "src/App.tsx",
-                framework: "react",
-                buildTool: "vite",
-                _meta: { ai_generated: true, outputFormat: "react", recovered: true },
-              }),
-              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-          } catch { /* fall through */ }
+        // Try to find JSON in the response — find start of { containing "files" and try progressive parsing
+        let extracted: { files: Record<string, string>; entryPoint?: string } | null = null;
+        const filesIdx = filesJson.indexOf('"files"');
+        if (filesIdx >= 0) {
+          // Walk backward to find the opening brace
+          let startIdx = filesIdx;
+          while (startIdx > 0 && filesJson[startIdx] !== '{') startIdx--;
+          // Try parsing progressively from the end of the string
+          for (let endIdx = filesJson.length; endIdx > filesIdx; endIdx--) {
+            if (filesJson[endIdx - 1] !== '}') continue;
+            try {
+              extracted = JSON.parse(filesJson.substring(startIdx, endIdx));
+              break;
+            } catch { /* try shorter */ }
+          }
+        }
+        if (extracted?.files) {
+          const sanitizedExtracted = sanitizeReactFiles(extracted.files);
+          return new Response(
+            JSON.stringify({
+              files: sanitizedExtracted,
+              entryPoint: extracted.entryPoint || "src/App.tsx",
+              framework: "react",
+              buildTool: "vite",
+              _meta: { ai_generated: true, outputFormat: "react", recovered: true },
+            }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
         
         // If content is raw HTML, convert to native JSX React component
@@ -960,9 +977,9 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
         if (looksLikeRawHtml) {
           console.warn("[systems-build] Raw HTML detected, converting to native JSX component");
           
-          const convertedFiles = {
+          const convertedFiles = sanitizeReactFiles({
             "src/App.tsx": htmlToReactComponent(filesJson),
-          };
+          });
           
           return new Response(
             JSON.stringify({
@@ -977,9 +994,10 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
         }
         
         // Truly unknown format — wrap as plain React
+        const unknownFiles = sanitizeReactFiles({ "src/App.tsx": filesJson });
         return new Response(
           JSON.stringify({
-            files: { "src/App.tsx": filesJson },
+            files: unknownFiles,
             entryPoint: "src/App.tsx",
             framework: "react",
             buildTool: "vite",
@@ -1091,7 +1109,7 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
 
     // Use gemini-2.5-flash for speed (pro times out on large prompts)
-    const model = variantMode ? "google/gemini-2.5-flash" : "google/gemini-2.5-flash";
+    const model = "google/gemini-2.5-flash";
     console.log(`[systems-build] Calling AI gateway with model=${model}`);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {

@@ -13,10 +13,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { THEME_PRESETS as PRESETS } from '@/components/onboarding/themePresets';
 import { Loader2, Sparkles, Plus, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
+const PRESETS = [
+  { id: 'modern', label: 'Modern', icon: '🎨', description: 'Clean modern design' },
+] as const;
 const THEME_PRESETS: Record<string, string> = Object.fromEntries(
   PRESETS.map(t => [t.id, t.description])
 );

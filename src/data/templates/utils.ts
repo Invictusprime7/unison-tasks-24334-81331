@@ -6,12 +6,8 @@
  * TypeScript/React from start to finish — no HTML conversion.
  */
 
-import { getCompositionById } from '@/sections/templates';
-import { compositionToReactCode } from '@/sections/PageRenderer';
 import { ensureReactImports } from '@/utils/aiCodeCleaner';
 import { htmlDocToReactComponentWithCSS } from '@/utils/htmlToJsx';
-import { getCanonicalTheme } from '@/themes/canonical';
-import { themeTokensToTemplateCSS } from '@/themes/utils';
 
 /**
  * Extracts <style> block content from HTML body strings
@@ -266,19 +262,7 @@ export const wrapInHtmlDoc = wrapInReactComponent;
  * Gets VFS-ready React code + extracted CSS for a template.
  * Returns { code, css } where css should go into /src/template.css.
  */
-export const getTemplateReactCodeWithCSS = (template: { code: string; id?: string; title?: string; name?: string }, themeId?: string): { code: string; css: string } => {
-  // Check for section-registry composition first
-  if (template.id) {
-    const composition = getCompositionById(template.id);
-    if (composition) {
-      // Resolve canonical theme tokens for CSS injection
-      const resolvedThemeId = themeId || 'modern';
-      const tokens = getCanonicalTheme(resolvedThemeId).tokens;
-      const css = themeTokensToTemplateCSS(tokens);
-      return { code: compositionToReactCode(composition, tokens, resolvedThemeId), css };
-    }
-  }
-
+export const getTemplateReactCodeWithCSS = (template: { code: string; id?: string; title?: string; name?: string }, _themeId?: string): { code: string; css: string } => {
   // Strip AI reasoning blocks before any processing
   let code = template.code.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
 

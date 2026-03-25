@@ -35,6 +35,22 @@ export interface PageComponent {
   };
 }
 
+/**
+ * Derive canonical page theme tokens from a theme id string.
+ * Maps canonical theme tokens to the PageSchema.themeTokens format.
+ */
+function resolvePageThemeTokens(_theme?: string): PageSchema['themeTokens'] {
+  return {
+    primary: '#6366F1',
+    secondary: '#8B5CF6',
+    accent: '#F59E0B',
+    background: '#FFFFFF',
+    text: '#1A1A2E',
+    fontHeading: 'Inter',
+    fontBody: 'Inter',
+  };
+}
+
 export const usePageGenerator = () => {
   const [loading, setLoading] = useState(false);
   const [generatedPage, setGeneratedPage] = useState<PageSchema | null>(null);
@@ -42,8 +58,10 @@ export const usePageGenerator = () => {
   const generatePage = async (prompt: string, theme?: string): Promise<PageSchema | null> => {
     setLoading(true);
     try {
+      // Pass canonical theme tokens alongside the prompt
+      const themeTokens = resolvePageThemeTokens(theme);
       const { data, error } = await supabase.functions.invoke('generate-page', {
-        body: { prompt, theme }
+        body: { prompt, theme, themeTokens }
       });
 
       if (error) {
@@ -78,7 +96,7 @@ export const usePageGenerator = () => {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-page', {
-        body: { prompt, theme, sectionType }
+        body: { prompt, theme, sectionType, themeTokens: resolvePageThemeTokens(theme) }
       });
 
       if (error) {

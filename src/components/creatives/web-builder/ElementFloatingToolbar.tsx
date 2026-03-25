@@ -23,7 +23,6 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import type { BusinessSystemType } from '@/data/templates/types';
 
 interface SelectedElement {
@@ -59,7 +58,7 @@ interface ElementFloatingToolbarProps {
   /** Business system type for context-aware AI edits (e.g. 'salon', 'restaurant') */
   systemType?: BusinessSystemType | null;
   /** Full business blueprint from systems-build for richer AI context */
-  systemsBuildContext?: SystemsBuildContext | null;
+  systemsBuildContext?: Record<string, unknown> | null;
 }
 
 const FONT_OPTIONS = [
@@ -78,7 +77,7 @@ interface InlineAIPanelProps {
   onAIEditComplete?: (selector: string, html: string) => boolean | Promise<boolean>;
   onRequestAI?: (selector: string) => void;
   systemType?: BusinessSystemType | null;
-  systemsBuildContext?: SystemsBuildContext | null;
+  systemsBuildContext?: Record<string, unknown> | null;
 }
 
 const InlineAIPanel: React.FC<InlineAIPanelProps> = ({

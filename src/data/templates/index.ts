@@ -26,21 +26,11 @@ export { wrapInReactComponent, wrapInReactComponentWithCSS, wrapInHtmlDoc, getTe
 
 import type { LayoutCategory, LayoutTemplate, BusinessSystemType } from './types';
 import { businessSystems } from './types';
-import { ALL_COMPOSITIONS } from '@/sections/templates';
-import { compositionToReactCode } from '@/sections/PageRenderer';
 
 /**
- * All layout templates — derived from section registry compositions
+ * All layout templates — placeholder (infrastructure stripped for rebuild)
  */
-export const layoutTemplates: LayoutTemplate[] = ALL_COMPOSITIONS.map(comp => ({
-  id: comp.id,
-  name: comp.name,
-  category: comp.category as LayoutCategory,
-  description: comp.description,
-  code: compositionToReactCode(comp),
-  systemType: comp.systemType as BusinessSystemType | undefined,
-  tags: comp.tags,
-}));
+export const layoutTemplates: LayoutTemplate[] = [];
 
 /**
  * Get templates filtered by category

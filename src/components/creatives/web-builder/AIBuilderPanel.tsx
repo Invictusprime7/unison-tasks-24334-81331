@@ -48,7 +48,6 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { BusinessSystemType } from '@/data/templates/types';
-import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 
@@ -170,8 +169,8 @@ interface AIBuilderPanelProps {
   backendStateContext?: string | null;
   /** Real business data (products, services, hours, etc.) */
   businessDataContext?: string | null;
-  /** Structured business blueprint from systems-build (brand, palette, intents, sections) */
-  systemsBuildContext?: SystemsBuildContext | null;
+  /** Structured business blueprint from systems-build */
+  systemsBuildContext?: Record<string, unknown> | null;
   /** Current VFS file list + dependency summary for AI awareness */
   vfsContext?: string | null;
   /** Full VFS file map for component-level site analysis */
@@ -809,7 +808,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // Build theme/styling context from Systems AI blueprint so in-builder edits stay consistent
       const themeContextBlock = (() => {
         if (!systemsBuildContext) return '';
-        const { brand, design, identity } = systemsBuildContext;
+        const ctx = systemsBuildContext as Record<string, any>;
+        const brand = ctx.brand;
+        const design = ctx.design;
+        const identity = ctx.identity;
         const lines: string[] = ['[🎨 Theme & Styling — Match this design language for all new elements]'];
         if (brand?.business_name) lines.push(`Business: ${brand.business_name}`);
         if (brand?.tone) lines.push(`Tone: ${brand.tone}`);

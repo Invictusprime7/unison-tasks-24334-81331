@@ -650,23 +650,12 @@ export function componentsForTemplateVariant(
 
 // Helper functions for generating default configurations
 function defaultBrandProfile(templateType: TemplateType, input: AiDesignInput): BrandProfile {
-  const industryColors: Record<string, { primary: string; secondary: string; accent: string }> = {
-    portfolio: { primary: "#1a1a1a", secondary: "#4a4a4a", accent: "#0066ff" },
-    restaurant: { primary: "#2c1810", secondary: "#8b4513", accent: "#ff6b35" },
-    clothingBrand: { primary: "#000000", secondary: "#333333", accent: "#e63946" },
-    landingPage: { primary: "#4361ee", secondary: "#3f37c9", accent: "#f72585" },
-    contractorServices: { primary: "#264653", secondary: "#2a9d8f", accent: "#e76f51" },
-    digitalCreator: { primary: "#6a4c93", secondary: "#8ac926", accent: "#ffca3a" }
-  };
-
-  const colors = industryColors[templateType] || { primary: "#1a1a1a", secondary: "#4a4a4a", accent: "#0066ff" };
-
   return {
     name: input.brandName || "Brand Name",
     industry: templateType,
-    primaryColor: colors.primary,
-    secondaryColor: colors.secondary,
-    accentColor: colors.accent,
+    primaryColor: "#6366F1",
+    secondaryColor: "#8B5CF6",
+    accentColor: "#F59E0B",
     fonts: {
       heading: "Inter",
       body: "Inter",

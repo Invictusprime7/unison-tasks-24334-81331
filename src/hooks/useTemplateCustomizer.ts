@@ -9,8 +9,9 @@
  */
 
 import { useState, useCallback, useRef, useMemo } from 'react';
-import type { VariantId, ActiveVariantMap } from '@/sections/variants';
-import { THEME_PRESETS as CANONICAL_PRESETS } from '@/components/onboarding/themePresets';
+
+type VariantId = string;
+type ActiveVariantMap = Record<string, string>;
 
 // ============================================================================
 // Types
@@ -118,25 +119,18 @@ const DEFAULT_SPACING: SpacingConfig = {
   elementGap: '24px',
 };
 
-export const THEME_PRESETS: ThemePreset[] = CANONICAL_PRESETS.map(t => ({
-  id: t.id,
-  name: t.label,
-  colors: {
-    primary: t.palette.accent,
-    secondary: t.palette.accent2 || t.palette.accent,
-    accent: t.palette.accent2 || t.palette.accent,
-    background: t.palette.bg,
-    surface: t.palette.bg,
-    text: t.palette.fg,
-    textMuted: t.palette.fg + '99',
-    border: t.palette.fg + '22',
+export const THEME_PRESETS: ThemePreset[] = [
+  {
+    id: 'modern',
+    name: 'Modern',
+    colors: {
+      primary: '#6366F1', secondary: '#8B5CF6', accent: '#F59E0B',
+      background: '#FFFFFF', surface: '#FFFFFF', text: '#1A1A2E',
+      textMuted: '#1A1A2E99', border: '#1A1A2E22',
+    },
+    typography: { headingFont: 'Inter, sans-serif', bodyFont: 'Inter, sans-serif', headingWeight: '700' },
   },
-  typography: {
-    headingFont: `${t.typography.headingFont}, sans-serif`,
-    bodyFont: `${t.typography.bodyFont}, sans-serif`,
-    headingWeight: t.typography.headingWeight,
-  },
-}));
+];
 
 const GOOGLE_FONTS = [
   'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Raleway',

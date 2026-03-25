@@ -962,7 +962,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             }
           }
 
-          response = await supabase.functions.invoke('ai-code-assistant', {
+          response = await supabase.functions.invoke('ai-editor', {
             body: {
               messages: [{ role: 'user', content: promptForAI }],
               // Always use template-react for React projects (even surgical edits)

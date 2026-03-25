@@ -139,7 +139,7 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         '5. Make ONLY the requested change — do not alter other aspects of the element.',
       ].join('\n');
 
-      const { data, error: fnError } = await supabase.functions.invoke('ai-code-assistant', {
+      const { data, error: fnError } = await supabase.functions.invoke('ai-editor', {
         body: {
           messages: [{ role: 'user', content: surgicalPrompt }],
           mode: 'code',

@@ -35,6 +35,7 @@ import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
+import type { PreviewStatus } from '@/types/launchConfig';
 
 // ============================================================================
 // Types
@@ -84,6 +85,8 @@ export interface VFSPreviewProps {
   selectionActivationKey?: number;
   /** Callback when an element is selected */
   onElementSelect?: (elementData: any) => void;
+  /** Preview origin status for transparency banner */
+  previewStatus?: PreviewStatus | null;
 }
 
 export interface VFSPreviewHandle {
@@ -187,6 +190,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   enableSelection = false,
   selectionActivationKey = 0,
   onElementSelect,
+  previewStatus = null,
 }, ref) => {
   // State - default to 'sandpack' — no HTML fallback
   const [backend, setBackend] = useState<PreviewBackend>('sandpack');
@@ -242,9 +246,17 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [files]);
   
   // Prepare Sandpack files: flatten /src/ paths, process imports, add shims
+  // In strict mode (launcher output), missing entrypoints throw instead of injecting defaults
   const sandpackFiles = useMemo(() => {
-    return prepareSandpackFiles(files);
-  }, [files]);
+    try {
+      return prepareSandpackFiles(files, { strict: previewStatus?.strictMode ?? false });
+    } catch (err) {
+      console.error('[VFSPreview] Strict sandpack prep failed:', err);
+      onError?.(err instanceof Error ? err.message : 'Sandpack file preparation failed');
+      // Return minimal valid files so Sandpack doesn't crash entirely
+      return prepareSandpackFiles(files);
+    }
+  }, [files, previewStatus?.strictMode, onError]);
   
   // Determine Sandpack entry file (from prepared/flattened files)
   const sandpackEntryFile = useMemo(() => {
@@ -526,6 +538,28 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         <div className="px-3 py-2 bg-destructive/10 text-destructive text-sm flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           {dockerService.error}
+        </div>
+      )}
+
+      {/* Preview origin status banner */}
+      {previewStatus && (
+        <div className={cn(
+          'px-3 py-1.5 text-xs font-medium flex items-center gap-2 border-b border-border',
+          previewStatus.origin === 'ai-generated' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+          previewStatus.origin === 'deterministic-fallback' && 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+          previewStatus.origin === 'sandpack-default-app' && 'bg-red-500/10 text-red-700 dark:text-red-400',
+          previewStatus.origin === 'docker-runtime' && 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
+        )}>
+          {previewStatus.origin === 'ai-generated' && <><Zap className="h-3 w-3" /> AI Generated</>}
+          {previewStatus.origin === 'deterministic-fallback' && <><AlertCircle className="h-3 w-3" /> Deterministic Fallback</>}
+          {previewStatus.origin === 'sandpack-default-app' && <><AlertCircle className="h-3 w-3" /> Sandpack Default App</>}
+          {previewStatus.origin === 'docker-runtime' && <><Server className="h-3 w-3" /> Docker Full-Stack</>}
+          <span className="text-muted-foreground ml-1">
+            {previewStatus.backend === 'sandpack' ? '(Frontend Only)' : `(${previewStatus.backend})`}
+          </span>
+          {previewStatus.errors.length > 0 && (
+            <span className="ml-auto text-destructive">{previewStatus.errors.length} error(s)</span>
+          )}
         </div>
       )}
       

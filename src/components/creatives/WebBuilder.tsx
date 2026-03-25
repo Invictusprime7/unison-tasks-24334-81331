@@ -70,6 +70,7 @@ import { DemoIntentOverlay, type DemoIntentOverlayConfig } from "./web-builder/D
 import { ResearchOverlay, type ResearchOverlayPayload } from "./web-builder/ResearchOverlay";
 import { decideIntentUx } from "@/runtime/intentUx";
 import type { BusinessSystemType } from "@/data/templates/types";
+import type { PreviewStatus } from "@/types/launchConfig";
 import { normalizeTemplateForCtaContract, type TemplateCtaAnalysis } from "@/utils/ctaContract";
 import { supabase } from "@/integrations/supabase/client";
 import { extractCleanCode, looksLikeCode, ensureReactImports } from "@/utils/aiCodeCleaner";
@@ -1326,6 +1327,8 @@ export default function App() {
   const launchVFS = (location.state as { launchVFS?: Record<string, string> })?.launchVFS ?? null;
   const launchBusinessName = (location.state as { launchBusinessName?: string })?.launchBusinessName ?? null;
   const launchAIGenerated = (location.state as { launchAIGenerated?: boolean })?.launchAIGenerated ?? false;
+  const launchError = (location.state as { launchError?: string | null })?.launchError ?? null;
+  const launchRuntimeManifest = (location.state as { launchRuntimeManifest?: import('@/types/launchConfig').LaunchRuntimeManifest })?.launchRuntimeManifest ?? null;
   
   // Virtual file system for code editor
   const virtualFS = useVirtualFileSystem();
@@ -1340,7 +1343,14 @@ export default function App() {
   } = virtualFS;
   
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
-  const aiVFS = useAIVFS(virtualFS, simplePreviewRef);
+  // Uses the active preview ref: livePreviewRef when useReactPreview is true (always),
+  // simplePreviewRef otherwise. Previously this was hardcoded to simplePreviewRef,
+  // causing AI output to refresh the unmounted preview handle.
+  const activePreviewRef = useMemo(
+    () => (useReactPreview ? livePreviewRef : simplePreviewRef),
+    [useReactPreview],
+  );
+  const aiVFS = useAIVFS(virtualFS, activePreviewRef as React.RefObject<any>);
   
   // Site builder orchestrator — provides site graph navigation, brand system, and intent routing
   // Uses project/business IDs from location state; no-ops if unavailable
@@ -1598,11 +1608,34 @@ export default function ${componentName}Page() {
 
   // Hydrate VFS from System Launcher generated site (passed via router state)
   const launchVFSLoadedRef = useRef(false);
+  const [previewStatus, setPreviewStatus] = useState<PreviewStatus | null>(null);
+
   useEffect(() => {
-    if (launchVFSLoadedRef.current || !launchVFS || Object.keys(launchVFS).length === 0) return;
+    if (launchVFSLoadedRef.current || !launchVFS || Object.keys(launchVFS).length === 0) {
+      // If AI failed with empty files, show the error
+      if (!launchVFSLoadedRef.current && launchError && (!launchVFS || Object.keys(launchVFS || {}).length === 0)) {
+        launchVFSLoadedRef.current = true;
+        setPreviewStatus({
+          origin: 'deterministic-fallback',
+          backend: 'sandpack',
+          strictMode: true,
+          errors: [launchError],
+        });
+        toast.error(`AI generation failed: ${launchError}`);
+      }
+      return;
+    }
     launchVFSLoadedRef.current = true;
 
     console.log('[WebBuilder] Hydrating VFS from System Launcher:', Object.keys(launchVFS), 'AI:', launchAIGenerated);
+
+    // Set preview status for transparency
+    setPreviewStatus({
+      origin: launchAIGenerated ? 'ai-generated' : 'deterministic-fallback',
+      backend: launchRuntimeManifest?.previewMode === 'docker' ? 'docker' : 'sandpack',
+      strictMode: launchAIGenerated,
+      errors: launchError ? [launchError] : [],
+    });
 
     if (launchAIGenerated) {
       // AI-generated files — use aiVFS orchestrator for dependency resolution
@@ -2613,13 +2646,9 @@ export default function ${componentName}Page() {
         } : undefined,
       });
       
-      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
+      const { data, error } = await supabase.functions.invoke("ai-page-generator", {
         body: {
           messages: [{ role: "user", content: pagePrompt }],
-          mode: "template-react",
-          templateAction: "full-control",
-          editMode: false,
-          navPageGen: true,
           systemType: activeSystemType ?? undefined,
           navPageName: pageName,
           navLabel: navLabel,
@@ -4657,6 +4686,7 @@ ${sectionsJsx}
                       enableSelection={builderMode === 'select'}
                       selectionActivationKey={editActivationKey}
                       onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
+                      previewStatus={previewStatus}
                       onNavigate={(path) => {
                         const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
                         if (pageName !== 'index') {
@@ -4852,6 +4882,7 @@ ${sectionsJsx}
                         enableSelection={builderMode === 'select'}
                         selectionActivationKey={editActivationKey}
                         onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
+                        previewStatus={previewStatus}
                         onNavigate={(path) => {
                           const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
                           if (pageName !== 'index') {

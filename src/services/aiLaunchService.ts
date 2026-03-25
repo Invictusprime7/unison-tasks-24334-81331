@@ -2,10 +2,10 @@
  * AI Launch Service
  *
  * Bridges the SystemLauncher's 3-layer LaunchConfig directly to the
- * ai-code-assistant edge function — the single source of truth for
+ * ai-template-generator edge function — the single source of truth for
  * AI-generated template output in build mode.
  *
- * Pipeline: LaunchConfig → ai-code-assistant (template-react) → VFS files
+ * Pipeline: LaunchConfig → ai-template-generator (template-react) → VFS files
  *
  * The deterministic siteGenerator output is passed as a content reference
  * so the AI uses it as a quality/structure baseline while generating a
@@ -17,6 +17,7 @@ import type {
   LaunchConfig,
   TemplateStructure,
   ThemeSkin,
+  LaunchRuntimeManifest,
 } from '@/types/launchConfig';
 import type { ThemeIdentity } from '@/themes/identities.stylex';
 import { THEME_IDENTITY_META } from '@/themes/identities.stylex';
@@ -34,6 +35,10 @@ export interface AILaunchResult {
   aiGenerated: boolean;
   /** Business name resolved for the industry */
   businessName: string;
+  /** Error message if generation failed (no silent recovery) */
+  error?: string;
+  /** Runtime manifest describing what preview engine to use */
+  runtimeManifest: LaunchRuntimeManifest;
 }
 
 export interface AILaunchProgress {
@@ -274,7 +279,7 @@ function buildSectionDirective(structure: TemplateStructure): string {
 }
 
 // ============================================================================
-// Prompt Builder — constructs the user message for ai-code-assistant
+// Prompt Builder — constructs the user message for ai-template-generator
 // ============================================================================
 
 /**
@@ -381,17 +386,86 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
 }
 
 // ============================================================================
-// Main API — single source of truth: ai-code-assistant template-react
+// File Normalizer — ensures all required entrypoints exist before preview
 // ============================================================================
 
 /**
- * Generate a site by calling ai-code-assistant directly in template-react mode.
+ * Normalizes AI-generated files to ensure all required React entrypoints exist.
+ * Uses deterministic VFS as a source for missing scaffolding files.
+ * Throws if the critical App entry is missing (no silent recovery).
+ */
+function normalizeLaunchFiles(
+  files: Record<string, string>,
+  deterministicVFS: Record<string, string>,
+): Record<string, string> {
+  const out = { ...files };
+
+  // Ensure /src/App.tsx exists
+  if (!out['/src/App.tsx']) {
+    const appEntry = Object.keys(out).find(p => /app\.(tsx|jsx)$/i.test(p));
+    if (!appEntry) {
+      throw new Error('AI output missing App entry — cannot normalize');
+    }
+    out['/src/App.tsx'] = out[appEntry];
+  }
+
+  // Fill in scaffolding from deterministic baseline
+  if (!out['/src/main.tsx'] && deterministicVFS['/src/main.tsx']) {
+    out['/src/main.tsx'] = deterministicVFS['/src/main.tsx'];
+  }
+  if (!out['/src/index.css'] && deterministicVFS['/src/index.css']) {
+    out['/src/index.css'] = deterministicVFS['/src/index.css'];
+  }
+
+  return out;
+}
+
+// ============================================================================
+// Runtime Manifest Builder
+// ============================================================================
+
+function buildRuntimeManifest(
+  files: Record<string, string>,
+  config: LaunchConfig,
+): LaunchRuntimeManifest {
+  const apiRoutes = Object.keys(files).filter(p =>
+    p.startsWith('/api/') || p.includes('/routes/') || p.includes('/server/'),
+  );
+  const envVars = Object.values(files)
+    .join('\n')
+    .match(/(?:import\.meta\.env|process\.env)\.([A-Z_]+)/g)
+    ?.map(m => m.replace(/^.+\./, '')) ?? [];
+  const integrations: string[] = [];
+  const allCode = Object.values(files).join('\n');
+  if (/supabase/i.test(allCode)) integrations.push('supabase');
+  if (/stripe/i.test(allCode)) integrations.push('stripe');
+  if (/inngest/i.test(allCode)) integrations.push('inngest');
+
+  const backendRequired = apiRoutes.length > 0 || integrations.length > 0;
+
+  return {
+    frontend: 'sandpack',
+    backendRequired,
+    apiRoutes,
+    envVars: [...new Set(envVars)],
+    integrations,
+    previewMode: backendRequired ? 'docker' : 'sandpack',
+  };
+}
+
+// ============================================================================
+// Main API — single source of truth: ai-template-generator template-react
+// ============================================================================
+
+/**
+ * Generate a site by calling ai-template-generator directly in template-react mode.
  *
- * ai-code-assistant is the SOURCE OF TRUTH for AI-generated template output.
+ * ai-template-generator is the SOURCE OF TRUTH for AI-generated template output.
  * The wizard's selections (industry, template, variant, theme) are mapped into
  * callerManaged mode parameters so the AI respects the user's exact choices.
  *
- * Falls back to the deterministic generator if the API call fails.
+ * In AI mode, failures are returned as errors — NOT silently replaced with
+ * deterministic templates. The caller must handle the error visibly.
  */
 export async function generateAILaunchSite(
   config: LaunchConfig,
@@ -418,8 +492,8 @@ export async function generateAILaunchSite(
   onProgress?.({ stage: 'generating', message: 'AI is creating your unique site...' });
 
   try {
-    // Call ai-code-assistant DIRECTLY — the single source of truth
-    const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
+    // Call ai-template-generator — the single source of truth for template generation
+    const { data, error } = await supabase.functions.invoke('ai-template-generator', {
       body: {
         messages: [{ role: 'user', content: userMessage }],
         mode: 'template-react',
@@ -437,16 +511,30 @@ export async function generateAILaunchSite(
     });
 
     if (error) {
-      console.error('[aiLaunchService] ai-code-assistant error:', error);
-      throw new Error(error.message || 'AI generation failed');
+      console.error('[aiLaunchService] ai-template-generator error:', error);
+      const errorMsg = error.message || 'AI edge function returned an error';
+      onProgress?.({ stage: 'error', message: errorMsg });
+      return {
+        files: {},
+        aiGenerated: false,
+        businessName,
+        error: errorMsg,
+        runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+      };
     }
 
-    // ai-code-assistant returns { content } with stringified JSON of files
+    // ai-template-generator returns { content } with stringified JSON of files
     const rawContent: string = data?.content ?? data?.code ?? '';
     if (!rawContent) {
-      console.warn('[aiLaunchService] Empty AI response, falling back to deterministic');
-      onProgress?.({ stage: 'processing', message: 'Using optimized template...' });
-      return { files: deterministicVFS, aiGenerated: false, businessName };
+      console.error('[aiLaunchService] Empty AI response — NOT falling back silently');
+      onProgress?.({ stage: 'error', message: 'AI returned empty response' });
+      return {
+        files: {},
+        aiGenerated: false,
+        businessName,
+        error: 'AI response was empty — no files generated',
+        runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+      };
     }
 
     onProgress?.({ stage: 'processing', message: 'Processing AI output...' });
@@ -454,49 +542,64 @@ export async function generateAILaunchSite(
     // Parse the multi-file JSON response
     const aiFiles = parseAIResponse(rawContent);
     if (!aiFiles) {
-      console.warn('[aiLaunchService] Could not parse AI response, falling back');
-      return { files: deterministicVFS, aiGenerated: false, businessName };
+      console.error('[aiLaunchService] Could not parse AI response');
+      onProgress?.({ stage: 'error', message: 'AI response could not be parsed' });
+      return {
+        files: {},
+        aiGenerated: false,
+        businessName,
+        error: 'AI response invalid — could not extract file map',
+        runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+      };
     }
 
     // Sanitize React files (fix common HTML-in-JSX issues)
     const sanitized = sanitizeReactFiles(aiFiles);
 
     // Normalize file paths — ensure /src/ prefix for Sandpack compatibility
-    const normalizedFiles: Record<string, string> = {};
+    const pathNormalized: Record<string, string> = {};
     for (const [path, content] of Object.entries(sanitized)) {
       const normalizedPath = path.startsWith('/') ? path : `/${path}`;
       const finalPath = normalizedPath.startsWith('/src/')
         ? normalizedPath
         : `/src/${normalizedPath.replace(/^\//, '')}`;
-      normalizedFiles[finalPath] = content;
+      pathNormalized[finalPath] = content;
     }
 
-    // Ensure we have an App.tsx entry point
-    if (!normalizedFiles['/src/App.tsx']) {
-      const appEntry = Object.keys(normalizedFiles).find(
-        p => p.toLowerCase().endsWith('app.tsx') || p.toLowerCase().endsWith('app.jsx'),
-      );
-      if (appEntry) {
-        normalizedFiles['/src/App.tsx'] = normalizedFiles[appEntry];
-      } else {
-        console.warn('[aiLaunchService] No App.tsx in AI output, falling back');
-        return { files: deterministicVFS, aiGenerated: false, businessName };
-      }
+    // Normalize entrypoints (App.tsx, main.tsx, index.css)
+    // Throws if critical App entry is missing — no silent recovery
+    let normalizedFiles: Record<string, string>;
+    try {
+      normalizedFiles = normalizeLaunchFiles(pathNormalized, deterministicVFS);
+    } catch (normErr) {
+      const errMsg = normErr instanceof Error ? normErr.message : 'Entrypoint normalization failed';
+      console.error('[aiLaunchService]', errMsg);
+      onProgress?.({ stage: 'error', message: errMsg });
+      return {
+        files: {},
+        aiGenerated: false,
+        businessName,
+        error: errMsg,
+        runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+      };
     }
 
-    // Ensure CSS exists
-    if (!normalizedFiles['/src/index.css'] && deterministicVFS['/src/index.css']) {
-      normalizedFiles['/src/index.css'] = deterministicVFS['/src/index.css'];
-    }
-
+    const runtimeManifest = buildRuntimeManifest(normalizedFiles, config);
     onProgress?.({ stage: 'complete', message: 'AI site generated!' });
 
-    return { files: normalizedFiles, aiGenerated: true, businessName };
+    return { files: normalizedFiles, aiGenerated: true, businessName, runtimeManifest };
   } catch (err) {
-    console.error('[aiLaunchService] AI generation failed, falling back to deterministic:', err);
-    onProgress?.({ stage: 'processing', message: 'Falling back to optimized template...' });
+    const errMsg = err instanceof Error ? err.message : 'AI generation failed';
+    console.error('[aiLaunchService] AI generation failed:', errMsg);
+    onProgress?.({ stage: 'error', message: errMsg });
 
-    return { files: deterministicVFS, aiGenerated: false, businessName };
+    return {
+      files: {},
+      aiGenerated: false,
+      businessName,
+      error: errMsg,
+      runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+    };
   }
 }
 
@@ -505,7 +608,7 @@ export async function generateAILaunchSite(
 // ============================================================================
 
 /**
- * Parse ai-code-assistant response into a file map.
+ * Parse ai-template-generator response into a file map.
  * Handles: clean JSON, markdown-wrapped JSON, progressively extracted JSON.
  */
 function parseAIResponse(raw: string): Record<string, string> | null {

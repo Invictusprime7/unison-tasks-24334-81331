@@ -140,6 +140,17 @@ const Index = () => {
           console.log('[SystemLauncher] AI progress:', progress.stage, progress.message);
         });
 
+        // If AI failed, show the error visibly instead of silently falling back
+        if (result.error) {
+          console.error('[SystemLauncher] AI generation error:', result.error);
+          toast({
+            title: 'AI Generation Failed',
+            description: result.error,
+            variant: 'destructive',
+          });
+          // Still navigate with empty VFS — builder will show the error state
+        }
+
         setLauncherOpen(false);
 
         navigate('/web-builder', {
@@ -148,6 +159,8 @@ const Index = () => {
             launchSystemType: config.blueprint.systemType,
             launchBusinessName: result.businessName,
             launchAIGenerated: result.aiGenerated,
+            launchError: result.error || null,
+            launchRuntimeManifest: result.runtimeManifest,
             systemType: config.blueprint.systemType,
             systemName: result.businessName,
           },
@@ -168,6 +181,14 @@ const Index = () => {
           launchVFS,
           launchSystemType: config.blueprint.systemType,
           launchBusinessName: businessName,
+          launchRuntimeManifest: {
+            frontend: 'sandpack' as const,
+            backendRequired: false,
+            apiRoutes: [],
+            envVars: [],
+            integrations: [],
+            previewMode: 'sandpack' as const,
+          },
           systemType: config.blueprint.systemType,
           systemName: businessName,
         },

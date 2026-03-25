@@ -63,7 +63,7 @@ export const WebDesignKit = ({ open, onOpenChange, onBack, onTemplateGenerated }
       // Generate unique variation seed for diverse outputs
       const variationSeed = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       
-      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
+      const { data, error } = await supabase.functions.invoke("ai-template-generator", {
         body: { 
           messages: [{ role: 'user', content: `Generate a ${templateName} template with ${aesthetic} aesthetic inspired by ${source}` }],
           mode: 'template-html',
@@ -82,7 +82,7 @@ export const WebDesignKit = ({ open, onOpenChange, onBack, onTemplateGenerated }
         return;
       }
 
-      // ai-code-assistant returns { content } with raw HTML
+      // ai-template-generator returns { content } with raw HTML
       let code = data.content || data.code;
       if (code) {
         // Clean markdown code fences if present

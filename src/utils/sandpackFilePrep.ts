@@ -641,8 +641,16 @@ export function processCode(code: string, filePath: string): string {
 /**
  * Convert VFS files to Sandpack-compatible format.
  * Flattens /src/ paths to root, processes imports, adds missing essentials.
+ * 
+ * @param options.strict - When true (launcher mode), throws instead of injecting
+ *   DEFAULT_APP / DEFAULT_MAIN. This surfaces missing entrypoints as real errors
+ *   rather than silently rendering a placeholder app.
  */
-export function prepareSandpackFiles(files: Record<string, string>): Record<string, string> {
+export function prepareSandpackFiles(
+  files: Record<string, string>,
+  options?: { strict?: boolean },
+): Record<string, string> {
+  const strict = options?.strict ?? false;
   const sandpackFiles: Record<string, string> = {};
   let hasApp = false;
   let hasMain = false;
@@ -717,8 +725,16 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
   }
 
   if (!hasCSS) sandpackFiles['/index.css'] = BASE_CSS;
-  if (!hasApp) sandpackFiles['/App.tsx'] = DEFAULT_APP;
-  if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
+
+  if (strict) {
+    // In strict mode (launcher output), missing entrypoints are real errors.
+    // Do NOT inject fallback apps — surface the problem to the UI.
+    if (!hasApp) throw new Error('Missing /App.tsx after Sandpack file preparation (strict mode)');
+    if (!hasMain) throw new Error('Missing /main.tsx after Sandpack file preparation (strict mode)');
+  } else {
+    if (!hasApp) sandpackFiles['/App.tsx'] = DEFAULT_APP;
+    if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
+  }
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
 
   // Ensure template.css exists if any file imports it

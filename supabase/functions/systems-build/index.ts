@@ -722,11 +722,11 @@ Generate a site that matches the user's established design preferences while bei
 
     // ==========================================================================
     // REACT FULLSTACK OUTPUT MODE
-    // Routes through ai-code-assistant for React fullstack generation
+    // Routes through ai-template-generator for React fullstack generation
     // Uses pre-built template HTML as quality baseline schema
     // ==========================================================================
     if (outputFormat === "react") {
-      console.log(`[systems-build] React fullstack mode - routing to ai-code-assistant template-react${templateId ? ` with template: ${templateId}` : ''}`);
+      console.log(`[systems-build] React fullstack mode - routing to ai-template-generator template-react${templateId ? ` with template: ${templateId}` : ''}`);
       
       // Perform web research for industry context (same as HTML mode)
       const rawIndustry = blueprint.identity.industry;
@@ -851,10 +851,10 @@ ${researchContext}
 ${designProfileContext}
 ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
 
-      // Call ai-code-assistant with template-react mode AND template reference
-      const aiCodeAssistantUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-code-assistant`;
+      // Call ai-template-generator with template-react mode AND template reference
+      const aiTemplateGeneratorUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-template-generator`;
       
-      const reactResponse = await fetch(aiCodeAssistantUrl, {
+      const reactResponse = await fetch(aiTemplateGeneratorUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -877,7 +877,7 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
 
       if (!reactResponse.ok) {
         const upstreamError = await reactResponse.text();
-        console.error("[systems-build] ai-code-assistant call failed:", reactResponse.status, upstreamError.substring(0, 300));
+        console.error("[systems-build] ai-template-generator call failed:", reactResponse.status, upstreamError.substring(0, 300));
 
         const fallbackHtml = generateFallbackHTML(blueprint);
         const fallbackFiles = {

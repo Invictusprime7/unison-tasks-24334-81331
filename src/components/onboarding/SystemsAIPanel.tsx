@@ -2,7 +2,7 @@
  * SystemsAIPanel - AI Code Assistant panel for the homepage
  * 
  * Generates production-ready websites using aiLaunchService as the bridge
- * to ai-code-assistant (template-react mode) — the single source of truth
+ * to ai-template-generator (template-react mode) — the single source of truth
  * for AI-generated template output.
  * 
  * Styled with Unison Tasks' arcade UI theme.
@@ -112,7 +112,7 @@ interface SystemsAIPanelProps {
 /**
  * Build a LaunchConfig from a chip selection (or generic defaults).
  * Maps to the 3-layer architecture required by aiLaunchService →
- * ai-code-assistant (template-react mode).
+ * ai-template-generator (template-react mode).
  */
 function buildLaunchConfigFromChip(chipId?: string | null): LaunchConfig {
   const systemType = (chipId && CHIP_TO_SYSTEM[chipId]) || 'content';
@@ -285,7 +285,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
   };
 
   /**
-   * Submit handler — routes through aiLaunchService → ai-code-assistant (template-react).
+   * Submit handler — routes through aiLaunchService → ai-template-generator (template-react).
    * Builds a LaunchConfig from chip selection and passes freeform prompt as extra context.
    */
   const handleCodeSubmit = async () => {
@@ -313,6 +313,11 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         userPrompt,
       );
 
+      // If AI failed, show the error visibly
+      if (result.error) {
+        toast({ title: "AI Generation Failed", description: result.error, variant: "destructive" });
+      }
+
       sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(result.files));
       setDroppedFiles([]);
       
@@ -324,6 +329,9 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           aesthetic: config.skin.identity,
           startInPreview: true,
           systemType: config.blueprint.systemType,
+          launchAIGenerated: result.aiGenerated,
+          launchError: result.error || null,
+          launchRuntimeManifest: result.runtimeManifest,
           framework: "react",
           userDesignProfile: hasProfile ? {
             projectCount: savedProjectCount,
@@ -332,12 +340,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         },
       });
 
-      toast({
-        title: result.aiGenerated ? "AI website generated!" : "Template site ready!",
-        description: result.aiGenerated
-          ? "Opening unique AI variation in Web Builder..."
-          : "Opening optimized template in Web Builder...",
-      });
+      if (!result.error) {
+        toast({
+          title: result.aiGenerated ? "AI website generated!" : "Template site ready!",
+          description: result.aiGenerated
+            ? "Opening unique AI variation in Web Builder..."
+            : "Opening optimized template in Web Builder...",
+        });
+      }
     } catch (error) {
       console.error("[SystemsAIPanel] Generation error:", error);
       toast({ title: "Generation failed", description: "Please try again", variant: "destructive" });

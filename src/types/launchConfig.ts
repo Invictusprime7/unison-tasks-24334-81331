@@ -236,3 +236,47 @@ export interface LaunchConfig {
   skin: ThemeSkin;
   buildMode: BuildMode;
 }
+
+// ============================================================================
+// LAUNCH RUNTIME MANIFEST — runtime selection contract
+// ============================================================================
+
+/**
+ * Describes what runtime capabilities the generated site requires.
+ * Used by WebBuilder to select the correct preview engine.
+ */
+export interface LaunchRuntimeManifest {
+  /** Frontend bundler for preview */
+  frontend: 'sandpack' | 'vite';
+  /** Whether the site requires a backend runtime */
+  backendRequired: boolean;
+  /** API routes declared by the generated site */
+  apiRoutes: string[];
+  /** Environment variables needed at runtime */
+  envVars: string[];
+  /** Third-party integrations referenced */
+  integrations: string[];
+  /** Which preview engine should be used */
+  previewMode: 'sandpack' | 'docker';
+}
+
+// ============================================================================
+// PREVIEW STATUS — origin tracking for transparency
+// ============================================================================
+
+export type PreviewOrigin =
+  | 'ai-generated'
+  | 'deterministic-fallback'
+  | 'sandpack-default-app'
+  | 'docker-runtime';
+
+export interface PreviewStatus {
+  /** How the current preview content was produced */
+  origin: PreviewOrigin;
+  /** Which backend is rendering the preview */
+  backend: 'sandpack' | 'docker' | 'local';
+  /** Whether strict mode (no silent fallbacks) is active */
+  strictMode: boolean;
+  /** Errors encountered during generation/preview */
+  errors: string[];
+}

@@ -55,6 +55,7 @@ interface DroppedFile {
 }
 
 // Map chip IDs to BusinessSystemType
+type BusinessSystemType = 'booking' | 'store' | 'portfolio' | 'agency' | 'content';
 const CHIP_TO_SYSTEM: Record<string, BusinessSystemType> = {
   local_service: "booking",
   salon_spa: "booking",

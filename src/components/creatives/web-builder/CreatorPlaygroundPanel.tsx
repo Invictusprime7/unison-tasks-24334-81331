@@ -140,7 +140,7 @@ export const CreatorPlaygroundPanel: React.FC<CreatorPlaygroundPanelProps> = ({
         {/* Hydration Stats */}
         {playground.lastHydration && (
           <div className="text-[10px] text-muted-foreground mt-1">
-            {allPages.length} pages · {playground.creatorData.products.length} products · {playground.creatorData.services.length} services
+            {allPages.length} pages · {Object.keys(playground.creatorData.products).length} products · {Object.keys(playground.creatorData.services).length} services
             {playground.lastHydration.funnelAutoWired && ' · Funnel auto-wired'}
           </div>
         )}

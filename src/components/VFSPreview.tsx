@@ -33,6 +33,7 @@ import { SandpackProvider, SandpackPreview, SandpackLayout } from '@codesandbox/
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { SANDPACK_DEPENDENCIES } from '@/utils/generationContract';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 import type { PreviewStatus } from '@/types/launchConfig';
@@ -236,16 +237,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   // Prepare Sandpack dependencies
   const sandpackDeps = useMemo(() => {
-    const baseDeps: Record<string, string> = {
-      react: '^18.3.1',
-      'react-dom': '^18.3.1',
-      'react-router-dom': '^6.20.0',
-      'lucide-react': 'latest',
-      'clsx': 'latest',
-      'tailwind-merge': 'latest',
-      'framer-motion': 'latest',
-    };
-    const { dependencies } = getDependenciesForSandpack(files, baseDeps);
+    const { dependencies } = getDependenciesForSandpack(files, SANDPACK_DEPENDENCIES);
     return dependencies;
   }, [files]);
   

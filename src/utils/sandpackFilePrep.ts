@@ -6,22 +6,9 @@
  */
 
 import { ensureReactImports, sanitizeSvgElements, fixJsxVoidElements, fixJsxStyleStrings } from '@/utils/aiCodeCleaner';
+import { SANDPACK_DEPENDENCIES, ALLOWED_NPM_IMPORTS, PREMIUM_CSS_UTILITIES } from '@/utils/generationContract';
 
-const ALLOWED_IMPORTS = new Set([
-  'react',
-  'react-dom',
-  'react-dom/client',
-  'react-router-dom',
-  'lucide-react',
-  'clsx',
-  'tailwind-merge',
-  'class-variance-authority',
-  '@radix-ui/react-slot',
-  'framer-motion',
-  'date-fns',
-  'recharts',
-  'inngest',
-]);
+const ALLOWED_IMPORTS = ALLOWED_NPM_IMPORTS;
 
 // cn() utility — standard shadcn/ui pattern used by AI-generated components
 const LIB_UTILS = `import { clsx, type ClassValue } from "clsx";

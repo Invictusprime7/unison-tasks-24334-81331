@@ -203,6 +203,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const hoveredElementRef = useRef<HTMLElement | null>(null);
   const selectedElementRef = useRef<HTMLElement | null>(null);
   
+  // Stable ref for onError to avoid re-triggering sandpackFiles useMemo
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  
   // Docker preview service
   const dockerService = usePreviewService();
   
@@ -252,11 +256,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       return prepareSandpackFiles(files, { strict: previewStatus?.strictMode ?? false });
     } catch (err) {
       console.error('[VFSPreview] Strict sandpack prep failed:', err);
-      onError?.(err instanceof Error ? err.message : 'Sandpack file preparation failed');
+      onErrorRef.current?.(err instanceof Error ? err.message : 'Sandpack file preparation failed');
       // Return minimal valid files so Sandpack doesn't crash entirely
       return prepareSandpackFiles(files);
     }
-  }, [files, previewStatus?.strictMode, onError]);
+  }, [files, previewStatus?.strictMode]);
   
   // Determine Sandpack entry file (from prepared/flattened files)
   const sandpackEntryFile = useMemo(() => {
@@ -264,7 +268,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     for (const candidate of candidates) {
       if (sandpackFiles[candidate]) return candidate;
     }
-    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/main.tsx' && p !== '/index.tsx');
+    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/ui-shim.tsx' && p !== '/main.tsx' && p !== '/index.tsx');
     return firstCode || '/App.tsx';
   }, [sandpackFiles]);
   
@@ -358,7 +362,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     };
   }, [enableSelection, selectionActivationKey, backend, sandpackKey, onElementSelect, clearPreviewHighlights]);
   
-  // Initialize backend — Docker for local dev, Sandpack for production
+  // Initialize backend — always start on Sandpack, upgrade to Docker in background
+  const dockerStartedRef = useRef(false);
+
   useEffect(() => {
     if (startAttemptedRef.current) return;
     startAttemptedRef.current = true;
@@ -375,26 +381,61 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       return;
     }
 
-    if (dockerGatewayConfigured && autoStart) {
-      setBackend('loading');
-      dockerService.startSession(nodes).then((session) => {
-        if (session) {
-          setBackend('docker');
-        } else {
-          setBackend('sandpack');
-        }
-        onReady?.();
-      }).catch(() => {
-        setBackend('sandpack');
-        onReady?.();
-      });
-      return;
-    }
-
-    // Default: always Sandpack
+    // Always start on Sandpack — Docker will upgrade in the background if available
     setBackend('sandpack');
     onReady?.();
   }, []);
+
+  // Background Docker upgrade — silently tries Docker after Sandpack is already rendering
+  // Only fires once, won't interrupt Sandpack until Docker session is confirmed running
+  useEffect(() => {
+    if (dockerStartedRef.current) return;
+    if (forceBackend === 'sandpack' || !dockerGatewayConfigured) return;
+
+    // Need meaningful files before starting Docker
+    const hasAppEntry = Object.keys(files).some(p => /App\.(tsx|jsx)$/i.test(p));
+    if (!hasAppEntry || Object.keys(files).length < 2) return;
+
+    // Only try Docker if hinted by launcher or gateway is configured
+    const hintedDocker = previewStatus?.backend === 'docker';
+    if (!hintedDocker && !autoStart) return;
+
+    dockerStartedRef.current = true;
+
+    // Quick health check before committing to Docker
+    const gatewayUrl = import.meta.env.VITE_PREVIEW_GATEWAY_URL;
+    const controller = new AbortController();
+    const healthTimeout = setTimeout(() => controller.abort(), 2000);
+
+    fetch(`${gatewayUrl}/health`, { signal: controller.signal })
+      .then(res => {
+        clearTimeout(healthTimeout);
+        if (!res.ok) {
+          console.warn('[VFSPreview] Docker gateway unhealthy — staying on Sandpack');
+          return;
+        }
+
+        console.log('[VFSPreview] Docker gateway healthy — starting session with', Object.keys(files).length, 'files');
+
+        // Race Docker start against a timeout
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000));
+        return Promise.race([
+          dockerService.startSessionFromFiles(files),
+          timeout,
+        ]).then((session) => {
+          if (session) {
+            console.log('[VFSPreview] Docker session ready — upgrading from Sandpack');
+            setBackend('docker');
+          } else {
+            console.warn('[VFSPreview] Docker session failed — staying on Sandpack');
+          }
+        });
+      })
+      .catch(() => {
+        clearTimeout(healthTimeout);
+        console.warn('[VFSPreview] Docker gateway unreachable — staying on Sandpack');
+      });
+  }, [files, previewStatus?.backend]);
   
   // Sync file changes to Docker when running
   useEffect(() => {
@@ -410,17 +451,18 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       onError?.('Docker gateway not configured');
       return;
     }
-    setBackend('loading');
     try {
-      await dockerService.startSession(nodes);
-      setBackend('docker');
-      onReady?.();
+      const session = await dockerService.startSessionFromFiles(files);
+      if (session) {
+        setBackend('docker');
+      } else {
+        onError?.('Docker session could not be created');
+      }
     } catch (err) {
       console.error('[VFSPreview] Failed to start Docker:', err);
-      setBackend('sandpack');
-      onError?.('Failed to start Docker preview, using Sandpack');
+      onError?.('Failed to start Docker preview');
     }
-  }, [dockerGatewayConfigured, dockerService, nodes, onReady, onError]);
+  }, [dockerGatewayConfigured, dockerService, files, onError]);
   
   const handleStopDocker = useCallback(async () => {
     await dockerService.stopSession();
@@ -474,12 +516,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                 backend === 'docker' && 'bg-green-500/20 text-green-600 dark:text-green-400',
                 backend === 'local' && 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
                 backend === 'sandpack' && 'bg-purple-500/20 text-purple-600 dark:text-purple-400',
-                backend === 'loading' && 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
               )}>
                 {backend === 'docker' && <><Server className="h-3 w-3" /> Docker HMR</>}
                 {backend === 'local' && <><Server className="h-3 w-3" /> Local Vite</>}
                 {backend === 'sandpack' && <><Zap className="h-3 w-3" /> React Live</>}
-                {backend === 'loading' && <><Loader2 className="h-3 w-3 animate-spin" /> Starting...</>}
               </div>
             )}
             
@@ -506,7 +546,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   <Button size="sm" variant="ghost" onClick={handleStopDocker} className="h-7 px-2 gap-1 text-xs" title="Stop Docker preview">
                     <Square className="h-3 w-3" /> Stop
                   </Button>
-                ) : backend !== 'loading' && (
+                ) : (
                   <Button size="sm" variant="default" onClick={handleStartDocker} className="h-7 px-2 gap-1 text-xs" title="Start Docker preview with HMR">
                     <Play className="h-3 w-3" /> Start Docker
                   </Button>
@@ -514,8 +554,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
               </>
             )}
             
-            <Button size="sm" variant="ghost" onClick={handleRestart} disabled={backend === 'loading'} className="h-7 w-7 p-0" title="Refresh preview">
-              <RefreshCw className={cn('h-4 w-4', backend === 'loading' && 'animate-spin')} />
+            <Button size="sm" variant="ghost" onClick={handleRestart} className="h-7 w-7 p-0" title="Refresh preview">
+              <RefreshCw className="h-4 w-4" />
             </Button>
             
             {backend === 'docker' && (
@@ -565,16 +605,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       
       {/* Preview Content */}
       <div ref={previewRootRef} className="flex-1 relative min-h-0">
-        {/* Loading State */}
-        {backend === 'loading' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
-            <div className="text-center space-y-3">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-              <p className="text-sm text-muted-foreground">Starting Docker preview...</p>
-            </div>
-          </div>
-        )}
-        
         {/* Docker / Local Vite iframe */}
         {(backend === 'docker' || backend === 'local') && dockerUrl && (
           <div 

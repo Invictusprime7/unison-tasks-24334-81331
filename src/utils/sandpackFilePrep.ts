@@ -23,6 +23,15 @@ const ALLOWED_IMPORTS = new Set([
   'inngest',
 ]);
 
+// cn() utility — standard shadcn/ui pattern used by AI-generated components
+const LIB_UTILS = `import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+`;
+
 const BASE_CSS = `
 :root {
   --background: 0 0% 100%;
@@ -351,7 +360,7 @@ export default function App() {
 }
 `;
 
-const HOOKS_SHIM = `
+const HOOKS_SHIM = `// @ts-nocheck
 import { useState as reactUseState, useEffect as reactUseEffect, useCallback as reactUseCallback, useMemo as reactUseMemo, useRef as reactUseRef, useContext as reactUseContext, createContext } from 'react';
 
 export const useState = reactUseState;
@@ -475,6 +484,249 @@ export default {
 `;
 
 /**
+ * UI Component Shim — stub implementations of shadcn/ui primitives.
+ * AI-generated code almost always imports from @/components/ui/*.
+ * These stubs render basic HTML so the preview doesn't crash on missing modules.
+ */
+const UI_SHIM = `// @ts-nocheck
+import React from 'react';
+
+const cn = (...c) => c.filter(Boolean).join(' ');
+
+/* ---- helpers ---- */
+const Div = (name, base = '') => {
+  const C = React.forwardRef(({ className, ...p }, ref) => (
+    React.createElement('div', { ref, className: cn(base, className), ...p })
+  ));
+  C.displayName = name;
+  return C;
+};
+
+/* ---- Card ---- */
+export const Card = Div('Card', 'rounded-lg border bg-card text-card-foreground shadow-sm');
+export const CardHeader = Div('CardHeader', 'flex flex-col space-y-1.5 p-6');
+export const CardTitle = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('h3', { ref, className: cn('text-2xl font-semibold leading-none tracking-tight', className), ...p })); C.displayName = 'CardTitle'; return C; })();
+export const CardDescription = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('p', { ref, className: cn('text-sm text-muted-foreground', className), ...p })); C.displayName = 'CardDescription'; return C; })();
+export const CardContent = Div('CardContent', 'p-6 pt-0');
+export const CardFooter = Div('CardFooter', 'flex items-center p-6 pt-0');
+
+/* ---- Button ---- */
+export const Button = (() => {
+  const C = React.forwardRef(({ className, variant, size, asChild, type = 'button', ...p }, ref) => React.createElement('button', { ref, type, className: cn(
+    'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
+    variant === 'outline' ? 'border border-input bg-background hover:bg-accent' :
+    variant === 'ghost' ? 'hover:bg-accent hover:text-accent-foreground' :
+    variant === 'link' ? 'text-primary underline-offset-4 hover:underline' :
+    variant === 'destructive' ? 'bg-destructive text-destructive-foreground' :
+    variant === 'secondary' ? 'bg-secondary text-secondary-foreground' :
+    'bg-primary text-primary-foreground hover:bg-primary/90',
+    size === 'sm' ? 'h-9 px-3' : size === 'lg' ? 'h-11 px-8' : size === 'icon' ? 'h-10 w-10' : 'h-10 px-4 py-2',
+    className
+  ), ...p }));
+  C.displayName = 'Button';
+  return C;
+})();
+export const buttonVariants = (opts) => '';
+
+/* ---- Form ---- */
+export const Input = (() => { const C = React.forwardRef(({ className, type = 'text', ...p }, ref) => React.createElement('input', { ref, type, className: cn('flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50', className), ...p })); C.displayName = 'Input'; return C; })();
+export const Textarea = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('textarea', { ref, className: cn('flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50', className), ...p })); C.displayName = 'Textarea'; return C; })();
+export const Label = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('label', { ref, className: cn('text-sm font-medium leading-none', className), ...p })); C.displayName = 'Label'; return C; })();
+export const Form = ({ children, ...p }) => React.createElement('form', p, children);
+export const FormControl = ({ children }) => React.createElement('div', null, children);
+export const FormDescription = ({ className, ...p }) => React.createElement('p', { className: cn('text-sm text-muted-foreground', className), ...p });
+export const FormField = ({ render, name }) => render ? render({ field: { name, value: '', onChange: () => {}, onBlur: () => {}, ref: () => {} } }) : null;
+export const FormItem = Div('FormItem', 'space-y-2');
+export const FormLabel = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('label', { ref, className: cn('text-sm font-medium leading-none', className), ...p })); C.displayName = 'FormLabel'; return C; })();
+export const FormMessage = ({ className, children, ...p }) => children ? React.createElement('p', { className: cn('text-sm font-medium text-destructive', className), ...p }, children) : null;
+
+/* ---- Select ---- */
+export const Select = ({ children, onValueChange, defaultValue, value }) => React.createElement('div', { 'data-select': true }, children);
+export const SelectTrigger = (() => { const C = React.forwardRef(({ className, children, ...p }, ref) => React.createElement('button', { ref, className: cn('flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm', className), ...p }, children)); C.displayName = 'SelectTrigger'; return C; })();
+export const SelectValue = ({ placeholder }) => React.createElement('span', null, placeholder || '');
+export const SelectContent = ({ children }) => React.createElement('div', null, children);
+export const SelectItem = (() => { const C = React.forwardRef(({ className, children, value, ...p }, ref) => React.createElement('div', { ref, className: cn('relative flex w-full cursor-default items-center rounded-sm py-1.5 pl-8 pr-2 text-sm', className), ...p }, children)); C.displayName = 'SelectItem'; return C; })();
+export const SelectGroup = ({ children }) => React.createElement('div', null, children);
+export const SelectLabel = ({ children }) => React.createElement('div', { className: 'text-sm font-semibold' }, children);
+export const SelectSeparator = () => React.createElement('div', { className: 'h-px bg-muted' });
+
+/* ---- Badge ---- */
+export const Badge = ({ className, variant, ...p }) => React.createElement('div', { className: cn('inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors',
+  variant === 'secondary' ? 'border-transparent bg-secondary text-secondary-foreground' :
+  variant === 'destructive' ? 'border-transparent bg-destructive text-destructive-foreground' :
+  variant === 'outline' ? 'text-foreground' :
+  'border-transparent bg-primary text-primary-foreground', className), ...p });
+
+/* ---- Avatar ---- */
+export const Avatar = Div('Avatar', 'relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full');
+export const AvatarImage = (() => { const C = React.forwardRef(({ className, src, alt, ...p }, ref) => React.createElement('img', { ref, src, alt, className: cn('aspect-square h-full w-full', className), ...p })); C.displayName = 'AvatarImage'; return C; })();
+export const AvatarFallback = Div('AvatarFallback', 'flex h-full w-full items-center justify-center rounded-full bg-muted');
+
+/* ---- Separator ---- */
+export const Separator = (() => { const C = React.forwardRef(({ className, orientation = 'horizontal', ...p }, ref) => React.createElement('div', { ref, className: cn(orientation === 'horizontal' ? 'h-px w-full' : 'h-full w-px', 'shrink-0 bg-border', className), ...p })); C.displayName = 'Separator'; return C; })();
+
+/* ---- Skeleton ---- */
+export const Skeleton = ({ className, ...p }) => React.createElement('div', { className: cn('animate-pulse rounded-md bg-muted', className), ...p });
+
+/* ---- Dialog ---- */
+export const Dialog = ({ children, open, onOpenChange }) => React.createElement(React.Fragment, null, children);
+export const DialogTrigger = React.forwardRef(({ children, asChild, ...p }, ref) => React.createElement('button', { ref, ...p }, children));
+DialogTrigger.displayName = 'DialogTrigger';
+export const DialogContent = (() => { const C = React.forwardRef(({ className, children, ...p }, ref) => React.createElement('div', { ref, className: cn('fixed inset-0 z-50 flex items-center justify-center', className) }, React.createElement('div', { className: 'bg-background rounded-lg border shadow-lg p-6 w-full max-w-lg' }, children))); C.displayName = 'DialogContent'; return C; })();
+export const DialogHeader = Div('DialogHeader', 'flex flex-col space-y-1.5 text-center sm:text-left');
+export const DialogTitle = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('h2', { ref, className: cn('text-lg font-semibold leading-none tracking-tight', className), ...p })); C.displayName = 'DialogTitle'; return C; })();
+export const DialogDescription = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('p', { ref, className: cn('text-sm text-muted-foreground', className), ...p })); C.displayName = 'DialogDescription'; return C; })();
+export const DialogFooter = Div('DialogFooter', 'flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2');
+export const DialogClose = React.forwardRef(({ children, ...p }, ref) => React.createElement('button', { ref, ...p }, children));
+DialogClose.displayName = 'DialogClose';
+
+/* ---- Sheet ---- */
+export const Sheet = ({ children, open, onOpenChange }) => React.createElement(React.Fragment, null, children);
+export const SheetTrigger = React.forwardRef(({ children, asChild, ...p }, ref) => React.createElement('button', { ref, ...p }, children));
+SheetTrigger.displayName = 'SheetTrigger';
+export const SheetContent = Div('SheetContent', 'fixed inset-y-0 right-0 z-50 w-3/4 max-w-sm bg-background p-6 shadow-lg');
+export const SheetHeader = Div('SheetHeader', 'flex flex-col space-y-2');
+export const SheetTitle = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('h2', { ref, className: cn('text-lg font-semibold', className), ...p })); C.displayName = 'SheetTitle'; return C; })();
+export const SheetDescription = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('p', { ref, className: cn('text-sm text-muted-foreground', className), ...p })); C.displayName = 'SheetDescription'; return C; })();
+export const SheetClose = React.forwardRef(({ children, ...p }, ref) => React.createElement('button', { ref, ...p }, children));
+SheetClose.displayName = 'SheetClose';
+
+/* ---- Tabs ---- */
+export const Tabs = ({ children, defaultValue, value, onValueChange, className }) => React.createElement('div', { className }, children);
+export const TabsList = Div('TabsList', 'inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground');
+export const TabsTrigger = (() => { const C = React.forwardRef(({ className, value, children, ...p }, ref) => React.createElement('button', { ref, className: cn('inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all', className), ...p }, children)); C.displayName = 'TabsTrigger'; return C; })();
+export const TabsContent = (() => { const C = React.forwardRef(({ className, value, children, ...p }, ref) => React.createElement('div', { ref, className: cn('mt-2', className), ...p }, children)); C.displayName = 'TabsContent'; return C; })();
+
+/* ---- Accordion ---- */
+export const Accordion = ({ children, type, collapsible, className }) => React.createElement('div', { className }, children);
+export const AccordionItem = (() => { const C = React.forwardRef(({ className, value, children, ...p }, ref) => React.createElement('div', { ref, className: cn('border-b', className), ...p }, children)); C.displayName = 'AccordionItem'; return C; })();
+export const AccordionTrigger = (() => { const C = React.forwardRef(({ className, children, ...p }, ref) => React.createElement('button', { ref, className: cn('flex flex-1 items-center justify-between py-4 font-medium transition-all', className), ...p }, children)); C.displayName = 'AccordionTrigger'; return C; })();
+export const AccordionContent = (() => { const C = React.forwardRef(({ className, children, ...p }, ref) => React.createElement('div', { ref, className: cn('pb-4 pt-0 text-sm', className), ...p }, children)); C.displayName = 'AccordionContent'; return C; })();
+
+/* ---- Alert ---- */
+export const Alert = (() => { const C = React.forwardRef(({ className, variant, ...p }, ref) => React.createElement('div', { ref, role: 'alert', className: cn('relative w-full rounded-lg border p-4', variant === 'destructive' ? 'border-destructive/50 text-destructive' : 'bg-background text-foreground', className), ...p })); C.displayName = 'Alert'; return C; })();
+export const AlertTitle = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('h5', { ref, className: cn('mb-1 font-medium leading-none tracking-tight', className), ...p })); C.displayName = 'AlertTitle'; return C; })();
+export const AlertDescription = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('div', { ref, className: cn('text-sm [&_p]:leading-relaxed', className), ...p })); C.displayName = 'AlertDescription'; return C; })();
+export const AlertDialog = ({ children }) => React.createElement(React.Fragment, null, children);
+export const AlertDialogTrigger = React.forwardRef(({ children, ...p }, ref) => React.createElement('button', { ref, ...p }, children));
+AlertDialogTrigger.displayName = 'AlertDialogTrigger';
+export const AlertDialogContent = Div('AlertDialogContent', 'fixed inset-0 z-50 flex items-center justify-center');
+export const AlertDialogHeader = Div('AlertDialogHeader', 'flex flex-col space-y-2');
+export const AlertDialogTitle = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('h2', { ref, className: cn('text-lg font-semibold', className), ...p })); C.displayName = 'AlertDialogTitle'; return C; })();
+export const AlertDialogDescription = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('p', { ref, className: cn('text-sm text-muted-foreground', className), ...p })); C.displayName = 'AlertDialogDescription'; return C; })();
+export const AlertDialogFooter = Div('AlertDialogFooter', 'flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2');
+export const AlertDialogAction = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('button', { ref, className: cn('inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground h-10 px-4 py-2 text-sm font-medium', className), ...p })); C.displayName = 'AlertDialogAction'; return C; })();
+export const AlertDialogCancel = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('button', { ref, className: cn('inline-flex items-center justify-center rounded-md border border-input bg-background h-10 px-4 py-2 text-sm font-medium', className), ...p })); C.displayName = 'AlertDialogCancel'; return C; })();
+
+/* ---- Tooltip ---- */
+export const TooltipProvider = ({ children }) => React.createElement(React.Fragment, null, children);
+export const Tooltip = ({ children }) => React.createElement(React.Fragment, null, children);
+export const TooltipTrigger = React.forwardRef(({ children, asChild, ...p }, ref) => React.createElement('span', { ref, ...p }, children));
+TooltipTrigger.displayName = 'TooltipTrigger';
+export const TooltipContent = (() => { const C = React.forwardRef(({ className, children, ...p }, ref) => React.createElement('div', { ref, className: cn('z-50 rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md', className), ...p }, children)); C.displayName = 'TooltipContent'; return C; })();
+
+/* ---- Popover ---- */
+export const Popover = ({ children }) => React.createElement(React.Fragment, null, children);
+export const PopoverTrigger = React.forwardRef(({ children, asChild, ...p }, ref) => React.createElement('button', { ref, ...p }, children));
+PopoverTrigger.displayName = 'PopoverTrigger';
+export const PopoverContent = Div('PopoverContent', 'z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md');
+
+/* ---- DropdownMenu ---- */
+export const DropdownMenu = ({ children }) => React.createElement(React.Fragment, null, children);
+export const DropdownMenuTrigger = React.forwardRef(({ children, asChild, ...p }, ref) => React.createElement('button', { ref, ...p }, children));
+DropdownMenuTrigger.displayName = 'DropdownMenuTrigger';
+export const DropdownMenuContent = Div('DropdownMenuContent', 'z-50 min-w-[8rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md');
+export const DropdownMenuItem = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('div', { ref, className: cn('relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none', className), ...p })); C.displayName = 'DropdownMenuItem'; return C; })();
+export const DropdownMenuSeparator = () => React.createElement('div', { className: '-mx-1 my-1 h-px bg-muted' });
+export const DropdownMenuLabel = ({ className, ...p }) => React.createElement('div', { className: cn('px-2 py-1.5 text-sm font-semibold', className), ...p });
+export const DropdownMenuGroup = ({ children }) => React.createElement('div', null, children);
+export const DropdownMenuCheckboxItem = DropdownMenuItem;
+export const DropdownMenuRadioGroup = ({ children }) => React.createElement('div', null, children);
+export const DropdownMenuRadioItem = DropdownMenuItem;
+export const DropdownMenuSub = ({ children }) => React.createElement(React.Fragment, null, children);
+export const DropdownMenuSubContent = DropdownMenuContent;
+export const DropdownMenuSubTrigger = DropdownMenuItem;
+
+/* ---- Switch / Checkbox / Radio ---- */
+export const Switch = React.forwardRef(({ className, checked, onCheckedChange, ...p }, ref) => React.createElement('button', { ref, role: 'switch', 'aria-checked': !!checked, onClick: () => onCheckedChange && onCheckedChange(!checked), className: cn('peer inline-flex h-[24px] w-[44px] shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors', checked ? 'bg-primary' : 'bg-input', className), ...p }, React.createElement('span', { className: cn('pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform', checked ? 'translate-x-5' : 'translate-x-0') })));
+Switch.displayName = 'Switch';
+export const Checkbox = React.forwardRef(({ className, checked, onCheckedChange, ...p }, ref) => React.createElement('button', { ref, role: 'checkbox', 'aria-checked': !!checked, onClick: () => onCheckedChange && onCheckedChange(!checked), className: cn('peer h-4 w-4 shrink-0 rounded-sm border border-primary', checked ? 'bg-primary text-primary-foreground' : '', className), ...p }, checked ? '✓' : ''));
+Checkbox.displayName = 'Checkbox';
+export const RadioGroup = ({ children, className, onValueChange, defaultValue, value }) => React.createElement('div', { className: cn('grid gap-2', className), role: 'radiogroup' }, children);
+export const RadioGroupItem = React.forwardRef(({ className, value, ...p }, ref) => React.createElement('button', { ref, role: 'radio', className: cn('aspect-square h-4 w-4 rounded-full border border-primary', className), ...p }));
+RadioGroupItem.displayName = 'RadioGroupItem';
+
+/* ---- ScrollArea ---- */
+export const ScrollArea = Div('ScrollArea', 'relative overflow-auto');
+export const ScrollBar = () => null;
+
+/* ---- Table ---- */
+export const Table = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('div', { className: 'relative w-full overflow-auto' }, React.createElement('table', { ref, className: cn('w-full caption-bottom text-sm', className), ...p }))); C.displayName = 'Table'; return C; })();
+export const TableHeader = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('thead', { ref, className: cn('[&_tr]:border-b', className), ...p })); C.displayName = 'TableHeader'; return C; })();
+export const TableBody = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('tbody', { ref, className: cn('[&_tr:last-child]:border-0', className), ...p })); C.displayName = 'TableBody'; return C; })();
+export const TableRow = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('tr', { ref, className: cn('border-b transition-colors hover:bg-muted/50', className), ...p })); C.displayName = 'TableRow'; return C; })();
+export const TableHead = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('th', { ref, className: cn('h-12 px-4 text-left align-middle font-medium text-muted-foreground', className), ...p })); C.displayName = 'TableHead'; return C; })();
+export const TableCell = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('td', { ref, className: cn('p-4 align-middle', className), ...p })); C.displayName = 'TableCell'; return C; })();
+export const TableCaption = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('caption', { ref, className: cn('mt-4 text-sm text-muted-foreground', className), ...p })); C.displayName = 'TableCaption'; return C; })();
+
+/* ---- Navigation ---- */
+export const NavigationMenu = Div('NavigationMenu', 'relative z-10 flex max-w-max flex-1 items-center justify-center');
+export const NavigationMenuList = Div('NavigationMenuList', 'group flex flex-1 list-none items-center justify-center space-x-1');
+export const NavigationMenuItem = ({ children, className }) => React.createElement('li', { className }, children);
+export const NavigationMenuTrigger = (() => { const C = React.forwardRef(({ className, children, ...p }, ref) => React.createElement('button', { ref, className: cn('group inline-flex h-10 w-max items-center justify-center rounded-md bg-background px-4 py-2 text-sm font-medium', className), ...p }, children)); C.displayName = 'NavigationMenuTrigger'; return C; })();
+export const NavigationMenuContent = Div('NavigationMenuContent', 'left-0 top-0 w-full');
+export const NavigationMenuLink = React.forwardRef(({ className, children, ...p }, ref) => React.createElement('a', { ref, className: cn('block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none', className), ...p }, children));
+NavigationMenuLink.displayName = 'NavigationMenuLink';
+
+/* ---- Breadcrumb ---- */
+export const Breadcrumb = ({ children, className }) => React.createElement('nav', { 'aria-label': 'breadcrumb', className }, children);
+export const BreadcrumbList = Div('BreadcrumbList', 'flex flex-wrap items-center gap-1.5 break-words text-sm text-muted-foreground');
+export const BreadcrumbItem = ({ children, className }) => React.createElement('li', { className: cn('inline-flex items-center gap-1.5', className) }, children);
+export const BreadcrumbLink = React.forwardRef(({ className, children, href, ...p }, ref) => React.createElement('a', { ref, href, className: cn('transition-colors hover:text-foreground', className), ...p }, children));
+BreadcrumbLink.displayName = 'BreadcrumbLink';
+export const BreadcrumbPage = ({ className, ...p }) => React.createElement('span', { role: 'link', 'aria-current': 'page', className: cn('font-normal text-foreground', className), ...p });
+export const BreadcrumbSeparator = ({ children }) => React.createElement('li', { role: 'presentation', 'aria-hidden': true, className: '[&>svg]:size-3.5' }, children || '/');
+
+/* ---- Misc ---- */
+export const Progress = React.forwardRef(({ className, value = 0, ...p }, ref) => React.createElement('div', { ref, className: cn('relative h-4 w-full overflow-hidden rounded-full bg-secondary', className), ...p }, React.createElement('div', { className: 'h-full w-full flex-1 bg-primary transition-all', style: { transform: 'translateX(-' + (100 - (value || 0)) + '%)' } })));
+Progress.displayName = 'Progress';
+export const Slider = React.forwardRef(({ className, ...p }, ref) => React.createElement('div', { ref, className: cn('relative flex w-full touch-none select-none items-center', className), ...p }));
+Slider.displayName = 'Slider';
+export const Toggle = React.forwardRef(({ className, variant, size, pressed, onPressedChange, children, ...p }, ref) => React.createElement('button', { ref, 'aria-pressed': pressed, onClick: () => onPressedChange && onPressedChange(!pressed), className: cn('inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors', className), ...p }, children));
+Toggle.displayName = 'Toggle';
+export const ToggleGroup = ({ children, className, type, value, onValueChange }) => React.createElement('div', { className: cn('flex items-center justify-center gap-1', className) }, children);
+export const ToggleGroupItem = Toggle;
+export const AspectRatio = ({ ratio = 1, children, className }) => React.createElement('div', { className, style: { position: 'relative', paddingBottom: (1 / ratio) * 100 + '%' } }, React.createElement('div', { style: { position: 'absolute', inset: 0 } }, children));
+export const Collapsible = ({ children, open, onOpenChange }) => React.createElement('div', null, children);
+export const CollapsibleTrigger = React.forwardRef(({ children, ...p }, ref) => React.createElement('button', { ref, ...p }, children));
+CollapsibleTrigger.displayName = 'CollapsibleTrigger';
+export const CollapsibleContent = Div('CollapsibleContent');
+export const HoverCard = ({ children }) => React.createElement(React.Fragment, null, children);
+export const HoverCardTrigger = React.forwardRef(({ children, asChild, ...p }, ref) => React.createElement('span', { ref, ...p }, children));
+HoverCardTrigger.displayName = 'HoverCardTrigger';
+export const HoverCardContent = Div('HoverCardContent', 'z-50 w-64 rounded-md border bg-popover p-4 text-popover-foreground shadow-md');
+export const Calendar = ({ className, ...p }) => React.createElement('div', { className: cn('p-3', className) }, React.createElement('p', { className: 'text-sm text-muted-foreground' }, 'Calendar preview'));
+export const Command = Div('Command', 'flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground');
+export const CommandDialog = Dialog;
+export const CommandEmpty = ({ children }) => React.createElement('p', { className: 'py-6 text-center text-sm' }, children);
+export const CommandGroup = Div('CommandGroup', 'overflow-hidden p-1 text-foreground');
+export const CommandInput = Input;
+export const CommandItem = (() => { const C = React.forwardRef(({ className, ...p }, ref) => React.createElement('div', { ref, className: cn('relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none', className), ...p })); C.displayName = 'CommandItem'; return C; })();
+export const CommandList = Div('CommandList', 'max-h-[300px] overflow-y-auto overflow-x-hidden');
+export const CommandSeparator = () => React.createElement('div', { className: '-mx-1 h-px bg-border' });
+export const Toaster = () => null;
+export const Sonner = () => null;
+export const ResizablePanelGroup = Div('ResizablePanelGroup', 'flex h-full w-full');
+export const ResizablePanel = Div('ResizablePanel', 'flex-1');
+export const ResizableHandle = () => React.createElement('div', { className: 'w-px bg-border' });
+export const Carousel = Div('Carousel', 'relative');
+export const CarouselContent = Div('CarouselContent', 'flex');
+export const CarouselItem = Div('CarouselItem', 'min-w-0 shrink-0 grow-0 basis-full');
+export const CarouselPrevious = (() => { const C = React.forwardRef((p, ref) => React.createElement('button', { ref, className: 'absolute left-0 top-1/2 -translate-y-1/2', ...p }, '‹')); C.displayName = 'CarouselPrevious'; return C; })();
+export const CarouselNext = (() => { const C = React.forwardRef((p, ref) => React.createElement('button', { ref, className: 'absolute right-0 top-1/2 -translate-y-1/2', ...p }, '›')); C.displayName = 'CarouselNext'; return C; })();
+`;
+
+/**
  * Detect if content is raw CSS (not valid JSX/TSX).
  * Returns true if the content looks like a stylesheet rather than a React component.
  */
@@ -576,17 +828,29 @@ export function processCode(code: string, filePath: string): string {
     /^import\s+(?:(?:\{([^}]*)\}|\*\s+as\s+(\w+)|(\w+))\s*,?\s*)*\s*from\s+['"]@\/([^'"]+)['"];?\s*$/gm,
     (match, namedImports, namespaceImport, defaultImport, modulePath) => {
       if (modulePath.startsWith('hooks/') || modulePath === 'hooks') {
-        if (namedImports) return `import { ${namedImports} } from './hooks-shim';`;
-        if (defaultImport) return `import ${defaultImport} from './hooks-shim';`;
-        if (namespaceImport) return `import * as ${namespaceImport} from './hooks-shim';`;
-        return `import hooks from './hooks-shim'; // [Preview] Shimmed: @/${modulePath}`;
+        if (namedImports) return `import { ${namedImports} } from '/hooks-shim';`;
+        if (defaultImport) return `import ${defaultImport} from '/hooks-shim';`;
+        if (namespaceImport) return `import * as ${namespaceImport} from '/hooks-shim';`;
+        return `import hooks from '/hooks-shim'; // [Preview] Shimmed: @/${modulePath}`;
       }
       if (modulePath.startsWith('integrations/supabase')) {
-        if (namedImports) return `import { ${namedImports} } from './hooks-shim';`;
-        if (defaultImport) return `import ${defaultImport} from './hooks-shim';`;
-        return `import { supabase } from './hooks-shim'; // [Preview] Shimmed: @/${modulePath}`;
+        if (namedImports) return `import { ${namedImports} } from '/hooks-shim';`;
+        if (defaultImport) return `import ${defaultImport} from '/hooks-shim';`;
+        return `import { supabase } from '/hooks-shim'; // [Preview] Shimmed: @/${modulePath}`;
       }
-      return `// [Preview] Stripped: ${match.trim()}`;
+      // Redirect @/components/ui/* to the UI component shim
+      if (modulePath.startsWith('components/ui/') || modulePath === 'components/ui') {
+        if (namedImports) return `import { ${namedImports} } from '/ui-shim';`;
+        if (defaultImport) return `import ${defaultImport} from '/ui-shim';`;
+        if (namespaceImport) return `import * as ${namespaceImport} from '/ui-shim';`;
+        return `import '/ui-shim'; // [Preview] Shimmed: @/${modulePath}`;
+      }
+      // Convert @/ aliases to absolute paths — after /src/ flattening, @/ maps to /
+      // Using absolute paths (not ./) ensures correct resolution regardless of importer depth
+      if (namedImports) return `import { ${namedImports} } from '/${modulePath}';`;
+      if (defaultImport) return `import ${defaultImport} from '/${modulePath}';`;
+      if (namespaceImport) return `import * as ${namespaceImport} from '/${modulePath}';`;
+      return `import '/${modulePath}';`;
     }
   );
 
@@ -598,41 +862,43 @@ export function processCode(code: string, filePath: string): string {
       if (ALLOWED_IMPORTS.has(modulePath) || ALLOWED_IMPORTS.has(baseModule)) return match;
       if (/\.(css|scss|less)$/.test(modulePath)) return match;
       if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
+        // Redirect relative UI component imports to the UI shim
+        if (modulePath.includes('components/ui/') || modulePath.includes('/ui/')) {
+          const importMatch = match.match(/import\s+(?:\{([^}]+)\}|([\w]+))/);
+          if (importMatch) {
+            const namedImports = importMatch[1];
+            const defaultImport = importMatch[2];
+            if (namedImports) return `import { ${namedImports} } from '/ui-shim';`;
+            if (defaultImport) return `import ${defaultImport} from '/ui-shim';`;
+          }
+          return `import '/ui-shim'; // [Preview] Shimmed: ${modulePath}`;
+        }
         if (modulePath.includes('hooks/')) {
           const importMatch = match.match(/import\s+(?:\{([^}]+)\}|([\w]+))/);
           if (importMatch) {
             const namedImports = importMatch[1];
             const defaultImport = importMatch[2];
-            if (namedImports) return `import { ${namedImports} } from './hooks-shim';`;
-            if (defaultImport) return `import ${defaultImport} from './hooks-shim';`;
+            if (namedImports) return `import { ${namedImports} } from '/hooks-shim';`;
+            if (defaultImport) return `import ${defaultImport} from '/hooks-shim';`;
           }
-          return `import hooks from './hooks-shim'; // [Preview] Shimmed: ${modulePath}`;
+          return `import hooks from '/hooks-shim'; // [Preview] Shimmed: ${modulePath}`;
         }
         return match;
       }
-      if (modulePath.startsWith('@/')) return `// [Preview] Stripped: ${match.trim()}`;
+      if (modulePath.startsWith('@/')) {
+        // Convert @/ to absolute — after /src/ flattening, @/ maps to /
+        const absolutePath = modulePath.replace('@/', '/');
+        return match.replace(modulePath, absolutePath);
+      }
       return match;
     }
   );
 
-  // Remove unsupported hook calls
-  const unsupportedHooks = [
-    'useAssetRegistry', 'useTemplateState', 'useGoHighLevelCRM', 'useSupabaseClient',
-  ];
-  for (const hook of unsupportedHooks) {
-    processed = processed.replace(
-      new RegExp(`const\\s+\\{[^}]*\\}\\s*=\\s*${hook}\\([^)]*\\);?`, 'g'),
-      `// [Preview] Stripped ${hook} call`
-    );
-    processed = processed.replace(
-      new RegExp(`const\\s+\\w+\\s*=\\s*${hook}\\([^)]*\\);?`, 'g'),
-      `// [Preview] Stripped ${hook} call`
-    );
-    processed = processed.replace(
-      new RegExp(`${hook}\\([^)]*\\)`, 'g'),
-      '{}'
-    );
-  }
+  // NOTE: Previously stripped calls to useAssetRegistry, useTemplateState,
+  // useGoHighLevelCRM, useSupabaseClient — but hooks-shim already provides
+  // working mock implementations for all of these. Stripping the CALL while
+  // keeping the destructured variables caused undefined-reference crashes.
+  // Now we let the shimmed import + call work end-to-end.
 
   processed = processed.replace(/\n{3,}/g, '\n\n');
   return processed;
@@ -727,15 +993,22 @@ export function prepareSandpackFiles(
   if (!hasCSS) sandpackFiles['/index.css'] = BASE_CSS;
 
   if (strict) {
-    // In strict mode (launcher output), missing entrypoints are real errors.
-    // Do NOT inject fallback apps — surface the problem to the UI.
+    // In strict mode (launcher output), App.tsx is the AI-generated content —
+    // if it's missing, that's a real error. main.tsx is scaffolding that the AI
+    // never generates, so always inject it.
     if (!hasApp) throw new Error('Missing /App.tsx after Sandpack file preparation (strict mode)');
-    if (!hasMain) throw new Error('Missing /main.tsx after Sandpack file preparation (strict mode)');
+    if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
   } else {
     if (!hasApp) sandpackFiles['/App.tsx'] = DEFAULT_APP;
     if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
   }
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
+  sandpackFiles['/ui-shim.tsx'] = UI_SHIM;
+
+  // Inject lib/utils.ts with cn() if not already present (AI uses @/lib/utils)
+  if (!sandpackFiles['/lib/utils.ts'] && !sandpackFiles['/lib/utils.tsx']) {
+    sandpackFiles['/lib/utils.ts'] = LIB_UTILS;
+  }
 
   // Ensure template.css exists if any file imports it
   const anyImportsTemplateCss = Object.values(sandpackFiles).some(c =>
@@ -744,6 +1017,88 @@ export function prepareSandpackFiles(
   if (anyImportsTemplateCss && !sandpackFiles['/template.css']) {
     // Provide an empty CSS file so Sandpack doesn't crash
     sandpackFiles['/template.css'] = '/* template styles */\n';
+  }
+
+  // =========================================================================
+  // AUTO-STUB: Scan for relative imports referencing files that don't exist
+  // in the prepared sandbox and generate lightweight stub components.
+  // This prevents "Could not find module" Sandpack crashes when AI generates
+  // App.tsx referencing section files it didn't actually include.
+  // =========================================================================
+  const EXTENSIONS = ['.tsx', '.ts', '.jsx', '.js'];
+  const SHIM_PATHS = new Set(['/hooks-shim', '/ui-shim', '/lib/utils']);
+
+  for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+
+    // Find all relative and absolute imports in this file
+    const importRegex = /from\s+['"](\/?\.\.?\/[^'"]+|\/[^'"]+)['"]/g;
+    let importMatch;
+    while ((importMatch = importRegex.exec(content)) !== null) {
+      const rawImportPath = importMatch[1];
+
+      // Skip npm packages (no leading . or /)
+      if (!rawImportPath.startsWith('.') && !rawImportPath.startsWith('/')) continue;
+
+      // Resolve to absolute sandbox path
+      let absPath: string;
+      if (rawImportPath.startsWith('/')) {
+        // Already absolute
+        absPath = rawImportPath;
+      } else {
+        // Relative — resolve from current file's directory
+        const fromDir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
+        const segments = (fromDir + '/' + rawImportPath).split('/').filter(Boolean);
+        const resolved: string[] = [];
+        for (const seg of segments) {
+          if (seg === '..') resolved.pop();
+          else if (seg !== '.') resolved.push(seg);
+        }
+        absPath = '/' + resolved.join('/');
+      }
+
+      // Skip well-known shims and CSS
+      if (SHIM_PATHS.has(absPath)) continue;
+      if (/\.(css|scss|less)$/.test(absPath)) continue;
+
+      // Check if the file already exists (with any extension)
+      const exists = EXTENSIONS.some(ext => sandpackFiles[absPath + ext]) || sandpackFiles[absPath];
+      if (exists) continue;
+
+      // Extract what's being imported to generate matching exports
+      const lineRegex = new RegExp(
+        `import\\s+(?:\\{([^}]+)\\}|(\\w+)).*?from\\s+['"]${rawImportPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`,
+        'm'
+      );
+      const lineMatch = content.match(lineRegex);
+      const namedExports = lineMatch?.[1]?.split(',').map(s => s.replace(/\s+as\s+\w+/, '').trim()).filter(Boolean) || [];
+      const defaultExport = lineMatch?.[2];
+
+      // Generate a stub component file
+      const componentName = absPath.split('/').pop() || 'Component';
+      let stub = `// @ts-nocheck\nimport React from 'react';\n\n`;
+
+      for (const name of namedExports) {
+        stub += `export function ${name}({ children, className, ...props }) {\n`;
+        stub += `  return React.createElement('div', { className, ...props }, children || '${name}');\n`;
+        stub += `}\n\n`;
+      }
+
+      if (defaultExport) {
+        stub += `export default function ${defaultExport}({ children, className, ...props }) {\n`;
+        stub += `  return React.createElement('div', { className, ...props }, children || '${defaultExport}');\n`;
+        stub += `}\n`;
+      } else if (namedExports.length === 0) {
+        // No named or default — generate a generic default export
+        stub += `export default function ${componentName}({ children, className, ...props }) {\n`;
+        stub += `  return React.createElement('div', { className, ...props }, children || '${componentName}');\n`;
+        stub += `}\n`;
+      }
+
+      const stubPath = absPath + '.tsx';
+      sandpackFiles[stubPath] = stub;
+      console.warn(`[sandpackFilePrep] Auto-stubbed missing import: ${stubPath} (referenced from ${filePath})`);
+    }
   }
 
   // Ensure index.html exists (minimal — click interceptor is now in main.tsx)

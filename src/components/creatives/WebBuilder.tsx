@@ -51,6 +51,7 @@ import { WorkflowListPanel } from "./web-builder/WorkflowListPanel";
 import { ProjectsPanel } from "./web-builder/ProjectsPanel";
 import { LayoutTemplatesPanel } from "./web-builder/LayoutTemplatesPanel";
 import { FloatingDock } from "./web-builder/FloatingDock";
+import { SiteOperatingBar, type SiteOperatingMode } from "./web-builder/SiteOperatingBar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useVirtualFileSystem, VirtualFile } from "@/hooks/useVirtualFileSystem";
@@ -887,6 +888,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [selectedObject, setSelectedObject] = useState<FabricCanvas['_objects'][0] | null>(null);
   const [activeMode, setActiveMode] = useState<"insert" | "layout" | "text" | "vector">("insert");
   const [builderMode, setBuilderMode] = useState<SimpleBuilderMode>('select');
+  const [siteOperatingMode, setSiteOperatingMode] = useState<SiteOperatingMode>("pages");
   const [editActivationKey, setEditActivationKey] = useState(0);
   const [useReactPreview] = useState(true); // Pure React/VFS preview mode only
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
@@ -1618,7 +1620,7 @@ export default function ${componentName}Page() {
         setPreviewStatus({
           origin: 'deterministic-fallback',
           backend: 'sandpack',
-          strictMode: true,
+          strictMode: false,
           errors: [launchError],
         });
         toast.error(`AI generation failed: ${launchError}`);
@@ -4224,6 +4226,23 @@ ${sectionsJsx}
           </Button>
         </div>
       </div>
+
+      {/* Site Operating Mode Bar — shows when launched from pipeline */}
+      {systemsBuildContextFromState && (
+        <SiteOperatingBar
+          activeMode={siteOperatingMode}
+          onModeChange={(mode) => {
+            setSiteOperatingMode(mode);
+            if (mode === "code") {
+              setViewMode("split");
+            } else if (mode === "pages" || mode === "content") {
+              setViewMode("canvas");
+            }
+          }}
+          systemName={launchBusinessName || systemName || null}
+          systemType={systemType || null}
+        />
+      )}
 
       {/* Creator's Playground Modal */}
       <CreatorPlaygroundModal

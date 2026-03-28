@@ -66,12 +66,13 @@ export function usePreviewService() {
   const pendingPatchesRef = useRef<Map<string, string>>(new Map());
   const patchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Convert VFS nodes to file map for the preview service
-  const vfsToFileMap = useCallback((nodes: VirtualNode[]): Record<string, string> => {
-    const files: Record<string, string> = {};
-    
+  // Add scaffolding files (index.html, package.json, vite.config, etc.) if missing
+  const addScaffolding = useCallback((files: Record<string, string>): Record<string, string> => {
+    const out = { ...files };
+
     // Add index.html at root
-    files['/index.html'] = `<!DOCTYPE html>
+    if (!out['/index.html']) {
+      out['/index.html'] = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -83,19 +84,11 @@ export function usePreviewService() {
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>`;
-
-    // Add all files from VFS
-    for (const node of nodes) {
-      if (node.type === 'file') {
-        const file = node as VirtualFile;
-        const path = file.path || `/${file.name}`;
-        files[path] = file.content;
-      }
     }
 
     // Add vite.config.ts if not present
-    if (!files['/vite.config.ts']) {
-      files['/vite.config.ts'] = `import { defineConfig } from 'vite';
+    if (!out['/vite.config.ts']) {
+      out['/vite.config.ts'] = `import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
@@ -109,14 +102,14 @@ export default defineConfig({
     }
 
     // Add package.json — dynamically resolve deps from VFS imports
-    if (!files['/package.json']) {
+    if (!out['/package.json']) {
       const baseDeps: Record<string, string> = {
         react: '^18.3.1',
         'react-dom': '^18.3.1',
       };
-      const { dependencies: resolvedDeps } = getDependenciesForSandpack(files, baseDeps);
+      const { dependencies: resolvedDeps } = getDependenciesForSandpack(out, baseDeps);
 
-      files['/package.json'] = JSON.stringify({
+      out['/package.json'] = JSON.stringify({
         name: 'preview-project',
         private: true,
         version: '0.0.0',
@@ -141,8 +134,8 @@ export default defineConfig({
     }
 
     // Add tailwind.config.js if not present
-    if (!files['/tailwind.config.js']) {
-      files['/tailwind.config.js'] = `/** @type {import('tailwindcss').Config} */
+    if (!out['/tailwind.config.js']) {
+      out['/tailwind.config.js'] = `/** @type {import('tailwindcss').Config} */
 export default {
   content: [
     "./index.html",
@@ -156,8 +149,8 @@ export default {
     }
 
     // Add postcss.config.js if not present
-    if (!files['/postcss.config.js']) {
-      files['/postcss.config.js'] = `export default {
+    if (!out['/postcss.config.js']) {
+      out['/postcss.config.js'] = `export default {
   plugins: {
     tailwindcss: {},
     autoprefixer: {},
@@ -166,8 +159,8 @@ export default {
     }
 
     // Add tsconfig.json if not present
-    if (!files['/tsconfig.json']) {
-      files['/tsconfig.json'] = JSON.stringify({
+    if (!out['/tsconfig.json']) {
+      out['/tsconfig.json'] = JSON.stringify({
         compilerOptions: {
           target: 'ES2020',
           useDefineForClassFields: true,
@@ -190,15 +183,33 @@ export default {
       }, null, 2);
     }
 
-    return files;
+    return out;
   }, []);
 
-  // Start a new preview session
-  const startSession = useCallback(async (nodes: VirtualNode[], projectId?: string) => {
+  // Convert VFS nodes to file map for the preview service
+  const vfsToFileMap = useCallback((nodes: VirtualNode[]): Record<string, string> => {
+    const files: Record<string, string> = {};
+
+    // Add all files from VFS
+    for (const node of nodes) {
+      if (node.type === 'file') {
+        const file = node as VirtualFile;
+        const path = file.path || `/${file.name}`;
+        files[path] = file.content;
+      }
+    }
+
+    return addScaffolding(files);
+  }, [addScaffolding]);
+
+  // Start a new preview session from a pre-built file map
+  // Adds scaffolding (index.html, package.json, vite.config, etc.) if missing
+  const startSessionFromFiles = useCallback(async (inputFiles: Record<string, string>, projectId?: string) => {
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const files = vfsToFileMap(nodes);
+      // Add scaffolding to the provided files
+      const files = addScaffolding(inputFiles);
       
       const response = await fetch(`${PREVIEW_GATEWAY_URL}/api/preview/start`, {
         method: 'POST',
@@ -251,7 +262,13 @@ export default {
       }));
       return null;
     }
-  }, [vfsToFileMap]);
+  }, []);
+
+  // Start a new preview session from VFS nodes (wraps startSessionFromFiles)
+  const startSession = useCallback(async (nodes: VirtualNode[], projectId?: string) => {
+    const files = vfsToFileMap(nodes);
+    return startSessionFromFiles(files, projectId);
+  }, [vfsToFileMap, startSessionFromFiles]);
 
   // Stop the current session
   const stopSession = useCallback(async () => {
@@ -444,6 +461,7 @@ export default {
   return {
     ...state,
     startSession,
+    startSessionFromFiles,
     stopSession,
     patchFile,
     getLogs,

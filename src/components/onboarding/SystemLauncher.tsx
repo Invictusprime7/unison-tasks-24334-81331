@@ -63,7 +63,7 @@ export function SystemLauncher({ open, onClose, onLaunch }: Props) {
     }
 
     dispatch({ type: 'START_GENERATING' });
-    setProgressMessage(state.buildMode === 'ai-enhanced' ? 'Preparing AI blueprint...' : null);
+    setProgressMessage(state.buildMode === 'ai-enhanced' ? 'Interpreting business model...' : null);
 
     try {
       const blueprint = buildSystemBlueprint(state.systemType, state.industryId);

@@ -20,6 +20,7 @@ import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
 import type { LaunchConfig } from "@/types/launchConfig";
 import { generateSiteVFS, getBusinessName } from "@/utils/siteGenerator";
 import { generateAILaunchSite } from "@/services/aiLaunchService";
+import { launchConfigToBlueprint, createQuickBlueprint, blueprintToLaunchConfig } from "@/services/blueprintCompiler";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -31,6 +32,8 @@ const Index = () => {
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
   const [connectedIntegrations, setConnectedIntegrations] = useState<Record<string, boolean>>({});
+  const [heroGenerating, setHeroGenerating] = useState(false);
+  const [heroProgressMessage, setHeroProgressMessage] = useState("");
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -125,6 +128,64 @@ const Index = () => {
     }
   };
 
+  // Map chip IDs to industry for quick blueprint creation
+  const CHIP_TO_INDUSTRY: Record<string, string> = {
+    local_service: "local_service",
+    salon_spa: "salon_spa",
+    restaurant: "restaurant",
+    ecommerce: "ecommerce",
+    creator: "creator_portfolio",
+    coaching: "coaching_consulting",
+    real_estate: "real_estate",
+    nonprofit: "nonprofit",
+  };
+
+  const handleHeroAIGenerate = useCallback(async (prompt: string, chipId: string | null) => {
+    setHeroGenerating(true);
+    setHeroProgressMessage("");
+    try {
+      const industry = (chipId && CHIP_TO_INDUSTRY[chipId]) || "other";
+      const blueprint = createQuickBlueprint(industry, "My Business");
+      const config = blueprintToLaunchConfig(blueprint, "ai-enhanced");
+
+      const result = await generateAILaunchSite(
+        config,
+        (progress) => setHeroProgressMessage(progress.message),
+        prompt,
+      );
+
+      if (result.error) {
+        toast({ title: "AI Generation Failed", description: result.error, variant: "destructive" });
+      }
+
+      navigate("/web-builder", {
+        state: {
+          launchVFS: result.files,
+          launchBusinessName: result.businessName,
+          launchAIGenerated: result.aiGenerated,
+          launchError: result.error || null,
+          launchRuntimeManifest: result.runtimeManifest,
+          systemsBuildContext: result.systemsBuildContext || null,
+          systemType: config.blueprint.systemType,
+          systemName: result.businessName,
+        },
+      });
+
+      if (!result.error) {
+        toast({
+          title: result.aiGenerated ? "AI website generated!" : "Template site ready!",
+          description: "Opening in Web Builder...",
+        });
+      }
+    } catch (error) {
+      console.error("[HeroAI] Generation error:", error);
+      toast({ title: "Generation failed", description: "Please try again", variant: "destructive" });
+    } finally {
+      setHeroGenerating(false);
+      setHeroProgressMessage("");
+    }
+  }, [navigate, toast]);
+
   const handleStartLauncher = () => {
     setLauncherOpen(true);
   };
@@ -161,6 +222,7 @@ const Index = () => {
             launchAIGenerated: result.aiGenerated,
             launchError: result.error || null,
             launchRuntimeManifest: result.runtimeManifest,
+            systemsBuildContext: result.systemsBuildContext || null,
             systemType: config.blueprint.systemType,
             systemName: result.businessName,
           },
@@ -175,6 +237,7 @@ const Index = () => {
 
       const launchVFS = generateSiteVFS(config);
       const businessName = getBusinessName(config.blueprint.industry);
+      const blueprint = launchConfigToBlueprint(config, businessName);
 
       navigate('/web-builder', {
         state: {
@@ -188,6 +251,24 @@ const Index = () => {
             envVars: [],
             integrations: [],
             previewMode: 'sandpack' as const,
+          },
+          systemsBuildContext: {
+            version: '1.0.0',
+            identity: {
+              industry: blueprint.identity.industry,
+              business_model: blueprint.identity.business_model,
+              primary_goal: blueprint.identity.primary_goal,
+            },
+            brand: {
+              business_name: businessName,
+              tone: blueprint.brand.tone,
+              palette: blueprint.brand.palette,
+              typography: blueprint.brand.typography,
+            },
+            intents: blueprint.intents.map(i => ({
+              intent: i.intent,
+              target: i.target,
+            })),
           },
           systemType: config.blueprint.systemType,
           systemName: businessName,
@@ -322,11 +403,14 @@ const Index = () => {
         onStartLauncher={handleStartLauncher}
       />
 
-      {/* Hero Section */}
+      {/* Hero Section — AI-first entry */}
       <HeroSection 
         user={user}
         onStartLauncher={handleStartLauncher}
         onAuthRequired={() => navigate("/auth")}
+        onAIGenerate={handleHeroAIGenerate}
+        isGenerating={heroGenerating}
+        progressMessage={heroProgressMessage}
       />
 
       {/* Recent Projects Section - Only visible for authenticated users */}

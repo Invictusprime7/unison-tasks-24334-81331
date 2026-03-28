@@ -143,12 +143,22 @@ export const INTENT_ALIASES: Record<string, CoreIntent> = {
   'phone.call': 'button.click',
   'email.now': 'button.click',
   'email.open': 'button.click',
+  'sms.now': 'button.click',
   'sms.send': 'button.click',
 
   // ============ SOCIAL/SHARE ALIASES ============
   'social.share': 'button.click',
   'share': 'button.click',
   'share.page': 'button.click',
+
+  // ============ LEGACY BLUEPRINT ALIASES (deprecated) ============
+  // These were used in the old BusinessBlueprint IntentTypeSchema.
+  // All new code should use canonical CoreIntents only.
+  'booking.reschedule': 'booking.create',
+  'booking.cancel': 'booking.cancelled',
+  'shop.buy_now': 'pay.checkout',
+  'media.watch_demo': 'nav.goto',
+  'nav.open_modal': 'nav.goto',
 
   // ============ FORM SPECIFIC ALIASES ============
   'form.contact': 'contact.submit',

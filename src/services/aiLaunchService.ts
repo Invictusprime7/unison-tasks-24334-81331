@@ -39,6 +39,8 @@ export interface AILaunchResult {
   error?: string;
   /** Runtime manifest describing what preview engine to use */
   runtimeManifest: LaunchRuntimeManifest;
+  /** Systems build context for builder AI — carries business/intent/brand context */
+  systemsBuildContext?: Record<string, unknown>;
 }
 
 export interface AILaunchProgress {
@@ -444,12 +446,14 @@ function buildRuntimeManifest(
   const backendRequired = apiRoutes.length > 0 || integrations.length > 0;
 
   return {
-    frontend: 'sandpack',
+    frontend: 'vite',
     backendRequired,
     apiRoutes,
     envVars: [...new Set(envVars)],
     integrations,
-    previewMode: backendRequired ? 'docker' : 'sandpack',
+    // Docker is the primary preview engine — Sandpack is the fallback
+    // when Docker gateway isn't configured at runtime
+    previewMode: 'docker',
   };
 }
 
@@ -474,7 +478,7 @@ export async function generateAILaunchSite(
 ): Promise<AILaunchResult> {
   const businessName = getBusinessName(config.blueprint.industry);
 
-  onProgress?.({ stage: 'preparing', message: 'Preparing AI blueprint...' });
+  onProgress?.({ stage: 'preparing', message: 'Interpreting business model...' });
 
   // Generate deterministic template as reference/fallback
   const deterministicVFS = generateSiteVFS(config);
@@ -482,6 +486,8 @@ export async function generateAILaunchSite(
 
   // Build the color tokens and structured context from wizard selections
   const colorTokens = buildAestheticColorTokens(config.skin);
+  onProgress?.({ stage: 'preparing', message: 'Building blueprint & selecting page structure...' });
+
   const systemsBuildContext = buildSystemsBuildContext(config, businessName);
   const baseMessage = buildGenerationPrompt(config, businessName, colorTokens);
   const userMessage = userPrompt
@@ -489,10 +495,11 @@ export async function generateAILaunchSite(
     : baseMessage;
   const variationSeed = `launch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-  onProgress?.({ stage: 'generating', message: 'AI is creating your unique site...' });
+  onProgress?.({ stage: 'generating', message: 'Applying theme system & wiring intents...' });
 
   try {
     // Call ai-template-generator — the single source of truth for template generation
+    onProgress?.({ stage: 'generating', message: 'AI generating unique site variation...' });
     const { data, error } = await supabase.functions.invoke('ai-template-generator', {
       body: {
         messages: [{ role: 'user', content: userMessage }],
@@ -513,9 +520,9 @@ export async function generateAILaunchSite(
     if (error) {
       console.error('[aiLaunchService] ai-template-generator error:', error);
       const errorMsg = error.message || 'AI edge function returned an error';
-      onProgress?.({ stage: 'error', message: errorMsg });
+      onProgress?.({ stage: 'error', message: `${errorMsg} — using template fallback` });
       return {
-        files: {},
+        files: deterministicVFS,
         aiGenerated: false,
         businessName,
         error: errorMsg,
@@ -526,29 +533,29 @@ export async function generateAILaunchSite(
     // ai-template-generator returns { content } with stringified JSON of files
     const rawContent: string = data?.content ?? data?.code ?? '';
     if (!rawContent) {
-      console.error('[aiLaunchService] Empty AI response — NOT falling back silently');
-      onProgress?.({ stage: 'error', message: 'AI returned empty response' });
+      console.error('[aiLaunchService] Empty AI response — falling back to deterministic template');
+      onProgress?.({ stage: 'error', message: 'AI returned empty response — using template fallback' });
       return {
-        files: {},
+        files: deterministicVFS,
         aiGenerated: false,
         businessName,
-        error: 'AI response was empty — no files generated',
+        error: 'AI response was empty — using template fallback',
         runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
       };
     }
 
-    onProgress?.({ stage: 'processing', message: 'Processing AI output...' });
+    onProgress?.({ stage: 'processing', message: 'Generating files & hydrating controls...' });
 
     // Parse the multi-file JSON response
     const aiFiles = parseAIResponse(rawContent);
     if (!aiFiles) {
-      console.error('[aiLaunchService] Could not parse AI response');
-      onProgress?.({ stage: 'error', message: 'AI response could not be parsed' });
+      console.error('[aiLaunchService] Could not parse AI response — falling back to deterministic template');
+      onProgress?.({ stage: 'error', message: 'AI response could not be parsed — using template fallback' });
       return {
-        files: {},
+        files: deterministicVFS,
         aiGenerated: false,
         businessName,
-        error: 'AI response invalid — could not extract file map',
+        error: 'AI response invalid — using template fallback',
         runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
       };
     }
@@ -573,31 +580,31 @@ export async function generateAILaunchSite(
       normalizedFiles = normalizeLaunchFiles(pathNormalized, deterministicVFS);
     } catch (normErr) {
       const errMsg = normErr instanceof Error ? normErr.message : 'Entrypoint normalization failed';
-      console.error('[aiLaunchService]', errMsg);
-      onProgress?.({ stage: 'error', message: errMsg });
+      console.error('[aiLaunchService]', errMsg, '— falling back to deterministic template');
+      onProgress?.({ stage: 'error', message: `${errMsg} — using template fallback` });
       return {
-        files: {},
+        files: deterministicVFS,
         aiGenerated: false,
         businessName,
-        error: errMsg,
+        error: `${errMsg} — using template fallback`,
         runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
       };
     }
 
     const runtimeManifest = buildRuntimeManifest(normalizedFiles, config);
-    onProgress?.({ stage: 'complete', message: 'AI site generated!' });
+    onProgress?.({ stage: 'complete', message: 'Preparing live preview...' });
 
-    return { files: normalizedFiles, aiGenerated: true, businessName, runtimeManifest };
+    return { files: normalizedFiles, aiGenerated: true, businessName, runtimeManifest, systemsBuildContext };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : 'AI generation failed';
-    console.error('[aiLaunchService] AI generation failed:', errMsg);
-    onProgress?.({ stage: 'error', message: errMsg });
+    console.error('[aiLaunchService] AI generation failed:', errMsg, '— falling back to deterministic template');
+    onProgress?.({ stage: 'error', message: `${errMsg} — using template fallback` });
 
     return {
-      files: {},
+      files: deterministicVFS,
       aiGenerated: false,
       businessName,
-      error: errMsg,
+      error: `${errMsg} — using template fallback`,
       runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
     };
   }

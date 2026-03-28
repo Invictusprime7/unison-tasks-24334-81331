@@ -13,8 +13,8 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateAILaunchSite } from "@/services/aiLaunchService";
-import type { LaunchConfig, SystemBlueprint, TemplateStructure, ThemeSkin } from "@/types/launchConfig";
-import type { BusinessSystemType } from "@/data/templates/types";
+import { createQuickBlueprint, blueprintToLaunchConfig } from "@/services/blueprintCompiler";
+import type { LaunchConfig } from "@/types/launchConfig";
 import { cn } from "@/lib/utils";
 import {
   arcadePanel,
@@ -110,59 +110,15 @@ interface SystemsAIPanelProps {
 }
 
 /**
- * Build a LaunchConfig from a chip selection (or generic defaults).
- * Maps to the 3-layer architecture required by aiLaunchService →
- * ai-template-generator (template-react mode).
+ * Build a LaunchConfig from a chip selection via the canonical blueprint compiler.
+ * Both SystemLauncher and SystemsAIPanel now produce the same BusinessBlueprint,
+ * which is then compiled into a LaunchConfig for the generation pipeline.
  */
 function buildLaunchConfigFromChip(chipId?: string | null): LaunchConfig {
-  const systemType = (chipId && CHIP_TO_SYSTEM[chipId]) || 'content';
   const industry = (chipId && CHIP_TO_INDUSTRY[chipId]) || 'other';
-
-  const blueprint: SystemBlueprint = {
-    systemType: systemType as BusinessSystemType,
-    industry,
-    intents: [
-      { intent: 'contact.submit' as any, required: true, label: 'Contact Form', outcome: 'Submit inquiry' },
-    ],
-    pages: [{ slug: '/', name: 'Home', required: true, requiredSections: ['hero', 'features'] }],
-    workflows: [],
-    ctaContract: [],
-  };
-
-  const structure: TemplateStructure = {
-    familyId: 'clean',
-    variantId: 'A',
-    sections: [
-      { id: 'nav', type: 'nav', required: true, order: 0 },
-      { id: 'hero', type: 'hero', required: true, order: 1 },
-      { id: 'features', type: 'features', required: true, order: 2 },
-      { id: 'services', type: 'services', required: true, order: 3 },
-      { id: 'testimonials', type: 'testimonials', required: false, order: 4 },
-      { id: 'cta', type: 'cta', required: true, order: 5 },
-      { id: 'footer', type: 'footer', required: true, order: 6 },
-    ],
-    heroStyle: 'centered',
-    density: 'balanced',
-    navLayout: 'sticky-top',
-    footerLayout: 'full',
-    columnsDesktop: 3,
-    maxWidth: 1200,
-  };
-
-  const skin: ThemeSkin = {
-    identity: 'modern',
-    overrides: {
-      primary: '#6366F1',
-      secondary: '#8B5CF6',
-      accent: '#F59E0B',
-      background: '#FFFFFF',
-      fontHeading: 'Inter',
-      fontBody: 'Inter',
-      radiusScale: 'soft',
-    },
-  };
-
-  return { blueprint, structure, skin, buildMode: 'ai-enhanced' };
+  const businessName = 'My Business'; // Will be resolved by aiLaunchService
+  const blueprint = createQuickBlueprint(industry, businessName);
+  return blueprintToLaunchConfig(blueprint, 'ai-enhanced');
 }
 
 export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
@@ -323,20 +279,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
       
       navigate("/web-builder", {
         state: {
-          vfsFiles: result.files,
-          generatedCode: result.files['/src/App.tsx'] || '',
-          templateName: result.businessName,
-          aesthetic: config.skin.identity,
-          startInPreview: true,
-          systemType: config.blueprint.systemType,
+          launchVFS: result.files,
+          launchBusinessName: result.businessName,
           launchAIGenerated: result.aiGenerated,
           launchError: result.error || null,
           launchRuntimeManifest: result.runtimeManifest,
-          framework: "react",
-          userDesignProfile: hasProfile ? {
-            projectCount: savedProjectCount,
-            dominantStyle: designProfile?.dominantStyle,
-          } : undefined,
+          systemsBuildContext: result.systemsBuildContext || null,
+          systemType: config.blueprint.systemType,
+          systemName: result.businessName,
         },
       });
 

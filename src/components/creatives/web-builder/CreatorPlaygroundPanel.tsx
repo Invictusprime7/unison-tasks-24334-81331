@@ -1,8 +1,16 @@
 /**
- * CreatorPlaygroundPanel — The site operating panel inside Web Builder.
+ * CreatorPlaygroundPanel — The site operating layer inside Web Builder.
  * 
+ * This is the structured control layer for the generated site.
  * Manages pages, funnels, products, services, forms, and business info
- * through a tabbed interface. Edits structured business objects so pages react.
+ * through a tabbed interface.
+ * 
+ * ARCHITECTURE:
+ *   AI generates into VFS → hydrate playground → user edits structured objects
+ *   → VFS patches → preview updates → automations stay aligned
+ * 
+ * This is NOT a side feature. It is the primary way users edit business
+ * structure after generation, preventing raw code editing for every change.
  */
 
 import React, { useState, useCallback } from "react";
@@ -121,7 +129,7 @@ export const CreatorPlaygroundPanel: React.FC<CreatorPlaygroundPanelProps> = ({
       <div className="px-3 py-2.5 border-b border-border/50">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-foreground tracking-tight">
-            Creator's Playground
+            Site Operating Layer
           </h3>
           {playground.isDirty && (
             <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-amber-500/50 text-amber-400">
@@ -129,6 +137,13 @@ export const CreatorPlaygroundPanel: React.FC<CreatorPlaygroundPanelProps> = ({
             </Badge>
           )}
         </div>
+        {/* Hydration Stats */}
+        {playground.lastHydration && (
+          <div className="text-[10px] text-muted-foreground mt-1">
+            {allPages.length} pages · {playground.creatorData.products.length} products · {playground.creatorData.services.length} services
+            {playground.lastHydration.funnelAutoWired && ' · Funnel auto-wired'}
+          </div>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">

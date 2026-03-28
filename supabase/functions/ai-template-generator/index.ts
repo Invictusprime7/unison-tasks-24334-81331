@@ -144,22 +144,20 @@ DO NOT invent your own colors, layout, sections, or fonts. The user message is t
 
 ## REACT ARCHITECTURE
 
+⚠️ CRITICAL: OUTPUT EXACTLY TWO FILES — src/App.tsx and src/index.css
+All components (Hero, Features, Header, Footer, Testimonials, etc.) MUST be defined
+INLINE in App.tsx as named function components. DO NOT create separate files for sections,
+layouts, or UI components. The preview runtime provides its own hooks-shim and ui-shim
+so you NEVER need to generate those files.
+
 File structure:
 \`\`\`
 src/
-├── App.tsx              # Main app with all sections
-├── main.tsx             # Entry point  
+├── App.tsx              # ALL components inline + main app composition
 ├── index.css            # Global styles with CSS variables FROM USER MESSAGE
-├── components/
-│   ├── ui/              # Button, Card, Input
-│   ├── layout/          # Header, Footer, Section
-│   └── sections/        # Hero, Services, About, etc.
-├── hooks/
-├── lib/
-└── types/
 \`\`\`
 
-## COMPONENT PATTERNS:
+## COMPONENT PATTERNS (ALL INLINE IN App.tsx):
 
 ### Button:
 \`\`\`tsx
@@ -225,15 +223,16 @@ For buttons, use data-ut-intent attributes:
 \`\`\`
 
 ## OUTPUT FORMAT:
-Return a single JSON object (no markdown, no explanations):
+Return a single JSON object (no markdown, no explanations).
+ONLY include src/App.tsx and src/index.css — no other files:
 \`\`\`json
 { "files": { "src/App.tsx": "...", "src/index.css": "..." }, "entryPoint": "src/App.tsx", "framework": "react", "buildTool": "vite" }
 \`\`\`
 
-## ⛔ NEVER INCLUDE: tailwind.config, package.json, vite.config, tsconfig, postcss.config
+## ⛔ NEVER INCLUDE: tailwind.config, package.json, vite.config, tsconfig, postcss.config, main.tsx, hooks/, lib/, components/ui/, components/sections/, components/layout/
 
 ## QUALITY (NON-NEGOTIABLE):
-- MINIMUM 10 section components
+- MINIMUM 10 section components (ALL INLINE in App.tsx)
 - EXACTLY ONE Hero section
 - MINIMUM 6 service items, 3 testimonials, 5 FAQ items
 - All images from Unsplash with alt text
@@ -241,7 +240,7 @@ Return a single JSON object (no markdown, no explanations):
 - Responsive with sm/md/lg/xl breakpoints
 - Smooth scroll animations
 
-OUTPUT: Return ONLY the JSON object with the files.`;
+OUTPUT: Return ONLY the JSON object with EXACTLY two files: src/App.tsx and src/index.css.`;
 
     } else {
       // Standard template generation — use industry variations
@@ -407,20 +406,17 @@ ${variationContext}
 
 ## REACT FULLSTACK ARCHITECTURE
 
+⚠️ CRITICAL: OUTPUT EXACTLY TWO FILES — src/App.tsx and src/index.css
+All components (Hero, Features, Header, Footer, Testimonials, etc.) MUST be defined
+INLINE in App.tsx as named function components. DO NOT create separate files for sections,
+layouts, or UI components. The preview runtime provides its own hooks-shim and ui-shim
+so you NEVER need to generate those files.
+
 File structure:
 \`\`\`
 src/
-├── App.tsx
-├── main.tsx
-├── index.css
-├── components/
-│   ├── ui/
-│   ├── layout/
-│   └── sections/
-├── pages/
-├── hooks/
-├── lib/
-└── types/
+├── App.tsx              # ALL components inline + main app composition
+├── index.css            # Global styles with CSS variables
 \`\`\`
 
 ## DESIGN SYSTEM (MANDATORY CSS VARIABLES):
@@ -503,6 +499,8 @@ For buttons/elements, PREFER data-ut-intent attributes:
 \`\`\`
 
 ## OUTPUT FORMAT:
+Return a single JSON object (no markdown, no explanations).
+ONLY include src/App.tsx and src/index.css — no other files:
 \`\`\`json
 {
   "files": { "src/App.tsx": "...", "src/index.css": "..." },
@@ -512,10 +510,10 @@ For buttons/elements, PREFER data-ut-intent attributes:
 }
 \`\`\`
 
-## ⛔ NEVER INCLUDE: tailwind.config, package.json, vite.config, tsconfig, postcss.config
+## ⛔ NEVER INCLUDE: tailwind.config, package.json, vite.config, tsconfig, postcss.config, main.tsx, hooks/, lib/, components/ui/, components/sections/, components/layout/
 
 ## QUALITY (NON-NEGOTIABLE):
-- MINIMUM 10 section components
+- MINIMUM 10 section components (ALL INLINE in App.tsx)
 - EXACTLY ONE Hero section
 - MINIMUM 6 service items, 3 testimonials, 5 FAQ items
 - All images from Unsplash with alt text
@@ -523,7 +521,7 @@ For buttons/elements, PREFER data-ut-intent attributes:
 - Responsive with sm/md/lg/xl breakpoints
 - Smooth scroll animations
 
-OUTPUT: Return ONLY the JSON object with the files.`;
+OUTPUT: Return ONLY the JSON object with EXACTLY two files: src/App.tsx and src/index.css.`;
       }
     }
 

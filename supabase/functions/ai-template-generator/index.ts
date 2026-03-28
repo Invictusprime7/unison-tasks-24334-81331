@@ -157,38 +157,61 @@ src/
 ├── index.css            # Global styles with CSS variables FROM USER MESSAGE
 \`\`\`
 
-## COMPONENT PATTERNS (ALL INLINE IN App.tsx):
+## AVAILABLE LIBRARIES (pre-installed in preview — USE THEM):
 
-### Button:
+### Icons:
 \`\`\`tsx
-import { cn } from "@/lib/utils";
-import { ButtonHTMLAttributes, forwardRef } from "react";
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "default" | "secondary" | "outline" | "ghost";
-  size?: "sm" | "md" | "lg";
-}
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "default", size = "md", ...props }, ref) => (
-    <button className={cn(
-      "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2",
-      { "bg-primary text-primary-foreground hover:bg-primary/90": variant === "default",
-        "bg-secondary text-secondary-foreground hover:bg-secondary/80": variant === "secondary",
-        "border border-input bg-background hover:bg-accent hover:text-accent-foreground": variant === "outline",
-        "hover:bg-accent hover:text-accent-foreground": variant === "ghost" },
-      { "h-9 px-3 text-sm": size === "sm", "h-10 px-4 py-2": size === "md", "h-11 px-8 text-lg": size === "lg" },
-      className
-    )} ref={ref} {...props} />
-  )
-);
+import { Star, ArrowRight, Check, Phone, Mail, MapPin, Clock, Users, Heart, Shield, Zap, Menu, X, ChevronDown, ChevronRight, Quote, Calendar, Sparkles, TrendingUp, Award, Target } from "lucide-react";
+\`\`\`
+Use Lucide icons extensively — they are ALWAYS available. Use semantic icons for every feature card, testimonial, stat, and navigation element.
+
+### Animations (framer-motion):
+\`\`\`tsx
+import { motion, AnimatePresence, useInView, useScroll, useTransform } from "framer-motion";
+import { useRef } from "react";
+
+// Scroll-triggered reveal
+const ref = useRef(null);
+const isInView = useInView(ref, { once: true, margin: "-100px" });
+<motion.div ref={ref} initial={{ opacity: 0, y: 40 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }}>
+
+// Staggered children
+<motion.div variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1 } } }} initial="hidden" animate="show">
+  {items.map(item => (
+    <motion.div key={item.id} variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}>
+\`\`\`
+USE framer-motion for: hero entrance animations, scroll-triggered section reveals, staggered card grids, hover effects.
+
+### Charts (recharts):
+\`\`\`tsx
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, AreaChart, Area } from "recharts";
+\`\`\`
+Use for: stats sections, pricing comparisons, growth metrics.
+
+### Utilities:
+\`\`\`tsx
+import { cn } from "@/lib/utils";  // clsx + tailwind-merge
 \`\`\`
 
-### Section:
+### Tailwind CSS:
+Full Tailwind CSS is available via CDN. Theme CSS variables map to Tailwind:
+- \`bg-primary\`, \`text-primary\`, \`border-primary\` → hsl(var(--primary))
+- \`bg-secondary\`, \`bg-muted\`, \`bg-accent\`, \`bg-card\`, \`bg-background\`
+- \`text-foreground\`, \`text-muted-foreground\`, \`text-primary-foreground\`
+
+## COMPONENT PATTERNS:
+
+### Section with Scroll Reveal:
 \`\`\`tsx
-export function Section({ children, className, id }: { children: React.ReactNode; className?: string; id?: string }) {
+function Section({ children, className, id }: { children: React.ReactNode; className?: string; id?: string }) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-80px" });
   return (
-    <section id={id} className={cn("py-16 md:py-24", className)}>
-      <div className="container mx-auto px-4">{children}</div>
-    </section>
+    <motion.section ref={ref} id={id} className={cn("py-16 md:py-24", className)}
+      initial={{ opacity: 0, y: 40 }} animate={isInView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.6 }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">{children}</div>
+    </motion.section>
   );
 }
 \`\`\`
@@ -209,17 +232,35 @@ For buttons, use data-ut-intent attributes:
 
 ## ICONS: import { IconName } from "lucide-react";
 
-## CSS UTILITY CLASSES (include in index.css alongside the :root variables from user message):
+## PREMIUM CSS UTILITIES (include in index.css alongside the :root variables from user message):
 \`\`\`css
-.glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
+.glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
 .glass-card { background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.02) 100%); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.15); border-radius: 24px; }
-.gradient-text { background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.hover-lift { transition: transform 0.3s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s ease; }
-.hover-lift:hover { transform: translateY(-6px); box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+.glass-light { background: rgba(255,255,255,0.7); backdrop-filter: blur(16px); border: 1px solid rgba(0,0,0,0.08); }
+.nav-blur { background: rgba(255,255,255,0.85); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(0,0,0,0.08); }
+.gradient-text { background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent, var(--secondary))) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-weight: 600; padding: 0.75rem 1.5rem; border-radius: var(--radius, 0.5rem); transition: all 0.2s ease; border: none; cursor: pointer; }
+.btn-primary:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 14px hsl(var(--primary) / 0.3); }
+.btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); font-weight: 600; padding: 0.75rem 1.5rem; border-radius: var(--radius, 0.5rem); transition: all 0.2s ease; border: none; cursor: pointer; }
+.btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; background: transparent; color: hsl(var(--foreground)); font-weight: 600; padding: 0.75rem 1.5rem; border-radius: var(--radius, 0.5rem); border: 2px solid hsl(var(--border)); transition: all 0.2s ease; cursor: pointer; }
+.btn-outline:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.hover-lift { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease; }
+.hover-lift:hover { transform: translateY(-6px); box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
+.card-elevated { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: var(--radius, 0.75rem); padding: 2rem; transition: all 0.3s ease; }
+.card-elevated:hover { border-color: hsl(var(--primary) / 0.3); box-shadow: 0 8px 30px hsl(var(--primary) / 0.1); transform: translateY(-4px); }
+.badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.875rem; font-size: 0.75rem; font-weight: 600; border-radius: 9999px; background: hsl(var(--primary) / 0.1); color: hsl(var(--primary)); }
+.headline-xl { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
+.headline-lg { font-size: clamp(2rem, 4vw, 3rem); font-weight: 700; line-height: 1.2; }
+.headline-md { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700; line-height: 1.3; }
+.body-lg { font-size: 1.125rem; line-height: 1.7; }
+.body-md { font-size: 1rem; line-height: 1.6; }
+.caption { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: hsl(var(--primary)); }
+.section-spacing { padding: 5rem 1rem; }
+.container-wide { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
 @keyframes fade-in-up { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 .animate-fade-in-up { opacity: 0; animation: fade-in-up 0.6s ease forwards; }
-.stagger-1 { animation-delay: 0.1s; } .stagger-2 { animation-delay: 0.2s; } .stagger-3 { animation-delay: 0.3s; }
-.caption { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: hsl(var(--primary)); }
+.stagger-1 { animation-delay: 0.1s; } .stagger-2 { animation-delay: 0.2s; } .stagger-3 { animation-delay: 0.3s; } .stagger-4 { animation-delay: 0.4s; }
+.divider-gradient { height: 1px; background: linear-gradient(90deg, transparent, hsl(var(--border)), transparent); border: none; }
 \`\`\`
 
 ## OUTPUT FORMAT:
@@ -236,9 +277,11 @@ ONLY include src/App.tsx and src/index.css — no other files:
 - EXACTLY ONE Hero section
 - MINIMUM 6 service items, 3 testimonials, 5 FAQ items
 - All images from Unsplash with alt text
-- Professional typography hierarchy (eyebrow → headline → body)
+- Professional typography hierarchy using headline-xl/lg/md classes
 - Responsive with sm/md/lg/xl breakpoints
-- Smooth scroll animations
+- Scroll-triggered reveal animations using framer-motion useInView
+- Staggered grid animations for cards and features
+- Lucide icons on EVERY feature card, stat, and CTA
 
 OUTPUT: Return ONLY the JSON object with EXACTLY two files: src/App.tsx and src/index.css.`;
 

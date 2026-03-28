@@ -457,7 +457,7 @@ export const useNavigate = () => (path) => {
   } else {
     // Post to parent for page generation / routing
     const requestId = 'nav-' + Date.now();
-    const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
+    const pageName = path.replace(/^\\//, '').replace(/\\.html$/, '') || 'index';
     window.parent.postMessage({
       type: 'NAV_PAGE_GENERATE',
       pageName,

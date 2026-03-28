@@ -340,6 +340,29 @@ ${sectionDirective}
 
 ## APPROVED CTA BUTTON LABELS:
 ${getIndustryLabels(blueprint.industry)}
+
+## REQUIRED LIBRARIES (pre-installed — USE THEM):
+- **lucide-react**: Import icons for EVERY feature card, stat, testimonial, and CTA. Example: import { Star, ArrowRight, Check, Phone, Mail, MapPin, Clock, Users, Heart, Shield, Zap, Menu, X, Calendar, Sparkles, Award } from "lucide-react";
+- **framer-motion**: Use motion components with useInView for scroll-triggered section reveals and staggered card animations. Example: import { motion, useInView } from "framer-motion";
+- **recharts**: Use for stats/metrics sections when applicable. Example: import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
+- **cn() utility**: import { cn } from "@/lib/utils"; for Tailwind class merging
+- **Tailwind CSS**: Full CDN available. Use bg-primary, text-foreground, bg-muted, etc. mapped to CSS variables.
+
+## REQUIRED COMPONENT PATTERN:
+Every section MUST use scroll-triggered reveal:
+\`\`\`tsx
+function Section({ children, className, id }) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-80px" });
+  return (
+    <motion.section ref={ref} id={id} className={cn("py-16 md:py-24", className)}
+      initial={{ opacity: 0, y: 40 }} animate={isInView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.6 }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">{children}</div>
+    </motion.section>
+  );
+}
+\`\`\`
 `;
 }
 

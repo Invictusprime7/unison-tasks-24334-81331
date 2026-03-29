@@ -7,7 +7,10 @@
  * - Undo/redo stack with configurable depth
  * - Snapshot metadata (label, source, timestamp)
  * - Diff summary for UI display
+ * - Supabase persistence for authenticated users
  */
+
+import { supabase } from '@/integrations/supabase/client';
 
 // ============================================================================
 // Types

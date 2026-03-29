@@ -2128,7 +2128,7 @@ export default function ${componentName}Page() {
                 code: previewCode,
                 editor_code: editorCode || null,
                 updated_at: new Date().toISOString(),
-              }, { onConflict: 'user_id' })
+              } as any, { onConflict: 'user_id,business_id' })
               .then(({ error }) => {
                 if (error) console.warn('[AutoSave] DB persist failed:', error.message);
               });

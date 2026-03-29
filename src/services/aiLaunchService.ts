@@ -411,6 +411,119 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
 }
 
 // ============================================================================
+// Thin-Shell Consolidator — inlines missing imported section components
+// ============================================================================
+
+/** Section template used when AI references a component that doesn't exist */
+function sectionPlaceholder(name: string): string {
+  const heading = name.replace(/([A-Z])/g, ' $1').trim(); // "CallToAction" → "Call To Action"
+  return `function ${name}() {
+  return (
+    <section className="py-16 px-4">
+      <div className="max-w-5xl mx-auto text-center">
+        <h2 className="text-3xl font-bold mb-4">${heading}</h2>
+        <p className="text-gray-500">This section is loading…</p>
+      </div>
+    </section>
+  );
+}`;
+}
+
+/**
+ * Detects when AI outputs a "thin-shell" App.tsx that merely imports and
+ * renders components from relative paths that don't exist in the file map.
+ * When detected, the missing imports are replaced with inline placeholder
+ * section components so the preview renders real content instead of stub text.
+ */
+function consolidateThinShell(files: Record<string, string>): Record<string, string> {
+  const appKey = Object.keys(files).find(p => /\/?src\/App\.tsx$/i.test(p));
+  if (!appKey) return files;
+
+  const src = files[appKey];
+
+  // Detect relative imports that reference files NOT in the output
+  // e.g. import Hero from './components/sections/Hero'
+  const importRe = /import\s+(\w+)\s+from\s+['"]\.\/([^'"]+)['"]/g;
+  const missing: { name: string; relPath: string; fullMatch: string }[] = [];
+
+  let m: RegExpExecArray | null;
+  while ((m = importRe.exec(src)) !== null) {
+    const [fullMatch, name, relPath] = m;
+    // Check if the imported file exists under any plausible key
+    const exists = Object.keys(files).some(p => {
+      const norm = p.replace(/^\/?(src\/)?/, '');
+      return (
+        norm === relPath ||
+        norm === relPath + '.tsx' ||
+        norm === relPath + '.ts' ||
+        norm === relPath + '/index.tsx' ||
+        norm === relPath + '/index.ts'
+      );
+    });
+    if (!exists) {
+      missing.push({ name, relPath, fullMatch });
+    }
+  }
+
+  // Not a thin-shell pattern — no missing imports
+  if (missing.length === 0) return files;
+
+  // Minimum "thin shell" heuristic: at least 2 missing imports and App.tsx < 2000 chars
+  if (missing.length < 2 && src.length > 2000) return files;
+
+  console.warn(
+    `[aiLaunchService] Thin-shell App.tsx detected (${missing.length} missing imports): ` +
+      missing.map(m => m.name).join(', '),
+  );
+
+  // Build consolidated App.tsx: strip missing imports, inject inline placeholders
+  let consolidated = src;
+  const placeholders: string[] = [];
+
+  for (const imp of missing) {
+    // Remove the import line
+    consolidated = consolidated.replace(imp.fullMatch + ';', '');
+    consolidated = consolidated.replace(imp.fullMatch, '');
+    // Generate inline section component
+    placeholders.push(sectionPlaceholder(imp.name));
+  }
+
+  // Insert placeholders before the default export / main component
+  const insertBefore =
+    consolidated.match(/export\s+default\s+function/) ||
+    consolidated.match(/function\s+App\s*\(/) ||
+    consolidated.match(/const\s+App\s*=/);
+
+  if (insertBefore && insertBefore.index !== undefined) {
+    const idx = insertBefore.index;
+    consolidated =
+      consolidated.slice(0, idx) +
+      placeholders.join('\n\n') +
+      '\n\n' +
+      consolidated.slice(idx);
+  } else {
+    // Fallback: prepend after last import
+    const lastImportIdx = consolidated.lastIndexOf('import ');
+    const lineEnd = consolidated.indexOf('\n', lastImportIdx);
+    if (lineEnd !== -1) {
+      consolidated =
+        consolidated.slice(0, lineEnd + 1) +
+        '\n' +
+        placeholders.join('\n\n') +
+        '\n\n' +
+        consolidated.slice(lineEnd + 1);
+    } else {
+      consolidated = placeholders.join('\n\n') + '\n\n' + consolidated;
+    }
+  }
+
+  // Clean up empty lines left by removed imports
+  consolidated = consolidated.replace(/\n{3,}/g, '\n\n');
+
+  return { ...files, [appKey]: consolidated };
+}
+
+// ============================================================================
 // File Normalizer — ensures all required entrypoints exist before preview
 // ============================================================================
 
@@ -597,9 +710,14 @@ export async function generateAILaunchSite(
     // Sanitize React files (fix common HTML-in-JSX issues)
     const sanitized = sanitizeReactFiles(aiFiles);
 
+    // Consolidate thin-shell App.tsx — if AI split into separate component files
+    // that it didn't actually include, inline placeholder sections so the preview
+    // renders real content instead of stub text
+    const consolidated = consolidateThinShell(sanitized);
+
     // Normalize file paths — ensure /src/ prefix for Sandpack compatibility
     const pathNormalized: Record<string, string> = {};
-    for (const [path, content] of Object.entries(sanitized)) {
+    for (const [path, content] of Object.entries(consolidated)) {
       // Strip leading slash for uniform handling
       const stripped = path.replace(/^\/+/, '');
       // If already has src/ prefix, add leading / only

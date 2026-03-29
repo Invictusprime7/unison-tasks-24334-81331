@@ -150,6 +150,27 @@ INLINE in App.tsx as named function components. DO NOT create separate files for
 layouts, or UI components. The preview runtime provides its own hooks-shim and ui-shim
 so you NEVER need to generate those files.
 
+🚫 FORBIDDEN PATTERN — DO NOT DO THIS:
+\`\`\`tsx
+// ❌ WRONG — importing from separate component files
+import Hero from './components/sections/Hero';
+import Features from './components/sections/Features';
+\`\`\`
+
+✅ CORRECT PATTERN — DO THIS:
+\`\`\`tsx
+// ✅ RIGHT — define each section inline, then compose in App
+function Hero() {
+  return <section className="py-20 px-4">...</section>;
+}
+function Features() {
+  return <section className="py-16 px-4">...</section>;
+}
+export default function App() {
+  return <><Hero /><Features /></>;
+}
+\`\`\`
+
 File structure:
 \`\`\`
 src/
@@ -452,6 +473,9 @@ ${variationContext}
 ⚠️ CRITICAL: OUTPUT EXACTLY TWO FILES — src/App.tsx and src/index.css
 All components (Hero, Features, Header, Footer, Testimonials, etc.) MUST be defined
 INLINE in App.tsx as named function components. DO NOT create separate files.
+🚫 NEVER import from './components/', './sections/', or any relative path.
+Define Hero(), Features(), Testimonials(), CallToAction(), Header(), Footer() etc.
+as function declarations INSIDE App.tsx, then compose them in the default export.
 
 ## DESIGN SYSTEM (MANDATORY CSS VARIABLES):
 

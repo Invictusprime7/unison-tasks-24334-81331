@@ -1086,24 +1086,37 @@ export function prepareSandpackFiles(
       const namedExports = lineMatch?.[1]?.split(',').map(s => s.replace(/\s+as\s+\w+/, '').trim()).filter(Boolean) || [];
       const defaultExport = lineMatch?.[2];
 
-      // Generate a stub component file
+      // Generate a stub component file with a styled section layout
+      // instead of bare <div>Name</div> which renders as literal text
       const componentName = absPath.split('/').pop() || 'Component';
       let stub = `// @ts-nocheck\nimport React from 'react';\n\n`;
 
+      const styledStub = (name: string) => {
+        const heading = name.replace(/([A-Z])/g, ' $1').trim();
+        return [
+          `  return React.createElement('section', { className: 'py-16 px-4 ' + (className || ''), ...props },`,
+          `    React.createElement('div', { className: 'max-w-5xl mx-auto text-center' },`,
+          `      React.createElement('h2', { className: 'text-3xl font-bold mb-4' }, '${heading}'),`,
+          `      React.createElement('p', { className: 'text-gray-500' }, children || 'Content loading…')`,
+          `    )`,
+          `  );`,
+        ].join('\n');
+      };
+
       for (const name of namedExports) {
         stub += `export function ${name}({ children, className, ...props }) {\n`;
-        stub += `  return React.createElement('div', { className, ...props }, children || '${name}');\n`;
+        stub += styledStub(name) + '\n';
         stub += `}\n\n`;
       }
 
       if (defaultExport) {
         stub += `export default function ${defaultExport}({ children, className, ...props }) {\n`;
-        stub += `  return React.createElement('div', { className, ...props }, children || '${defaultExport}');\n`;
+        stub += styledStub(defaultExport) + '\n';
         stub += `}\n`;
       } else if (namedExports.length === 0) {
         // No named or default — generate a generic default export
         stub += `export default function ${componentName}({ children, className, ...props }) {\n`;
-        stub += `  return React.createElement('div', { className, ...props }, children || '${componentName}');\n`;
+        stub += styledStub(componentName) + '\n';
         stub += `}\n`;
       }
 

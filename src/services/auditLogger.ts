@@ -35,6 +35,7 @@ export type ResourceType =
   | 'folder' 
   | 'user' 
   | 'business'
+  | 'organization'
   | 'preview_session'
   | 'template'
   | 'workflow'

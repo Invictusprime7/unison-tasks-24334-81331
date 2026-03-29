@@ -49,9 +49,8 @@ export function AIServiceDiagnostics() {
 
       if (error) {
         setTestResult(`❌ Error: ${error.message}`);
-      } else if (data?.html || data?.content || data?.code) {
-        const html = data.html || data.content || data.code;
-        setTestResult(`✅ Success! Generated ${html.length} characters of HTML`);
+      } else if (data?.content) {
+        setTestResult(`✅ Success! Generated ${data.content.length} characters of code`);
       } else {
         setTestResult(`⚠️ Response received but no HTML content found. Response: ${JSON.stringify(data).substring(0, 200)}`);
       }

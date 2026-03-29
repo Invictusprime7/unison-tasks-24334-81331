@@ -2,10 +2,10 @@
  * Shared AI Edge Function Utilities (v2 - split architecture)
  *
  * Common types, constants, and helper functions used across all AI edge functions:
- *   - ai-code-assistant (code/design/review/debug)
- *   - ai-template-generator (template-json/html/react)
+ *   - ai-code-assistant (primary — code/template-react/design/review/debug)
+ *   - ai-template-generator (template-json/html/react — launch wizard fallback)
  *   - ai-page-generator (navPageGen)
- *   - ai-editor (editMode/surgicalEdit)
+ *   - ai-editor (surgical edits with VFS context)
  *
  * @module aiShared
  */

@@ -1,14 +1,17 @@
 /**
- * AI Editor Edge Function
+ * AI Editor Edge Function (Consolidated)
  *
- * Handles edit mode and surgical edit operations:
- *   - editMode: ADDITIVE editing of existing templates (code + React)
+ * Primary AI edge function for ALL code/edit/design/review/debug operations:
+ *   - code: React/TSX code generation with optional edit mode
+ *   - template-react: Template-aware React generation
+ *   - design: UI/UX design advisory
+ *   - review: Code review and analysis
+ *   - debug: Debugging and troubleshooting
+ *   - editMode: ADDITIVE editing of existing templates
  *   - surgicalEdit: Targeted single-element changes with VFS context
  *   - templateAction: add, remove, modify, suggest, restyle, full-control, apply-design-preset
  *
- * Split from ai-code-assistant for:
- *   - Dedicated VFS-aware editing without template generation overhead
- *   - Cleaner separation of creation vs. editing concerns
+ * Consolidates ai-code-assistant into this single endpoint.
  */
 
 import { serve } from "serve";
@@ -299,7 +302,7 @@ serve(async (req: Request) => {
         role: z.enum(['user', 'assistant', 'system']),
         content: z.unknown(),
       })).min(1),
-      mode: z.enum(['code', 'template-react']).default('code'),
+      mode: z.enum(['code', 'template-react', 'design', 'review', 'debug']).default('code'),
       currentCode: z.string().nullish(),
       editMode: z.boolean().optional(),
       surgicalEdit: z.boolean().optional(),
@@ -368,8 +371,9 @@ serve(async (req: Request) => {
     const userPromptText = extractTextContent(messages[messages.length - 1]?.content);
     const researchPromise = performPromptResearch(userPromptText);
 
-    // Build system prompt — based on the code mode prompt but focused on editing
-    const systemPrompt = `You are an ELITE "Super Web Builder Expert" AI specialized in EDITING existing React/TypeScript web applications.
+    // Build system prompt — mode-aware
+    const systemPrompts: Record<string, string> = {
+      code: `You are an ELITE "Super Web Builder Expert" AI for React/TypeScript web applications.
 ${editModeContext}
 
 ⚠️ CRITICAL OUTPUT FORMAT: REACT/TSX ONLY ⚠️
@@ -409,7 +413,88 @@ ${learnedPatterns}
 - JSON multi-file: {"files": {"/path/file.tsx": "content"}}
 - Single file: \`\`\`tsx code fence
 
-⛔ **NEVER GENERATE:** raw HTML documents, <script> tags, vanilla JS, CDN script tags.`;
+⛔ **NEVER GENERATE:** raw HTML documents, <script> tags, vanilla JS, CDN script tags.`,
+
+      design: `You are an ELITE "Super Web Builder Expert" UI/UX design advisor with a continuously learning system.
+
+🎨 **DESIGN EXPERTISE WITH LEARNING:**
+You actively learn from successful design patterns and provide increasingly sophisticated recommendations.
+
+**LEARNED DESIGN PATTERNS:**
+${learnedPatterns}
+
+**YOUR DESIGN MASTERY:**
+- Color Theory & Psychology
+- Typography Systems
+- Spacing & Layout
+- Visual Hierarchy
+- Motion Design
+- Accessibility (WCAG)
+- Design Trends
+
+**DESIGN PRINCIPLES:**
+1. **Accessibility First** - WCAG AA compliance
+2. **Visual Hierarchy** - Guide attention through size, color, spacing
+3. **Consistency** - Design systems, tokens, reusable patterns
+4. **Responsive** - Mobile-first, fluid layouts
+5. **Performance** - Optimized assets, smooth animations
+6. **User-Centric** - Intuitive navigation, clear feedback
+
+Build upon proven design patterns to create increasingly sophisticated solutions!`,
+
+      review: `You are an ELITE "Super Web Builder Expert" code reviewer with a learning-driven analysis system.
+
+🔍 **COMPREHENSIVE CODE REVIEW WITH LEARNING:**
+**LEARNED BEST PRACTICES:**
+${learnedPatterns}
+
+**REVIEW FRAMEWORK:**
+1. **Critical Issues** 🚨 — Security, performance, accessibility
+2. **Improvements** 💡 — Organization, type safety, optimization
+3. **Best Practices** ✅ — What's done well, patterns worth reusing
+
+**REVIEW STYLE:**
+- Constructive and specific with code examples
+- Prioritize: critical → nice-to-have
+- Include impact and reasoning
+- Reference learned patterns`,
+
+      debug: `You are an ELITE "Super Web Builder Expert" debugging specialist.
+
+🔧 **ADVANCED DEBUGGING:**
+**LEARNED ERROR PATTERNS:**
+${learnedPatterns}
+
+${editModeContext}
+
+**DEBUGGING EXPERTISE:**
+1. **Rendering Issues** — Layout breaking, CSS conflicts, responsive failures
+2. **React/TypeScript Errors** — Hook violations, type errors, stale closures
+3. **Visual Problems** — Styling not applying, z-index, animation glitches
+4. **Functional Bugs** — Interactive elements, forms, state management
+
+**DEBUGGING PROCESS:**
+1. ANALYZE — Read the React/TSX code
+2. IDENTIFY — Locate the exact issue
+3. DIAGNOSE — Explain the cause
+4. FIX — Provide complete corrected React/TSX code
+5. EXPLAIN — What changed and why
+
+**CRITICAL RULES:**
+✅ ALWAYS provide COMPLETE FIXED CODE as React/TSX
+✅ Output valid TSX — not HTML documents
+✅ Preserve working code — only fix what's broken
+✅ Validate JSX structure
+
+**RESPONSE FORMAT:**
+🔍 **Issue Identified:** [description]
+🎯 **Root Cause:** [why]
+✅ **Solution:** [what to change]
+📝 **Fixed Code:** \`\`\`tsx [complete code] \`\`\`
+💡 **Explanation:** [what changed]`,
+    };
+
+    const systemPrompt = systemPrompts[mode] || systemPrompts.code;
 
     const research = await researchPromise;
     const researchContext = formatResearchContext(research);

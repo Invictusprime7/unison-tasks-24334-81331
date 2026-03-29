@@ -28,6 +28,9 @@ import {
   buildSystemTypeContext,
   buildDesignProfileContext,
   buildSystemsBuildContextText,
+  analyzeTemplateStructure,
+  fetchLearnedPatterns,
+  formatLearnedPatterns,
   handleCorsOptions,
   buildErrorResponse,
   saveLearnSession,
@@ -58,6 +61,8 @@ serve(async (req: Request) => {
       templateAction: z.string().max(100).nullish(),
       savePattern: z.boolean().optional(),
       systemType: z.string().max(100).nullish(),
+      editMode: z.boolean().optional(),
+      siteElementsLibraryContext: z.string().nullish(),
       userDesignProfile: z.object({
         projectCount: z.number().optional(),
         dominantStyle: z.enum(["dark", "light", "colorful", "minimal", "mixed"]).optional(),
@@ -86,6 +91,8 @@ serve(async (req: Request) => {
       templateAction,
       savePattern,
       systemType,
+      editMode = false,
+      siteElementsLibraryContext,
       userDesignProfile,
       systemsBuildContext,
     } = parsed.data;
@@ -97,6 +104,63 @@ serve(async (req: Request) => {
       systemType ?? null,
       templateName ?? null
     );
+
+    // Build edit mode context when editing existing templates (from AIBuilderPanel)
+    let editModeContext = '';
+    if (editMode && currentCode && templateAction !== 'use-as-schema') {
+      const templateStructure = analyzeTemplateStructure(currentCode);
+      const maxCodeLength = 4000;
+
+      // Template action context for builder panel editing
+      let templateActionCtx = '';
+      if (templateAction === 'full-control') {
+        templateActionCtx = `
+🚀 **FULL CREATIVE CONTROL MODE**
+You have FULL AUTHORITY to make ANY UI/UX decisions. Restyle, reorder, add/remove sections.
+⚠️ ALL COMPONENTS MUST BE INLINE IN ONE FILE (App.tsx). No separate component files.`;
+      } else if (templateAction === 'add') {
+        templateActionCtx = `\n🎯 **ACTION: ADD** — Add new elements/sections. Maintain existing patterns and imports.`;
+      } else if (templateAction === 'remove') {
+        templateActionCtx = `\n🎯 **ACTION: REMOVE** — Remove ONLY what's specified. Clean up orphaned imports.`;
+      } else if (templateAction === 'modify') {
+        templateActionCtx = `\n🎯 **ACTION: MODIFY** — Make targeted changes to ONLY the specified component. Preserve everything else.`;
+      } else if (templateAction === 'restyle') {
+        templateActionCtx = `\n🎯 **ACTION: RESTYLE** — Change visual styling only. Maintain layout and structure.`;
+      } else if (templateAction === 'apply-design-preset') {
+        templateActionCtx = `\n🎨 **ACTION: APPLY DESIGN PRESET** — Change ONLY visual styling (colors, fonts, shadows). NEVER change text content, layout, or structure.`;
+      } else if (templateAction === 'suggest') {
+        templateActionCtx = `\n💡 **ACTION: SUGGEST** — Provide specific, actionable UI/UX improvement suggestions with code examples.`;
+      }
+
+      editModeContext = `
+⛔ EDIT MODE: ADDITIVE ONLY - ZERO TOLERANCE FOR REMOVAL ⛔
+You are editing an EXISTING template. The user's site is LIVE.
+
+🔒 **GOLDEN RULE: ADD, NEVER REMOVE**
+- You must ADD to the existing template
+- You must NEVER remove sections, scripts, styles, or elements
+- Unless the user EXPLICITLY says "remove", "delete", "take out", or "get rid of"
+- If user says "change X" → MODIFY X in place, do not delete and recreate
+
+📊 **ELEMENT COUNT VALIDATION:**
+- React components/sections: Input count MUST equal output count (unless explicitly adding/removing)
+- Import statements: ALL MUST be preserved
+- Hooks: ALL MUST be preserved
+- data-ut-intent attributes: ALL MUST be preserved
+${templateActionCtx}
+${templateStructure}
+
+**CURRENT CODE (${currentCode.length > maxCodeLength ? 'truncated' : 'full'}):**
+\`\`\`tsx
+${currentCode.substring(0, maxCodeLength)}${currentCode.length > maxCodeLength ? '\n... (truncated)' : ''}
+\`\`\`
+`;
+    }
+
+    // Elements library context
+    const elementsLibraryBlock = siteElementsLibraryContext
+      ? `\n${siteElementsLibraryContext}\n⚠️ LIBRARY USAGE RULE: The element library provides STRUCTURE and INTENT WIRING patterns only. For visual design, follow the design profile and brand palette.\n`
+      : '';
 
     // Perform web research in parallel
     const userPromptText = extractTextContent(messages[messages.length - 1]?.content);
@@ -644,11 +708,11 @@ OUTPUT: Return ONLY the JSON object with EXACTLY two files: src/App.tsx and src/
 
     // Build final messages
     const aiMessages = [
-      { role: 'system', content: systemPrompt + researchContext + systemTypeContext + designProfileContext + systemsBuildContextText + THINKING_INSTRUCTION },
+      { role: 'system', content: systemPrompt + editModeContext + researchContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + THINKING_INSTRUCTION },
       ...processedMessages,
     ];
 
-    console.log(`[ai-template-generator] Processing ${processedMessages.length} messages`);
+    console.log(`[ai-template-generator] Processing ${processedMessages.length} messages, editMode=${editMode}, templateAction=${templateAction ?? 'none'}`);
 
     // Call AI providers
     const result: AIProviderResult = await callAIProviders(aiMessages);

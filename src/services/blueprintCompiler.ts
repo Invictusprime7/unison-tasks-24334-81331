@@ -314,10 +314,24 @@ function inferPageType(slug: string): BusinessBlueprint['site']['pages'][0]['typ
 
 function inferSystemType(industry: string): string {
   const map: Record<string, string> = {
-    local_service: 'booking', salon_spa: 'booking', restaurant: 'booking',
-    ecommerce: 'store', creator_portfolio: 'portfolio',
-    coaching_consulting: 'booking', real_estate: 'agency',
-    nonprofit: 'content', other: 'content',
+    // Booking industries
+    salon: 'booking', barbershop: 'booking', fitness: 'booking',
+    medical: 'booking', restaurant: 'booking', coaching: 'booking',
+    consulting: 'booking',
+    // Store industries
+    clothing: 'store', 'food-products': 'store', ecommerce: 'store',
+    // Portfolio industries
+    photographer: 'portfolio', designer: 'portfolio', developer: 'portfolio',
+    // Agency / leads industries
+    contractor: 'agency', roofing: 'agency', hvac: 'agency',
+    legal: 'agency', realestate: 'agency',
+    // SaaS / content
+    'saas-product': 'content', devtool: 'content', blog: 'content',
+    nonprofit: 'content',
+    // Legacy chip-based IDs (backward compat)
+    local_service: 'booking', salon_spa: 'booking',
+    creator_portfolio: 'portfolio', coaching_consulting: 'booking',
+    real_estate: 'agency', other: 'content',
   };
   return map[industry] ?? 'content';
 }

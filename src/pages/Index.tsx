@@ -130,13 +130,13 @@ const Index = () => {
 
   // Map chip IDs to industry for quick blueprint creation
   const CHIP_TO_INDUSTRY: Record<string, string> = {
-    local_service: "local_service",
-    salon_spa: "salon_spa",
+    local_service: "contractor",
+    salon_spa: "salon",
     restaurant: "restaurant",
-    ecommerce: "ecommerce",
-    creator: "creator_portfolio",
-    coaching: "coaching_consulting",
-    real_estate: "real_estate",
+    ecommerce: "clothing",
+    creator: "photographer",
+    coaching: "consulting",
+    real_estate: "realestate",
     nonprofit: "nonprofit",
   };
 

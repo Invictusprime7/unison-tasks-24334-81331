@@ -208,9 +208,9 @@ export const useWebBuilderAI = (
     setLoading(true);
     try {
       const variationSeed = generateVariationSeed();
-      console.log('[useWebBuilderAI] Generating template via ai-template-generator, prompt:', prompt, 'seed:', variationSeed);
+      console.log('[useWebBuilderAI] Generating template via ai-code-assistant, prompt:', prompt, 'seed:', variationSeed);
       
-      const { data, error } = await supabase.functions.invoke('ai-template-generator', {
+      const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
         body: { 
           messages: [{ role: 'user', content: prompt }],
           mode: 'template-json',
@@ -233,7 +233,7 @@ export const useWebBuilderAI = (
 
       console.log('[useWebBuilderAI] Received data:', data);
 
-      // ai-template-generator returns { content } with raw JSON string - parse it
+      // ai-code-assistant returns { content } with raw JSON string - parse it
       let template;
       if (data.content) {
         // Parse JSON from content string (may have markdown code fences)
@@ -299,7 +299,7 @@ ${prompt.keyMessages?.length ? `Key Messages: ${prompt.keyMessages.join(', ')}` 
 ${prompt.preferredStyle ? `Style: ${prompt.preferredStyle}` : ''}
 ${prompt.brandKit ? `Brand Colors: Primary ${prompt.brandKit.primaryColor}, Secondary ${prompt.brandKit.secondaryColor}` : ''}`;
 
-      const { data, error } = await supabase.functions.invoke('ai-template-generator', {
+      const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
         body: { 
           messages: [{ role: 'user', content: promptText }],
           mode: 'template-json',
@@ -319,7 +319,7 @@ ${prompt.brandKit ? `Brand Colors: Primary ${prompt.brandKit.primaryColor}, Seco
         return null;
       }
 
-      // Parse JSON from ai-template-generator content response
+      // Parse JSON from ai-code-assistant content response
       let generatedTemplate: AIGeneratedTemplate;
       if (data.content) {
         let jsonContent = data.content;

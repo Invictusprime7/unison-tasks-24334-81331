@@ -962,28 +962,44 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             }
           }
 
-          response = await supabase.functions.invoke('ai-editor', {
-            body: {
-              messages: [{ role: 'user', content: promptForAI }],
-              // Always use template-react for React projects (even surgical edits)
-              // to ensure the AI generates React/TSX output, not raw HTML.
-              // The surgicalEdit flag tells the edge function to apply surgical constraints.
-              // Only fall back to 'code' mode for non-React (HTML template) surgical edits.
-              mode: isSurgicalEdit && !isReactProject ? 'code' : 'template-react',
-              currentCode: truncatedCode,
-              editMode: !!currentCode,
-              surgicalEdit: isSurgicalEdit,
-              systemType,
-              templateName,
-              templateAction,
-              userDesignProfile: userDesignProfile ?? undefined,
-              systemsBuildContext: systemsBuildContext ?? undefined,
-              siteElementsLibraryContext,
-              attachments: _attachments.length > 0 ? _attachments : undefined,
-              // Send VFS files for surgical edit context
-              vfsFiles: vfsPayload,
-            },
-          });
+          // PRIMARY CALL PATH: ai-code-assistant for all template generation & rendering
+          // - template-react: Full React template generation (builder panel + VFS + Docker preview)
+          // - code: Non-React surgical/code edits
+          // ai-editor is used only for surgical edits needing VFS file context
+          if (isSurgicalEdit) {
+            response = await supabase.functions.invoke('ai-editor', {
+              body: {
+                messages: [{ role: 'user', content: promptForAI }],
+                mode: isReactProject ? 'template-react' : 'code',
+                currentCode: truncatedCode,
+                editMode: !!currentCode,
+                surgicalEdit: true,
+                systemType,
+                templateName,
+                templateAction,
+                userDesignProfile: userDesignProfile ?? undefined,
+                systemsBuildContext: systemsBuildContext ?? undefined,
+                siteElementsLibraryContext,
+                attachments: _attachments.length > 0 ? _attachments : undefined,
+                vfsFiles: vfsPayload,
+              },
+            });
+          } else {
+            response = await supabase.functions.invoke('ai-code-assistant', {
+              body: {
+                messages: [{ role: 'user', content: promptForAI }],
+                mode: isReactProject ? 'template-react' : 'code',
+                currentCode: truncatedCode,
+                editMode: !!currentCode,
+                templateAction,
+                systemType,
+                templateName,
+                userDesignProfile: userDesignProfile ?? undefined,
+                systemsBuildContext: systemsBuildContext ?? undefined,
+                siteElementsLibraryContext,
+              },
+            });
+          }
           
           // Check for retryable errors
           if (response.error) {
@@ -1441,14 +1457,18 @@ export default function App() {
 
       if (response.error) throw response.error;
 
-      const fix = response.data?.code || response.data?.response;
+      // ai-code-assistant returns { content } — extract code from the content field
+      const rawContent = response.data?.content || '';
+      // Extract code from markdown fences if present
+      const fenceMatch = rawContent.match(/```(?:tsx|jsx|typescript|javascript|ts|js)?\s*\n([\s\S]*?)```/i);
+      const fix = fenceMatch ? fenceMatch[1].trim() : (rawContent.includes('import ') || rawContent.includes('export ') ? rawContent : null);
       
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: response.data?.response || '✅ Fix generated! Review and apply the changes below.',
+        content: fix ? '✅ Fix generated! Review and apply the changes below.' : (rawContent || 'No fix could be generated.'),
         timestamp: new Date(),
-        code: fix,
+        code: fix || undefined,
         error,
         thinking: [
           { id: '1', type: 'analyzing', message: 'Analyzing error...', timestamp: new Date() },

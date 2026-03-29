@@ -1,22 +1,26 @@
 /**
- * AI Code Assistant Edge Function (Slimmed)
+ * AI Code Assistant Edge Function — PRIMARY CALL PATH
  *
- * Handles code generation and analysis modes only:
+ * Handles ALL code generation, template rendering, and analysis modes:
  *   - code: React/TSX code generation with edit mode support
+ *   - template-react: Full React/TSX template generation for VFS & Docker preview
  *   - design: UI/UX design advisory
  *   - review: Code review and analysis
  *   - debug: Debugging and troubleshooting
  *
- * Template generation → ai-template-generator
- * Page generation   → ai-page-generator
- * Surgical editing  → ai-editor
+ * Primary endpoint for:
+ *   - AIBuilderPanel (template generation & rendering)
+ *   - aiLaunchService (AI launcher wizard)
+ *   - MonacoEditor, AICodeAssistant, AIAssistantCore
  */
 
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { generateVariation, variationToPromptContext } from "../_shared/industryVariations.ts";
 import {
   corsHeaders,
+  hexToHsl,
   extractTextContent,
   performPromptResearch,
   formatResearchContext,
@@ -48,13 +52,18 @@ serve(async (req: Request) => {
         role: z.enum(['user', 'assistant', 'system']),
         content: z.unknown(),
       })).min(1),
-      mode: z.enum(['code', 'design', 'review', 'debug']).default('code'),
+      mode: z.enum(['code', 'template-react', 'template-html', 'template-json', 'design', 'review', 'debug']).default('code'),
       currentCode: z.string().nullish(),
       editMode: z.boolean().optional(),
       templateAction: z.string().max(100).nullish(),
       savePattern: z.boolean().optional(),
       generateImage: z.boolean().optional(),
       imagePlacement: z.string().max(50).nullish(),
+      // Launcher-specific fields for template-react mode
+      callerManaged: z.boolean().optional(),
+      aesthetic: z.string().max(200).nullish(),
+      source: z.string().max(200).nullish(),
+      variationSeed: z.string().max(200).nullish(),
       systemType: z.string().max(100).nullish(),
       templateName: z.string().max(200).nullish(),
       userDesignProfile: z.object({
@@ -83,6 +92,10 @@ serve(async (req: Request) => {
       savePattern,
       generateImage,
       imagePlacement,
+      callerManaged = false,
+      aesthetic,
+      source,
+      variationSeed,
       systemType,
       templateName,
       userDesignProfile,
@@ -444,6 +457,282 @@ PRE-BUILT COMPONENTS AVAILABLE (use via import):
 - module.exports
 
 REMEMBER: Every component you generate MUST be a valid React/TypeScript functional component.`,
+
+      'template-react': (() => {
+        // Build template-react prompt dynamically based on caller context
+        if (callerManaged) {
+          // CALLER-MANAGED MODE: systems-build has injected all design tokens into user message
+          const referenceTemplateBlock = currentCode && templateAction === 'use-as-schema' ? `
+## 📝 CONTENT REFERENCE (INSPIRATION ONLY — DO NOT COPY LAYOUT)
+Below is a reference for CONTENT DIRECTION ONLY (services, copy tone, industry terms).
+DO NOT copy its layout, color scheme, section order, or visual structure.
+\`\`\`
+${(currentCode ?? '').substring(0, 8000)}
+\`\`\`
+` : '';
+
+          return `You are an ELITE React fullstack developer producing PREMIUM, PRODUCTION-READY React applications that rival Lovable, Framer, and ThemeForest premium templates.
+${referenceTemplateBlock}
+## CRITICAL: DESIGN SPECIFICATIONS ARE IN BOTH THE USER MESSAGE AND SYSTEM CONTEXT
+The user message contains EXACT specifications for CSS color variables, layout, typography, sections, images, and industry rules.
+The system context (Business Blueprint) provides brand, identity, and intent wiring details.
+Follow BOTH precisely. DO NOT invent your own colors, layout, or fonts.
+
+## REACT ARCHITECTURE
+⚠️ CRITICAL: OUTPUT EXACTLY TWO FILES — src/App.tsx and src/index.css
+All components MUST be defined INLINE in App.tsx as named function components.
+🚫 NEVER import from './components/', './sections/', or any relative path.
+
+## AVAILABLE LIBRARIES (pre-installed):
+### Icons:
+\`\`\`tsx
+import { Star, ArrowRight, Check, Phone, Mail, MapPin, Clock, Users, Heart, Shield, Zap, Menu, X, ChevronDown, Quote, Calendar, Sparkles, TrendingUp, Award, Target } from "lucide-react";
+\`\`\`
+### Animations:
+\`\`\`tsx
+import { motion, useInView } from "framer-motion";
+\`\`\`
+### Charts:
+\`\`\`tsx
+import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
+\`\`\`
+### Utilities:
+\`\`\`tsx
+import { cn } from "@/lib/utils";
+\`\`\`
+
+## INTENT HANDLERS:
+\`\`\`tsx
+<button data-ut-intent="booking.create">Book Now</button>
+<a href="#contact" data-ut-intent="nav.anchor" data-ut-anchor="contact">Contact</a>
+\`\`\`
+
+## 🖼️ IMAGE RULES (MANDATORY):
+- Hero MUST have a full-viewport Unsplash background image with dark gradient overlay
+- Service/feature cards SHOULD have icons (Lucide) AND contextual imagery where possible
+- About section MUST have a real Unsplash image (not a placeholder icon)
+- Use the EXACT Unsplash URLs provided in the user message
+- Every <img> MUST have: alt text + onError fallback: onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/cccccc/666666?text=Image'; }}
+- ❌ NEVER use gradient-only backgrounds as a substitute for real hero images
+- ❌ NEVER use empty divs with just an icon where an image should be
+
+## PREMIUM CSS UTILITIES (include in index.css):
+\`\`\`css
+.glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
+.gradient-text { background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent, var(--secondary))) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.btn-primary { display: inline-flex; align-items: center; gap: 0.5rem; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-weight: 600; padding: 0.75rem 1.5rem; border-radius: var(--radius, 0.5rem); transition: all 0.2s ease; border: none; cursor: pointer; }
+.btn-primary:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 14px hsl(var(--primary) / 0.3); }
+.hover-lift { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease; }
+.hover-lift:hover { transform: translateY(-6px); box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
+.card-elevated { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: var(--radius, 0.75rem); padding: 2rem; transition: all 0.3s ease; }
+.card-elevated:hover { border-color: hsl(var(--primary) / 0.3); box-shadow: 0 8px 30px hsl(var(--primary) / 0.1); transform: translateY(-4px); }
+.headline-xl { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
+.headline-lg { font-size: clamp(2rem, 4vw, 3rem); font-weight: 700; line-height: 1.2; }
+.section-spacing { padding: 5rem 1rem; }
+.container-wide { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+@keyframes fade-in-up { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-in-up { opacity: 0; animation: fade-in-up 0.6s ease forwards; }
+\`\`\`
+
+## OUTPUT FORMAT:
+Return a single JSON object (no markdown):
+\`\`\`json
+{ "files": { "src/App.tsx": "...", "src/index.css": "..." }, "entryPoint": "src/App.tsx", "framework": "react", "buildTool": "vite" }
+\`\`\`
+⛔ NEVER INCLUDE: tailwind.config, package.json, vite.config, tsconfig, main.tsx, hooks/, lib/, components/
+
+## QUALITY CHECKLIST (NON-NEGOTIABLE — every item MUST be true):
+- [ ] MINIMUM 10 inline section components in App.tsx (Header, Hero, Features/Services, About, Stats, Testimonials, CTA, Contact, Pricing/FAQ, Footer)
+- [ ] EXACTLY ONE Hero section — full-viewport with Unsplash background image
+- [ ] framer-motion scroll-triggered reveals on EVERY section + staggered grid animations on cards
+- [ ] Lucide icons on EVERY feature card, stat block, testimonial, nav link, and CTA
+- [ ] Real Unsplash images used (hero bg, about section, gallery) — NOT gradient-only placeholders
+- [ ] Contact form with name, email, message fields + submit button with data-ut-intent="contact.submit"
+- [ ] EVERY CTA button has data-ut-intent + visible industry-specific label
+- [ ] Responsive with sm/md/lg/xl breakpoints — mobile hamburger menu in Header
+- [ ] Section headers use eyebrow text + headline + subtitle pattern
+- [ ] Cards have hover-lift/shadow animation effects`;
+        }
+
+        // NON-CALLER-MANAGED: Builder panel template generation with industry variations
+        const templatePromptText = templateName
+          ? `${templateName} ${aesthetic || ''} ${source || ''}`
+          : extractTextContent(messages[messages.length - 1]?.content) || '';
+        const variation = generateVariation(templatePromptText, variationSeed ?? undefined);
+        const variationContext = variationToPromptContext(variation);
+
+        return `You are an ELITE React fullstack developer producing PREMIUM, PRODUCTION-READY React applications.
+${editModeContext}
+${variationContext}
+
+## REACT ARCHITECTURE
+⚠️ CRITICAL: OUTPUT EXACTLY TWO FILES — src/App.tsx and src/index.css
+All components MUST be defined INLINE in App.tsx. DO NOT create separate files.
+
+## DESIGN SYSTEM (MANDATORY CSS VARIABLES):
+\`\`\`css
+:root {
+  --primary: ${hexToHsl(variation.colorScheme.primary)};
+  --primary-foreground: 0 0% 100%;
+  --secondary: ${hexToHsl(variation.colorScheme.secondary)};
+  --accent: ${hexToHsl(variation.colorScheme.accent)};
+  --background: ${hexToHsl(variation.colorScheme.background)};
+  --foreground: ${hexToHsl(variation.colorScheme.foreground)};
+  --muted: ${hexToHsl(variation.colorScheme.muted)};
+  --card: ${hexToHsl(variation.colorScheme.cardBg)};
+  --border: 240 5.9% 90%;
+  --radius: 0.5rem;
+}
+\`\`\`
+
+## TYPOGRAPHY: Heading: "${variation.fontPairing.heading}", Body: "${variation.fontPairing.body}"
+
+## SECTION ORDER:
+${variation.sectionOrder.map((s: string, i: number) => `${i + 1}. ${s.charAt(0).toUpperCase() + s.slice(1)}`).join('\n')}
+⚠️ Generate EXACTLY ONE Hero section.
+## HERO LAYOUT: ${variation.heroVariant.name} (${variation.heroVariant.layout})
+
+## IMAGES:
+${variation.industry.unsplashIds.map((id: string) => `https://images.unsplash.com/${id}?w=800&q=80`).join('\n')}
+
+## AVAILABLE LIBRARIES:
+\`\`\`tsx
+import { Star, ArrowRight, Check, Phone, Mail, MapPin, Clock, Users, Heart, Shield, Zap, Menu, X } from "lucide-react";
+import { motion, useInView } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { useIntentHandlers } from './hooks-shim';
+\`\`\`
+
+## INTENT WIRING:
+\`\`\`tsx
+<button data-ut-intent="booking.create">Book Now</button>
+<button data-ut-intent="nav.goto" data-ut-payload='{"path":"#contact"}'>Contact</button>
+\`\`\`
+
+## OUTPUT FORMAT:
+\`\`\`json
+{ "files": { "src/App.tsx": "...", "src/index.css": "..." }, "entryPoint": "src/App.tsx", "framework": "react", "buildTool": "vite" }
+\`\`\`
+⛔ NEVER INCLUDE: tailwind.config, package.json, vite.config, tsconfig, main.tsx, hooks/, lib/, components/
+
+## QUALITY:
+- MINIMUM 10 inline sections, EXACTLY ONE Hero
+- framer-motion scroll reveals + staggered grids
+- Lucide icons everywhere
+- Responsive sm/md/lg/xl`;
+      })(),
+
+      'template-json': (() => {
+        const templatePromptText = templateName
+          ? `${templateName} ${aesthetic || ''} ${source || ''}`
+          : extractTextContent(messages[messages.length - 1]?.content) || '';
+        const variation = generateVariation(templatePromptText, variationSeed ?? undefined);
+        const variationContext = variationToPromptContext(variation);
+
+        return `You are an ELITE web template generator producing PREMIUM, PRODUCTION-READY templates for a Web Builder canvas. Your templates must rival top-tier designs from ThemeForest, Webflow, and Framer.
+
+${variationContext}
+
+TEMPLATE SCHEMA (STRICT — follow exactly, USE THE COLORS SPECIFIED ABOVE):
+{
+  "name": "Template Name",
+  "description": "Brief description",
+  "industry": "${variation.industry.id}",
+  "brandKit": {
+    "primaryColor": "${variation.colorScheme.primary}",
+    "secondaryColor": "${variation.colorScheme.secondary}",
+    "accentColor": "${variation.colorScheme.accent}",
+    "fonts": {
+      "heading": "${variation.fontPairing.heading}",
+      "body": "${variation.fontPairing.body}"${variation.fontPairing.accent ? `,
+      "accent": "${variation.fontPairing.accent}"` : ''}
+    }
+  },
+  "sections": [ ... ],
+  "formats": [
+    { "id": "desktop", "name": "Desktop", "size": { "width": 1280, "height": 800 }, "format": "web" }
+  ],
+  "data": { ... }
+}
+
+SECTION STRUCTURE:
+{
+  "id": "section-[name]",
+  "name": "Section Name",
+  "type": "hero" | "features" | "cta" | "testimonials" | "pricing" | "stats" | "about" | "footer",
+  "constraints": {
+    "width": { "mode": "fill" },
+    "height": { "mode": "fixed", "value": 600 },
+    "padding": { "top": 60, "right": 80, "bottom": 60, "left": 80 },
+    "gap": 24,
+    "flexDirection": "column",
+    "alignItems": "center",
+    "justifyContent": "center"
+  },
+  "style": { "background": "linear-gradient(135deg, ${variation.colorScheme.gradients[0]})" },
+  "components": [ ... ]
+}
+
+COMPONENT STRUCTURE:
+{
+  "id": "unique-id",
+  "type": "text" | "image" | "shape" | "button" | "container",
+  "constraints": { "width": { "mode": "fill" | "hug" | "fixed" }, "height": { "mode": "fill" | "hug" | "fixed" } },
+  "style": { "backgroundColor": "${variation.colorScheme.primary}", "borderRadius": 12 },
+  "fabricProps": { "fontSize": 56, "fontFamily": "${variation.fontPairing.heading}", "fontWeight": "bold", "fill": "${variation.colorScheme.foreground}" }
+}
+
+MINIMUM 6 sections with 4-6 components each. Use the industry images: ${variation.industry.unsplashIds.map((id: string) => `https://images.unsplash.com/${id}?w=800&q=80`).join(', ')}
+
+OUTPUT: Return ONLY valid JSON matching this schema.`;
+      })(),
+
+      'template-html': (() => {
+        const templatePromptText = templateName
+          ? `${templateName} ${aesthetic || ''} ${source || ''}`
+          : extractTextContent(messages[messages.length - 1]?.content) || '';
+        const variation = generateVariation(templatePromptText, variationSeed ?? undefined);
+        const variationContext = variationToPromptContext(variation);
+
+        return `You are an ELITE web designer producing PREMIUM, AWARD-WINNING website templates. Your output must rival top-tier templates from ThemeForest, Webflow, and Framer.
+
+${variationContext}
+
+DESIGN SYSTEM (MANDATORY):
+Use CSS custom properties for theming:
+:root {
+  --primary: ${hexToHsl(variation.colorScheme.primary)};
+  --secondary: ${hexToHsl(variation.colorScheme.secondary)};
+  --accent: ${hexToHsl(variation.colorScheme.accent)};
+  --background: ${hexToHsl(variation.colorScheme.background)};
+  --foreground: ${hexToHsl(variation.colorScheme.foreground)};
+  --muted: ${hexToHsl(variation.colorScheme.muted)};
+  --card: ${hexToHsl(variation.colorScheme.cardBg)};
+}
+
+ARCHITECTURE RULES:
+- Use Tailwind CSS via CDN
+- Use Lucide Icons CDN: <i data-lucide="icon-name" class="w-6 h-6"></i>
+- Use semantic HTML5
+- Mobile-first responsive: sm → md → lg → xl
+- Initialize icons: <script>lucide.createIcons();</script>
+
+TYPOGRAPHY (USE THESE FONTS):
+- Heading: "${variation.fontPairing.heading}"
+- Body: "${variation.fontPairing.body}"
+
+SECTION ORDER (FOLLOW EXACTLY):
+${variation.sectionOrder.map((s: string, i: number) => `${i + 1}. ${s.toUpperCase()}`).join('\n')}
+
+⚠️ CRITICAL: Generate EXACTLY ONE hero section.
+
+HERO LAYOUT: ${variation.heroVariant.name} (${variation.heroVariant.layout})
+
+IMAGES TO USE:
+${variation.industry.unsplashIds.map((id: string) => `https://images.unsplash.com/${id}?w=800&q=80`).join('\n')}
+
+OUTPUT: Return ONLY the complete, self-contained HTML document. No markdown, no explanations.`;
+      })(),
 
       design: `You are an ELITE "Super Web Builder Expert" UI/UX design advisor with a continuously learning system.
 

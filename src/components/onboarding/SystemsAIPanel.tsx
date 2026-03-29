@@ -2,7 +2,7 @@
  * SystemsAIPanel - AI Code Assistant panel for the homepage
  * 
  * Generates production-ready websites using aiLaunchService as the bridge
- * to ai-template-generator (template-react mode) — the single source of truth
+ * to ai-code-assistant (template-react mode) — the single source of truth
  * for AI-generated template output.
  * 
  * Styled with Unison Tasks' arcade UI theme.
@@ -69,13 +69,13 @@ const CHIP_TO_SYSTEM: Record<string, BusinessSystemType> = {
 
 // Map chip IDs to industry string
 const CHIP_TO_INDUSTRY: Record<string, string> = {
-  local_service: "local_service",
-  salon_spa: "salon_spa",
+  local_service: "contractor",
+  salon_spa: "salon",
   restaurant: "restaurant",
-  ecommerce: "ecommerce",
-  creator: "creator_portfolio",
-  coaching: "coaching_consulting",
-  real_estate: "real_estate",
+  ecommerce: "clothing",
+  creator: "photographer",
+  coaching: "consulting",
+  real_estate: "realestate",
   nonprofit: "nonprofit",
 };
 
@@ -242,7 +242,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
   };
 
   /**
-   * Submit handler — routes through aiLaunchService → ai-template-generator (template-react).
+   * Submit handler — routes through aiLaunchService → ai-code-assistant (template-react).
    * Builds a LaunchConfig from chip selection and passes freeform prompt as extra context.
    */
   const handleCodeSubmit = async () => {

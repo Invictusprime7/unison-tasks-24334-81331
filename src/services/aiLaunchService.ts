@@ -2,10 +2,10 @@
  * AI Launch Service
  *
  * Bridges the SystemLauncher's 3-layer LaunchConfig directly to the
- * ai-template-generator edge function — the single source of truth for
+ * ai-code-assistant edge function — the single source of truth for
  * AI-generated template output in build mode.
  *
- * Pipeline: LaunchConfig → ai-template-generator (template-react) → VFS files
+ * Pipeline: LaunchConfig → ai-code-assistant (template-react) → VFS files
  *
  * The deterministic siteGenerator output is passed as a content reference
  * so the AI uses it as a quality/structure baseline while generating a
@@ -185,6 +185,50 @@ function buildSystemsBuildContext(
 }
 
 // ============================================================================
+// Industry Unsplash Image IDs (for prompt injection)
+// ============================================================================
+
+const INDUSTRY_UNSPLASH_IMAGES: Record<string, string[]> = {
+  salon: ['photo-1560066984-138dadb4c035', 'photo-1522337360788-8b13dee7a37e', 'photo-1487412720507-e7ab37603c6f', 'photo-1516975080664-ed2fc6a32937'],
+  barbershop: ['photo-1503951914875-452162b0f3f1', 'photo-1621605815971-fbc98d665033', 'photo-1585747860019-8e8ef1a1e3f3'],
+  fitness: ['photo-1534438327276-14e5300c3a48', 'photo-1517836357463-d25dfeac3438', 'photo-1571019614242-c5c5dee9f50b'],
+  medical: ['photo-1576091160550-2173dba999ef', 'photo-1519494026892-80bbd2d6fd0d', 'photo-1551076805-e1869033e561'],
+  restaurant: ['photo-1517248135467-4c7edcad34c4', 'photo-1414235077428-338989a2e8c0', 'photo-1504674900247-0877df9cc836', 'photo-1555396273-367ea4eb4db5'],
+  contractor: ['photo-1581578731548-c64695cc6952', 'photo-1562259949-e8e7689d7828', 'photo-1504307651254-35680f356dfd', 'photo-1621905251189-08b45d6a269e'],
+  realestate: ['photo-1560518883-ce09059eeffa', 'photo-1600596542815-ffad4c1539a9', 'photo-1600585154340-be6161a56a0c', 'photo-1512917774080-9991f1c4c750'],
+  'real-estate': ['photo-1560518883-ce09059eeffa', 'photo-1600596542815-ffad4c1539a9', 'photo-1600585154340-be6161a56a0c', 'photo-1512917774080-9991f1c4c750'],
+  clothing: ['photo-1441984904996-e0b6ba687e04', 'photo-1607082348824-0a96f2a4b9da', 'photo-1472851294608-062f824d29cc', 'photo-1483985988355-763728e1935b'],
+  ecommerce: ['photo-1441984904996-e0b6ba687e04', 'photo-1607082348824-0a96f2a4b9da', 'photo-1472851294608-062f824d29cc', 'photo-1483985988355-763728e1935b'],
+  'food-products': ['photo-1504674900247-0877df9cc836', 'photo-1555396273-367ea4eb4db5', 'photo-1414235077428-338989a2e8c0'],
+  photographer: ['photo-1507003211169-0a1dd7228f2d', 'photo-1493863641943-9b68992a8d07', 'photo-1542038784456-1ea8e935640e', 'photo-1618005182384-a83a8bd57fbe'],
+  designer: ['photo-1558618666-fcd25c85f82e', 'photo-1542744094-3a31f272c490', 'photo-1559028012-481c04fa702d'],
+  developer: ['photo-1558618666-fcd25c85f82e', 'photo-1542744094-3a31f272c490', 'photo-1559028012-481c04fa702d'],
+  portfolio: ['photo-1507003211169-0a1dd7228f2d', 'photo-1493863641943-9b68992a8d07', 'photo-1542038784456-1ea8e935640e', 'photo-1618005182384-a83a8bd57fbe'],
+  consulting: ['photo-1552664730-d307ca884978', 'photo-1542744173-8e7e53415bb0', 'photo-1573497019940-1c28c88b4f3e', 'photo-1553484771-047a44eee27a'],
+  coaching: ['photo-1552664730-d307ca884978', 'photo-1542744173-8e7e53415bb0', 'photo-1573497019940-1c28c88b4f3e', 'photo-1553484771-047a44eee27a'],
+  nonprofit: ['photo-1559027615-cd4628902d4a', 'photo-1593113630400-ea4288922497', 'photo-1469571486292-0ba58a3f068b', 'photo-1532629345422-7515f3d16bb6'],
+  'saas-product': ['photo-1558618666-fcd25c85f82e', 'photo-1542744094-3a31f272c490', 'photo-1559028012-481c04fa702d'],
+  saas: ['photo-1558618666-fcd25c85f82e', 'photo-1542744094-3a31f272c490', 'photo-1559028012-481c04fa702d'],
+  agency: ['photo-1552664730-d307ca884978', 'photo-1542744173-8e7e53415bb0', 'photo-1573497019940-1c28c88b4f3e'],
+  roofing: ['photo-1581578731548-c64695cc6952', 'photo-1562259949-e8e7689d7828', 'photo-1504307651254-35680f356dfd'],
+  hvac: ['photo-1581578731548-c64695cc6952', 'photo-1562259949-e8e7689d7828', 'photo-1504307651254-35680f356dfd'],
+  legal: ['photo-1552664730-d307ca884978', 'photo-1542744173-8e7e53415bb0', 'photo-1573497019940-1c28c88b4f3e'],
+  blog: ['photo-1499750310107-5fef28a66643', 'photo-1486312338219-ce68d2c6f44d', 'photo-1505682634904-d7d5d2f85e15'],
+  devtool: ['photo-1558618666-fcd25c85f82e', 'photo-1542744094-3a31f272c490', 'photo-1559028012-481c04fa702d'],
+  event: ['photo-1540575467063-178a50c2df87', 'photo-1505373877841-8d25f7d46678', 'photo-1511578314322-379afb476865'],
+};
+
+function getIndustryImageUrls(industry: string): string[] {
+  const key = industry.toLowerCase().replace(/[\s_]/g, '-');
+  const ids = INDUSTRY_UNSPLASH_IMAGES[key] ?? [
+    'photo-1497366216548-37526070297c',
+    'photo-1497215842964-222b430dc094',
+    'photo-1497366811353-6870744d04b2',
+  ];
+  return ids.map(id => `https://images.unsplash.com/${id}?w=800&q=80`);
+}
+
+// ============================================================================
 // Industry CTA Labels (for prompt injection)
 // ============================================================================
 
@@ -221,13 +265,57 @@ const INDUSTRY_BUTTON_LABELS: Record<string, { primary: string[]; secondary: str
     primary: ['Schedule Viewing', 'Book Viewing', 'Contact', 'Get in Touch'],
     secondary: ['View Listing', 'Search Properties', 'Request Quote'],
   },
+  realestate: {
+    primary: ['Schedule Viewing', 'Book Viewing', 'Contact', 'Get in Touch'],
+    secondary: ['View Listing', 'Search Properties', 'Request Quote'],
+  },
   contractor: {
     primary: ['Get Free Quote', 'Request Estimate', 'Call Now', 'Get Quote'],
     secondary: ['View Services', 'Contact Us', 'See Our Work'],
   },
+  roofing: {
+    primary: ['Get Free Quote', 'Request Estimate', 'Call Now'],
+    secondary: ['View Services', 'Contact Us', 'See Our Work'],
+  },
+  hvac: {
+    primary: ['Get Free Quote', 'Request Estimate', 'Call Now'],
+    secondary: ['View Services', 'Contact Us', 'Schedule Service'],
+  },
+  legal: {
+    primary: ['Book Consultation', 'Contact Us', 'Get Started'],
+    secondary: ['Our Services', 'Learn More', 'Call Now'],
+  },
   saas: {
     primary: ['Get Started', 'Start Free Trial', 'Try It Free', 'Sign Up'],
     secondary: ['Watch Demo', 'See Plans', 'Contact Sales', 'Learn More'],
+  },
+  'saas-product': {
+    primary: ['Get Started', 'Start Free Trial', 'Try It Free', 'Sign Up'],
+    secondary: ['Watch Demo', 'See Plans', 'Contact Sales', 'Learn More'],
+  },
+  consulting: {
+    primary: ['Book Consultation', 'Get Started', 'Schedule Call'],
+    secondary: ['Our Services', 'Learn More', 'Contact Us'],
+  },
+  clothing: {
+    primary: ['Shop Now', 'Shop Collection', 'Browse Catalog'],
+    secondary: ['View Cart', 'New Arrivals', 'Contact Us'],
+  },
+  'food-products': {
+    primary: ['Order Now', 'Shop Products', 'Buy Now'],
+    secondary: ['View Menu', 'Subscribe', 'Contact Us'],
+  },
+  photographer: {
+    primary: ['Book a Shoot', 'Hire Me', 'View Portfolio'],
+    secondary: ['View Work', 'Contact', 'Download Resume'],
+  },
+  designer: {
+    primary: ['Hire Me', 'Start a Project', 'View Portfolio'],
+    secondary: ['View Work', 'Contact', 'Book a Call'],
+  },
+  developer: {
+    primary: ['Hire Me', 'Start a Project', 'View Portfolio'],
+    secondary: ['View Work', 'Contact', 'GitHub'],
   },
   agency: {
     primary: ['Start a Project', 'Get in Touch', 'Hire Us', 'Contact'],
@@ -281,7 +369,7 @@ function buildSectionDirective(structure: TemplateStructure): string {
 }
 
 // ============================================================================
-// Prompt Builder — constructs the user message for ai-template-generator
+// Prompt Builder — constructs the user message for ai-code-assistant
 // ============================================================================
 
 /**
@@ -298,9 +386,13 @@ function buildGenerationPrompt(
   const identityMeta = THEME_IDENTITY_META[skin.identity];
 
   const sectionDirective = buildSectionDirective(structure);
+  const imageUrls = getIndustryImageUrls(blueprint.industry);
+  const serviceNames = industry?.contentDefaults?.serviceNames ?? ['Consulting', 'Development', 'Design', 'Strategy', 'Support'];
 
-  return `Create a ${businessName} website for the ${blueprint.industry.replace(/_/g, ' ')} industry.
+  return `Create a PREMIUM, production-ready ${businessName} website for the ${blueprint.industry.replace(/_/g, ' ')} industry.
 
+Business: ${businessName}
+Industry: ${blueprint.industry.replace(/_/g, ' ')}
 ${industry?.contentDefaults.heroSubheadline ? `Tagline: "${industry.contentDefaults.heroSubheadline}"` : ''}
 Goal: ${industry?.contentDefaults.heroHeadline ?? 'Grow your business'}
 Tone: ${identityMeta.tags[0] ?? 'professional'}
@@ -330,6 +422,13 @@ Typography (LOAD VIA GOOGLE FONTS):
 - Headings: ${skin.overrides.fontHeading} (weight: bold)
 - Body: ${skin.overrides.fontBody} (weight: normal)
 
+## 🖼️ IMAGES (MANDATORY — USE THESE EXACT UNSPLASH URLS):
+Hero background: ${imageUrls[0]}
+About/Feature images: ${imageUrls.slice(1).join(', ')}
+All images MUST include onError fallback: onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/cccccc/666666?text=Image'; }}
+❌ NEVER use placeholder divs, gradient-only backgrounds, or icon-only cards when images are available.
+✅ Use real Unsplash images on: Hero background, About section, service/feature cards, testimonial avatars, gallery.
+
 ## 🎨 AESTHETIC STYLE DIRECTIVE ("${identityMeta.name}"):
 ${IDENTITY_STYLE_DIRECTIVES[skin.identity]}
 
@@ -338,8 +437,26 @@ ${IDENTITY_GENERATION_DIRECTIVES[skin.identity]}
 
 ${sectionDirective}
 
+## 🏢 INDUSTRY SERVICES (use these exact names for feature/service cards):
+${serviceNames.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}
+Each service card MUST have: Lucide icon, service name, 2-3 sentence description, and a CTA button.
+
 ## APPROVED CTA BUTTON LABELS:
 ${getIndustryLabels(blueprint.industry)}
+Every CTA button MUST have a data-ut-intent attribute (booking.create, contact.submit, quote.request, cart.add, auth.signup, etc.)
+Every CTA button MUST have a visible, industry-specific label (e.g., "Book Now", "Get Free Quote", "Shop Now").
+
+## 📝 RICH SECTION CONTENT REQUIREMENTS:
+- **Hero**: Full-viewport (min-h-screen) with Unsplash background image + dark gradient overlay (from-black/70 via-black/50 to-transparent). Badge/pill above headline. H1 headline (text-5xl md:text-7xl). Tagline paragraph. TWO CTA buttons (primary + secondary) with data-ut-intent.
+- **Services/Features**: Grid of ${serviceNames.length} cards. Each card: icon, heading, 2-3 sentence description, hover lift effect. Use industry-specific service names above.
+- **About**: Split layout (text left, image right). Stats row (e.g., "500+ Clients", "10+ Years", "99% Satisfaction"). Use Unsplash image.
+- **Testimonials**: 3 testimonial cards with client names, roles, and ${industry?.contentDefaults?.testimonialContext ? `quotes about "${industry.contentDefaults.testimonialContext}"` : 'industry-relevant quotes'}. Quote icon. Avatar with initials.
+- **CTA Banner**: Full-width primary-color background. Compelling headline. TWO CTA buttons. data-ut-intent on both.
+- **Contact**: Split layout — contact info (email, phone, address with Lucide icons) + working form (name, email, message, submit button with data-ut-intent="contact.submit").
+- **Pricing** (if included): 3-tier pricing cards. Most-popular badge. Feature lists with Check icons. CTA buttons with data-ut-intent.
+- **FAQ** (if included): Accordion-style with expand/collapse. 4-6 industry-relevant questions.
+- **Header**: Sticky with backdrop-blur. Logo text. Nav links with data-ut-intent="nav.anchor". Mobile hamburger menu.
+- **Footer**: Multi-column (Brand, Company, Services, Connect). Copyright. Social links.
 
 ## REQUIRED LIBRARIES (pre-installed — USE THEM):
 - **lucide-react**: Import icons for EVERY feature card, stat, testimonial, and CTA. Example: import { Star, ArrowRight, Check, Phone, Mail, MapPin, Clock, Users, Heart, Shield, Zap, Menu, X, Calendar, Sparkles, Award } from "lucide-react";
@@ -351,14 +468,14 @@ ${getIndustryLabels(blueprint.industry)}
 ## REQUIRED COMPONENT PATTERN:
 Every section MUST use scroll-triggered reveal:
 \`\`\`tsx
-function Section({ children, className, id }) {
-  const ref = useRef(null);
+function SectionName() {
+  const ref = React.useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-80px" });
   return (
-    <motion.section ref={ref} id={id} className={cn("py-16 md:py-24", className)}
+    <motion.section ref={ref} className="py-16 md:py-24"
       initial={{ opacity: 0, y: 40 }} animate={isInView ? { opacity: 1, y: 0 } : {}}
       transition={{ duration: 0.6 }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">{children}</div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">{/* content */}</div>
     </motion.section>
   );
 }
@@ -424,22 +541,23 @@ const SECTION_TEMPLATES: Record<string, (industry?: ReturnType<typeof getIndustr
   const ref = React.useRef(null);
   const isInView = useInView(ref, { once: true });
   return (
-    <section ref={ref} className="relative min-h-[80vh] flex items-center justify-center overflow-hidden" style={{ background: 'linear-gradient(135deg, hsl(var(--primary)/0.08), hsl(var(--background)))' }}>
-      <div className="absolute inset-0 bg-grid-pattern opacity-5" />
+    <section ref={ref} className="relative min-h-screen flex items-center justify-center overflow-hidden">
+      <img src="${ind ? `https://images.unsplash.com/${(INDUSTRY_UNSPLASH_IMAGES[ind.id] ?? ['photo-1497366216548-37526070297c'])[0]}?w=1600&q=80` : 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1600&q=80'}" alt="Hero background" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/1600x900/1a1a2e/e0e0e0?text=${ind?.name ?? 'Business'}'; }} />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80" />
       <motion.div
         initial={{ opacity: 0, y: 40 }}
         animate={isInView ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.8, ease: 'easeOut' }}
         className="relative z-10 max-w-4xl mx-auto px-6 text-center"
       >
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium mb-6" style={{ background: 'hsl(var(--primary)/0.1)', color: 'hsl(var(--primary))' }}>
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium mb-6" style={{ background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)', color: '#fff' }}>
           <Sparkles className="w-4 h-4" />
           <span>${ind?.contentDefaults?.heroSubheadline || 'Welcome to our platform'}</span>
         </div>
-        <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6" style={{ color: 'hsl(var(--foreground))' }}>
+        <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 text-white">
           ${ind?.contentDefaults?.heroHeadline || 'Build Something Amazing'}
         </h1>
-        <p className="text-lg md:text-xl max-w-2xl mx-auto mb-10" style={{ color: 'hsl(var(--muted-foreground))' }}>
+        <p className="text-lg md:text-xl max-w-2xl mx-auto mb-10 text-white/80">
           ${ind?.contentDefaults?.heroSubheadline || 'Professional solutions tailored to your needs. Get started today and see the difference.'}
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -447,7 +565,7 @@ const SECTION_TEMPLATES: Record<string, (industry?: ReturnType<typeof getIndustr
             ${ind?.contentDefaults?.primaryCTA || 'Get Started'}
             <ArrowRight className="inline ml-2 w-5 h-5" />
           </button>
-          <button className="px-8 py-3.5 rounded-lg font-semibold text-lg border-2 transition-all hover:shadow-md" style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }} data-ut-intent="cta.secondary">
+          <button className="px-8 py-3.5 rounded-lg font-semibold text-lg border-2 border-white/30 text-white transition-all hover:bg-white/10" data-ut-intent="cta.secondary">
             ${ind?.contentDefaults?.secondaryCTA || 'Learn More'}
           </button>
         </div>
@@ -658,10 +776,8 @@ ${cards}
             ))}
           </div>
         </motion.div>
-        <motion.div initial={{ opacity: 0, x: 30 }} animate={isInView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.6, delay: 0.2 }} className="rounded-2xl overflow-hidden aspect-[4/3]" style={{ background: 'linear-gradient(135deg, hsl(var(--primary)/0.1), hsl(var(--accent)/0.1))' }}>
-          <div className="w-full h-full flex items-center justify-center">
-            <Award className="w-20 h-20" style={{ color: 'hsl(var(--primary)/0.3)' }} />
-          </div>
+        <motion.div initial={{ opacity: 0, x: 30 }} animate={isInView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.6, delay: 0.2 }} className="rounded-2xl overflow-hidden aspect-[4/3]">
+          <img src="${ind ? `https://images.unsplash.com/${(INDUSTRY_UNSPLASH_IMAGES[ind.id] ?? ['photo-1497366216548-37526070297c'])[1] ?? (INDUSTRY_UNSPLASH_IMAGES[ind.id] ?? ['photo-1497366216548-37526070297c'])[0]}?w=800&q=80` : 'https://images.unsplash.com/photo-1497215842964-222b430dc094?w=800&q=80'}" alt="About us" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/cccccc/666666?text=About+Us'; }} />
         </motion.div>
       </div>
     </section>
@@ -696,7 +812,7 @@ ${cards}
           <input placeholder="Your Name" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--background))', color: 'hsl(var(--foreground))' }} />
           <input placeholder="Email Address" type="email" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--background))', color: 'hsl(var(--foreground))' }} />
           <textarea placeholder="Your Message" rows={4} className="w-full px-4 py-3 rounded-lg border text-sm resize-none" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--background))', color: 'hsl(var(--foreground))' }} />
-          <button type="submit" className="w-full py-3 rounded-lg font-semibold transition-all" style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }} data-ut-intent="form.submit">
+          <button type="submit" className="w-full py-3 rounded-lg font-semibold transition-all" style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }} data-ut-intent="contact.submit">
             ${ind?.contentDefaults?.primaryCTA || 'Send Message'}
           </button>
         </motion.form>
@@ -1035,13 +1151,13 @@ function buildRuntimeManifest(
 }
 
 // ============================================================================
-// Main API — single source of truth: ai-template-generator template-react
+// Main API — single source of truth: ai-code-assistant template-react
 // ============================================================================
 
 /**
- * Generate a site by calling ai-template-generator directly in template-react mode.
+ * Generate a site by calling ai-code-assistant directly in template-react mode.
  *
- * ai-template-generator is the SOURCE OF TRUTH for AI-generated template output.
+ * ai-code-assistant is the SOURCE OF TRUTH for AI-generated template output.
  * The wizard's selections (industry, template, variant, theme) are mapped into
  * callerManaged mode parameters so the AI respects the user's exact choices.
  *
@@ -1075,9 +1191,9 @@ export async function generateAILaunchSite(
   onProgress?.({ stage: 'generating', message: 'Applying theme system & wiring intents...' });
 
   try {
-    // Call ai-template-generator — the single source of truth for template generation
+    // Call ai-code-assistant — primary call path for template generation & VFS rendering
     onProgress?.({ stage: 'generating', message: 'AI generating unique site variation...' });
-    const { data, error } = await supabase.functions.invoke('ai-template-generator', {
+    const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
       body: {
         messages: [{ role: 'user', content: userMessage }],
         mode: 'template-react',
@@ -1095,7 +1211,7 @@ export async function generateAILaunchSite(
     });
 
     if (error) {
-      console.error('[aiLaunchService] ai-template-generator error:', error);
+      console.error('[aiLaunchService] ai-code-assistant error:', error);
       // Extract detailed error from edge function response body when available
       let errorMsg = 'AI edge function returned an error';
       try {
@@ -1119,7 +1235,7 @@ export async function generateAILaunchSite(
       };
     }
 
-    // ai-template-generator returns { content } with stringified JSON of files
+    // ai-code-assistant returns { content } with stringified JSON of files
     const rawContent: string = data?.content ?? data?.code ?? '';
     if (!rawContent) {
       console.error('[aiLaunchService] Empty AI response — falling back to deterministic template');
@@ -1212,7 +1328,7 @@ export async function generateAILaunchSite(
 // ============================================================================
 
 /**
- * Parse ai-template-generator response into a file map.
+ * Parse ai-code-assistant response into a file map.
  * Handles: clean JSON, markdown-wrapped JSON, progressively extracted JSON,
  * and raw code fallback (when AI returns a React component directly).
  */

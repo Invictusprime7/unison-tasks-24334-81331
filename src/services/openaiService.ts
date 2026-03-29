@@ -23,7 +23,7 @@ export interface OpenAIImageResponse {
 
 export interface OpenAICodeRequest {
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
-  mode?: 'creative' | 'technical' | 'web' | 'component';
+  mode?: 'code' | 'template-react' | 'template-html' | 'template-json' | 'design' | 'review' | 'debug';
 }
 
 export interface OpenAICodeResponse {
@@ -67,7 +67,7 @@ export async function generateAICode(request: OpenAICodeRequest): Promise<OpenAI
     
     const { data, error } = await invokeAIFunction('ai-code-assistant', {
       messages: request.messages,
-      mode: request.mode || 'creative',
+      mode: request.mode || 'code',
       savePattern: true
     });
 
@@ -169,7 +169,7 @@ export async function getAIServiceStatus(): Promise<{
   try {
     const { error } = await invokeAIFunction('ai-code-assistant', {
       messages: [{ role: 'user', content: 'test' }],
-      mode: 'test'
+      mode: 'code'
     });
 
     if (error) {

@@ -1200,6 +1200,34 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           normalizedFiles[normalizedPath] = fileContent;
         }
+
+        // Thin-shell guard: if App.tsx imports from relative paths that don't
+        // exist in the output, strip those imports — the sandpackFilePrep auto-stub
+        // system will generate real styled components for them downstream.
+        const appPath = Object.keys(normalizedFiles).find(p => /App\.tsx$/i.test(p));
+        if (appPath) {
+          const appSrc = normalizedFiles[appPath];
+          const relImportRe = /import\s+(\w+)\s+from\s+['"]\.\/([^'"]+)['"]/g;
+          let hasTrimmable = false;
+          let cleaned = appSrc;
+          let match: RegExpExecArray | null;
+          while ((match = relImportRe.exec(appSrc)) !== null) {
+            const [fullMatch, , relPath] = match;
+            const exists = Object.keys(normalizedFiles).some(p => {
+              const norm = p.replace(/^\/?(src\/)?/, '');
+              return norm === relPath || norm === relPath + '.tsx' || norm === relPath + '.ts';
+            });
+            if (!exists) {
+              hasTrimmable = true;
+              cleaned = cleaned.replace(fullMatch + ';', '');
+              cleaned = cleaned.replace(fullMatch, '');
+            }
+          }
+          if (hasTrimmable) {
+            normalizedFiles[appPath] = cleaned.replace(/\n{3,}/g, '\n\n');
+            console.warn('[AIBuilderPanel] Stripped thin-shell imports from App.tsx — auto-stubs will generate real components');
+          }
+        }
         
         if (onApplyToVFS) {
           console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));

@@ -411,35 +411,443 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
 }
 
 // ============================================================================
-// Thin-Shell Consolidator — inlines missing imported section components
+// Real Section Component Generator — produces styled React section code
 // ============================================================================
 
-/** Section template used when AI references a component that doesn't exist */
-function sectionPlaceholder(name: string): string {
-  const heading = name.replace(/([A-Z])/g, ' $1').trim(); // "CallToAction" → "Call To Action"
-  return `function ${name}() {
+/**
+ * Section component templates keyed by common AI component names.
+ * Each returns a fully styled React function component with Tailwind + Lucide icons.
+ * These are REAL components, not placeholders — they render production-quality UI.
+ */
+const SECTION_TEMPLATES: Record<string, (industry?: ReturnType<typeof getIndustryById>) => string> = {
+  Hero: (ind) => `function Hero() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
   return (
-    <section className="py-16 px-4">
-      <div className="max-w-5xl mx-auto text-center">
-        <h2 className="text-3xl font-bold mb-4">${heading}</h2>
-        <p className="text-gray-500">This section is loading…</p>
+    <section ref={ref} className="relative min-h-[80vh] flex items-center justify-center overflow-hidden" style={{ background: 'linear-gradient(135deg, hsl(var(--primary)/0.08), hsl(var(--background)))' }}>
+      <div className="absolute inset-0 bg-grid-pattern opacity-5" />
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={isInView ? { opacity: 1, y: 0 } : {}}
+        transition={{ duration: 0.8, ease: 'easeOut' }}
+        className="relative z-10 max-w-4xl mx-auto px-6 text-center"
+      >
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium mb-6" style={{ background: 'hsl(var(--primary)/0.1)', color: 'hsl(var(--primary))' }}>
+          <Sparkles className="w-4 h-4" />
+          <span>${ind?.contentDefaults?.heroSubheadline || 'Welcome to our platform'}</span>
+        </div>
+        <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6" style={{ color: 'hsl(var(--foreground))' }}>
+          ${ind?.contentDefaults?.heroHeadline || 'Build Something Amazing'}
+        </h1>
+        <p className="text-lg md:text-xl max-w-2xl mx-auto mb-10" style={{ color: 'hsl(var(--muted-foreground))' }}>
+          ${ind?.contentDefaults?.heroSubheadline || 'Professional solutions tailored to your needs. Get started today and see the difference.'}
+        </p>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <button className="px-8 py-3.5 rounded-lg font-semibold text-lg shadow-lg hover:shadow-xl transition-all" style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }} data-ut-intent="cta.primary">
+            ${ind?.contentDefaults?.primaryCTA || 'Get Started'}
+            <ArrowRight className="inline ml-2 w-5 h-5" />
+          </button>
+          <button className="px-8 py-3.5 rounded-lg font-semibold text-lg border-2 transition-all hover:shadow-md" style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }} data-ut-intent="cta.secondary">
+            ${ind?.contentDefaults?.secondaryCTA || 'Learn More'}
+          </button>
+        </div>
+      </motion.div>
+    </section>
+  );
+}`,
+
+  Features: (ind) => {
+    const services = ind?.contentDefaults?.serviceNames || ['Design', 'Development', 'Marketing', 'Analytics', 'Support'];
+    const icons = ['Shield', 'Zap', 'Heart', 'Star', 'Target'];
+    const cards = services.slice(0, 5).map((name: string, i: number) =>
+      `        <motion.div
+          key="${name}"
+          initial={{ opacity: 0, y: 30 }}
+          animate={isInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.5, delay: ${i} * 0.1 }}
+          className="p-6 rounded-2xl border transition-all hover:shadow-lg"
+          style={{ background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
+        >
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ background: 'hsl(var(--primary)/0.1)' }}>
+            <${icons[i % icons.length]} className="w-6 h-6" style={{ color: 'hsl(var(--primary))' }} />
+          </div>
+          <h3 className="text-lg font-semibold mb-2" style={{ color: 'hsl(var(--foreground))' }}>${name}</h3>
+          <p className="text-sm leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>Professional ${name.toLowerCase()} services designed to exceed your expectations and deliver outstanding results.</p>
+        </motion.div>`
+    ).join('\n');
+    return `function Features() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  return (
+    <section ref={ref} className="py-20 px-6" style={{ background: 'hsl(var(--background))' }}>
+      <div className="max-w-6xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="text-center mb-14">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4" style={{ color: 'hsl(var(--foreground))' }}>Our Services</h2>
+          <p className="text-lg max-w-2xl mx-auto" style={{ color: 'hsl(var(--muted-foreground))' }}>Everything you need to succeed, all in one place.</p>
+        </motion.div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+${cards}
+        </div>
       </div>
+    </section>
+  );
+}`;
+  },
+
+  Testimonials: (ind) => `function Testimonials() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  const testimonials = [
+    { name: 'Sarah Johnson', role: 'Business Owner', text: 'Absolutely transformed our ${ind?.contentDefaults?.testimonialContext || 'business'}. The results exceeded every expectation we had.' },
+    { name: 'Michael Chen', role: 'Marketing Director', text: 'The level of professionalism and quality is unmatched. Highly recommend to anyone looking for top-tier service.' },
+    { name: 'Emily Rodriguez', role: 'Entrepreneur', text: 'From start to finish, the experience was seamless. They truly understand what clients need.' },
+  ];
+  return (
+    <section ref={ref} className="py-20 px-6" style={{ background: 'hsl(var(--muted)/0.3)' }}>
+      <div className="max-w-6xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="text-center mb-14">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4" style={{ color: 'hsl(var(--foreground))' }}>What Our Clients Say</h2>
+          <p className="text-lg" style={{ color: 'hsl(var(--muted-foreground))' }}>Real stories from real customers.</p>
+        </motion.div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {testimonials.map((t, i) => (
+            <motion.div key={t.name} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.5, delay: i * 0.15 }} className="p-8 rounded-2xl border" style={{ background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}>
+              <Quote className="w-8 h-8 mb-4" style={{ color: 'hsl(var(--primary)/0.4)' }} />
+              <p className="text-base mb-6 leading-relaxed" style={{ color: 'hsl(var(--foreground))' }}>"{t.text}"</p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm" style={{ background: 'hsl(var(--primary)/0.1)', color: 'hsl(var(--primary))' }}>{t.name[0]}</div>
+                <div>
+                  <p className="font-semibold text-sm" style={{ color: 'hsl(var(--foreground))' }}>{t.name}</p>
+                  <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>{t.role}</p>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`,
+
+  CallToAction: (ind) => `function CallToAction() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  return (
+    <section ref={ref} className="py-20 px-6">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={isInView ? { opacity: 1, scale: 1 } : {}} transition={{ duration: 0.6 }} className="max-w-4xl mx-auto rounded-3xl p-12 md:p-16 text-center" style={{ background: 'hsl(var(--primary))' }}>
+        <h2 className="text-3xl md:text-4xl font-bold mb-4" style={{ color: 'hsl(var(--primary-foreground))' }}>Ready to Get Started?</h2>
+        <p className="text-lg mb-8 opacity-90" style={{ color: 'hsl(var(--primary-foreground))' }}>Join hundreds of satisfied clients and take the next step today.</p>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <button className="px-8 py-3.5 rounded-lg font-semibold text-lg transition-all hover:opacity-90" style={{ background: 'hsl(var(--primary-foreground))', color: 'hsl(var(--primary))' }} data-ut-intent="cta.primary">
+            ${ind?.contentDefaults?.primaryCTA || 'Get Started Now'}
+            <ArrowRight className="inline ml-2 w-5 h-5" />
+          </button>
+          <button className="px-8 py-3.5 rounded-lg font-semibold text-lg border-2 transition-all" style={{ borderColor: 'hsl(var(--primary-foreground)/0.3)', color: 'hsl(var(--primary-foreground))' }} data-ut-intent="cta.secondary">
+            ${ind?.contentDefaults?.secondaryCTA || 'Contact Us'}
+          </button>
+        </div>
+      </motion.div>
+    </section>
+  );
+}`,
+
+  Header: () => `function Header() {
+  const [isOpen, setIsOpen] = React.useState(false);
+  return (
+    <header className="sticky top-0 z-50 backdrop-blur-md border-b" style={{ background: 'hsl(var(--background)/0.8)', borderColor: 'hsl(var(--border))' }}>
+      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <span className="text-xl font-bold" style={{ color: 'hsl(var(--foreground))' }}>Brand</span>
+        <nav className="hidden md:flex items-center gap-8">
+          {['Home', 'Services', 'About', 'Contact'].map(item => (
+            <a key={item} href={\`#\${item.toLowerCase()}\`} className="text-sm font-medium hover:opacity-80 transition-opacity" style={{ color: 'hsl(var(--foreground))' }} data-ut-intent="nav.anchor" data-ut-anchor={item.toLowerCase()}>{item}</a>
+          ))}
+          <button className="px-5 py-2 rounded-lg text-sm font-semibold" style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }} data-ut-intent="cta.primary">Get Started</button>
+        </nav>
+        <button onClick={() => setIsOpen(!isOpen)} className="md:hidden" data-no-intent>
+          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </div>
+      {isOpen && (
+        <div className="md:hidden px-6 py-4 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
+          {['Home', 'Services', 'About', 'Contact'].map(item => (
+            <a key={item} href={\`#\${item.toLowerCase()}\`} className="block py-2 text-sm font-medium" style={{ color: 'hsl(var(--foreground))' }} data-ut-intent="nav.anchor">{item}</a>
+          ))}
+        </div>
+      )}
+    </header>
+  );
+}`,
+
+  Footer: () => `function Footer() {
+  return (
+    <footer className="py-12 px-6 border-t" style={{ background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}>
+      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div>
+          <span className="text-lg font-bold" style={{ color: 'hsl(var(--foreground))' }}>Brand</span>
+          <p className="text-sm mt-2" style={{ color: 'hsl(var(--muted-foreground))' }}>Building exceptional experiences for our clients worldwide.</p>
+        </div>
+        {[
+          { title: 'Company', links: ['About', 'Careers', 'Blog'] },
+          { title: 'Services', links: ['Consulting', 'Support', 'Pricing'] },
+          { title: 'Connect', links: ['Contact', 'Twitter', 'LinkedIn'] },
+        ].map(col => (
+          <div key={col.title}>
+            <h4 className="font-semibold mb-3" style={{ color: 'hsl(var(--foreground))' }}>{col.title}</h4>
+            {col.links.map(link => (
+              <a key={link} href="#" className="block text-sm py-1 hover:underline" style={{ color: 'hsl(var(--muted-foreground))' }}>{link}</a>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="max-w-6xl mx-auto mt-8 pt-6 border-t text-center text-sm" style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>
+        © {new Date().getFullYear()} Brand. All rights reserved.
+      </div>
+    </footer>
+  );
+}`,
+
+  Pricing: () => `function Pricing() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  const plans = [
+    { name: 'Starter', price: '29', features: ['Up to 5 projects', 'Basic support', 'Core features', '1GB storage'] },
+    { name: 'Professional', price: '79', features: ['Unlimited projects', 'Priority support', 'Advanced features', '10GB storage', 'Team access'], popular: true },
+    { name: 'Enterprise', price: '199', features: ['Everything in Pro', 'Dedicated manager', 'Custom integrations', 'Unlimited storage', 'SLA guarantee'] },
+  ];
+  return (
+    <section ref={ref} className="py-20 px-6" style={{ background: 'hsl(var(--background))' }}>
+      <div className="max-w-6xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="text-center mb-14">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4" style={{ color: 'hsl(var(--foreground))' }}>Simple Pricing</h2>
+          <p className="text-lg" style={{ color: 'hsl(var(--muted-foreground))' }}>Choose the plan that fits your needs.</p>
+        </motion.div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {plans.map((plan, i) => (
+            <motion.div key={plan.name} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.5, delay: i * 0.1 }} className={\`p-8 rounded-2xl border-2 \${plan.popular ? 'scale-105' : ''}\`} style={{ background: 'hsl(var(--card))', borderColor: plan.popular ? 'hsl(var(--primary))' : 'hsl(var(--border))' }}>
+              {plan.popular && <span className="inline-block px-3 py-1 text-xs font-bold rounded-full mb-4" style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}>Most Popular</span>}
+              <h3 className="text-xl font-bold" style={{ color: 'hsl(var(--foreground))' }}>{plan.name}</h3>
+              <div className="mt-4 mb-6"><span className="text-4xl font-bold" style={{ color: 'hsl(var(--foreground))' }}>\${plan.price}</span><span className="text-sm" style={{ color: 'hsl(var(--muted-foreground))' }}>/mo</span></div>
+              <ul className="space-y-3 mb-8">
+                {plan.features.map(f => <li key={f} className="flex items-center gap-2 text-sm" style={{ color: 'hsl(var(--foreground))' }}><Check className="w-4 h-4" style={{ color: 'hsl(var(--primary))' }} />{f}</li>)}
+              </ul>
+              <button className="w-full py-3 rounded-lg font-semibold transition-all" style={plan.popular ? { background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' } : { border: '2px solid hsl(var(--border))', color: 'hsl(var(--foreground))' }} data-ut-intent="cta.primary">Choose Plan</button>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`,
+
+  About: () => `function About() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  return (
+    <section ref={ref} className="py-20 px-6" style={{ background: 'hsl(var(--muted)/0.2)' }}>
+      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+        <motion.div initial={{ opacity: 0, x: -30 }} animate={isInView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.6 }}>
+          <h2 className="text-3xl md:text-4xl font-bold mb-6" style={{ color: 'hsl(var(--foreground))' }}>About Us</h2>
+          <p className="text-lg mb-4 leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>We're a team of passionate professionals dedicated to delivering exceptional results. With years of experience and a commitment to quality, we help businesses thrive.</p>
+          <p className="text-base mb-6" style={{ color: 'hsl(var(--muted-foreground))' }}>Our mission is simple: provide outstanding service that makes a real difference in our clients' success.</p>
+          <div className="grid grid-cols-3 gap-6">
+            {[{ num: '500+', label: 'Clients' }, { num: '10+', label: 'Years' }, { num: '99%', label: 'Satisfaction' }].map(s => (
+              <div key={s.label} className="text-center">
+                <div className="text-2xl font-bold" style={{ color: 'hsl(var(--primary))' }}>{s.num}</div>
+                <div className="text-xs mt-1" style={{ color: 'hsl(var(--muted-foreground))' }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+        <motion.div initial={{ opacity: 0, x: 30 }} animate={isInView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.6, delay: 0.2 }} className="rounded-2xl overflow-hidden aspect-[4/3]" style={{ background: 'linear-gradient(135deg, hsl(var(--primary)/0.1), hsl(var(--accent)/0.1))' }}>
+          <div className="w-full h-full flex items-center justify-center">
+            <Award className="w-20 h-20" style={{ color: 'hsl(var(--primary)/0.3)' }} />
+          </div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}`,
+
+  Contact: (ind) => `function Contact() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  return (
+    <section ref={ref} className="py-20 px-6" style={{ background: 'hsl(var(--background))' }}>
+      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12">
+        <motion.div initial={{ opacity: 0, x: -30 }} animate={isInView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.6 }}>
+          <h2 className="text-3xl md:text-4xl font-bold mb-4" style={{ color: 'hsl(var(--foreground))' }}>Get In Touch</h2>
+          <p className="text-lg mb-8" style={{ color: 'hsl(var(--muted-foreground))' }}>We'd love to hear from you. Send us a message and we'll respond as soon as possible.</p>
+          <div className="space-y-4">
+            {[
+              { icon: 'Mail', label: 'hello@yourbrand.com' },
+              { icon: 'Phone', label: '(555) 123-4567' },
+              { icon: 'MapPin', label: '123 Main Street, City, ST 12345' },
+            ].map(item => (
+              <div key={item.icon} className="flex items-center gap-3">
+                {item.icon === 'Mail' && <Mail className="w-5 h-5" style={{ color: 'hsl(var(--primary))' }} />}
+                {item.icon === 'Phone' && <Phone className="w-5 h-5" style={{ color: 'hsl(var(--primary))' }} />}
+                {item.icon === 'MapPin' && <MapPin className="w-5 h-5" style={{ color: 'hsl(var(--primary))' }} />}
+                <span className="text-sm" style={{ color: 'hsl(var(--muted-foreground))' }}>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+        <motion.form initial={{ opacity: 0, x: 30 }} animate={isInView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.6, delay: 0.2 }} className="space-y-4 p-8 rounded-2xl border" style={{ background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }} onSubmit={e => e.preventDefault()}>
+          <input placeholder="Your Name" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--background))', color: 'hsl(var(--foreground))' }} />
+          <input placeholder="Email Address" type="email" className="w-full px-4 py-3 rounded-lg border text-sm" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--background))', color: 'hsl(var(--foreground))' }} />
+          <textarea placeholder="Your Message" rows={4} className="w-full px-4 py-3 rounded-lg border text-sm resize-none" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--background))', color: 'hsl(var(--foreground))' }} />
+          <button type="submit" className="w-full py-3 rounded-lg font-semibold transition-all" style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }} data-ut-intent="form.submit">
+            ${ind?.contentDefaults?.primaryCTA || 'Send Message'}
+          </button>
+        </motion.form>
+      </div>
+    </section>
+  );
+}`,
+
+  Stats: () => `function Stats() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  const stats = [
+    { icon: Users, value: '10,000+', label: 'Happy Clients' },
+    { icon: Award, value: '500+', label: 'Projects Done' },
+    { icon: TrendingUp, value: '99%', label: 'Success Rate' },
+    { icon: Clock, value: '24/7', label: 'Support' },
+  ];
+  return (
+    <section ref={ref} className="py-16 px-6" style={{ background: 'hsl(var(--primary))' }}>
+      <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
+        {stats.map((stat, i) => (
+          <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.4, delay: i * 0.1 }} className="text-center">
+            <stat.icon className="w-8 h-8 mx-auto mb-3" style={{ color: 'hsl(var(--primary-foreground)/0.7)' }} />
+            <div className="text-3xl font-bold" style={{ color: 'hsl(var(--primary-foreground))' }}>{stat.value}</div>
+            <div className="text-sm mt-1 opacity-80" style={{ color: 'hsl(var(--primary-foreground))' }}>{stat.label}</div>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  );
+}`,
+
+  Services: (ind) => {
+    const services = ind?.contentDefaults?.serviceNames || ['Consulting', 'Development', 'Design', 'Marketing', 'Support'];
+    const cards = services.slice(0, 5).map((name: string, i: number) =>
+      `          <motion.div key="${name}" initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.5, delay: ${i} * 0.1 }} className="group p-6 rounded-2xl border hover:shadow-lg transition-all" style={{ background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}>
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3" style={{ background: 'hsl(var(--primary)/0.1)' }}>
+              <Check className="w-5 h-5" style={{ color: 'hsl(var(--primary))' }} />
+            </div>
+            <h3 className="text-lg font-semibold mb-2" style={{ color: 'hsl(var(--foreground))' }}>${name}</h3>
+            <p className="text-sm" style={{ color: 'hsl(var(--muted-foreground))' }}>Expert ${name.toLowerCase()} tailored to your specific needs and goals.</p>
+          </motion.div>`
+    ).join('\n');
+    return `function Services() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  return (
+    <section ref={ref} className="py-20 px-6" style={{ background: 'hsl(var(--background))' }}>
+      <div className="max-w-6xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="text-center mb-14">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4" style={{ color: 'hsl(var(--foreground))' }}>Our Services</h2>
+          <p className="text-lg" style={{ color: 'hsl(var(--muted-foreground))' }}>Comprehensive solutions designed for your success.</p>
+        </motion.div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+${cards}
+        </div>
+      </div>
+    </section>
+  );
+}`;
+  },
+
+  FAQ: () => `function FAQ() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  const [open, setOpen] = React.useState<number | null>(null);
+  const faqs = [
+    { q: 'How do I get started?', a: 'Simply click the Get Started button above or contact us directly. We\\'ll schedule a free consultation to understand your needs.' },
+    { q: 'What is your typical turnaround time?', a: 'Most projects are completed within 2-4 weeks, depending on scope and complexity. We\\'ll provide a detailed timeline during our initial consultation.' },
+    { q: 'Do you offer ongoing support?', a: 'Yes! We provide ongoing support and maintenance packages to ensure everything continues running smoothly after launch.' },
+    { q: 'What makes you different from competitors?', a: 'Our commitment to quality, attention to detail, and personalized approach sets us apart. We treat every project as if it were our own.' },
+  ];
+  return (
+    <section ref={ref} className="py-20 px-6" style={{ background: 'hsl(var(--background))' }}>
+      <div className="max-w-3xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="text-center mb-14">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4" style={{ color: 'hsl(var(--foreground))' }}>Frequently Asked Questions</h2>
+        </motion.div>
+        <div className="space-y-4">
+          {faqs.map((faq, i) => (
+            <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.4, delay: i * 0.08 }} className="border rounded-xl overflow-hidden" style={{ borderColor: 'hsl(var(--border))' }}>
+              <button onClick={() => setOpen(open === i ? null : i)} className="w-full flex items-center justify-between p-5 text-left font-medium" style={{ color: 'hsl(var(--foreground))' }} data-no-intent>
+                {faq.q}
+                <ChevronDown className={\`w-5 h-5 transition-transform \${open === i ? 'rotate-180' : ''}\`} style={{ color: 'hsl(var(--muted-foreground))' }} />
+              </button>
+              {open === i && <div className="px-5 pb-5 text-sm leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>{faq.a}</div>}
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`,
+};
+
+/**
+ * Generic fallback for section names not in the template map above.
+ * Generates a styled section with heading/body using the component name.
+ */
+function genericSectionComponent(name: string, industry?: ReturnType<typeof getIndustryById>): string {
+  const heading = name.replace(/([A-Z])/g, ' $1').trim();
+  return `function ${name}() {
+  const ref = React.useRef(null);
+  const isInView = useInView(ref, { once: true });
+  return (
+    <section ref={ref} className="py-20 px-6" style={{ background: 'hsl(var(--background))' }}>
+      <motion.div initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="max-w-5xl mx-auto text-center">
+        <h2 className="text-3xl md:text-4xl font-bold mb-4" style={{ color: 'hsl(var(--foreground))' }}>${heading}</h2>
+        <p className="text-lg max-w-2xl mx-auto mb-8" style={{ color: 'hsl(var(--muted-foreground))' }}>${industry?.contentDefaults?.heroSubheadline || 'Discover what makes us the best choice for your needs.'}</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {['Quality', 'Reliability', 'Innovation'].map((item, i) => (
+            <motion.div key={item} initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.4, delay: i * 0.1 }} className="p-6 rounded-xl border" style={{ background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}>
+              <Star className="w-6 h-6 mx-auto mb-3" style={{ color: 'hsl(var(--primary))' }} />
+              <h3 className="font-semibold mb-2" style={{ color: 'hsl(var(--foreground))' }}>{item}</h3>
+              <p className="text-sm" style={{ color: 'hsl(var(--muted-foreground))' }}>Delivering exceptional {item.toLowerCase()} in everything we do.</p>
+            </motion.div>
+          ))}
+        </div>
+      </motion.div>
     </section>
   );
 }`;
 }
 
+/** Build a real section component for a given name, using industry data when available */
+function buildRealSection(name: string, industry?: ReturnType<typeof getIndustryById>): string {
+  const template = SECTION_TEMPLATES[name];
+  if (template) return template(industry);
+  return genericSectionComponent(name, industry);
+}
+
+// ============================================================================
+// Thin-Shell Consolidator — inlines REAL section components for missing imports
+// ============================================================================
+
 /**
  * Detects when AI outputs a "thin-shell" App.tsx that merely imports and
  * renders components from relative paths that don't exist in the file map.
- * When detected, the missing imports are replaced with inline placeholder
- * section components so the preview renders real content instead of stub text.
+ * When detected, the missing imports are replaced with inline REAL section
+ * components using the industry data, complete with Tailwind styling,
+ * framer-motion animations, and Lucide icons.
  */
-function consolidateThinShell(files: Record<string, string>): Record<string, string> {
+function consolidateThinShell(
+  files: Record<string, string>,
+  industryId?: string,
+): Record<string, string> {
   const appKey = Object.keys(files).find(p => /\/?src\/App\.tsx$/i.test(p));
   if (!appKey) return files;
 
   const src = files[appKey];
+  const industry = industryId ? getIndustryById(industryId) : undefined;
 
   // Detect relative imports that reference files NOT in the output
   // e.g. import Hero from './components/sections/Hero'
@@ -473,22 +881,56 @@ function consolidateThinShell(files: Record<string, string>): Record<string, str
 
   console.warn(
     `[aiLaunchService] Thin-shell App.tsx detected (${missing.length} missing imports): ` +
-      missing.map(m => m.name).join(', '),
+      missing.map(m => m.name).join(', ') +
+      ' — injecting real section components',
   );
 
-  // Build consolidated App.tsx: strip missing imports, inject inline placeholders
+  // Build consolidated App.tsx: strip missing imports, inject real sections
   let consolidated = src;
-  const placeholders: string[] = [];
+  const realSections: string[] = [];
+
+  // Ensure framer-motion + lucide-react imports exist at the top
+  const needsMotionImport = !consolidated.includes('from "framer-motion"') && !consolidated.includes("from 'framer-motion'");
+  const needsLucideImport = !consolidated.includes('from "lucide-react"') && !consolidated.includes("from 'lucide-react'");
 
   for (const imp of missing) {
     // Remove the import line
     consolidated = consolidated.replace(imp.fullMatch + ';', '');
     consolidated = consolidated.replace(imp.fullMatch, '');
-    // Generate inline section component
-    placeholders.push(sectionPlaceholder(imp.name));
+    // Generate real inline section component
+    realSections.push(buildRealSection(imp.name, industry));
   }
 
-  // Insert placeholders before the default export / main component
+  // Add required library imports if missing
+  const importsToAdd: string[] = [];
+  if (needsMotionImport) {
+    importsToAdd.push('import { motion, useInView } from "framer-motion";');
+  }
+  if (needsLucideImport) {
+    importsToAdd.push('import { Star, ArrowRight, Check, Phone, Mail, MapPin, Clock, Users, Heart, Shield, Zap, Menu, X, ChevronDown, Quote, Sparkles, TrendingUp, Award, Target } from "lucide-react";');
+  }
+
+  // Insert imports at the top (after existing imports)
+  if (importsToAdd.length > 0) {
+    const lastImportEnd = Math.max(
+      consolidated.lastIndexOf("from '"),
+      consolidated.lastIndexOf('from "'),
+    );
+    if (lastImportEnd !== -1) {
+      const lineEnd = consolidated.indexOf('\n', lastImportEnd);
+      if (lineEnd !== -1) {
+        consolidated =
+          consolidated.slice(0, lineEnd + 1) +
+          importsToAdd.join('\n') +
+          '\n' +
+          consolidated.slice(lineEnd + 1);
+      }
+    } else {
+      consolidated = importsToAdd.join('\n') + '\n\n' + consolidated;
+    }
+  }
+
+  // Insert sections before the default export / main component
   const insertBefore =
     consolidated.match(/export\s+default\s+function/) ||
     consolidated.match(/function\s+App\s*\(/) ||
@@ -498,7 +940,7 @@ function consolidateThinShell(files: Record<string, string>): Record<string, str
     const idx = insertBefore.index;
     consolidated =
       consolidated.slice(0, idx) +
-      placeholders.join('\n\n') +
+      realSections.join('\n\n') +
       '\n\n' +
       consolidated.slice(idx);
   } else {
@@ -509,11 +951,11 @@ function consolidateThinShell(files: Record<string, string>): Record<string, str
       consolidated =
         consolidated.slice(0, lineEnd + 1) +
         '\n' +
-        placeholders.join('\n\n') +
+        realSections.join('\n\n') +
         '\n\n' +
         consolidated.slice(lineEnd + 1);
     } else {
-      consolidated = placeholders.join('\n\n') + '\n\n' + consolidated;
+      consolidated = realSections.join('\n\n') + '\n\n' + consolidated;
     }
   }
 
@@ -711,9 +1153,9 @@ export async function generateAILaunchSite(
     const sanitized = sanitizeReactFiles(aiFiles);
 
     // Consolidate thin-shell App.tsx — if AI split into separate component files
-    // that it didn't actually include, inline placeholder sections so the preview
-    // renders real content instead of stub text
-    const consolidated = consolidateThinShell(sanitized);
+    // that it didn't actually include, generate real styled section components
+    // with industry-aware content, animations, and proper Tailwind styling
+    const consolidated = consolidateThinShell(sanitized, config.blueprint.industry);
 
     // Normalize file paths — ensure /src/ prefix for Sandpack compatibility
     const pathNormalized: Record<string, string> = {};

@@ -75,6 +75,23 @@ ${templateAction === 'full-control' ? `🚀 **FULL CREATIVE CONTROL MODE - AI HA
 
 You have FULL AUTHORITY to make ANY UI/UX decisions. The user trusts your expertise.
 
+⚠️ CRITICAL ARCHITECTURE RULE: ALL COMPONENTS INLINE IN ONE FILE
+Define every section (Hero, Features, Testimonials, Footer, etc.) as named function
+components INSIDE a single App.tsx file. DO NOT import from ./components/, ./sections/,
+or any relative path that doesn't exist in the current VFS.
+
+🚫 FORBIDDEN:
+\`\`\`tsx
+import Hero from './components/sections/Hero'; // ❌ NEVER
+import Features from './sections/Features';     // ❌ NEVER
+\`\`\`
+✅ CORRECT:
+\`\`\`tsx
+function Hero() { return <section>...</section>; }
+function Features() { return <section>...</section>; }
+export default function App() { return <><Hero /><Features /></>; }
+\`\`\`
+
 🎨 **YOU CAN AND SHOULD:**
 - Completely restyle colors, fonts, typography, spacing
 - Add gradients, shadows, animations, transitions
@@ -85,12 +102,15 @@ You have FULL AUTHORITY to make ANY UI/UX decisions. The user trusts your expert
 
 **OUTPUT REQUIREMENTS:**
 1. Return COMPLETE, PRODUCTION-READY React/TSX components
-2. Use Tailwind CSS with design token classes
+2. Use Tailwind CSS with design token classes: hsl(var(--primary)), hsl(var(--background)), etc.
 3. Use CSS-in-JS or index.css for custom animations (NOT <style> tags)
 4. Use React hooks for interactivity (NOT <script> tags)
-5. Ensure responsive design
-6. Wire ALL conversion elements with data-ut-intent
-7. For multi-file: output JSON {"files": {"src/App.tsx": "...", ...}}. For single file: use tsx code fence.` : ''}
+5. Use Lucide React icons: import { Star, ArrowRight, Check, ... } from "lucide-react";
+6. Use framer-motion for scroll animations: import { motion, useInView } from "framer-motion";
+7. Ensure responsive design (mobile-first with md: and lg: breakpoints)
+8. Wire ALL conversion elements with data-ut-intent
+9. For multi-file: output JSON {"files": {"src/App.tsx": "...", "src/index.css": "..."}}. For single file: use tsx code fence.
+10. Generate MINIMUM 6 sections: Hero, Features/Services, About/Stats, Testimonials, CTA, Footer` : ''}
 ${templateAction === 'apply-design-preset' ? `🎨 **DESIGN PRESET APPLICATION MODE - VISUAL STYLING ONLY**
 
 ⚠️ **CRITICAL: PRESERVE ALL TEMPLATE CONTENT EXACTLY AS-IS**
@@ -354,6 +374,11 @@ ${editModeContext}
 
 ⚠️ CRITICAL OUTPUT FORMAT: REACT/TSX ONLY ⚠️
 You MUST generate React/TypeScript components. NEVER generate raw HTML pages or vanilla JavaScript.
+
+⚠️ INLINE ARCHITECTURE RULE ⚠️
+All section components (Hero, Features, Testimonials, Footer, etc.) MUST be defined
+as named function declarations INSIDE the file they are used in. DO NOT import from
+./components/, ./sections/, or any relative path that doesn't exist in the current project.
 
 REACT COMPONENT ARCHITECTURE:
 - Export default function components (one per file)

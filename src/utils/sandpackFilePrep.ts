@@ -1086,18 +1086,126 @@ export function prepareSandpackFiles(
       const namedExports = lineMatch?.[1]?.split(',').map(s => s.replace(/\s+as\s+\w+/, '').trim()).filter(Boolean) || [];
       const defaultExport = lineMatch?.[2];
 
-      // Generate a stub component file with a styled section layout
-      // instead of bare <div>Name</div> which renders as literal text
+      // Generate a real styled component — NOT a bare text stub.
+      // Uses full JSX with Tailwind classes, CSS variable theming, and proper
+      // section layout so the preview renders production-quality UI.
       const componentName = absPath.split('/').pop() || 'Component';
       let stub = `// @ts-nocheck\nimport React from 'react';\n\n`;
 
-      const styledStub = (name: string) => {
+      /**
+       * Build a real section component body for a given name.
+       * Uses createElement for compatibility (no JSX transform needed in stubs).
+       */
+      const buildRealStub = (name: string) => {
         const heading = name.replace(/([A-Z])/g, ' $1').trim();
+
+        // Map common section names to richer component layouts
+        const sectionLayouts: Record<string, string> = {
+          Hero: [
+            `  return React.createElement('section', {`,
+            `    className: 'relative min-h-[60vh] flex items-center justify-center px-6 ' + (className || ''),`,
+            `    style: { background: 'linear-gradient(135deg, hsl(var(--primary)/0.08), hsl(var(--background)))' },`,
+            `    ...props`,
+            `  },`,
+            `    React.createElement('div', { className: 'max-w-4xl mx-auto text-center' },`,
+            `      React.createElement('h1', { className: 'text-4xl md:text-6xl font-bold mb-6', style: { color: 'hsl(var(--foreground))' } }, '${heading}'),`,
+            `      React.createElement('p', { className: 'text-lg md:text-xl mb-8 max-w-2xl mx-auto', style: { color: 'hsl(var(--muted-foreground))' } }, 'Professional solutions tailored to your needs.'),`,
+            `      React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4 justify-center' },`,
+            `        React.createElement('button', { className: 'px-8 py-3 rounded-lg font-semibold', style: { background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }, 'data-ut-intent': 'cta.primary' }, 'Get Started'),`,
+            `        React.createElement('button', { className: 'px-8 py-3 rounded-lg font-semibold border-2', style: { borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }, 'data-ut-intent': 'cta.secondary' }, 'Learn More')`,
+            `      )`,
+            `    )`,
+            `  );`,
+          ].join('\n'),
+
+          Features: [
+            `  const features = ['Quality Service', 'Expert Team', 'Fast Delivery'];`,
+            `  return React.createElement('section', { className: 'py-20 px-6 ' + (className || ''), style: { background: 'hsl(var(--background))' }, ...props },`,
+            `    React.createElement('div', { className: 'max-w-6xl mx-auto' },`,
+            `      React.createElement('h2', { className: 'text-3xl font-bold text-center mb-12', style: { color: 'hsl(var(--foreground))' } }, 'Our Features'),`,
+            `      React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-8' },`,
+            `        ...features.map(f => React.createElement('div', { key: f, className: 'p-6 rounded-2xl border', style: { background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' } },`,
+            `          React.createElement('div', { className: 'w-10 h-10 rounded-lg mb-4 flex items-center justify-center', style: { background: 'hsl(var(--primary)/0.1)' } }, '✦'),`,
+            `          React.createElement('h3', { className: 'font-semibold mb-2', style: { color: 'hsl(var(--foreground))' } }, f),`,
+            `          React.createElement('p', { className: 'text-sm', style: { color: 'hsl(var(--muted-foreground))' } }, 'Delivering exceptional ' + f.toLowerCase() + ' for every client.')`,
+            `        ))`,
+            `      )`,
+            `    )`,
+            `  );`,
+          ].join('\n'),
+
+          Testimonials: [
+            `  const items = [`,
+            `    { name: 'Sarah J.', text: 'Outstanding results and exceptional service quality.' },`,
+            `    { name: 'Mike R.', text: 'Highly recommend — professional and reliable team.' },`,
+            `    { name: 'Emily L.', text: 'Exceeded all expectations. Will definitely return.' },`,
+            `  ];`,
+            `  return React.createElement('section', { className: 'py-20 px-6 ' + (className || ''), style: { background: 'hsl(var(--muted)/0.3)' }, ...props },`,
+            `    React.createElement('div', { className: 'max-w-6xl mx-auto' },`,
+            `      React.createElement('h2', { className: 'text-3xl font-bold text-center mb-12', style: { color: 'hsl(var(--foreground))' } }, 'What Our Clients Say'),`,
+            `      React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-8' },`,
+            `        ...items.map(t => React.createElement('div', { key: t.name, className: 'p-8 rounded-2xl border', style: { background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' } },`,
+            `          React.createElement('p', { className: 'mb-4 leading-relaxed', style: { color: 'hsl(var(--foreground))' } }, '"' + t.text + '"'),`,
+            `          React.createElement('p', { className: 'font-semibold text-sm', style: { color: 'hsl(var(--primary))' } }, '— ' + t.name)`,
+            `        ))`,
+            `      )`,
+            `    )`,
+            `  );`,
+          ].join('\n'),
+
+          CallToAction: [
+            `  return React.createElement('section', { className: 'py-20 px-6 ' + (className || ''), ...props },`,
+            `    React.createElement('div', { className: 'max-w-4xl mx-auto rounded-3xl p-12 text-center', style: { background: 'hsl(var(--primary))' } },`,
+            `      React.createElement('h2', { className: 'text-3xl font-bold mb-4', style: { color: 'hsl(var(--primary-foreground))' } }, 'Ready to Get Started?'),`,
+            `      React.createElement('p', { className: 'text-lg mb-8 opacity-90', style: { color: 'hsl(var(--primary-foreground))' } }, 'Take the next step and join hundreds of satisfied clients.'),`,
+            `      React.createElement('button', { className: 'px-8 py-3 rounded-lg font-semibold', style: { background: 'hsl(var(--primary-foreground))', color: 'hsl(var(--primary))' }, 'data-ut-intent': 'cta.primary' }, 'Get Started Now')`,
+            `    )`,
+            `  );`,
+          ].join('\n'),
+
+          Footer: [
+            `  return React.createElement('footer', { className: 'py-12 px-6 border-t ' + (className || ''), style: { background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }, ...props },`,
+            `    React.createElement('div', { className: 'max-w-6xl mx-auto text-center' },`,
+            `      React.createElement('p', { className: 'text-sm', style: { color: 'hsl(var(--muted-foreground))' } }, '© ' + new Date().getFullYear() + ' Brand. All rights reserved.')`,
+            `    )`,
+            `  );`,
+          ].join('\n'),
+
+          Header: [
+            `  return React.createElement('header', { className: 'sticky top-0 z-50 backdrop-blur-md border-b ' + (className || ''), style: { background: 'hsl(var(--background)/0.8)', borderColor: 'hsl(var(--border))' }, ...props },`,
+            `    React.createElement('div', { className: 'max-w-6xl mx-auto px-6 h-16 flex items-center justify-between' },`,
+            `      React.createElement('span', { className: 'text-xl font-bold', style: { color: 'hsl(var(--foreground))' } }, 'Brand'),`,
+            `      React.createElement('nav', { className: 'hidden md:flex items-center gap-8' },`,
+            `        ...['Home', 'Services', 'About', 'Contact'].map(item =>`,
+            `          React.createElement('a', { key: item, href: '#', className: 'text-sm font-medium', style: { color: 'hsl(var(--foreground))' } }, item)`,
+            `        )`,
+            `      )`,
+            `    )`,
+            `  );`,
+          ].join('\n'),
+        };
+
+        // Check for matching layout by name (case-insensitive matching of known sections)
+        const normalizedName = name.charAt(0).toUpperCase() + name.slice(1);
+        const matchedLayout = sectionLayouts[normalizedName]
+          || sectionLayouts[Object.keys(sectionLayouts).find(k => normalizedName.toLowerCase().includes(k.toLowerCase())) || ''];
+
+        if (matchedLayout) return matchedLayout;
+
+        // Generic fallback: styled section with heading, description, and 3-column grid
         return [
-          `  return React.createElement('section', { className: 'py-16 px-4 ' + (className || ''), ...props },`,
+          `  return React.createElement('section', { className: 'py-20 px-6 ' + (className || ''), style: { background: 'hsl(var(--background))' }, ...props },`,
           `    React.createElement('div', { className: 'max-w-5xl mx-auto text-center' },`,
-          `      React.createElement('h2', { className: 'text-3xl font-bold mb-4' }, '${heading}'),`,
-          `      React.createElement('p', { className: 'text-gray-500' }, children || 'Content loading…')`,
+          `      React.createElement('h2', { className: 'text-3xl font-bold mb-4', style: { color: 'hsl(var(--foreground))' } }, '${heading}'),`,
+          `      React.createElement('p', { className: 'text-lg mb-8 max-w-2xl mx-auto', style: { color: 'hsl(var(--muted-foreground))' } }, 'Discover what makes us the best choice for your needs.'),`,
+          `      React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6' },`,
+          `        ...['Quality', 'Reliability', 'Innovation'].map(item =>`,
+          `          React.createElement('div', { key: item, className: 'p-6 rounded-xl border', style: { background: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' } },`,
+          `            React.createElement('h3', { className: 'font-semibold mb-2', style: { color: 'hsl(var(--foreground))' } }, item),`,
+          `            React.createElement('p', { className: 'text-sm', style: { color: 'hsl(var(--muted-foreground))' } }, 'Delivering exceptional ' + item.toLowerCase() + '.')`,
+          `          )`,
+          `        )`,
+          `      )`,
           `    )`,
           `  );`,
         ].join('\n');
@@ -1105,18 +1213,18 @@ export function prepareSandpackFiles(
 
       for (const name of namedExports) {
         stub += `export function ${name}({ children, className, ...props }) {\n`;
-        stub += styledStub(name) + '\n';
+        stub += buildRealStub(name) + '\n';
         stub += `}\n\n`;
       }
 
       if (defaultExport) {
         stub += `export default function ${defaultExport}({ children, className, ...props }) {\n`;
-        stub += styledStub(defaultExport) + '\n';
+        stub += buildRealStub(defaultExport) + '\n';
         stub += `}\n`;
       } else if (namedExports.length === 0) {
         // No named or default — generate a generic default export
         stub += `export default function ${componentName}({ children, className, ...props }) {\n`;
-        stub += styledStub(componentName) + '\n';
+        stub += buildRealStub(componentName) + '\n';
         stub += `}\n`;
       }
 

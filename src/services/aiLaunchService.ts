@@ -474,9 +474,8 @@ function buildRuntimeManifest(
     apiRoutes,
     envVars: [...new Set(envVars)],
     integrations,
-    // Docker is the primary preview engine — Sandpack is the fallback
-    // when Docker gateway isn't configured at runtime
-    previewMode: 'docker',
+    // Use Docker only if gateway is explicitly configured; otherwise Sandpack
+    previewMode: import.meta.env.VITE_PREVIEW_GATEWAY_URL ? 'docker' : 'sandpack',
   };
 }
 
@@ -542,7 +541,19 @@ export async function generateAILaunchSite(
 
     if (error) {
       console.error('[aiLaunchService] ai-template-generator error:', error);
-      const errorMsg = error.message || 'AI edge function returned an error';
+      // Extract detailed error from edge function response body when available
+      let errorMsg = 'AI edge function returned an error';
+      try {
+        if (data && typeof data === 'object' && data.error) {
+          errorMsg = data.error;
+        } else if (error.context && typeof error.context.json === 'function') {
+          const body = await error.context.json();
+          if (body?.error) errorMsg = body.error;
+        } else if (error.message) {
+          errorMsg = error.message;
+        }
+      } catch { /* use default */ }
+      console.error('[aiLaunchService] Detailed error:', errorMsg);
       onProgress?.({ stage: 'error', message: `${errorMsg} — using template fallback` });
       return {
         files: deterministicVFS,

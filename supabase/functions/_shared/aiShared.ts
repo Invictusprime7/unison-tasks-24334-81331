@@ -310,10 +310,14 @@ export async function callAIProviders(
       clearTimeout(timeoutId);
 
       if (resp.status === 429) {
-        return { ok: false, status: 429, error: 'Rate limit exceeded. Please try again later.', errorType: 'rate_limit' };
+        console.warn(`[AI-Hybrid] ${model.label} rate-limited (429) — trying next provider`);
+        lastError = `${model.label}: rate limited (429)`;
+        continue;
       }
       if (resp.status === 402) {
-        return { ok: false, status: 402, error: 'Payment required. Please add credits to your workspace.', errorType: 'payment_required' };
+        console.warn(`[AI-Hybrid] ${model.label} payment required (402) — trying next provider`);
+        lastError = `${model.label}: payment required (402)`;
+        continue;
       }
       if (!resp.ok) {
         const errText = await resp.text();

@@ -9,6 +9,15 @@ verify_jwt = false
 [functions.ai-code-assistant]
 verify_jwt = false
 
+[functions.ai-template-generator]
+verify_jwt = false
+
+[functions.ai-page-generator]
+verify_jwt = false
+
+[functions.ai-editor]
+verify_jwt = false
+
 [functions.ai-design-assistant]
 verify_jwt = false
 

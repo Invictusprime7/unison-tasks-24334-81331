@@ -103,7 +103,28 @@ export class VFSSnapshotManager {
       this.undoStack = this.undoStack.slice(-this.maxSnapshots);
     }
 
+    // Persist to Supabase (fire-and-forget)
+    this.persistSnapshot(snapshot);
+
     return snapshot;
+  }
+
+  /** Persist snapshot to Supabase for authenticated users */
+  private async persistSnapshot(snapshot: VFSSnapshot): Promise<void> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase.from('vfs_snapshots').insert({
+        user_id: user.id,
+        label: snapshot.label,
+        source: snapshot.source,
+        files: snapshot.files as any,
+        metadata: (snapshot.metadata || {}) as any,
+      });
+    } catch (error) {
+      console.warn('[VFSSnapshotManager] DB persist failed:', error);
+    }
   }
 
   /** Get the current (latest) snapshot */

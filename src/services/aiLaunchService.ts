@@ -600,10 +600,13 @@ export async function generateAILaunchSite(
     // Normalize file paths — ensure /src/ prefix for Sandpack compatibility
     const pathNormalized: Record<string, string> = {};
     for (const [path, content] of Object.entries(sanitized)) {
-      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-      const finalPath = normalizedPath.startsWith('/src/')
-        ? normalizedPath
-        : `/src/${normalizedPath.replace(/^\//, '')}`;
+      // Strip leading slash for uniform handling
+      const stripped = path.replace(/^\/+/, '');
+      // If already has src/ prefix, add leading / only
+      // Otherwise add /src/ prefix
+      const finalPath = stripped.startsWith('src/')
+        ? `/${stripped}`
+        : `/src/${stripped}`;
       pathNormalized[finalPath] = content;
     }
 
@@ -650,7 +653,8 @@ export async function generateAILaunchSite(
 
 /**
  * Parse ai-template-generator response into a file map.
- * Handles: clean JSON, markdown-wrapped JSON, progressively extracted JSON.
+ * Handles: clean JSON, markdown-wrapped JSON, progressively extracted JSON,
+ * and raw code fallback (when AI returns a React component directly).
  */
 function parseAIResponse(raw: string): Record<string, string> | null {
   let cleaned = raw
@@ -660,16 +664,31 @@ function parseAIResponse(raw: string): Record<string, string> | null {
   // Strip markdown code fences
   cleaned = cleaned.replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
-  // Attempt direct parse
+  // Strategy 1: Attempt direct JSON parse
   try {
     const parsed = JSON.parse(cleaned);
-    if (parsed.files && typeof parsed.files === 'object') return parsed.files;
-    return null;
+    if (parsed.files && typeof parsed.files === 'object') {
+      // Validate that file values are strings (not nested objects)
+      const files = parsed.files as Record<string, unknown>;
+      const validFiles: Record<string, string> = {};
+      for (const [key, value] of Object.entries(files)) {
+        if (typeof value === 'string') {
+          validFiles[key] = value;
+        } else if (value && typeof value === 'object') {
+          // Double-nested: value is an object instead of code string — stringify it
+          console.warn(`[parseAIResponse] File ${key} has object value instead of string — extracting`);
+          validFiles[key] = JSON.stringify(value);
+        }
+      }
+      if (Object.keys(validFiles).length > 0) return validFiles;
+    }
   } catch {
-    // Progressive extraction — find the JSON object containing "files"
-    const filesIdx = cleaned.indexOf('"files"');
-    if (filesIdx < 0) return null;
+    // Not valid JSON — try other strategies
+  }
 
+  // Strategy 2: Progressive extraction — find JSON object containing "files"
+  const filesIdx = cleaned.indexOf('"files"');
+  if (filesIdx >= 0) {
     let startIdx = filesIdx;
     while (startIdx > 0 && cleaned[startIdx] !== '{') startIdx--;
 
@@ -677,12 +696,33 @@ function parseAIResponse(raw: string): Record<string, string> | null {
       if (cleaned[endIdx - 1] !== '}') continue;
       try {
         const extracted = JSON.parse(cleaned.substring(startIdx, endIdx));
-        if (extracted?.files) return extracted.files;
+        if (extracted?.files && typeof extracted.files === 'object') return extracted.files;
       } catch {
         /* try shorter */
       }
     }
-
-    return null;
   }
+
+  // Strategy 3: Extract code from markdown fences (```tsx ... ```)
+  const fenceMatch = cleaned.match(/```(?:tsx|jsx|typescript|javascript)?\s*\n([\s\S]*?)```/i);
+  if (fenceMatch) {
+    const code = fenceMatch[1].trim();
+    if (code.includes('import ') || code.includes('export ') || code.includes('function ')) {
+      console.log('[parseAIResponse] Extracted code from markdown fence as App.tsx');
+      return { 'src/App.tsx': code };
+    }
+  }
+
+  // Strategy 4: Raw code fallback — AI returned a React component directly
+  const looksLikeReact = (
+    (cleaned.includes('import ') || cleaned.includes('export ')) &&
+    (cleaned.includes('return (') || cleaned.includes('return(') || cleaned.includes('React')) &&
+    cleaned.includes('<')
+  );
+  if (looksLikeReact) {
+    console.log('[parseAIResponse] Raw React code detected — wrapping as App.tsx');
+    return { 'src/App.tsx': cleaned };
+  }
+
+  return null;
 }

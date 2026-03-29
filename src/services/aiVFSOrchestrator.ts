@@ -136,10 +136,38 @@ export function applyAIOutputToVFS(
     const currentFiles = preserveExisting ? vfs.getSandpackFiles() : {};
     vfsSnapshotManager.createSnapshot(currentFiles, `Before AI edit (${Object.keys(aiFiles).length} files)`, 'ai');
 
+    // 0b. Validate and normalize AI file content
+    const validatedFiles: Record<string, string> = {};
+    for (const [path, content] of Object.entries(aiFiles)) {
+      if (typeof content !== 'string') {
+        console.warn(`[AIVFSOrchestrator] File ${path} has non-string content (${typeof content}) — converting`);
+        validatedFiles[path] = typeof content === 'object' ? JSON.stringify(content) : String(content);
+        continue;
+      }
+      // Detect double-serialized JSON: value is a JSON string wrapping {"files": ...}
+      if (content.trim().startsWith('{') && content.includes('"files"') &&
+          !content.includes('import ') && !content.includes('export ')) {
+        try {
+          const inner = JSON.parse(content);
+          if (inner.files && typeof inner.files === 'object') {
+            console.warn(`[AIVFSOrchestrator] File ${path} contains double-serialized JSON — unwrapping`);
+            // Unwrap: merge the inner files instead of using the wrapper
+            for (const [innerPath, innerContent] of Object.entries(inner.files)) {
+              if (typeof innerContent === 'string') {
+                validatedFiles[innerPath] = innerContent;
+              }
+            }
+            continue;
+          }
+        } catch { /* not JSON, use as-is */ }
+      }
+      validatedFiles[path] = content;
+    }
+
     // 1. Merge AI output with existing files
     const mergedFiles: Record<string, string> = {
       ...currentFiles,
-      ...aiFiles,
+      ...validatedFiles,
     };
 
     // 2. Extract dependencies from ALL files (existing + new)

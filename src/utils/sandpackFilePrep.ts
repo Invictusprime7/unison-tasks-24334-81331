@@ -945,6 +945,31 @@ export function prepareSandpackFiles(
     // Fix imports in content to match flattened paths
     let processedContent = content;
 
+    // SAFETY NET: Detect stringified JSON accidentally passed as file content
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath)) {
+      const trimmedContent = processedContent.trim();
+      if (trimmedContent.startsWith('{') && !trimmedContent.includes('import ') &&
+          !trimmedContent.includes('export ') && !trimmedContent.includes('function ')) {
+        try {
+          const parsed = JSON.parse(trimmedContent);
+          if (parsed.files && typeof parsed.files === 'object') {
+            // Double-serialized AI output — extract the actual code
+            const appCode = parsed.files['src/App.tsx'] || parsed.files['/src/App.tsx'] ||
+                            parsed.files['App.tsx'] || parsed.files['/App.tsx'];
+            if (appCode && typeof appCode === 'string') {
+              console.warn(`[sandpackFilePrep] Unwrapped double-serialized JSON in ${normalizedPath}`);
+              processedContent = appCode;
+            }
+          } else if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+            console.warn(`[sandpackFilePrep] File ${normalizedPath} contains JSON object instead of code — wrapping`);
+            processedContent = `import React from 'react';\nexport default function App() { return <pre>{${JSON.stringify(JSON.stringify(parsed, null, 2))}}</pre>; }`;
+          }
+        } catch {
+          // Not valid JSON — might be JSX object expression, leave as-is
+        }
+      }
+    }
+
     // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {
       console.warn(`[sandpackFilePrep] Raw CSS detected in ${normalizedPath} — wrapping in React component`);

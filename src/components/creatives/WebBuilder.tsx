@@ -1631,6 +1631,15 @@ export default function ${componentName}Page() {
 
     console.log('[WebBuilder] Hydrating VFS from System Launcher:', Object.keys(launchVFS), 'AI:', launchAIGenerated);
 
+    // Validate and normalize launchVFS — ensure all values are code strings
+    let vfsToLoad = launchVFS;
+    for (const [path, content] of Object.entries(vfsToLoad)) {
+      if (typeof content !== 'string') {
+        console.warn(`[WebBuilder] launchVFS[${path}] is ${typeof content} — converting to string`);
+        (vfsToLoad as Record<string, string>)[path] = String(content);
+      }
+    }
+
     // Set preview status for transparency
     setPreviewStatus({
       origin: launchAIGenerated ? 'ai-generated' : 'deterministic-fallback',
@@ -1641,13 +1650,13 @@ export default function ${componentName}Page() {
 
     if (launchAIGenerated) {
       // AI-generated files — use aiVFS orchestrator for dependency resolution
-      aiVFS.applyCode(launchVFS);
+      aiVFS.applyCode(vfsToLoad);
     } else {
       // Deterministic template — direct VFS import (no dep resolution needed)
-      vfsImportFiles(launchVFS);
+      vfsImportFiles(vfsToLoad);
     }
 
-    const appCode = launchVFS['/src/App.tsx'] || '';
+    const appCode = vfsToLoad['/src/App.tsx'] || '';
     if (appCode) {
       setEditorCode(appCode);
       setPreviewCode(appCode);

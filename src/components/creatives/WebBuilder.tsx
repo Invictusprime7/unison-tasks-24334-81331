@@ -2100,7 +2100,7 @@ export default function ${componentName}Page() {
     setHasUnsavedChanges(hasChanges);
   }, [previewCode]);
   
-  // Auto-save draft to localStorage
+  // Auto-save draft to localStorage + Supabase
   const saveDraft = useCallback(() => {
     if (previewCode && previewCode !== lastSavedCodeRef.current) {
       setAutoSaveStatus('saving');
@@ -2116,12 +2116,30 @@ export default function ${componentName}Page() {
         setLastSavedAt(new Date());
         setAutoSaveStatus('saved');
         setTimeout(() => setAutoSaveStatus('idle'), 2000);
+
+        // Persist to Supabase (fire-and-forget)
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (user) {
+            supabase.from('builder_drafts')
+              .upsert({
+                user_id: user.id,
+                business_id: businessId || null,
+                template_id: templateFiles.currentTemplateId || null,
+                code: previewCode,
+                editor_code: editorCode || null,
+                updated_at: new Date().toISOString(),
+              } as any, { onConflict: 'user_id,business_id' })
+              .then(({ error }) => {
+                if (error) console.warn('[AutoSave] DB persist failed:', error.message);
+              });
+          }
+        });
       } catch (error) {
         console.error('[AutoSave] Error saving draft:', error);
         setAutoSaveStatus('idle');
       }
     }
-  }, [previewCode, editorCode, templateFiles.currentTemplateId]);
+  }, [previewCode, editorCode, templateFiles.currentTemplateId, businessId]);
   
   // Handle back navigation - go to home/launcher
   const handleBackNavigation = useCallback(() => {

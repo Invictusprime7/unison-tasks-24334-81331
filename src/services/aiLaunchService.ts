@@ -757,7 +757,7 @@ ${cards}
   );
 }`,
 
-  About: () => `function About() {
+  About: (ind) => `function About() {
   const ref = React.useRef(null);
   const isInView = useInView(ref, { once: true });
   return (

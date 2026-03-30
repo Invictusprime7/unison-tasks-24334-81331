@@ -117,12 +117,12 @@ class AuditLogger {
         resource_type: entry.resourceType,
         resource_id: entry.resourceId ?? null,
         resource_name: entry.resourceName ?? null,
-        changes: (entry.changes as Record<string, unknown>) ?? {},
-        metadata: {
+        changes: (entry.changes ?? {}) as unknown as import('@/integrations/supabase/types').Json,
+        metadata: ({
           ...entry.metadata,
           request_id: this.requestId,
           session_id: this.sessionId,
-        } as Record<string, unknown>,
+        }) as unknown as import('@/integrations/supabase/types').Json,
         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         status: 'success',
       }]);

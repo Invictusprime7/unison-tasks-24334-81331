@@ -2119,6 +2119,7 @@ export default function ${componentName}Page() {
           // Check if there's meaningful content (not just default)
           const isDefaultContent = draft.code.includes('AI-generated code will appear here');
           if (!isDefaultContent) {
+            setShowLauncher(false);
             setPreviewCode(draft.code);
             if (draft.editorCode) {
               setEditorCode(draft.editorCode);

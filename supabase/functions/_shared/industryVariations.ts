@@ -516,8 +516,7 @@ ${v.fontPairing.accent ? `- Accent fontFamily: "${v.fontPairing.accent}"` : ''}
 ${v.heroVariant.hasVideo ? '- MUST include video background placeholder' : ''}
 - Decorative elements to include: ${v.heroVariant.decorativeElements.join(', ')}
 
-📋 **REQUIRED SECTION ORDER (BUILD SECTIONS IN THIS EXACT SEQUENCE — ONE OF EACH, NO DUPLICATES):**
-⚠️ CRITICAL: Generate EXACTLY ONE hero section. Do NOT create multiple hero variants or hero alternatives. Users swap layouts later.
+📋 **REQUIRED SECTION ORDER (BUILD SECTIONS IN THIS EXACT SEQUENCE):**
 ${v.sectionOrder.map((s, i) => `${i + 1}. ${s.toUpperCase()}`).join('\n')}
 
 ✨ **REQUIRED VISUAL EFFECTS:**

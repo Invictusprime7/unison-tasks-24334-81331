@@ -25,7 +25,7 @@ export async function validateAIService(): Promise<AIServiceStatus> {
     const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
       body: {
         messages: [{ role: 'user', content: 'test' }],
-        mode: 'code',
+        mode: 'creative',
         model: 'gpt-4o-mini', // Use smaller model for test
         maxTokens: 10
       }

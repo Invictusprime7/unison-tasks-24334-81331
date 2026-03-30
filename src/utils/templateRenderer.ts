@@ -51,7 +51,8 @@ export class TemplateRenderer {
 
       // Set canvas size based on first frame (guaranteed to exist after validation)
       const frame = validatedTemplate.frames[0];
-      this.canvas.setDimensions({ width: frame.width, height: frame.height });
+      this.canvas.setWidth(frame.width);
+      this.canvas.setHeight(frame.height);
       this.canvas.backgroundColor = frame.background || '#ffffff';
 
       // Pillar 2 & 3: Render layers from frame

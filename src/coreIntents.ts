@@ -175,7 +175,7 @@ export const INTENT_ELEMENT_AFFINITY: Record<string, {
   },
 
   // Automation
-  'auth.register': {
+  'auth.signup': {
     elements: ['hero-centered', 'hero-split', 'navbar-standard', 'cta-banner', 'footer-multi-column'],
     ctaLabels: ['cta.hero', 'cta.nav', 'cta.primary'],
     payloadKeys: [],
@@ -187,10 +187,10 @@ export const INTENT_ELEMENT_AFFINITY: Record<string, {
     payloadKeys: ['data-product-id', 'data-product-name', 'data-price'],
     description: 'Add item to shopping cart',
   },
-  'cart.checkout': {
+  'cart.view': {
     elements: ['navbar-standard'],
     ctaLabels: ['cta.nav'],
     payloadKeys: [],
-    description: 'Open cart overlay / begin checkout',
+    description: 'Open cart overlay',
   },
 };

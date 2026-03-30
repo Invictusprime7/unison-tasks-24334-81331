@@ -327,40 +327,25 @@ export class ImageSlotTracker {
 
     this.events.push(event);
 
-    // Store in localStorage for immediate access
+    // Store in localStorage for persistence
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY);
       const allEvents = stored ? JSON.parse(stored) : [];
       allEvents.push(event);
+      
+      // Keep only last 100 events
       if (allEvents.length > 100) {
         allEvents.splice(0, allEvents.length - 100);
       }
+      
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allEvents));
     } catch (error) {
       console.error('[ImageSlotTracker] Failed to store event:', error);
     }
-
-    // Persist to Supabase (fire-and-forget)
-    import('@/integrations/supabase/client').then(({ supabase }) => {
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user) {
-          supabase.from('image_slot_events').insert({
-            user_id: user.id,
-            slot_id: slot.id,
-            slot_type: slot.type,
-            old_src: oldSrc,
-            new_src: newSrc,
-            section: slot.section,
-          }).then(({ error }) => {
-            if (error) console.warn('[ImageSlotTracker] DB persist failed:', error.message);
-          });
-        }
-      });
-    });
   }
 
   static getEvents(): ImageReplacementEvent[] {
-    // Load from localStorage for fast access
+    // Load from localStorage
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY);
       if (stored) {

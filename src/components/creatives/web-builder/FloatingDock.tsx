@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Cloud, FolderOpen, Layout, Layers, X, Monitor, Tablet, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LayoutTemplatesPanel } from "./LayoutTemplatesPanel";
+import { SectionLayoutPicker } from "./SectionLayoutPicker";
 import { ProjectsPanel } from "./ProjectsPanel";
 import { CloudPanel } from "./CloudPanel";
 import type { BusinessSystemType } from "@/data/templates/types";
@@ -166,9 +167,10 @@ export const FloatingDock = ({
               />
             )}
             {activePanel === "layouts" && (
-              <div className="p-4 text-center text-muted-foreground text-sm">
-                Section layouts unavailable — infrastructure being rebuilt
-              </div>
+              <SectionLayoutPicker
+                currentCode={currentCode}
+                onSwapSection={onSwapSection || (() => {})}
+              />
             )}
             {activePanel === "projects" && (
               <ProjectsPanel

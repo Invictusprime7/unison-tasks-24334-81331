@@ -2,35 +2,48 @@
  * VFSPreview - Sandpack-Only Preview Component
  * 
  * All previews use Sandpack in-browser React/TypeScript bundling.
- * No Docker, no static HTML fallback — everything renders as live React.
+ * No static HTML fallback — everything renders as live React.
  * 
  * Features:
- * - Sandpack in-browser bundling (sole engine)
+ * - Sandpack in-browser bundling (primary and only engine)
+ * - Docker-based Vite preview with true HMR (local dev enhancement)
  * - Automatic file sync from VFS
- * - Toolbar with status and controls
- * - Responsive device preview
- * - Edit-mode element selection via postMessage bridge
+ * - Toolbar with status, controls, and logs
+ * - Open in new tab
  */
 
 import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useRef, useMemo, Component, type ReactNode, type ErrorInfo } from 'react';
 import { cn } from '@/lib/utils';
 import { 
   RefreshCw, 
-  Zap,
+  ExternalLink, 
+  Wifi, 
+  WifiOff, 
+  Loader2,
+  Server,
+  Terminal,
+  ChevronDown,
   AlertCircle,
+  Play,
+  Square,
+  Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SandpackProvider, SandpackPreview, SandpackLayout } from '@codesandbox/sandpack-react';
+import { usePreviewService } from '@/hooks/usePreviewService';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
-import { SANDPACK_DEPENDENCIES } from '@/utils/generationContract';
-import { removeHighlight } from '@/utils/htmlElementSelector';
+import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
-import type { PreviewStatus } from '@/types/launchConfig';
 
 // ============================================================================
 // Types
 // ============================================================================
+
+type PreviewBackend = 'docker' | 'local' | 'sandpack' | 'loading' | 'none';
+
+// Local Vite server URL (for development without Docker)
+const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
 
 export interface VFSPreviewProps {
   /** VFS nodes for file content */
@@ -45,8 +58,10 @@ export interface VFSPreviewProps {
   showConsole?: boolean;
   /** Show toolbar */
   showToolbar?: boolean;
-  /** Auto-start preview */
+  /** Auto-start Docker preview */
   autoStart?: boolean;
+  /** Force a specific backend (kept for compatibility) */
+  forceBackend?: 'docker' | 'sandpack';
   /** Callback when preview is ready */
   onReady?: () => void;
   /** Callback on error */
@@ -65,16 +80,16 @@ export interface VFSPreviewProps {
   device?: 'desktop' | 'tablet' | 'mobile';
   /** Enable element selection (edit mode) */
   enableSelection?: boolean;
-  /** Bump this to explicitly re-arm edit mode in the preview */
-  selectionActivationKey?: number;
   /** Callback when an element is selected */
   onElementSelect?: (elementData: any) => void;
-  /** Preview origin status for transparency banner */
-  previewStatus?: PreviewStatus | null;
 }
 
 export interface VFSPreviewHandle {
   refresh: () => void;
+  startDocker: () => Promise<void>;
+  stopDocker: () => Promise<void>;
+  getBackend: () => PreviewBackend;
+  openInNewTab: () => void;
   getIframe: () => HTMLIFrameElement | null;
 }
 
@@ -128,12 +143,6 @@ class SandpackErrorBoundary extends Component<
 // Helpers
 // ============================================================================
 
-function resolvePreviewIframe(root: HTMLDivElement | null): HTMLIFrameElement | null {
-  if (!root) return null;
-  // Target Sandpack's preview iframe specifically — avoid the hidden bundler/manager iframe
-  return root.querySelector('iframe.sp-preview-iframe') || root.querySelector('.sp-preview-container iframe') || root.querySelector('iframe');
-}
-
 function nodesToFileMap(nodes: VirtualNode[]): Record<string, string> {
   const files: Record<string, string> = {};
   for (const node of nodes) {
@@ -150,7 +159,7 @@ function nodesToFileMap(nodes: VirtualNode[]): Record<string, string> {
 // Main Component
 // ============================================================================
 
-export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({ 
+export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   nodes,
   files: propFiles,
   activeFile,
@@ -158,6 +167,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   showConsole = false,
   showToolbar = true,
   autoStart = true,
+  forceBackend,
   onReady,
   onError,
   showBackendIndicator = true,
@@ -167,30 +177,24 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   siteId,
   device = 'desktop',
   enableSelection = false,
-  selectionActivationKey = 0,
   onElementSelect,
-  previewStatus = null,
 }, ref) => {
+  // State - default to 'sandpack' — no HTML fallback
+  const [backend, setBackend] = useState<PreviewBackend>('sandpack');
+  const [showLogs, setShowLogs] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
   const [sandpackKey, setSandpackKey] = useState(0);
-  const previewRootRef = useRef<HTMLDivElement | null>(null);
-  const hoveredElementRef = useRef<HTMLElement | null>(null);
-  const selectedElementRef = useRef<HTMLElement | null>(null);
+  const startAttemptedRef = useRef(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   
-  // Stable ref for onError to avoid re-triggering sandpackFiles useMemo
-  const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
+  // Docker preview service
+  const dockerService = usePreviewService();
   
-  const clearPreviewHighlights = useCallback(() => {
-    if (hoveredElementRef.current) {
-      removeHighlight(hoveredElementRef.current);
-      hoveredElementRef.current = null;
-    }
-
-    if (selectedElementRef.current) {
-      removeHighlight(selectedElementRef.current);
-      selectedElementRef.current = null;
-    }
-  }, []);
+  // Check if Docker gateway is explicitly configured (local dev only)
+  const dockerGatewayConfigured = !!import.meta.env.VITE_PREVIEW_GATEWAY_URL;
+  
+  // Check if local Vite server is configured
+  const localViteConfigured = !!LOCAL_PREVIEW_URL;
   
   // Convert nodes to files - ALWAYS recompute to ensure we have latest
   const files = useMemo(() => {
@@ -200,22 +204,23 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   // Prepare Sandpack dependencies
   const sandpackDeps = useMemo(() => {
-    const { dependencies } = getDependenciesForSandpack(files, SANDPACK_DEPENDENCIES);
+    const baseDeps: Record<string, string> = {
+      react: '^18.3.1',
+      'react-dom': '^18.3.1',
+      'react-router-dom': '^6.20.0',
+      'lucide-react': 'latest',
+      'clsx': 'latest',
+      'tailwind-merge': 'latest',
+      'framer-motion': 'latest',
+    };
+    const { dependencies } = getDependenciesForSandpack(files, baseDeps);
     return dependencies;
   }, [files]);
   
   // Prepare Sandpack files: flatten /src/ paths, process imports, add shims
-  // In strict mode (launcher output), missing entrypoints throw instead of injecting defaults
   const sandpackFiles = useMemo(() => {
-    try {
-      return prepareSandpackFiles(files, { strict: previewStatus?.strictMode ?? false });
-    } catch (err) {
-      console.error('[VFSPreview] Strict sandpack prep failed:', err);
-      onErrorRef.current?.(err instanceof Error ? err.message : 'Sandpack file preparation failed');
-      // Return minimal valid files so Sandpack doesn't crash entirely
-      return prepareSandpackFiles(files);
-    }
-  }, [files, previewStatus?.strictMode]);
+    return prepareSandpackFiles(files);
+  }, [files]);
   
   // Determine Sandpack entry file (from prepared/flattened files)
   const sandpackEntryFile = useMemo(() => {
@@ -223,14 +228,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     for (const candidate of candidates) {
       if (sandpackFiles[candidate]) return candidate;
     }
-    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/ui-shim.tsx' && p !== '/main.tsx' && p !== '/index.tsx');
+    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/main.tsx' && p !== '/index.tsx');
     return firstCode || '/App.tsx';
   }, [sandpackFiles]);
-  
-  // Signal ready on mount
-  useEffect(() => {
-    onReady?.();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   
   // Handle messages from preview iframe (intent system)
   useEffect(() => {
@@ -264,69 +264,110 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
   }, [onNavigate, onIntentTrigger, businessId, siteId]);
-
-  // Attach edit-mode selection via postMessage bridge (works cross-origin with Sandpack)
+  
+  // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {
-    if (!enableSelection) {
-      const iframe = resolvePreviewIframe(previewRootRef.current);
-      if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'EDIT_MODE_TOGGLE', enabled: false }, '*');
-      }
-      clearPreviewHighlights();
+    if (startAttemptedRef.current) return;
+    startAttemptedRef.current = true;
+
+    if (forceBackend === 'sandpack') {
+      setBackend('sandpack');
+      onReady?.();
       return;
     }
 
-    const sendEnable = () => {
-      const iframe = resolvePreviewIframe(previewRootRef.current);
-      if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'EDIT_MODE_TOGGLE', enabled: true }, '*');
-      }
-    };
-
-    sendEnable();
-    setTimeout(sendEnable, 60);
-
-    let observer: MutationObserver | null = null;
-    if (previewRootRef.current) {
-      observer = new MutationObserver(() => {
-        setTimeout(sendEnable, 200);
-      });
-      observer.observe(previewRootRef.current, { childList: true, subtree: true });
+    if (localViteConfigured) {
+      setBackend('local');
+      onReady?.();
+      return;
     }
 
-    const interval = setInterval(sendEnable, 800);
-    const stopInterval = setTimeout(() => clearInterval(interval), 8000);
+    if (dockerGatewayConfigured && autoStart) {
+      setBackend('loading');
+      dockerService.startSession(nodes).then((session) => {
+        if (session) {
+          setBackend('docker');
+        } else {
+          setBackend('sandpack');
+        }
+        onReady?.();
+      }).catch(() => {
+        setBackend('sandpack');
+        onReady?.();
+      });
+      return;
+    }
 
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'ELEMENT_SELECTED' && event.data.elementData) {
-        onElementSelect?.(event.data.elementData);
-      }
-    };
-    window.addEventListener('message', handleMessage);
-
-    return () => {
-      observer?.disconnect();
-      clearInterval(interval);
-      clearTimeout(stopInterval);
-      window.removeEventListener('message', handleMessage);
-      const iframe = resolvePreviewIframe(previewRootRef.current);
-      if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'EDIT_MODE_TOGGLE', enabled: false }, '*');
-      }
-    };
-  }, [enableSelection, selectionActivationKey, sandpackKey, onElementSelect, clearPreviewHighlights]);
+    // Default: always Sandpack
+    setBackend('sandpack');
+    onReady?.();
+  }, []);
+  
+  // Sync file changes to Docker when running
+  useEffect(() => {
+    if (backend !== 'docker' || !dockerService.session || dockerService.session.status !== 'running') return;
+    for (const [path, content] of Object.entries(files)) {
+      dockerService.patchFile(path, content);
+    }
+  }, [files, backend, dockerService.session]);
   
   // Handlers
+  const handleStartDocker = useCallback(async () => {
+    if (!dockerGatewayConfigured) {
+      onError?.('Docker gateway not configured');
+      return;
+    }
+    setBackend('loading');
+    try {
+      await dockerService.startSession(nodes);
+      setBackend('docker');
+      onReady?.();
+    } catch (err) {
+      console.error('[VFSPreview] Failed to start Docker:', err);
+      setBackend('sandpack');
+      onError?.('Failed to start Docker preview, using Sandpack');
+    }
+  }, [dockerGatewayConfigured, dockerService, nodes, onReady, onError]);
+  
+  const handleStopDocker = useCallback(async () => {
+    await dockerService.stopSession();
+    setBackend('sandpack');
+  }, [dockerService]);
+  
   const handleRestart = useCallback(() => {
-    // Force Sandpack remount
-    setSandpackKey(k => k + 1);
-  }, []);
+    if (backend === 'docker') {
+      dockerService.patchFile('/src/App.tsx', files['/src/App.tsx'] || '');
+    } else {
+      // Force Sandpack remount
+      setSandpackKey(k => k + 1);
+    }
+  }, [backend, dockerService, files]);
+  
+  const handleOpenInNewTab = useCallback(() => {
+    if (backend === 'docker' && dockerService.session?.iframeUrl) {
+      window.open(dockerService.session.iframeUrl, '_blank');
+    } else if (backend === 'local' && LOCAL_PREVIEW_URL) {
+      window.open(LOCAL_PREVIEW_URL, '_blank');
+    }
+    // For Sandpack, we can't easily open in new tab — it's in-browser
+  }, [backend, dockerService.session]);
 
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
     refresh: handleRestart,
-    getIframe: () => resolvePreviewIframe(previewRootRef.current),
-  }), [handleRestart]);
+    startDocker: handleStartDocker,
+    stopDocker: handleStopDocker,
+    getBackend: () => backend,
+    openInNewTab: handleOpenInNewTab,
+    getIframe: () => iframeRef.current,
+  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab]);
+  
+  // Docker preview URL
+  const dockerUrl = useMemo(() => {
+    if (backend === 'docker' && dockerService.session?.iframeUrl) return dockerService.session.iframeUrl;
+    if (backend === 'local' && LOCAL_PREVIEW_URL) return LOCAL_PREVIEW_URL;
+    return null;
+  }, [backend, dockerService.session]);
   
   return (
     <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
@@ -335,86 +376,166 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border">
           <div className="flex items-center gap-2">
             {showBackendIndicator && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-600 dark:text-purple-400">
-                <Zap className="h-3 w-3" /> React Live
+              <div className={cn(
+                'flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium',
+                backend === 'docker' && 'bg-green-500/20 text-green-600 dark:text-green-400',
+                backend === 'local' && 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
+                backend === 'sandpack' && 'bg-purple-500/20 text-purple-600 dark:text-purple-400',
+                backend === 'loading' && 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
+              )}>
+                {backend === 'docker' && <><Server className="h-3 w-3" /> Docker HMR</>}
+                {backend === 'local' && <><Server className="h-3 w-3" /> Local Vite</>}
+                {backend === 'sandpack' && <><Zap className="h-3 w-3" /> React Live</>}
+                {backend === 'loading' && <><Loader2 className="h-3 w-3 animate-spin" /> Starting...</>}
+              </div>
+            )}
+            
+            {backend === 'docker' && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                {dockerService.connected ? (
+                  <><Wifi className="h-3 w-3 text-green-500" /> Connected</>
+                ) : (
+                  <><WifiOff className="h-3 w-3 text-yellow-500" /> Connecting...</>
+                )}
+              </div>
+            )}
+            {backend === 'local' && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Wifi className="h-3 w-3 text-green-500" /> {LOCAL_PREVIEW_URL}
               </div>
             )}
           </div>
           
           <div className="flex items-center gap-1">
-            <Button size="sm" variant="ghost" onClick={handleRestart} className="h-7 w-7 p-0" title="Refresh preview">
-              <RefreshCw className="h-4 w-4" />
+            {dockerGatewayConfigured && (
+              <>
+                {backend === 'docker' ? (
+                  <Button size="sm" variant="ghost" onClick={handleStopDocker} className="h-7 px-2 gap-1 text-xs" title="Stop Docker preview">
+                    <Square className="h-3 w-3" /> Stop
+                  </Button>
+                ) : backend !== 'loading' && (
+                  <Button size="sm" variant="default" onClick={handleStartDocker} className="h-7 px-2 gap-1 text-xs" title="Start Docker preview with HMR">
+                    <Play className="h-3 w-3" /> Start Docker
+                  </Button>
+                )}
+              </>
+            )}
+            
+            <Button size="sm" variant="ghost" onClick={handleRestart} disabled={backend === 'loading'} className="h-7 w-7 p-0" title="Refresh preview">
+              <RefreshCw className={cn('h-4 w-4', backend === 'loading' && 'animate-spin')} />
             </Button>
+            
+            {backend === 'docker' && (
+              <Button size="sm" variant="ghost" onClick={() => setShowLogs(!showLogs)} className={cn('h-7 px-2 gap-1 text-xs', showLogs && 'bg-accent')}>
+                <Terminal className="h-3 w-3" /> Logs
+              </Button>
+            )}
+            
+            {(backend === 'docker' || backend === 'local') && (
+              <Button size="sm" variant="ghost" onClick={handleOpenInNewTab} className="h-7 w-7 p-0" title="Open in new tab">
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
       )}
-
-      {/* Preview origin status banner */}
-      {previewStatus && (
-        <div className={cn(
-          'px-3 py-1.5 text-xs font-medium flex items-center gap-2 border-b border-border',
-          previewStatus.origin === 'ai-generated' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-          previewStatus.origin === 'deterministic-fallback' && 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-          previewStatus.origin === 'sandpack-default-app' && 'bg-red-500/10 text-red-700 dark:text-red-400',
-        )}>
-          {previewStatus.origin === 'ai-generated' && <><Zap className="h-3 w-3" /> AI Generated</>}
-          {previewStatus.origin === 'deterministic-fallback' && <><AlertCircle className="h-3 w-3" /> Deterministic Fallback</>}
-          {previewStatus.origin === 'sandpack-default-app' && <><AlertCircle className="h-3 w-3" /> Sandpack Default App</>}
-          <span className="text-muted-foreground ml-1">(Frontend Only)</span>
-          {previewStatus.errors.length > 0 && (
-            <span className="ml-auto text-destructive">{previewStatus.errors.length} error(s)</span>
-          )}
+      
+      {/* Error display */}
+      {dockerService.error && (
+        <div className="px-3 py-2 bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+          <AlertCircle className="h-4 w-4" />
+          {dockerService.error}
         </div>
       )}
       
       {/* Preview Content */}
-      <div ref={previewRootRef} className="flex-1 relative min-h-0">
-        <div
-          className="w-full h-full flex justify-center overflow-hidden"
-          style={{
-            padding: device !== 'desktop' ? '16px' : 0,
-            background: device !== 'desktop' ? 'hsl(var(--muted))' : undefined,
-          }}
-        >
-          <div
-            className="h-full transition-all duration-300 overflow-hidden"
-            style={{
-              width: device === 'mobile' ? '375px' : device === 'tablet' ? '768px' : '100%',
-              maxWidth: '100%',
-              boxShadow: device !== 'desktop' ? '0 4px 20px rgba(0,0,0,0.15)' : 'none',
-              borderRadius: device !== 'desktop' ? '12px' : '0',
-            }}
-          >
-            <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
-              <SandpackProvider
-                key={`sandpack-${sandpackKey}`}
-                template="react-ts"
-                files={sandpackFiles}
-                theme="light"
-                options={{
-                  activeFile: sandpackEntryFile,
-                  visibleFiles: [sandpackEntryFile],
-                  autorun: true,
-                  autoReload: true,
-                  recompileMode: 'delayed',
-                  recompileDelay: 300,
-                }}
-                customSetup={{
-                  dependencies: sandpackDeps,
-                }}
-              >
-                <SandpackLayout className="!flex-1 !min-h-0 !border-0 !rounded-none !bg-transparent" style={{ height: '100%' }}>
-                  <SandpackPreview
-                    showNavigator={false}
-                    showRefreshButton={false}
-                    showOpenInCodeSandbox={false}
-                    style={{ height: '100%', minHeight: 0 }}
-                  />
-                </SandpackLayout>
-              </SandpackProvider>
-            </SandpackErrorBoundary>
+      <div className="flex-1 relative min-h-0">
+        {/* Loading State */}
+        {backend === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
+            <div className="text-center space-y-3">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+              <p className="text-sm text-muted-foreground">Starting Docker preview...</p>
+            </div>
           </div>
-        </div>
+        )}
+        
+        {/* Docker / Local Vite iframe */}
+        {(backend === 'docker' || backend === 'local') && dockerUrl && (
+          <div 
+            className="w-full h-full flex justify-center overflow-hidden bg-muted"
+            style={{ padding: device !== 'desktop' ? '16px' : 0 }}
+          >
+            <iframe
+              ref={iframeRef}
+              src={dockerUrl}
+              className="h-full border-0 bg-white transition-all duration-300"
+              style={{
+                width: device === 'mobile' ? '375px' : device === 'tablet' ? '768px' : '100%',
+                maxWidth: '100%',
+                boxShadow: device !== 'desktop' ? '0 4px 20px rgba(0,0,0,0.15)' : 'none',
+                borderRadius: device !== 'desktop' ? '12px' : '0',
+                pointerEvents: enableSelection ? 'auto' : undefined,
+              }}
+              title="VFS Preview"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            />
+          </div>
+        )}
+        
+        {/* Sandpack In-Browser React Preview — the primary rendering engine */}
+        {backend === 'sandpack' && (
+          <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
+            <SandpackProvider
+              key={`sandpack-${sandpackKey}`}
+              template="react-ts"
+              files={sandpackFiles}
+              theme="light"
+              options={{
+                externalResources: ['https://cdn.tailwindcss.com'],
+                activeFile: sandpackEntryFile,
+                visibleFiles: [sandpackEntryFile],
+                autorun: true,
+                autoReload: true,
+                recompileMode: 'delayed',
+                recompileDelay: 300,
+              }}
+              customSetup={{
+                dependencies: sandpackDeps,
+              }}
+            >
+              <SandpackLayout className="!flex-1 !min-h-0 !border-0 !rounded-none !bg-transparent" style={{ height: '100%' }}>
+                <SandpackPreview
+                  showNavigator={false}
+                  showRefreshButton={false}
+                  showOpenInCodeSandbox={false}
+                  style={{ height: '100%', minHeight: 0 }}
+                />
+              </SandpackLayout>
+            </SandpackProvider>
+          </SandpackErrorBoundary>
+        )}
+        
+        {/* Logs Panel */}
+        {showLogs && backend === 'docker' && (
+          <div className="absolute bottom-0 left-0 right-0 h-48 bg-background/95 text-green-600 dark:text-green-400 font-mono text-xs overflow-hidden flex flex-col border-t border-border">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50">
+              <span className="text-muted-foreground">Container Logs</span>
+              <Button size="sm" variant="ghost" onClick={() => setShowLogs(false)} className="h-5 w-5 p-0">
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto p-2">
+              {logs.length === 0 ? (
+                <span className="text-muted-foreground">No logs yet...</span>
+              ) : (
+                logs.map((log, i) => (
+                  <div key={i} className="whitespace-pre-wrap">{log}</div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

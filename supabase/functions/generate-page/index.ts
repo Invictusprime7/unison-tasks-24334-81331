@@ -16,15 +16,6 @@ serve(async (req) => {
       prompt: z.string().trim().min(1).max(10_000),
       theme: z.string().trim().max(2000).optional(),
       sectionType: z.string().trim().max(40).optional(),
-      themeTokens: z.object({
-        primary: z.string().trim().max(50),
-        secondary: z.string().trim().max(50),
-        accent: z.string().trim().max(50),
-        background: z.string().trim().max(50),
-        text: z.string().trim().max(50),
-        fontHeading: z.string().trim().max(100),
-        fontBody: z.string().trim().max(100),
-      }).optional(),
     });
 
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
@@ -35,7 +26,7 @@ serve(async (req) => {
       );
     }
 
-    const { prompt, theme, sectionType, themeTokens } = parsed.data;
+    const { prompt, theme, sectionType } = parsed.data;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
@@ -92,8 +83,7 @@ CRITICAL RULES:
 5. Make it beautiful, modern, and accessible
 6. Include proper spacing, typography hierarchy
 7. ${sectionType ? `Generate ONLY a ${sectionType} section` : 'Generate a complete page with multiple sections'}
-${theme ? `8. Use this theme: ${theme}` : ''}
-${themeTokens ? `9. Use these exact theme tokens when possible: ${JSON.stringify(themeTokens)}` : ''}`;
+${theme ? `8. Use this theme: ${theme}` : ''}`;
 
     // Use AbortController with extended timeout for page generation
     const controller = new AbortController();

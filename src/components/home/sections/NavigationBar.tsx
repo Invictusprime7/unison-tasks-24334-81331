@@ -51,8 +51,8 @@ export function NavigationBar({
           </div>
         </div>
         <div className="hidden md:flex items-center gap-6">
-          <a href="#features" className="text-gray-400 hover:text-cyan-400 transition-colors">Templates</a>
-          <a href="#integrations" className="text-gray-400 hover:text-lime-400 transition-colors">Integrations</a>
+          <a href="#systems" className="text-gray-400 hover:text-cyan-400 transition-colors">Systems</a>
+          <a href="#features" className="text-gray-400 hover:text-lime-400 transition-colors">Features</a>
           <a href="#pricing" className="text-gray-400 hover:text-fuchsia-400 transition-colors">Pricing</a>
         </div>
         <div className="flex items-center gap-3">

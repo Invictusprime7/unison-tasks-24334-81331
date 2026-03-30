@@ -1043,6 +1043,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
               mode,
               currentCode: currentCodeForRequest,
               editMode: hasExistingTemplate || mode === "debug",
+              debugMode: mode === "debug",
               templateAction,
               // Pass user design profile for personalized AI generation
               userDesignProfile: userDesignProfile || undefined,

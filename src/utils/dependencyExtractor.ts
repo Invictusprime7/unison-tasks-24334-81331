@@ -19,11 +19,8 @@ const BUILTIN_MODULES = new Set([
   'module', 'process', 'console', 'timers', 'string_decoder'
 ]);
 
-import { SANDPACK_DEPENDENCIES } from '@/utils/generationContract';
-
 // Common dependencies with known stable versions
 const KNOWN_VERSIONS: Record<string, string> = {
-  ...SANDPACK_DEPENDENCIES,
   'react': '^18.2.0',
   'react-dom': '^18.2.0',
   'react-router-dom': '^6.20.0',

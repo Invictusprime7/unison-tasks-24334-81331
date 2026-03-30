@@ -23,11 +23,13 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TemplateCustomizerReturn, SectionInfo } from '@/hooks/useTemplateCustomizer';
-
-type SectionType = string;
+import { SectionVariantSelector } from './SectionVariantSelector';
+import type { SectionType } from '@/sections/types';
 
 /**
  * Infer the SectionType from a parsed SectionInfo.
+ * Uses the tag name, ID, and label heuristics to map DOM sections
+ * back to the section registry's SectionType.
  */
 function inferSectionType(section: SectionInfo): SectionType {
   const id = section.id.toLowerCase();
@@ -223,8 +225,19 @@ export const TemplateCustomizerPanel: React.FC<TemplateCustomizerPanelProps> = (
         {/* Layout Variants */}
         <TabsContent value="layouts" className="flex-1 mt-0 overflow-hidden">
           <ScrollArea className="h-full">
-            <div className="px-3 py-2 text-center text-muted-foreground text-sm">
-              Section variants unavailable — infrastructure being rebuilt
+            <div className="px-3 py-2">
+              <SectionVariantSelector
+                sections={customizer.sections.map(s => ({
+                  id: s.id,
+                  type: inferSectionType(s),
+                  label: s.label,
+                }))}
+                activeVariants={customizer.activeVariants}
+                onVariantSelect={(sectionId, variantId) => {
+                  customizer.setActiveVariant(sectionId, variantId);
+                  onApply();
+                }}
+              />
             </div>
           </ScrollArea>
         </TabsContent>

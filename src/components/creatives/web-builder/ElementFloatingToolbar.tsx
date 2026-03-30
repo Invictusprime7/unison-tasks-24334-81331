@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import type { BusinessSystemType } from '@/data/templates/types';
 
 interface SelectedElement {
@@ -58,7 +59,7 @@ interface ElementFloatingToolbarProps {
   /** Business system type for context-aware AI edits (e.g. 'salon', 'restaurant') */
   systemType?: BusinessSystemType | null;
   /** Full business blueprint from systems-build for richer AI context */
-  systemsBuildContext?: Record<string, unknown> | null;
+  systemsBuildContext?: SystemsBuildContext | null;
 }
 
 const FONT_OPTIONS = [
@@ -77,7 +78,7 @@ interface InlineAIPanelProps {
   onAIEditComplete?: (selector: string, html: string) => boolean | Promise<boolean>;
   onRequestAI?: (selector: string) => void;
   systemType?: BusinessSystemType | null;
-  systemsBuildContext?: Record<string, unknown> | null;
+  systemsBuildContext?: SystemsBuildContext | null;
 }
 
 const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
@@ -139,7 +140,7 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         '5. Make ONLY the requested change — do not alter other aspects of the element.',
       ].join('\n');
 
-      const { data, error: fnError } = await supabase.functions.invoke('ai-editor', {
+      const { data, error: fnError } = await supabase.functions.invoke('ai-code-assistant', {
         body: {
           messages: [{ role: 'user', content: surgicalPrompt }],
           mode: 'code',

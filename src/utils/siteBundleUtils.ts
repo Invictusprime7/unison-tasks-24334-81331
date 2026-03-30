@@ -72,12 +72,12 @@ import { validateSiteBundle } from "../schemas/SiteBundle";
 export const CURRENT_BUNDLE_VERSION: SiteBundleVersion = "1.0.0";
 
 export const DEFAULT_COLORS = {
-  primary: '#6366F1',
-  secondary: '#8B5CF6',
-  accent: '#F59E0B',
-  background: '#FFFFFF',
-  foreground: '#1A1A2E',
-  muted: '#F1F5F9',
+  primary: "#3B82F6",
+  secondary: "#10B981",
+  accent: "#F59E0B",
+  background: "#FFFFFF",
+  foreground: "#1E293B",
+  muted: "#64748B",
   danger: "#EF4444",
   success: "#22C55E",
   warning: "#F59E0B",

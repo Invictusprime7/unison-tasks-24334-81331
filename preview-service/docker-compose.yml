@@ -12,7 +12,7 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3001
-      - GATEWAY_URL=http://localhost:3001
+      - GATEWAY_URL=http://host.docker.internal:3001
       - PREVIEW_IMAGE=unison-preview-worker:latest
       - CONTAINER_NETWORK=preview-service_preview-network
       - MAX_SESSIONS=10

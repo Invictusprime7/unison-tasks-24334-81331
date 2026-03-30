@@ -107,7 +107,7 @@ For code files:
               ]
             }))
           ],
-          mode: 'code', // Request code mode for generation
+          mode: 'html', // Request HTML mode for vanilla output
         }
       });
 
@@ -119,8 +119,8 @@ For code files:
         };
       }
 
-      // Extract code from response — ai-code-assistant returns { content }
-      const responseContent = data?.content || '';
+      // Extract code from response
+      const responseContent = data?.response || data?.content || data?.code || '';
       
       // Try to extract code block
       const codeMatch = responseContent.match(/```(?:jsx?|tsx?|html)?\s*([\s\S]*?)```/);
@@ -181,7 +181,7 @@ Return ONLY the HTML code, no explanations.`
               ]
             }
           ],
-          mode: 'code',
+          mode: 'html',
         }
       });
 
@@ -189,8 +189,7 @@ Return ONLY the HTML code, no explanations.`
         return { success: false, error: error.message };
       }
 
-      // ai-code-assistant returns { content }
-      const responseContent = data?.content || '';
+      const responseContent = data?.response || data?.content || data?.code || '';
       const codeMatch = responseContent.match(/```(?:jsx?|tsx?|html)?\s*([\s\S]*?)```/);
       const code = codeMatch ? codeMatch[1].trim() : responseContent;
 

@@ -48,8 +48,10 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { BusinessSystemType } from '@/data/templates/types';
+import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
+import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
 
 // ============================================================================
 /**
@@ -101,6 +103,51 @@ function stripModuleExportsBlocks(code: string): string {
  */
 function stripInlineCodeRefs(content: string): string {
   return content.replace(/`[^`]*`/g, 'CODE_REF');
+}
+
+/**
+ * Extract HTML from AI response that mixes reasoning text with raw HTML.
+ * Handles cases like: "I will generate...<!DOCTYPE html><html>...</html>"
+ * Returns the extracted HTML or null if no HTML found.
+ * 
+ * IMPORTANT: Ignores HTML tags mentioned inside backtick code references
+ * in reasoning text (e.g. "`<html>`", "`<style>`").
+ */
+function extractRawHtmlFromMixed(content: string): string | null {
+  // Strip inline code refs so `<html>` in reasoning doesn't trigger false match
+  const cleaned = stripInlineCodeRefs(content);
+
+  // Case 1: Content contains <!DOCTYPE html> — extract everything from there
+  const doctypeIdx = cleaned.indexOf('<!DOCTYPE');
+  if (doctypeIdx >= 0) {
+    // Use the index from cleaned to slice from the ORIGINAL content
+    const originalDoctypeIdx = content.indexOf('<!DOCTYPE', Math.max(0, doctypeIdx - 50));
+    if (originalDoctypeIdx >= 0) {
+      return content.slice(originalDoctypeIdx).trim();
+    }
+  }
+  
+  // Case 2: Content contains <html — but only if it looks like an actual tag (not inside prose)
+  // Match <html followed by > or whitespace+attributes, NOT inside backticks
+  const htmlTagRegex = /<html[\s>]/gi;
+  let match: RegExpExecArray | null;
+  while ((match = htmlTagRegex.exec(cleaned)) !== null) {
+    // Find the corresponding position in original content
+    const originalIdx = content.indexOf('<html', Math.max(0, match.index - 50));
+    if (originalIdx >= 0) {
+      const extracted = content.slice(originalIdx).trim();
+      if (extracted.includes('</html>')) return extracted;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Convert raw HTML into a proper React component with native JSX.
+ */
+function wrapHtmlInReactComponent(html: string): string {
+  return htmlDocToReactComponentFn(html, 'App');
 }
 
 // Types
@@ -169,8 +216,8 @@ interface AIBuilderPanelProps {
   backendStateContext?: string | null;
   /** Real business data (products, services, hours, etc.) */
   businessDataContext?: string | null;
-  /** Structured business blueprint from systems-build */
-  systemsBuildContext?: Record<string, unknown> | null;
+  /** Structured business blueprint from systems-build (brand, palette, intents, sections) */
+  systemsBuildContext?: SystemsBuildContext | null;
   /** Current VFS file list + dependency summary for AI awareness */
   vfsContext?: string | null;
   /** Full VFS file map for component-level site analysis */
@@ -808,10 +855,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // Build theme/styling context from Systems AI blueprint so in-builder edits stay consistent
       const themeContextBlock = (() => {
         if (!systemsBuildContext) return '';
-        const ctx = systemsBuildContext as Record<string, any>;
-        const brand = ctx.brand;
-        const design = ctx.design;
-        const identity = ctx.identity;
+        const { brand, design, identity } = systemsBuildContext;
         const lines: string[] = ['[🎨 Theme & Styling — Match this design language for all new elements]'];
         if (brand?.business_name) lines.push(`Business: ${brand.business_name}`);
         if (brand?.tone) lines.push(`Tone: ${brand.tone}`);
@@ -962,44 +1006,28 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             }
           }
 
-          // PRIMARY CALL PATH: ai-code-assistant for all template generation & rendering
-          // - template-react: Full React template generation (builder panel + VFS + Docker preview)
-          // - code: Non-React surgical/code edits
-          // ai-editor is used only for surgical edits needing VFS file context
-          if (isSurgicalEdit) {
-            response = await supabase.functions.invoke('ai-editor', {
-              body: {
-                messages: [{ role: 'user', content: promptForAI }],
-                mode: isReactProject ? 'template-react' : 'code',
-                currentCode: truncatedCode,
-                editMode: !!currentCode,
-                surgicalEdit: true,
-                systemType,
-                templateName,
-                templateAction,
-                userDesignProfile: userDesignProfile ?? undefined,
-                systemsBuildContext: systemsBuildContext ?? undefined,
-                siteElementsLibraryContext,
-                attachments: _attachments.length > 0 ? _attachments : undefined,
-                vfsFiles: vfsPayload,
-              },
-            });
-          } else {
-            response = await supabase.functions.invoke('ai-code-assistant', {
-              body: {
-                messages: [{ role: 'user', content: promptForAI }],
-                mode: isReactProject ? 'template-react' : 'code',
-                currentCode: truncatedCode,
-                editMode: !!currentCode,
-                templateAction,
-                systemType,
-                templateName,
-                userDesignProfile: userDesignProfile ?? undefined,
-                systemsBuildContext: systemsBuildContext ?? undefined,
-                siteElementsLibraryContext,
-              },
-            });
-          }
+          response = await supabase.functions.invoke('ai-code-assistant', {
+            body: {
+              messages: [{ role: 'user', content: promptForAI }],
+              // Always use template-react for React projects (even surgical edits)
+              // to ensure the AI generates React/TSX output, not raw HTML.
+              // The surgicalEdit flag tells the edge function to apply surgical constraints.
+              // Only fall back to 'code' mode for non-React (HTML template) surgical edits.
+              mode: isSurgicalEdit && !isReactProject ? 'code' : 'template-react',
+              currentCode: truncatedCode,
+              editMode: !!currentCode,
+              surgicalEdit: isSurgicalEdit,
+              systemType,
+              templateName,
+              templateAction,
+              userDesignProfile: userDesignProfile ?? undefined,
+              systemsBuildContext: systemsBuildContext ?? undefined,
+              siteElementsLibraryContext,
+              attachments: _attachments.length > 0 ? _attachments : undefined,
+              // Send VFS files for surgical edit context
+              vfsFiles: vfsPayload,
+            },
+          });
           
           // Check for retryable errors
           if (response.error) {
@@ -1160,13 +1188,40 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               generatedCode = `import React, { useEffect } from 'react';\n\nconst CSS_CONTENT = ${cssJsonStr};\n\nexport default function App() {\n  useEffect(() => {\n    const s = document.createElement('style');\n    s.textContent = CSS_CONTENT;\n    document.head.appendChild(s);\n    return () => { s.remove(); };\n  }, []);\n\n  return (\n    <div style={{ minHeight: '100vh' }}><p>Styles applied.</p></div>\n  );\n}`;
               console.log('[AIBuilderPanel] Extracted CSS from fence, wrapped in React component');
             } else if (hasHtmlStructure) {
-              // Reject raw HTML — AI should output React/TSX
-              console.warn('[AIBuilderPanel] Rejected HTML output from fence — expecting React/TSX');
+              generatedCode = wrapHtmlInReactComponent(bestBlock);
+              console.log('[AIBuilderPanel] Extracted HTML from fence, wrapped in React component');
             }
           }
         }
 
-        // Strategy 4 (surgical edit fallback): Extract JSON {"files": {...}} from prose
+        // Strategy 4: Raw HTML mixed with reasoning text (e.g. "I will generate...<!DOCTYPE html>...")
+        if (!multiFileOutput && !generatedCode) {
+          const rawHtml = extractRawHtmlFromMixed(trimmed);
+          if (rawHtml) {
+            console.log('[AIBuilderPanel] Extracted raw HTML from mixed content, wrapping in React component');
+            generatedCode = wrapHtmlInReactComponent(rawHtml);
+            // Extract explanation from the text before the HTML
+            const doctypeIdx = trimmed.indexOf('<!DOCTYPE');
+            const htmlIdx = doctypeIdx >= 0 ? doctypeIdx : trimmed.indexOf('<html');
+            if (htmlIdx > 0) {
+              explanationText = trimmed.slice(0, htmlIdx).trim();
+            }
+            if (!explanationText) {
+              explanationText = '✅ HTML site generated and wrapped for preview.';
+            }
+          }
+        }
+
+        // Strategy 5: Content is purely raw HTML (starts with <!DOCTYPE or <html)
+        if (!multiFileOutput && !generatedCode) {
+          if (/^\s*<!DOCTYPE/i.test(trimmed) || /^\s*<html[\s>]/i.test(trimmed)) {
+            console.log('[AIBuilderPanel] Content is raw HTML, wrapping in React component');
+            generatedCode = wrapHtmlInReactComponent(trimmed);
+            explanationText = '✅ HTML site generated and wrapped for preview.';
+          }
+        }
+
+        // Strategy 6 (surgical edit fallback): Extract JSON {"files": {...}} from prose
         // AI may return: "Here's the change:\n```json\n{\"files\": {...}}\n```\nI changed X"
         if (!multiFileOutput && !generatedCode && isSurgicalEdit) {
           // Try to find {"files": embedded anywhere in the content
@@ -1216,34 +1271,6 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           normalizedFiles[normalizedPath] = fileContent;
         }
-
-        // Thin-shell guard: if App.tsx imports from relative paths that don't
-        // exist in the output, strip those imports — the sandpackFilePrep auto-stub
-        // system will generate real styled components for them downstream.
-        const appPath = Object.keys(normalizedFiles).find(p => /App\.tsx$/i.test(p));
-        if (appPath) {
-          const appSrc = normalizedFiles[appPath];
-          const relImportRe = /import\s+(\w+)\s+from\s+['"]\.\/([^'"]+)['"]/g;
-          let hasTrimmable = false;
-          let cleaned = appSrc;
-          let match: RegExpExecArray | null;
-          while ((match = relImportRe.exec(appSrc)) !== null) {
-            const [fullMatch, , relPath] = match;
-            const exists = Object.keys(normalizedFiles).some(p => {
-              const norm = p.replace(/^\/?(src\/)?/, '');
-              return norm === relPath || norm === relPath + '.tsx' || norm === relPath + '.ts';
-            });
-            if (!exists) {
-              hasTrimmable = true;
-              cleaned = cleaned.replace(fullMatch + ';', '');
-              cleaned = cleaned.replace(fullMatch, '');
-            }
-          }
-          if (hasTrimmable) {
-            normalizedFiles[appPath] = cleaned.replace(/\n{3,}/g, '\n\n');
-            console.warn('[AIBuilderPanel] Stripped thin-shell imports from App.tsx — auto-stubs will generate real components');
-          }
-        }
         
         if (onApplyToVFS) {
           console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
@@ -1257,11 +1284,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         }
       }
 
-      // SAFETY NET 1: If generatedCode is raw HTML, reject it — AI must output React/TSX
+      // SAFETY NET 1: If generatedCode is still raw HTML (not wrapped in React), wrap it now
       if (generatedCode && (/^\s*<!DOCTYPE/i.test(generatedCode) || /^\s*<html[\s>]/i.test(generatedCode))) {
-        console.warn('[AIBuilderPanel] Rejected: AI returned raw HTML instead of React/TSX');
-        generatedCode = null;
-        explanationText = '⚠️ AI returned raw HTML instead of React/TypeScript. Please try again — all output must be React components.';
+        console.warn('[AIBuilderPanel] Safety net: wrapping raw HTML that escaped extraction strategies');
+        generatedCode = wrapHtmlInReactComponent(generatedCode);
       }
 
       // SAFETY NET 2: If generatedCode is raw CSS (:root, body {, @import, etc.), wrap in React component
@@ -1354,7 +1380,8 @@ export default function App() {
           generatedCode.includes('function ') ||
           generatedCode.includes('dangerouslySetInnerHTML') ||
           generatedCode.includes('return (') ||
-          generatedCode.includes('className=');
+          /^\s*<!DOCTYPE/i.test(generatedCode) ||
+          /^\s*<html[\s>]/i.test(generatedCode);
         
         const looksLikeProse = /\b(I will|I need to|I'll|Let me|inspired|simplified|Here's my|I'm going to)\b/i.test(generatedCode.slice(0, 300));
         
@@ -1457,18 +1484,14 @@ export default function App() {
 
       if (response.error) throw response.error;
 
-      // ai-code-assistant returns { content } — extract code from the content field
-      const rawContent = response.data?.content || '';
-      // Extract code from markdown fences if present
-      const fenceMatch = rawContent.match(/```(?:tsx|jsx|typescript|javascript|ts|js)?\s*\n([\s\S]*?)```/i);
-      const fix = fenceMatch ? fenceMatch[1].trim() : (rawContent.includes('import ') || rawContent.includes('export ') ? rawContent : null);
+      const fix = response.data?.code || response.data?.response;
       
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: fix ? '✅ Fix generated! Review and apply the changes below.' : (rawContent || 'No fix could be generated.'),
+        content: response.data?.response || '✅ Fix generated! Review and apply the changes below.',
         timestamp: new Date(),
-        code: fix || undefined,
+        code: fix,
         error,
         thinking: [
           { id: '1', type: 'analyzing', message: 'Analyzing error...', timestamp: new Date() },

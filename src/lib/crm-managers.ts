@@ -6,6 +6,7 @@
  * and Inngest for workflow automation.
  */
 
+import { createClient } from '@supabase/supabase-js';
 import type { 
   IntentManagers, 
   LeadData, 
@@ -16,8 +17,16 @@ import type {
   Cart,
   CheckoutOptions
 } from '@/runtime/intentExecutor';
-import { supabase } from '@/integrations/supabase/runtime-client';
 import { setupEventBridge, type EventBridgeContext } from './inngest-event-bridge';
+
+// ============ SUPABASE CLIENT ============
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
 
 // ============ STORAGE ============
 
@@ -61,9 +70,11 @@ function createCRMManager(businessId: string): IntentManagers['crm'] {
           .insert({
             business_id: businessId,
             email: data.email,
+            phone: data.phone,
             name: data.name,
             source: data.source || 'website',
-            metadata: { ...data.metadata, phone: data.phone, pipeline_id: pipelineId },
+            pipeline_id: pipelineId,
+            metadata: data.metadata,
           })
           .select()
           .single();
@@ -173,12 +184,10 @@ function createBookingManager(businessId: string): IntentManagers['booking'] {
           .insert({
             business_id: businessId,
             service_id: data.serviceId,
+            scheduled_at: data.datetime,
             customer_name: data.customerName,
             customer_email: data.customerEmail,
             customer_phone: data.customerPhone,
-            service_name: (data as any).serviceName || 'Consultation',
-            booking_date: data.datetime ? new Date(data.datetime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            booking_time: data.datetime ? new Date(data.datetime).toTimeString().slice(0, 8) : '09:00:00',
             notes: data.notes,
             status: 'pending',
           })
@@ -211,7 +220,7 @@ function createBookingManager(businessId: string): IntentManagers['booking'] {
             id: s.id,
             name: s.name,
             duration: s.duration_minutes || 60,
-            price: (s.price_cents ?? 0) / 100,
+            price: s.price,
           }));
         }
       }

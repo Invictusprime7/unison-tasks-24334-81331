@@ -21,7 +21,7 @@ export function extractCleanCode(input: string): string {
   if (!input || typeof input !== 'string') return input || '';
 
   // Strip AI reasoning blocks (<thinking>...</thinking>) first
-  const trimmed = input.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+  let trimmed = input.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
 
   // 1. If content has markdown code blocks with a language, extract the largest one
   const fenceMatches = [...trimmed.matchAll(
@@ -33,18 +33,18 @@ export function extractCleanCode(input: string): string {
       (a[1]?.length ?? 0) >= (b[1]?.length ?? 0) ? a : b
     );
     const code = best[1]?.trim();
-    if (code && code.length > 20) return fixTripleBraces(stripMarkdownArtifacts(code));
+    if (code && code.length > 20) return stripMarkdownArtifacts(code);
   }
 
   // 2. If content contains a full HTML document, strip everything before it
   const doctypeIdx = trimmed.search(/<!DOCTYPE\s+html/i);
   if (doctypeIdx >= 0) {
-    return fixTripleBraces(trimmed.slice(doctypeIdx).trim());
+    return trimmed.slice(doctypeIdx).trim();
   }
 
   const htmlTagIdx = trimmed.search(/<html[\s>]/i);
   if (htmlTagIdx >= 0) {
-    return fixTripleBraces(trimmed.slice(htmlTagIdx).trim());
+    return trimmed.slice(htmlTagIdx).trim();
   }
 
   // 3. If content starts with non-code text before a React import statement
@@ -52,7 +52,7 @@ export function extractCleanCode(input: string): string {
   if (importIdx > 0) {
     const textBefore = trimmed.slice(0, importIdx);
     if (looksLikeProse(textBefore)) {
-      return fixTripleBraces(trimmed.slice(importIdx).trim());
+      return trimmed.slice(importIdx).trim();
     }
   }
 
@@ -62,7 +62,7 @@ export function extractCleanCode(input: string): string {
     const textBefore = trimmed.slice(0, exportIdx);
     // Keep legitimate code preambles (imports/constants/types/comments)
     if (looksLikeProse(textBefore) && !hasCodePreamble(textBefore)) {
-      return fixTripleBraces(trimmed.slice(exportIdx).trim());
+      return trimmed.slice(exportIdx).trim();
     }
   }
 
@@ -73,15 +73,7 @@ export function extractCleanCode(input: string): string {
   }
 
   // 6. Already starts with code — strip any trailing markdown artifacts
-  return fixTripleBraces(stripMarkdownArtifacts(trimmed));
-}
-
-/**
- * Fix triple-brace JSX: style={{{ ... }}} → style={{ ... }}
- * AI models commonly generate an extra brace layer in JSX style/expression props.
- */
-function fixTripleBraces(code: string): string {
-  return code.replace(/\{\{\{/g, '{{').replace(/\}\}\}/g, '}}');
+  return stripMarkdownArtifacts(trimmed);
 }
 
 /**
@@ -210,46 +202,6 @@ export function ensureReactImports(code: string): string {
     : `import React from 'react';\n\n`;
   
   return importLine + code;
-}
-
-/**
- * Self-close HTML void elements for JSX compatibility.
- * AI often outputs `<br>`, `<hr>`, `<img ...>`, `<input ...>` etc.
- * which are valid HTML but invalid JSX — must be `<br />`, `<hr />`, etc.
- */
-const VOID_ELEMENTS = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
-const VOID_RE = new RegExp(`<(${VOID_ELEMENTS.join('|')})(\\b[^>]*?)(?<!/)>`, 'gi');
-
-export function fixJsxVoidElements(code: string): string {
-  if (!code || typeof code !== 'string') return code;
-  return code.replace(VOID_RE, '<$1$2 />');
-}
-
-/**
- * Convert HTML-style `style="..."` string attributes to JSX `style={{...}}` objects.
- * AI often outputs style strings instead of JSX style objects in otherwise-valid React code.
- */
-export function fixJsxStyleStrings(code: string): string {
-  if (!code || typeof code !== 'string') return code;
-  // Only match style="..." that isn't already style={{ (JSX object)
-  return code.replace(/\bstyle="([^"]*)"/g, (_, styleStr: string) => {
-    const pairs = styleStr
-      .split(';')
-      .map((s: string) => s.trim())
-      .filter(Boolean)
-      .map((s: string) => {
-        const colonIdx = s.indexOf(':');
-        if (colonIdx < 0) return null;
-        const prop = s.slice(0, colonIdx).trim();
-        const val = s.slice(colonIdx + 1).trim();
-        if (!prop || !val) return null;
-        const camelProp = prop.replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
-        const isNumeric = /^\d+(\.\d+)?$/.test(val);
-        return `${camelProp}: ${isNumeric ? val : JSON.stringify(val)}`;
-      })
-      .filter(Boolean);
-    return `style={{ ${pairs.join(', ')} }}`;
-  });
 }
 
 /**

@@ -3,15 +3,16 @@
  * 
  * Provides a unified context for managing the VFS across all components:
  * - File tree state
+ * - Preview service integration (Docker-based)
+ * - Auto-sync between code changes and preview
+ * - Session management
  * - Saved project loading and parsing
  * - Online webpage import
- * - Snapshots / Undo-Redo
- * 
- * Preview rendering is handled entirely by Sandpack (in VFSPreview component).
  */
 
-import React, { createContext, useCallback, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { useVirtualFileSystem, VirtualFile, VirtualFolder, VirtualNode } from '@/hooks/useVirtualFileSystem';
+import { usePreviewService, PreviewSession, PreviewServiceState } from '@/hooks/usePreviewService';
 import { 
   parseSavedProject, 
   parseOnlineWebpage, 
@@ -62,11 +63,28 @@ export interface VFSContextValue {
   resetToEmpty: () => void;
   loadDefaultTemplate: () => void;
   
+  // Preview State
+  previewSession: PreviewSession | null;
+  previewLoading: boolean;
+  previewError: string | null;
+  previewConnected: boolean;
+  dockerAvailable: boolean;
+  
+  // Preview Actions
+  startPreview: () => Promise<void>;
+  stopPreview: () => Promise<void>;
+  restartPreview: () => Promise<void>;
+  patchFile: (path: string, content: string) => Promise<boolean>;
+  
   // Enhanced Import Actions
   importSavedProject: (data: string | object) => SavedProjectData | null;
   importFromWebpage: (html: string, sourceUrl?: string) => VFSGenerationResult;
   importFromCode: (code: string, projectName?: string) => VFSGenerationResult;
   parseWebContent: (html: string, sourceUrl?: string) => ParsedWebContent;
+  
+  // Combined helpers
+  getPreviewUrl: () => string | null;
+  isPreviewRunning: () => boolean;
   
   // Event Bus
   eventBus: VFSEventBus;
@@ -88,12 +106,119 @@ const VFSContext = createContext<VFSContextValue | null>(null);
 
 interface VFSProviderProps {
   children: ReactNode;
+  autoStartPreview?: boolean;
+  debounceMs?: number;
 }
 
 export function VFSProvider({ 
-  children,
+  children, 
+  autoStartPreview = false,
+  debounceMs = 300 
 }: VFSProviderProps) {
   const vfs = useVirtualFileSystem();
+  const preview = usePreviewService();
+  
+  // Track pending file changes for debounced sync
+  const pendingChangesRef = useRef<Map<string, string>>(new Map());
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSyncedContentRef = useRef<Map<string, string>>(new Map());
+  
+  // Check if preview service is available (Docker gateway OR Vercel API in production)
+  const dockerAvailable = !!import.meta.env.VITE_PREVIEW_GATEWAY_URL || import.meta.env.PROD;
+  
+  // Sync file changes to preview with debounce
+  const syncFileToPreview = useCallback(async (path: string, content: string) => {
+    if (!preview.session || preview.session.status !== 'running') return;
+    
+    // Skip if content hasn't changed
+    if (lastSyncedContentRef.current.get(path) === content) return;
+    
+    await preview.patchFile(path, content);
+    lastSyncedContentRef.current.set(path, content);
+  }, [preview]);
+  
+  // Debounced sync - batch file changes
+  const debouncedSync = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    debounceTimerRef.current = setTimeout(async () => {
+      const changes = new Map(pendingChangesRef.current);
+      pendingChangesRef.current.clear();
+      
+      for (const [path, content] of changes) {
+        await syncFileToPreview(path, content);
+      }
+    }, debounceMs);
+  }, [debounceMs, syncFileToPreview]);
+  
+  // Watch for VFS file changes and sync to preview
+  useEffect(() => {
+    if (!preview.session || preview.session.status !== 'running') return;
+    
+    // Get all current files
+    const files = vfs.getSandpackFiles();
+    
+    // Queue changes for files that differ from last synced
+    for (const [path, content] of Object.entries(files)) {
+      if (lastSyncedContentRef.current.get(path) !== content) {
+        pendingChangesRef.current.set(path, content);
+      }
+    }
+    
+    if (pendingChangesRef.current.size > 0) {
+      debouncedSync();
+    }
+  }, [vfs.nodes, preview.session, debouncedSync]);
+  
+  // Auto-start preview on mount if configured
+  useEffect(() => {
+    if (autoStartPreview && dockerAvailable && vfs.hasFiles && !preview.session) {
+      preview.startSession(vfs.nodes).catch(err => {
+        console.warn('[VFSContext] Auto-start preview failed:', err);
+      });
+    }
+  }, [autoStartPreview, dockerAvailable, vfs.hasFiles]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+  
+  // Combined actions
+  const startPreview = useCallback(async () => {
+    if (!dockerAvailable) {
+      console.warn('[VFSContext] Preview service not available');
+      return;
+    }
+    await preview.startSession(vfs.nodes);
+    // Reset sync cache on new session
+    lastSyncedContentRef.current.clear();
+  }, [dockerAvailable, preview, vfs.nodes]);
+  
+  const stopPreview = useCallback(async () => {
+    await preview.stopSession();
+    lastSyncedContentRef.current.clear();
+  }, [preview]);
+  
+  const restartPreview = useCallback(async () => {
+    await stopPreview();
+    await startPreview();
+  }, [stopPreview, startPreview]);
+  
+  // Helpers
+  const getPreviewUrl = useCallback(() => {
+    return preview.session?.iframeUrl || null;
+  }, [preview.session]);
+  
+  const isPreviewRunning = useCallback(() => {
+    return preview.session?.status === 'running';
+  }, [preview.session]);
 
   // Snapshot helpers
   const createSnapshot = useCallback((label: string): string => {
@@ -206,11 +331,28 @@ export function VFSProvider({
     resetToEmpty: vfs.resetToEmpty,
     loadDefaultTemplate: vfs.loadDefaultTemplate,
     
+    // Preview State
+    previewSession: preview.session,
+    previewLoading: preview.loading,
+    previewError: preview.error,
+    previewConnected: preview.connected,
+    dockerAvailable,
+    
+    // Preview Actions
+    startPreview,
+    stopPreview,
+    restartPreview,
+    patchFile: preview.patchFile,
+    
     // Enhanced Import Actions
     importSavedProject,
     importFromWebpage,
     importFromCode,
     parseWebContent,
+    
+    // Combined helpers
+    getPreviewUrl,
+    isPreviewRunning,
     
     // Event Bus
     eventBus: vfsEventBus,

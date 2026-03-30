@@ -3,11 +3,13 @@
  * Shared helpers for template generation
  * 
  * REACT-ONLY: All templates output native React/JSX component strings (.tsx)
- * TypeScript/React from start to finish — no HTML conversion.
+ * No dangerouslySetInnerHTML — uses htmlToJsx converter for HTML→JSX.
  */
 
+import { getCompositionById } from '@/sections/templates';
+import { compositionToReactCode } from '@/sections/PageRenderer';
 import { ensureReactImports } from '@/utils/aiCodeCleaner';
-import { htmlDocToReactComponentWithCSS } from '@/utils/htmlToJsx';
+import { htmlToJsx, htmlDocToReactComponentWithCSS, isHtmlDocument } from '@/utils/htmlToJsx';
 
 /**
  * Extracts <style> block content from HTML body strings
@@ -47,9 +49,8 @@ function extractScripts(body: string): { scripts: string; cleanBody: string } {
  * No DOM style injection — CSS is meant for a .css file import.
  */
 export const wrapInReactComponentWithCSS = (body: string, title: string = "Template"): { code: string; css: string } => {
-  // Legacy HTML documents — auto-migrate to React component
-  if (body.includes('<!DOCTYPE') || body.includes('<html')) {
-    console.warn('[wrapInReactComponentWithCSS] Migrating legacy HTML document to React/TSX');
+  // If it's a full HTML document, delegate to the document converter
+  if (isHtmlDocument(body)) {
     return htmlDocToReactComponentWithCSS(body, 'App');
   }
 
@@ -72,11 +73,8 @@ details > summary::-webkit-details-marker { display: none; }
   
   const css = baseStyles + '\n' + extractedStyles;
 
-  // Body content should already be JSX — minimal attribute normalization for safety
-  const jsxBody = finalBody
-    .replace(/\bclass=/g, 'className=')
-    .replace(/\bfor=/g, 'htmlFor=')
-    .replace(/<!--[\s\S]*?-->/g, '{/* comment */}');
+  // Convert HTML body to valid JSX
+  const jsxBody = htmlToJsx(finalBody);
   
   const titleJson = JSON.stringify(title);
 
@@ -262,7 +260,15 @@ export const wrapInHtmlDoc = wrapInReactComponent;
  * Gets VFS-ready React code + extracted CSS for a template.
  * Returns { code, css } where css should go into /src/template.css.
  */
-export const getTemplateReactCodeWithCSS = (template: { code: string; id?: string; title?: string; name?: string }, _themeId?: string): { code: string; css: string } => {
+export const getTemplateReactCodeWithCSS = (template: { code: string; id?: string; title?: string; name?: string }): { code: string; css: string } => {
+  // Check for section-registry composition first
+  if (template.id) {
+    const composition = getCompositionById(template.id);
+    if (composition) {
+      return { code: compositionToReactCode(composition), css: '' };
+    }
+  }
+
   // Strip AI reasoning blocks before any processing
   let code = template.code.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
 
@@ -276,13 +282,12 @@ export const getTemplateReactCodeWithCSS = (template: { code: string; id?: strin
     return { code: ensureReactImports(code), css: '' };
   }
 
-  // Legacy HTML documents — auto-migrate to React component
-  if (code.includes('<!DOCTYPE') || code.includes('<html')) {
-    console.warn('[getTemplateReactCodeWithCSS] Migrating legacy HTML document to React/TSX');
+  // Full HTML document → convert to native JSX component + CSS
+  if (isHtmlDocument(code)) {
     return htmlDocToReactComponentWithCSS(code, 'App');
   }
 
-  // Raw JSX fragment → wrap in React component
+  // Raw HTML fragment → wrap in React component with native JSX + CSS
   return wrapInReactComponentWithCSS(code, template.title || template.name || 'Template');
 };
 

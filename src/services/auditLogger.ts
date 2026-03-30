@@ -34,7 +34,6 @@ export type ResourceType =
   | 'file' 
   | 'folder' 
   | 'user' 
-  | 'business'
   | 'organization'
   | 'preview_session'
   | 'template'
@@ -55,7 +54,7 @@ export interface AuditLogEntry {
 
 export interface AuditLogFilters {
   userId?: string;
-  businessId?: string;
+  organizationId?: string;
   action?: AuditAction;
   resourceType?: ResourceType;
   resourceId?: string;
@@ -69,7 +68,7 @@ export interface AuditLogResult {
   id: string;
   user_id: string;
   user_email: string;
-  business_id: string | null;
+  organization_id: string;
   action: AuditAction;
   resource_type: ResourceType;
   resource_id: string;
@@ -110,28 +109,29 @@ class AuditLogger {
         return;
       }
 
-      // Get user's primary business
+      // Get user's primary organization
       const { data: membership } = await supabase
-        .from('business_members')
-        .select('business_id')
+        .from('organization_members')
+        .select('organization_id')
         .eq('user_id', user.id)
+        .eq('is_active', true)
         .limit(1)
         .single();
 
       await supabase.from('audit_logs').insert({
         user_id: user.id,
         user_email: user.email,
-        business_id: membership?.business_id || null,
+        organization_id: membership?.organization_id,
         action: entry.action,
         resource_type: entry.resourceType,
         resource_id: entry.resourceId,
         resource_name: entry.resourceName,
-        changes: entry.changes as any,
+        changes: entry.changes,
         metadata: {
           ...entry.metadata,
           request_id: this.requestId,
           session_id: this.sessionId,
-        } as any,
+        },
         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         status: 'success',
       });
@@ -152,28 +152,29 @@ class AuditLogger {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
-      // Get user's primary business
-      let businessId: string | null = null;
+      // Get user's primary organization
+      let organizationId: string | null = null;
       if (user) {
         const { data: membership } = await supabase
-          .from('business_members')
-          .select('business_id')
+          .from('organization_members')
+          .select('organization_id')
           .eq('user_id', user.id)
+          .eq('is_active', true)
           .limit(1)
           .single();
-        businessId = membership?.business_id || null;
+        organizationId = membership?.organization_id || null;
       }
 
       await supabase.from('security_events').insert({
         event_type: eventType,
         user_id: user?.id,
         user_email: user?.email,
-        business_id: businessId,
+        organization_id: organizationId,
         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         details: {
           ...details,
           request_id: this.requestId,
-        } as any,
+        },
         risk_level: riskLevel,
       });
     } catch (error) {
@@ -193,8 +194,8 @@ class AuditLogger {
     if (filters.userId) {
       query = query.eq('user_id', filters.userId);
     }
-    if (filters.businessId) {
-      query = query.eq('business_id', filters.businessId);
+    if (filters.organizationId) {
+      query = query.eq('organization_id', filters.organizationId);
     }
     if (filters.action) {
       query = query.eq('action', filters.action);
@@ -224,7 +225,7 @@ class AuditLogger {
       throw error;
     }
 
-    return (data || []) as unknown as AuditLogResult[];
+    return (data || []) as AuditLogResult[];
   }
 }
 
@@ -247,12 +248,14 @@ export function createChangesDiff(
 ): Record<string, { old: unknown; new: unknown }> {
   const changes: Record<string, { old: unknown; new: unknown }> = {};
 
+  // Get all keys from both objects
   const allKeys = new Set([...Object.keys(oldObj), ...Object.keys(newObj)]);
 
   for (const key of allKeys) {
     const oldValue = oldObj[key];
     const newValue = newObj[key];
 
+    // Simple comparison (deep comparison could be added for objects)
     if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
       changes[key] = { old: oldValue, new: newValue };
     }

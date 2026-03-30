@@ -1,8 +1,6 @@
 import { serve } from "serve";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
-import { pickIndustryPalette, paletteToColorTokens } from "../_shared/industryThemeMatrix.ts";
-import { pickIndustryLayout, buildLayoutDirective } from "../_shared/industryLayoutMatrix.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -126,31 +124,9 @@ const BodySchema = z.object({
   templateId: z.string().optional(),
   templateHtml: z.string().max(200_000).optional(),
   variantMode: z.boolean().optional().default(false),
-  variationSeed: z.string().optional(),
-  outputFormat: z.enum(["react"]).optional().default("react"),
-  // Theme-aware aesthetic directives from SystemLauncher
-  aestheticId: z.string().optional(),
-  aestheticLabel: z.string().optional(),
-  aestheticStyleDirective: z.string().max(2000).optional(),
-  aestheticCSSDirective: z.string().max(5000).optional(),
-  aestheticGenerationDirective: z.string().max(8000).optional(),
-  aestheticColorTokens: z.object({
-    primary: z.string(),
-    primaryForeground: z.string(),
-    secondary: z.string(),
-    secondaryForeground: z.string(),
-    accent: z.string(),
-    accentForeground: z.string(),
-    background: z.string(),
-    foreground: z.string(),
-    muted: z.string(),
-    mutedForeground: z.string(),
-    card: z.string(),
-    cardForeground: z.string(),
-    border: z.string(),
-  }).optional(),
-  sectionVariantDirective: z.string().max(50000).optional(),
-  // User Design Profile
+  variationSeed: z.string().optional(), // Random seed for visual diversity
+  outputFormat: z.enum(["react"]).optional().default("react"), // Output format: react = React fullstack
+  // User Design Profile - extracted patterns from user's saved projects for style-matching
   userDesignProfile: z.object({
     projectCount: z.number().optional(),
     dominantStyle: z.enum(["dark", "light", "colorful", "minimal", "mixed"]).optional(),
@@ -622,18 +598,15 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
     const htmlCommentCount = (cleaned.match(/<!--/g) || []).length;
     const rawClassCount = (cleaned.match(/ class="/g) || []).length;
 
-    // If it's predominantly raw HTML, auto-convert to React JSX
+    // If it's predominantly raw HTML, convert to proper React JSX
     if ((hasDoctype || hasHtmlTag || hasBodyTag) || (htmlCommentCount > 3 && rawClassCount > 5)) {
-      console.warn(`[systems-build] File ${path} contains raw HTML — converting to React/TSX`);
+      console.warn(`[systems-build] File ${path} contains raw HTML, converting to native JSX`);
       result[path] = htmlToReactComponent(cleaned);
       continue;
     }
     
     // Light sanitization for mostly-valid JSX
     let sanitized = cleaned;
-    // Fix triple-brace JSX: style={{{ ... }}} → style={{ ... }}
-    sanitized = sanitized.replace(/\{\{\{/g, '{{');
-    sanitized = sanitized.replace(/\}\}\}/g, '}}');
     sanitized = sanitized.replace(/<!--([\s\S]*?)-->/g, '{/* $1 */}');
     sanitized = sanitized.replace(/\bclass="/g, 'className="');
     sanitized = sanitized.replace(/\bfor="/g, 'htmlFor="');
@@ -661,11 +634,6 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
     sanitized = sanitized.replace(/\bcolspan="/g, 'colSpan="');
     sanitized = sanitized.replace(/\browspan="/g, 'rowSpan="');
     
-    // Self-close void HTML elements for JSX (<br> → <br />, <img ...> → <img ... />, etc.)
-    const VOID_ELS = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
-    const voidRe = new RegExp(`<(${VOID_ELS.join('|')})(\\b[^>]*?)(?<!/)>`, 'gi');
-    sanitized = sanitized.replace(voidRe, '<$1$2 />');
-    
     result[path] = sanitized;
   }
   
@@ -687,28 +655,7 @@ serve(async (req) => {
       );
     }
 
-    const { blueprint, userPrompt, enhanceWithAI: _enhanceWithAI, templateId, templateHtml, variantMode, variationSeed, outputFormat, aestheticId, aestheticLabel, aestheticStyleDirective, aestheticCSSDirective, aestheticGenerationDirective, aestheticColorTokens: rawColorTokens, sectionVariantDirective, userDesignProfile } = parsed.data;
-
-    // Industry-aware color variation: override static theme tokens with
-    // industry-specific palette when both aestheticId and industry are known
-    const industryPalette = aestheticId && blueprint.identity?.industry
-      ? pickIndustryPalette(aestheticId, blueprint.identity.industry, variationSeed || Date.now().toString(36))
-      : undefined;
-    const aestheticColorTokens = industryPalette
-      ? paletteToColorTokens(industryPalette)
-      : rawColorTokens;
-    if (industryPalette) {
-      console.log(`[systems-build] Industry palette override: ${industryPalette.name} (${industryPalette.id}) for ${aestheticId}×${blueprint.identity.industry}`);
-    }
-
-    // Industry layout matrix: determine layout, styling, and elements per industry
-    const industryLayout = pickIndustryLayout(
-      blueprint.identity.industry,
-      variationSeed || Date.now().toString(36)
-    );
-    const industryLayoutDirective = buildLayoutDirective(industryLayout);
-    console.log(`[systems-build] Industry layout: ${industryLayout.id} for ${blueprint.identity.industry}`);
-
+    const { blueprint, userPrompt, enhanceWithAI: _enhanceWithAI, templateId, templateHtml, variantMode, variationSeed, outputFormat, userDesignProfile } = parsed.data;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     // Build design profile context string for AI prompts
@@ -722,11 +669,11 @@ Generate a site that matches the user's established design preferences while bei
 
     // ==========================================================================
     // REACT FULLSTACK OUTPUT MODE
-    // Routes through ai-template-generator for React fullstack generation
+    // Routes through ai-code-assistant for React fullstack generation
     // Uses pre-built template HTML as quality baseline schema
     // ==========================================================================
     if (outputFormat === "react") {
-      console.log(`[systems-build] React fullstack mode - routing to ai-template-generator template-react${templateId ? ` with template: ${templateId}` : ''}`);
+      console.log(`[systems-build] React fullstack mode - routing to ai-code-assistant template-react${templateId ? ` with template: ${templateId}` : ''}`);
       
       // Perform web research for industry context (same as HTML mode)
       const rawIndustry = blueprint.identity.industry;
@@ -765,43 +712,6 @@ Generate a site that matches the user's established design preferences while bei
       const sectionStructure = templateHtml ? extractSectionStructure(templateHtml) : '';
       const intentWiring = templateHtml ? extractIntents(templateHtml) : '';
       
-      // Build aesthetic context — COLORS ONLY from theme, LAYOUT from industry matrix
-      const aestheticBlock = `
-
-## 🎨 COLOR PALETTE: "${aestheticLabel || aestheticId || 'default'}" (MANDATORY)
-Use the exact CSS color variables below. Do NOT substitute with different colors.
-${aestheticStyleDirective ? `\n## 🎨 AESTHETIC STYLE DIRECTIVE ("${aestheticLabel || aestheticId}"):\n${aestheticStyleDirective}\n` : ''}
-${aestheticGenerationDirective ? `\n## 🎨 THEME DESIGN RULES ("${aestheticLabel || aestheticId}"):\n${aestheticGenerationDirective}\n` : ''}
-${aestheticCSSDirective ? `### Theme CSS Utilities (INJECT INTO index.css alongside layout CSS):\n\`\`\`css\n${aestheticCSSDirective}\n\`\`\`\n` : ''}
-## 📐 LAYOUT & STRUCTURE (FROM INDUSTRY MATRIX — FOLLOW EXACTLY):
-${industryLayoutDirective}
-
-### Industry Layout CSS (INJECT INTO index.css):
-\`\`\`css
-${industryLayout.cssDirective}
-\`\`\`
-
-### Design Parameters (from industry matrix — NOT from theme):
-- Hero Layout: ${industryLayout.heroStyle}
-- Navigation: ${industryLayout.navStyle}
-- Section Spacing: ${industryLayout.sectionSpacing}
-- Max Width: ${industryLayout.maxWidth}
-- Shadows: ${industryLayout.shadows}
-- Glassmorphism: ${industryLayout.glassmorphism ? 'YES — use glass-card pattern' : 'NO'}
-- Gradients: ${industryLayout.gradients ? 'YES' : 'NO'}
-- Scroll Animations: ${industryLayout.scrollAnimations ? 'YES' : 'NO'}
-- Button Style: ${industryLayout.buttonStyle} / Size: ${industryLayout.buttonSize}
-- Image Style: ${industryLayout.imageStyle}
-- Content Density: ${industryLayout.contentDensity}
-- Heading Weight: ${industryLayout.headingWeight}
-- Heading Transform: ${industryLayout.headingTransform}
-- Required Sections: ${industryLayout.requiredSections.join(', ')}
-
-CRITICAL: Layout and structural decisions come from the INDUSTRY MATRIX above, NOT from the color theme.
-The theme ONLY provides the color palette. Follow the industry-specific layout rules EXACTLY.
-Each generation must look structurally different based on the industry layout variation selected.
-`;
-
       // Build enhanced prompt from blueprint WITH template reference
       const reactPrompt = `Create a ${blueprint.brand.business_name} website for ${blueprint.identity.industry.replace(/_/g, " ")} industry.
 
@@ -809,52 +719,27 @@ ${blueprint.brand.tagline ? `Tagline: "${blueprint.brand.tagline}"` : ""}
 ${blueprint.identity.primary_goal ? `Goal: ${blueprint.identity.primary_goal}` : ""}
 ${blueprint.brand.tone ? `Tone: ${blueprint.brand.tone}` : ""}
 
-${aestheticColorTokens ? `## EXACT CSS COLOR VARIABLES (COPY THESE INTO :root — DO NOT MODIFY):
-\`\`\`css
-:root {
-  --primary: ${aestheticColorTokens.primary};
-  --primary-foreground: ${aestheticColorTokens.primaryForeground};
-  --secondary: ${aestheticColorTokens.secondary};
-  --secondary-foreground: ${aestheticColorTokens.secondaryForeground};
-  --accent: ${aestheticColorTokens.accent};
-  --accent-foreground: ${aestheticColorTokens.accentForeground};
-  --background: ${aestheticColorTokens.background};
-  --foreground: ${aestheticColorTokens.foreground};
-  --muted: ${aestheticColorTokens.muted};
-  --muted-foreground: ${aestheticColorTokens.mutedForeground};
-  --card: ${aestheticColorTokens.card};
-  --card-foreground: ${aestheticColorTokens.cardForeground};
-  --border: ${aestheticColorTokens.border};
-}
-\`\`\`
-CRITICAL: Use these EXACT HSL values. Reference them as hsl(var(--primary)), hsl(var(--background)), etc.
-Do NOT substitute with different colors. These define the "${aestheticLabel || aestheticId}" palette.` : `Brand Colors (USE THESE EXACT COLORS IN :root CSS VARIABLES):
+Brand Colors:
 - Primary: ${blueprint.brand.palette?.primary || "#0EA5E9"}
 - Secondary: ${blueprint.brand.palette?.secondary || "#22D3EE"}
 - Accent: ${blueprint.brand.palette?.accent || "#F59E0B"}
 - Background: ${blueprint.brand.palette?.background || "#FFFFFF"}
-- Foreground: ${blueprint.brand.palette?.foreground || "#1E293B"}`}
+- Foreground: ${blueprint.brand.palette?.foreground || "#1E293B"}
 
-Typography (LOAD VIA GOOGLE FONTS):
-- Headings: ${blueprint.brand.typography?.heading || "Inter"} (weight: bold)
-- Body: ${blueprint.brand.typography?.body || "Inter"} (weight: normal)
+Typography:
+- Headings: ${blueprint.brand.typography?.heading || "Inter"}
+- Body: ${blueprint.brand.typography?.body || "Inter"}
 
-${aestheticBlock}
-${sectionVariantDirective ? `\n${sectionVariantDirective}\n` : ''}
 ${sectionStructure ? `\n${sectionStructure}` : ''}
 ${intentWiring ? `\n${intentWiring}` : ''}
-
-## APPROVED CTA BUTTON LABELS:
-${getIndustryLabels(blueprint.identity.industry)}
-
 ${researchContext}
 ${designProfileContext}
-${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
+${userPrompt ? `Additional requirements: ${userPrompt}` : ""}`;
 
-      // Call ai-template-generator with template-react mode AND template reference
-      const aiTemplateGeneratorUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-template-generator`;
+      // Call ai-code-assistant with template-react mode AND template reference
+      const aiCodeAssistantUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-code-assistant`;
       
-      const reactResponse = await fetch(aiTemplateGeneratorUrl, {
+      const reactResponse = await fetch(aiCodeAssistantUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -863,44 +748,22 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
         body: JSON.stringify({
           messages: [{ role: "user", content: reactPrompt }],
           mode: "template-react",
-          callerManaged: true,
           variationSeed: variationSeed || `react-${Date.now().toString(36)}`,
           templateName: blueprint.brand.business_name,
-          aesthetic: aestheticId || blueprint.brand.tone || "modern professional",
+          aesthetic: blueprint.brand.tone || "modern professional",
           source: blueprint.identity.industry,
           savePattern: true,
-          // Pass truncated template reference for CONTENT inspiration only (not layout copying)
-          currentCode: templateHtml ? templateHtml.substring(0, 8000) : undefined,
+          // Pass template reference (React composition or HTML) for quality baseline
+          currentCode: templateHtml ? templateHtml.substring(0, 80000) : undefined,
           templateAction: templateHtml ? "use-as-schema" : undefined,
         }),
       });
 
       if (!reactResponse.ok) {
-        const upstreamError = await reactResponse.text();
-        console.error("[systems-build] ai-template-generator call failed:", reactResponse.status, upstreamError.substring(0, 300));
-
-        const fallbackHtml = generateFallbackHTML(blueprint);
-        const fallbackFiles = {
-          "src/App.tsx": htmlToReactComponent(fallbackHtml),
-        };
-
+        console.error("[systems-build] ai-code-assistant call failed:", reactResponse.status);
         return new Response(
-          JSON.stringify({
-            files: fallbackFiles,
-            entryPoint: "src/App.tsx",
-            framework: "react",
-            buildTool: "vite",
-            _meta: {
-              ai_generated: false,
-              outputFormat: "react",
-              fallback: true,
-              upstream_status: reactResponse.status,
-              upstream_error: upstreamError.substring(0, 300),
-              template: templateId,
-              variation_seed: variationSeed,
-            },
-          }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "React generation failed", status: reactResponse.status }),
+          { status: reactResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -940,34 +803,22 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
         // If JSON parsing fails, try to extract JSON from mixed content
         console.warn("[systems-build] Failed to parse React JSON, attempting extraction:", parseError);
         
-        // Try to find JSON in the response — find start of { containing "files" and try progressive parsing
-        let extracted: { files: Record<string, string>; entryPoint?: string } | null = null;
-        const filesIdx = filesJson.indexOf('"files"');
-        if (filesIdx >= 0) {
-          // Walk backward to find the opening brace
-          let startIdx = filesIdx;
-          while (startIdx > 0 && filesJson[startIdx] !== '{') startIdx--;
-          // Try parsing progressively from the end of the string
-          for (let endIdx = filesJson.length; endIdx > filesIdx; endIdx--) {
-            if (filesJson[endIdx - 1] !== '}') continue;
-            try {
-              extracted = JSON.parse(filesJson.substring(startIdx, endIdx));
-              break;
-            } catch { /* try shorter */ }
-          }
-        }
-        if (extracted?.files) {
-          const sanitizedExtracted = sanitizeReactFiles(extracted.files);
-          return new Response(
-            JSON.stringify({
-              files: sanitizedExtracted,
-              entryPoint: extracted.entryPoint || "src/App.tsx",
-              framework: "react",
-              buildTool: "vite",
-              _meta: { ai_generated: true, outputFormat: "react", recovered: true },
-            }),
-            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
+        // Try to find JSON in the response
+        const jsonMatch = filesJson.match(/\{[\s\S]*"files"\s*:\s*\{[\s\S]*\}[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            const extracted = JSON.parse(jsonMatch[0]);
+            return new Response(
+              JSON.stringify({
+                files: extracted.files,
+                entryPoint: extracted.entryPoint || "src/App.tsx",
+                framework: "react",
+                buildTool: "vite",
+                _meta: { ai_generated: true, outputFormat: "react", recovered: true },
+              }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          } catch { /* fall through */ }
         }
         
         // If content is raw HTML, convert to native JSX React component
@@ -977,9 +828,9 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
         if (looksLikeRawHtml) {
           console.warn("[systems-build] Raw HTML detected, converting to native JSX component");
           
-          const convertedFiles = sanitizeReactFiles({
+          const convertedFiles = {
             "src/App.tsx": htmlToReactComponent(filesJson),
-          });
+          };
           
           return new Response(
             JSON.stringify({
@@ -994,10 +845,9 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
         }
         
         // Truly unknown format — wrap as plain React
-        const unknownFiles = sanitizeReactFiles({ "src/App.tsx": filesJson });
         return new Response(
           JSON.stringify({
-            files: unknownFiles,
+            files: { "src/App.tsx": filesJson },
             entryPoint: "src/App.tsx",
             framework: "react",
             buildTool: "vite",
@@ -1109,7 +959,7 @@ ${userPrompt ? `\nUser Requirements: ${userPrompt}` : ""}`;
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
 
     // Use gemini-2.5-flash for speed (pro times out on large prompts)
-    const model = "google/gemini-2.5-flash";
+    const model = variantMode ? "google/gemini-2.5-flash" : "google/gemini-2.5-flash";
     console.log(`[systems-build] Calling AI gateway with model=${model}`);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {

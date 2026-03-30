@@ -37,50 +37,35 @@ export const PageTypeSchema = z.enum([
   "legal",
 ]);
 
-/**
- * Canonical Intent Types — ALIGNED with coreIntents.ts
- * 
- * All intent names here MUST match the canonical vocabulary in coreIntents.ts.
- * Legacy names (shop.add_to_cart, auth.sign_in, nav.goto_page, etc.) are
- * handled by runtime/intentAliases.ts and should NOT appear here.
- */
 export const IntentTypeSchema = z.enum([
-  // Navigation (canonical: coreIntents.ts NAV_INTENTS)
-  "nav.goto",
-  "nav.external",
-  "nav.anchor",
-
-  // Payment (canonical: coreIntents.ts PAY_INTENTS)
-  "pay.checkout",
-  "pay.success",
-  "pay.cancel",
-
-  // Business actions (canonical: coreIntents.ts ACTION_INTENTS)
-  "contact.submit",
-  "newsletter.subscribe",
-  "booking.create",
-  "quote.request",
+  // Leads / comms
   "lead.capture",
+  "newsletter.subscribe",
+  "contact.submit",
+  "call.now",
+  "sms.now",
 
-  // Automation triggers (canonical: coreIntents.ts AUTOMATION_INTENTS)
-  "button.click",
-  "form.submit",
-  "auth.login",
-  "auth.register",
-  "cart.add",
-  "cart.checkout",
-  "cart.abandoned",
-  "booking.confirmed",
-  "booking.reminder",
-  "booking.cancelled",
-  "booking.noshow",
-  "order.created",
-  "order.shipped",
-  "order.delivered",
-  "deal.won",
-  "deal.lost",
-  "proposal.sent",
-  "job.completed",
+  // Booking
+  "booking.create",
+  "booking.reschedule",
+  "booking.cancel",
+
+  // Commerce
+  "shop.add_to_cart",
+  "shop.checkout",
+  "shop.buy_now",
+
+  // Auth
+  "auth.sign_in",
+  "auth.sign_up",
+  "auth.sign_out",
+
+  // Navigation
+  "nav.goto_page",
+  "nav.open_modal",
+
+  // Media
+  "media.watch_demo",
 ]);
 
 export const AutomationTriggerSchema = z.enum([

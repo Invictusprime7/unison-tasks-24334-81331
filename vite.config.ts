@@ -1,9 +1,8 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import react from "@vitejs/plugin-react-swc";
 import path from "node:path";
 import { componentTagger } from "lovable-tagger";
 import { visualizer } from 'rollup-plugin-visualizer';
-import stylexPlugin from '@stylexjs/babel-plugin';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -13,23 +12,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react({
-      babel: {
-        plugins: [
-          [
-            stylexPlugin,
-            {
-              dev: mode === 'development',
-              runtimeInjection: mode === 'development',
-              genConditionalClasses: true,
-              treeshakeCompensation: true,
-              unstable_moduleResolution: {
-                type: 'commonJS',
-                rootDir: path.resolve(__dirname),
-              },
-            },
-          ],
-        ],
-      },
+      jsxImportSource: undefined, // Use automatic JSX runtime
     }),
     mode === "development" && componentTagger(),
     mode === "analyze" && visualizer({
@@ -40,20 +23,10 @@ export default defineConfig(({ mode }) => ({
     })
   ].filter(Boolean),
   resolve: {
-    alias: [
-      {
-        find: '@/integrations/supabase/client',
-        replacement: path.resolve(__dirname, './src/integrations/supabase/runtime-client.ts'),
-      },
-      {
-        find: '@',
-        replacement: path.resolve(__dirname, './src'),
-      },
-      {
-        find: '@radix-ui/react-compose-refs',
-        replacement: path.resolve(__dirname, './src/lib/compose-refs-shim.ts'),
-      },
-    ],
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      "@radix-ui/react-compose-refs": path.resolve(__dirname, "./src/lib/compose-refs-shim.ts"),
+    },
     dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
   },
   build: {

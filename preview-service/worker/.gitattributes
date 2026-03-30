@@ -1,3 +1,0 @@
-# Shell scripts must always use LF line endings (Linux containers)
-*.sh text eol=lf
-entrypoint.sh text eol=lf

@@ -16,7 +16,7 @@ import type {
   AssetQueryFilters
 } from '@/types/asset';
 
-const ASSET_BUCKET = 'user-files';
+const ASSET_BUCKET = 'user-assets';
 const ASSET_STORAGE_KEY = 'asset_registry_cache';
 
 /**

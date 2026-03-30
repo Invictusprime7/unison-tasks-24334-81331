@@ -238,19 +238,56 @@ const MonacoEditor: React.FC<React.ComponentProps<typeof Editor>> = (props) => {
   // AI completion helper
   const getAICompletion = async (context: string): Promise<string | null> => {
     try {
-      const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
-        body: {
-          messages: [
-            { role: 'user', content: `Complete this code. Only return the next few lines of completion, no explanations:\n\n${context}` }
-          ],
-          mode: 'code',
-          savePattern: false,
-        },
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-code-assistant`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: 'user', content: `Complete this code. Only return the next few lines of completion, no explanations:\n\n${context}` }
+            ],
+            mode: 'code',
+            savePattern: false,
+          }),
+        }
+      );
 
-      if (error || !data?.content) return null;
+      if (!response.ok) return null;
 
-      const fullText = data.content;
+      const reader = response.body?.getReader();
+      if (!reader) return null;
+
+      const decoder = new TextDecoder();
+      let fullText = '';
+      let done = false;
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+              try {
+                const jsonStr = line.slice(6).trim();
+                const parsed = JSON.parse(jsonStr);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) fullText += content;
+              } catch (e) {
+                // Ignore parse errors
+              }
+            }
+          }
+        }
+      }
+
       // Extract code from markdown blocks
       const codeMatch = fullText.match(/```(?:html|javascript|js|typescript|tsx?)?\n?([\s\S]*?)```/);
       return codeMatch ? codeMatch[1].trim() : fullText.trim().substring(0, 200) || null;
@@ -263,20 +300,56 @@ const MonacoEditor: React.FC<React.ComponentProps<typeof Editor>> = (props) => {
   // AI assistance helper
   const getAIAssistance = async (prompt: string, mode: 'code' | 'design' | 'review'): Promise<string | null> => {
     try {
-      const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
-        body: {
-          messages: [
-            { role: 'user', content: prompt }
-          ],
-          mode,
-          savePattern: true,
-        },
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-code-assistant`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: 'user', content: prompt }
+            ],
+            mode,
+            savePattern: true,
+          }),
+        }
+      );
 
-      if (error) throw new Error('AI request failed');
-      if (!data?.content) throw new Error('No content in response');
+      if (!response.ok) throw new Error('AI request failed');
 
-      const fullText = data.content;
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let fullText = '';
+      let done = false;
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+              try {
+                const jsonStr = line.slice(6).trim();
+                const parsed = JSON.parse(jsonStr);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) fullText += content;
+              } catch (e) {
+                // Ignore parse errors
+              }
+            }
+          }
+        }
+      }
+
       // Extract code from markdown blocks
       const codeMatch = fullText.match(/```(?:html|javascript|js|typescript|tsx?)?\n?([\s\S]*?)```/);
       return codeMatch ? codeMatch[1].trim() : fullText.trim() || null;

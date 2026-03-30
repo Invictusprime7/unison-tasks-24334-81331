@@ -12,9 +12,6 @@ export type LayoutCategory =
   | "portfolio"   // Portfolio showcase templates
   | "agency"      // Agency/business templates
   | "store"       // E-commerce store templates
-  | "ecommerce"   // E-commerce templates (legacy)
-  | "blog"        // Blog templates
-  | "startup"     // Startup templates
   | "saas"        // SaaS product templates
   | "content"     // Content/blog templates
   | "coaching"    // Coaching/consulting templates

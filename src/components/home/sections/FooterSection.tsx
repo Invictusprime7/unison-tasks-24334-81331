@@ -15,7 +15,7 @@ export function FooterSection() {
             <a href="#" className="hover:text-cyan-400 transition-colors">Support</a>
           </div>
           <p className="text-sm text-gray-500">
-            © 2026 Unison Tasks. All rights reserved.
+            © 2025 Unison Tasks. All rights reserved.
           </p>
         </div>
       </div>

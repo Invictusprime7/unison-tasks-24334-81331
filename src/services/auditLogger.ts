@@ -121,19 +121,19 @@ class AuditLogger {
       await supabase.from('audit_logs').insert({
         user_id: user.id,
         user_email: user.email,
-        organization_id: membership?.organization_id,
         action: entry.action,
         resource_type: entry.resourceType,
         resource_id: entry.resourceId,
         resource_name: entry.resourceName,
-        changes: entry.changes,
+        changes: entry.changes as any,
         metadata: {
           ...entry.metadata,
           request_id: this.requestId,
           session_id: this.sessionId,
-        },
+        } as any,
         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         status: 'success',
+        business_id: membership?.organization_id,
       });
     } catch (error) {
       // Don't throw - audit logging should never break the app
@@ -225,7 +225,7 @@ class AuditLogger {
       throw error;
     }
 
-    return (data || []) as AuditLogResult[];
+    return (data || []) as unknown as AuditLogResult[];
   }
 }
 

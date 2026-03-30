@@ -561,6 +561,7 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
       sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingCSS;
     }
   }
+  if (!hasApp) sandpackFiles['/App.tsx'] = DEFAULT_APP;
   if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
 

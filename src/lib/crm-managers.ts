@@ -6,7 +6,6 @@
  * and Inngest for workflow automation.
  */
 
-import { createClient } from '@supabase/supabase-js';
 import type { 
   IntentManagers, 
   LeadData, 
@@ -17,16 +16,8 @@ import type {
   Cart,
   CheckoutOptions
 } from '@/runtime/intentExecutor';
+import { supabase } from '@/integrations/supabase/runtime-client';
 import { setupEventBridge, type EventBridgeContext } from './inngest-event-bridge';
-
-// ============ SUPABASE CLIENT ============
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-const supabase = supabaseUrl && supabaseAnonKey 
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
 
 // ============ STORAGE ============
 

@@ -3966,9 +3966,9 @@ ${sectionsJsx}
       <InteractiveElementHighlight isInteractiveMode={isInteractiveMode} />
 
       {/* Full-Width Top Toolbar */}
-      <div className="h-12 flex-shrink-0 bg-[#0a0a14] border-b-2 border-fuchsia-500/50 flex items-center px-4 gap-3 shadow-[0_4px_20px_rgba(255,0,255,0.15)] z-20">
+      <div className="h-10 sm:h-12 flex-shrink-0 bg-[#0a0a14] border-b-2 border-fuchsia-500/50 flex items-center px-1.5 sm:px-4 gap-1 sm:gap-3 shadow-[0_4px_20px_rgba(255,0,255,0.15)] z-20 overflow-x-auto overflow-y-hidden scrollbar-none">
         {/* Left Section: AI Toggle, Back, Device, Mode */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {/* AI Panel Toggle Button */}
           <Button
             variant="ghost"
@@ -3982,10 +3982,11 @@ ${sectionsJsx}
             )}
             title={aiPanelOpen ? "Close AI Panel" : "Open AI Panel"}
           >
-            <span className="text-sm">⚡ AI</span>
+            <span className="text-sm hidden sm:inline">⚡ AI</span>
+            <span className="text-sm sm:hidden">⚡</span>
           </Button>
           
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           <Button
             variant="ghost"
@@ -3997,15 +3998,15 @@ ${sectionsJsx}
             <ArrowLeft className="h-4 w-4" />
           </Button>
           
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Device Breakpoints */}
-          <div className="flex items-center gap-0.5 bg-[#0d0d18] rounded-lg p-1">
+          <div className="flex items-center gap-0.5 bg-[#0d0d18] rounded-lg p-0.5 sm:p-1">
             <Button
               variant={device === "desktop" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("desktop")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "desktop" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-6 w-6 sm:h-7 sm:w-7 rounded-md transition-all duration-200", device === "desktop" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
               title="Desktop"
             >
               <Monitor className="h-3.5 w-3.5" />
@@ -4014,7 +4015,7 @@ ${sectionsJsx}
               variant={device === "tablet" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("tablet")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "tablet" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-6 w-6 sm:h-7 sm:w-7 rounded-md transition-all duration-200", device === "tablet" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
               title="Tablet"
             >
               <Tablet className="h-3.5 w-3.5" />
@@ -4023,14 +4024,14 @@ ${sectionsJsx}
               variant={device === "mobile" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("mobile")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "mobile" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-6 w-6 sm:h-7 sm:w-7 rounded-md transition-all duration-200", device === "mobile" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
               title="Mobile"
             >
               <Smartphone className="h-3.5 w-3.5" />
             </Button>
           </div>
           
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Mode Toggle */}
           <SimpleModeToggle
@@ -4064,7 +4065,7 @@ ${sectionsJsx}
           />
           
           {/* Left/Right Panel Toggles */}
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           <Button
             variant="ghost"
             size="sm"
@@ -4082,7 +4083,7 @@ ${sectionsJsx}
         </div>
 
         {/* Center Section: Floating Dock */}
-        <div className="flex-1 flex justify-center">
+        <div className="flex-1 flex justify-center min-w-0 flex-shrink">
           <FloatingDock
             onSelectTemplate={handleSelectTemplate}
             onDemoTemplate={(code, name, systemType, templateId) => {
@@ -4099,7 +4100,7 @@ ${sectionsJsx}
         </div>
 
         {/* Right Section: View Mode, Save, AI Activity, Right Panel Toggle */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {/* View Mode Toggle */}
           <div className="flex items-center bg-[#0d0d18]/80 backdrop-blur-sm rounded-xl p-0.5 border border-white/[0.06] shadow-lg shadow-black/20">
             {([
@@ -4113,7 +4114,7 @@ ${sectionsJsx}
                   key={id}
                   onClick={() => setViewMode(id)}
                   className={cn(
-                    'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-250 outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500/50',
+                    'relative flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-250 outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500/50',
                     isActive
                       ? 'bg-fuchsia-500 text-black shadow-[0_0_18px_rgba(255,0,255,0.55)] scale-[1.02]'
                       : 'text-fuchsia-400/60 hover:text-fuchsia-300 hover:bg-fuchsia-500/[0.12]',
@@ -4121,7 +4122,7 @@ ${sectionsJsx}
                   title={`${label} View`}
                 >
                   <Icon className="h-3.5 w-3.5" />
-                  <span className={cn('tracking-wide', isActive ? 'font-bold' : '')}>{label}</span>
+                  <span className={cn('tracking-wide hidden sm:inline', isActive ? 'font-bold' : '')}>{label}</span>
                   {isActive && (
                     <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-fuchsia-300/60" />
                   )}
@@ -4130,10 +4131,10 @@ ${sectionsJsx}
             })}
           </div>
           
-          <div className="h-5 w-px bg-cyan-500/50" />
+          <div className="h-5 w-px bg-cyan-500/50 hidden sm:block" />
           
           {/* Save with status */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             {autoSaveStatus === 'saving' && (
               <div className="animate-spin h-3 w-3 border-2 border-yellow-500/30 border-t-yellow-400 rounded-full" />
             )}
@@ -4147,8 +4148,8 @@ ${sectionsJsx}
               className="h-7 text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/20 px-2.5 rounded-lg hover:shadow-[0_0_10px_rgba(255,255,0,0.3)] transition-all duration-200"
               title={currentTemplateName ? `Update "${currentTemplateName}"` : "Save to Projects"}
             >
-              <Save className="h-3.5 w-3.5 mr-1.5" />
-              <span className="text-xs font-bold">{currentTemplateName ? 'Update' : 'Save'}</span>
+              <Save className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="text-xs font-bold hidden sm:inline">{currentTemplateName ? 'Update' : 'Save'}</span>
             </Button>
             <DeployButton
               files={{ 'index.html': previewCode }}
@@ -4167,7 +4168,7 @@ ${sectionsJsx}
             />
           </div>
           
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Right Panel Toggle */}
           <Button
@@ -4185,7 +4186,7 @@ ${sectionsJsx}
             <Settings className="h-4 w-4" />
           </Button>
 
-          <div className="h-5 w-px bg-emerald-500/50" />
+          <div className="h-5 w-px bg-emerald-500/50 hidden sm:block" />
 
           {/* Creator's Playground Toggle */}
           <Button

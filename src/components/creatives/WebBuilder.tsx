@@ -951,6 +951,14 @@ export default function App() {
   // Business Setup Suggestions - shown after AI generates a site/template
   const [showBusinessSetup, setShowBusinessSetup] = useState(false);
 
+  // Auto-open SystemLauncher when no pre-generated content is provided
+  const hasIncomingContent = !!(
+    (location.state as any)?.vfsFiles ||
+    (location.state as any)?.generatedCode ||
+    (location.state as any)?.generatedTemplate
+  );
+  const [showLauncher, setShowLauncher] = useState(!hasIncomingContent);
+
   // Parse template when previewCode changes (but NOT when customizer is applying overrides)
   useEffect(() => {
     if (!previewCode || !previewCode.trim()) return;

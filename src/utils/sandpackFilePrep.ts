@@ -550,8 +550,17 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     if (normalizedPath.endsWith('.css')) hasCSS = true;
   }
 
-  if (!hasCSS) sandpackFiles['/index.css'] = BASE_CSS;
-  if (!hasApp) sandpackFiles['/App.tsx'] = DEFAULT_APP;
+  if (!hasCSS) {
+    sandpackFiles['/index.css'] = BASE_CSS;
+  } else {
+    // Ensure semantic CSS variables exist even when user/Launcher provides CSS.
+    // If the provided CSS is missing key tokens (--primary, --secondary, etc.)
+    // prepend defaults so Tailwind semantic classes resolve correctly.
+    const existingCSS = sandpackFiles['/index.css'] || '';
+    if (existingCSS && !existingCSS.includes('--primary:')) {
+      sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingCSS;
+    }
+  }
   if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
 

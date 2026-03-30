@@ -1242,7 +1242,7 @@ export function prepareSandpackFiles(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Preview</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.tailwindcss.com"><\/script>
   <script>
     tailwind.config = {
       theme: {
@@ -1261,15 +1261,36 @@ export function prepareSandpackFiles(
             popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
             card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
           },
+          fontFamily: {
+            heading: ['var(--font-heading)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            body: ['var(--font-body)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            sans: ['var(--font-body)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          },
           borderRadius: {
             lg: 'var(--radius)',
             md: 'calc(var(--radius) - 2px)',
             sm: 'calc(var(--radius) - 4px)',
           },
+          container: {
+            center: true,
+            padding: '1rem',
+          },
+          spacing: {
+            'section': 'var(--section-spacing, 5rem)',
+            'section-lg': 'var(--section-spacing-lg, 7rem)',
+          },
+          keyframes: {
+            'fade-in-up': { from: { opacity: '0', transform: 'translateY(20px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+            'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+          },
+          animation: {
+            'fade-in-up': 'fade-in-up 0.6s ease forwards',
+            'fade-in': 'fade-in 0.5s ease forwards',
+          },
         },
       },
     };
-  </script>
+  <\/script>
 </head>
 <body>
   <div id="root"></div>

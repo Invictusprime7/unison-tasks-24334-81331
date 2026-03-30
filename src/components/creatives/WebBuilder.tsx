@@ -4019,6 +4019,9 @@ ${html}
 
   return (
     <div ref={mainContainerRef} className="flex flex-col h-screen bg-[#1a0a14]">
+      {/* SystemLauncher — auto-opens when no pre-generated content */}
+      <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
+
       {/* Interactive Element Highlighting Styles */}
       <InteractiveElementHighlight isInteractiveMode={isInteractiveMode} />
 

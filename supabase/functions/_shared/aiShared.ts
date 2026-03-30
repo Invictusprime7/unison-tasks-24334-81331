@@ -293,7 +293,7 @@ export async function callAIProviders(
     try {
       console.log(`[AI-Hybrid] Trying gateway model ${model.label}...`);
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const timeoutId = setTimeout(() => controller.abort(), 55000);
       const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {

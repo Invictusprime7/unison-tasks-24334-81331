@@ -23,11 +23,11 @@ const ALLOWED_IMPORTS = new Set([
   'inngest',
 ]);
 
-const BASE_CSS = `
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
+/**
+ * Complete set of semantic CSS variables required for Tailwind utility classes
+ * (bg-primary, text-foreground, etc.) to resolve correctly in the preview.
+ */
+const SEMANTIC_CSS_VARS = `
 :root {
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
@@ -50,6 +50,14 @@ const BASE_CSS = `
   --ring: 221.2 83.2% 53.3%;
   --radius: 0.75rem;
 }
+`;
+
+const BASE_CSS = `
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+${SEMANTIC_CSS_VARS}
 
 * {
   border-color: hsl(var(--border));
@@ -542,7 +550,17 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     if (normalizedPath.endsWith('.css')) hasCSS = true;
   }
 
-  if (!hasCSS) sandpackFiles['/index.css'] = BASE_CSS;
+  if (!hasCSS) {
+    sandpackFiles['/index.css'] = BASE_CSS;
+  } else {
+    // Ensure semantic CSS variables exist even when user/Launcher provides CSS.
+    // If the provided CSS is missing key tokens (--primary, --secondary, etc.)
+    // prepend defaults so Tailwind semantic classes resolve correctly.
+    const existingCSS = sandpackFiles['/index.css'] || '';
+    if (existingCSS && !existingCSS.includes('--primary:')) {
+      sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingCSS;
+    }
+  }
   if (!hasApp) sandpackFiles['/App.tsx'] = DEFAULT_APP;
   if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;

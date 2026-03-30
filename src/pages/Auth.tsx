@@ -17,15 +17,15 @@ const Auth = () => {
   const [resetEmail, setResetEmail] = useState("");
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        navigate("/home");
+        navigate("/dashboard", { replace: true });
       }
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        navigate("/home");
+        navigate("/dashboard", { replace: true });
       }
     });
 
@@ -41,44 +41,63 @@ const Auth = () => {
     const password = formData.get("signup-password") as string;
     const fullName = formData.get("full-name") as string;
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/home`,
-        data: {
-          full_name: fullName,
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          data: {
+            full_name: fullName,
+          },
         },
-      },
-    });
-
-    setLoading(false);
-
-    if (error) {
-      toast({
-        title: "Sign up failed",
-        description: error.message,
-        variant: "destructive",
       });
-    } else if (data.user && data.user.identities && data.user.identities.length === 0) {
-      // User already exists (Supabase returns empty identities)
-      toast({
-        title: "Account already exists",
-        description: "An account with this email already exists. Please sign in instead.",
-        variant: "destructive",
-      });
-    } else if (data.session) {
-      // Email confirmation disabled — user is immediately signed in
+
+      if (error) {
+        toast({
+          title: "Sign up failed",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        toast({
+          title: "Account already exists",
+          description: "An account with this email already exists. Please sign in instead.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (data.session) {
+        toast({
+          title: "Account created!",
+          description: "Welcome to Unison Tasks! Redirecting...",
+        });
+        navigate('/dashboard', { replace: true });
+        return;
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (signInError) {
+        toast({
+          title: "Account created",
+          description: "Your account was created, but automatic sign-in failed. Please sign in manually.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       toast({
         title: "Account created!",
-        description: "Welcome to Unison Tasks!",
+        description: "Welcome to Unison Tasks! Redirecting...",
       });
-    } else {
-      // Email confirmation required
-      toast({
-        title: "Check your email",
-        description: "We sent a confirmation link to " + email + ". Please confirm your email before signing in.",
-      });
+      navigate('/dashboard', { replace: true });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -90,19 +109,24 @@ const Auth = () => {
     const email = formData.get("signin-email") as string;
     const password = formData.get("signin-password") as string;
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    setLoading(false);
-
-    if (error) {
-      toast({
-        title: "Sign in failed",
-        description: error.message,
-        variant: "destructive",
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
+
+      if (error) {
+        toast({
+          title: "Sign in failed",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      navigate('/dashboard', { replace: true });
+    } finally {
+      setLoading(false);
     }
   };
 

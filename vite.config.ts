@@ -40,10 +40,20 @@ export default defineConfig(({ mode }) => ({
     })
   ].filter(Boolean),
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@radix-ui/react-compose-refs": path.resolve(__dirname, "./src/lib/compose-refs-shim.ts"),
-    },
+    alias: [
+      {
+        find: '@/integrations/supabase/client',
+        replacement: path.resolve(__dirname, './src/integrations/supabase/runtime-client.ts'),
+      },
+      {
+        find: '@',
+        replacement: path.resolve(__dirname, './src'),
+      },
+      {
+        find: '@radix-ui/react-compose-refs',
+        replacement: path.resolve(__dirname, './src/lib/compose-refs-shim.ts'),
+      },
+    ],
     dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
   },
   build: {

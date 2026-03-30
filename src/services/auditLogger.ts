@@ -68,7 +68,7 @@ export interface AuditLogResult {
   id: string;
   user_id: string;
   user_email: string;
-  organization_id: string;
+  organization_id?: string;
   action: AuditAction;
   resource_type: ResourceType;
   resource_id: string;
@@ -109,19 +109,9 @@ class AuditLogger {
         return;
       }
 
-      // Get user's primary organization
-      const { data: membership } = await supabase
-        .from('organization_members')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .limit(1)
-        .single();
-
       await supabase.from('audit_logs').insert({
         user_id: user.id,
         user_email: user.email,
-        organization_id: membership?.organization_id,
         action: entry.action,
         resource_type: entry.resourceType,
         resource_id: entry.resourceId,

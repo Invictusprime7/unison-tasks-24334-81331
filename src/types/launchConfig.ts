@@ -257,7 +257,7 @@ export interface LaunchRuntimeManifest {
   /** Third-party integrations referenced */
   integrations: string[];
   /** Which preview engine should be used */
-  previewMode: 'sandpack' | 'docker';
+  previewMode: 'sandpack';
 }
 
 // ============================================================================
@@ -267,14 +267,13 @@ export interface LaunchRuntimeManifest {
 export type PreviewOrigin =
   | 'ai-generated'
   | 'deterministic-fallback'
-  | 'sandpack-default-app'
-  | 'docker-runtime';
+  | 'sandpack-default-app';
 
 export interface PreviewStatus {
   /** How the current preview content was produced */
   origin: PreviewOrigin;
   /** Which backend is rendering the preview */
-  backend: 'sandpack' | 'docker' | 'local';
+  backend: 'sandpack';
   /** Whether strict mode (no silent fallbacks) is active */
   strictMode: boolean;
   /** Errors encountered during generation/preview */

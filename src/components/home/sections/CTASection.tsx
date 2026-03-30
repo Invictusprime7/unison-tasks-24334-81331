@@ -13,9 +13,9 @@ export function CTASection({ onStartLauncher }: CTASectionProps) {
       <div className="container mx-auto px-4">
         <Card className="max-w-4xl mx-auto bg-gradient-to-r from-cyan-500/20 via-fuchsia-500/20 to-lime-500/20 border border-cyan-500/30 shadow-[0_0_40px_rgba(0,255,255,0.2)]">
           <CardContent className="py-12 text-center">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4 text-white">Ready to <span className="text-cyan-400 drop-shadow-[0_0_20px_rgba(0,255,255,0.5)]">launch?</span></h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4 text-white">Your industry. <span className="text-cyan-400 drop-shadow-[0_0_20px_rgba(0,255,255,0.5)]">Your site. Ready now.</span></h2>
             <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
-              Pick a business type. We'll handle the rest.
+              Pick from 11 industry templates or let AI build one — every button, form, and payment wired.
             </p>
             <Button 
               size="lg" 
@@ -28,7 +28,7 @@ export function CTASection({ onStartLauncher }: CTASectionProps) {
               )}
             >
               <Zap className="mr-2 h-5 w-5" />
-              Launch Your System
+              Browse Templates
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </CardContent>

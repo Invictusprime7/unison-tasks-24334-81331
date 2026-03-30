@@ -29,42 +29,6 @@ export function useVFSSafe(): VFSContextValue | null {
 }
 
 // ============================================================================
-// Preview-Only Hook
-// ============================================================================
-
-export function useVFSPreview() {
-  const {
-    previewSession,
-    previewLoading,
-    previewError,
-    previewConnected,
-    dockerAvailable,
-    startPreview,
-    stopPreview,
-    restartPreview,
-    getPreviewUrl,
-    isPreviewRunning,
-    getSandpackFiles,
-    nodes,
-  } = useVFS();
-  
-  return {
-    session: previewSession,
-    loading: previewLoading,
-    error: previewError,
-    connected: previewConnected,
-    dockerAvailable,
-    start: startPreview,
-    stop: stopPreview,
-    restart: restartPreview,
-    url: getPreviewUrl(),
-    isRunning: isPreviewRunning(),
-    files: getSandpackFiles(),
-    nodes,
-  };
-}
-
-// ============================================================================
 // Import Hook - For importing content from various sources
 // ============================================================================
 

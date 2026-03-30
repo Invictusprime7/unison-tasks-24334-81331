@@ -484,11 +484,11 @@ export function useSitePreview(options: UseSitePreviewOptions): UseSitePreviewRe
   }, [state.generatedPages, brand, navigation.navItems]);
   
   /**
-   * Get preview URL
+   * Get preview URL (Sandpack uses in-browser rendering, no external URL)
    */
   const getPreviewUrl = useCallback((): string | null => {
-    return vfs?.getPreviewUrl() || null;
-  }, [vfs]);
+    return null;
+  }, []);
   
   // Auto-sync on page change
   useEffect(() => {

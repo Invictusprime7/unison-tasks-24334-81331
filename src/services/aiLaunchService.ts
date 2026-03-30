@@ -22,7 +22,7 @@ import type {
 import type { ThemeIdentity } from '@/themes/identities.stylex';
 import { THEME_IDENTITY_META } from '@/themes/identities.stylex';
 import { getIndustryById } from '@/data/industries';
-import { generateSiteVFS, getBusinessName, resolveTokens } from '@/utils/siteGenerator';
+import { getBusinessName, resolveTokens } from '@/utils/siteGenerator';
 
 // ============================================================================
 // Types
@@ -80,7 +80,7 @@ function buildAestheticColorTokens(skin: ThemeSkin) {
 // ============================================================================
 
 const IDENTITY_STYLE_DIRECTIVES: Record<ThemeIdentity, string> = {
-  modern: 'Clean minimalist design. Grid-based layouts with generous whitespace. Medium border radius. Cool neutral palette with one sharp accent color. Crisp borders and subtle shadows.',
+  modern: 'Clean contemporary design. Grid-based layouts with generous whitespace. Medium border radius. Cool neutral palette with one sharp accent color. Crisp borders and subtle shadows.',
   editorial: 'Typography-forward design. Serif headlines paired with clean sans-serif body text. Asymmetric layouts with strong visual hierarchy. Larger type scale. Thin borders and minimal shadows.',
   bold: 'High-contrast design with visual urgency. Heavy font weights, larger CTAs, strong color blocking. Higher saturation throughout. Firmer shapes and more pronounced shadows.',
   futuristic: 'Dark-first design with electric neon accents. Layered surfaces with luminous depth. Glow edges and gradient meshes. Glassmorphism elements. Monospace details.',
@@ -1087,12 +1087,13 @@ function consolidateThinShell(
 
 /**
  * Normalizes AI-generated files to ensure all required React entrypoints exist.
- * Uses deterministic VFS as a source for missing scaffolding files.
+ * Generates Tailwind-compatible scaffolding for missing files using the AI's
+ * own color tokens — never imports from the deterministic template.
  * Throws if the critical App entry is missing (no silent recovery).
  */
 function normalizeLaunchFiles(
   files: Record<string, string>,
-  deterministicVFS: Record<string, string>,
+  colorTokens: ReturnType<typeof buildAestheticColorTokens>,
 ): Record<string, string> {
   const out = { ...files };
 
@@ -1105,12 +1106,54 @@ function normalizeLaunchFiles(
     out['/src/App.tsx'] = out[appEntry];
   }
 
-  // Fill in scaffolding from deterministic baseline
-  if (!out['/src/main.tsx'] && deterministicVFS['/src/main.tsx']) {
-    out['/src/main.tsx'] = deterministicVFS['/src/main.tsx'];
+  // Generate Sandpack-compatible main.tsx if missing
+  if (!out['/src/main.tsx']) {
+    out['/src/main.tsx'] = `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);`;
   }
-  if (!out['/src/index.css'] && deterministicVFS['/src/index.css']) {
-    out['/src/index.css'] = deterministicVFS['/src/index.css'];
+
+  // Generate Tailwind-compatible index.css if missing — uses the same HSL
+  // variable convention the AI prompt instructs (hsl(var(--primary)), etc.)
+  if (!out['/src/index.css']) {
+    out['/src/index.css'] = `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: ${colorTokens.primary};
+  --primary-foreground: ${colorTokens.primaryForeground};
+  --secondary: ${colorTokens.secondary};
+  --secondary-foreground: ${colorTokens.secondaryForeground};
+  --accent: ${colorTokens.accent};
+  --accent-foreground: ${colorTokens.accentForeground};
+  --background: ${colorTokens.background};
+  --foreground: ${colorTokens.foreground};
+  --muted: ${colorTokens.muted};
+  --muted-foreground: ${colorTokens.mutedForeground};
+  --card: ${colorTokens.card};
+  --card-foreground: ${colorTokens.cardForeground};
+  --border: ${colorTokens.border};
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4, h5, h6 { line-height: 1.2; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }`;
   }
 
   return out;
@@ -1145,8 +1188,7 @@ function buildRuntimeManifest(
     apiRoutes,
     envVars: [...new Set(envVars)],
     integrations,
-    // Use Docker only if gateway is explicitly configured; otherwise Sandpack
-    previewMode: import.meta.env.VITE_PREVIEW_GATEWAY_URL ? 'docker' : 'sandpack',
+    previewMode: 'sandpack',
   };
 }
 
@@ -1172,10 +1214,6 @@ export async function generateAILaunchSite(
   const businessName = getBusinessName(config.blueprint.industry);
 
   onProgress?.({ stage: 'preparing', message: 'Interpreting business model...' });
-
-  // Generate deterministic template as reference/fallback
-  const deterministicVFS = generateSiteVFS(config);
-  const templateReference = deterministicVFS['/src/App.tsx'];
 
   // Build the color tokens and structured context from wizard selections
   const colorTokens = buildAestheticColorTokens(config.skin);
@@ -1204,9 +1242,6 @@ export async function generateAILaunchSite(
         source: config.blueprint.industry,
         savePattern: true,
         systemsBuildContext,
-        // Pass truncated deterministic template as content reference only
-        currentCode: templateReference?.substring(0, 8000),
-        templateAction: templateReference ? 'use-as-schema' : undefined,
       },
     });
 
@@ -1225,27 +1260,27 @@ export async function generateAILaunchSite(
         }
       } catch { /* use default */ }
       console.error('[aiLaunchService] Detailed error:', errorMsg);
-      onProgress?.({ stage: 'error', message: `${errorMsg} — using template fallback` });
+      onProgress?.({ stage: 'error', message: errorMsg });
       return {
-        files: deterministicVFS,
+        files: {},
         aiGenerated: false,
         businessName,
         error: errorMsg,
-        runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+        runtimeManifest: buildRuntimeManifest({}, config),
       };
     }
 
     // ai-code-assistant returns { content } with stringified JSON of files
     const rawContent: string = data?.content ?? data?.code ?? '';
     if (!rawContent) {
-      console.error('[aiLaunchService] Empty AI response — falling back to deterministic template');
-      onProgress?.({ stage: 'error', message: 'AI returned empty response — using template fallback' });
+      console.error('[aiLaunchService] Empty AI response');
+      onProgress?.({ stage: 'error', message: 'AI returned empty response' });
       return {
-        files: deterministicVFS,
+        files: {},
         aiGenerated: false,
         businessName,
-        error: 'AI response was empty — using template fallback',
-        runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+        error: 'AI returned empty response',
+        runtimeManifest: buildRuntimeManifest({}, config),
       };
     }
 
@@ -1254,14 +1289,14 @@ export async function generateAILaunchSite(
     // Parse the multi-file JSON response
     const aiFiles = parseAIResponse(rawContent);
     if (!aiFiles) {
-      console.error('[aiLaunchService] Could not parse AI response — falling back to deterministic template');
-      onProgress?.({ stage: 'error', message: 'AI response could not be parsed — using template fallback' });
+      console.error('[aiLaunchService] Could not parse AI response');
+      onProgress?.({ stage: 'error', message: 'AI response could not be parsed' });
       return {
-        files: deterministicVFS,
+        files: {},
         aiGenerated: false,
         businessName,
-        error: 'AI response invalid — using template fallback',
-        runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+        error: 'AI response could not be parsed',
+        runtimeManifest: buildRuntimeManifest({}, config),
       };
     }
 
@@ -1290,17 +1325,17 @@ export async function generateAILaunchSite(
     // Throws if critical App entry is missing — no silent recovery
     let normalizedFiles: Record<string, string>;
     try {
-      normalizedFiles = normalizeLaunchFiles(pathNormalized, deterministicVFS);
+      normalizedFiles = normalizeLaunchFiles(pathNormalized, colorTokens);
     } catch (normErr) {
       const errMsg = normErr instanceof Error ? normErr.message : 'Entrypoint normalization failed';
-      console.error('[aiLaunchService]', errMsg, '— falling back to deterministic template');
-      onProgress?.({ stage: 'error', message: `${errMsg} — using template fallback` });
+      console.error('[aiLaunchService]', errMsg);
+      onProgress?.({ stage: 'error', message: errMsg });
       return {
-        files: deterministicVFS,
+        files: {},
         aiGenerated: false,
         businessName,
-        error: `${errMsg} — using template fallback`,
-        runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+        error: errMsg,
+        runtimeManifest: buildRuntimeManifest({}, config),
       };
     }
 
@@ -1310,15 +1345,15 @@ export async function generateAILaunchSite(
     return { files: normalizedFiles, aiGenerated: true, businessName, runtimeManifest, systemsBuildContext };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : 'AI generation failed';
-    console.error('[aiLaunchService] AI generation failed:', errMsg, '— falling back to deterministic template');
-    onProgress?.({ stage: 'error', message: `${errMsg} — using template fallback` });
+    console.error('[aiLaunchService] AI generation failed:', errMsg);
+    onProgress?.({ stage: 'error', message: errMsg });
 
     return {
-      files: deterministicVFS,
+      files: {},
       aiGenerated: false,
       businessName,
-      error: `${errMsg} — using template fallback`,
-      runtimeManifest: buildRuntimeManifest(deterministicVFS, config),
+      error: errMsg,
+      runtimeManifest: buildRuntimeManifest({}, config),
     };
   }
 }

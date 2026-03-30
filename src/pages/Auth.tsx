@@ -13,6 +13,8 @@ const Auth = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -39,7 +41,7 @@ const Auth = () => {
     const password = formData.get("signup-password") as string;
     const fullName = formData.get("full-name") as string;
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -58,10 +60,24 @@ const Auth = () => {
         description: error.message,
         variant: "destructive",
       });
-    } else {
+    } else if (data.user && data.user.identities && data.user.identities.length === 0) {
+      // User already exists (Supabase returns empty identities)
+      toast({
+        title: "Account already exists",
+        description: "An account with this email already exists. Please sign in instead.",
+        variant: "destructive",
+      });
+    } else if (data.session) {
+      // Email confirmation disabled — user is immediately signed in
       toast({
         title: "Account created!",
-        description: "You can now sign in to your account.",
+        description: "Welcome to Unison Tasks!",
+      });
+    } else {
+      // Email confirmation required
+      toast({
+        title: "Check your email",
+        description: "We sent a confirmation link to " + email + ". Please confirm your email before signing in.",
       });
     }
   };
@@ -215,6 +231,65 @@ const Auth = () => {
                   </span>
                 ) : "Sign In"}
               </Button>
+              <div className="text-center mt-3">
+                {!showForgotPassword ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(true)}
+                    className="text-sm text-cyan-400/60 hover:text-cyan-400 transition-colors"
+                  >
+                    Forgot your password?
+                  </button>
+                ) : (
+                  <div className="mt-4 p-4 rounded-lg border border-cyan-500/20 bg-[#0a0a12] space-y-3">
+                    <p className="text-sm text-gray-400">Enter your email to receive a password reset link.</p>
+                    <Input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      className={cn(
+                        "bg-[#12121e] border-cyan-500/20 text-white",
+                        "placeholder:text-gray-500",
+                        "focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40"
+                      )}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowForgotPassword(false)}
+                        className="text-gray-500 hover:text-gray-300"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={loading || !resetEmail}
+                        className="bg-cyan-500 text-black hover:bg-cyan-400 flex-1"
+                        onClick={async () => {
+                          setLoading(true);
+                          const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+                            redirectTo: `${window.location.origin}/auth/reset-password`,
+                          });
+                          setLoading(false);
+                          if (error) {
+                            toast({ title: "Reset failed", description: error.message, variant: "destructive" });
+                          } else {
+                            toast({ title: "Check your email", description: "If an account exists with that email, you'll receive a password reset link." });
+                            setShowForgotPassword(false);
+                            setResetEmail("");
+                          }
+                        }}
+                      >
+                        {loading ? "Sending..." : "Send Reset Link"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </form>
           </TabsContent>
           

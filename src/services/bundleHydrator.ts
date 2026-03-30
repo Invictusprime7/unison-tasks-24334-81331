@@ -144,7 +144,7 @@ export function hydrateBundleFromLaunch(
   const manifest = options?.runtimeManifest;
   const homePageId = pages.find(p => p.path === '/')?.pageId ?? pages[0]?.pageId ?? 'home';
   bundle.runtime = {
-    preferredEngine: manifest?.previewMode === 'docker' ? 'worker' : 'vfs',
+    preferredEngine: 'vfs',
     enginesAllowed: ['simple', 'vfs', 'worker'],
     entry: {
       type: 'react' as const,

@@ -3,8 +3,8 @@ import {
   Zap, 
   Bot, 
   Workflow, 
-  Shield, 
-  Sparkles,
+  Crown, 
+  Paintbrush,
   CreditCard, 
   BarChart3, 
   Webhook, 
@@ -21,33 +21,33 @@ export interface PlatformFeature {
 export const platformFeatures: PlatformFeature[] = [
   {
     icon: Layers,
-    title: "Ready-to-Run Systems",
-    description: "Not just templates. Complete business systems with booking, payments, and CRM pre-wired."
+    title: "11 Industry Templates",
+    description: "Salon, restaurant, agency, e-commerce, contractor, portfolio, blog, medical, SaaS, startup, and landing pages — all production-ready."
   },
   {
-    icon: Zap,
-    title: "Buttons That Work",
-    description: "Every button knows what it does. Forms submit, carts update, bookings confirm—automatically."
+    icon: Crown,
+    title: "Premium Tiers",
+    description: "Standard and premium templates per industry. Premium includes advanced layouts, animations, and conversion-optimized sections."
+  },
+  {
+    icon: Paintbrush,
+    title: "Design Presets",
+    description: "Apply editorial, minimal, luxury, playful, retro, cyberpunk, or glass design presets to any template before launch."
   },
   {
     icon: Bot,
-    title: "AI That Understands Context",
-    description: "Generate pages, copy, and features that understand your business type and goals."
+    title: "AI Generation",
+    description: "Describe your business and AI builds a full multi-page site with industry-aware content and working forms."
+  },
+  {
+    icon: Zap,
+    title: "Intent-Wired Buttons",
+    description: "Every button, form, and CTA is pre-wired to real actions — booking, payments, lead capture, CRM updates."
   },
   {
     icon: Workflow,
-    title: "Built-in Automation",
-    description: "Lead capture, email notifications, and CRM updates happen without extra setup."
-  },
-  {
-    icon: Shield,
-    title: "Enterprise-Ready",
-    description: "Secure infrastructure, custom domains, and SSO for growing teams."
-  },
-  {
-    icon: Sparkles,
-    title: "One-Click Launch",
-    description: "From template to live website in minutes. No deployment headaches."
+    title: "Built-in Backend",
+    description: "Backend packs install automatically. Database tables, edge functions, and automations — no setup required."
   }
 ];
 

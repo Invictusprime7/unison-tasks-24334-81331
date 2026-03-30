@@ -794,6 +794,7 @@ import { useCanvasHistory } from "@/hooks/useCanvasHistory";
 import { useCodeHistory } from "@/hooks/useCodeHistory";
 import { ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, ArrowLeft } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
 import {
   Dialog,
   DialogContent,
@@ -949,6 +950,14 @@ export default function App() {
   
   // Business Setup Suggestions - shown after AI generates a site/template
   const [showBusinessSetup, setShowBusinessSetup] = useState(false);
+
+  // Auto-open SystemLauncher when no pre-generated content is provided
+  const hasIncomingContent = !!(
+    (location.state as any)?.vfsFiles ||
+    (location.state as any)?.generatedCode ||
+    (location.state as any)?.generatedTemplate
+  );
+  const [showLauncher, setShowLauncher] = useState(!hasIncomingContent);
 
   // Parse template when previewCode changes (but NOT when customizer is applying overrides)
   useEffect(() => {
@@ -2110,6 +2119,7 @@ export default function ${componentName}Page() {
           // Check if there's meaningful content (not just default)
           const isDefaultContent = draft.code.includes('AI-generated code will appear here');
           if (!isDefaultContent) {
+            setShowLauncher(false);
             setPreviewCode(draft.code);
             if (draft.editorCode) {
               setEditorCode(draft.editorCode);
@@ -4010,6 +4020,9 @@ ${html}
 
   return (
     <div ref={mainContainerRef} className="flex flex-col h-screen bg-[#1a0a14]">
+      {/* SystemLauncher — auto-opens when no pre-generated content */}
+      <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
+
       {/* Interactive Element Highlighting Styles */}
       <InteractiveElementHighlight isInteractiveMode={isInteractiveMode} />
 

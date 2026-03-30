@@ -3966,9 +3966,9 @@ ${sectionsJsx}
       <InteractiveElementHighlight isInteractiveMode={isInteractiveMode} />
 
       {/* Full-Width Top Toolbar */}
-      <div className="h-12 flex-shrink-0 bg-[#0a0a14] border-b-2 border-fuchsia-500/50 flex items-center px-4 gap-3 shadow-[0_4px_20px_rgba(255,0,255,0.15)] z-20">
+      <div className="h-10 sm:h-12 flex-shrink-0 bg-[#0a0a14] border-b-2 border-fuchsia-500/50 flex items-center px-1.5 sm:px-4 gap-1 sm:gap-3 shadow-[0_4px_20px_rgba(255,0,255,0.15)] z-20 overflow-x-auto overflow-y-hidden scrollbar-none">
         {/* Left Section: AI Toggle, Back, Device, Mode */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {/* AI Panel Toggle Button */}
           <Button
             variant="ghost"
@@ -3982,10 +3982,11 @@ ${sectionsJsx}
             )}
             title={aiPanelOpen ? "Close AI Panel" : "Open AI Panel"}
           >
-            <span className="text-sm">⚡ AI</span>
+            <span className="text-sm hidden sm:inline">⚡ AI</span>
+            <span className="text-sm sm:hidden">⚡</span>
           </Button>
           
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           <Button
             variant="ghost"
@@ -3997,15 +3998,15 @@ ${sectionsJsx}
             <ArrowLeft className="h-4 w-4" />
           </Button>
           
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Device Breakpoints */}
-          <div className="flex items-center gap-0.5 bg-[#0d0d18] rounded-lg p-1">
+          <div className="flex items-center gap-0.5 bg-[#0d0d18] rounded-lg p-0.5 sm:p-1">
             <Button
               variant={device === "desktop" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("desktop")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "desktop" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-6 w-6 sm:h-7 sm:w-7 rounded-md transition-all duration-200", device === "desktop" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
               title="Desktop"
             >
               <Monitor className="h-3.5 w-3.5" />
@@ -4014,7 +4015,7 @@ ${sectionsJsx}
               variant={device === "tablet" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("tablet")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "tablet" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-6 w-6 sm:h-7 sm:w-7 rounded-md transition-all duration-200", device === "tablet" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
               title="Tablet"
             >
               <Tablet className="h-3.5 w-3.5" />
@@ -4023,14 +4024,14 @@ ${sectionsJsx}
               variant={device === "mobile" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("mobile")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "mobile" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-6 w-6 sm:h-7 sm:w-7 rounded-md transition-all duration-200", device === "mobile" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
               title="Mobile"
             >
               <Smartphone className="h-3.5 w-3.5" />
             </Button>
           </div>
           
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Mode Toggle */}
           <SimpleModeToggle
@@ -4064,7 +4065,7 @@ ${sectionsJsx}
           />
           
           {/* Left/Right Panel Toggles */}
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           <Button
             variant="ghost"
             size="sm"

@@ -485,20 +485,9 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     sandpackFiles['/template.css'] = '/* template styles */\n';
   }
 
-  // Ensure index.html exists (minimal — click interceptor is now in main.tsx)
+  // Ensure index.html exists with Tailwind CDN + semantic theme config
   if (!sandpackFiles['/index.html']) {
-    sandpackFiles['/index.html'] = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Preview</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body>
-  <div id="root"></div>
-</body>
-</html>`;
+    sandpackFiles['/index.html'] = PREVIEW_INDEX_HTML;
   }
 
   console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));

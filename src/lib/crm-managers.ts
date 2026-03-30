@@ -176,7 +176,7 @@ function createBookingManager(businessId: string): IntentManagers['booking'] {
             customer_name: data.customerName,
             customer_email: data.customerEmail,
             customer_phone: data.customerPhone,
-            service_name: data.serviceName || 'Consultation',
+            service_name: (data as any).serviceName || 'Consultation',
             booking_date: data.datetime ? new Date(data.datetime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
             booking_time: data.datetime ? new Date(data.datetime).toTimeString().slice(0, 8) : '09:00:00',
             notes: data.notes,

@@ -794,6 +794,7 @@ import { useCanvasHistory } from "@/hooks/useCanvasHistory";
 import { useCodeHistory } from "@/hooks/useCodeHistory";
 import { ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, ArrowLeft } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
 import {
   Dialog,
   DialogContent,

@@ -23,11 +23,11 @@ const ALLOWED_IMPORTS = new Set([
   'inngest',
 ]);
 
-const BASE_CSS = `
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
+/**
+ * Complete set of semantic CSS variables required for Tailwind utility classes
+ * (bg-primary, text-foreground, etc.) to resolve correctly in the preview.
+ */
+const SEMANTIC_CSS_VARS = `
 :root {
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
@@ -50,6 +50,14 @@ const BASE_CSS = `
   --ring: 221.2 83.2% 53.3%;
   --radius: 0.75rem;
 }
+`;
+
+const BASE_CSS = `
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+${SEMANTIC_CSS_VARS}
 
 * {
   border-color: hsl(var(--border));

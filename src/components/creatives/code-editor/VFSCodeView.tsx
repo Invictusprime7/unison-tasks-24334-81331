@@ -289,7 +289,6 @@ function InlinePreview({ files, className, device }: InlinePreviewProps) {
           files={sandpackFiles}
           customSetup={{ dependencies }}
           options={{
-            externalResources: ['https://cdn.tailwindcss.com'],
             autorun: true,
             autoReload: true,
           }}

@@ -64,6 +64,77 @@ body {
 }
 `;
 
+/**
+ * index.html with Tailwind CDN configured to recognize semantic design tokens.
+ * Without this config, classes like bg-primary, text-foreground, bg-muted etc.
+ * are unknown to the CDN and compile to nothing — causing invisible elements.
+ */
+const PREVIEW_INDEX_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            border: 'hsl(var(--border))',
+            input: 'hsl(var(--input))',
+            ring: 'hsl(var(--ring))',
+            background: 'hsl(var(--background))',
+            foreground: 'hsl(var(--foreground))',
+            primary: {
+              DEFAULT: 'hsl(var(--primary))',
+              foreground: 'hsl(var(--primary-foreground))',
+            },
+            secondary: {
+              DEFAULT: 'hsl(var(--secondary))',
+              foreground: 'hsl(var(--secondary-foreground))',
+            },
+            destructive: {
+              DEFAULT: 'hsl(var(--destructive))',
+              foreground: 'hsl(var(--destructive-foreground))',
+            },
+            muted: {
+              DEFAULT: 'hsl(var(--muted))',
+              foreground: 'hsl(var(--muted-foreground))',
+            },
+            accent: {
+              DEFAULT: 'hsl(var(--accent))',
+              foreground: 'hsl(var(--accent-foreground))',
+            },
+            popover: {
+              DEFAULT: 'hsl(var(--popover))',
+              foreground: 'hsl(var(--popover-foreground))',
+            },
+            card: {
+              DEFAULT: 'hsl(var(--card))',
+              foreground: 'hsl(var(--card-foreground))',
+            },
+          },
+          borderRadius: {
+            lg: 'var(--radius)',
+            md: 'calc(var(--radius) - 2px)',
+            sm: 'calc(var(--radius) - 4px)',
+          },
+          fontFamily: {
+            heading: 'var(--font-heading, ui-sans-serif, system-ui, sans-serif)',
+            body: 'var(--font-body, ui-sans-serif, system-ui, sans-serif)',
+          },
+        },
+      },
+    }
+  <\/script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>`;
+
+
 const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
   const bridgeWindow = window as Window & { __lovablePreviewNavBridgeInstalled?: boolean };
   if (bridgeWindow.__lovablePreviewNavBridgeInstalled) return;

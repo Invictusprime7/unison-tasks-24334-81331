@@ -17,6 +17,8 @@ import {
   type RecentProject
 } from "@/components/home/sections";
 import SystemLauncher from "@/components/onboarding/SystemLauncher";
+import { createQuickBlueprint, blueprintToLaunchConfig } from "@/services/blueprintCompiler";
+import { generateAILaunchSite } from "@/services/aiLaunchService";
 
 const Index = () => {
   const navigate = useNavigate();

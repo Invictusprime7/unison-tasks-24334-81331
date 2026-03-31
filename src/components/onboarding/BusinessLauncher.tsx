@@ -217,6 +217,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   const [buildProgress, setBuildProgress] = useState(0);
   const [buildStatus, setBuildStatus] = useState("");
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [generatedVfsFiles, setGeneratedVfsFiles] = useState<Record<string, string> | null>(null);
 
   const resetFlow = useCallback(() => {
     setStep("prompt");
@@ -225,6 +226,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     setBuildProgress(0);
     setBuildStatus("");
     setGeneratedCode(null);
+    setGeneratedVfsFiles(null);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -331,14 +333,22 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       setBuildStatus("Finalizing pages...");
       await new Promise(r => setTimeout(r, 300));
 
-      // Prefer React VFS files; fallback to single code string
-      const reactFiles = data?.files;
-      const code = reactFiles?.["src/App.tsx"] || reactFiles?.["App.tsx"] || data?.code || "";
+      // Prefer React VFS files; fallback to single code string only if structured files are missing
+      const reactFiles = data?.files && typeof data.files === "object"
+        ? Object.fromEntries(
+            Object.entries(data.files as Record<string, string>).map(([path, content]) => [
+              path.startsWith("/") ? path : `/${path}`,
+              content,
+            ])
+          )
+        : null;
+      const code = reactFiles?.["/src/App.tsx"] || reactFiles?.["/App.tsx"] || data?.code || "";
       if (!code || code.length < 50) {
         throw new Error("Failed to generate website code");
       }
 
       setGeneratedCode(code);
+      setGeneratedVfsFiles(reactFiles);
       
       setBuildProgress(90);
       setBuildStatus("Preparing builder...");
@@ -399,6 +409,20 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   };
 
   const handleOpenBuilder = async () => {
+    if (generatedVfsFiles && Object.keys(generatedVfsFiles).length > 0) {
+      navigate("/web-builder", {
+        state: {
+          vfsFiles: generatedVfsFiles,
+          templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
+          aesthetic: "modern",
+          startInPreview: true,
+          systemType: selectedChip ? getSystemTypeForChip(selectedChip) : undefined,
+        },
+      });
+      handleClose();
+      return;
+    }
+
     if (generatedCode) {
       // Parse multi-page output if present
       const { hasMultiPageMarkers, parseMultiPageOutput, generateMultiPageVFS } = await import('@/utils/redirectPageGenerator');

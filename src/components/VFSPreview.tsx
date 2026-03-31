@@ -227,11 +227,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       return normalizedActiveFile;
     }
 
-    const candidates = ['/App.tsx', '/App.jsx', '/main.tsx', '/index.tsx', '/main.jsx', '/index.jsx'];
+    const candidates = ['/App.tsx', '/App.jsx', '/index.tsx', '/index.jsx'];
     for (const candidate of candidates) {
       if (sandpackFiles[candidate]) return candidate;
     }
-    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/main.tsx' && p !== '/index.tsx');
+    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/index.tsx');
     return firstCode || '/App.tsx';
   }, [sandpackFiles, normalizedActiveFile]);
   

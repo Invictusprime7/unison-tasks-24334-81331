@@ -2135,15 +2135,13 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
       ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [] } as ResearchResult)
       : performPromptResearch(userPromptText);
 
-    // For navPageGen requests, ALSO run targeted industry page research in parallel
-    const navResearchPromise: Promise<string> = (navPageGen && systemType)
+    // For navPageGen requests (NOT fast wizard launches), run targeted industry page research
+    const navResearchPromise: Promise<string> = (navPageGen && !fastTemplateReact && systemType)
       ? (async () => {
           try {
             const profile = getIndustryProfile(systemType ?? null);
             const pattern = matchPagePattern(profile, navPageName ?? '', navLabel ?? '');
-            // Static context (always fast)
             const staticCtx = buildIndustryPageContext(profile, pattern);
-            // Live DuckDuckGo research using pattern-specific queries (run both in parallel)
             const queries = getResearchQueries(pattern);
             const liveResults = await Promise.allSettled(
               queries.map(q => performPromptResearch(q))

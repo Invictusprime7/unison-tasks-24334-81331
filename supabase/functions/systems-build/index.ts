@@ -822,41 +822,12 @@ ${userPrompt ? `Additional requirements: ${userPrompt}` : ""}`;
           } catch { /* fall through */ }
         }
         
-        // If content is raw HTML, convert to native JSX React component
-        const looksLikeRawHtml = filesJson.includes("<!DOCTYPE") || filesJson.includes("<html") || 
-          filesJson.includes("<header") || filesJson.includes("<!--") || 
-          / class="[^"]*"/.test(filesJson) || filesJson.includes("<nav") || filesJson.includes("<footer");
-        if (looksLikeRawHtml) {
-          console.warn("[systems-build] Raw HTML detected, converting to native JSX component");
-          
-          const convertedFiles = {
-            "src/App.tsx": htmlToReactComponent(filesJson),
-          };
-          
-          return new Response(
-            JSON.stringify({
-              files: convertedFiles,
-              entryPoint: "src/App.tsx",
-              framework: "react",
-              buildTool: "vite",
-              _meta: { ai_generated: true, outputFormat: "react", html_converted: true },
-            }),
-            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-        
-        // Truly unknown format — wrap in a proper React component so Sandpack can render it
-        console.warn("[systems-build] Unknown format — wrapping raw content in React component");
-        const wrappedComponent = htmlToReactComponent(filesJson);
         return new Response(
           JSON.stringify({
-            files: { "src/App.tsx": wrappedComponent },
-            entryPoint: "src/App.tsx",
-            framework: "react",
-            buildTool: "vite",
-            _meta: { ai_generated: true, outputFormat: "react", parse_error: true, wrapped: true },
+            error: "Launcher generation must return structured React VFS JSON from the industry theme pipeline",
+            details: String(parseError),
           }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
     }

@@ -942,26 +942,11 @@ function EmptyState({
         <div className="flex gap-3 justify-center flex-wrap">
           <Button
             variant="default"
-            onClick={() => {
-              importFiles({
-                '/src/App.tsx': `import React from 'react';
-
-export default function App() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-gray-800 mb-4">Hello World</h1>
-        <p className="text-gray-600">Start editing to build something amazing!</p>
-      </div>
-    </div>
-  );
-}`,
-              });
-            }}
+            onClick={() => window.location.href = '/onboarding'}
             className="gap-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/20 border-0"
           >
-            <Plus className="w-4 h-4" />
-            Create New File
+            <Sparkles className="w-4 h-4" />
+            Open Launcher
           </Button>
         </div>
       </motion.div>

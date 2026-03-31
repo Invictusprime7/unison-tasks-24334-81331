@@ -445,8 +445,6 @@ export default function App() {
 }
 `;
 }
-`;
-}
 
 function pickPrimaryComponentPath(paths: string[]): string | null {
   const uniquePaths = [...new Set(paths)].filter((path) => path !== '/hooks-shim.ts');

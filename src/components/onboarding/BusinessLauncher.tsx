@@ -496,19 +496,19 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       <Progress value={buildProgress} className="w-full" />
       
       <div className="text-sm text-muted-foreground space-y-1">
-        {buildProgress >= 15 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> Business created</p>}
-        {buildProgress >= 30 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> CRM configured</p>}
-        {buildProgress >= 50 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> Pages generated</p>}
-        {buildProgress >= 70 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> Buttons wired</p>}
-        {buildProgress >= 85 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> Automations active</p>}
+        {buildProgress >= 15 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> Business created</p>}
+        {buildProgress >= 30 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> CRM configured</p>}
+        {buildProgress >= 50 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> Pages generated</p>}
+        {buildProgress >= 70 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> Buttons wired</p>}
+        {buildProgress >= 85 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> Automations active</p>}
       </div>
     </div>
   );
 
   const renderCompleteStep = () => (
     <div className="space-y-6 text-center py-8">
-      <div className="w-20 h-20 mx-auto rounded-full bg-green-100 flex items-center justify-center">
-        <Check className="h-10 w-10 text-green-600" />
+      <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+        <Check className="h-10 w-10 text-primary" />
       </div>
       
       <div>

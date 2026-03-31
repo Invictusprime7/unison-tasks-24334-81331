@@ -2834,6 +2834,13 @@ export default ${componentName}Page;`;
       return;
     }
 
+    if (navState?.startInPreview && !navState?.vfsFiles) {
+      toast.error('Launcher preview requires structured VFS files from the industry pipeline.');
+      importedRouteStateRef.current = navStateSignature;
+      window.history.replaceState({}, document.title);
+      return;
+    }
+
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (navState?.vfsFiles) {
       const vfsFiles = { ...navState.vfsFiles };

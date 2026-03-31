@@ -34,9 +34,8 @@ import {
   randomFontPairing,
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
-import { getCompositionReactCode, getCompositionMeta, getCompositionContentContext } from "@/utils/compositionReference";
+import { getCompositionReactCode, getCompositionContentContext } from "@/utils/compositionReference";
 import {
-  buildFullPagePrompt,
   getAllReferences,
   getReferencesForIndustry,
   INDUSTRY_CONTEXTS,
@@ -216,6 +215,39 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
   }
 
   return cards;
+}
+
+const AI_MESSAGE_CHAR_LIMIT = 8_500;
+const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
+const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
+
+function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
+function buildTemplateGuidance(card: TemplateCardData | null): string {
+  if (!card) return "";
+
+  const industryContext = INDUSTRY_CONTEXTS.find((entry) => entry.industry === card.industry);
+  const displayLabel = INDUSTRY_DISPLAY[card.industry]?.label || card.industry;
+  const sectionFlow = card.sectionTypes.length > 0
+    ? card.sectionTypes
+    : industryContext?.sectionFlow || [];
+
+  return [
+    `Template: ${card.label}`,
+    `Industry: ${displayLabel}`,
+    `Description: ${card.description}`,
+    sectionFlow.length > 0 ? `Preferred sections: ${sectionFlow.join(" → ")}` : "",
+    card.traits.length > 0 ? `Visual traits: ${card.traits.join(", ")}` : "",
+    industryContext?.toneDirective ? `Tone direction: ${industryContext.toneDirective}` : "",
+    industryContext?.conversionGoals?.length ? `Conversion goals: ${industryContext.conversionGoals.join(", ")}` : "",
+    industryContext?.trustSignals?.length ? `Trust signals: ${industryContext.trustSignals.join(", ")}` : "",
+    "Use a premium image-first hero, semantic sections, one H1, and HSL design tokens only.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // Mini preview component
@@ -433,31 +465,33 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         design,
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
+        template_sections: selectedTemplate?.sectionTypes,
       };
 
       const themeInstruction = selectedTheme
         ? `\n\n🎨 VISUAL AESTHETIC: ${selectedTheme.label}\n${selectedTheme.styleDirective}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ""}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
         : "";
       const customInstruction = customPrompt.trim()
-        ? `\n\nADDITIONAL INSTRUCTIONS: ${customPrompt.trim()}\n`
+        ? `\n\nADDITIONAL INSTRUCTIONS: ${clampPromptText(customPrompt.trim(), CUSTOM_INSTRUCTION_CHAR_LIMIT)}\n`
         : "";
 
-      // Use selected template's industry for premium references
-      const templateIndustry = selectedTemplate?.industry;
-      const premiumRefPrompt = templateIndustry && templateIndustry !== "universal"
-        ? buildFullPagePrompt(templateIndustry)
-        : "";
-
-      const contentContext = getCompositionContentContext(primaryCategory);
+      const contentContext = clampPromptText(
+        getCompositionContentContext(primaryCategory) || "",
+        INDUSTRY_CONTEXT_CHAR_LIMIT
+      );
       const industryContextBlock = contentContext
         ? `\n\n📋 INDUSTRY CONTENT CONTEXT:\n${contentContext}\n`
         : "";
 
-      const templateContext = selectedTemplate
-        ? `\n\nSELECTED TEMPLATE: "${selectedTemplate.label}" (${selectedTemplate.industry})\nSections: ${selectedTemplate.sectionTypes.join(", ")}\nTraits: ${selectedTemplate.traits.join(", ")}\n`
+      const templateGuidance = buildTemplateGuidance(selectedTemplate);
+      const templateContext = templateGuidance
+        ? `\n\n--- TEMPLATE GUIDANCE ---\n${templateGuidance}\n`
         : "";
 
-      const userPrompt = `Create a premium ${primaryCategory} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}${premiumRefPrompt ? `\n\n--- PREMIUM SECTION REFERENCES ---\n${premiumRefPrompt}` : ""}`;
+      const userPrompt = clampPromptText(
+        `Create a premium ${primaryCategory} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}`,
+        AI_MESSAGE_CHAR_LIMIT
+      );
 
       const compositionCode = getCompositionReactCode(primaryCategory);
 

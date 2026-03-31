@@ -283,7 +283,6 @@ serve(async (req: Request) => {
       navLabel: z.string().max(120).nullish(),
       // Systems Build Context — mirrors the full BlueprintSchema from systems-build (snake_case).
       // When provided, every generation request benefits from brand, palette, intents & section layout.
-      // When absent but systemType is present a minimal default blueprint is auto-synthesised below.
       systemsBuildContext: z.object({
         version: z.string().optional(),
         identity: z.object({
@@ -424,11 +423,8 @@ Generate a site that matches the user's established design preferences while bei
 ` : '';
 
     // Build systems-build blueprint context — brand, palette, intents, template structure.
-    // Auto-synthesise a minimal default when systemType is present but no explicit blueprint was sent.
-    const resolvedBlueprint = systemsBuildContext ?? (systemType ? {
-      identity: { industry: systemType },
-      brand: { business_name: templateName ?? systemType },
-    } : null);
+    // Launcher generation must pass the explicit themed blueprint instead of auto-synthesised defaults.
+    const resolvedBlueprint = systemsBuildContext ?? null;
 
     const systemsBuildContextText = resolvedBlueprint ? (() => {
       const { brand, identity, design, intents, template_sections, template_intents } = resolvedBlueprint as {

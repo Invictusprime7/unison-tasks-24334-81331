@@ -204,17 +204,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 `;
 
-const DEFAULT_APP = `import React from 'react';
-
-export default function App() {
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-background">
-      <p className="text-muted-foreground">Start coding to see preview</p>
-    </div>
-  );
-}
-`;
-
 const HOOKS_SHIM = `
 import { useState as reactUseState, useEffect as reactUseEffect, useCallback as reactUseCallback, useMemo as reactUseMemo, useRef as reactUseRef, useContext as reactUseContext, createContext } from 'react';
 
@@ -438,6 +427,24 @@ export default function App() {
 
   return <PreviewEntry />;
 }
+
+function createMissingEntryApp(): string {
+  return `import React from 'react';
+
+export default function App() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
+      <div className="max-w-lg rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+        <h1 className="text-xl font-semibold text-foreground">Invalid Launcher preview payload</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          The preview did not receive a renderable industry-theme React entry file from Launcher.
+        </p>
+      </div>
+    </div>
+  );
+}
+`;
+}
 `;
 }
 
@@ -644,10 +651,10 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
   if (!hasApp) {
     const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
 
-    if (!hasMain && primaryComponentPath) {
+    if (primaryComponentPath) {
       sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
-    } else if (!primaryComponentPath) {
-      sandpackFiles['/App.tsx'] = DEFAULT_APP;
+    } else {
+      sandpackFiles['/App.tsx'] = createMissingEntryApp();
     }
   }
   if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;

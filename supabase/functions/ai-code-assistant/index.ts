@@ -2130,7 +2130,10 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
     const userPrompt = userPromptText.toLowerCase();
     
     // Perform web research in parallel (non-blocking) for design/code context
-    const researchPromise = performPromptResearch(userPromptText);
+    // SKIP for fast-path wizard launches to reduce latency
+    const researchPromise = fastGenerationMode
+      ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [] } as ResearchResult)
+      : performPromptResearch(userPromptText);
 
     // For navPageGen requests, ALSO run targeted industry page research in parallel
     const navResearchPromise: Promise<string> = (navPageGen && systemType)

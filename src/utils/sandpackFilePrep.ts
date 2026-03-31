@@ -6,6 +6,7 @@
  */
 
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
+import { LAUNCHER_BASE_THEME } from '@/sections/themes';
 
 const ALLOWED_IMPORTS = new Set([
   'react',
@@ -22,6 +23,8 @@ const ALLOWED_IMPORTS = new Set([
   'recharts',
   'inngest',
 ]);
+
+const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 
 /**
  * Complete set of semantic CSS variables required for Tailwind utility classes

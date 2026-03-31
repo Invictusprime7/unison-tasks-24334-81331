@@ -231,22 +231,18 @@ body {
 
 const DEFAULT_APP_TSX = `import React from 'react';
 
-function App() {
+export default function App() {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          Welcome to Unison Preview
-        </h1>
-        <p className="text-gray-600">
-          Start editing to see live changes
+    <div className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
+      <div className="max-w-lg rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+        <h1 className="text-xl font-semibold text-foreground">No Project Loaded</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Use the Launcher to generate an industry-themed website.
         </p>
       </div>
     </div>
   );
-}
-
-export default App;`;
+}`;
 
 // ============================================
 // REQUIRED ROOT FILES

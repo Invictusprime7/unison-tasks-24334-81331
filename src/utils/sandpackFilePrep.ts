@@ -6,6 +6,7 @@
  */
 
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
+import { LAUNCHER_BASE_THEME } from '@/sections/themes';
 
 const ALLOWED_IMPORTS = new Set([
   'react',
@@ -22,6 +23,8 @@ const ALLOWED_IMPORTS = new Set([
   'recharts',
   'inngest',
 ]);
+
+const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 
 /**
  * Complete set of semantic CSS variables required for Tailwind utility classes
@@ -605,6 +608,14 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
 
     // Fix imports in content to match flattened paths
     let processedContent = content;
+
+    // Repair legacy/generated payloads that serialized THEME as undefined/null.
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && /const\s+THEME\s*=\s*(undefined|null);/.test(processedContent)) {
+      processedContent = processedContent.replace(
+        /const\s+THEME\s*=\s*(undefined|null);/,
+        `const THEME = ${LAUNCHER_THEME_JSON};`
+      );
+    }
 
     // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {

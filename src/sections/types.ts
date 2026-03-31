@@ -308,7 +308,7 @@ export interface TemplateComposition {
   category: string;
   industry: string;
   description: string;
-  theme: ThemeTokens;
+  theme?: ThemeTokens | null;
   sections: SectionEntry[];
   /** Optional global CSS for advanced effects (keyframes, scroll-reveal) */
   globalStyles?: string;

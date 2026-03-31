@@ -410,13 +410,31 @@ function createProxyApp(targetPath: string): string {
   return `import React from 'react';
 import * as PreviewEntryModule from '${importPath}';
 
-const PreviewEntry = (PreviewEntryModule.default ?? Object.values(PreviewEntryModule)[0]) as React.ComponentType | undefined;
+// Robust component discovery: prefer default export, then find first PascalCase function/class component
+function findRenderableComponent(mod) {
+  if (mod.default && (typeof mod.default === 'function' || (typeof mod.default === 'object' && mod.default.$$typeof))) {
+    return mod.default;
+  }
+  for (const [key, value] of Object.entries(mod)) {
+    if (key === '__esModule' || key === 'default') continue;
+    if (/^[A-Z]/.test(key) && (typeof value === 'function' || (typeof value === 'object' && value !== null && value.$$typeof))) {
+      return value;
+    }
+  }
+  return null;
+}
+
+const PreviewEntry = findRenderableComponent(PreviewEntryModule);
 
 export default function App() {
   if (!PreviewEntry) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
-        <p className="text-muted-foreground">Preview entry is missing a renderable component.</p>
+      <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui' }}>
+        <div style={{ textAlign: 'center', maxWidth: 420, padding: 32 }}>
+          <h2 style={{ fontSize: 18, marginBottom: 8 }}>No renderable component found</h2>
+          <p style={{ color: '#888', fontSize: 14 }}>The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.</p>
+          <p style={{ color: '#aaa', fontSize: 12, marginTop: 12 }}>Source: ${targetPath}</p>
+        </div>
       </div>
     );
   }
@@ -424,6 +442,7 @@ export default function App() {
   return <PreviewEntry />;
 }
 `;
+}
 }
 
 function createMissingEntryApp(): string {

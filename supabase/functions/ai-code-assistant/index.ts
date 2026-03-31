@@ -2291,7 +2291,7 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
     // inside <thinking>…</thinking> before producing their final answer.
     // The tags are stripped from the returned content and forwarded to the UI separately.
     // For navPageGen requests (on-demand page clicks), skip thinking to reduce latency.
-    const thinkingInstruction = navPageGen ? '' : `
+    const thinkingInstruction = fastGenerationMode ? '' : `
 
 [REASONING REQUIREMENT]
 Before writing your final answer, reason through the problem step-by-step inside <thinking> tags.

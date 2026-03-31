@@ -48,6 +48,9 @@ export const SANDPACK_DEPENDENCIES: Record<string, string> = {
   '@radix-ui/react-menubar': 'latest',
   '@radix-ui/react-navigation-menu': 'latest',
 
+  // Icons
+  'lucide-react': 'latest',
+
   // Animation
   'framer-motion': 'latest',
 

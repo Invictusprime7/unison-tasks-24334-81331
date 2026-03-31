@@ -3929,9 +3929,7 @@ ${html}
 
   // Scroll navigation functions — post message to iframe or scroll container
   const postScrollToIframe = useCallback((command: 'top' | 'bottom' | 'up' | 'down') => {
-    const iframe = useReactPreview
-      ? livePreviewRef.current?.getIframe?.()
-      : simplePreviewRef.current?.getIframe();
+    const iframe = livePreviewRef.current?.getIframe?.();
     if (iframe?.contentWindow) {
       try {
         const doc = iframe.contentDocument || iframe.contentWindow.document;

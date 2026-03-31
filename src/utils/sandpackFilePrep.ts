@@ -7,22 +7,9 @@
 
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
 import { LAUNCHER_BASE_THEME } from '@/sections/themes';
+import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 
-const ALLOWED_IMPORTS = new Set([
-  'react',
-  'react-dom',
-  'react-dom/client',
-  'react-router-dom',
-  'lucide-react',
-  'clsx',
-  'tailwind-merge',
-  'class-variance-authority',
-  '@radix-ui/react-slot',
-  'framer-motion',
-  'date-fns',
-  'recharts',
-  'inngest',
-]);
+const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
 
 const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 

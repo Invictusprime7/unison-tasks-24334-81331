@@ -39,6 +39,7 @@ import {
 } from '@/services/previewSession';
 import { createCodeSandbox, openInCodeSandbox, type CodeSandboxSession } from '@/services/codesandbox';
 import { getDependenciesForSandpack, type ExtractedDependencies } from '@/utils/dependencyExtractor';
+import { SANDPACK_DEPENDENCIES, SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 
 // ============================================================================
 // Types

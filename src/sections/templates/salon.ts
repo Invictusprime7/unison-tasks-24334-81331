@@ -1,17 +1,16 @@
 /**
- * Salon Booking Template — Minimal aesthetic
+ * Salon Booking Template — Theme provided by Launcher pipeline
  */
 import type { TemplateComposition } from '../types';
-import { THEME_MINIMAL_LIGHT } from '../themes';
 
 export const salonBooking: TemplateComposition = {
   id: 'salon-booking',
   name: 'Salon & Spa',
   category: 'salon',
   industry: 'salon',
-  description: 'Clean, minimal booking template for salons and spas',
+  description: 'Booking template for salons and spas — themed by Launcher',
   systemType: 'booking',
-  theme: THEME_MINIMAL_LIGHT,
+  theme: undefined as any, // Populated at runtime by Launcher aesthetic pipeline
   sections: [
     {
       id: 'nav',

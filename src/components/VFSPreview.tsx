@@ -205,16 +205,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   // Prepare Sandpack dependencies
   const sandpackDeps = useMemo(() => {
-    const baseDeps: Record<string, string> = {
-      react: '^18.3.1',
-      'react-dom': '^18.3.1',
-      'react-router-dom': '^6.20.0',
-      'lucide-react': 'latest',
-      'clsx': 'latest',
-      'tailwind-merge': 'latest',
-      'framer-motion': 'latest',
-    };
-    const { dependencies } = getDependenciesForSandpack(files, baseDeps);
+    const { dependencies } = getDependenciesForSandpack(files, SANDPACK_DEPENDENCIES);
     return dependencies;
   }, [files]);
   

@@ -4856,11 +4856,9 @@ ${html}
                     <div className="flex items-center gap-2">
                       <Eye className="w-4 h-4 text-slate-400" />
                       <span className="text-sm text-slate-500">Live Preview</span>
-                      {useReactPreview && (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                          <FileCode className="h-3 w-3" /> React Preview
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
+                        <FileCode className="h-3 w-3" /> React Preview
+                      </div>
                     </div>
                     <div className="flex items-center gap-1">
                       <Button

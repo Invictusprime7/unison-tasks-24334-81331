@@ -3361,16 +3361,12 @@ ${html}
     }
   }, [redoCode, canRedoCanvas, redoCanvas]);
 
-  // Manual refresh handler — works for both VFSPreview (React/Sandpack) and SimplePreview (srcdoc)
+  // Manual refresh handler — always uses VFSPreview (Sandpack)
   const handleRefreshPreview = useCallback(() => {
     setIsRefreshing(true);
-    if (useReactPreview && livePreviewRef.current) {
-      livePreviewRef.current.refresh();
-    } else if (simplePreviewRef.current) {
-      simplePreviewRef.current.refresh();
-    }
+    livePreviewRef.current?.refresh();
     setTimeout(() => setIsRefreshing(false), 600);
-  }, [useReactPreview]);
+  }, []);
 
   useEffect(() => {
     if (!canvasRef.current) return;

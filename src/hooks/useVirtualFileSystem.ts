@@ -1248,10 +1248,12 @@ export default ${componentName};`;
   }, []);
 
   // Load the full default React project template
+  // NOTE: This now loads the same empty structure — Launcher pipeline is the only way to load a template.
   const loadDefaultTemplate = useCallback(() => {
-    setNodes(DEFAULT_PROJECT_STRUCTURE);
-    setActiveFileId('app-tsx');
-    setOpenTabs(['app-tsx']);
+    console.warn('[VFS] loadDefaultTemplate is deprecated — use Launcher industry pipeline instead.');
+    setNodes(EMPTY_PROJECT_STRUCTURE);
+    setActiveFileId('');
+    setOpenTabs([]);
   }, []);
 
   // Check if VFS has any user files (not just folders)

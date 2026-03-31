@@ -364,6 +364,38 @@ function injectPreviewNavBridge(code: string, filePath: string): string {
   return `${PREVIEW_NAV_BRIDGE}\n__initLovablePreviewNavBridge();\n\n${code}`;
 }
 
+function getFileDirectory(filePath: string): string {
+  const normalized = filePath.startsWith('/') ? filePath : `/${filePath}`;
+  const lastSlash = normalized.lastIndexOf('/');
+  return lastSlash <= 0 ? '/' : normalized.slice(0, lastSlash);
+}
+
+function toRelativeSandpackImport(fromFilePath: string, targetPath: string): string {
+  const fromParts = getFileDirectory(fromFilePath).split('/').filter(Boolean);
+  const targetParts = targetPath.replace(/^\//, '').split('/').filter(Boolean);
+
+  let shared = 0;
+  while (
+    shared < fromParts.length &&
+    shared < targetParts.length &&
+    fromParts[shared] === targetParts[shared]
+  ) {
+    shared += 1;
+  }
+
+  const upLevels = fromParts.length - shared;
+  const downParts = targetParts.slice(shared);
+  const relativeParts = [...Array(upLevels).fill('..'), ...downParts];
+  const relativePath = relativeParts.join('/');
+
+  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+}
+
+function aliasModuleToRelativeImport(fromFilePath: string, aliasModulePath: string): string {
+  const normalizedModulePath = aliasModulePath.replace(/^@\//, '');
+  return toRelativeSandpackImport(fromFilePath, `/${normalizedModulePath}`);
+}
+
 /**
  * Wrap raw CSS content in a valid React component so Sandpack can render it.
  * Uses JSON.stringify to safely embed CSS as a string constant (avoids template literal parsing issues).
@@ -397,6 +429,7 @@ export function processCode(code: string, filePath: string): string {
   }
 
   let processed = code;
+  const hooksShimImport = toRelativeSandpackImport(filePath, '/hooks-shim');
 
   // Strip leaked markdown code-fence artifacts (```, </code></pre>)
   processed = processed.replace(/\s*```\s*$/g, '');
@@ -417,33 +450,27 @@ export function processCode(code: string, filePath: string): string {
     }
   );
 
-  // Handle @/ path alias imports — convert to relative paths for Sandpack
-  // Since /src/ is flattened to /, @/components/Foo → ./components/Foo
+  // Handle @/ path alias imports — convert to correct relative paths for flattened Sandpack files
   processed = processed.replace(
     /^(import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
     (match, importPrefix, modulePath, importSuffix) => {
-      // Hooks → shim
       if (modulePath.startsWith('hooks/') || modulePath === 'hooks') {
         const namedMatch = match.match(/import\s+\{([^}]+)\}/);
         const defaultMatch = match.match(/import\s+(\w+)\s+from/);
-        if (namedMatch) return `import { ${namedMatch[1]} } from './hooks-shim';`;
-        if (defaultMatch) return `import ${defaultMatch[1]} from './hooks-shim';`;
-        return `import hooks from './hooks-shim'; // [Preview] Shimmed: @/${modulePath}`;
+        if (namedMatch) return `import { ${namedMatch[1]} } from '${hooksShimImport}';`;
+        if (defaultMatch) return `import ${defaultMatch[1]} from '${hooksShimImport}';`;
+        return `import hooks from '${hooksShimImport}'; // [Preview] Shimmed: @/${modulePath}`;
       }
-      // Supabase → shim
+
       if (modulePath.startsWith('integrations/supabase')) {
         const namedMatch = match.match(/import\s+\{([^}]+)\}/);
         const defaultMatch = match.match(/import\s+(\w+)\s+from/);
-        if (namedMatch) return `import { ${namedMatch[1]} } from './hooks-shim';`;
-        if (defaultMatch) return `import ${defaultMatch[1]} from './hooks-shim';`;
-        return `import { supabase } from './hooks-shim'; // [Preview] Shimmed: @/${modulePath}`;
+        if (namedMatch) return `import { ${namedMatch[1]} } from '${hooksShimImport}';`;
+        if (defaultMatch) return `import ${defaultMatch[1]} from '${hooksShimImport}';`;
+        return `import { supabase } from '${hooksShimImport}'; // [Preview] Shimmed: @/${modulePath}`;
       }
-      // CSS imports — convert path
-      if (/\.(css|scss|less)$/.test(modulePath)) {
-        return `${importPrefix}./${modulePath}${importSuffix}`;
-      }
-      // All other @/ paths — convert to relative (files are flattened from /src/ to /)
-      return `${importPrefix}./${modulePath}${importSuffix}`;
+
+      return `${importPrefix}${aliasModuleToRelativeImport(filePath, `@/${modulePath}`)}${importSuffix}`;
     }
   );
 
@@ -454,20 +481,25 @@ export function processCode(code: string, filePath: string): string {
       const baseModule = modulePath.split('/')[0];
       if (ALLOWED_IMPORTS.has(modulePath) || ALLOWED_IMPORTS.has(baseModule)) return match;
       if (/\.(css|scss|less)$/.test(modulePath)) return match;
+
       if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
         if (modulePath.includes('hooks/')) {
           const importMatch = match.match(/import\s+(?:\{([^}]+)\}|([\w]+))/);
           if (importMatch) {
             const namedImports = importMatch[1];
             const defaultImport = importMatch[2];
-            if (namedImports) return `import { ${namedImports} } from './hooks-shim';`;
-            if (defaultImport) return `import ${defaultImport} from './hooks-shim';`;
+            if (namedImports) return `import { ${namedImports} } from '${hooksShimImport}';`;
+            if (defaultImport) return `import ${defaultImport} from '${hooksShimImport}';`;
           }
-          return `import hooks from './hooks-shim'; // [Preview] Shimmed: ${modulePath}`;
+          return `import hooks from '${hooksShimImport}'; // [Preview] Shimmed: ${modulePath}`;
         }
         return match;
       }
-      if (modulePath.startsWith('@/')) return match.replace(/@\//, './'); // Convert remaining @/ to relative
+
+      if (modulePath.startsWith('@/')) {
+        return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
+      }
+
       return match;
     }
   );

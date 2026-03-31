@@ -844,14 +844,16 @@ ${userPrompt ? `Additional requirements: ${userPrompt}` : ""}`;
           );
         }
         
-        // Truly unknown format — wrap as plain React
+        // Truly unknown format — wrap in a proper React component so Sandpack can render it
+        console.warn("[systems-build] Unknown format — wrapping raw content in React component");
+        const wrappedComponent = htmlToReactComponent(filesJson);
         return new Response(
           JSON.stringify({
-            files: { "src/App.tsx": filesJson },
+            files: { "src/App.tsx": wrappedComponent },
             entryPoint: "src/App.tsx",
             framework: "react",
             buildTool: "vite",
-            _meta: { ai_generated: true, outputFormat: "react", parse_error: true },
+            _meta: { ai_generated: true, outputFormat: "react", parse_error: true, wrapped: true },
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );

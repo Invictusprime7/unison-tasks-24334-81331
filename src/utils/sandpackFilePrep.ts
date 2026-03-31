@@ -417,22 +417,33 @@ export function processCode(code: string, filePath: string): string {
     }
   );
 
-  // Handle @/ path alias imports
+  // Handle @/ path alias imports — convert to relative paths for Sandpack
+  // Since /src/ is flattened to /, @/components/Foo → ./components/Foo
   processed = processed.replace(
-    /^import\s+(?:(?:\{([^}]*)\}|\*\s+as\s+(\w+)|(\w+))\s*,?\s*)*\s*from\s+['"]@\/([^'"]+)['"];?\s*$/gm,
-    (match, namedImports, namespaceImport, defaultImport, modulePath) => {
+    /^(import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
+    (match, importPrefix, modulePath, importSuffix) => {
+      // Hooks → shim
       if (modulePath.startsWith('hooks/') || modulePath === 'hooks') {
-        if (namedImports) return `import { ${namedImports} } from './hooks-shim';`;
-        if (defaultImport) return `import ${defaultImport} from './hooks-shim';`;
-        if (namespaceImport) return `import * as ${namespaceImport} from './hooks-shim';`;
+        const namedMatch = match.match(/import\s+\{([^}]+)\}/);
+        const defaultMatch = match.match(/import\s+(\w+)\s+from/);
+        if (namedMatch) return `import { ${namedMatch[1]} } from './hooks-shim';`;
+        if (defaultMatch) return `import ${defaultMatch[1]} from './hooks-shim';`;
         return `import hooks from './hooks-shim'; // [Preview] Shimmed: @/${modulePath}`;
       }
+      // Supabase → shim
       if (modulePath.startsWith('integrations/supabase')) {
-        if (namedImports) return `import { ${namedImports} } from './hooks-shim';`;
-        if (defaultImport) return `import ${defaultImport} from './hooks-shim';`;
+        const namedMatch = match.match(/import\s+\{([^}]+)\}/);
+        const defaultMatch = match.match(/import\s+(\w+)\s+from/);
+        if (namedMatch) return `import { ${namedMatch[1]} } from './hooks-shim';`;
+        if (defaultMatch) return `import ${defaultMatch[1]} from './hooks-shim';`;
         return `import { supabase } from './hooks-shim'; // [Preview] Shimmed: @/${modulePath}`;
       }
-      return `// [Preview] Stripped: ${match.trim()}`;
+      // CSS imports — convert path
+      if (/\.(css|scss|less)$/.test(modulePath)) {
+        return `${importPrefix}./${modulePath}${importSuffix}`;
+      }
+      // All other @/ paths — convert to relative (files are flattened from /src/ to /)
+      return `${importPrefix}./${modulePath}${importSuffix}`;
     }
   );
 
@@ -456,7 +467,7 @@ export function processCode(code: string, filePath: string): string {
         }
         return match;
       }
-      if (modulePath.startsWith('@/')) return `// [Preview] Stripped: ${match.trim()}`;
+      if (modulePath.startsWith('@/')) return match.replace(/@\//, './'); // Convert remaining @/ to relative
       return match;
     }
   );

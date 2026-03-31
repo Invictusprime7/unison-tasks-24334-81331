@@ -333,7 +333,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       setBuildStatus("Finalizing pages...");
       await new Promise(r => setTimeout(r, 300));
 
-      // Prefer React VFS files; fallback to single code string only if structured files are missing
+      // Require structured React VFS files from launcher output.
       const reactFiles = data?.files && typeof data.files === "object"
         ? Object.fromEntries(
             Object.entries(data.files as Record<string, string>).map(([path, content]) => [
@@ -342,9 +342,17 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
             ])
           )
         : null;
-      const code = reactFiles?.["/src/App.tsx"] || reactFiles?.["/App.tsx"] || data?.code || "";
-      if (!code || code.length < 50) {
-        throw new Error("Failed to generate website code");
+      const entryPath = reactFiles?.["/src/App.tsx"]
+        ? "/src/App.tsx"
+        : reactFiles?.["/App.tsx"]
+          ? "/App.tsx"
+          : reactFiles
+            ? Object.keys(reactFiles).find((path) => /\.(tsx|jsx)$/.test(path)) || null
+            : null;
+      const code = entryPath ? reactFiles?.[entryPath] || "" : "";
+
+      if (!reactFiles || Object.keys(reactFiles).length === 0 || !code || code.length < 50) {
+        throw new Error("Launcher must return structured VFS files for Web Builder");
       }
 
       setGeneratedCode(code);
@@ -409,42 +417,25 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   };
 
   const handleOpenBuilder = async () => {
-    if (generatedVfsFiles && Object.keys(generatedVfsFiles).length > 0) {
-      navigate("/web-builder", {
-        state: {
-          vfsFiles: generatedVfsFiles,
-          templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
-          aesthetic: "modern",
-          startInPreview: true,
-          systemType: selectedChip ? getSystemTypeForChip(selectedChip) : undefined,
-        },
+    if (!generatedVfsFiles || Object.keys(generatedVfsFiles).length === 0) {
+      toast({
+        title: "Builder launch blocked",
+        description: "Launcher output must include structured VFS files before opening Web Builder.",
+        variant: "destructive",
       });
-      handleClose();
       return;
     }
 
-    if (generatedCode) {
-      // Parse multi-page output if present
-      const { hasMultiPageMarkers, parseMultiPageOutput, generateMultiPageVFS } = await import('@/utils/redirectPageGenerator');
-      let vfsFiles: Record<string, string> | undefined;
-      
-      if (hasMultiPageMarkers(generatedCode)) {
-        const parsed = parseMultiPageOutput(generatedCode);
-        vfsFiles = generateMultiPageVFS(parsed);
-      }
-      
-      sessionStorage.setItem('ai_assistant_generated_code', generatedCode);
-      navigate("/web-builder", {
-        state: {
-          generatedCode: vfsFiles ? undefined : generatedCode,
-          vfsFiles: vfsFiles,
-          templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
-          aesthetic: "modern",
-          startInPreview: true,
-        },
-      });
-      handleClose();
-    }
+    navigate("/web-builder", {
+      state: {
+        vfsFiles: generatedVfsFiles,
+        templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
+        aesthetic: "modern",
+        startInPreview: true,
+        systemType: selectedChip ? getSystemTypeForChip(selectedChip) : undefined,
+      },
+    });
+    handleClose();
   };
 
   const renderPromptStep = () => (

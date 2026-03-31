@@ -808,9 +808,10 @@ ${userPrompt ? `Additional requirements: ${userPrompt}` : ""}`;
         if (jsonMatch) {
           try {
             const extracted = JSON.parse(jsonMatch[0]);
+            const sanitizedRecoveredFiles = sanitizeReactFiles(extracted.files || {});
             return new Response(
               JSON.stringify({
-                files: extracted.files,
+                files: sanitizedRecoveredFiles,
                 entryPoint: extracted.entryPoint || "src/App.tsx",
                 framework: "react",
                 buildTool: "vite",

@@ -531,9 +531,9 @@ export function processCode(code: string, filePath: string): string {
       }
 
       // Unknown npm package — pass through to Sandpack for real resolution.
-      // Sandpack will install it on-the-fly via its bundler.
       // The dependency extractor will pick it up and add it to customSetup.dependencies.
       return match;
+    }
   );
 
   // Remove unsupported hook calls

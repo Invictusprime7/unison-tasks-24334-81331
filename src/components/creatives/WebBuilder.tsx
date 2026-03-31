@@ -3972,7 +3972,7 @@ ${html}
           break;
       }
     }
-  }, [useReactPreview]);
+  }, []);
 
   const scrollToTop = () => postScrollToIframe('top');
   const scrollToBottom = () => postScrollToIframe('bottom');

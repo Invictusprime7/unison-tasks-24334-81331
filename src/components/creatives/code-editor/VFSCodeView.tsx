@@ -912,7 +912,7 @@ function NoFileSelected() {
 // ---------------------------------------------------------------------------
 
 function EmptyState({
-  loadDefaultTemplate,
+  loadDefaultTemplate: _loadDefaultTemplate,
   importFiles,
 }: {
   loadDefaultTemplate: () => void;
@@ -936,18 +936,10 @@ function EmptyState({
 
         <h3 className="text-xl font-semibold text-white mb-2">No Project Loaded</h3>
         <p className="text-sm text-white/40 mb-8 leading-relaxed">
-          Load a template to explore a full React project, or create a new file to start from scratch.
+          Use the Launcher to generate a themed industry website, or import files to start editing.
         </p>
 
         <div className="flex gap-3 justify-center flex-wrap">
-          <Button
-            variant="outline"
-            onClick={loadDefaultTemplate}
-            className="gap-2 bg-white/[0.03] border-fuchsia-500/20 text-white/60 hover:text-white hover:bg-fuchsia-500/10 hover:border-fuchsia-500/40 transition-all duration-200"
-          >
-            <Layout className="w-4 h-4" />
-            Load React Template
-          </Button>
           <Button
             variant="default"
             onClick={() => {

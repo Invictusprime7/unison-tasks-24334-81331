@@ -467,7 +467,7 @@ export function processCode(code: string, filePath: string): string {
         }
         return match;
       }
-      if (modulePath.startsWith('@/')) return `// [Preview] Stripped: ${match.trim()}`;
+      if (modulePath.startsWith('@/')) return match.replace(/@\//, './'); // Convert remaining @/ to relative
       return match;
     }
   );

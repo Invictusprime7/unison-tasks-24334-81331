@@ -2161,8 +2161,9 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
       : Promise.resolve('');
     
     // More specific keywords - avoid triggering on general page generation requests
+    // SKIP entirely for fast-path wizard launches
     const imageKeywords = ['generate image', 'create image', 'generate a logo', 'create a logo', 'make a logo', 'add logo image', 'insert image'];
-    const shouldGenerateImage = generateImage || imageKeywords.some(kw => userPrompt.includes(kw));
+    const shouldGenerateImage = !fastTemplateReact && (generateImage || imageKeywords.some(kw => userPrompt.includes(kw)));
     
     let generatedImageUrl = '';
     let imageHtml = '';

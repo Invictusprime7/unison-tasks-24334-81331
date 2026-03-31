@@ -1,17 +1,16 @@
 /**
- * Restaurant Booking Template — Minimal aesthetic
+ * Restaurant Booking Template — Theme provided by Launcher pipeline
  */
 import type { TemplateComposition } from '../types';
-import { THEME_MINIMAL_LIGHT } from '../themes';
 
 export const restaurantBooking: TemplateComposition = {
   id: 'restaurant-booking',
   name: 'Restaurant',
   category: 'restaurant',
   industry: 'restaurant',
-  description: 'Clean, minimal booking template for restaurants and dining',
+  description: 'Booking template for restaurants and dining — themed by Launcher',
   systemType: 'booking',
-  theme: THEME_MINIMAL_LIGHT,
+  theme: undefined as any, // Populated at runtime by Launcher aesthetic pipeline
   sections: [
     {
       id: 'nav',

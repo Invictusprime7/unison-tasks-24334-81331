@@ -4928,8 +4928,7 @@ ${html}
                     data-drop-zone="true"
                     className="flex-1 flex flex-col min-h-0 overflow-hidden"
                   >
-                    {/* React mode uses VFSPreview with Docker HMR, HTML mode uses SimplePreview */}
-                    {useReactPreview ? (
+                    {/* Unified VFSPreview — single Sandpack-based preview engine */}
                       <VFSPreview
                         ref={livePreviewRef}
                         nodes={virtualFS.nodes}
@@ -4964,17 +4963,6 @@ ${html}
                           }]);
                         }}
                       />
-                    ) : (
-                      <SimplePreview
-                        ref={simplePreviewRef}
-                        code={previewCode}
-                        className="w-full h-full min-h-0 flex-1"
-                        showToolbar={false}
-                        device={device}
-                        enableSelection={builderMode === 'select'}
-                        onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
-                      />
-                    )}
                   </div>
                 </div>
 

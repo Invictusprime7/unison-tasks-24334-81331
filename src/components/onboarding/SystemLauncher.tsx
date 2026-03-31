@@ -603,10 +603,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const navState = {
         templateName: `${businessName.trim()} Site`,
         aesthetic: selectedTheme?.id,
-        templateCategory: primaryCategory,
+        templateCategory: generationCategory,
         systemType: selectedSystem,
         systemName: system.name,
-        preloadedIntents: system.intents,
+        preloadedIntents: canonicalIntents,
         startInPreview: true,
       };
 

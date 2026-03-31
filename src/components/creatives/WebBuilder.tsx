@@ -4710,11 +4710,7 @@ ${html}
                       variant="ghost"
                       size="icon"
                       onClick={() => {
-                        if (useReactPreview) {
-                          livePreviewRef.current?.openInNewTab();
-                        } else {
-                          simplePreviewRef.current?.openInNewTab();
-                        }
+                        livePreviewRef.current?.openInNewTab();
                       }}
                       className="h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                       title="Open preview in new tab"

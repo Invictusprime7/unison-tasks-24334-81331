@@ -2,6 +2,7 @@
  * Sandpack File Preparation Utilities
  * 
  * Sandpack's react-ts template expects files at ROOT level (e.g., /App.tsx, not /src/App.tsx).
+ * Entry point MUST be /index.tsx (not /main.tsx) — Sandpack react-ts uses /index.tsx.
  * This module flattens VFS paths, processes imports, and ensures essential files exist.
  */
 
@@ -179,7 +180,11 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
 }
 `;
 
-const DEFAULT_MAIN = `import React from 'react';
+/**
+ * DEFAULT_INDEX — the canonical Sandpack entry point.
+ * Sandpack react-ts uses /index.tsx, NOT /main.tsx.
+ */
+const DEFAULT_INDEX = `import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
@@ -332,7 +337,8 @@ function isRawCss(content: string): boolean {
 }
 
 function injectPreviewNavBridge(code: string, filePath: string): string {
-  if (!/^\/(?:main|index)\.(?:tsx?|jsx?)$/.test(filePath)) return code;
+  // Only inject into /index.tsx or /index.jsx (the canonical Sandpack entry)
+  if (!/^\/index\.(?:tsx?|jsx?)$/.test(filePath)) return code;
   if (code.includes('__initLovablePreviewNavBridge')) return code;
 
   const importBlock = code.match(/^(?:import[^\n]*\n)+/);
@@ -444,7 +450,7 @@ function pickPrimaryComponentPath(paths: string[]): string | null {
   return uniquePaths.find((path) => path === '/App.tsx' || path === '/App.jsx')
     || uniquePaths.find((path) => /\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(path))
     || uniquePaths.find((path) => /\/pages\//.test(path))
-    || uniquePaths.find((path) => !/\/(main|index)\.(tsx|jsx)$/.test(path))
+    || uniquePaths.find((path) => !/\/(index)\.(tsx|jsx)$/.test(path))
     || uniquePaths[0]
     || null;
 }
@@ -560,13 +566,90 @@ export function processCode(code: string, filePath: string): string {
 }
 
 /**
- * Convert VFS files to Sandpack-compatible format.
- * Flattens /src/ paths to root, processes imports, adds missing essentials.
+ * Normalize raw launcher/wizard VFS files before handing off to the Web Builder.
+ * Ensures consistent paths, entry files, and CSS tokens.
  */
-export function prepareSandpackFiles(files: Record<string, string>): Record<string, string> {
+export function normalizeLauncherFiles(
+  files: Record<string, string>,
+  options?: { entryPoint?: string }
+): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  // Normalize all paths to have leading slash
+  for (const [path, content] of Object.entries(files)) {
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    out[normalized] = content;
+  }
+
+  // Ensure /src/main.tsx exists
+  if (!out['/src/main.tsx']) {
+    out['/src/main.tsx'] = `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);`;
+  }
+
+  // Ensure /src/index.css exists
+  if (!out['/src/index.css']) {
+    out['/src/index.css'] = BASE_CSS;
+  }
+
+  // Ensure /src/App.tsx exists — derive from entryPoint or first page component
+  if (!out['/src/App.tsx']) {
+    const entryPoint = options?.entryPoint;
+    let targetImport: string | null = null;
+
+    if (entryPoint && out[entryPoint]) {
+      targetImport = entryPoint;
+    } else {
+      // Find a page or component to use as entry
+      targetImport =
+        Object.keys(out).find(p => /\/src\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(p)) ||
+        Object.keys(out).find(p => /\/src\/pages\/.+\.(tsx|jsx)$/.test(p)) ||
+        Object.keys(out).find(p => /\/src\/.*\.(tsx|jsx)$/.test(p) && !/\/(main|index)\.(tsx|jsx)$/.test(p));
+    }
+
+    if (targetImport) {
+      const importPath = targetImport.replace('/src/', './').replace(/\.(tsx|jsx)$/, '');
+      out['/src/App.tsx'] = `import React from 'react';
+import Entry from '${importPath}';
+
+export default function App() {
+  return <Entry />;
+}`;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Compile source VFS files (in /src/ structure) into a Sandpack-compatible overlay.
+ * This is the canonical preview compiler — the SINGLE source of truth for preview prep.
+ * 
+ * Source VFS: /src/App.tsx, /src/main.tsx, /src/components/...
+ * Sandpack overlay: /App.tsx, /index.tsx, /index.css, /components/...
+ * 
+ * Key rules:
+ * - /src/ prefix is stripped (flattened to root)
+ * - /main.tsx is ALWAYS renamed to /index.tsx (Sandpack react-ts entry point)
+ * - /index.tsx is the ONLY valid entry — never /main.tsx
+ * - Missing /App.tsx gets a proxy to the primary component
+ * - Missing /index.tsx gets DEFAULT_INDEX injected
+ */
+export function prepareSandpackFiles(
+  files: Record<string, string>,
+  options?: { strict?: boolean; entryPoint?: string }
+): Record<string, string> {
   const sandpackFiles: Record<string, string> = {};
   let hasApp = false;
-  let hasMain = false;
+  let hasIndex = false;
   let hasCSS = false;
   const componentFilePaths: string[] = [];
 
@@ -593,6 +676,16 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     // Flatten /styles/ to root
     if (normalizedPath.startsWith('/styles/')) {
       normalizedPath = normalizedPath.replace('/styles/', '/');
+    }
+
+    // *** CRITICAL FIX: Rename /main.tsx → /index.tsx ***
+    // Sandpack react-ts template uses /index.tsx as its entry point, NOT /main.tsx.
+    if (normalizedPath === '/main.tsx') {
+      normalizedPath = '/index.tsx';
+    } else if (normalizedPath === '/main.jsx') {
+      normalizedPath = '/index.jsx';
+    } else if (normalizedPath === '/main.ts') {
+      normalizedPath = '/index.ts';
     }
 
     // Fix imports in content to match flattened paths
@@ -633,7 +726,7 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
       componentFilePaths.push(normalizedPath);
     }
     if (normalizedPath === '/App.tsx' || normalizedPath === '/App.jsx') hasApp = true;
-    if (normalizedPath === '/main.tsx' || normalizedPath === '/main.jsx' || normalizedPath === '/index.tsx') hasMain = true;
+    if (normalizedPath === '/index.tsx' || normalizedPath === '/index.jsx') hasIndex = true;
     if (normalizedPath.endsWith('.css')) hasCSS = true;
   }
 
@@ -641,23 +734,38 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     sandpackFiles['/index.css'] = BASE_CSS;
   } else {
     // Ensure semantic CSS variables exist even when user/Launcher provides CSS.
-    // If the provided CSS is missing key tokens (--primary, --secondary, etc.)
-    // prepend defaults so Tailwind semantic classes resolve correctly.
     const existingCSS = sandpackFiles['/index.css'] || '';
     if (existingCSS && !existingCSS.includes('--primary:')) {
       sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingCSS;
     }
   }
-  if (!hasApp) {
-    const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
 
-    if (primaryComponentPath) {
-      sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
+  if (!hasApp) {
+    if (options?.strict && options?.entryPoint) {
+      // In strict mode with explicit entry, create proxy to that entry
+      const entryFlattened = options.entryPoint.replace(/^\/src\//, '/');
+      if (sandpackFiles[entryFlattened]) {
+        sandpackFiles['/App.tsx'] = createProxyApp(entryFlattened);
+      } else {
+        sandpackFiles['/App.tsx'] = createMissingEntryApp();
+      }
     } else {
-      sandpackFiles['/App.tsx'] = createMissingEntryApp();
+      const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
+      if (primaryComponentPath) {
+        sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
+      } else {
+        sandpackFiles['/App.tsx'] = createMissingEntryApp();
+      }
     }
   }
-  if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
+
+  // Always use /index.tsx — never /main.tsx
+  if (!hasIndex) sandpackFiles['/index.tsx'] = DEFAULT_INDEX;
+  
+  // Remove any stale /main.tsx that might have leaked through
+  delete sandpackFiles['/main.tsx'];
+  delete sandpackFiles['/main.jsx'];
+
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
 
   // Ensure template.css exists if any file imports it
@@ -665,7 +773,6 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     typeof c === 'string' && /import\s+['"]\.\/template\.css['"]/.test(c)
   );
   if (anyImportsTemplateCss && !sandpackFiles['/template.css']) {
-    // Provide an empty CSS file so Sandpack doesn't crash
     sandpackFiles['/template.css'] = '/* template styles */\n';
   }
 

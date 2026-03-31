@@ -427,6 +427,8 @@ export default function App() {
 
   return <PreviewEntry />;
 }
+`;
+}
 
 function createMissingEntryApp(): string {
   return `import React from 'react';

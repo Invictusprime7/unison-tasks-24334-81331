@@ -139,7 +139,7 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
   if (bridgeWindow.__lovablePreviewNavBridgeInstalled) return;
   bridgeWindow.__lovablePreviewNavBridgeInstalled = true;
 
-  const normalizePath = (rawPath: string) => rawPath.replace(/^\//, '').replace(/\.html(?:[?#].*)?$/, '').replace(/[?#].*$/, '') || 'index';
+  const normalizePath = (rawPath: string) => rawPath.replace(/^\\//, '').replace(/\\.html(?:[?#].*)?$/, '').replace(/[?#].*$/, '') || 'index';
 
   document.addEventListener('click', function (event) {
     const target = event.target as HTMLElement | null;

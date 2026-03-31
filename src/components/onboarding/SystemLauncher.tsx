@@ -283,7 +283,7 @@ function getFunctionErrorMessage(error: unknown): string {
     const withContext = error as Error & { context?: { body?: string } };
     const body = withContext.context?.body;
 
-    if (body) {
+    if (typeof body === "string" && body) {
       try {
         const parsed = JSON.parse(body) as { error?: string; details?: unknown };
         if (parsed.error) return parsed.error;
@@ -294,6 +294,8 @@ function getFunctionErrorMessage(error: unknown): string {
 
     return error.message;
   }
+
+  if (typeof error === "string") return error;
 
   return "Generation failed";
 }

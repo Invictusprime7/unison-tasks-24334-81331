@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -13,9 +13,9 @@ import {
   ArrowRight,
   ArrowLeft,
   Check,
-  Zap,
   Sparkles,
   Loader2,
+  Eye,
 } from "lucide-react";
 import {
   businessSystems,
@@ -35,13 +35,20 @@ import {
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
 import { getCompositionReactCode, getCompositionMeta, getCompositionContentContext } from "@/utils/compositionReference";
-import { buildFullPagePrompt } from "@/sections/references";
+import {
+  buildFullPagePrompt,
+  getAllReferences,
+  getReferencesForIndustry,
+  INDUSTRY_CONTEXTS,
+  type IndustryTag,
+  type PremiumSectionReference,
+} from "@/sections/references";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type WizardStep = "industry" | "details" | "aesthetic";
+type WizardStep = "industry" | "templates" | "aesthetic";
 
 interface SystemLauncherProps {
   open: boolean;
@@ -50,9 +57,33 @@ interface SystemLauncherProps {
 
 const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [
   { key: "industry", num: 1, label: "Industry", sublabel: "What you do" },
-  { key: "details", num: 2, label: "Your Brand", sublabel: "Name & voice" },
-  { key: "aesthetic", num: 3, label: "Aesthetic", sublabel: "Look & feel" },
+  { key: "templates", num: 2, label: "Templates", sublabel: "Pick a base" },
+  { key: "aesthetic", num: 3, label: "Launch", sublabel: "Name & style" },
 ];
+
+// Map businessSystem ids → industry tags for premium templates
+const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
+  booking: ["salon", "restaurant", "fitness"],
+  saas: ["universal"],
+  agency: ["coaching", "universal"],
+  portfolio: ["photography", "universal"],
+  store: ["ecommerce", "universal"],
+  content: ["universal"],
+};
+
+// Industry display metadata
+const INDUSTRY_DISPLAY: Record<IndustryTag, { label: string; icon: string }> = {
+  salon: { label: "Salon & Beauty", icon: "💇" },
+  "local-service": { label: "Local Service", icon: "🔧" },
+  coaching: { label: "Coaching & Consulting", icon: "🎯" },
+  restaurant: { label: "Restaurant & Food", icon: "🍽️" },
+  ecommerce: { label: "E-Commerce", icon: "🛍️" },
+  fitness: { label: "Fitness & Wellness", icon: "💪" },
+  legal: { label: "Legal", icon: "⚖️" },
+  realestate: { label: "Real Estate", icon: "🏠" },
+  photography: { label: "Photography", icon: "📷" },
+  universal: { label: "Universal", icon: "✦" },
+};
 
 // Extended industry cards with richer visuals
 const INDUSTRY_CARDS: {
@@ -114,6 +145,177 @@ const INDUSTRY_CARDS: {
 ];
 
 // ============================================================================
+// Template Preview Card — renders a mini-preview of a premium section
+// ============================================================================
+
+interface TemplateCardData {
+  id: string;
+  label: string;
+  description: string;
+  industry: IndustryTag;
+  sectionTypes: string[];
+  traits: string[];
+  heroRef?: PremiumSectionReference;
+}
+
+function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
+  const cards: TemplateCardData[] = [];
+
+  for (const tag of industryTags) {
+    const refs = getReferencesForIndustry(tag);
+    const ctx = INDUSTRY_CONTEXTS.find((c) => c.industry === tag);
+    const heroRef = refs.find((r) => r.sectionType === "hero");
+    const servicesRef = refs.find((r) => r.sectionType === "services");
+    const ctaRef = refs.find((r) => r.sectionType === "cta");
+
+    // Build 1–2 template variants per industry
+    if (heroRef) {
+      cards.push({
+        id: `${tag}-premium`,
+        label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Premium`,
+        description: ctx?.toneDirective.split(".")[0] || heroRef.description,
+        industry: tag,
+        sectionTypes: ctx?.sectionFlow.slice(0, 6).map((s) => s) || ["hero", "services", "cta"],
+        traits: heroRef.traits.slice(0, 3),
+        heroRef,
+      });
+    }
+
+    // Second variant if we have enough refs
+    if (servicesRef && ctaRef && heroRef) {
+      const altHero = refs.find((r) => r.sectionType === "hero" && r.id !== heroRef.id);
+      if (altHero) {
+        cards.push({
+          id: `${tag}-alt`,
+          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Minimal`,
+          description: "Clean, focused layout emphasizing clarity and conversions",
+          industry: tag,
+          sectionTypes: ["hero", "services", "testimonials", "cta", "contact", "footer"],
+          traits: altHero.traits.slice(0, 3),
+          heroRef: altHero,
+        });
+      }
+    }
+  }
+
+  // Add universal fallback if empty
+  if (cards.length === 0) {
+    const allRefs = getAllReferences();
+    const universalHero = allRefs.find((r) => r.sectionType === "hero");
+    if (universalHero) {
+      cards.push({
+        id: "universal-default",
+        label: "Modern Professional",
+        description: "Versatile layout for any business type",
+        industry: "universal",
+        sectionTypes: ["hero", "features", "testimonials", "cta", "contact", "footer"],
+        traits: universalHero.traits.slice(0, 3),
+        heroRef: universalHero,
+      });
+    }
+  }
+
+  return cards;
+}
+
+// Mini preview component
+const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
+  const display = INDUSTRY_DISPLAY[card.industry];
+
+  return (
+    <motion.button
+      onClick={onClick}
+      whileHover={{ scale: 1.02, y: -2 }}
+      whileTap={{ scale: 0.98 }}
+      className={cn(
+        "group relative rounded-xl text-left transition-all duration-300 overflow-hidden",
+        "border focus:outline-none",
+        isSelected
+          ? "border-cyan-500/40 shadow-[0_0_30px_rgba(0,200,255,0.1)] ring-1 ring-cyan-500/20"
+          : "border-white/[0.06] hover:border-white/[0.15]"
+      )}
+    >
+      {/* Mini preview area */}
+      <div className={cn(
+        "relative h-36 overflow-hidden",
+        isSelected ? "bg-cyan-500/[0.04]" : "bg-white/[0.02]"
+      )}>
+        {/* Simulated section layout preview */}
+        <div className="absolute inset-0 p-3 flex flex-col gap-1.5 opacity-60 group-hover:opacity-80 transition-opacity">
+          {/* Navbar bar */}
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-1.5 rounded-full bg-white/20" />
+            <div className="flex-1" />
+            <div className="w-3 h-1 rounded-full bg-white/10" />
+            <div className="w-3 h-1 rounded-full bg-white/10" />
+            <div className="w-3 h-1 rounded-full bg-white/10" />
+          </div>
+          {/* Hero block */}
+          <div className="flex-1 rounded-lg p-2 flex flex-col justify-center" style={{
+            background: `linear-gradient(135deg, hsl(var(--primary) / 0.12), hsl(var(--accent) / 0.08))`,
+          }}>
+            <div className="w-8 h-1 rounded-full bg-primary/40 mb-1.5" />
+            <div className="w-16 h-2 rounded bg-white/25 mb-1" />
+            <div className="w-12 h-1 rounded bg-white/10 mb-2" />
+            <div className="flex gap-1">
+              <div className="w-6 h-2 rounded-full bg-primary/50" />
+              <div className="w-5 h-2 rounded-full border border-white/15" />
+            </div>
+          </div>
+          {/* Section blocks */}
+          <div className="flex gap-1">
+            {card.sectionTypes.slice(1, 4).map((_, i) => (
+              <div key={i} className="flex-1 h-5 rounded bg-white/[0.03] border border-white/[0.04]" />
+            ))}
+          </div>
+          {/* Footer bar */}
+          <div className="h-2 rounded bg-white/[0.03]" />
+        </div>
+
+        {/* Hover overlay */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm">
+          <div className="flex items-center gap-1.5 text-white/90 text-xs font-medium">
+            <Eye className="h-3.5 w-3.5" />
+            Use Template
+          </div>
+        </div>
+
+        {/* Selected check */}
+        {isSelected && (
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="absolute top-2 right-2 w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center shadow-lg z-10"
+          >
+            <Check className="h-3.5 w-3.5 text-[#07080F]" />
+          </motion.div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="p-3">
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-xs">{display?.icon}</span>
+          <h4 className="text-xs font-semibold text-white/80 truncate">{card.label}</h4>
+        </div>
+        <p className="text-[10px] text-white/25 leading-relaxed line-clamp-2">{card.description}</p>
+        {/* Trait badges */}
+        <div className="flex flex-wrap gap-1 mt-2">
+          {card.traits.slice(0, 2).map((trait) => (
+            <span key={trait} className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.04] text-white/20 border border-white/[0.04]">
+              {trait}
+            </span>
+          ))}
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.04] text-white/20 border border-white/[0.04]">
+            {card.sectionTypes.length} sections
+          </span>
+        </div>
+      </div>
+    </motion.button>
+  );
+};
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -123,46 +325,66 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   // Wizard state
   const [step, setStep] = useState<WizardStep>("industry");
   const [selectedSystem, setSelectedSystem] = useState<BusinessSystemType | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateCardData | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<ThemePreset | null>(null);
   const [businessName, setBusinessName] = useState("");
-  const [businessDescription, setBusinessDescription] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
 
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
+
+  // Build template cards based on selected system
+  const templateCards = useMemo(() => {
+    if (!selectedSystem) return [];
+    const tags = SYSTEM_TO_INDUSTRY[selectedSystem] || ["universal"];
+    return buildTemplateCards(tags as IndustryTag[]);
+  }, [selectedSystem]);
+
+  // Group templates by industry
+  const templatesByIndustry = useMemo(() => {
+    const grouped: Record<string, TemplateCardData[]> = {};
+    for (const card of templateCards) {
+      const key = card.industry;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(card);
+    }
+    return grouped;
+  }, [templateCards]);
 
   // ─── Handlers ───────────────────────────────────────────────────────────
 
   const resetState = useCallback(() => {
     setStep("industry");
     setSelectedSystem(null);
+    setSelectedTemplate(null);
     setSelectedTheme(null);
     setBusinessName("");
-    setBusinessDescription("");
     setCustomPrompt("");
     setIsLaunching(false);
   }, []);
 
   const handleSystemSelect = (systemId: BusinessSystemType) => {
     setSelectedSystem(systemId);
-    setStep("details");
+    setSelectedTemplate(null);
+    setStep("templates");
   };
 
-  const handleDetailsNext = () => {
-    if (!businessName.trim()) {
-      toast.error("Please enter your business name");
-      return;
-    }
+  const handleTemplateSelect = (card: TemplateCardData) => {
+    setSelectedTemplate(selectedTemplate?.id === card.id ? null : card);
+  };
+
+  const handleTemplateNext = () => {
     setStep("aesthetic");
   };
 
   const handleBack = () => {
     if (step === "aesthetic") {
-      setStep("details");
+      setStep("templates");
       setSelectedTheme(null);
-    } else if (step === "details") {
+    } else if (step === "templates") {
       setStep("industry");
       setSelectedSystem(null);
+      setSelectedTemplate(null);
     }
   };
 
@@ -170,6 +392,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
+    if (!businessName.trim()) {
+      toast.error("Please enter your business name");
+      return;
+    }
 
     setIsLaunching(true);
     try {
@@ -180,7 +406,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      // Build industry context
       const primaryCategory = system.templateCategories[0];
       const industryProfile = getIndustryForCategory(primaryCategory as any);
       const canonicalIntents = industryProfile
@@ -201,8 +426,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             : "Generate leads and grow the business",
         },
         brand: {
-          business_name: businessName.trim() || `${system.name} Business`,
-          tagline: businessDescription.trim() || `Professional ${system.name.toLowerCase()} services you can trust`,
+          business_name: businessName.trim(),
+          tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
           tone: "professional and friendly",
           typography: fonts,
         },
@@ -210,7 +435,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
       };
 
-      // Build AI prompt with premium section references
       const themeInstruction = selectedTheme
         ? `\n\n🎨 VISUAL AESTHETIC: ${selectedTheme.label}\n${selectedTheme.styleDirective}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ""}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
         : "";
@@ -218,23 +442,24 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         ? `\n\nADDITIONAL INSTRUCTIONS: ${customPrompt.trim()}\n`
         : "";
 
-      // Pull premium reference prompt for the industry
-      const industryTag = primaryCategory === "contractor" ? "local-service"
-        : primaryCategory === "salon" ? "salon"
-        : primaryCategory === "coaching" ? "coaching"
-        : undefined;
-      const premiumRefPrompt = industryTag ? buildFullPagePrompt(industryTag as any) : "";
+      // Use selected template's industry for premium references
+      const templateIndustry = selectedTemplate?.industry;
+      const premiumRefPrompt = templateIndustry && templateIndustry !== "universal"
+        ? buildFullPagePrompt(templateIndustry)
+        : "";
 
       const contentContext = getCompositionContentContext(primaryCategory);
       const industryContextBlock = contentContext
         ? `\n\n📋 INDUSTRY CONTENT CONTEXT:\n${contentContext}\n`
         : "";
 
-      const userPrompt = `Create a premium ${primaryCategory} website for "${businessName.trim()}".${businessDescription.trim() ? ` Business description: ${businessDescription.trim()}.` : ""}${industryContextBlock}${themeInstruction}${customInstruction}${premiumRefPrompt ? `\n\n--- PREMIUM SECTION REFERENCES ---\n${premiumRefPrompt}` : ""}`;
+      const templateContext = selectedTemplate
+        ? `\n\nSELECTED TEMPLATE: "${selectedTemplate.label}" (${selectedTemplate.industry})\nSections: ${selectedTemplate.sectionTypes.join(", ")}\nTraits: ${selectedTemplate.traits.join(", ")}\n`
+        : "";
 
-      // Get composition reference code if available
+      const userPrompt = `Create a premium ${primaryCategory} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}${premiumRefPrompt ? `\n\n--- PREMIUM SECTION REFERENCES ---\n${premiumRefPrompt}` : ""}`;
+
       const compositionCode = getCompositionReactCode(primaryCategory);
-      const compositionMetaData = getCompositionMeta(primaryCategory);
 
       toast("Generating your site…", { description: "This takes ~20 seconds" });
 
@@ -265,7 +490,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         throw error;
       }
 
-      // ai-code-assistant returns { content } with code or JSON
       const rawContent = (data?.content || data?.code || "")
         .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
         .trim()
@@ -275,7 +499,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
 
-      // Try to parse as VFS JSON first (multi-file output)
       let vfsFiles: Record<string, string> | null = null;
       try {
         const parsed = JSON.parse(rawContent);
@@ -283,22 +506,21 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           vfsFiles = parsed.files;
         }
       } catch {
-        // Not JSON — treat as single-file code output
+        // single-file output
       }
 
+      const navState = {
+        templateName: `${businessName.trim()} Site`,
+        aesthetic: selectedTheme?.id,
+        templateCategory: primaryCategory,
+        systemType: selectedSystem,
+        systemName: system.name,
+        preloadedIntents: system.intents,
+        startInPreview: true,
+      };
+
       if (vfsFiles && Object.keys(vfsFiles).length > 0) {
-        navigate("/web-builder", {
-          state: {
-            vfsFiles,
-            templateName: `${businessName.trim()} Site`,
-            aesthetic: selectedTheme?.id,
-            templateCategory: primaryCategory,
-            systemType: selectedSystem,
-            systemName: system.name,
-            preloadedIntents: system.intents,
-            startInPreview: true,
-          },
-        });
+        navigate("/web-builder", { state: { vfsFiles, ...navState } });
       } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
         const cleaned = extractCleanCode(rawContent);
         if (!cleaned || !looksLikeCode(cleaned)) {
@@ -312,13 +534,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
               "/src/index.css": baseCSS,
             },
-            templateName: `${businessName.trim()} Site`,
-            aesthetic: selectedTheme?.id,
-            templateCategory: primaryCategory,
-            systemType: selectedSystem,
-            systemName: system.name,
-            preloadedIntents: system.intents,
-            startInPreview: true,
+            ...navState,
           },
         });
       } else {
@@ -348,22 +564,21 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         if (!isOpen) resetState();
       }}
     >
-      <DialogContent className="max-w-[940px] p-0 overflow-hidden border-0 bg-[#07080F] max-h-[92vh] shadow-[0_0_100px_rgba(0,200,255,0.06),0_0_40px_rgba(0,0,0,0.5)]">
+      <DialogContent className="max-w-[960px] p-0 overflow-hidden border-0 bg-[#07080F] max-h-[92vh] shadow-[0_0_100px_rgba(0,200,255,0.06),0_0_40px_rgba(0,0,0,0.5)]">
         <DialogHeader className="sr-only">
           <DialogTitle>Launch Your Website</DialogTitle>
           <DialogDescription>
-            Choose your industry, describe your business, and pick a visual style.
+            Choose your industry, select a template, and customize.
           </DialogDescription>
         </DialogHeader>
 
         {/* ─── Header + Step Indicator ─── */}
-        <div className="relative px-6 pt-6 pb-5 border-b border-white/[0.06]">
-          {/* Glow */}
+        <div className="relative px-6 pt-5 pb-4 border-b border-white/[0.06]">
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[250px] bg-cyan-500/[0.04] rounded-full blur-[100px]" />
           </div>
 
-          <div className="relative flex items-center justify-between mb-5">
+          <div className="relative flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 flex items-center justify-center text-sm">
                 ⚡
@@ -384,7 +599,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 <div key={s.key} className="flex items-center">
                   {i > 0 && (
                     <div className={cn(
-                      "w-16 h-px mx-2 transition-colors duration-500",
+                      "w-14 h-px mx-1.5 transition-colors duration-500",
                       isPast ? "bg-gradient-to-r from-cyan-500/60 to-cyan-500/30" : "bg-white/[0.06]"
                     )} />
                   )}
@@ -392,21 +607,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     onClick={() => {
                       if (isPast) {
                         setStep(s.key);
-                        if (s.key === "industry") { setSelectedSystem(null); setSelectedTheme(null); }
-                        if (s.key === "details") setSelectedTheme(null);
+                        if (s.key === "industry") { setSelectedSystem(null); setSelectedTemplate(null); setSelectedTheme(null); }
+                        if (s.key === "templates") setSelectedTheme(null);
                       }
                     }}
                     disabled={!isPast && !isActive}
                     className={cn(
-                      "flex items-center gap-2.5 px-4 py-2 rounded-full text-xs font-medium transition-all duration-300 outline-none",
-                      isActive && "bg-cyan-500/12 text-cyan-400 ring-1 ring-cyan-500/25 shadow-[0_0_16px_rgba(0,200,255,0.1)]",
+                      "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-300 outline-none",
+                      isActive && "bg-cyan-500/12 text-cyan-400 ring-1 ring-cyan-500/25",
                       isPast && "bg-cyan-500/8 text-cyan-500/60 hover:text-cyan-400 cursor-pointer",
                       !isActive && !isPast && "text-white/20"
                     )}
                   >
                     <span className={cn(
-                      "w-5.5 h-5.5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300",
-                      "w-[22px] h-[22px]",
+                      "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300",
                       isActive && "bg-cyan-500 text-[#07080F]",
                       isPast && "bg-cyan-500/25 text-cyan-400",
                       !isActive && !isPast && "bg-white/[0.05] text-white/25"
@@ -437,15 +651,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              className="px-6 pt-8 pb-10"
+              className="px-6 pt-7 pb-8"
             >
-              <div className="text-center mb-10">
+              <div className="text-center mb-8">
                 <h2 className="text-2xl md:text-3xl font-bold text-white mb-2 tracking-tight">
                   What are you building?
                 </h2>
                 <p className="text-sm text-white/35 max-w-md mx-auto">
-                  Pick your industry — we'll generate a premium site with the right structure,
-                  content, and backend.
+                  Pick your industry — we'll show you premium templates built for it.
                 </p>
               </div>
 
@@ -464,17 +677,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                       "overflow-hidden"
                     )}
                   >
-                    {/* Hover gradient */}
                     <div className={cn(
                       "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
                       card.gradient
                     )} />
-                    {/* Hover glow */}
                     <div
                       className="absolute -top-8 -right-8 w-24 h-24 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-2xl pointer-events-none"
                       style={{ background: card.glowColor }}
                     />
-
                     <div className="relative">
                       <div className="text-3xl mb-3 group-hover:scale-110 transition-transform duration-300 will-change-transform">
                         {card.icon}
@@ -490,7 +700,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 ))}
               </div>
 
-              <div className="text-center mt-8">
+              <div className="text-center mt-7">
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -506,17 +716,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             </motion.div>
           )}
 
-          {/* ══ Step 2: Business Details ══ */}
-          {step === "details" && selectedSystem && (
+          {/* ══ Step 2: Templates ══ */}
+          {step === "templates" && selectedSystem && (
             <motion.div
-              key="details"
+              key="templates"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-5 pb-3 flex items-center gap-3">
+              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -526,95 +736,68 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
                 <div>
-                  <h2 className="text-lg font-bold text-white tracking-tight">Tell us about your business</h2>
+                  <h2 className="text-lg font-bold text-white tracking-tight">Choose a template</h2>
                   <p className="text-xs text-white/30">
-                    We'll use this to generate relevant content and copy.
+                    Premium layouts for{" "}
+                    <span className="text-cyan-400/70 font-medium">
+                      {INDUSTRY_CARDS.find((c) => c.systemId === selectedSystem)?.label}
+                    </span>
                   </p>
                 </div>
               </div>
 
-              <div className="px-6 py-8 flex-1">
-                <div className="max-w-lg mx-auto space-y-6">
-                  {/* Business name */}
-                  <div>
-                    <label className="block text-xs font-semibold text-white/50 mb-2 uppercase tracking-wider">
-                      Business Name <span className="text-cyan-400/60">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={businessName}
-                      onChange={(e) => setBusinessName(e.target.value)}
-                      placeholder="e.g., Stellar Studio, QuickFix Plumbing…"
-                      className={cn(
-                        "w-full px-4 py-3.5 text-sm rounded-xl transition-all duration-200",
-                        "bg-white/[0.04] border border-white/[0.08] text-white placeholder:text-white/20",
-                        "focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-500/25 focus:bg-white/[0.06]",
-                        "outline-none"
-                      )}
-                      autoFocus
-                    />
-                  </div>
-
-                  {/* Business description */}
-                  <div>
-                    <label className="block text-xs font-semibold text-white/50 mb-2 uppercase tracking-wider">
-                      What do you do? <span className="text-white/20">(optional)</span>
-                    </label>
-                    <textarea
-                      value={businessDescription}
-                      onChange={(e) => setBusinessDescription(e.target.value)}
-                      placeholder="Briefly describe your services, audience, or what makes you unique…"
-                      rows={3}
-                      className={cn(
-                        "w-full px-4 py-3 text-sm rounded-xl resize-none transition-all duration-200",
-                        "bg-white/[0.04] border border-white/[0.08] text-white placeholder:text-white/20",
-                        "focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-500/25 focus:bg-white/[0.06]",
-                        "outline-none"
-                      )}
-                    />
-                  </div>
-
-                  {/* Selected system badge */}
-                  <div className="flex items-center gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
-                    <span className="text-2xl">
-                      {INDUSTRY_CARDS.find((c) => c.systemId === selectedSystem)?.icon}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold text-white/70">
-                        {INDUSTRY_CARDS.find((c) => c.systemId === selectedSystem)?.label}
+              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
+                {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
+                  const display = INDUSTRY_DISPLAY[industryKey as IndustryTag];
+                  return (
+                    <div key={industryKey} className="mb-5 last:mb-0">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-sm">{display?.icon}</span>
+                        <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                          {display?.label || industryKey}
+                        </h3>
+                        <div className="flex-1 h-px bg-white/[0.04]" />
                       </div>
-                      <div className="text-[10px] text-white/25">
-                        Industry-optimized sections, content, and backend
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {cards.map((card) => (
+                          <TemplatePreview
+                            key={card.id}
+                            card={card}
+                            isSelected={selectedTemplate?.id === card.id}
+                            onClick={() => handleTemplateSelect(card)}
+                          />
+                        ))}
                       </div>
                     </div>
-                    <button
-                      onClick={handleBack}
-                      className="text-[10px] text-white/25 hover:text-white/50 transition-colors"
-                    >
-                      Change
-                    </button>
+                  );
+                })}
+
+                {templateCards.length === 0 && (
+                  <div className="text-center py-12">
+                    <p className="text-white/30 text-sm">No premium templates available for this category yet.</p>
+                    <p className="text-white/15 text-xs mt-1">AI will generate a custom layout.</p>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-white/[0.06] flex items-center justify-between">
-                <div className="flex-1">
-                  {businessName.trim() ? (
-                    <p className="text-sm text-white/60">
-                      <span className="text-cyan-400 font-medium">{businessName.trim()}</span>
-                    </p>
+              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+                <div className="flex-1 text-sm">
+                  {selectedTemplate ? (
+                    <span className="flex items-center gap-2 text-white/50">
+                      <Check className="h-3.5 w-3.5 text-cyan-400" />
+                      <span className="text-cyan-400 font-medium text-xs">{selectedTemplate.label}</span>
+                    </span>
                   ) : (
-                    <p className="text-xs text-white/20">Enter a name to continue</p>
+                    <span className="text-white/20 text-xs">Select a template or continue for AI layout</span>
                   )}
                 </div>
                 <Button
-                  onClick={handleDetailsNext}
-                  disabled={!businessName.trim()}
+                  onClick={handleTemplateNext}
                   className={cn(
                     "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
                     "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
-                    "transition-all disabled:opacity-30"
+                    "transition-all"
                   )}
                 >
                   Continue
@@ -624,7 +807,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             </motion.div>
           )}
 
-          {/* ══ Step 3: Aesthetic ══ */}
+          {/* ══ Step 3: Aesthetic + Name ══ */}
           {step === "aesthetic" && selectedSystem && (
             <motion.div
               key="aesthetic"
@@ -634,7 +817,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-5 pb-3 flex items-center gap-3">
+              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -645,96 +828,98 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 </Button>
                 <div>
                   <h2 className="text-lg font-bold text-white tracking-tight">
-                    Choose your aesthetic
+                    Name & style
                   </h2>
                   <p className="text-xs text-white/30">
-                    Visual style for{" "}
-                    <span className="text-cyan-400/70 font-medium">{businessName.trim()}</span>
+                    Final details before we generate your site
                   </p>
                 </div>
               </div>
 
-              <div className="flex-1 max-h-[52vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
-                  {THEME_PRESETS.map((theme) => {
-                    const isSelected = selectedTheme?.id === theme.id;
-                    return (
-                      <motion.button
-                        key={theme.id}
-                        onClick={() => setSelectedTheme(isSelected ? null : theme)}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className={cn(
-                          "relative p-5 rounded-2xl text-left transition-all duration-300",
-                          "border focus:outline-none overflow-hidden",
-                          isSelected
-                            ? "bg-cyan-500/[0.06] border-cyan-500/35 shadow-[0_0_30px_rgba(0,200,255,0.08)]"
-                            : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.12]"
-                        )}
-                      >
-                        {/* Color swatches */}
-                        <div className="flex gap-2 mb-4">
-                          {[theme.palette.bg, theme.palette.accent, theme.palette.accent2 || theme.palette.fg].map(
-                            (color, ci) => (
-                              <div
-                                key={ci}
-                                className={cn(
-                                  "w-8 h-8 rounded-lg transition-all duration-300 ring-1 ring-white/5",
-                                  isSelected && "scale-110 ring-cyan-500/20"
-                                )}
-                                style={{
-                                  backgroundColor: color,
-                                  boxShadow: isSelected ? `0 0 12px ${color}30` : "none",
-                                }}
-                              />
-                            )
-                          )}
-                        </div>
+              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
+                {/* Business Name */}
+                <div className="mb-5">
+                  <label className="block text-xs font-semibold text-white/50 mb-2 uppercase tracking-wider">
+                    Business Name <span className="text-cyan-400/60">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    placeholder="e.g., Stellar Studio, QuickFix Plumbing…"
+                    className={cn(
+                      "w-full px-4 py-3 text-sm rounded-xl transition-all duration-200",
+                      "bg-white/[0.04] border border-white/[0.08] text-white placeholder:text-white/20",
+                      "focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-500/25 focus:bg-white/[0.06]",
+                      "outline-none"
+                    )}
+                    autoFocus
+                  />
+                </div>
 
-                        {/* Label */}
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-base opacity-60">{theme.icon}</span>
-                          <h3 className="font-semibold text-sm text-white/90">{theme.label}</h3>
-                          {isSelected && (
-                            <motion.div
-                              initial={{ scale: 0 }}
-                              animate={{ scale: 1 }}
-                              className="ml-auto w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center shadow-[0_0_8px_rgba(0,200,255,0.3)]"
-                            >
-                              <Check className="h-3 w-3 text-[#07080F]" />
-                            </motion.div>
+                {/* Theme Grid */}
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    Visual Style <span className="text-white/20">(optional)</span>
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                    {THEME_PRESETS.map((theme) => {
+                      const isSelected = selectedTheme?.id === theme.id;
+                      return (
+                        <button
+                          key={theme.id}
+                          onClick={() => setSelectedTheme(isSelected ? null : theme)}
+                          className={cn(
+                            "relative p-3.5 rounded-xl text-left transition-all duration-300",
+                            "border focus:outline-none overflow-hidden",
+                            isSelected
+                              ? "bg-cyan-500/[0.06] border-cyan-500/35"
+                              : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.12]"
                           )}
-                        </div>
-                        <p className="text-[11px] text-white/25 leading-relaxed">{theme.description}</p>
-
-                        {/* Typography preview */}
-                        <div className="mt-3 pt-3 border-t border-white/[0.04]">
-                          <div className="text-[10px] text-white/15 flex items-center gap-2">
-                            <span style={{ fontFamily: theme.typography.headingFont }}>
-                              {theme.typography.headingFont}
-                            </span>
-                            <span className="text-white/8">+</span>
-                            <span style={{ fontFamily: theme.typography.bodyFont }}>
-                              {theme.typography.bodyFont}
-                            </span>
+                        >
+                          {/* Color swatches */}
+                          <div className="flex gap-1.5 mb-3">
+                            {[theme.palette.bg, theme.palette.accent, theme.palette.accent2 || theme.palette.fg].map(
+                              (color, ci) => (
+                                <div
+                                  key={ci}
+                                  className="w-6 h-6 rounded-md ring-1 ring-white/5"
+                                  style={{ backgroundColor: color }}
+                                />
+                              )
+                            )}
                           </div>
-                        </div>
-                      </motion.button>
-                    );
-                  })}
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-sm opacity-60">{theme.icon}</span>
+                            <h3 className="font-semibold text-xs text-white/90">{theme.label}</h3>
+                            {isSelected && (
+                              <motion.div
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                className="ml-auto w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center"
+                              >
+                                <Check className="h-2.5 w-2.5 text-[#07080F]" />
+                              </motion.div>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-white/25 leading-relaxed">{theme.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Custom prompt */}
-                <div className="mt-5">
+                <div>
                   <label className="text-xs font-medium text-white/40 mb-2 block">
                     Custom instructions <span className="text-white/15">(optional)</span>
                   </label>
                   <textarea
-                    placeholder="e.g., Dark navy background, warm earth tones, include a pricing section…"
+                    placeholder="e.g., Include a pricing section, use warm tones…"
                     value={customPrompt}
                     onChange={(e) => setCustomPrompt(e.target.value)}
                     className={cn(
-                      "w-full min-h-[68px] p-3 text-sm rounded-xl resize-none transition-all",
+                      "w-full min-h-[56px] p-3 text-sm rounded-xl resize-none transition-all",
                       "bg-white/[0.03] border border-white/[0.06] text-white/80 placeholder:text-white/15",
                       "focus:ring-1 focus:ring-cyan-500/25 focus:border-cyan-500/25 focus:bg-white/[0.05]",
                       "outline-none"
@@ -744,31 +929,35 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-white/[0.06] flex items-center justify-between">
-                <div className="flex-1 text-sm">
-                  {selectedTheme ? (
-                    <span className="flex items-center gap-2 text-white/50">
-                      <span className="text-base">{selectedTheme.icon}</span>
-                      <span>
-                        <span className="text-cyan-400 font-medium">{selectedTheme.label}</span>{" "}
-                        <span className="text-white/25">aesthetic</span>
+              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 text-xs text-white/30">
+                    {selectedTemplate && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-white/50">Template:</span>
+                        <span className="text-cyan-400/70">{selectedTemplate.label}</span>
                       </span>
-                    </span>
-                  ) : (
-                    <span className="text-white/20 text-xs">AI will choose a fitting style</span>
-                  )}
+                    )}
+                    {selectedTheme && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-white/50">Style:</span>
+                        <span className="text-cyan-400/70">{selectedTheme.label}</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleLaunch}
-                  disabled={isLaunching}
+                  disabled={isLaunching || !businessName.trim()}
                   className={cn(
                     "h-10 px-6 text-sm font-semibold",
                     "bg-gradient-to-r from-cyan-500/20 to-fuchsia-500/15 text-cyan-400",
                     "border border-cyan-500/30",
                     "hover:from-cyan-500/30 hover:to-fuchsia-500/20",
                     "hover:shadow-[0_0_24px_rgba(0,200,255,0.15)]",
-                    "transition-all duration-300"
+                    "transition-all duration-300",
+                    "disabled:opacity-30"
                   )}
                 >
                   {isLaunching ? (

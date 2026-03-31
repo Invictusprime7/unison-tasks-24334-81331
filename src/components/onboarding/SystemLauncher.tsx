@@ -36,7 +36,6 @@ import {
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
 import {
-  getCompositionReactCode,
   getCompositionContentContext,
   getCompositionMeta,
 } from "@/utils/compositionReference";

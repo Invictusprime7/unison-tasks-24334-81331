@@ -4668,11 +4668,9 @@ ${html}
                     <span className="text-xs font-medium text-slate-300">
                       {builderMode === 'select' ? 'Select Mode' : 'Preview Mode'}
                     </span>
-                    {useReactPreview && (
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                        <FileCode className="h-3 w-3" /> React Preview
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
+                      <FileCode className="h-3 w-3" /> React Preview
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     {/* Undo/Redo/Refresh buttons */}

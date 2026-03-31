@@ -398,6 +398,15 @@ serve(async (req: Request) => {
       surgicalEdit = false,
       vfsFiles,
     } = parsed.data;
+
+    // ── Fast-path detection for wizard launches ──────────────────────────────
+    // When the SystemLauncher calls with template-react + systemsBuildContext + no existing code,
+    // we use a dramatically simplified prompt and faster models to avoid CPU/wall-clock timeouts.
+    const fastTemplateReact = mode === 'template-react' && Boolean(systemsBuildContext) && !currentCode && !editMode && !templateAction;
+    const fastGenerationMode = navPageGen || fastTemplateReact;
+    if (fastTemplateReact) {
+      console.log('[ai-code-assistant] FAST PATH: wizard launch detected, using compact prompt');
+    }
     
     // Suppress unused variable warnings - these are used in specific modes
     void _debugMode;

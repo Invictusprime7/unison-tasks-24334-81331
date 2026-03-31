@@ -36,7 +36,6 @@ import {
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
 import {
-  getCompositionReactCode,
   getCompositionContentContext,
   getCompositionMeta,
 } from "@/utils/compositionReference";
@@ -552,10 +551,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         AI_MESSAGE_CHAR_LIMIT
       );
 
-      const compositionCode = getCompositionReactCode(generationCategory);
+      toast("Generating your site…", { description: "This takes ~15 seconds" });
 
-      toast("Generating your site…", { description: "This takes ~20 seconds" });
-
+      // NOTE: We intentionally do NOT send compositionCode as currentCode here.
+      // Sending it disables the fast-path in the edge function and causes timeouts.
+      // The blueprint + template guidance in the user prompt provide enough context.
       const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
         body: {
           messages: [{ role: "user", content: userPrompt }],
@@ -564,10 +564,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           templateName: businessName.trim() || system.name,
           aesthetic: selectedTheme?.id || "modern professional",
           source: resolvedIndustry,
-          savePattern: true,
-          currentCode: compositionCode || undefined,
-          templateAction: compositionCode ? "use-as-schema" : undefined,
+          savePattern: false,
           systemsBuildContext: blueprint,
+          systemType: selectedSystem,
         },
       });
 

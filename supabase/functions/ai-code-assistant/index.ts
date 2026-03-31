@@ -398,6 +398,15 @@ serve(async (req: Request) => {
       surgicalEdit = false,
       vfsFiles,
     } = parsed.data;
+
+    // ── Fast-path detection for wizard launches ──────────────────────────────
+    // When the SystemLauncher calls with template-react + systemsBuildContext + no existing code,
+    // we use a dramatically simplified prompt and faster models to avoid CPU/wall-clock timeouts.
+    const fastTemplateReact = mode === 'template-react' && Boolean(systemsBuildContext) && !currentCode && !editMode && !templateAction;
+    const fastGenerationMode = navPageGen || fastTemplateReact;
+    if (fastTemplateReact) {
+      console.log('[ai-code-assistant] FAST PATH: wizard launch detected, using compact prompt');
+    }
     
     // Suppress unused variable warnings - these are used in specific modes
     void _debugMode;
@@ -484,21 +493,24 @@ Generate a site that matches the user's established design preferences while bei
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch top learned patterns for context — include full code snippets for design reference
-    const { data: patterns } = await supabase
-      .from('ai_code_patterns')
-      .select('*')
-      .order('usage_count', { ascending: false })
-      .order('success_rate', { ascending: false })
-      .limit(12);
+    // Fetch top learned patterns for context — SKIP for fast path to reduce latency
+    let learnedPatterns = 'No patterns loaded (fast mode).';
+    if (!fastGenerationMode) {
+      const { data: patterns } = await supabase
+        .from('ai_code_patterns')
+        .select('*')
+        .order('usage_count', { ascending: false })
+        .order('success_rate', { ascending: false })
+        .limit(12);
 
-    const learnedPatterns = patterns && patterns.length > 0 ? (patterns as CodePattern[]).map((p: CodePattern) => `
+      learnedPatterns = patterns && patterns.length > 0 ? (patterns as CodePattern[]).map((p: CodePattern) => `
 📐 **${p.pattern_type.toUpperCase()}** — ${p.description || 'N/A'}
 Tags: ${(p.tags || []).join(', ')} | Used ${p.usage_count}× | ${p.success_rate}% success
 \`\`\`tsx
 ${p.code_snippet.substring(0, 600)}${p.code_snippet.length > 600 ? '...' : ''}
 \`\`\`
 `).join('\n') : 'No learned patterns yet - but I will learn from every successful interaction!';
+    }
 
     // Analyze template structure for context-aware editing
     const analyzeTemplateStructure = (code: string): string => {
@@ -2118,17 +2130,18 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
     const userPrompt = userPromptText.toLowerCase();
     
     // Perform web research in parallel (non-blocking) for design/code context
-    const researchPromise = performPromptResearch(userPromptText);
+    // SKIP for fast-path wizard launches to reduce latency
+    const researchPromise = fastGenerationMode
+      ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [] } as ResearchResult)
+      : performPromptResearch(userPromptText);
 
-    // For navPageGen requests, ALSO run targeted industry page research in parallel
-    const navResearchPromise: Promise<string> = (navPageGen && systemType)
+    // For navPageGen requests (NOT fast wizard launches), run targeted industry page research
+    const navResearchPromise: Promise<string> = (navPageGen && !fastTemplateReact && systemType)
       ? (async () => {
           try {
             const profile = getIndustryProfile(systemType ?? null);
             const pattern = matchPagePattern(profile, navPageName ?? '', navLabel ?? '');
-            // Static context (always fast)
             const staticCtx = buildIndustryPageContext(profile, pattern);
-            // Live DuckDuckGo research using pattern-specific queries (run both in parallel)
             const queries = getResearchQueries(pattern);
             const liveResults = await Promise.allSettled(
               queries.map(q => performPromptResearch(q))
@@ -2148,8 +2161,9 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
       : Promise.resolve('');
     
     // More specific keywords - avoid triggering on general page generation requests
+    // SKIP entirely for fast-path wizard launches
     const imageKeywords = ['generate image', 'create image', 'generate a logo', 'create a logo', 'make a logo', 'add logo image', 'insert image'];
-    const shouldGenerateImage = generateImage || imageKeywords.some(kw => userPrompt.includes(kw));
+    const shouldGenerateImage = !fastTemplateReact && (generateImage || imageKeywords.some(kw => userPrompt.includes(kw)));
     
     let generatedImageUrl = '';
     let imageHtml = '';
@@ -2276,7 +2290,7 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
     // inside <thinking>…</thinking> before producing their final answer.
     // The tags are stripped from the returned content and forwarded to the UI separately.
     // For navPageGen requests (on-demand page clicks), skip thinking to reduce latency.
-    const thinkingInstruction = navPageGen ? '' : `
+    const thinkingInstruction = fastGenerationMode ? '' : `
 
 [REASONING REQUIREMENT]
 Before writing your final answer, reason through the problem step-by-step inside <thinking> tags.
@@ -2392,25 +2406,63 @@ When the user asks to "wire", "connect", "integrate", "hook up", "link to backen
 ${vfsFilesContext}
 ` : '';
 
+    // ── Fast-path system prompt override for wizard launches ────────────────
+    // Replaces the massive template-react prompt with a compact 2-file contract
+    const finalSystemPrompt = fastTemplateReact ? (() => {
+      const bp = systemsBuildContext as Record<string, any>;
+      const brandName = bp?.brand?.business_name || templateName || 'My Business';
+      const industry = bp?.identity?.industry || source || 'professional services';
+      const tone = bp?.brand?.tone || 'professional and friendly';
+      const palette = bp?.brand?.palette || {};
+      const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
+      const intents = (bp?.intents || []).map((i: any) => i.intent).join(', ') || 'contact.submit, booking.create';
+
+      return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
+
+BUSINESS: "${brandName}" — ${industry}
+TONE: ${tone}
+SECTIONS: ${sections.join(' → ')}
+INTENTS TO WIRE: ${intents}
+
+BRAND COLORS (use as CSS custom properties):
+--primary: ${palette.primary || '#3B82F6'}
+--secondary: ${palette.secondary || '#10B981'}
+--accent: ${palette.accent || '#F59E0B'}
+--background: ${palette.background || '#0A0A0A'}
+--foreground: ${palette.foreground || '#FAFAFA'}
+
+RULES:
+1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
+2. App.tsx must be a SINGLE FILE with ALL sections inline (no separate component files)
+3. Use Tailwind CSS utility classes + CSS custom properties (hsl(var(--primary)), etc.)
+4. Use Lucide React icons: import { Icon } from "lucide-react"
+5. Wire CTAs with data-ut-intent attributes (booking.create, contact.submit, nav.goto, nav.anchor)
+6. Navigation links: <a href="#section" data-ut-intent="nav.anchor" data-ut-anchor="section">
+7. Images: use https://images.unsplash.com/photo-[id]?w=800&q=80 URLs
+8. index.css: @tailwind base/components/utilities + :root CSS variables + animations
+9. MINIMUM 7 sections, each with 3+ content elements
+10. Dark theme by default, premium glassmorphism + gradient effects
+11. Responsive: mobile-first with sm:/md:/lg: breakpoints
+12. NO markdown, NO explanations, NO code fences — ONLY the JSON object`;
+    })() : systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '');
+
     const aiMessages = [
-      { role: 'system', content: systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `
-
-**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**
-${imageHtml}
-
-The image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '') },
+      { role: 'system', content: finalSystemPrompt },
       ...processedMessages
     ];
 
     // Hybrid AI: try Vercel AI Gateway models first, then fall back to direct provider APIs
-    // Models listed in order of preference (valid, existing model IDs)
-    // navPageGen reduces maxTokens to 10000 for faster on-demand page generation
-    const pageTokens = navPageGen ? 10000 : 32000;
-    const gatewayModels = LOVABLE_API_KEY ? [
+    // Fast-path uses lighter/faster models with reduced token budget
+    const pageTokens = fastGenerationMode ? 12000 : 32000;
+    const gatewayModels = LOVABLE_API_KEY ? (fastGenerationMode ? [
+      { id: 'google/gemini-2.5-flash-lite',   maxTokens: 12000,  label: 'Gemini 2.5 Flash Lite' },
+      { id: 'google/gemini-2.5-flash',         maxTokens: 12000,  label: 'Gemini 2.5 Flash' },
+      { id: 'openai/gpt-5-mini',               maxTokens: 12000,  label: 'GPT-5 Mini' },
+    ] : [
       { id: 'google/gemini-2.5-flash',       maxTokens: pageTokens,        label: 'Gemini 2.5 Flash' },
       { id: 'google/gemini-2.5-pro',         maxTokens: pageTokens,        label: 'Gemini 2.5 Pro' },
       { id: 'openai/gpt-5-mini',             maxTokens: pageTokens,        label: 'GPT-5 Mini' },
-    ] : [];
+    ]) : [];
 
     let content = '';
     let lastError = '';

@@ -236,18 +236,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const compositionCode = getCompositionReactCode(primaryCategory);
       const compositionMetaData = getCompositionMeta(primaryCategory);
 
-      toast("Generating your site…", { description: "This takes ~15 seconds" });
+      toast("Generating your site…", { description: "This takes ~20 seconds" });
 
-      const { data, error } = await supabase.functions.invoke("systems-build", {
+      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
         body: {
-          blueprint,
-          userPrompt,
-          enhanceWithAI: true,
-          templateId: compositionMetaData?.compositionId || `ai-${primaryCategory}`,
-          templateHtml: compositionCode || "",
-          variantMode: true,
+          messages: [{ role: "user", content: userPrompt }],
+          mode: "template-react",
           variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-          outputFormat: "react",
+          templateName: businessName.trim() || system.name,
+          aesthetic: selectedTheme?.id || "modern professional",
+          source: primaryCategory,
+          savePattern: true,
+          currentCode: compositionCode || undefined,
+          templateAction: compositionCode ? "use-as-schema" : undefined,
+          systemsBuildContext: blueprint,
         },
       });
 
@@ -263,16 +265,31 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         throw error;
       }
 
-      // Process output
-      const generatedFiles = data?.files;
-      const generatedCode = generatedFiles?.["src/App.tsx"] || generatedFiles?.["App.tsx"] || data?.code;
+      // ai-code-assistant returns { content } with code or JSON
+      const rawContent = (data?.content || data?.code || "")
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+        .trim()
+        .replace(/^```json?\s*\n?/i, "")
+        .replace(/\n?```\s*$/i, "")
+        .trim();
 
       const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
 
-      if (generatedFiles && typeof generatedFiles === "object" && Object.keys(generatedFiles).length > 0) {
+      // Try to parse as VFS JSON first (multi-file output)
+      let vfsFiles: Record<string, string> | null = null;
+      try {
+        const parsed = JSON.parse(rawContent);
+        if (parsed.files && typeof parsed.files === "object") {
+          vfsFiles = parsed.files;
+        }
+      } catch {
+        // Not JSON — treat as single-file code output
+      }
+
+      if (vfsFiles && Object.keys(vfsFiles).length > 0) {
         navigate("/web-builder", {
           state: {
-            vfsFiles: generatedFiles,
+            vfsFiles,
             templateName: `${businessName.trim()} Site`,
             aesthetic: selectedTheme?.id,
             templateCategory: primaryCategory,
@@ -282,8 +299,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             startInPreview: true,
           },
         });
-      } else if (generatedCode && typeof generatedCode === "string" && generatedCode.length >= 100) {
-        const cleaned = extractCleanCode(generatedCode);
+      } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
+        const cleaned = extractCleanCode(rawContent);
         if (!cleaned || !looksLikeCode(cleaned)) {
           toast.error("AI generation produced invalid output. Try again.");
           return;

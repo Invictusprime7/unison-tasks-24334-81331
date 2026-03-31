@@ -609,6 +609,16 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     // Fix imports in content to match flattened paths
     let processedContent = content;
 
+    // Repair legacy/generated payloads that serialized THEME as undefined/null.
+    if (/
+      \.(tsx?|jsx?)$
+    /x.test(normalizedPath) && /const\s+THEME\s*=\s*(undefined|null);/.test(processedContent)) {
+      processedContent = processedContent.replace(
+        /const\s+THEME\s*=\s*(undefined|null);/,
+        `const THEME = ${LAUNCHER_THEME_JSON};`
+      );
+    }
+
     // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {
       console.warn(`[sandpackFilePrep] Raw CSS detected in ${normalizedPath} — wrapping in React component`);

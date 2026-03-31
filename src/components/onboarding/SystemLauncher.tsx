@@ -35,6 +35,7 @@ import {
   randomFontPairing,
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
+import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
 import {
   getCompositionContentContext,
   getCompositionMeta,
@@ -595,19 +596,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       try {
         const parsed = JSON.parse(rawContent);
         if (parsed.files && typeof parsed.files === "object") {
-          vfsFiles = { ...parsed.files };
-          // Ensure entry files exist for Sandpack compatibility
-          const hasMain = vfsFiles["/src/main.tsx"] || vfsFiles["src/main.tsx"] || vfsFiles["/main.tsx"];
-          if (!hasMain) {
-            vfsFiles["/src/main.tsx"] = `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`;
-          }
-          // Ensure index.css has semantic tokens if AI omitted them
-          const cssKey = vfsFiles["/src/index.css"] ? "/src/index.css" : vfsFiles["src/index.css"] ? "src/index.css" : null;
-          if (cssKey && !vfsFiles[cssKey].includes("--primary:")) {
-            vfsFiles[cssKey] = baseCSS + "\n" + vfsFiles[cssKey];
-          } else if (!cssKey) {
-            vfsFiles["/src/index.css"] = baseCSS;
-          }
+          // Use normalizeLauncherFiles to ensure consistent structure
+          vfsFiles = normalizeLauncherFiles(parsed.files, {
+            entryPoint: parsed.entryPoint || undefined,
+          });
         }
       } catch {
         // single-file output

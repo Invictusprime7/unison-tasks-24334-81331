@@ -951,6 +951,8 @@ export default function App() {
   // Business Setup Suggestions - shown after AI generates a site/template
   const [showBusinessSetup, setShowBusinessSetup] = useState(false);
 
+  const importedRouteStateRef = useRef<string | null>(null);
+
   // Auto-open SystemLauncher when no pre-generated content is provided
   const hasIncomingContent = !!(
     (location.state as any)?.vfsFiles ||
@@ -2816,6 +2818,20 @@ export default ${componentName}Page;`;
       systemType?: string;
     } | null;
 
+    const navStateSignature = navState
+      ? JSON.stringify({
+          hasVfsFiles: !!navState.vfsFiles,
+          vfsKeys: navState.vfsFiles ? Object.keys(navState.vfsFiles).sort() : [],
+          generatedCodeLength: navState.generatedCode?.length ?? 0,
+          templateName: navState.templateName ?? null,
+          systemType: navState.systemType ?? null,
+        })
+      : null;
+
+    if (navStateSignature && importedRouteStateRef.current === navStateSignature) {
+      return;
+    }
+
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (navState?.vfsFiles) {
       const vfsFiles = { ...navState.vfsFiles };
@@ -2838,6 +2854,13 @@ export default ${componentName}Page;`;
         if (entry) {
           // Ensure React imports are present
           const safeEntry = ensureReactImports(entry);
+          const activeEntryPath = vfsFiles["/src/App.tsx"]
+            ? "/src/App.tsx"
+            : vfsFiles["/App.tsx"]
+              ? "/App.tsx"
+              : Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path)) || activePagePath;
+          setActivePagePath(activeEntryPath);
+          lastSyncedCodeRef.current = safeEntry;
           setEditorCode(safeEntry);
           setPreviewCode(safeEntry);
         }
@@ -2876,6 +2899,7 @@ export default ${componentName}Page;`;
         }
 
         // Prevent re-processing generatedCode when vfsFiles already represent source of truth
+        importedRouteStateRef.current = navStateSignature;
         window.history.replaceState({}, document.title);
         return;
       }
@@ -2954,6 +2978,7 @@ export default ${componentName}Page;`;
         });
       }
       // Clear the state to prevent re-loading on subsequent renders
+      importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
     } else if (navState?.generatedTemplate) {
       const { generatedTemplate, templateName, aesthetic } = navState;
@@ -2994,9 +3019,10 @@ ${sectionsJsx}
       toast(`${templateName || generatedTemplate.name} loaded!`, {
         description: `${aesthetic || generatedTemplate.description} - View and edit in Code Editor`,
       });
+      importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
     }
-  }, [location.state]);
+  }, [location.state, activePagePath, activeSystemType, creatorPlayground, virtualFS, vfsImportFiles]);
 
   // Handle AI code generation
   const handleAICodeGenerated = (code: string) => {

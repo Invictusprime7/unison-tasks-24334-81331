@@ -517,7 +517,7 @@ export function processCode(code: string, filePath: string): string {
     }
   );
 
-  // Process remaining imports
+  // Process remaining imports — strip unresolvable npm packages to prevent Sandpack crashes
   processed = processed.replace(
     /^import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"]([^'"]+)['"];?\s*$/gm,
     (match, modulePath) => {
@@ -543,7 +543,37 @@ export function processCode(code: string, filePath: string): string {
         return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
       }
 
-      return match;
+      // Unknown npm package — strip to prevent "undefined" component crashes in Sandpack
+      // Extract what was imported so we can create stub constants
+      const namedMatch = match.match(/import\s+\{([^}]+)\}/);
+      const defaultMatch = match.match(/import\s+(\w+)\s+from/);
+      const stubs: string[] = [];
+      if (namedMatch) {
+        const names = namedMatch[1].split(',').map(n => {
+          const parts = n.trim().split(/\s+as\s+/);
+          return parts[parts.length - 1].trim();
+        }).filter(Boolean);
+        for (const name of names) {
+          // Create stub: components become pass-through divs, others become no-ops
+          if (/^[A-Z]/.test(name)) {
+            stubs.push(`const ${name} = ({ children, ...props }: any) => <div {...props}>{children}</div>;`);
+          } else {
+            stubs.push(`const ${name} = (() => {}) as any;`);
+          }
+        }
+      }
+      if (defaultMatch && !namedMatch) {
+        const name = defaultMatch[1];
+        if (/^[A-Z]/.test(name)) {
+          stubs.push(`const ${name} = ({ children, ...props }: any) => <div {...props}>{children}</div>;`);
+        } else {
+          stubs.push(`const ${name} = {} as any;`);
+        }
+      }
+      if (stubs.length > 0) {
+        return `// [Preview] Stubbed: ${modulePath}\n${stubs.join('\n')}`;
+      }
+      return `// [Preview] Stripped unresolvable: ${match.trim()}`;
     }
   );
 

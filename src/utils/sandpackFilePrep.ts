@@ -443,7 +443,6 @@ export default function App() {
 }
 `;
 }
-}
 
 function createMissingEntryApp(): string {
   return `import React from 'react';

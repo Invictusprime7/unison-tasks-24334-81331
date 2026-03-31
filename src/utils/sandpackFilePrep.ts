@@ -419,6 +419,39 @@ export default function App() {
 `;
 }
 
+function createProxyApp(targetPath: string): string {
+  const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
+
+  return `import React from 'react';
+import * as PreviewEntryModule from '${importPath}';
+
+const PreviewEntry = (PreviewEntryModule.default ?? Object.values(PreviewEntryModule)[0]) as React.ComponentType | undefined;
+
+export default function App() {
+  if (!PreviewEntry) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <p className="text-muted-foreground">Preview entry is missing a renderable component.</p>
+      </div>
+    );
+  }
+
+  return <PreviewEntry />;
+}
+`;
+}
+
+function pickPrimaryComponentPath(paths: string[]): string | null {
+  const uniquePaths = [...new Set(paths)].filter((path) => path !== '/hooks-shim.ts');
+
+  return uniquePaths.find((path) => path === '/App.tsx' || path === '/App.jsx')
+    || uniquePaths.find((path) => /\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(path))
+    || uniquePaths.find((path) => /\/pages\//.test(path))
+    || uniquePaths.find((path) => !/\/(main|index)\.(tsx|jsx)$/.test(path))
+    || uniquePaths[0]
+    || null;
+}
+
 /**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
@@ -536,6 +569,7 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
   let hasApp = false;
   let hasMain = false;
   let hasCSS = false;
+  const componentFilePaths: string[] = [];
 
   console.log('[sandpackFilePrep] Input VFS files:', Object.keys(files));
 
@@ -588,6 +622,9 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     processedContent = injectPreviewNavBridge(processedContent, normalizedPath);
     sandpackFiles[normalizedPath] = processedContent;
 
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts') {
+      componentFilePaths.push(normalizedPath);
+    }
     if (normalizedPath === '/App.tsx' || normalizedPath === '/App.jsx') hasApp = true;
     if (normalizedPath === '/main.tsx' || normalizedPath === '/main.jsx' || normalizedPath === '/index.tsx') hasMain = true;
     if (normalizedPath.endsWith('.css')) hasCSS = true;
@@ -604,7 +641,15 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
       sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingCSS;
     }
   }
-  if (!hasApp) sandpackFiles['/App.tsx'] = DEFAULT_APP;
+  if (!hasApp) {
+    const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
+
+    if (!hasMain && primaryComponentPath) {
+      sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
+    } else if (!primaryComponentPath) {
+      sandpackFiles['/App.tsx'] = DEFAULT_APP;
+    }
+  }
   if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
 

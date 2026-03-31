@@ -221,16 +221,27 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const sandpackFiles = useMemo(() => {
     return prepareSandpackFiles(files);
   }, [files]);
+
+  const normalizedActiveFile = useMemo(() => {
+    if (!activeFile) return null;
+    if (activeFile.startsWith('/src/')) return activeFile.replace('/src/', '/');
+    if (activeFile.startsWith('/styles/')) return activeFile.replace('/styles/', '/');
+    return activeFile;
+  }, [activeFile]);
   
   // Determine Sandpack entry file (from prepared/flattened files)
   const sandpackEntryFile = useMemo(() => {
-    const candidates = ['/App.tsx', '/App.jsx'];
+    if (normalizedActiveFile && sandpackFiles[normalizedActiveFile]) {
+      return normalizedActiveFile;
+    }
+
+    const candidates = ['/App.tsx', '/App.jsx', '/main.tsx', '/index.tsx', '/main.jsx', '/index.jsx'];
     for (const candidate of candidates) {
       if (sandpackFiles[candidate]) return candidate;
     }
     const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/main.tsx' && p !== '/index.tsx');
     return firstCode || '/App.tsx';
-  }, [sandpackFiles]);
+  }, [sandpackFiles, normalizedActiveFile]);
   
   // Handle messages from preview iframe (intent system)
   useEffect(() => {

@@ -218,6 +218,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   const [buildStatus, setBuildStatus] = useState("");
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [generatedVfsFiles, setGeneratedVfsFiles] = useState<Record<string, string> | null>(null);
+  const [generatedEntryPoint, setGeneratedEntryPoint] = useState<string | null>(null);
 
   const resetFlow = useCallback(() => {
     setStep("prompt");
@@ -227,6 +228,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     setBuildStatus("");
     setGeneratedCode(null);
     setGeneratedVfsFiles(null);
+    setGeneratedEntryPoint(null);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -342,13 +344,20 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
             ])
           )
         : null;
-      const entryPath = reactFiles?.["/src/App.tsx"]
-        ? "/src/App.tsx"
-        : reactFiles?.["/App.tsx"]
-          ? "/App.tsx"
-          : reactFiles
-            ? Object.keys(reactFiles).find((path) => /\.(tsx|jsx)$/.test(path)) || null
-            : null;
+      const normalizedEntryPoint = typeof data?.entryPoint === "string"
+        ? (data.entryPoint.startsWith("/") ? data.entryPoint : `/${data.entryPoint}`)
+        : null;
+      const entryPath = normalizedEntryPoint && reactFiles?.[normalizedEntryPoint]
+        ? normalizedEntryPoint
+        : reactFiles?.["/src/App.tsx"]
+          ? "/src/App.tsx"
+          : reactFiles?.["/App.tsx"]
+            ? "/App.tsx"
+            : reactFiles
+              ? Object.keys(reactFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
+                Object.keys(reactFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
+                null
+              : null;
       const code = entryPath ? reactFiles?.[entryPath] || "" : "";
 
       if (!reactFiles || Object.keys(reactFiles).length === 0 || !code || code.length < 50) {
@@ -357,6 +366,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
 
       setGeneratedCode(code);
       setGeneratedVfsFiles(reactFiles);
+      setGeneratedEntryPoint(entryPath);
       
       setBuildProgress(90);
       setBuildStatus("Preparing builder...");
@@ -429,6 +439,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     navigate("/web-builder", {
       state: {
         vfsFiles: generatedVfsFiles,
+        entryPoint: generatedEntryPoint,
         templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
         aesthetic: "modern",
         startInPreview: true,

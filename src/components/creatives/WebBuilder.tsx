@@ -870,7 +870,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [selectedObject, setSelectedObject] = useState<FabricCanvas['_objects'][0] | null>(null);
   const [activeMode, setActiveMode] = useState<"insert" | "layout" | "text" | "vector">("insert");
   const [builderMode, setBuilderMode] = useState<SimpleBuilderMode>('select');
-  const [useReactPreview, setUseReactPreview] = useState(true); // React/VFS preview mode (Docker + HTML blob fallback)
+  const [useReactPreview, setUseReactPreview] = useState(true); // Sandpack/VFS preview mode
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [zoom, setZoom] = useState(0.5);
   const [canvasHeight, setCanvasHeight] = useState(800);
@@ -2816,6 +2816,7 @@ export default ${componentName}Page;`;
       aesthetic?: string;
       startInPreview?: boolean;
       systemType?: string;
+      entryPoint?: string;
     } | null;
 
     const navStateSignature = navState
@@ -2825,6 +2826,7 @@ export default ${componentName}Page;`;
           generatedCodeLength: navState.generatedCode?.length ?? 0,
           templateName: navState.templateName ?? null,
           systemType: navState.systemType ?? null,
+          entryPoint: navState.entryPoint ?? null,
         })
       : null;
 
@@ -2835,6 +2837,9 @@ export default ${componentName}Page;`;
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (navState?.vfsFiles) {
       const vfsFiles = { ...navState.vfsFiles };
+      const normalizedEntryPoint = navState.entryPoint
+        ? (navState.entryPoint.startsWith('/') ? navState.entryPoint : `/${navState.entryPoint}`)
+        : null;
 
       // Extract embedded TEMPLATE_STYLES/TEMPLATE_CSS from App.tsx and route to CSS file
       const appKey = vfsFiles["/src/App.tsx"] ? "/src/App.tsx" : vfsFiles["/App.tsx"] ? "/App.tsx" : null;
@@ -2849,17 +2854,21 @@ export default ${componentName}Page;`;
       if (Object.keys(vfsFiles).length > 0) {
         virtualFS.importFiles(vfsFiles);
 
-        // Find React entry point — prioritize /src/App.tsx, then /App.tsx
-        const entry = vfsFiles["/src/App.tsx"] || vfsFiles["/App.tsx"] || Object.values(vfsFiles)[0];
+        const editableEntryPath = vfsFiles["/src/App.tsx"]
+          ? "/src/App.tsx"
+          : vfsFiles["/App.tsx"]
+            ? "/App.tsx"
+            : Object.keys(vfsFiles).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) ||
+              (normalizedEntryPoint && vfsFiles[normalizedEntryPoint] ? normalizedEntryPoint : null) ||
+              Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path)) ||
+              Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
+              activePagePath;
+        const entry = vfsFiles[editableEntryPath];
+
         if (entry) {
           // Ensure React imports are present
           const safeEntry = ensureReactImports(entry);
-          const activeEntryPath = vfsFiles["/src/App.tsx"]
-            ? "/src/App.tsx"
-            : vfsFiles["/App.tsx"]
-              ? "/App.tsx"
-              : Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path)) || activePagePath;
-          setActivePagePath(activeEntryPath);
+          setActivePagePath(editableEntryPath);
           lastSyncedCodeRef.current = safeEntry;
           setEditorCode(safeEntry);
           setPreviewCode(safeEntry);
@@ -4660,7 +4669,7 @@ ${html}
                     </span>
                     {useReactPreview && (
                       <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                        <FileCode className="h-3 w-3" /> HTML Preview
+                        <FileCode className="h-3 w-3" /> React Preview
                       </div>
                     )}
                   </div>
@@ -4866,7 +4875,7 @@ ${html}
                       <span className="text-sm text-slate-500">Live Preview</span>
                       {useReactPreview && (
                         <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                          <FileCode className="h-3 w-3" /> HTML Preview
+                          <FileCode className="h-3 w-3" /> React Preview
                         </div>
                       )}
                     </div>

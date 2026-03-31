@@ -35,6 +35,7 @@ import {
   randomFontPairing,
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
+import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
 import {
   getCompositionContentContext,
   getCompositionMeta,

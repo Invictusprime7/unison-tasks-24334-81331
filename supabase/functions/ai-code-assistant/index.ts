@@ -493,21 +493,24 @@ Generate a site that matches the user's established design preferences while bei
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch top learned patterns for context — include full code snippets for design reference
-    const { data: patterns } = await supabase
-      .from('ai_code_patterns')
-      .select('*')
-      .order('usage_count', { ascending: false })
-      .order('success_rate', { ascending: false })
-      .limit(12);
+    // Fetch top learned patterns for context — SKIP for fast path to reduce latency
+    let learnedPatterns = 'No patterns loaded (fast mode).';
+    if (!fastGenerationMode) {
+      const { data: patterns } = await supabase
+        .from('ai_code_patterns')
+        .select('*')
+        .order('usage_count', { ascending: false })
+        .order('success_rate', { ascending: false })
+        .limit(12);
 
-    const learnedPatterns = patterns && patterns.length > 0 ? (patterns as CodePattern[]).map((p: CodePattern) => `
+      learnedPatterns = patterns && patterns.length > 0 ? (patterns as CodePattern[]).map((p: CodePattern) => `
 📐 **${p.pattern_type.toUpperCase()}** — ${p.description || 'N/A'}
 Tags: ${(p.tags || []).join(', ')} | Used ${p.usage_count}× | ${p.success_rate}% success
 \`\`\`tsx
 ${p.code_snippet.substring(0, 600)}${p.code_snippet.length > 600 ? '...' : ''}
 \`\`\`
 `).join('\n') : 'No learned patterns yet - but I will learn from every successful interaction!';
+    }
 
     // Analyze template structure for context-aware editing
     const analyzeTemplateStructure = (code: string): string => {

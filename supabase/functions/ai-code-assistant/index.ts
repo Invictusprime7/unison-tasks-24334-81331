@@ -2474,12 +2474,17 @@ RULES:
     ];
 
     // Hybrid AI: try Vercel AI Gateway models first, then fall back to direct provider APIs
-    // Fast-path uses lighter/faster models with reduced token budget
-    const pageTokens = fastGenerationMode ? 12000 : 32000;
-    const gatewayModels = LOVABLE_API_KEY ? (fastGenerationMode ? [
+    // Wizard fast-path needs more tokens (full 7-section site) and longer timeout
+    const pageTokens = navPageGen ? 12000 : fastTemplateReact ? 16000 : 32000;
+    // Wizard launches: use capable models with generous timeout (55s × 3 = 165s, within 180s wall-clock)
+    // Nav-page gen: lightweight models with short timeout
+    const gatewayModels = LOVABLE_API_KEY ? (navPageGen ? [
       { id: 'google/gemini-2.5-flash-lite',   maxTokens: 12000,  label: 'Gemini 2.5 Flash Lite' },
       { id: 'google/gemini-2.5-flash',         maxTokens: 12000,  label: 'Gemini 2.5 Flash' },
-      { id: 'openai/gpt-5-mini',               maxTokens: 12000,  label: 'GPT-5 Mini' },
+    ] : fastTemplateReact ? [
+      { id: 'google/gemini-2.5-flash',         maxTokens: 16000,  label: 'Gemini 2.5 Flash' },
+      { id: 'google/gemini-2.5-pro',           maxTokens: 16000,  label: 'Gemini 2.5 Pro' },
+      { id: 'openai/gpt-5-mini',               maxTokens: 16000,  label: 'GPT-5 Mini' },
     ] : [
       { id: 'google/gemini-2.5-flash',       maxTokens: pageTokens,        label: 'Gemini 2.5 Flash' },
       { id: 'google/gemini-2.5-pro',         maxTokens: pageTokens,        label: 'Gemini 2.5 Pro' },
@@ -2491,13 +2496,15 @@ RULES:
     // Mutable wrapper so TypeScript const-analysis doesn't flag it (assigned inside nested conditionals)
     const capture = { reasoning: '' };
 
+    // Per-model timeout: wizard gets 55s (full site gen), nav-page 20s, normal 25s
+    const perModelTimeout = fastTemplateReact ? 55000 : navPageGen ? 20000 : 25000;
+
     // ── Phase 1: Vercel AI Gateway ──────────────────────────────────────────
     for (const model of gatewayModels) {
       try {
-        console.log(`[AI-Hybrid] Trying gateway model ${model.label}...`);
+        console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${perModelTimeout / 1000}s)...`);
         const controller = new AbortController();
-        // 25s per-model timeout: allows up to 5 attempts (125s total) within Supabase's 150s wall-clock limit
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        const timeoutId = setTimeout(() => controller.abort(), perModelTimeout);
 
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',

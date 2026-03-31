@@ -2407,25 +2407,63 @@ When the user asks to "wire", "connect", "integrate", "hook up", "link to backen
 ${vfsFilesContext}
 ` : '';
 
+    // ── Fast-path system prompt override for wizard launches ────────────────
+    // Replaces the massive template-react prompt with a compact 2-file contract
+    const finalSystemPrompt = fastTemplateReact ? (() => {
+      const bp = systemsBuildContext as Record<string, any>;
+      const brandName = bp?.brand?.business_name || templateName || 'My Business';
+      const industry = bp?.identity?.industry || source || 'professional services';
+      const tone = bp?.brand?.tone || 'professional and friendly';
+      const palette = bp?.brand?.palette || {};
+      const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
+      const intents = (bp?.intents || []).map((i: any) => i.intent).join(', ') || 'contact.submit, booking.create';
+
+      return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
+
+BUSINESS: "${brandName}" — ${industry}
+TONE: ${tone}
+SECTIONS: ${sections.join(' → ')}
+INTENTS TO WIRE: ${intents}
+
+BRAND COLORS (use as CSS custom properties):
+--primary: ${palette.primary || '#3B82F6'}
+--secondary: ${palette.secondary || '#10B981'}
+--accent: ${palette.accent || '#F59E0B'}
+--background: ${palette.background || '#0A0A0A'}
+--foreground: ${palette.foreground || '#FAFAFA'}
+
+RULES:
+1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
+2. App.tsx must be a SINGLE FILE with ALL sections inline (no separate component files)
+3. Use Tailwind CSS utility classes + CSS custom properties (hsl(var(--primary)), etc.)
+4. Use Lucide React icons: import { Icon } from "lucide-react"
+5. Wire CTAs with data-ut-intent attributes (booking.create, contact.submit, nav.goto, nav.anchor)
+6. Navigation links: <a href="#section" data-ut-intent="nav.anchor" data-ut-anchor="section">
+7. Images: use https://images.unsplash.com/photo-[id]?w=800&q=80 URLs
+8. index.css: @tailwind base/components/utilities + :root CSS variables + animations
+9. MINIMUM 7 sections, each with 3+ content elements
+10. Dark theme by default, premium glassmorphism + gradient effects
+11. Responsive: mobile-first with sm:/md:/lg: breakpoints
+12. NO markdown, NO explanations, NO code fences — ONLY the JSON object`;
+    })() : systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '');
+
     const aiMessages = [
-      { role: 'system', content: systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `
-
-**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**
-${imageHtml}
-
-The image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '') },
+      { role: 'system', content: finalSystemPrompt },
       ...processedMessages
     ];
 
     // Hybrid AI: try Vercel AI Gateway models first, then fall back to direct provider APIs
-    // Models listed in order of preference (valid, existing model IDs)
-    // navPageGen reduces maxTokens to 10000 for faster on-demand page generation
-    const pageTokens = navPageGen ? 10000 : 32000;
-    const gatewayModels = LOVABLE_API_KEY ? [
+    // Fast-path uses lighter/faster models with reduced token budget
+    const pageTokens = fastGenerationMode ? 12000 : 32000;
+    const gatewayModels = LOVABLE_API_KEY ? (fastGenerationMode ? [
+      { id: 'google/gemini-2.5-flash-lite',   maxTokens: 12000,  label: 'Gemini 2.5 Flash Lite' },
+      { id: 'google/gemini-2.5-flash',         maxTokens: 12000,  label: 'Gemini 2.5 Flash' },
+      { id: 'openai/gpt-5-mini',               maxTokens: 12000,  label: 'GPT-5 Mini' },
+    ] : [
       { id: 'google/gemini-2.5-flash',       maxTokens: pageTokens,        label: 'Gemini 2.5 Flash' },
       { id: 'google/gemini-2.5-pro',         maxTokens: pageTokens,        label: 'Gemini 2.5 Pro' },
       { id: 'openai/gpt-5-mini',             maxTokens: pageTokens,        label: 'GPT-5 Mini' },
-    ] : [];
+    ]) : [];
 
     let content = '';
     let lastError = '';

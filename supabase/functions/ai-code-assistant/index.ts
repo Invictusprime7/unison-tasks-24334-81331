@@ -2417,6 +2417,17 @@ ${vfsFilesContext}
       const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
       const intents = (bp?.intents || []).map((i: any) => i.intent).join(', ') || 'contact.submit, booking.create';
 
+      // Convert hex colors to HSL for Tailwind CSS custom properties
+      const toHsl = (hex: string | undefined, fallback: string): string => {
+        if (!hex) return fallback;
+        try { return hexToHsl(hex); } catch { return fallback; }
+      };
+      const primaryHsl = toHsl(palette.primary, '221.2 83.2% 53.3%');
+      const secondaryHsl = toHsl(palette.secondary, '160 84.1% 39.4%');
+      const accentHsl = toHsl(palette.accent, '38 92.1% 50.2%');
+      const backgroundHsl = toHsl(palette.background, '222.2 84% 4.9%');
+      const foregroundHsl = toHsl(palette.foreground, '210 40% 98%');
+
       return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
 
 BUSINESS: "${brandName}" — ${industry}
@@ -2424,26 +2435,37 @@ TONE: ${tone}
 SECTIONS: ${sections.join(' → ')}
 INTENTS TO WIRE: ${intents}
 
-BRAND COLORS (use as CSS custom properties):
---primary: ${palette.primary || '#3B82F6'}
---secondary: ${palette.secondary || '#10B981'}
---accent: ${palette.accent || '#F59E0B'}
---background: ${palette.background || '#0A0A0A'}
---foreground: ${palette.foreground || '#FAFAFA'}
+BRAND COLORS — HSL values for CSS custom properties (no hsl() wrapper, just the values):
+--primary: ${primaryHsl}
+--primary-foreground: 210 40% 98%
+--secondary: ${secondaryHsl}
+--secondary-foreground: 210 40% 98%
+--accent: ${accentHsl}
+--accent-foreground: 210 40% 98%
+--background: ${backgroundHsl}
+--foreground: ${foregroundHsl}
+--muted: 217.2 32.6% 17.5%
+--muted-foreground: 215 20.2% 65.1%
+--border: 217.2 32.6% 17.5%
+--card: 222.2 84% 4.9%
+--card-foreground: 210 40% 98%
+--ring: 224.3 76.3% 48%
+--radius: 0.75rem
 
 RULES:
 1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
-2. App.tsx must be a SINGLE FILE with ALL sections inline (no separate component files)
-3. Use Tailwind CSS utility classes + CSS custom properties (hsl(var(--primary)), etc.)
-4. Use Lucide React icons: import { Icon } from "lucide-react"
-5. Wire CTAs with data-ut-intent attributes (booking.create, contact.submit, nav.goto, nav.anchor)
-6. Navigation links: <a href="#section" data-ut-intent="nav.anchor" data-ut-anchor="section">
-7. Images: use https://images.unsplash.com/photo-[id]?w=800&q=80 URLs
-8. index.css: @tailwind base/components/utilities + :root CSS variables + animations
-9. MINIMUM 7 sections, each with 3+ content elements
-10. Dark theme by default, premium glassmorphism + gradient effects
-11. Responsive: mobile-first with sm:/md:/lg: breakpoints
-12. NO markdown, NO explanations, NO code fences — ONLY the JSON object`;
+2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
+3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports.
+4. In App.tsx use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
+5. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
+6. Wire CTAs with data-ut-intent attributes: data-ut-intent="booking.create", data-ut-intent="contact.submit"
+7. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
+8. Images: use placeholder URLs like https://images.unsplash.com/photo-1234567890?w=800&q=80
+9. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above
+10. MINIMUM 7 distinct sections, each with rich content
+11. Dark theme, premium glassmorphism + gradient effects, responsive (sm:/md:/lg:)
+12. export default function App() — must be the default export
+13. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object`;
     })() : systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '');
 
     const aiMessages = [

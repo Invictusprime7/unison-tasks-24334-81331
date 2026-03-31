@@ -236,18 +236,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const compositionCode = getCompositionReactCode(primaryCategory);
       const compositionMetaData = getCompositionMeta(primaryCategory);
 
-      toast("Generating your site…", { description: "This takes ~15 seconds" });
+      toast("Generating your site…", { description: "This takes ~20 seconds" });
 
-      const { data, error } = await supabase.functions.invoke("systems-build", {
+      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
         body: {
-          blueprint,
-          userPrompt,
-          enhanceWithAI: true,
-          templateId: compositionMetaData?.compositionId || `ai-${primaryCategory}`,
-          templateHtml: compositionCode || "",
-          variantMode: true,
+          messages: [{ role: "user", content: userPrompt }],
+          mode: "template-react",
           variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-          outputFormat: "react",
+          templateName: businessName.trim() || system.name,
+          aesthetic: selectedTheme?.id || "modern professional",
+          source: primaryCategory,
+          savePattern: true,
+          currentCode: compositionCode || undefined,
+          templateAction: compositionCode ? "use-as-schema" : undefined,
+          systemsBuildContext: blueprint,
         },
       });
 

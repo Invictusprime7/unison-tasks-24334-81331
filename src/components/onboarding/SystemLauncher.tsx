@@ -20,6 +20,7 @@ import {
 import {
   businessSystems,
   type BusinessSystemType,
+  type LayoutCategory,
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,7 +35,11 @@ import {
   randomFontPairing,
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
-import { getCompositionReactCode, getCompositionContentContext } from "@/utils/compositionReference";
+import {
+  getCompositionReactCode,
+  getCompositionContentContext,
+  getCompositionMeta,
+} from "@/utils/compositionReference";
 import {
   getAllReferences,
   getReferencesForIndustry,
@@ -82,6 +87,18 @@ const INDUSTRY_DISPLAY: Record<IndustryTag, { label: string; icon: string }> = {
   realestate: { label: "Real Estate", icon: "🏠" },
   photography: { label: "Photography", icon: "📷" },
   universal: { label: "Universal", icon: "✦" },
+};
+
+const TEMPLATE_INDUSTRY_TO_CATEGORY: Partial<Record<IndustryTag, LayoutCategory>> = {
+  salon: "salon",
+  "local-service": "contractor",
+  coaching: "coaching",
+  restaurant: "restaurant",
+  ecommerce: "store",
+  realestate: "realestate",
+  photography: "portfolio",
+  legal: "agency",
+  fitness: "coaching",
 };
 
 // Extended industry cards with richer visuals
@@ -248,6 +265,37 @@ function buildTemplateGuidance(card: TemplateCardData | null): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function getGenerationCategory(
+  system: (typeof businessSystems)[number],
+  template: TemplateCardData | null
+): LayoutCategory {
+  const templateCategory = template
+    ? TEMPLATE_INDUSTRY_TO_CATEGORY[template.industry]
+    : undefined;
+
+  return (templateCategory || system.templateCategories[0]) as LayoutCategory;
+}
+
+function getFunctionErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const withContext = error as Error & { context?: { body?: string } };
+    const body = withContext.context?.body;
+
+    if (body) {
+      try {
+        const parsed = JSON.parse(body) as { error?: string; details?: unknown };
+        if (parsed.error) return parsed.error;
+      } catch {
+        return body;
+      }
+    }
+
+    return error.message;
+  }
+
+  return "Generation failed";
 }
 
 // Mini preview component
@@ -438,19 +486,25 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      const primaryCategory = system.templateCategories[0];
-      const industryProfile = getIndustryForCategory(primaryCategory as any);
-      const canonicalIntents = industryProfile
-        ? getAllowedIntents(industryProfile.defaultCapabilities)
-        : system.intents;
+      const generationCategory = getGenerationCategory(system, selectedTemplate);
+      const industryProfile = getIndustryForCategory(generationCategory);
+      const compositionMeta = getCompositionMeta(generationCategory);
+      const canonicalIntents = Array.from(new Set([
+        ...(industryProfile
+          ? getAllowedIntents(industryProfile.defaultCapabilities)
+          : system.intents),
+        ...(compositionMeta?.intents || []),
+      ]));
 
       const fonts = randomFontPairing();
       const design = generateDesignVariation();
+      const resolvedIndustry = industryProfile?.industry || generationCategory;
 
       const blueprint = {
         version: "1.0",
         identity: {
-          industry: primaryCategory,
+          industry: resolvedIndustry,
+          business_model: system.id,
           primary_goal: industryProfile
             ? industryProfile.defaultCapabilities.includes("booking")
               ? "bookings"
@@ -465,7 +519,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         design,
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
-        template_sections: selectedTemplate?.sectionTypes,
+        template_sections: selectedTemplate?.sectionTypes?.length
+          ? selectedTemplate.sectionTypes
+          : compositionMeta?.sections,
+        template_intents: compositionMeta?.intents,
       };
 
       const themeInstruction = selectedTheme
@@ -476,7 +533,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         : "";
 
       const contentContext = clampPromptText(
-        getCompositionContentContext(primaryCategory) || "",
+        getCompositionContentContext(generationCategory) || "",
         INDUSTRY_CONTEXT_CHAR_LIMIT
       );
       const industryContextBlock = contentContext
@@ -489,11 +546,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         : "";
 
       const userPrompt = clampPromptText(
-        `Create a premium ${primaryCategory} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}`,
+        `Create a premium ${resolvedIndustry} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}`,
         AI_MESSAGE_CHAR_LIMIT
       );
 
-      const compositionCode = getCompositionReactCode(primaryCategory);
+      const compositionCode = getCompositionReactCode(generationCategory);
 
       toast("Generating your site…", { description: "This takes ~20 seconds" });
 
@@ -504,7 +561,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
           templateName: businessName.trim() || system.name,
           aesthetic: selectedTheme?.id || "modern professional",
-          source: primaryCategory,
+          source: resolvedIndustry,
           savePattern: true,
           currentCode: compositionCode || undefined,
           templateAction: compositionCode ? "use-as-schema" : undefined,
@@ -580,7 +637,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       resetState();
       toast.success("Site generated! Opening builder…");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Generation failed";
+      const msg = getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);
       toast.error(msg);
     } finally {

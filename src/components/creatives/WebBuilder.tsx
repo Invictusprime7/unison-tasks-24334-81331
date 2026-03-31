@@ -870,7 +870,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [selectedObject, setSelectedObject] = useState<FabricCanvas['_objects'][0] | null>(null);
   const [activeMode, setActiveMode] = useState<"insert" | "layout" | "text" | "vector">("insert");
   const [builderMode, setBuilderMode] = useState<SimpleBuilderMode>('select');
-  const [useReactPreview, setUseReactPreview] = useState(true); // Sandpack/VFS preview mode
+  // useReactPreview removed — VFSPreview (Sandpack) is now the only preview engine
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [zoom, setZoom] = useState(0.5);
   const [canvasHeight, setCanvasHeight] = useState(800);
@@ -3361,16 +3361,12 @@ ${html}
     }
   }, [redoCode, canRedoCanvas, redoCanvas]);
 
-  // Manual refresh handler — works for both VFSPreview (React/Sandpack) and SimplePreview (srcdoc)
+  // Manual refresh handler — always uses VFSPreview (Sandpack)
   const handleRefreshPreview = useCallback(() => {
     setIsRefreshing(true);
-    if (useReactPreview && livePreviewRef.current) {
-      livePreviewRef.current.refresh();
-    } else if (simplePreviewRef.current) {
-      simplePreviewRef.current.refresh();
-    }
+    livePreviewRef.current?.refresh();
     setTimeout(() => setIsRefreshing(false), 600);
-  }, [useReactPreview]);
+  }, []);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -3933,9 +3929,7 @@ ${html}
 
   // Scroll navigation functions — post message to iframe or scroll container
   const postScrollToIframe = useCallback((command: 'top' | 'bottom' | 'up' | 'down') => {
-    const iframe = useReactPreview
-      ? livePreviewRef.current?.getIframe?.()
-      : simplePreviewRef.current?.getIframe();
+    const iframe = livePreviewRef.current?.getIframe?.();
     if (iframe?.contentWindow) {
       try {
         const doc = iframe.contentDocument || iframe.contentWindow.document;
@@ -3978,7 +3972,7 @@ ${html}
           break;
       }
     }
-  }, [useReactPreview]);
+  }, []);
 
   const scrollToTop = () => postScrollToIframe('top');
   const scrollToBottom = () => postScrollToIframe('bottom');
@@ -4674,11 +4668,9 @@ ${html}
                     <span className="text-xs font-medium text-slate-300">
                       {builderMode === 'select' ? 'Select Mode' : 'Preview Mode'}
                     </span>
-                    {useReactPreview && (
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                        <FileCode className="h-3 w-3" /> React Preview
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
+                      <FileCode className="h-3 w-3" /> React Preview
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     {/* Undo/Redo/Refresh buttons */}
@@ -4716,11 +4708,7 @@ ${html}
                       variant="ghost"
                       size="icon"
                       onClick={() => {
-                        if (useReactPreview) {
-                          livePreviewRef.current?.openInNewTab();
-                        } else {
-                          simplePreviewRef.current?.openInNewTab();
-                        }
+                        livePreviewRef.current?.openInNewTab();
                       }}
                       className="h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                       title="Open preview in new tab"
@@ -4747,8 +4735,7 @@ ${html}
                   data-drop-zone="true"
                   className="flex-1 flex flex-col min-h-0 overflow-hidden"
                 >
-                  {/* React mode uses VFSPreview with Docker HMR, HTML mode uses SimplePreview */}
-                    {useReactPreview ? (
+                  {/* Unified VFSPreview — single Sandpack-based preview engine */}
                     <VFSPreview
                       ref={livePreviewRef}
                       nodes={virtualFS.nodes}
@@ -4783,17 +4770,6 @@ ${html}
                         }]);
                       }}
                     />
-                  ) : (
-                    <SimplePreview
-                      ref={simplePreviewRef}
-                      code={previewCode}
-                      className="w-full h-full min-h-0 flex-1"
-                      showToolbar={false}
-                      device={device}
-                      enableSelection={builderMode === 'select'}
-                      onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
-                    />
-                  )}
                   {/* Inline loading overlay for AI page generation */}
                   {isGeneratingPage && (
                     <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/40 backdrop-blur-md">
@@ -4880,11 +4856,9 @@ ${html}
                     <div className="flex items-center gap-2">
                       <Eye className="w-4 h-4 text-slate-400" />
                       <span className="text-sm text-slate-500">Live Preview</span>
-                      {useReactPreview && (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                          <FileCode className="h-3 w-3" /> React Preview
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
+                        <FileCode className="h-3 w-3" /> React Preview
+                      </div>
                     </div>
                     <div className="flex items-center gap-1">
                       <Button
@@ -4921,11 +4895,7 @@ ${html}
                         variant="ghost"
                         size="icon"
                         onClick={() => {
-                          if (useReactPreview) {
-                            livePreviewRef.current?.openInNewTab();
-                          } else {
-                            simplePreviewRef.current?.openInNewTab();
-                          }
+                          livePreviewRef.current?.openInNewTab();
                         }}
                         className="h-7 w-7 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-md transition-all duration-200"
                         title="Open preview in new tab"
@@ -4940,8 +4910,7 @@ ${html}
                     data-drop-zone="true"
                     className="flex-1 flex flex-col min-h-0 overflow-hidden"
                   >
-                    {/* React mode uses VFSPreview with Docker HMR, HTML mode uses SimplePreview */}
-                    {useReactPreview ? (
+                    {/* Unified VFSPreview — single Sandpack-based preview engine */}
                       <VFSPreview
                         ref={livePreviewRef}
                         nodes={virtualFS.nodes}
@@ -4976,17 +4945,6 @@ ${html}
                           }]);
                         }}
                       />
-                    ) : (
-                      <SimplePreview
-                        ref={simplePreviewRef}
-                        code={previewCode}
-                        className="w-full h-full min-h-0 flex-1"
-                        showToolbar={false}
-                        device={device}
-                        enableSelection={builderMode === 'select'}
-                        onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
-                      />
-                    )}
                   </div>
                 </div>
 

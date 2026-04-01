@@ -2168,7 +2168,7 @@ export default function ${componentName}Page() {
         }
         // Re-sync manifest to iframe so all pages are available for back-navigation
         setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
+          livePreviewRef.current?.syncPageManifest?.(pageManifest);
         }, 300);
         return;
       }

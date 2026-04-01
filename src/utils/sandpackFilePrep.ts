@@ -999,6 +999,9 @@ export function prepareSandpackFiles(
 
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
 
+  // ── Stub missing relative imports to prevent "Element type is invalid" crashes ──
+  stubMissingRelativeImports(sandpackFiles);
+
   // Ensure template.css exists if any file imports it
   const anyImportsTemplateCss = Object.values(sandpackFiles).some(c =>
     typeof c === 'string' && /import\s+['"]\.\/template\.css['"]/.test(c)

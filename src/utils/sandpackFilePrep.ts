@@ -731,7 +731,7 @@ export default Hero;`;
 function genNavbar(ctx: GeneratorContext): string {
   return `import React from 'react';
 
-export default function Navbar() {
+export function Navbar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -751,7 +751,7 @@ export default function Navbar() {
 function genHeader(ctx: GeneratorContext): string {
   return `import React from 'react';
 
-export default function Header() {
+export function Header() {
   return (
     <header className="bg-background border-b border-border">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -778,7 +778,7 @@ const features = [
   { title: 'Customer Focus', desc: 'Your satisfaction drives everything we do — from consultation to completion.', icon: '💎' },
 ];
 
-export default function Features() {
+export function Features() {
   return (
     <section id="features" className="py-24 bg-secondary/30">
       <div className="max-w-7xl mx-auto px-6">
@@ -811,7 +811,7 @@ const services = [
   { name: 'Custom Solution', desc: 'Tailored specifically to your unique requirements and goals.', price: 'Contact Us', img: '${img2}' },
 ];
 
-export default function Services() {
+export function Services() {
   return (
     <section id="services" className="py-24 bg-background">
       <div className="max-w-7xl mx-auto px-6">
@@ -844,7 +844,7 @@ function genAbout(ctx: GeneratorContext): string {
   const img = ctx.images[1] || CONTEXTUAL_IMAGES.default[1];
   return `import React from 'react';
 
-export default function About() {
+export function About() {
   return (
     <section id="about" className="py-24 bg-background">
       <div className="max-w-7xl mx-auto px-6">
@@ -878,7 +878,7 @@ const testimonials = [
   { name: 'Emily Rodriguez', role: 'Returning Customer', text: 'The attention to detail and personalized approach makes all the difference.', img: '${PORTRAIT_IMAGES[2]}' },
 ];
 
-export default function Testimonials() {
+export function Testimonials() {
   return (
     <section className="py-24 bg-secondary/30">
       <div className="max-w-7xl mx-auto px-6">
@@ -905,7 +905,7 @@ function genContact(ctx: GeneratorContext): string {
   const emailDomain = ctx.brandName.toLowerCase().replace(/\s+/g, '');
   return `import React from 'react';
 
-export default function Contact() {
+export function Contact() {
   return (
     <section id="contact" className="py-24 bg-background">
       <div className="max-w-7xl mx-auto px-6">
@@ -938,7 +938,7 @@ export default function Contact() {
 function genFooter(ctx: GeneratorContext): string {
   return `import React from 'react';
 
-export default function Footer() {
+export function Footer() {
   return (
     <footer className="bg-foreground text-background py-16">
       <div className="max-w-7xl mx-auto px-6">
@@ -989,7 +989,7 @@ const plans = [
   { name: 'Enterprise', price: '$199', period: '/mo', features: ['Everything in Pro', '24/7 support', 'Unlimited users', 'Custom solutions', 'Dedicated manager'], popular: false },
 ];
 
-export default function Pricing() {
+export function Pricing() {
   return (
     <section id="pricing" className="py-24 bg-background">
       <div className="max-w-7xl mx-auto px-6">
@@ -1024,7 +1024,7 @@ const galleryImages = [
   '${CONTEXTUAL_IMAGES.saas[0]}',
 ];
 
-export default function Gallery() {
+export function Gallery() {
   return (
     <section className="py-24 bg-secondary/30">
       <div className="max-w-7xl mx-auto px-6">
@@ -1045,7 +1045,7 @@ export default function Gallery() {
 function genCTA(ctx: GeneratorContext): string {
   return `import React from 'react';
 
-export default function CTA() {
+export function CTA() {
   return (
     <section className="py-24 bg-primary">
       <div className="max-w-4xl mx-auto px-6 text-center">
@@ -1071,7 +1071,7 @@ const faqs = [
   { q: 'What is your cancellation policy?', a: 'We require 24-hour notice for cancellations. Late cancellations may incur a fee.' },
 ];
 
-export default function FAQ() {
+export function FAQ() {
   const [open, setOpen] = React.useState<number | null>(null);
   return (
     <section className="py-24 bg-background">
@@ -1103,7 +1103,7 @@ const members = [
   { name: 'Sophie Chen', role: 'Operations Manager', img: '${PORTRAIT_IMAGES[3]}' },
 ];
 
-export default function Team() {
+export function Team() {
   return (
     <section className="py-24 bg-secondary/30">
       <div className="max-w-7xl mx-auto px-6">

@@ -398,6 +398,9 @@ export const useWebBuilderState = (fabricCanvas: FabricCanvas | null) => {
     resetZoom,
     toggleFullscreen,
     
+    // Editor layer
+    setEditorLayer,
+    
     // Panels
     toggleLeftPanel,
     toggleRightPanel,

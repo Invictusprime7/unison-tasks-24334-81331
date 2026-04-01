@@ -36,6 +36,7 @@ import {
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
 import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
+import { createRuntimeManifest } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,
   getCompositionMeta,

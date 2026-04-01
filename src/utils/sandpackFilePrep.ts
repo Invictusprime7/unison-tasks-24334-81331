@@ -966,6 +966,11 @@ export function prepareSandpackFiles(
     }
   }
 
+  // Enforce contrast on final CSS
+  if (sandpackFiles['/index.css']) {
+    sandpackFiles['/index.css'] = enforceContrastInCSS(sandpackFiles['/index.css']);
+  }
+
   if (!hasApp) {
     if (options?.strict && options?.entryPoint) {
       // In strict mode with explicit entry, create proxy to that entry

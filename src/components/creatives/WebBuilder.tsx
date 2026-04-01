@@ -1398,7 +1398,7 @@ export default function App() {
       // Sync all HTML pages to iframe cache (with small delay to ensure iframe is ready)
       const timeoutId = setTimeout(() => {
         console.log('[WebBuilder] Syncing page manifest:', pageCount, 'pages');
-        simplePreviewRef.current?.syncPageManifest(pageManifest);
+        livePreviewRef.current?.syncPageManifest?.(pageManifest);
       }, 200);
       return () => clearTimeout(timeoutId);
     }

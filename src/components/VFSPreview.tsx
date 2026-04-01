@@ -495,7 +495,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
               files={sandpackFiles}
               theme="light"
               options={{
-                externalResources: [],
+                externalResources: [
+                  'https://cdn.tailwindcss.com',
+                ],
                 activeFile: sandpackEntryFile,
                 visibleFiles: [sandpackEntryFile],
                 autorun: true,

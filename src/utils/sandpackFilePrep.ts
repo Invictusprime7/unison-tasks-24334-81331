@@ -1337,25 +1337,61 @@ function generateMissingComponents(sandpackFiles: Record<string, string>): void 
       const sectionKey = matchSectionGenerator(componentName);
 
       if (sectionKey) {
-        sandpackFiles[targetPath] = SECTION_GENERATORS[sectionKey](ctx);
+        let generated = SECTION_GENERATORS[sectionKey](ctx);
+        // Ensure BOTH named and default exports exist so either import style works
+        // Section generators already export default; add named export if missing
+        if (namedMatch) {
+          const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+          for (const name of names) {
+            if (/^[A-Z]/.test(name) && !generated.includes(`export function ${name}`) && !generated.includes(`export const ${name}`)) {
+              // Re-export default under the named identifier
+              generated += `\nexport { default as ${name} } from '.';\n`;
+              // Simpler: just add a named export alias at the end
+              generated = generated.replace(
+                /export default function (\w+)/,
+                `export function ${name}$1_default`.length ? `export function $1` : `export default function $1`
+              );
+              // Actually the cleanest approach: replace `export default function X` with `export function X` + add `export default X` at end
+            }
+          }
+          // Simplest robust fix: ensure the component function name is also a named export
+          // Most generators use `export default function Hero()`. Convert to dual export.
+          const fnMatch = generated.match(/export default function (\w+)/);
+          if (fnMatch) {
+            const fnName = fnMatch[1];
+            // Already has both? Skip
+            if (!generated.includes(`export { ${fnName} }`) && !generated.includes(`export function ${fnName}`)) {
+              // Change `export default function X` to `export function X` + add `export default X` at end
+              generated = generated.replace(`export default function ${fnName}`, `export function ${fnName}`);
+              if (!generated.includes(`export default ${fnName}`)) {
+                generated += `\nexport default ${fnName};\n`;
+              }
+            }
+          }
+        }
+        sandpackFiles[targetPath] = generated;
         console.log(`[sandpackFilePrep] Generated real ${sectionKey} component: ${targetPath}`);
       } else {
         const displayName = componentName.replace(/([A-Z])/g, ' $1').trim();
         let code = `import React from 'react';\n\n`;
+        // Always generate BOTH named and default exports for maximum compatibility
+        const safeName = componentName || 'Section';
         if (namedMatch) {
           const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
           for (const name of names) {
             if (/^[A-Z]/.test(name)) {
-              code += `export const ${name} = ({ children, className, ...props }: any) => (\n  <div className={"py-12 px-6 " + (className || "")} {...props}>\n    <div className="max-w-7xl mx-auto">{children || <p className="text-muted-foreground text-center">${name} Section</p>}</div>\n  </div>\n);\n\n`;
+              code += `export function ${name}({ children, className, ...props }: any) {\n  return (\n    <div className={"py-12 px-6 " + (className || "")} {...props}>\n      <div className="max-w-7xl mx-auto">{children || <p className="text-muted-foreground text-center">${name} Section</p>}</div>\n    </div>\n  );\n}\n\n`;
             } else {
               code += `export const ${name} = undefined;\n`;
             }
           }
-        }
-        if (defaultMatch) {
-          code += `export default function ${componentName}({ children, className, ...props }: any) {\n  return (\n    <section className={"py-16 px-6 " + (className || "")} {...props}>\n      <div className="max-w-7xl mx-auto">{children || <h2 className="text-3xl font-bold text-foreground text-center">${displayName}</h2>}</div>\n    </section>\n  );\n}\n`;
-        } else if (!namedMatch) {
-          code += `export default function ${componentName || 'Section'}({ children, className, ...props }: any) {\n  return (\n    <section className={"py-16 px-6 " + (className || "")} {...props}>\n      <div className="max-w-7xl mx-auto">{children || <h2 className="text-3xl font-bold text-foreground text-center">${displayName || 'Section'}</h2>}</div>\n    </section>\n  );\n}\n`;
+          // Add default export as the first named component
+          const primaryName = names.find(n => /^[A-Z]/.test(n));
+          if (primaryName) {
+            code += `export default ${primaryName};\n`;
+          }
+        } else {
+          code += `export function ${safeName}({ children, className, ...props }: any) {\n  return (\n    <section className={"py-16 px-6 " + (className || "")} {...props}>\n      <div className="max-w-7xl mx-auto">{children || <h2 className="text-3xl font-bold text-foreground text-center">${displayName || 'Section'}</h2>}</div>\n    </section>\n  );\n}\n\nexport default ${safeName};\n`;
         }
         sandpackFiles[targetPath] = code;
         console.warn(`[sandpackFilePrep] Generated generic component: ${targetPath} (no section match for "${componentName}")`);

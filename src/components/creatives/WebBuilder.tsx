@@ -937,8 +937,6 @@ export default function App() {
   const splitViewDropZoneRef = useRef<HTMLDivElement>(null);
   const [selectedHTMLElement, setSelectedHTMLElement] = useState<SelectedElement | null>(null);
   const livePreviewRef = useRef<VFSPreviewHandle | null>(null);
-  const liveHtmlPreviewRef = useRef<LiveHTMLPreviewHandle | null>(null);
-  const simplePreviewRef = useRef<SimplePreviewHandle | null>(null);
 
   // Template Customizer - full DOM control
   const templateCustomizer = useTemplateCustomizer();

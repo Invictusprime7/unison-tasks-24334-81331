@@ -56,9 +56,11 @@ export {
 // Sandpack integration
 export {
   generateSandpackFiles,
+  generateIntentRuntimeFiles,
   type SandpackFilesConfig,
   type SandpackFile,
   type SandpackFiles,
+  type IntentRuntimeConfig,
 } from './SandpackRuntimeWrapper';
 
 // Sandpack Intent Bridge (button handler system)

@@ -926,29 +926,7 @@ function EmptyState({
         transition={{ duration: 0.4 }}
         className="text-center max-w-md"
       >
-        {/* Icon */}
-        <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-fuchsia-500/10 to-cyan-500/10 border border-fuchsia-500/20 flex items-center justify-center relative">
-          <Code2 className="w-9 h-9 text-fuchsia-400/60" />
-          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-fuchsia-500/30 flex items-center justify-center">
-            <Sparkles className="w-2.5 h-2.5 text-fuchsia-300" />
-          </div>
-        </div>
-
-        <h3 className="text-xl font-semibold text-white mb-2">No Project Loaded</h3>
-        <p className="text-sm text-white/40 mb-8 leading-relaxed">
-          Use the Launcher to generate a themed industry website, or import files to start editing.
-        </p>
-
-        <div className="flex gap-3 justify-center flex-wrap">
-          <Button
-            variant="default"
-            onClick={() => window.location.href = '/onboarding'}
-            className="gap-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/20 border-0"
-          >
-            <Sparkles className="w-4 h-4" />
-            Open Launcher
-          </Button>
-        </div>
+        {/* Empty state - no preview when no files loaded */}
       </motion.div>
     </div>
   );

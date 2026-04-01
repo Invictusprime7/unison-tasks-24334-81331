@@ -19,10 +19,8 @@ import { useCreatorPlayground } from "@/hooks/useCreatorPlayground";
 import { toast } from "sonner";
 import VFSMonacoEditor from './code-editor/VFSMonacoEditor';
 import { VFSCodeView } from './code-editor/VFSCodeView';
-import { SimplePreview, type SimplePreviewHandle } from '@/components/SimplePreview';
 import { VFSPreview, type VFSPreviewHandle } from '../VFSPreview';
 import { DeployButton } from '@/components/DeployButton';
-import { LiveHTMLPreview, type LiveHTMLPreviewHandle } from './LiveHTMLPreview';
 import { CollapsiblePropertiesPanel } from "./web-builder/CollapsiblePropertiesPanel";
 import { CanvasDragDropService } from "@/services/canvasDragDropService";
 import { CodePreviewDialog } from "./web-builder/CodePreviewDialog";
@@ -53,7 +51,8 @@ import { LayoutTemplatesPanel } from "./web-builder/LayoutTemplatesPanel";
 import { FloatingDock } from "./web-builder/FloatingDock";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useVirtualFileSystem, VirtualFile } from "@/hooks/useVirtualFileSystem";
+import { VirtualFile } from "@/hooks/useVirtualFileSystem";
+import { useVFS } from "@/hooks/useVFSContext";
 import { FileExplorer } from "./code-editor/FileExplorer";
 import { ModernFileExplorer } from "./code-editor/ModernFileExplorer";
 import { EditorTabs } from "./code-editor/EditorTabs";
@@ -870,7 +869,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [selectedObject, setSelectedObject] = useState<FabricCanvas['_objects'][0] | null>(null);
   const [activeMode, setActiveMode] = useState<"insert" | "layout" | "text" | "vector">("insert");
   const [builderMode, setBuilderMode] = useState<SimpleBuilderMode>('select');
-  const [useReactPreview, setUseReactPreview] = useState(true); // Sandpack/VFS preview mode
+  // VFS/Sandpack preview is always active (SimplePreview removed)
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [zoom, setZoom] = useState(0.5);
   const [canvasHeight, setCanvasHeight] = useState(800);
@@ -922,25 +921,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [isInteractiveMode, setIsInteractiveMode] = useState(false);
   const [isInteractiveModeHelpOpen, setIsInteractiveModeHelpOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [editorCode, setEditorCode] = useState('// AI Web Builder - JavaScript Mode\n// Use vanilla JavaScript to create interactive web experiences\n\n// Example: Create a simple interactive button\nconst createButton = () => {\n  const button = document.createElement("button");\n  button.textContent = "Click Me!";\n  button.style.padding = "12px 24px";\n  button.style.fontSize = "16px";\n  button.style.cursor = "pointer";\n  \n  button.onclick = () => {\n    alert("Hello from Web Builder!");\n  };\n  \n  return button;\n};\n\n// Usage: Uncomment to test\n// document.body.appendChild(createButton());');
-  const [previewCode, setPreviewCode] = useState(`import React from 'react';
-
-export default function App() {
-  return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-      <div className="text-center p-8">
-        <h1 className="text-4xl font-bold mb-4">Welcome to AI Web Builder</h1>
-        <p className="text-muted-foreground">Use the AI Code Assistant to generate components</p>
-      </div>
-    </div>
-  );
-}`);
+  const [editorCode, setEditorCode] = useState('');
+  const [previewCode, setPreviewCode] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const splitViewDropZoneRef = useRef<HTMLDivElement>(null);
   const [selectedHTMLElement, setSelectedHTMLElement] = useState<SelectedElement | null>(null);
   const livePreviewRef = useRef<VFSPreviewHandle | null>(null);
-  const liveHtmlPreviewRef = useRef<LiveHTMLPreviewHandle | null>(null);
-  const simplePreviewRef = useRef<SimplePreviewHandle | null>(null);
+  // LiveHTMLPreview and SimplePreview refs removed — VFSPreview is the sole preview surface
 
   // Template Customizer - full DOM control
   const templateCustomizer = useTemplateCustomizer();
@@ -994,10 +981,8 @@ export default function App() {
       return;
     }
 
-    // Try both preview refs — VFSPreview (primary) or SimplePreview (fallback)
-    const vfsIframe = livePreviewRef.current?.getIframe?.();
-    const simpleIframe = simplePreviewRef.current?.getIframe();
-    const iframe = vfsIframe || simpleIframe;
+    // Get iframe from VFSPreview
+    const iframe = livePreviewRef.current?.getIframe?.() ?? null;
     const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document || null;
 
     if (!iframeDoc || !iframeDoc.head) {
@@ -1097,7 +1082,7 @@ export default function App() {
     }
   }, [templateCustomizer.overrideVersion]);
 
-  // Stable callback for SimplePreview element selection (avoids new ref each render)
+  // Stable callback for preview element selection (avoids new ref each render)
   const handlePreviewElementSelect = useCallback((el: any) => {
     setSelectedHTMLElement({
       tagName: el.tagName,
@@ -1315,8 +1300,8 @@ export default function App() {
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
   const systemsBuildContextFromState = (location.state as { systemsBuildContext?: SystemsBuildContext })?.systemsBuildContext ?? null;
   
-  // Virtual file system for code editor
-  const virtualFS = useVirtualFileSystem();
+  // Virtual file system - shared across all components via VFSContext
+  const virtualFS = useVFS();
   // Destructure stable callbacks for use in dependency arrays (avoids re-render loops)
   const {
     nodes: vfsNodes,
@@ -1328,7 +1313,7 @@ export default function App() {
   } = virtualFS;
   
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
-  const aiVFS = useAIVFS(virtualFS, simplePreviewRef);
+  const aiVFS = useAIVFS(virtualFS, livePreviewRef);
   
   // Site builder orchestrator — provides site graph navigation, brand system, and intent routing
   // Uses project/business IDs from location state; no-ops if unavailable
@@ -1396,19 +1381,7 @@ export default function App() {
     return manifest;
   }, [virtualFS.nodes]);
   
-  // Sync page manifest to preview iframe when VFS changes
-  // This enables instant in-place navigation (no new tabs)
-  useEffect(() => {
-    const pageCount = Object.keys(pageManifest).length;
-    if (pageCount >= 1) {
-      // Sync all HTML pages to iframe cache (with small delay to ensure iframe is ready)
-      const timeoutId = setTimeout(() => {
-        console.log('[WebBuilder] Syncing page manifest:', pageCount, 'pages');
-        simplePreviewRef.current?.syncPageManifest(pageManifest);
-      }, 200);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [pageManifest]);
+  // Page manifest sync removed — VFSPreview handles navigation internally via Sandpack
 
   // Apply variant section swaps — replace section JSX blocks in VFS source code
   useEffect(() => {
@@ -1460,16 +1433,7 @@ export default function App() {
     }
   }, [templateCustomizer.activeVariants, templateCustomizer.sections, vfsNodes, vfsUpdateFileContent, activePagePath]);
   
-  // Re-sync manifest when preview code changes (iframe reloads)
-  useEffect(() => {
-    if (Object.keys(pageManifest).length >= 1 && previewCode) {
-      // Delay to let iframe finish loading the new content
-      const timeoutId = setTimeout(() => {
-        simplePreviewRef.current?.syncPageManifest(pageManifest);
-      }, 500);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [previewCode, pageManifest]);
+  // Preview code manifest re-sync removed — VFSPreview handles this internally
   
   // Handle page switching in multi-page preview
   const handleSelectPage = useCallback((path: string) => {
@@ -1791,6 +1755,7 @@ export default function ${componentName}Page() {
   const [activeSystemType, setActiveSystemType] = useState<BusinessSystemType | null>(
     (systemType as BusinessSystemType) || null
   );
+  const [useIntentRuntime, setUseIntentRuntime] = useState(false);
   const [templateCtaAnalysis, setTemplateCtaAnalysis] = useState<TemplateCtaAnalysis>({
     intents: [],
     slots: [],
@@ -2173,9 +2138,7 @@ export default function ${componentName}Page() {
           setEditorCode(pageContent);
         }
         // Re-sync manifest to iframe so all pages are available for back-navigation
-        setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
-        }, 300);
+        // (VFSPreview handles this internally via Sandpack file updates)
         return;
       }
       
@@ -2206,19 +2169,14 @@ export default function ${componentName}Page() {
         setPreviewCode(previewContent);
         setEditorCode(rawContent); // Editor shows clean HTML without cache scripts
         
-        // Re-sync manifest after iframe reloads
-        setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
-        }, 600);
+        // Re-sync manifest after iframe reloads (VFSPreview handles internally)
         return;
       }
       
       // Handle manifest request from iframe after in-place page navigation
       if (event.data?.type === 'REQUEST_PAGE_MANIFEST') {
         console.log('[WebBuilder] Iframe requested page manifest re-sync');
-        setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
-        }, 50);
+        // VFSPreview handles page manifest internally via Sandpack
         return;
       }
       
@@ -2817,6 +2775,7 @@ export default ${componentName}Page;`;
       startInPreview?: boolean;
       systemType?: string;
       entryPoint?: string;
+      intentRuntime?: boolean;
     } | null;
 
     const navStateSignature = navState
@@ -2912,6 +2871,11 @@ export default ${componentName}Page;`;
           }
         } else {
           setViewMode('code');
+        }
+
+        // Enable intent runtime if requested
+        if (navState.intentRuntime) {
+          setUseIntentRuntime(true);
         }
 
         // Prevent re-processing generatedCode when vfsFiles already represent source of truth
@@ -3053,9 +3017,8 @@ ${sectionsJsx}
 
   // Clear canvas and reset to initial state
   const handleClearCanvas = () => {
-    const defaultCode = '// AI Web Builder - JavaScript Mode\n// Use vanilla JavaScript to create interactive web experiences\n\n// Example: Create a simple interactive button\nconst createButton = () => {\n  const button = document.createElement("button");\n  button.textContent = "Click Me!";\n  button.style.padding = "12px 24px";\n  button.style.fontSize = "16px";\n  button.style.cursor = "pointer";\n  \n  button.onclick = () => {\n    alert("Hello from Web Builder!");\n  };\n  \n  return button;\n};\n\n// Usage: Uncomment to test\n// document.body.appendChild(createButton());';
-    
-    const defaultPreview = 'import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}';
+    const defaultCode = '';
+    const defaultPreview = '';
     
     setEditorCode(defaultCode);
     setPreviewCode(defaultPreview);
@@ -3364,13 +3327,11 @@ ${html}
   // Manual refresh handler — works for both VFSPreview (React/Sandpack) and SimplePreview (srcdoc)
   const handleRefreshPreview = useCallback(() => {
     setIsRefreshing(true);
-    if (useReactPreview && livePreviewRef.current) {
+    if (livePreviewRef.current) {
       livePreviewRef.current.refresh();
-    } else if (simplePreviewRef.current) {
-      simplePreviewRef.current.refresh();
     }
     setTimeout(() => setIsRefreshing(false), 600);
-  }, [useReactPreview]);
+  }, []);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -3933,9 +3894,7 @@ ${html}
 
   // Scroll navigation functions — post message to iframe or scroll container
   const postScrollToIframe = useCallback((command: 'top' | 'bottom' | 'up' | 'down') => {
-    const iframe = useReactPreview
-      ? livePreviewRef.current?.getIframe?.()
-      : simplePreviewRef.current?.getIframe();
+    const iframe = livePreviewRef.current?.getIframe?.();
     if (iframe?.contentWindow) {
       try {
         const doc = iframe.contentDocument || iframe.contentWindow.document;
@@ -3978,7 +3937,7 @@ ${html}
           break;
       }
     }
-  }, [useReactPreview]);
+  }, []);
 
   const scrollToTop = () => postScrollToIframe('top');
   const scrollToBottom = () => postScrollToIframe('bottom');
@@ -4061,7 +4020,7 @@ ${html}
   console.log('[WebBuilder] About to return JSX...');
 
   return (
-    <div ref={mainContainerRef} className="flex flex-col h-screen bg-[#1a0a14]">
+    <div ref={mainContainerRef} className="flex flex-col h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900">
       {/* SystemLauncher — auto-opens when no pre-generated content */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
 
@@ -4472,7 +4431,7 @@ ${html}
           <div className="h-full flex overflow-x-auto overflow-y-hidden">
         {/* Left Panel - Elements Sidebar */}
         {!leftPanelCollapsed && (
-          <div className="w-64 flex-shrink-0 bg-[#0d0d18] border-r-2 border-cyan-500/40 flex flex-col overflow-hidden shadow-[0_0_20px_rgba(0,255,255,0.15)]">
+          <div className="w-64 flex-shrink-0 bg-gradient-to-b from-slate-800 to-slate-900 border-r border-slate-700/50 flex flex-col overflow-hidden shadow-xl shadow-black/50 backdrop-blur-sm">
             {/* Left Panel Header with Close Button */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-cyan-500/30 bg-[#0a0a14]">
               <div className="flex items-center gap-2">
@@ -4674,11 +4633,9 @@ ${html}
                     <span className="text-xs font-medium text-slate-300">
                       {builderMode === 'select' ? 'Select Mode' : 'Preview Mode'}
                     </span>
-                    {useReactPreview && (
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                        <FileCode className="h-3 w-3" /> React Preview
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
+                      <FileCode className="h-3 w-3" /> React Preview
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     {/* Undo/Redo/Refresh buttons */}
@@ -4715,13 +4672,7 @@ ${html}
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => {
-                        if (useReactPreview) {
-                          livePreviewRef.current?.openInNewTab();
-                        } else {
-                          simplePreviewRef.current?.openInNewTab();
-                        }
-                      }}
+                      onClick={() => livePreviewRef.current?.openInNewTab()}
                       className="h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                       title="Open preview in new tab"
                     >
@@ -4747,8 +4698,7 @@ ${html}
                   data-drop-zone="true"
                   className="flex-1 flex flex-col min-h-0 overflow-hidden"
                 >
-                  {/* React mode uses VFSPreview with Docker HMR, HTML mode uses SimplePreview */}
-                    {useReactPreview ? (
+                  {/* VFSPreview — Sandpack-based React live preview */}
                     <VFSPreview
                       ref={livePreviewRef}
                       nodes={virtualFS.nodes}
@@ -4760,6 +4710,7 @@ ${html}
                       device={device}
                       enableSelection={builderMode === 'select'}
                       onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
+                      intentRuntime={useIntentRuntime}
                       onNavigate={(path) => {
                         const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
                         if (pageName !== 'index') {
@@ -4783,17 +4734,6 @@ ${html}
                         }]);
                       }}
                     />
-                  ) : (
-                    <SimplePreview
-                      ref={simplePreviewRef}
-                      code={previewCode}
-                      className="w-full h-full min-h-0 flex-1"
-                      showToolbar={false}
-                      device={device}
-                      enableSelection={builderMode === 'select'}
-                      onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
-                    />
-                  )}
                   {/* Inline loading overlay for AI page generation */}
                   {isGeneratingPage && (
                     <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/40 backdrop-blur-md">
@@ -4875,16 +4815,14 @@ ${html}
             {viewMode === 'split' && (
               <div className="w-full h-full flex gap-4">
                 {/* Live Preview - Main viewing area */}
-                <div className="flex-1 bg-white rounded-xl overflow-hidden border border-white/[0.08] shadow-2xl shadow-black/30 relative flex flex-col">
+                <div className="flex-1 bg-gradient-to-b from-white/95 to-white rounded-xl overflow-hidden border border-white/20 shadow-2xl shadow-black/40 relative flex flex-col">
                   <div className="h-10 backdrop-blur-md bg-gradient-to-r from-slate-100/95 to-slate-50/95 border-b border-slate-200/50 flex items-center justify-between px-4 flex-shrink-0">
                     <div className="flex items-center gap-2">
                       <Eye className="w-4 h-4 text-slate-400" />
                       <span className="text-sm text-slate-500">Live Preview</span>
-                      {useReactPreview && (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                          <FileCode className="h-3 w-3" /> React Preview
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
+                        <FileCode className="h-3 w-3" /> React Preview
+                      </div>
                     </div>
                     <div className="flex items-center gap-1">
                       <Button
@@ -4920,13 +4858,7 @@ ${html}
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => {
-                          if (useReactPreview) {
-                            livePreviewRef.current?.openInNewTab();
-                          } else {
-                            simplePreviewRef.current?.openInNewTab();
-                          }
-                        }}
+                        onClick={() => livePreviewRef.current?.openInNewTab()}
                         className="h-7 w-7 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-md transition-all duration-200"
                         title="Open preview in new tab"
                       >
@@ -4940,8 +4872,7 @@ ${html}
                     data-drop-zone="true"
                     className="flex-1 flex flex-col min-h-0 overflow-hidden"
                   >
-                    {/* React mode uses VFSPreview with Docker HMR, HTML mode uses SimplePreview */}
-                    {useReactPreview ? (
+                    {/* VFSPreview — Sandpack-based React live preview */}
                       <VFSPreview
                         ref={livePreviewRef}
                         nodes={virtualFS.nodes}
@@ -4953,6 +4884,7 @@ ${html}
                         device={device}
                         enableSelection={builderMode === 'select'}
                         onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
+                        intentRuntime={useIntentRuntime}
                         onNavigate={(path) => {
                           const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
                           if (pageName !== 'index') {
@@ -4976,17 +4908,6 @@ ${html}
                           }]);
                         }}
                       />
-                    ) : (
-                      <SimplePreview
-                        ref={simplePreviewRef}
-                        code={previewCode}
-                        className="w-full h-full min-h-0 flex-1"
-                        showToolbar={false}
-                        device={device}
-                        enableSelection={builderMode === 'select'}
-                        onElementSelect={builderMode === 'select' ? handlePreviewElementSelect : undefined}
-                      />
-                    )}
                   </div>
                 </div>
 

@@ -46,6 +46,7 @@ import {
   type IndustryTag,
   type PremiumSectionReference,
 } from "@/sections/references";
+import { createLaunchState, type LaunchState } from "@/types/launchState";
 
 // ============================================================================
 // Types
@@ -621,10 +622,29 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemName: system.name,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
+        intentRuntime: true,
+      };
+
+      // Create LaunchState wrapping the wizard output
+      const createNavPayload = (files: Record<string, string>) => {
+        const launchState: LaunchState = createLaunchState({
+          systemType: selectedSystem as any,
+          systemName: system.name,
+          businessName: businessName.trim(),
+          templateName: navState.templateName,
+          templateCategory: generationCategory,
+          aesthetic: selectedTheme?.id,
+          vfsFiles: files,
+          preloadedIntents: canonicalIntents,
+          blueprint: blueprint as any,
+          ...navState,
+        });
+        
+        return { launchState, ...navState, vfsFiles: files };
       };
 
       if (vfsFiles && Object.keys(vfsFiles).length > 0) {
-        navigate("/web-builder", { state: { vfsFiles, ...navState } });
+        navigate("/web-builder", { state: createNavPayload(vfsFiles) });
       } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
         const cleaned = extractCleanCode(rawContent);
         if (!cleaned || !looksLikeCode(cleaned)) {
@@ -632,14 +652,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return;
         }
         navigate("/web-builder", {
-          state: {
-            vfsFiles: {
-              "/src/App.tsx": cleaned,
-              "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-              "/src/index.css": baseCSS,
-            },
-            ...navState,
-          },
+          state: createNavPayload({
+            "/src/App.tsx": cleaned,
+            "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
+            "/src/index.css": baseCSS,
+          }),
         });
       } else {
         toast.error("AI generation produced no output. Try again.");

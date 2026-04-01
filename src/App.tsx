@@ -7,6 +7,7 @@ import { Suspense, lazy } from "react";
 import { RouteErrorBoundary, AsyncBoundary } from "@/components/RouteErrorBoundary";
 import { Analytics } from "@vercel/analytics/react";
 import { CloudProvider } from "@/contexts/CloudContext";
+import { LaunchProvider } from "@/contexts/LaunchContext";
 
 // Static imports for lightweight pages
 import Landing from "./pages/Landing";
@@ -54,8 +55,9 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <DirectionProvider dir="ltr">
         <TooltipProvider>
-          <Sonner />
-          <BrowserRouter>
+          <LaunchProvider>
+            <Sonner />
+            <BrowserRouter>
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<Auth />} />
@@ -171,6 +173,7 @@ const App = () => (
           </Routes>
         </BrowserRouter>
         <Analytics />
+          </LaunchProvider>
       </TooltipProvider>
     </DirectionProvider>
   </QueryClientProvider>

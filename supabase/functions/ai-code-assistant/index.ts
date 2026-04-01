@@ -2407,14 +2407,16 @@ ${vfsFilesContext}
 ` : '';
 
     // ── Fast-path system prompt override for wizard launches ────────────────
-    // Replaces the massive template-react prompt with a compact 2-file contract
+    // Replaces the massive template-react prompt with a compact multi-file contract
     const finalSystemPrompt = fastTemplateReact ? (() => {
+      // deno-lint-ignore no-explicit-any
       const bp = systemsBuildContext as Record<string, any>;
       const brandName = bp?.brand?.business_name || templateName || 'My Business';
       const industry = bp?.identity?.industry || source || 'professional services';
       const tone = bp?.brand?.tone || 'professional and friendly';
       const palette = bp?.brand?.palette || {};
       const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
+      // deno-lint-ignore no-explicit-any
       const intents = (bp?.intents || []).map((i: any) => i.intent).join(', ') || 'contact.submit, booking.create';
 
       // Convert hex colors to HSL for Tailwind CSS custom properties
@@ -2428,7 +2430,15 @@ ${vfsFilesContext}
       const backgroundHsl = toHsl(palette.background, '222.2 84% 4.9%');
       const foregroundHsl = toHsl(palette.foreground, '210 40% 98%');
 
-      return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
+      // Build a section→component map for the prompt
+      const sectionComponents = sections.map((s: string) => {
+        const name = s.charAt(0).toUpperCase() + s.slice(1).replace(/[-_](\w)/g, (_: string, c: string) => c.toUpperCase());
+        return { section: s, component: name, file: `src/components/${name}.tsx` };
+      });
+      const componentFileList = sectionComponents.map((sc: { file: string; component: string; section: string }) => `"${sc.file}": "// ${sc.component} component"`).join(',\n    ');
+      const componentImports = sectionComponents.map((sc: { component: string }) => `import ${sc.component} from './components/${sc.component}';`).join('\\n');
+
+      return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a multi-file React application.
 
 BUSINESS: "${brandName}" — ${industry}
 TONE: ${tone}
@@ -2452,20 +2462,32 @@ BRAND COLORS — HSL values for CSS custom properties (no hsl() wrapper, just th
 --ring: 224.3 76.3% 48%
 --radius: 0.75rem
 
+ARCHITECTURE:
+Generate separate component files. App.tsx imports and composes them.
+
+Required files:
+  "src/App.tsx"        — imports each section component and renders them in order
+  "src/index.css"      — global styles with Tailwind directives + :root CSS vars
+  ${componentFileList}
+
+Each component file: export default function ComponentName() { return <section>...</section>; }
+App.tsx imports: ${componentImports}
+
 RULES:
-1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
-2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
-3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports.
-4. In App.tsx use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
-5. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
-6. Wire CTAs with data-ut-intent attributes: data-ut-intent="booking.create", data-ut-intent="contact.submit"
-7. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
-8. Images: use placeholder URLs like https://images.unsplash.com/photo-1234567890?w=800&q=80
-9. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above
-10. MINIMUM 7 distinct sections, each with rich content
-11. Dark theme, premium glassmorphism + gradient effects, responsive (sm:/md:/lg:)
-12. export default function App() — must be the default export
-13. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object`;
+1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "...", "src/components/Hero.tsx": "...", ...}}
+2. EVERY section MUST be a separate file under src/components/ — do NOT inline sections in App.tsx
+3. Each component file uses: import React from 'react'; and optionally lucide-react icons. NO other imports.
+4. App.tsx imports all components with relative paths: import Hero from './components/Hero';
+5. Use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
+6. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
+7. Wire CTAs with data-ut-intent attributes: data-ut-intent="booking.create", data-ut-intent="contact.submit"
+8. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
+9. Images: use real Unsplash URLs like https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80
+10. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above
+11. MINIMUM 7 distinct section components, each with rich content (multiple cards, items, etc.)
+12. App.tsx: export default function App() — must be the default export
+13. Dark theme, premium glassmorphism + gradient effects, responsive (sm:/md:/lg:)
+14. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object`;
     })() : systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '');
 
     const aiMessages = [
@@ -2713,7 +2735,7 @@ RULES:
     // Post-process: strip config files from JSON multi-file output
     if (content.includes('"files"') && content.includes('"src/App.tsx"')) {
       try {
-        let jsonStr = content.trim().replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+        const jsonStr = content.trim().replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = JSON.parse(jsonStr);
         if (parsed.files && typeof parsed.files === 'object') {
           const BLOCKED = /(tailwind\.config|postcss\.config|vite\.config|tsconfig|package\.json|package-lock)/i;

@@ -24,6 +24,7 @@ class VFSErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[VFS] Render error:", error, info.componentStack);
+    console.error("[VFS] Error stack:", error.stack);
   }
 
   render() {
@@ -36,6 +37,11 @@ class VFSErrorBoundary extends Component<
             <p className="text-muted-foreground mb-4 text-sm">
               {this.state.error?.message || "An unexpected error occurred during initialization."}
             </p>
+            {this.state.error?.stack && (
+              <pre className="text-left text-xs bg-muted p-3 rounded overflow-auto max-h-40 mb-4 whitespace-pre-wrap">
+                {this.state.error.stack}
+              </pre>
+            )}
             <div className="flex gap-2 justify-center">
               <Button
                 onClick={() => this.setState({ hasError: false, error: null })}

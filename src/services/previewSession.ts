@@ -229,19 +229,8 @@ body {
   min-height: 100vh;
 }`;
 
-const DEFAULT_APP_TSX = `import React from 'react';
-
-export default function App() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-      <div className="max-w-lg rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-foreground">No Project Loaded</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Use the Launcher to generate an industry-themed website.
-        </p>
-      </div>
-    </div>
-  );
+const DEFAULT_APP_TSX = `export default function App() {
+  return null;
 }`;
 
 // ============================================

@@ -174,11 +174,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 const DEFAULT_APP = `import React from 'react';
 
 export default function App() {
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-background">
-      <p className="text-muted-foreground">Start coding to see preview</p>
-    </div>
-  );
+  return null;
 }
 `;
 

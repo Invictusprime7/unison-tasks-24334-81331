@@ -55,31 +55,36 @@ export function generateSandpackFiles(config: SandpackFilesConfig): SandpackFile
   
   const files: SandpackFiles = {};
   
-  // 1. Main entry point (App with PreviewRuntime)
-  files[`/App${ext}`] = {
-    code: generateAppFile(siteBundle, entryPath, debug, assetBaseUrl),
+  // 1. Boot entry (ReactDOM.createRoot + HashRouter)
+  files[`/index${ext}`] = {
+    code: generateBootEntry(debug),
     active: true,
   };
+
+  // 2. Main App component (routes + runtime)
+  files[`/App${ext}`] = {
+    code: generateAppFile(siteBundle, entryPath, debug, assetBaseUrl),
+  };
   
-  // 2. Page components
+  // 3. Page components
   const pages = siteBundle.pages ? Object.values(siteBundle.pages) : [];
   for (const page of pages) {
     files[`/pages/${sanitizeFilename(page.path)}${ext}`] = generatePageFile(page);
   }
   
-  // 3. Click handler script (for injection)
+  // 4. Click handler script (for injection)
   files['/runtime/clickHandler.js'] = {
     code: generateClickHandlerScript({ debug }),
     hidden: true,
   };
   
-  // 4. Index.html
+  // 5. Index.html
   files['/index.html'] = generateIndexHtml(debug);
   
-  // 5. Styles
+  // 6. Styles
   files['/styles.css'] = generateStyles();
   
-  // 6. SiteBundle JSON (for runtime access)
+  // 7. SiteBundle JSON (for runtime access)
   files['/siteBundle.json'] = {
     code: JSON.stringify(siteBundle, null, 2),
     hidden: true,
@@ -87,6 +92,34 @@ export function generateSandpackFiles(config: SandpackFilesConfig): SandpackFile
   };
   
   return files;
+}
+
+/**
+ * Generate the Sandpack boot entry (/index.tsx)
+ * This is the actual ReactDOM.createRoot mount that Sandpack needs.
+ */
+function generateBootEntry(debug: boolean): string {
+  return `
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { HashRouter } from 'react-router-dom';
+import App from './App';
+
+const root = document.getElementById('root');
+if (!root) {
+  throw new Error('Missing #root element in preview');
+}
+
+${debug ? "console.log('[Preview] Boot entry mounting App');" : ''}
+
+ReactDOM.createRoot(root).render(
+  <React.StrictMode>
+    <HashRouter>
+      <App />
+    </HashRouter>
+  </React.StrictMode>
+);
+`.trim();
 }
 
 /**
@@ -144,8 +177,13 @@ function usePreviewRuntime() {
   return ctx;
 }
 
-// CMS mock state reducer
-function cmsReducer(state, action) {
+// CMS mock state reducer with proper typing
+interface CMSAction {
+  type: string;
+  [key: string]: any;
+}
+
+function cmsReducer(state: any, action: CMSAction): any {
   switch (action.type) {
     case 'CART_ADD': {
       const existing = state.cart.items.find(i => i.productId === action.item.productId);
@@ -890,6 +928,531 @@ function sanitizeComponentName(path: string): string {
   const filename = sanitizeFilename(path);
   // Ensure starts with capital letter
   return filename.charAt(0).toUpperCase() + filename.slice(1) + 'Page';
+}
+
+// ============================================================================
+// Intent Runtime Overlay — wraps any existing App.tsx with the full
+// intent-driven runtime (HashRouter, CMS mock, overlays, click resolver)
+// without replacing AI-generated page content.
+// ============================================================================
+
+export interface IntentRuntimeConfig {
+  debug?: boolean;
+  typescript?: boolean;
+}
+
+/**
+ * Generate intent runtime files that wrap an existing App component.
+ * Returns files to merge into the Sandpack file map, replacing main.tsx.
+ */
+export function generateIntentRuntimeFiles(config: IntentRuntimeConfig = {}): SandpackFiles {
+  const { debug = false, typescript = true } = config;
+  const ext = typescript ? '.tsx' : '.jsx';
+  const files: SandpackFiles = {};
+
+  // 1. Boot entry — replaces /src/index.tsx with intent-runtime boot
+  //    Lives at /src/ so `import './App'` resolves to /src/App.tsx
+  files[`/src/index${ext}`] = {
+    code: generateIntentBootEntry(debug),
+    active: true,
+  };
+
+  // 2. PreviewRuntime provider — CMS state, overlays, click resolver
+  files[`/src/PreviewRuntime${ext}`] = {
+    code: generatePreviewRuntimeModule(debug),
+    hidden: true,
+  };
+
+  // 3. Overlay styles (appended in the boot entry via import)
+  files['/src/intent-runtime.css'] = {
+    code: generateStyles(),
+    hidden: true,
+  };
+
+  return files;
+}
+
+/**
+ * Boot entry that wraps App in HashRouter + PreviewRuntimeProvider.
+ */
+function generateIntentBootEntry(debug: boolean): string {
+  return `
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { HashRouter } from 'react-router-dom';
+import { PreviewRuntimeProvider } from './PreviewRuntime';
+import App from './App';
+import './index.css';
+import './intent-runtime.css';
+
+${debug ? "console.log('[IntentRuntime] Initializing intent-driven runtime...');" : ''}
+
+const root = document.getElementById('root');
+
+if (!root) {
+  const error = '[IntentRuntime] Fatal: Missing #root element. Check index.html.';
+  console.error(error);
+  document.body.innerHTML = '<div style="padding:20px; color: red; font-family: sans-serif;"><strong>Preview Error:</strong> Missing root element</div>';
+} else {
+  try {
+    ${debug ? "console.log('[IntentRuntime] Mounting App with intent-driven runtime...');" : ''}
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <HashRouter>
+          <PreviewRuntimeProvider>
+            <App />
+          </PreviewRuntimeProvider>
+        </HashRouter>
+      </React.StrictMode>
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[IntentRuntime] Failed to mount React:', message);
+    if (root) {
+      root.innerHTML = '<div style="padding:20px; color: red; font-family: sans-serif;"><strong>Preview Error:</strong> ' + message + '</div>';
+    }
+  }
+}
+`.trim();
+}
+
+/**
+ * Self-contained PreviewRuntime module with CMS mock, overlays, and click resolver.
+ * Exported as a React provider that wraps children.
+ */
+function generatePreviewRuntimeModule(debug: boolean): string {
+  return `
+import React, { type ReactNode, type ErrorInfo, type Reducer } from 'react';
+
+// ============================================================================
+// Context & Types
+// ============================================================================
+
+interface PreviewRuntimeContextType {
+  cms: any;
+  dispatch: (action: any) => void;
+  overlays: any;
+  openOverlay: (type: string, data?: any) => void;
+  closeOverlay: () => void;
+  resolveIntent: (intent: string, payload: Record<string, any>) => Promise<any>;
+}
+
+// ============================================================================
+// CMS Mock State
+// ============================================================================
+
+function cmsReducer(state, action) {
+  switch (action.type) {
+    case 'CART_ADD': {
+      const existing = state.cart.items.find(i => i.productId === action.item.productId);
+      let items;
+      if (existing) {
+        items = state.cart.items.map(i =>
+          i.productId === action.item.productId
+            ? { ...i, quantity: i.quantity + (action.item.quantity || 1) }
+            : i
+        );
+      } else {
+        items = [...state.cart.items, {
+          id: 'cart-' + Date.now(),
+          ...action.item,
+          quantity: action.item.quantity || 1
+        }];
+      }
+      return { ...state, cart: { items, total: items.reduce((s, i) => s + i.price * i.quantity, 0) } };
+    }
+    case 'CART_REMOVE': {
+      const filtered = state.cart.items.filter(i => i.productId !== action.productId);
+      return { ...state, cart: { items: filtered, total: filtered.reduce((s, i) => s + i.price * i.quantity, 0) } };
+    }
+    case 'CART_CLEAR':
+      return { ...state, cart: { items: [], total: 0 } };
+    case 'AUTH_LOGIN':
+      return { ...state, auth: { isLoggedIn: true, user: action.user } };
+    case 'AUTH_LOGOUT':
+      return { ...state, auth: { isLoggedIn: false, user: null } };
+    default:
+      return state;
+  }
+}
+
+// ============================================================================
+// Overlay Components
+// ============================================================================
+
+function OverlayContainer({ children }) {
+  const { overlay, closeOverlay } = usePreviewRuntime();
+  if (!overlay.active) return children;
+  return (
+    <>
+      {children}
+      <div className="overlay-backdrop" onClick={() => closeOverlay()} />
+      <div className="overlay-container">
+        <OverlayRouter type={overlay.active} payload={overlay.payload} />
+      </div>
+    </>
+  );
+}
+
+function OverlayRouter({ type, payload }) {
+  switch (type) {
+    case 'cart': return <CartOverlay />;
+    case 'auth': return <AuthOverlay mode={payload.mode || 'login'} />;
+    case 'booking': return <BookingOverlay service={payload.service} />;
+    case 'contact': return <ContactOverlay />;
+    default: return <GenericOverlay type={type} payload={payload} />;
+  }
+}
+
+function CartOverlay() {
+  const { closeOverlay, cmsState, removeFromCart, clearCart } = usePreviewRuntime();
+  return (
+    <div className="overlay-card">
+      <div className="overlay-header">
+        <h2>Shopping Cart</h2>
+        <button onClick={() => closeOverlay()}>\\u2715</button>
+      </div>
+      <div className="overlay-body">
+        {cmsState.cart.items.length === 0 ? (
+          <p className="text-muted text-center">Your cart is empty</p>
+        ) : (
+          cmsState.cart.items.map(item => (
+            <div key={item.id} className="cart-item">
+              <div>
+                <strong>{item.name}</strong>
+                <small>${'$'}{item.price.toFixed(2)} \u00d7 {item.quantity}</small>
+              </div>
+              <button onClick={() => removeFromCart(item.productId)} className="btn-link">Remove</button>
+            </div>
+          ))
+        )}
+      </div>
+      {cmsState.cart.items.length > 0 && (
+        <div className="overlay-footer">
+          <div className="cart-total">Total: ${'$'}{cmsState.cart.total.toFixed(2)}</div>
+          <div className="btn-row">
+            <button onClick={clearCart} className="btn-secondary">Clear</button>
+            <button onClick={() => { alert('Checkout (Preview Mode)'); closeOverlay(); }} className="btn-primary">Checkout</button>
+          </div>
+          <small className="text-muted">(Preview mode - no payment)</small>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AuthOverlay({ mode: initialMode }) {
+  const { closeOverlay } = usePreviewRuntime();
+  const [mode, setMode] = React.useState(initialMode);
+  const [submitted, setSubmitted] = React.useState(false);
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setSubmitted(true);
+    setTimeout(() => closeOverlay(), 1500);
+  };
+  if (submitted) {
+    return (
+      <div className="overlay-card">
+        <div className="overlay-body text-center">
+          <div className="success-icon">\\u2713</div>
+          <h3>{mode === 'login' ? 'Signed In!' : 'Account Created!'}</h3>
+          <small className="text-muted">(Preview mode)</small>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="overlay-card">
+      <div className="overlay-header">
+        <h2>{mode === 'login' ? 'Sign In' : 'Create Account'}</h2>
+        <button onClick={() => closeOverlay()}>\\u2715</button>
+      </div>
+      <form onSubmit={handleSubmit} className="overlay-body">
+        <input type="email" placeholder="Email" required className="input" />
+        <input type="password" placeholder="Password" required className="input" />
+        <button type="submit" className="btn-primary">{mode === 'login' ? 'Sign In' : 'Sign Up'}</button>
+        <p className="text-center">
+          {mode === 'login' ? (
+            <>No account? <button type="button" onClick={() => setMode('register')} className="btn-link">Sign up</button></>
+          ) : (
+            <>Have an account? <button type="button" onClick={() => setMode('login')} className="btn-link">Sign in</button></>
+          )}
+        </p>
+      </form>
+    </div>
+  );
+}
+
+function BookingOverlay({ service }) {
+  const { closeOverlay } = usePreviewRuntime();
+  const [submitted, setSubmitted] = React.useState(false);
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setSubmitted(true);
+  };
+  if (submitted) {
+    return (
+      <div className="overlay-card">
+        <div className="overlay-body text-center">
+          <div className="success-icon">\\u2713</div>
+          <h3>Booking Confirmed!</h3>
+          <small className="text-muted">(Preview mode)</small>
+          <button onClick={() => closeOverlay()} className="btn-primary mt-4">Done</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="overlay-card">
+      <div className="overlay-header">
+        <h2>Book {service || 'Appointment'}</h2>
+        <button onClick={() => closeOverlay()}>\\u2715</button>
+      </div>
+      <form onSubmit={handleSubmit} className="overlay-body">
+        <div className="form-row">
+          <input type="date" required className="input" />
+          <select required className="input">
+            <option value="">Time</option>
+            <option>9:00 AM</option>
+            <option>10:00 AM</option>
+            <option>2:00 PM</option>
+            <option>3:00 PM</option>
+          </select>
+        </div>
+        <input type="text" placeholder="Name" required className="input" />
+        <input type="email" placeholder="Email" required className="input" />
+        <button type="submit" className="btn-primary">Confirm Booking</button>
+      </form>
+    </div>
+  );
+}
+
+function ContactOverlay() {
+  const { closeOverlay } = usePreviewRuntime();
+  const [submitted, setSubmitted] = React.useState(false);
+  if (submitted) {
+    return (
+      <div className="overlay-card">
+        <div className="overlay-body text-center">
+          <div className="success-icon">\\ud83d\\udcec</div>
+          <h3>Message Sent!</h3>
+          <small className="text-muted">(Preview mode)</small>
+          <button onClick={() => closeOverlay()} className="btn-primary mt-4">Done</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="overlay-card">
+      <div className="overlay-header">
+        <h2>Contact Us</h2>
+        <button onClick={() => closeOverlay()}>\\u2715</button>
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); setSubmitted(true); }} className="overlay-body">
+        <input type="text" placeholder="Name" required className="input" />
+        <input type="email" placeholder="Email" required className="input" />
+        <textarea placeholder="Message" rows={4} required className="input" />
+        <button type="submit" className="btn-primary">Send Message</button>
+      </form>
+    </div>
+  );
+}
+
+function GenericOverlay({ type, payload }) {
+  const { closeOverlay } = usePreviewRuntime();
+  return (
+    <div className="overlay-card">
+      <div className="overlay-header">
+        <h2>{type}</h2>
+        <button onClick={() => closeOverlay()}>\\u2715</button>
+      </div>
+      <div className="overlay-body">
+        <p className="text-muted">Overlay "{type}" not implemented in preview.</p>
+        {Object.keys(payload).length > 0 && (
+          <pre className="code-block">{JSON.stringify(payload, null, 2)}</pre>
+        )}
+      </div>
+      <div className="overlay-footer">
+        <button onClick={() => closeOverlay()} className="btn-primary">Close</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Intent Executor + Global Click Handler
+// ============================================================================
+
+function useIntentExecutor({ navigate, openOverlay, closeOverlay, addToCart }) {
+  const executeIntent = React.useCallback(async (intent, payload = {}) => {
+    ${debug ? "console.log('[IntentRuntime] Intent:', intent, payload);" : ''}
+
+    // Navigation
+    if (intent === 'nav.goto' && payload.path) {
+      navigate(payload.path);
+      return { success: true };
+    }
+    if (intent === 'nav.anchor' && payload.anchor) {
+      const el = document.querySelector('#' + payload.anchor + ', [data-section="' + payload.anchor + '"]');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      return { success: true };
+    }
+    if (intent === 'nav.external' && payload.url) {
+      window.open(payload.url, '_blank');
+      return { success: true };
+    }
+
+    // Cart
+    if (intent === 'cart.add') {
+      addToCart(payload);
+      openOverlay('cart');
+      return { success: true };
+    }
+    if (intent === 'cart.view') {
+      openOverlay('cart');
+      return { success: true };
+    }
+
+    // Auth
+    if (intent === 'auth.signin' || intent === 'auth.login') {
+      openOverlay('auth', { mode: 'login' });
+      return { success: true };
+    }
+    if (intent === 'auth.signup' || intent === 'auth.register') {
+      openOverlay('auth', { mode: 'register' });
+      return { success: true };
+    }
+
+    // Booking
+    if (intent === 'booking.create' || intent === 'booking.book') {
+      openOverlay('booking', payload);
+      return { success: true };
+    }
+
+    // Overlays
+    if (intent === 'overlay.open') {
+      openOverlay(payload.type || 'default', payload);
+      return { success: true };
+    }
+    if (intent === 'overlay.close') {
+      closeOverlay();
+      return { success: true };
+    }
+
+    // Contact
+    if (intent === 'contact.submit' || intent === 'contact.open') {
+      openOverlay('contact');
+      return { success: true };
+    }
+
+    ${debug ? "console.log('[IntentRuntime] Unhandled intent:', intent);" : ''}
+    return { success: false, error: 'Unknown intent' };
+  }, [navigate, openOverlay, closeOverlay, addToCart]);
+
+  return executeIntent;
+}
+
+// ============================================================================
+// Provider
+// ============================================================================
+
+export function PreviewRuntimeProvider({ children }) {
+  const navigate = (path) => {
+    window.location.hash = path;
+  };
+
+  const [cmsState, dispatchCMS] = React.useReducer(cmsReducer, {
+    cart: { items: [], total: 0 },
+    auth: { isLoggedIn: false, user: null }
+  });
+
+  const [overlay, setOverlay] = React.useState({ active: null, payload: {} });
+  const openOverlay = (type, payload = {}) => setOverlay({ active: type, payload });
+  const closeOverlay = () => setOverlay({ active: null, payload: {} });
+
+  const addToCart = (item) => {
+    dispatchCMS({ type: 'CART_ADD', item });
+    window.dispatchEvent(new CustomEvent('preview:cart.add', { detail: item }));
+  };
+  const removeFromCart = (productId) => dispatchCMS({ type: 'CART_REMOVE', productId });
+  const clearCart = () => dispatchCMS({ type: 'CART_CLEAR' });
+
+  const executeIntent = useIntentExecutor({ navigate, openOverlay, closeOverlay, addToCart });
+
+  // Global click handler — resolves intents from any element
+  React.useEffect(() => {
+    const handleClick = async (e) => {
+      const el = e.target.closest('a, button, [data-ut-intent]');
+      if (!el) return;
+
+      const explicit = el.getAttribute('data-ut-intent');
+      const href = el.getAttribute('href');
+      let intent, payload = {};
+
+      if (explicit) {
+        intent = explicit;
+      } else if (href) {
+        if (href.startsWith('#')) {
+          intent = 'nav.anchor';
+          payload = { anchor: href.slice(1) };
+        } else if (href.startsWith('http')) {
+          intent = 'nav.external';
+          payload = { url: href };
+        } else if (href.startsWith('/')) {
+          intent = 'nav.goto';
+          payload = { path: href };
+        }
+      }
+
+      if (!intent) {
+        const text = (el.textContent || '').toLowerCase();
+        if (/sign\\s*in|login/.test(text)) intent = 'auth.signin';
+        else if (/sign\\s*up|register/.test(text)) intent = 'auth.signup';
+        else if (/add\\s*to\\s*cart/.test(text)) intent = 'cart.add';
+        else if (/view\\s*cart|cart/.test(text)) intent = 'cart.view';
+        else if (/book|schedule|appointment/.test(text)) intent = 'booking.create';
+        else if (/contact|get\\s*in\\s*touch/.test(text)) intent = 'overlay.open', payload = { type: 'contact' };
+        else if (/learn\\s*more/.test(text)) intent = 'nav.anchor', payload = { anchor: 'features' };
+      }
+
+      if (intent) {
+        e.preventDefault();
+        e.stopPropagation();
+        for (const attr of el.attributes) {
+          if (attr.name.startsWith('data-') && attr.name !== 'data-ut-intent') {
+            const key = attr.name.slice(5).replace(/-/g, '');
+            payload[key] = attr.value;
+          }
+        }
+        await executeIntent(intent, payload);
+      }
+    };
+
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, [executeIntent]);
+
+  const value = {
+    navigate,
+    executeIntent,
+    cmsState,
+    overlay,
+    openOverlay,
+    closeOverlay,
+    addToCart,
+    removeFromCart,
+    clearCart,
+  };
+
+  return (
+    <PreviewContext.Provider value={value}>
+      <OverlayContainer>
+        {children}
+      </OverlayContainer>
+    </PreviewContext.Provider>
+  );
+}
+`.trim();
 }
 
 // ============================================================================

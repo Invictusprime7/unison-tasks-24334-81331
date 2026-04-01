@@ -1,8 +1,8 @@
 /**
  * Sandpack File Preparation Utilities
  * 
- * Sandpack's react-ts template expects files at ROOT level (e.g., /App.tsx, not /src/App.tsx).
- * This module flattens VFS paths, processes imports, and ensures essential files exist.
+ * Sandpack's react-ts template entry chain: /src/index.tsx → /src/App.tsx.
+ * This module preserves /src/ paths, processes imports, and ensures essential files exist.
  */
 
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
@@ -138,7 +138,7 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
   if (bridgeWindow.__lovablePreviewNavBridgeInstalled) return;
   bridgeWindow.__lovablePreviewNavBridgeInstalled = true;
 
-  const normalizePath = (rawPath: string) => rawPath.replace(/^\//, '').replace(/\.html(?:[?#].*)?$/, '').replace(/[?#].*$/, '') || 'index';
+  const normalizePath = (rawPath: string) => rawPath.replace(/^\\//, '').replace(/\\.html(?:[?#].*)?$/, '').replace(/[?#].*$/, '') || 'index';
 
   document.addEventListener('click', function (event) {
     const target = event.target as HTMLElement | null;
@@ -185,13 +185,34 @@ import App from './App';
 import './index.css';
 
 ${PREVIEW_NAV_BRIDGE}
-__initLovablePreviewNavBridge();
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// Initialize navigation bridge when available
+if (typeof __initLovablePreviewNavBridge === 'function') {
+  try {
+    __initLovablePreviewNavBridge();
+  } catch (e) {
+    console.warn('[Preview] Navigation bridge initialization failed:', e);
+  }
+}
+
+// Render with null-safe root element handling
+const root = document.getElementById('root');
+if (!root) {
+  const error = '[Preview] Fatal: Missing #root element. Check index.html.';
+  console.error(error);
+  document.body.innerHTML = '<div style="padding:20px; color: red; font-family: sans-serif;"><strong>Preview Error:</strong> Missing root element</div>';
+} else {
+  try {
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+  } catch (e) {
+    console.error('[Preview] Failed to mount React:', e);
+    root.innerHTML = '<div style="padding:20px; color: red; font-family: sans-serif;"><strong>Preview Error:</strong> ' + (e instanceof Error ? e.message : 'Unknown error') + '</div>';
+  }
+}
 `;
 
 const HOOKS_SHIM = `
@@ -332,7 +353,7 @@ function isRawCss(content: string): boolean {
 }
 
 function injectPreviewNavBridge(code: string, filePath: string): string {
-  if (!/^\/(?:main|index)\.(?:tsx?|jsx?)$/.test(filePath)) return code;
+  if (!/^\/(?:src\/)?(?:main|index)\.(?:tsx?|jsx?)$/.test(filePath)) return code;
   if (code.includes('__initLovablePreviewNavBridge')) return code;
 
   const importBlock = code.match(/^(?:import[^\n]*\n)+/);
@@ -372,7 +393,8 @@ function toRelativeSandpackImport(fromFilePath: string, targetPath: string): str
 
 function aliasModuleToRelativeImport(fromFilePath: string, aliasModulePath: string): string {
   const normalizedModulePath = aliasModulePath.replace(/^@\//, '');
-  return toRelativeSandpackImport(fromFilePath, `/${normalizedModulePath}`);
+  // @/ maps to /src/ since files keep their /src/ prefix
+  return toRelativeSandpackImport(fromFilePath, `/src/${normalizedModulePath}`);
 }
 
 /**
@@ -399,49 +421,90 @@ export default function App() {
 }
 
 function createProxyApp(targetPath: string): string {
-  const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
+  const importPath = toRelativeSandpackImport('/src/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
 
   return `import React from 'react';
-import * as PreviewEntryModule from '${importPath}';
 
-const PreviewEntry = (PreviewEntryModule.default ?? Object.values(PreviewEntryModule)[0]) as React.ComponentType | undefined;
+let PreviewEntry = undefined;
+try {
+  const PreviewEntryModule = await import('${importPath}');
+  PreviewEntry = PreviewEntryModule.default || Object.values(PreviewEntryModule)[0];
+} catch (e) {
+  console.error('[App] Failed to import from ${importPath}:', e);
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+  
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[App] Render error:', error?.message || 'Unknown error');
+    console.error('[App] Component stack:', errorInfo?.componentStack);
+  }
+  
+  render(): React.ReactNode {
+    if (this.state.hasError) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background text-foreground px-6">
+          <div className="max-w-lg text-center">
+            <div className="text-4xl mb-3">⚠️</div>
+            <p className="text-lg font-semibold mb-2">Preview Error</p>
+            <p className="text-sm text-muted-foreground mb-4">{this.state.error?.message || 'The component encountered a render error'}</p>
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded text-sm font-medium hover:bg-primary/90"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    if (!PreviewEntry || typeof PreviewEntry !== 'function') {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background text-foreground px-6">
+          <div className="max-w-lg text-center">
+            <div className="text-4xl mb-3">❌</div>
+            <p className="text-lg font-semibold mb-2">Component Not Found</p>
+            <p className="text-sm text-muted-foreground">No valid React component exported from the target file.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return <PreviewEntry />;
+  }
+}
 
 export default function App() {
-  if (!PreviewEntry) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
-        <p className="text-muted-foreground">Preview entry is missing a renderable component.</p>
-      </div>
-    );
-  }
-
-  return <PreviewEntry />;
+  return <ErrorBoundary><div /></ErrorBoundary>;
 }
 `;
 }
 
 function createMissingEntryApp(): string {
-  return `import React from 'react';
+  return `export default function App() {
+  return null;
+}`;
+}
 
-export default function App() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-      <div className="max-w-lg rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-foreground">Invalid Launcher preview payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The preview did not receive a renderable industry-theme React entry file from Launcher.
-        </p>
-      </div>
-    </div>
-  );
-}
-`;
-}
 
 function pickPrimaryComponentPath(paths: string[]): string | null {
-  const uniquePaths = [...new Set(paths)].filter((path) => path !== '/hooks-shim.ts');
+  const uniquePaths = [...new Set(paths)].filter((path) => !path.endsWith('/hooks-shim.ts'));
 
-  return uniquePaths.find((path) => path === '/App.tsx' || path === '/App.jsx')
+  return uniquePaths.find((path) => /^\/(?:src\/)?App\.(tsx|jsx)$/.test(path))
     || uniquePaths.find((path) => /\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(path))
     || uniquePaths.find((path) => /\/pages\//.test(path))
     || uniquePaths.find((path) => !/\/(main|index)\.(tsx|jsx)$/.test(path))
@@ -484,6 +547,12 @@ export function processCode(code: string, filePath: string): string {
   processed = processed.replace(
     /^(import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
     (match, importPrefix, modulePath, importSuffix) => {
+      // Safety check: validate module path isn't empty or malformed
+      if (!modulePath || /[<>:"|?*]/.test(modulePath)) {
+        console.warn(`[processCode] Invalid @/ import path: @/${modulePath}`);
+        return `// [Preview] Removed invalid import: ${match}`;
+      }
+
       if (modulePath.startsWith('hooks/') || modulePath === 'hooks') {
         const namedMatch = match.match(/import\s+\{([^}]+)\}/);
         const defaultMatch = match.match(/import\s+(\w+)\s+from/);
@@ -500,7 +569,13 @@ export function processCode(code: string, filePath: string): string {
         return `import { supabase } from '${hooksShimImport}'; // [Preview] Shimmed: @/${modulePath}`;
       }
 
-      return `${importPrefix}${aliasModuleToRelativeImport(filePath, `@/${modulePath}`)}${importSuffix}`;
+      try {
+        const resolved = aliasModuleToRelativeImport(filePath, `@/${modulePath}`);
+        return `${importPrefix}${resolved}${importSuffix}`;
+      } catch (e) {
+        console.warn(`[processCode] Failed to resolve @/${modulePath}:`, e);
+        return `// [Preview] Failed to resolve: ${match}`;
+      }
     }
   );
 
@@ -508,6 +583,12 @@ export function processCode(code: string, filePath: string): string {
   processed = processed.replace(
     /^import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"]([^'"]+)['"];?\s*$/gm,
     (match, modulePath) => {
+      // Safety check: validate module path
+      if (!modulePath || modulePath.length === 0 || /[<>:"|?*]/.test(modulePath)) {
+        console.warn(`[processCode] Invalid import path: ${modulePath}`);
+        return `// [Preview] Removed invalid import: ${match}`;
+      }
+
       const baseModule = modulePath.split('/')[0];
       if (ALLOWED_IMPORTS.has(modulePath) || ALLOWED_IMPORTS.has(baseModule)) return match;
       if (/\.(css|scss|less)$/.test(modulePath)) return match;
@@ -527,7 +608,13 @@ export function processCode(code: string, filePath: string): string {
       }
 
       if (modulePath.startsWith('@/')) {
-        return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
+        try {
+          const resolved = aliasModuleToRelativeImport(filePath, modulePath);
+          return match.replace(modulePath, resolved);
+        } catch (e) {
+          console.warn(`[processCode] Failed to resolve ${modulePath}:`, e);
+          return `// [Preview] Failed to resolve: ${match}`;
+        }
       }
 
       // Unknown npm package — pass through to Sandpack for real resolution.
@@ -561,7 +648,7 @@ export function processCode(code: string, filePath: string): string {
 
 /**
  * Convert VFS files to Sandpack-compatible format.
- * Flattens /src/ paths to root, processes imports, adds missing essentials.
+ * Preserves /src/ paths (matches react-ts template entry chain), processes imports, adds missing essentials.
  */
 export function prepareSandpackFiles(files: Record<string, string>): Record<string, string> {
   const sandpackFiles: Record<string, string> = {};
@@ -585,24 +672,25 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
       continue;
     }
 
-    // Flatten /src/ paths to root for Sandpack compatibility
-    if (normalizedPath.startsWith('/src/')) {
-      normalizedPath = normalizedPath.replace('/src/', '/');
-    }
-
-    // Flatten /styles/ to root
+    // Flatten /styles/ to /src/ so CSS imports from /src/ files resolve
     if (normalizedPath.startsWith('/styles/')) {
-      normalizedPath = normalizedPath.replace('/styles/', '/');
+      normalizedPath = normalizedPath.replace('/styles/', '/src/');
     }
 
     // Fix imports in content to match flattened paths
     let processedContent = content;
 
     // Repair legacy/generated payloads that serialized THEME as undefined/null.
-    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && /const\s+THEME\s*=\s*(undefined|null);/.test(processedContent)) {
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath)) {
+      // Handle various THEME undefined patterns
       processedContent = processedContent.replace(
-        /const\s+THEME\s*=\s*(undefined|null);/,
+        /const\s+THEME\s*=\s*(?:undefined|null|\{\}|false|true);/g,
         `const THEME = ${LAUNCHER_THEME_JSON};`
+      );
+      // Also handle export statements
+      processedContent = processedContent.replace(
+        /export\s+(?:const|default)\s+THEME\s*=\s*(?:undefined|null|\{\}|false|true);/g,
+        `export const THEME = ${LAUNCHER_THEME_JSON};`
       );
     }
 
@@ -619,9 +707,8 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
       processedContent = sanitizeSvgElements(processedContent);
     }
 
+    // Fix imports referencing /styles/ to use flattened root CSS paths
     processedContent = processedContent
-      .replace(/from\s+['"]\.\/src\//g, "from './")
-      .replace(/from\s+['"]src\//g, "from './")
       .replace(/from\s+['"]\.\/styles\//g, "from './")
       .replace(/import\s+['"]\.\/styles\//g, "import './");
 
@@ -629,43 +716,77 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     processedContent = injectPreviewNavBridge(processedContent, normalizedPath);
     sandpackFiles[normalizedPath] = processedContent;
 
-    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts') {
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts' && normalizedPath !== '/src/hooks-shim.ts') {
       componentFilePaths.push(normalizedPath);
     }
-    if (normalizedPath === '/App.tsx' || normalizedPath === '/App.jsx') hasApp = true;
-    if (normalizedPath === '/main.tsx' || normalizedPath === '/main.jsx' || normalizedPath === '/index.tsx') hasMain = true;
+    if (/^\/(?:src\/)?App\.(tsx|jsx)$/.test(normalizedPath)) hasApp = true;
+    if (/^\/(?:src\/)?(main|index)\.(tsx|jsx)$/.test(normalizedPath)) hasMain = true;
     if (normalizedPath.endsWith('.css')) hasCSS = true;
   }
 
   if (!hasCSS) {
-    sandpackFiles['/index.css'] = BASE_CSS;
+    sandpackFiles['/src/index.css'] = BASE_CSS;
   } else {
     // Ensure semantic CSS variables exist even when user/Launcher provides CSS.
-    // If the provided CSS is missing key tokens (--primary, --secondary, etc.)
-    // prepend defaults so Tailwind semantic classes resolve correctly.
-    const existingCSS = sandpackFiles['/index.css'] || '';
-    if (existingCSS && !existingCSS.includes('--primary:')) {
-      sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingCSS;
+    // Check both /src/index.css and /index.css (root)
+    const cssKey = sandpackFiles['/src/index.css'] ? '/src/index.css'
+                 : sandpackFiles['/index.css'] ? '/index.css'
+                 : null;
+    if (cssKey && !sandpackFiles[cssKey].includes('--primary:')) {
+      sandpackFiles[cssKey] = SEMANTIC_CSS_VARS + '\n' + sandpackFiles[cssKey];
     }
   }
+
+  // Determine where App lives: /src/App.tsx (preferred) or /App.tsx (root)
+  const appPath = sandpackFiles['/src/App.tsx'] ? '/src/App.tsx'
+                : sandpackFiles['/src/App.jsx'] ? '/src/App.jsx'
+                : sandpackFiles['/App.tsx'] ? '/App.tsx'
+                : sandpackFiles['/App.jsx'] ? '/App.jsx'
+                : null;
+
   if (!hasApp) {
     const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
 
     if (primaryComponentPath) {
-      sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
+      sandpackFiles['/src/App.tsx'] = createProxyApp(primaryComponentPath);
     } else {
-      sandpackFiles['/App.tsx'] = createMissingEntryApp();
+      sandpackFiles['/src/App.tsx'] = createMissingEntryApp();
     }
+  } else if (appPath && !appPath.startsWith('/src/')) {
+    // App exists but at root — copy to /src/ for template chain
+    sandpackFiles['/src/App.tsx'] = sandpackFiles[appPath];
   }
-  if (!hasMain) sandpackFiles['/main.tsx'] = DEFAULT_MAIN;
+
+  // Determine where main lives
+  const mainPath = sandpackFiles['/src/main.tsx'] ? '/src/main.tsx'
+                 : sandpackFiles['/src/main.jsx'] ? '/src/main.jsx'
+                 : sandpackFiles['/main.tsx'] ? '/main.tsx'
+                 : sandpackFiles['/main.jsx'] ? '/main.jsx'
+                 : null;
+
+  if (!hasMain) {
+    sandpackFiles['/src/main.tsx'] = DEFAULT_MAIN;
+  }
+
+  // /src/index.tsx — the Sandpack react-ts template entry point
+  // This MUST exist and bootstrap the app for the template chain to work.
+  if (mainPath) {
+    sandpackFiles['/src/index.tsx'] = sandpackFiles[mainPath];
+  } else {
+    sandpackFiles['/src/index.tsx'] = DEFAULT_MAIN;
+  }
+
+  // Place hooks-shim at /src/ so relative imports from /src/ files resolve
+  sandpackFiles['/src/hooks-shim.ts'] = HOOKS_SHIM;
+  // Also at root for any files that import from root level
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
 
   // Ensure template.css exists if any file imports it
   const anyImportsTemplateCss = Object.values(sandpackFiles).some(c =>
-    typeof c === 'string' && /import\s+['"]\.\/template\.css['"]/.test(c)
+    typeof c === 'string' && /import\s+['"](?:\.\.?\/)*template\.css['"]/.test(c)
   );
-  if (anyImportsTemplateCss && !sandpackFiles['/template.css']) {
-    // Provide an empty CSS file so Sandpack doesn't crash
+  if (anyImportsTemplateCss && !sandpackFiles['/template.css'] && !sandpackFiles['/src/template.css']) {
+    sandpackFiles['/src/template.css'] = '/* template styles */\n';
     sandpackFiles['/template.css'] = '/* template styles */\n';
   }
 
@@ -674,6 +795,41 @@ export function prepareSandpackFiles(files: Record<string, string>): Record<stri
     sandpackFiles['/index.html'] = PREVIEW_INDEX_HTML;
   }
 
-  console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));
+  // Provide /public/index.html so the template uses our HTML with Tailwind CDN
+  sandpackFiles['/public/index.html'] = sandpackFiles['/index.html'] || PREVIEW_INDEX_HTML;
+
+  // Validate critical files exist and are valid code
+  const criticalFiles = ['/src/App.tsx', '/src/index.tsx', '/src/index.css', '/index.html'];
+  for (const filePath of criticalFiles) {
+    const content = sandpackFiles[filePath];
+    if (!content || typeof content !== 'string') {
+      console.warn(`[sandpackFilePrep] Critical file missing or invalid: ${filePath}`);
+      // Apply defaults for critical missing files
+      if (filePath === '/src/index.css' && !sandpackFiles[filePath]) {
+        sandpackFiles[filePath] = BASE_CSS;
+      } else if (filePath === '/index.html' && !sandpackFiles[filePath]) {
+        sandpackFiles[filePath] = PREVIEW_INDEX_HTML;
+      }
+    }
+  }
+
+  // Validate imports in generated code
+  const generatedCodePaths = ['/src/App.tsx', '/src/main.tsx', '/src/index.tsx'];
+  for (const path of generatedCodePaths) {
+    const code = sandpackFiles[path];
+    if (code && typeof code === 'string') {
+      // Check for unmatched braces/quotes that would cause parse errors
+      const braceCount = (code.match(/\{/g) || []).length - (code.match(/\}/g) || []).length;
+      if (braceCount !== 0) {
+        console.warn(`[sandpackFilePrep] Brace mismatch in ${path}: ${braceCount > 0 ? 'missing closing' : 'extra closing'} braces`);
+      }
+      // Verify JSX looks valid
+      if (!/<\w+.*\/>|<\w+>.*<\/\w+>/.test(code) && code.includes('export default function')) {
+        console.warn(`[sandpackFilePrep] No JSX detected in ${path}, may not render`);
+      }
+    }
+  }
+
+  console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles).sort());
   return sandpackFiles;
 }

@@ -34,7 +34,10 @@ import { usePreviewService } from '@/hooks/usePreviewService';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { launchStateToSandpackFiles } from '@/utils/launchToSandpack';
+import { generateIntentRuntimeFiles } from '@/runtime/preview';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
+import { useLaunch } from '@/contexts/LaunchContext';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 
 // ============================================================================
@@ -83,6 +86,8 @@ export interface VFSPreviewProps {
   enableSelection?: boolean;
   /** Callback when an element is selected */
   onElementSelect?: (elementData: any) => void;
+  /** Enable intent-driven runtime (HashRouter, CMS mock, overlays, click resolver) */
+  intentRuntime?: boolean;
 }
 
 export interface VFSPreviewHandle {
@@ -100,11 +105,13 @@ export interface VFSPreviewHandle {
 
 class SandpackErrorBoundary extends Component<
   { children: ReactNode; onRetryExhausted?: () => void },
-  { hasError: boolean; error: Error | null; retryCount: number }
+  { hasError: boolean; error: Error | null; retryCount: number; showDetails: boolean }
 > {
+  private maxRetries = 3;
+
   constructor(props: { children: ReactNode; onRetryExhausted?: () => void }) {
     super(props);
-    this.state = { hasError: false, error: null, retryCount: 0 };
+    this.state = { hasError: false, error: null, retryCount: 0, showDetails: false };
   }
 
   static getDerivedStateFromError(error: Error) {
@@ -112,26 +119,81 @@ class SandpackErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[VFSPreview] Sandpack render crash:', error.message, info.componentStack);
+    console.error('[VFSPreview] Sandpack crash:', error.message);
+    console.error('[VFSPreview] Component stack:', info.componentStack);
+    
+    // Log to browser console for debugging
+    if (window.console && window.console.group) {
+      window.console.group('[VFSPreview] Error Details');
+      window.console.error('Message:', error.message);
+      window.console.error('Stack:', error.stack);
+      window.console.error('Component:', info.componentStack);
+      window.console.groupEnd();
+    }
   }
+
+  handleRetry = () => {
+    const newCount = this.state.retryCount + 1;
+    if (newCount >= this.maxRetries) {
+      this.props.onRetryExhausted?.();
+    }
+    this.setState({ hasError: false, error: null, retryCount: newCount, showDetails: false });
+  };
+
+  toggleDetails = () => {
+    this.setState(s => ({ showDetails: !s.showDetails }));
+  };
 
   render() {
     if (this.state.hasError) {
+      const isExhausted = this.state.retryCount >= this.maxRetries;
+      const errorMsg = this.state.error?.message || 'Unknown error';
+      const isBabelError = errorMsg.includes('Babel') || errorMsg.includes('parsing');
+      const isMissingModule = errorMsg.includes('Cannot find module') || errorMsg.includes('is not defined');
+      
       return (
         <div className="flex items-center justify-center h-full bg-background text-foreground p-10">
           <div className="text-center max-w-md">
-            <div className="text-4xl mb-3">⚡</div>
+            <div className="text-4xl mb-3">{isBabelError ? '🔧' : isMissingModule ? '📦' : '⚠️'}</div>
             <h3 className="text-lg font-semibold mb-2">Preview Error</h3>
             <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
-              {this.state.error?.message || 'The preview encountered an issue during compilation.'}
+              {isBabelError && 'Syntax error in your code:'}
+              {isMissingModule && 'Missing import or module:'}
+              {!isBabelError && !isMissingModule && 'Error during preview compilation:'}
             </p>
-            <Button
-              size="sm"
-              onClick={() => this.setState(s => ({ hasError: false, error: null, retryCount: s.retryCount + 1 }))}
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Retry Preview
-            </Button>
+            
+            {this.state.showDetails && (
+              <div className="bg-card border border-border rounded p-3 mb-4 text-left max-h-32 overflow-y-auto">
+                <code className="text-xs font-mono text-destructive break-words">
+                  {errorMsg}
+                </code>
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Button
+                size="sm"
+                onClick={this.handleRetry}
+                disabled={isExhausted}
+                variant={isExhausted ? 'destructive' : 'default'}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {isExhausted ? `Failed (${this.state.retryCount}/${this.maxRetries})` : 'Retry'}
+              </Button>
+              
+              <button
+                onClick={this.toggleDetails}
+                className="text-xs text-muted-foreground hover:text-foreground underline w-full"
+              >
+                {this.state.showDetails ? 'Hide' : 'Show'} Details
+              </button>
+            </div>
+            
+            {isExhausted && (
+              <p className="text-xs text-muted-foreground mt-4">
+                Check the browser console for more information.
+              </p>
+            )}
           </div>
         </div>
       );
@@ -179,6 +241,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   device = 'desktop',
   enableSelection = false,
   onElementSelect,
+  intentRuntime = false,
 }, ref) => {
   // State - default to 'sandpack' — no HTML fallback
   const [backend, setBackend] = useState<PreviewBackend>('sandpack');
@@ -209,30 +272,80 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return dependencies;
   }, [files]);
   
-  // Prepare Sandpack files: flatten /src/ paths, process imports, add shims
+  // Prepare Sandpack files: process imports, add shims (files keep /src/ paths)
+  const { launch } = useLaunch();
+  
   const sandpackFiles = useMemo(() => {
-    return prepareSandpackFiles(files);
-  }, [files]);
+    try {
+      // If we have LaunchState with metadata, use the enhanced launch path
+      let prepared;
+      if (launch && launch.vfsFiles) {
+        prepared = launchStateToSandpackFiles({
+          launchState: launch,
+          vfsFiles: files,
+          debug: false,
+        });
+      } else {
+        // Fall back to raw VFS preparation (for editing-only scenarios)
+        prepared = prepareSandpackFiles(files);
+      }
+      
+      if (!intentRuntime) return prepared;
 
+      // Merge intent runtime files — replaces main.tsx boot with intent-driven entry
+      const runtimeFiles = generateIntentRuntimeFiles({ debug: false, typescript: true });
+      const merged = { ...prepared };
+
+      // Remove plain main/index boot — intent runtime provides /src/index.tsx instead
+      delete merged['/main.tsx'];
+      delete merged['/main.jsx'];
+      delete merged['/src/main.tsx'];
+      delete merged['/src/main.jsx'];
+
+      for (const [path, file] of Object.entries(runtimeFiles)) {
+        merged[path] = typeof file === 'string' ? file : file.code;
+      }
+
+      // Intent runtime already provides /src/index.tsx (template entry) — no bridge needed
+
+      return merged;
+    } catch (error) {
+      console.error('[VFSPreview] Failed to prepare Sandpack files:', error);
+      // Return a minimal fallback
+      return {
+        '/index.html': '<html><head><title>Error</title></head><body><h1>Preview Error</h1><p>Failed to prepare preview files</p></body></html>',
+      };
+    }
+  }, [files, intentRuntime, launch]);
+
+  // Normalize activeFile path for lookup in sandpackFiles
   const normalizedActiveFile = useMemo(() => {
     if (!activeFile) return null;
-    if (activeFile.startsWith('/src/')) return activeFile.replace('/src/', '/');
-    if (activeFile.startsWith('/styles/')) return activeFile.replace('/styles/', '/');
+    // /styles/ files are flattened to /src/ in sandpackFilePrep
+    if (activeFile.startsWith('/styles/')) return activeFile.replace('/styles/', '/src/');
     return activeFile;
   }, [activeFile]);
   
-  // Determine Sandpack entry file (from prepared/flattened files)
+  // Determine Sandpack entry file — prefer /src/ paths since files keep /src/ prefix
   const sandpackEntryFile = useMemo(() => {
     if (normalizedActiveFile && sandpackFiles[normalizedActiveFile]) {
       return normalizedActiveFile;
     }
 
-    const candidates = ['/App.tsx', '/App.jsx', '/main.tsx', '/index.tsx', '/main.jsx', '/index.jsx'];
+    const candidates = [
+      '/src/App.tsx', '/src/App.jsx', '/src/main.tsx', '/src/index.tsx',
+      '/App.tsx', '/App.jsx', '/main.tsx', '/index.tsx', '/main.jsx', '/index.jsx',
+    ];
     for (const candidate of candidates) {
       if (sandpackFiles[candidate]) return candidate;
     }
-    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/main.tsx' && p !== '/index.tsx');
-    return firstCode || '/App.tsx';
+    const firstCode = Object.keys(sandpackFiles).find(p =>
+      /\.(tsx?|jsx?)$/.test(p) &&
+      !p.endsWith('/hooks-shim.ts') &&
+      !p.endsWith('/main.tsx') &&
+      !p.endsWith('/index.tsx')
+    );
+    return firstCode || '/src/App.tsx';
   }, [sandpackFiles, normalizedActiveFile]);
   
   // Handle messages from preview iframe (intent system)
@@ -287,10 +400,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     if (dockerGatewayConfigured && autoStart) {
       setBackend('loading');
-      dockerService.startSession(nodes).then((session) => {
+      // Timeout Docker start after 5s — fall back to Sandpack if gateway is unreachable
+      const dockerTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+      Promise.race([dockerService.startSession(nodes), dockerTimeout]).then((session) => {
         if (session) {
           setBackend('docker');
         } else {
+          console.warn('[VFSPreview] Docker gateway unreachable or slow — falling back to Sandpack');
           setBackend('sandpack');
         }
         onReady?.();
@@ -495,7 +611,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
               files={sandpackFiles}
               theme="light"
               options={{
-                externalResources: [],
+                externalResources: [
+                  'https://cdn.tailwindcss.com',
+                ],
                 activeFile: sandpackEntryFile,
                 visibleFiles: [sandpackEntryFile],
                 autorun: true,

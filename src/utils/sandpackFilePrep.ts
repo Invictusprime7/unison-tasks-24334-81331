@@ -629,7 +629,15 @@ export function normalizeLauncherFiles(
   // Normalize all paths to have leading slash
   for (const [path, content] of Object.entries(files)) {
     const normalized = path.startsWith('/') ? path : `/${path}`;
-    out[normalized] = content;
+    // Sanitize image URLs and enforce contrast in all files
+    let sanitized = content;
+    if (/\.(tsx?|jsx?|css)$/.test(normalized)) {
+      sanitized = repairBrokenImageUrls(sanitized);
+    }
+    if (normalized.endsWith('.css')) {
+      sanitized = enforceContrastInCSS(sanitized);
+    }
+    out[normalized] = sanitized;
   }
 
   // Ensure /src/main.tsx exists

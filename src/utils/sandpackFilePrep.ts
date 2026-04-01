@@ -2298,7 +2298,8 @@ function generateMissingComponents(sandpackFiles: Record<string, string>): void 
             if (/^[A-Z]/.test(name)) {
               code += `export function ${name}({ children, className, ...props }: any) {\n  return (\n    <div className={"py-12 px-6 " + (className || "")} {...props}>\n      <div className="max-w-7xl mx-auto">{children || <p className="text-muted-foreground text-center">${name} Section</p>}</div>\n    </div>\n  );\n}\n\n`;
             } else {
-              code += `export const ${name} = undefined;\n`;
+              // Non-component named exports get a safe no-op value instead of undefined
+              code += `export const ${name} = () => null;\n`;
             }
           }
           // Add default export as the first named component
@@ -2647,9 +2648,28 @@ export function prepareSandpackFiles(
     }
   }
 
+  if (!hasIndex) sandpackFiles['/index.tsx'] = DEFAULT_INDEX;
+
+  // Remove any stale /main.tsx that might have leaked through
+  delete sandpackFiles['/main.tsx'];
+  delete sandpackFiles['/main.jsx'];
+
+  sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
+
+  // ── Generate real components for missing relative imports ──
+  // Run BEFORE App.tsx export validation so generated sub-components exist first.
+  // Run up to 3 passes to resolve transitive imports (generated components may import others).
+  for (let pass = 0; pass < 3; pass++) {
+    const beforeCount = Object.keys(sandpackFiles).length;
+    generateMissingComponents(sandpackFiles);
+    if (Object.keys(sandpackFiles).length === beforeCount) break;
+    console.log(`[sandpackFilePrep] Component generation pass ${pass + 1}: ${Object.keys(sandpackFiles).length - beforeCount} new files`);
+  }
+
   // ── SAFETY: Validate App.tsx has a default export ──
   // If AI-generated App.tsx only uses named exports (e.g., `export function App`),
   // `import App from './App'` in index.tsx resolves to undefined → crash.
+  // Must run AFTER generateMissingComponents so all files are present.
   const appContent = sandpackFiles['/App.tsx'] || sandpackFiles['/App.jsx'] || '';
   if (appContent && !appContent.includes('export default')) {
     const appPath = sandpackFiles['/App.tsx'] ? '/App.tsx' : '/App.jsx';
@@ -2664,16 +2684,19 @@ export function prepareSandpackFiles(
       console.warn('[sandpackFilePrep] App.tsx has no valid exports — replaced with diagnostic entry');
     }
   }
-  if (!hasIndex) sandpackFiles['/index.tsx'] = DEFAULT_INDEX;
-  
-  // Remove any stale /main.tsx that might have leaked through
-  delete sandpackFiles['/main.tsx'];
-  delete sandpackFiles['/main.jsx'];
 
-  sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
+  // ── SAFETY: Validate ALL generated .tsx/.jsx files have a default export ──
+  // Prevents "Element type is invalid" when any component is default-imported.
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+    if (filePath === '/index.tsx' || filePath === '/hooks-shim.ts') continue;
+    if (content.includes('export default')) continue;
 
-  // ── Generate real components for missing relative imports ──
-  generateMissingComponents(sandpackFiles);
+    const namedMatch = content.match(/export\s+(?:function|const|class)\s+([A-Z]\w*)/);
+    if (namedMatch) {
+      sandpackFiles[filePath] = content + `\nexport default ${namedMatch[1]};\n`;
+    }
+  }
 
   // Ensure template.css exists if any file imports it
   const anyImportsTemplateCss = Object.values(sandpackFiles).some(c =>

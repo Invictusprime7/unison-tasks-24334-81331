@@ -2172,7 +2172,7 @@ function matchSectionGenerator(componentName: string): string | null {
     fitnessprograms: 'programs', trainingprograms: 'programs',
 
     // Medical
-    ourdoctors: 'doctors', physicians: 'doctors', medicalteam: 'doctors', providers: 'doctors', specialists: 'doctors', staff: 'team',
+    ourdoctors: 'doctors', physicians: 'doctors', medicalteam: 'doctors', providers: 'doctors', specialists: 'doctors',
     specialties: 'departments', medicaldepartments: 'departments', clinics: 'departments',
     bookappointment: 'appointment', schedulevisit: 'appointment', appointmentform: 'appointment',
     insuranceproviders: 'insurance', acceptedinsurance: 'insurance', insurancelist: 'insurance',

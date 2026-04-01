@@ -2205,7 +2205,7 @@ function matchSectionGenerator(componentName: string): string | null {
     framework: 'methodology', ourapproach: 'methodology', pillars: 'methodology', system: 'methodology',
     clientresults: 'results', outcomes: 'results', impact: 'results', successmetrics: 'results',
     bookacall: 'discoverycall', freeconsult: 'discoverycall', strategycall: 'discoverycall', consultation: 'discoverycall', calendly: 'discoverycall',
-    coachingplans: 'coachingprograms', programplans: 'coachingprograms', packages: 'coachingprograms', offerings: 'services',
+    coachingplans: 'coachingprograms', programplans: 'coachingprograms', packages: 'coachingprograms',
 
     // Booking (universal)
     bookingform: 'booking', bookingwidget: 'booking', schedulebooking: 'booking',

@@ -46,6 +46,13 @@ interface WebBuilderState {
   viewMode: ViewMode;
   isInteractive: boolean;
   
+  /**
+   * Active editor layer. Controls whether Fabric is mounted.
+   * Default: 'react-preview' — Fabric is NOT loaded.
+   * Only 'visual-overlay' and 'wireframe' activate Fabric.
+   */
+  editorLayer: EditorLayer;
+  
   // Device & Viewport
   device: DeviceType;
   zoom: number;
@@ -74,10 +81,16 @@ const DEVICE_WIDTHS: Record<DeviceType, number> = {
   mobile: 375,
 };
 
+/** Whether the given editor layer requires Fabric.js to be mounted */
+export function layerRequiresFabric(layer: EditorLayer): boolean {
+  return layer === 'visual-overlay' || layer === 'wireframe';
+}
+
 const DEFAULT_STATE: WebBuilderState = {
   builderMode: 'select',
   viewMode: 'canvas',
   isInteractive: false,
+  editorLayer: 'react-preview', // React preview is default — no Fabric
   device: 'desktop',
   zoom: 0.5,
   isFullscreen: false,

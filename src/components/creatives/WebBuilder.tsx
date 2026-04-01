@@ -1322,7 +1322,7 @@ export default function App() {
   } = virtualFS;
   
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
-  const aiVFS = useAIVFS(virtualFS, simplePreviewRef);
+  const aiVFS = useAIVFS(virtualFS, livePreviewRef);
   
   // Site builder orchestrator — provides site graph navigation, brand system, and intent routing
   // Uses project/business IDs from location state; no-ops if unavailable

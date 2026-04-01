@@ -9,6 +9,17 @@ import { toast } from 'sonner';
 
 export type BuilderMode = 'select' | 'edit' | 'preview' | 'pan' | 'code';
 export type ViewMode = 'canvas' | 'code' | 'split';
+
+/**
+ * Editor layer determines what powers the visual editing surface.
+ * - 'react-preview': React runtime in Sandpack iframe (PRIMARY — source of truth)
+ * - 'visual-overlay': Fabric.js for drag handles, selection boxes, annotations
+ * - 'wireframe': Fabric.js for spatial planning / wireframe mode
+ *
+ * Fabric is NEVER the rendering truth. It only provides editing affordances
+ * as an overlay on top of the React preview.
+ */
+export type EditorLayer = 'react-preview' | 'visual-overlay' | 'wireframe';
 export type DeviceType = 'desktop' | 'tablet' | 'mobile';
 
 interface CanvasState {

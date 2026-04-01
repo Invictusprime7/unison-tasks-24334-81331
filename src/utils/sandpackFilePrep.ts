@@ -1151,16 +1151,15 @@ export function Team() {
 }
 
 // ── Industry-specific generators ──────────────────────────────────────────────
-
+// RESTAURANT
 function genMenu(ctx: GeneratorContext): string {
   const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.default[0];
   const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.default[1];
   return `import React from 'react';
-
 const menuItems = [
   { category: 'Starters', items: [
     { name: 'Bruschetta', desc: 'Toasted bread with fresh tomatoes, basil, and olive oil', price: '$12', img: '${img0}' },
-    { name: 'Soup of the Day', desc: 'Chef\\'s daily selection served with artisan bread', price: '$10' },
+    { name: 'Soup of the Day', desc: "Chef's daily selection served with artisan bread", price: '$10' },
     { name: 'Caesar Salad', desc: 'Crisp romaine with parmesan, croutons, and house dressing', price: '$14' },
   ]},
   { category: 'Main Courses', items: [
@@ -1169,7 +1168,6 @@ const menuItems = [
     { name: 'Pasta Primavera', desc: 'Fresh pasta with garden vegetables in a light cream sauce', price: '$22' },
   ]},
 ];
-
 export function Menu() {
   return (
     <section id="menu" className="py-24 bg-background">
@@ -1199,13 +1197,11 @@ export function Menu() {
     </section>
   );
 }
-
 export default Menu;`;
 }
 
 function genReservation(ctx: GeneratorContext): string {
   return `import React from 'react';
-
 export function Reservation() {
   return (
     <section id="reservation" className="py-24 bg-secondary/30">
@@ -1221,7 +1217,7 @@ export function Reservation() {
             <input type="date" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground" />
             <input type="time" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground" />
             <select className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground">
-              <option>2 Guests</option><option>3 Guests</option><option>4 Guests</option><option>5 Guests</option><option>6+ Guests</option>
+              <option>2 Guests</option><option>3 Guests</option><option>4 Guests</option><option>5+ Guests</option>
             </select>
           </div>
           <textarea placeholder="Special Requests" rows={3} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
@@ -1231,26 +1227,23 @@ export function Reservation() {
     </section>
   );
 }
-
 export default Reservation;`;
 }
 
 function genSpecials(ctx: GeneratorContext): string {
   const img = ctx.images[0] || CONTEXTUAL_IMAGES.default[0];
   return `import React from 'react';
-
 const specials = [
-  { name: 'Chef\\'s Tasting Menu', desc: 'A curated five-course experience featuring seasonal highlights.', price: '$85/person', img: '${img}' },
+  { name: "Chef's Tasting Menu", desc: 'A curated five-course experience featuring seasonal highlights.', price: '$85/person', img: '${img}' },
   { name: 'Weekend Brunch', desc: 'Enjoy our signature brunch menu every Saturday and Sunday.', price: 'From $18' },
-  { name: 'Happy Hour', desc: 'Half-price appetizers and cocktails, Mon–Fri 4–6 PM.', price: 'From $6' },
+  { name: 'Happy Hour', desc: 'Half-price appetizers and cocktails, Mon-Fri 4-6 PM.', price: 'From $6' },
 ];
-
 export function Specials() {
   return (
     <section className="py-24 bg-background">
       <div className="max-w-7xl mx-auto px-6">
         <h2 className="text-4xl font-bold text-foreground text-center mb-4">Today's Specials</h2>
-        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Don't miss our hand-picked selections</p>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Hand-picked selections from our kitchen</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {specials.map((s, i) => (
             <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-shadow">
@@ -1267,45 +1260,955 @@ export function Specials() {
     </section>
   );
 }
-
 export default Specials;`;
 }
 
-function genBooking(ctx: GeneratorContext): string {
-  return genReservation(ctx);
+// SALON / BEAUTY
+function genTreatments(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.salon[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.salon[1];
+  return `import React from 'react';
+const treatments = [
+  { name: 'Signature Facial', desc: 'Deep-cleansing facial customized to your skin type with premium products.', duration: '60 min', price: '$95', img: '${img0}' },
+  { name: 'Hair Transformation', desc: 'Full color and cut with our senior stylist for a complete new look.', duration: '120 min', price: '$180', img: '${img1}' },
+  { name: 'Relaxation Massage', desc: 'Full-body Swedish massage to melt away tension and restore balance.', duration: '90 min', price: '$120' },
+  { name: 'Manicure & Pedicure', desc: 'Luxurious hand and foot treatment with gel polish application.', duration: '75 min', price: '$65' },
+];
+export function Treatments() {
+  return (
+    <section id="treatments" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Our Treatments</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Indulge in our curated wellness experiences</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {treatments.map((t, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col md:flex-row hover:shadow-lg transition-shadow">
+              {t.img && <img src={t.img} alt={t.name} className="w-full md:w-48 h-48 md:h-auto object-cover" />}
+              <div className="p-6 flex-1">
+                <h3 className="text-xl font-semibold text-card-foreground mb-2">{t.name}</h3>
+                <p className="text-muted-foreground text-sm mb-3">{t.desc}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-sm">{t.duration}</span>
+                  <span className="text-primary font-bold text-lg">{t.price}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Treatments;`;
 }
 
+function genBeforeAfter(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.salon[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.salon[1];
+  return `import React from 'react';
+const transformations = [
+  { title: 'Color Transformation', before: '${img0}', after: '${img1}', desc: 'From brunette to sun-kissed balayage' },
+  { title: 'Skin Rejuvenation', before: '${img1}', after: '${img0}', desc: 'Visible results after our signature facial series' },
+];
+export function BeforeAfter() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Transformations</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">See the results our clients love</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {transformations.map((t, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="grid grid-cols-2">
+                <div className="relative"><img src={t.before} alt="Before" className="w-full h-64 object-cover" /><span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">Before</span></div>
+                <div className="relative"><img src={t.after} alt="After" className="w-full h-64 object-cover" /><span className="absolute bottom-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded">After</span></div>
+              </div>
+              <div className="p-5"><h3 className="font-semibold text-card-foreground">{t.title}</h3><p className="text-muted-foreground text-sm mt-1">{t.desc}</p></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default BeforeAfter;`;
+}
+
+function genStylists(ctx: GeneratorContext): string {
+  return `import React from 'react';
+const stylists = [
+  { name: 'Isabella Cruz', role: 'Senior Stylist', specialty: 'Color & Balayage', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'Marcus Lee', role: 'Lead Barber', specialty: 'Precision Cuts', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Ava Williams', role: 'Esthetician', specialty: 'Facials & Skin Care', img: '${PORTRAIT_IMAGES[3]}' },
+];
+export function Stylists() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Meet Our Stylists</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {stylists.map((s, i) => (
+            <div key={i} className="text-center group">
+              <div className="w-48 h-48 mx-auto rounded-full overflow-hidden mb-4 ring-4 ring-border group-hover:ring-primary transition-all">
+                <img src={s.img} alt={s.name} className="w-full h-full object-cover" />
+              </div>
+              <h3 className="font-semibold text-foreground text-lg">{s.name}</h3>
+              <p className="text-primary text-sm font-medium">{s.role}</p>
+              <p className="text-muted-foreground text-sm mt-1">{s.specialty}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Stylists;`;
+}
+
+// FITNESS / GYM
+function genClasses(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.fitness[0];
+  return `import React from 'react';
+const classes = [
+  { name: 'HIIT Burn', time: 'Mon/Wed/Fri 6:00 AM', trainer: 'Coach Mike', level: 'All Levels', img: '${img0}' },
+  { name: 'Power Yoga', time: 'Tue/Thu 7:30 AM', trainer: 'Sara K.', level: 'Beginner' },
+  { name: 'Spin Cycle', time: 'Mon-Fri 12:00 PM', trainer: 'DJ Marcus', level: 'Intermediate' },
+  { name: 'Strength Lab', time: 'Mon/Wed/Fri 5:30 PM', trainer: 'Coach Jake', level: 'Advanced' },
+];
+export function Classes() {
+  return (
+    <section id="classes" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Class Schedule</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Find the perfect class for your fitness journey</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {classes.map((c, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-6 flex gap-4 items-center hover:shadow-lg transition-shadow">
+              {c.img && <img src={c.img} alt={c.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />}
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-card-foreground">{c.name}</h3>
+                <p className="text-muted-foreground text-sm">{c.time} &middot; {c.trainer}</p>
+                <span className="inline-block mt-2 text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium">{c.level}</span>
+              </div>
+              <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex-shrink-0">Join</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Classes;`;
+}
+
+function genTrainers(ctx: GeneratorContext): string {
+  return `import React from 'react';
+const trainers = [
+  { name: 'Mike Johnson', specialty: 'HIIT & Strength', cert: 'NASM-CPT', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Sara Kim', specialty: 'Yoga & Mobility', cert: 'RYT-500', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'Jake Torres', specialty: 'Powerlifting', cert: 'CSCS', img: '${PORTRAIT_IMAGES[2]}' },
+];
+export function Trainers() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Expert Trainers</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {trainers.map((t, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 text-center hover:shadow-lg transition-shadow">
+              <img src={t.img} alt={t.name} className="w-32 h-32 rounded-full object-cover mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-card-foreground">{t.name}</h3>
+              <p className="text-primary font-medium text-sm">{t.specialty}</p>
+              <p className="text-muted-foreground text-xs mt-1">{t.cert}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Trainers;`;
+}
+
+function genMembership(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const plans = [
+  { name: 'Day Pass', price: '$15', period: '/day', features: ['Full gym access', 'Locker room', 'Free WiFi'], popular: false },
+  { name: 'Monthly', price: '$49', period: '/mo', features: ['Unlimited gym access', 'All group classes', 'Locker room', 'Free parking'], popular: true },
+  { name: 'Annual', price: '$399', period: '/yr', features: ['Everything in Monthly', 'Personal training session', 'Nutrition consult', 'Guest passes'], popular: false },
+];
+export function Membership() {
+  return (
+    <section id="membership" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Membership Plans</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Flexible options to fit your lifestyle</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {plans.map((p, i) => (
+            <div key={i} className={\`bg-card border rounded-2xl p-8 relative \${p.popular ? 'border-primary shadow-xl scale-105' : 'border-border'}\`}>
+              {p.popular && <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">Best Value</span>}
+              <h3 className="text-xl font-semibold text-card-foreground mb-2">{p.name}</h3>
+              <div className="mb-6"><span className="text-4xl font-bold text-foreground">{p.price}</span><span className="text-muted-foreground">{p.period}</span></div>
+              <ul className="space-y-3 mb-8">{p.features.map((f, j) => <li key={j} className="flex items-center gap-2 text-muted-foreground"><span className="text-primary">✓</span>{f}</li>)}</ul>
+              <button className={\`w-full py-3 rounded-lg font-semibold transition-opacity \${p.popular ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-secondary-foreground hover:opacity-80'}\`}>Join Now</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Membership;`;
+}
+
+function genSchedule(ctx: GeneratorContext): string { return genClasses(ctx); }
+function genPrograms(ctx: GeneratorContext): string { return genClasses(ctx); }
+
+// MEDICAL / HEALTH
+function genDoctors(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const doctors = [
+  { name: 'Dr. Sarah Chen', specialty: 'Family Medicine', education: 'Johns Hopkins University', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'Dr. James Wilson', specialty: 'Internal Medicine', education: 'Stanford Medical School', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Dr. Emily Park', specialty: 'Pediatrics', education: 'Harvard Medical School', img: '${PORTRAIT_IMAGES[3]}' },
+];
+export function Doctors() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Our Physicians</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Board-certified professionals dedicated to your health</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {doctors.map((d, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 text-center hover:shadow-lg transition-shadow">
+              <img src={d.img} alt={d.name} className="w-32 h-32 rounded-full object-cover mx-auto mb-4 ring-4 ring-primary/20" />
+              <h3 className="text-xl font-semibold text-card-foreground">{d.name}</h3>
+              <p className="text-primary font-medium text-sm">{d.specialty}</p>
+              <p className="text-muted-foreground text-xs mt-1">{d.education}</p>
+              <button className="mt-4 px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">Book Appointment</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Doctors;`;
+}
+
+function genDepartments(ctx: GeneratorContext): string {
+  const img = ctx.images[0] || CONTEXTUAL_IMAGES.medical[0];
+  return `import React from 'react';
+const departments = [
+  { name: 'Primary Care', desc: 'Comprehensive health services for the whole family.', icon: '🏥' },
+  { name: 'Pediatrics', desc: 'Specialized care for infants, children, and adolescents.', icon: '👶' },
+  { name: 'Cardiology', desc: 'Expert heart health monitoring and treatment.', icon: '❤️' },
+  { name: 'Orthopedics', desc: 'Bone, joint, and muscle care from diagnosis to recovery.', icon: '🦴' },
+  { name: 'Dermatology', desc: 'Skin health diagnostics and cosmetic procedures.', icon: '✨' },
+  { name: 'Urgent Care', desc: 'Walk-in care for non-life-threatening emergencies.', icon: '⚡' },
+];
+export function Departments() {
+  return (
+    <section id="departments" className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Departments</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Comprehensive medical care under one roof</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {departments.map((d, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-6 hover:shadow-lg transition-shadow">
+              <span className="text-3xl mb-3 block">{d.icon}</span>
+              <h3 className="text-xl font-semibold text-card-foreground mb-2">{d.name}</h3>
+              <p className="text-muted-foreground text-sm">{d.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Departments;`;
+}
+
+function genAppointment(ctx: GeneratorContext): string {
+  return `import React from 'react';
+export function Appointment() {
+  return (
+    <section id="appointment" className="py-24 bg-background">
+      <div className="max-w-4xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Schedule an Appointment</h2>
+        <p className="text-muted-foreground text-center mb-12 text-lg">Your health is our priority at ${ctx.brandName}</p>
+        <form className="bg-card border border-border rounded-2xl p-8 space-y-5" onSubmit={e => e.preventDefault()}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="Patient Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="Phone" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input type="date" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground" />
+            <select className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground">
+              <option>Select Department</option><option>Primary Care</option><option>Pediatrics</option><option>Cardiology</option><option>Dermatology</option>
+            </select>
+          </div>
+          <textarea placeholder="Reason for visit" rows={3} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
+          <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Request Appointment</button>
+        </form>
+      </div>
+    </section>
+  );
+}
+export default Appointment;`;
+}
+
+function genInsurance(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const providers = ['Aetna', 'Blue Cross Blue Shield', 'Cigna', 'United Healthcare', 'Humana', 'Kaiser Permanente', 'Medicare', 'Medicaid'];
+export function Insurance() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Insurance Accepted</h2>
+        <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto text-lg">We work with most major insurance providers</p>
+        <div className="flex flex-wrap justify-center gap-4 max-w-4xl mx-auto">
+          {providers.map((p, i) => (
+            <span key={i} className="bg-card border border-border rounded-xl px-6 py-3 text-card-foreground font-medium text-sm">{p}</span>
+          ))}
+        </div>
+        <p className="text-center text-muted-foreground text-sm mt-8">Don't see your provider? Contact us — we may still be able to help.</p>
+      </div>
+    </section>
+  );
+}
+export default Insurance;`;
+}
+
+// SAAS / SOFTWARE
+function genDemo(ctx: GeneratorContext): string {
+  const img = ctx.images[0] || CONTEXTUAL_IMAGES.saas[0];
+  return `import React from 'react';
+export function Demo() {
+  return (
+    <section id="demo" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          <div>
+            <span className="text-primary font-medium text-sm uppercase tracking-wider">Product Demo</span>
+            <h2 className="text-4xl font-bold text-foreground mt-2 mb-6">See ${ctx.brandName} in Action</h2>
+            <p className="text-muted-foreground text-lg mb-8">Watch how our platform streamlines your workflow and delivers results from day one.</p>
+            <form className="space-y-4 max-w-sm" onSubmit={e => e.preventDefault()}>
+              <input placeholder="Work email" type="email" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+              <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Request Demo</button>
+            </form>
+          </div>
+          <div className="rounded-2xl overflow-hidden shadow-2xl border border-border">
+            <img src="${img}" alt="Product Demo" className="w-full h-auto" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Demo;`;
+}
+
+function genIntegrations(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const integrations = [
+  { name: 'Slack', desc: 'Real-time notifications and team collaboration.', icon: '💬' },
+  { name: 'GitHub', desc: 'Sync repositories and track deployments.', icon: '🐙' },
+  { name: 'Google Workspace', desc: 'Connect docs, sheets, and calendar.', icon: '📊' },
+  { name: 'Stripe', desc: 'Seamless payment processing and invoicing.', icon: '💳' },
+  { name: 'Zapier', desc: 'Automate workflows with 5000+ apps.', icon: '⚡' },
+  { name: 'HubSpot', desc: 'CRM sync for sales and marketing.', icon: '🎯' },
+];
+export function Integrations() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Integrations</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Connects with the tools you already use</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+          {integrations.map((int, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-6 text-center hover:shadow-lg transition-shadow">
+              <span className="text-3xl mb-3 block">{int.icon}</span>
+              <h3 className="font-semibold text-card-foreground">{int.name}</h3>
+              <p className="text-muted-foreground text-xs mt-1">{int.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Integrations;`;
+}
+
+function genDashboard(ctx: GeneratorContext): string {
+  const img = ctx.images[1] || CONTEXTUAL_IMAGES.saas[1];
+  return `import React from 'react';
+export function Dashboard() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6 text-center">
+        <h2 className="text-4xl font-bold text-foreground mb-4">Powerful Dashboard</h2>
+        <p className="text-muted-foreground mb-12 max-w-2xl mx-auto text-lg">Everything you need at a glance — analytics, insights, and controls.</p>
+        <div className="rounded-2xl overflow-hidden shadow-2xl border border-border max-w-5xl mx-auto">
+          <img src="${img}" alt="Dashboard Preview" className="w-full h-auto" />
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Dashboard;`;
+}
+
+// E-COMMERCE
+function genProducts(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.ecommerce[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.ecommerce[1];
+  const img2 = ctx.images[2] || CONTEXTUAL_IMAGES.ecommerce[2];
+  return `import React from 'react';
+const products = [
+  { name: 'Premium Collection', price: '$129', badge: 'New', img: '${img0}', rating: 4.8 },
+  { name: 'Classic Edition', price: '$89', badge: 'Popular', img: '${img1}', rating: 4.9 },
+  { name: 'Limited Release', price: '$199', badge: 'Limited', img: '${img2}', rating: 5.0 },
+];
+export function Products() {
+  return (
+    <section id="products" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Featured Products</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Handpicked favorites our customers love</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {products.map((p, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl transition-all">
+              <div className="relative h-72 overflow-hidden">
+                <img src={p.img} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <span className="absolute top-3 right-3 bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded-full">{p.badge}</span>
+              </div>
+              <div className="p-6">
+                <h3 className="text-xl font-semibold text-card-foreground mb-1">{p.name}</h3>
+                <div className="flex items-center gap-1 mb-3">{'★'.repeat(Math.floor(p.rating)).split('').map((s, j) => <span key={j} className="text-yellow-500 text-sm">{s}</span>)}<span className="text-muted-foreground text-xs ml-1">{p.rating}</span></div>
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl font-bold text-foreground">{p.price}</span>
+                  <button className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">Add to Cart</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Products;`;
+}
+
+function genCategories(ctx: GeneratorContext): string {
+  const imgs = ctx.images.length >= 3 ? ctx.images : CONTEXTUAL_IMAGES.ecommerce;
+  return `import React from 'react';
+const categories = [
+  { name: 'New Arrivals', count: 24, img: '${imgs[0]}' },
+  { name: 'Best Sellers', count: 18, img: '${imgs[1]}' },
+  { name: 'On Sale', count: 12, img: '${imgs[2] || imgs[0]}' },
+];
+export function Categories() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Shop by Category</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {categories.map((c, i) => (
+            <div key={i} className="relative rounded-2xl overflow-hidden group cursor-pointer h-80">
+              <img src={c.img} alt={c.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+              <div className="absolute bottom-6 left-6">
+                <h3 className="text-2xl font-bold text-white">{c.name}</h3>
+                <p className="text-white/80 text-sm">{c.count} products</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Categories;`;
+}
+
+// PORTFOLIO / CREATIVE
+function genPortfolioProjects(ctx: GeneratorContext): string {
+  const imgs = ctx.images.length >= 2 ? ctx.images : CONTEXTUAL_IMAGES.portfolio;
+  return `import React from 'react';
+const projects = [
+  { title: 'Brand Identity Redesign', category: 'Branding', img: '${imgs[0]}' },
+  { title: 'E-Commerce Platform', category: 'Web Development', img: '${imgs[1]}' },
+  { title: 'Mobile App UI/UX', category: 'Design', img: '${imgs[2] || imgs[0]}' },
+];
+export function PortfolioProjects() {
+  return (
+    <section id="work" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Selected Work</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">A curated selection of recent projects</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {projects.map((p, i) => (
+            <div key={i} className="group cursor-pointer">
+              <div className="rounded-2xl overflow-hidden mb-4 aspect-[4/3]">
+                <img src={p.img} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              </div>
+              <span className="text-primary text-sm font-medium">{p.category}</span>
+              <h3 className="text-xl font-semibold text-foreground mt-1">{p.title}</h3>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default PortfolioProjects;`;
+}
+
+function genSkills(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const skills = [
+  { name: 'UI/UX Design', level: 95 }, { name: 'React / TypeScript', level: 90 },
+  { name: 'Brand Strategy', level: 85 }, { name: 'Motion Design', level: 80 },
+];
+export function Skills() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-3xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Skills & Expertise</h2>
+        <div className="space-y-6">
+          {skills.map((s, i) => (
+            <div key={i}>
+              <div className="flex justify-between mb-2"><span className="text-foreground font-medium">{s.name}</span><span className="text-muted-foreground text-sm">{s.level}%</span></div>
+              <div className="w-full bg-secondary rounded-full h-2"><div className="bg-primary h-2 rounded-full transition-all" style={{ width: s.level + '%' }} /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Skills;`;
+}
+
+// CONTRACTOR / LOCAL SERVICE
+function genEstimate(ctx: GeneratorContext): string {
+  return `import React from 'react';
+export function Estimate() {
+  return (
+    <section id="estimate" className="py-24 bg-secondary/30">
+      <div className="max-w-4xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Get a Free Estimate</h2>
+        <p className="text-muted-foreground text-center mb-12 text-lg">Tell us about your project and we will get back within 24 hours</p>
+        <form className="bg-card border border-border rounded-2xl p-8 space-y-5" onSubmit={e => e.preventDefault()}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="Your Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="Phone" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="Email" type="email" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <select className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground">
+              <option>Select Service</option><option>Plumbing</option><option>Electrical</option><option>HVAC</option><option>Remodeling</option><option>Roofing</option>
+            </select>
+          </div>
+          <textarea placeholder="Project details" rows={4} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
+          <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Request Free Estimate</button>
+        </form>
+      </div>
+    </section>
+  );
+}
+export default Estimate;`;
+}
+
+function genServiceArea(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const areas = ['Downtown', 'Midtown', 'Westside', 'Eastside', 'North County', 'South Bay', 'Suburbs', 'Metro Area'];
+export function ServiceArea() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Service Areas</h2>
+        <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto text-lg">Licensed and insured — proudly serving the greater metro area</p>
+        <div className="flex flex-wrap justify-center gap-3 max-w-4xl mx-auto">
+          {areas.map((a, i) => (
+            <span key={i} className="bg-card border border-border rounded-xl px-6 py-3 text-card-foreground font-medium text-sm hover:border-primary transition-colors cursor-default">{a}</span>
+          ))}
+        </div>
+        <p className="text-center mt-8"><button className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Check Your Area</button></p>
+      </div>
+    </section>
+  );
+}
+export default ServiceArea;`;
+}
+
+function genLicenses(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const credentials = [
+  { label: 'Licensed', icon: '📜', desc: 'Fully licensed in all service areas' },
+  { label: 'Insured', icon: '🛡️', desc: '$2M liability coverage' },
+  { label: 'Bonded', icon: '🔒', desc: 'Performance bond guaranteed' },
+  { label: 'BBB A+', icon: '⭐', desc: 'Better Business Bureau rated' },
+];
+export function Licenses() {
+  return (
+    <section className="py-16 bg-primary">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          {credentials.map((c, i) => (
+            <div key={i} className="text-center">
+              <span className="text-3xl mb-2 block">{c.icon}</span>
+              <h3 className="text-primary-foreground font-bold text-lg">{c.label}</h3>
+              <p className="text-primary-foreground/70 text-sm">{c.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Licenses;`;
+}
+
+// AGENCY
+function genCaseStudies(ctx: GeneratorContext): string {
+  const imgs = ctx.images.length >= 2 ? ctx.images : CONTEXTUAL_IMAGES.agency;
+  return `import React from 'react';
+const studies = [
+  { title: 'SaaS Platform Launch', result: '+340% signups in 90 days', category: 'Growth Marketing', img: '${imgs[0]}' },
+  { title: 'E-Commerce Rebrand', result: '+120% conversion rate', category: 'Brand Strategy', img: '${imgs[1]}' },
+  { title: 'Mobile App Campaign', result: '2M+ downloads in Q1', category: 'Digital Ads', img: '${imgs[2] || imgs[0]}' },
+];
+export function CaseStudies() {
+  return (
+    <section id="work" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Case Studies</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Real results for real businesses</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {studies.map((s, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl transition-all cursor-pointer">
+              <div className="h-56 overflow-hidden"><img src={s.img} alt={s.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /></div>
+              <div className="p-6">
+                <span className="text-primary text-sm font-medium">{s.category}</span>
+                <h3 className="text-xl font-semibold text-card-foreground mt-1 mb-2">{s.title}</h3>
+                <p className="text-muted-foreground font-medium">{s.result}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default CaseStudies;`;
+}
+
+function genProcess(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const steps = [
+  { num: '01', title: 'Discovery', desc: 'Deep-dive into your brand, market, and goals.' },
+  { num: '02', title: 'Strategy', desc: 'Data-driven plan tailored to your growth targets.' },
+  { num: '03', title: 'Execution', desc: 'Multi-channel campaigns launched with precision.' },
+  { num: '04', title: 'Optimize', desc: 'Continuous testing, learning, and scaling.' },
+];
+export function Process() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Our Process</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          {steps.map((s, i) => (
+            <div key={i} className="text-center">
+              <span className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary text-primary-foreground text-2xl font-bold mb-4">{s.num}</span>
+              <h3 className="text-xl font-semibold text-foreground mb-2">{s.title}</h3>
+              <p className="text-muted-foreground text-sm">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Process;`;
+}
+
+function genClients(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const clients = ['TechCorp', 'GrowthLab', 'NovaBrand', 'Skyline Digital', 'Apex Solutions', 'Vertex Inc.'];
+export function Clients() {
+  return (
+    <section className="py-16 bg-background border-y border-border">
+      <div className="max-w-7xl mx-auto px-6">
+        <p className="text-center text-muted-foreground text-sm uppercase tracking-wider mb-8">Trusted by Leading Brands</p>
+        <div className="flex flex-wrap justify-center gap-8 items-center">
+          {clients.map((c, i) => (
+            <span key={i} className="text-xl font-bold text-muted-foreground/40 hover:text-foreground transition-colors cursor-default">{c}</span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Clients;`;
+}
+
+// COACHING / CONSULTING
+function genMethodology(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const pillars = [
+  { title: 'Assess', desc: 'Comprehensive evaluation of your current position and goals.', icon: '🔍' },
+  { title: 'Plan', desc: 'Custom roadmap designed around your unique challenges.', icon: '📋' },
+  { title: 'Execute', desc: 'Guided implementation with accountability checkpoints.', icon: '🚀' },
+  { title: 'Sustain', desc: 'Systems and habits for lasting transformation.', icon: '🏆' },
+];
+export function Methodology() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">The Framework</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">A proven methodology for breakthrough results</p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          {pillars.map((p, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 text-center hover:shadow-lg transition-shadow">
+              <span className="text-4xl mb-4 block">{p.icon}</span>
+              <h3 className="text-xl font-semibold text-card-foreground mb-3">{p.title}</h3>
+              <p className="text-muted-foreground text-sm">{p.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Methodology;`;
+}
+
+function genResults(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const results = [
+  { metric: '95%', label: 'Client Satisfaction' },
+  { metric: '3x', label: 'Average ROI' },
+  { metric: '500+', label: 'Clients Coached' },
+  { metric: '12+', label: 'Years Experience' },
+];
+export function Results() {
+  return (
+    <section className="py-24 bg-primary">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-primary-foreground text-center mb-16">Proven Results</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {results.map((r, i) => (
+            <div key={i} className="text-center">
+              <span className="block text-5xl font-bold text-primary-foreground mb-2">{r.metric}</span>
+              <span className="text-primary-foreground/70">{r.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Results;`;
+}
+
+function genDiscoveryCall(ctx: GeneratorContext): string {
+  return `import React from 'react';
+export function DiscoveryCall() {
+  return (
+    <section id="book" className="py-24 bg-background">
+      <div className="max-w-4xl mx-auto px-6">
+        <div className="bg-card border border-border rounded-2xl p-12 text-center">
+          <h2 className="text-4xl font-bold text-foreground mb-4">Book a Free Discovery Call</h2>
+          <p className="text-muted-foreground text-lg mb-8 max-w-2xl mx-auto">Let's explore how ${ctx.brandName} can help you achieve your goals. No pressure, no obligation.</p>
+          <form className="max-w-md mx-auto space-y-4" onSubmit={e => e.preventDefault()}>
+            <input placeholder="Your Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="Email" type="email" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="What's your biggest challenge?" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Schedule Call</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+export default DiscoveryCall;`;
+}
+
+function genCoachingPrograms(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const programs = [
+  { name: '1:1 Coaching', desc: 'Personalized sessions tailored to your goals.', duration: '12 weeks', price: 'From $2,500', popular: false },
+  { name: 'Group Mastermind', desc: 'Collaborate with like-minded achievers.', duration: '8 weeks', price: 'From $997', popular: true },
+  { name: 'VIP Intensive', desc: 'Accelerated breakthroughs in a focused 2-day deep-dive.', duration: '2 days', price: 'From $5,000', popular: false },
+];
+export function CoachingPrograms() {
+  return (
+    <section id="programs" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Programs</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Choose the path that fits your ambition</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {programs.map((p, i) => (
+            <div key={i} className={\`bg-card border rounded-2xl p-8 relative \${p.popular ? 'border-primary shadow-xl scale-105' : 'border-border'}\`}>
+              {p.popular && <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">Most Popular</span>}
+              <h3 className="text-xl font-semibold text-card-foreground mb-2">{p.name}</h3>
+              <p className="text-muted-foreground text-sm mb-4">{p.desc}</p>
+              <p className="text-muted-foreground text-sm mb-1">{p.duration}</p>
+              <p className="text-2xl font-bold text-foreground mb-6">{p.price}</p>
+              <button className={\`w-full py-3 rounded-lg font-semibold transition-opacity \${p.popular ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-secondary-foreground hover:opacity-80'}\`}>Apply Now</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default CoachingPrograms;`;
+}
+
+// ── Stats section (universal) ─────────────────────────────────────────────────
+function genStats(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const stats = [
+  { value: '10+', label: 'Years Experience' },
+  { value: '500+', label: 'Happy Clients' },
+  { value: '50+', label: 'Team Members' },
+  { value: '99%', label: 'Satisfaction Rate' },
+];
+export function Stats() {
+  return (
+    <section className="py-16 bg-primary">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {stats.map((s, i) => (
+            <div key={i} className="text-center">
+              <span className="block text-4xl font-bold text-primary-foreground mb-1">{s.value}</span>
+              <span className="text-primary-foreground/70 text-sm">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Stats;`;
+}
+
+// ── Booking (universal appointment form) ──────────────────────────────────────
+function genBooking(ctx: GeneratorContext): string { return genReservation(ctx); }
+
+// ── SECTION_GENERATORS registry ──────────────────────────────────────────────
 const SECTION_GENERATORS: Record<string, (ctx: GeneratorContext) => string> = {
+  // Universal
   hero: genHero, navbar: genNavbar, header: genHeader, features: genFeatures,
   services: genServices, about: genAbout, testimonials: genTestimonials,
   contact: genContact, footer: genFooter, pricing: genPricing,
-  gallery: genGallery, cta: genCTA, faq: genFAQ, team: genTeam,
-  menu: genMenu, reservation: genReservation, specials: genSpecials, booking: genBooking,
+  gallery: genGallery, cta: genCTA, faq: genFAQ, team: genTeam, stats: genStats,
+  // Restaurant
+  menu: genMenu, reservation: genReservation, specials: genSpecials,
+  // Salon / Beauty
+  treatments: genTreatments, beforeafter: genBeforeAfter, stylists: genStylists,
+  // Fitness
+  classes: genClasses, trainers: genTrainers, membership: genMembership, schedule: genSchedule, programs: genPrograms,
+  // Medical
+  doctors: genDoctors, departments: genDepartments, appointment: genAppointment, insurance: genInsurance,
+  // SaaS
+  demo: genDemo, integrations: genIntegrations, dashboard: genDashboard,
+  // E-commerce
+  products: genProducts, categories: genCategories,
+  // Portfolio
+  portfolioprojects: genPortfolioProjects, skills: genSkills,
+  // Contractor / Local Service
+  estimate: genEstimate, servicearea: genServiceArea, licenses: genLicenses,
+  // Agency
+  casestudies: genCaseStudies, process: genProcess, clients: genClients,
+  // Coaching
+  methodology: genMethodology, results: genResults, discoverycall: genDiscoveryCall,
+  coachingprograms: genCoachingPrograms,
+  // Aliases that map directly
+  booking: genBooking,
 };
 
 /** Normalize component name to a section generator key. */
 function matchSectionGenerator(componentName: string): string | null {
-  const lower = componentName.toLowerCase().replace(/section$|component$|block$/i, '');
+  const lower = componentName.toLowerCase().replace(/section$|component$|block$|widget$/i, '');
   if (SECTION_GENERATORS[lower]) return lower;
   const aliases: Record<string, string> = {
-    navigation: 'navbar', nav: 'navbar', topbar: 'navbar',
+    // Universal
+    navigation: 'navbar', nav: 'navbar', topbar: 'navbar', menubar: 'navbar',
     herosection: 'hero', herobanner: 'hero', banner: 'hero', jumbotron: 'hero',
-    featurelist: 'features', featuregrid: 'features', benefits: 'features', whyus: 'features', whychooseus: 'features',
-    servicelist: 'services', servicegrid: 'services', offerings: 'services',
-    aboutus: 'about', aboutsection: 'about', story: 'about',
-    testimonial: 'testimonials', reviews: 'testimonials', clientreviews: 'testimonials',
-    contactform: 'contact', contactus: 'contact', getintouch: 'contact',
+    featurelist: 'features', featuregrid: 'features', benefits: 'features', whyus: 'features', whychooseus: 'features', highlights: 'features',
+    servicelist: 'services', servicegrid: 'services', offerings: 'services', whatwedo: 'services',
+    aboutus: 'about', aboutsection: 'about', story: 'about', ourstory: 'about',
+    testimonial: 'testimonials', reviews: 'testimonials', clientreviews: 'testimonials', socialproof: 'testimonials', customerreviews: 'testimonials',
+    contactform: 'contact', contactus: 'contact', getintouch: 'contact', reachout: 'contact',
     footersection: 'footer', sitefooter: 'footer',
-    pricingplan: 'pricing', pricingtable: 'pricing', plans: 'pricing',
-    portfolio: 'gallery', showcase: 'gallery', work: 'gallery', projects: 'gallery',
-    calltoaction: 'cta', ctasection: 'cta', ctablock: 'cta',
-    faqsection: 'faq', questions: 'faq',
-    teamgrid: 'team', ourteam: 'team', staff: 'team', people: 'team',
-    // Restaurant / food industry
-    menusection: 'menu', menulist: 'menu', foodmenu: 'menu', diningmenu: 'menu',
+    pricingplan: 'pricing', pricingtable: 'pricing', plans: 'pricing', pricingcards: 'pricing',
+    portfolio: 'gallery', showcase: 'gallery', work: 'gallery', ourwork: 'gallery',
+    calltoaction: 'cta', ctasection: 'cta', ctablock: 'cta', ctabanner: 'cta',
+    faqsection: 'faq', questions: 'faq', frequentlyasked: 'faq',
+    teamgrid: 'team', ourteam: 'team', staff: 'team', people: 'team', meettheteam: 'team',
+    statistics: 'stats', metrics: 'stats', numbers: 'stats', counters: 'stats', achievements: 'stats',
+
+    // Restaurant
+    menusection: 'menu', menulist: 'menu', foodmenu: 'menu', diningmenu: 'menu', menucard: 'menu', menugrid: 'menu',
     reservations: 'reservation', reservationform: 'reservation', booktable: 'reservation', tablereservation: 'reservation',
-    bookingform: 'booking', bookingwidget: 'booking', appointmentform: 'booking', schedulebooking: 'booking',
-    dailyspecials: 'specials', todaysspecials: 'specials', specialoffers: 'specials', featuredmenu: 'specials',
+    dailyspecials: 'specials', todaysspecials: 'specials', specialoffers: 'specials', featuredmenu: 'specials', chefsspecial: 'specials',
+
+    // Salon / Beauty
+    treatmentlist: 'treatments', treatmentmenu: 'treatments', salonservices: 'treatments', beautyservices: 'treatments', spaservices: 'treatments', servicemenu: 'treatments',
+    transformations: 'beforeafter', beforeandafter: 'beforeafter', results: 'results',
+    ourstylists: 'stylists', hairstylists: 'stylists', beauticians: 'stylists', therapists: 'stylists',
+
+    // Fitness
+    classschedule: 'classes', classgrid: 'classes', groupclasses: 'classes', fitnessclasstable: 'classes', workouts: 'classes',
+    ourtrainers: 'trainers', coaches: 'trainers', instructors: 'trainers', fitnessteam: 'trainers',
+    membershipplans: 'membership', gympricing: 'membership', fitnesspricing: 'membership', joinplans: 'membership',
+    timetable: 'schedule', weeklyschedule: 'schedule',
+    fitnessprograms: 'programs', trainingprograms: 'programs',
+
+    // Medical
+    ourdoctors: 'doctors', physicians: 'doctors', medicalteam: 'doctors', providers: 'doctors', specialists: 'doctors', staff: 'team',
+    specialties: 'departments', medicaldepartments: 'departments', clinics: 'departments',
+    bookappointment: 'appointment', schedulevisit: 'appointment', appointmentform: 'appointment',
+    insuranceproviders: 'insurance', acceptedinsurance: 'insurance', insurancelist: 'insurance',
+
+    // SaaS
+    requestdemo: 'demo', bookdemo: 'demo', livedemo: 'demo', productdemo: 'demo', tryforfree: 'demo',
+    integrationgrid: 'integrations', connectors: 'integrations', partners: 'integrations', ecosystem: 'integrations',
+    productscreen: 'dashboard', apppreview: 'dashboard', screenshot: 'dashboard', platformpreview: 'dashboard',
+
+    // E-commerce
+    featuredproducts: 'products', productgrid: 'products', productcards: 'products', shopcollection: 'products', collection: 'products',
+    shopcategories: 'categories', productcategories: 'categories', browsecategories: 'categories',
+
+    // Portfolio
+    selectedwork: 'portfolioprojects', projectgrid: 'portfolioprojects', creativework: 'portfolioprojects', projectshowcase: 'portfolioprojects',
+    projects: 'portfolioprojects', mywork: 'portfolioprojects',
+    skillset: 'skills', expertise: 'skills', capabilities: 'skills', techstack: 'skills',
+
+    // Contractor / Local Service
+    freeestimate: 'estimate', requestquote: 'estimate', getquote: 'estimate', quoterequest: 'estimate', estimateform: 'estimate',
+    serviceareas: 'servicearea', coveragearea: 'servicearea', locationscovered: 'servicearea', areas: 'servicearea',
+    credentials: 'licenses', certifications: 'licenses', trustbadges: 'licenses', accreditations: 'licenses',
+
+    // Agency
+    casestudy: 'casestudies', portfoliocases: 'casestudies', clientwork: 'casestudies', successstories: 'casestudies',
+    ourprocess: 'process', howwework: 'process', workflow: 'process', approach: 'process', steps: 'process',
+    ourclients: 'clients', trustedby: 'clients', clientlogos: 'clients', brandlogos: 'clients', partnerslogos: 'clients',
+
+    // Coaching / Consulting
+    framework: 'methodology', ourapproach: 'methodology', pillars: 'methodology', system: 'methodology',
+    clientresults: 'results', outcomes: 'results', impact: 'results', successmetrics: 'results',
+    bookacall: 'discoverycall', freeconsult: 'discoverycall', strategycall: 'discoverycall', consultation: 'discoverycall', calendly: 'discoverycall',
+    coachingplans: 'coachingprograms', programplans: 'coachingprograms', packages: 'coachingprograms', offerings: 'services',
+
+    // Booking (universal)
+    bookingform: 'booking', bookingwidget: 'booking', schedulebooking: 'booking',
   };
   if (aliases[lower]) return aliases[lower];
   for (const key of Object.keys(SECTION_GENERATORS)) {

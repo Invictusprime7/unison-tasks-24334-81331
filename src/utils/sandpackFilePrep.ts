@@ -1,9 +1,17 @@
 /**
  * Sandpack File Preparation Utilities
  * 
+ * THE canonical preview compiler for Unison Tasks.
+ * 
  * Sandpack's react-ts template expects files at ROOT level (e.g., /App.tsx, not /src/App.tsx).
  * Entry point MUST be /index.tsx (not /main.tsx) — Sandpack react-ts uses /index.tsx.
  * This module flattens VFS paths, processes imports, and ensures essential files exist.
+ *
+ * Pipeline:
+ *   Launcher → normalizeLauncherFiles() → source VFS
+ *   source VFS → prepareSandpackFiles() → Sandpack overlay
+ *   or:
+ *   Launcher → compileLauncherOutputForPreview() → Sandpack overlay (combines both steps)
  */
 
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';

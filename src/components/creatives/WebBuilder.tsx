@@ -2202,7 +2202,7 @@ export default function ${componentName}Page() {
         
         // Re-sync manifest after iframe reloads
         setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
+           livePreviewRef.current?.syncPageManifest?.(pageManifest);
         }, 600);
         return;
       }

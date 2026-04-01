@@ -661,30 +661,527 @@ export default function App() {
 `;
 }
 
+// ── Real component generators keyed by section name ─────────────────────────
+// When the AI generates App.tsx that imports ./components/Hero etc. but omits
+// the actual file, we synthesize a REAL section component — not a stub.
+
+interface GeneratorContext {
+  industry: string;
+  images: string[];
+  portraits: string[];
+  brandName: string;
+}
+
+/** Detect industry from existing VFS content (CSS vars, copy, file names). */
+function detectIndustryFromVFS(files: Record<string, string>): string {
+  const allContent = Object.values(files).join(' ').toLowerCase();
+  const indicators: [string, string[]][] = [
+    ['restaurant', ['menu', 'dish', 'cuisine', 'chef', 'reservation', 'dining', 'restaurant']],
+    ['salon', ['salon', 'beauty', 'hair', 'spa', 'stylist', 'treatment', 'nail']],
+    ['fitness', ['fitness', 'gym', 'workout', 'training', 'coach', 'exercise']],
+    ['medical', ['medical', 'health', 'clinic', 'doctor', 'patient', 'care', 'dental']],
+    ['saas', ['saas', 'software', 'platform', 'dashboard', 'analytics', 'api', 'startup']],
+    ['ecommerce', ['shop', 'product', 'cart', 'store', 'buy', 'price', 'ecommerce']],
+    ['portfolio', ['portfolio', 'project', 'creative', 'design', 'work', 'freelance']],
+    ['contractor', ['contractor', 'construction', 'plumbing', 'roofing', 'remodel', 'handyman']],
+    ['agency', ['agency', 'marketing', 'branding', 'campaign', 'client', 'strategy']],
+  ];
+  for (const [industry, keywords] of indicators) {
+    if (keywords.filter(k => allContent.includes(k)).length >= 2) return industry;
+  }
+  return 'default';
+}
+
+/** Extract business name from App.tsx / VFS content. */
+function extractBusinessName(files: Record<string, string>): string {
+  for (const content of Object.values(files)) {
+    const h1 = content.match(/<h1[^>]*>([^<]{2,40})<\/h1>/i);
+    if (h1) return h1[1].trim();
+    const title = content.match(/(?:brandName|businessName|siteName|company)\s*[=:]\s*["']([^"']+)["']/);
+    if (title) return title[1];
+  }
+  return 'Our Business';
+}
+
+function genHero(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export default function Hero() {
+  return (
+    <section className="relative min-h-[85vh] flex items-center overflow-hidden">
+      <div className="absolute inset-0 z-0">
+        <img src="${ctx.images[0] || CONTEXTUAL_IMAGES.default[0]}" alt="${ctx.brandName}" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+      </div>
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-24">
+        <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">${ctx.brandName}</h1>
+        <p className="text-xl md:text-2xl text-white/90 mb-8 max-w-2xl">Premium ${ctx.industry} services crafted with passion and expertise for our valued clients.</p>
+        <div className="flex flex-wrap gap-4">
+          <button className="px-8 py-4 bg-white text-black font-semibold rounded-lg hover:bg-white/90 transition-all text-lg">Get Started</button>
+          <button className="px-8 py-4 border-2 border-white text-white font-semibold rounded-lg hover:bg-white/10 transition-all text-lg">Learn More</button>
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genNavbar(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export default function Navbar() {
+  return (
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <a href="#" className="text-xl font-bold text-foreground">${ctx.brandName}</a>
+        <div className="hidden md:flex items-center gap-8">
+          <a href="#about" className="text-foreground/70 hover:text-foreground transition-colors">About</a>
+          <a href="#services" className="text-foreground/70 hover:text-foreground transition-colors">Services</a>
+          <a href="#contact" className="text-foreground/70 hover:text-foreground transition-colors">Contact</a>
+          <button className="px-5 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity">Book Now</button>
+        </div>
+      </div>
+    </nav>
+  );
+}`;
+}
+
+function genHeader(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export default function Header() {
+  return (
+    <header className="bg-background border-b border-border">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <span className="text-xl font-bold text-foreground">${ctx.brandName}</span>
+        <nav className="hidden md:flex items-center gap-6">
+          <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">Home</a>
+          <a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">Services</a>
+          <a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">About</a>
+          <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact</a>
+        </nav>
+      </div>
+    </header>
+  );
+}`;
+}
+
+function genFeatures(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const features = [
+  { title: 'Expert Team', desc: 'Our certified professionals bring years of ${ctx.industry} experience to every project.', icon: '⭐' },
+  { title: 'Quality First', desc: 'We use only premium materials and cutting-edge techniques for outstanding results.', icon: '✨' },
+  { title: 'Fast Turnaround', desc: 'Efficient processes ensure your project is completed on time, every time.', icon: '⚡' },
+  { title: 'Customer Focus', desc: 'Your satisfaction drives everything we do — from consultation to completion.', icon: '💎' },
+];
+
+export default function Features() {
+  return (
+    <section id="features" className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Why Choose Us</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Discover what sets us apart in the ${ctx.industry} industry</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          {features.map((f, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 text-center hover:shadow-lg transition-shadow">
+              <span className="text-4xl mb-4 block">{f.icon}</span>
+              <h3 className="text-xl font-semibold text-card-foreground mb-3">{f.title}</h3>
+              <p className="text-muted-foreground">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genServices(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.default[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.default[1];
+  const img2 = ctx.images[2] || CONTEXTUAL_IMAGES.default[2];
+  return `import React from 'react';
+
+const services = [
+  { name: 'Premium Service', desc: 'Our flagship ${ctx.industry} offering with personalized attention to detail.', price: 'From $99', img: '${img0}' },
+  { name: 'Standard Package', desc: 'Everything you need to get started with professional quality.', price: 'From $59', img: '${img1}' },
+  { name: 'Custom Solution', desc: 'Tailored specifically to your unique requirements and goals.', price: 'Contact Us', img: '${img2}' },
+];
+
+export default function Services() {
+  return (
+    <section id="services" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Our Services</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Professional solutions tailored to your needs</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {services.map((s, i) => (
+            <div key={i} className="group bg-card border border-border rounded-2xl overflow-hidden hover:shadow-xl transition-all">
+              <div className="h-56 overflow-hidden">
+                <img src={s.img} alt={s.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              </div>
+              <div className="p-6">
+                <h3 className="text-xl font-semibold text-card-foreground mb-2">{s.name}</h3>
+                <p className="text-muted-foreground mb-4">{s.desc}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-primary font-bold text-lg">{s.price}</span>
+                  <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">Learn More</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genAbout(ctx: GeneratorContext): string {
+  const img = ctx.images[1] || CONTEXTUAL_IMAGES.default[1];
+  return `import React from 'react';
+
+export default function About() {
+  return (
+    <section id="about" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          <div>
+            <h2 className="text-4xl font-bold text-foreground mb-6">About ${ctx.brandName}</h2>
+            <p className="text-muted-foreground text-lg mb-6 leading-relaxed">With years of experience in the ${ctx.industry} industry, we have built a reputation for excellence, reliability, and genuine care for our clients.</p>
+            <p className="text-muted-foreground text-lg mb-8 leading-relaxed">Our team of dedicated professionals is passionate about delivering exceptional results that exceed expectations every time.</p>
+            <div className="grid grid-cols-3 gap-6">
+              <div className="text-center"><span className="block text-3xl font-bold text-primary">10+</span><span className="text-muted-foreground text-sm">Years</span></div>
+              <div className="text-center"><span className="block text-3xl font-bold text-primary">500+</span><span className="text-muted-foreground text-sm">Clients</span></div>
+              <div className="text-center"><span className="block text-3xl font-bold text-primary">50+</span><span className="text-muted-foreground text-sm">Team</span></div>
+            </div>
+          </div>
+          <div className="rounded-2xl overflow-hidden shadow-2xl">
+            <img src="${img}" alt="About ${ctx.brandName}" className="w-full h-[500px] object-cover" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genTestimonials(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const testimonials = [
+  { name: 'Sarah Johnson', role: 'Regular Client', text: 'Absolutely outstanding service! ${ctx.brandName} exceeded all my expectations.', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Michael Chen', role: 'Business Owner', text: 'Professional, reliable, and incredibly talented. They transformed my vision into reality.', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'Emily Rodriguez', role: 'Returning Customer', text: 'The attention to detail and personalized approach makes all the difference.', img: '${PORTRAIT_IMAGES[2]}' },
+];
+
+export default function Testimonials() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">What Our Clients Say</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {testimonials.map((t, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8">
+              <div className="flex items-center gap-1 mb-4">{[...Array(5)].map((_, j) => <span key={j} className="text-yellow-500 text-lg">★</span>)}</div>
+              <p className="text-card-foreground mb-6 italic leading-relaxed">"{t.text}"</p>
+              <div className="flex items-center gap-3">
+                <img src={t.img} alt={t.name} className="w-12 h-12 rounded-full object-cover" />
+                <div><p className="font-semibold text-card-foreground">{t.name}</p><p className="text-muted-foreground text-sm">{t.role}</p></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genContact(ctx: GeneratorContext): string {
+  const emailDomain = ctx.brandName.toLowerCase().replace(/\s+/g, '');
+  return `import React from 'react';
+
+export default function Contact() {
+  return (
+    <section id="contact" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
+          <div>
+            <h2 className="text-4xl font-bold text-foreground mb-6">Get In Touch</h2>
+            <p className="text-muted-foreground text-lg mb-8">Ready to get started? Reach out and we will respond within 24 hours.</p>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-foreground"><span className="text-primary text-xl">📍</span>123 Business Ave, Suite 100</div>
+              <div className="flex items-center gap-3 text-foreground"><span className="text-primary text-xl">📞</span>(555) 123-4567</div>
+              <div className="flex items-center gap-3 text-foreground"><span className="text-primary text-xl">✉️</span>hello@${emailDomain}.com</div>
+            </div>
+          </div>
+          <form className="bg-card border border-border rounded-2xl p-8 space-y-5" onSubmit={e => e.preventDefault()}>
+            <div className="grid grid-cols-2 gap-4">
+              <input placeholder="First Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+              <input placeholder="Last Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            </div>
+            <input placeholder="Email" type="email" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <textarea placeholder="Your Message" rows={4} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
+            <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Send Message</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genFooter(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export default function Footer() {
+  return (
+    <footer className="bg-foreground text-background py-16">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
+          <div>
+            <h3 className="text-xl font-bold mb-4">${ctx.brandName}</h3>
+            <p className="text-background/70 text-sm leading-relaxed">Delivering exceptional quality and service since day one.</p>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-4">Quick Links</h4>
+            <ul className="space-y-2 text-background/70 text-sm">
+              <li><a href="#" className="hover:text-background transition-colors">Home</a></li>
+              <li><a href="#services" className="hover:text-background transition-colors">Services</a></li>
+              <li><a href="#about" className="hover:text-background transition-colors">About</a></li>
+              <li><a href="#contact" className="hover:text-background transition-colors">Contact</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-4">Hours</h4>
+            <ul className="space-y-2 text-background/70 text-sm">
+              <li>Mon-Fri: 9am - 6pm</li>
+              <li>Saturday: 10am - 4pm</li>
+              <li>Sunday: Closed</li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-4">Follow Us</h4>
+            <div className="flex gap-3">
+              <a href="#" className="w-10 h-10 rounded-full bg-background/10 flex items-center justify-center hover:bg-background/20 transition-colors text-sm">X</a>
+              <a href="#" className="w-10 h-10 rounded-full bg-background/10 flex items-center justify-center hover:bg-background/20 transition-colors text-sm">in</a>
+              <a href="#" className="w-10 h-10 rounded-full bg-background/10 flex items-center justify-center hover:bg-background/20 transition-colors text-sm">ig</a>
+            </div>
+          </div>
+        </div>
+        <div className="border-t border-background/20 pt-8 text-center text-background/50 text-sm">&copy; {new Date().getFullYear()} ${ctx.brandName}. All rights reserved.</div>
+      </div>
+    </footer>
+  );
+}`;
+}
+
+function genPricing(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const plans = [
+  { name: 'Basic', price: '$29', period: '/mo', features: ['Core features', 'Email support', '1 user', 'Basic analytics'], popular: false },
+  { name: 'Professional', price: '$79', period: '/mo', features: ['Everything in Basic', 'Priority support', '5 users', 'Advanced analytics', 'Custom integrations'], popular: true },
+  { name: 'Enterprise', price: '$199', period: '/mo', features: ['Everything in Pro', '24/7 support', 'Unlimited users', 'Custom solutions', 'Dedicated manager'], popular: false },
+];
+
+export default function Pricing() {
+  return (
+    <section id="pricing" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Simple Pricing</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Choose the plan that fits your needs</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {plans.map((p, i) => (
+            <div key={i} className={\`bg-card border rounded-2xl p-8 relative \${p.popular ? 'border-primary shadow-xl scale-105' : 'border-border'}\`}>
+              {p.popular && <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">Most Popular</span>}
+              <h3 className="text-xl font-semibold text-card-foreground mb-2">{p.name}</h3>
+              <div className="mb-6"><span className="text-4xl font-bold text-foreground">{p.price}</span><span className="text-muted-foreground">{p.period}</span></div>
+              <ul className="space-y-3 mb-8">{p.features.map((f, j) => <li key={j} className="flex items-center gap-2 text-muted-foreground"><span className="text-primary">✓</span>{f}</li>)}</ul>
+              <button className={\`w-full py-3 rounded-lg font-semibold transition-opacity \${p.popular ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-secondary-foreground hover:opacity-80'}\`}>Get Started</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genGallery(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const galleryImages = [
+  '${CONTEXTUAL_IMAGES.default[0]}',
+  '${CONTEXTUAL_IMAGES.default[1]}',
+  '${CONTEXTUAL_IMAGES.default[2]}',
+  '${CONTEXTUAL_IMAGES.portfolio[0]}',
+  '${CONTEXTUAL_IMAGES.agency[0]}',
+  '${CONTEXTUAL_IMAGES.saas[0]}',
+];
+
+export default function Gallery() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Our Work</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {galleryImages.map((src, i) => (
+            <div key={i} className="aspect-square rounded-xl overflow-hidden group cursor-pointer">
+              <img src={src} alt={\`Gallery \${i+1}\`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genCTA(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export default function CTA() {
+  return (
+    <section className="py-24 bg-primary">
+      <div className="max-w-4xl mx-auto px-6 text-center">
+        <h2 className="text-4xl font-bold text-primary-foreground mb-6">Ready to Get Started?</h2>
+        <p className="text-primary-foreground/80 text-xl mb-10 max-w-2xl mx-auto">Join hundreds of satisfied customers who chose ${ctx.brandName}.</p>
+        <div className="flex flex-wrap gap-4 justify-center">
+          <button className="px-8 py-4 bg-background text-foreground font-semibold rounded-lg hover:opacity-90 transition-opacity text-lg">Contact Us Today</button>
+          <button className="px-8 py-4 border-2 border-primary-foreground text-primary-foreground font-semibold rounded-lg hover:bg-primary-foreground/10 transition-colors text-lg">View Our Work</button>
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genFAQ(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const faqs = [
+  { q: 'How do I get started?', a: 'Simply reach out through our contact form or give us a call. We will schedule a free consultation to discuss your needs.' },
+  { q: 'What are your hours?', a: 'We are open Monday through Friday, 9am to 6pm, and Saturday 10am to 4pm.' },
+  { q: 'Do you offer free consultations?', a: 'Yes! We offer a complimentary initial consultation to understand your requirements and provide a detailed quote.' },
+  { q: 'What is your cancellation policy?', a: 'We require 24-hour notice for cancellations. Late cancellations may incur a fee.' },
+];
+
+export default function FAQ() {
+  const [open, setOpen] = React.useState<number | null>(null);
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-3xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Frequently Asked Questions</h2>
+        <div className="space-y-4">
+          {faqs.map((f, i) => (
+            <div key={i} className="border border-border rounded-xl overflow-hidden">
+              <button onClick={() => setOpen(open === i ? null : i)} className="w-full px-6 py-4 flex items-center justify-between text-left text-foreground font-medium hover:bg-secondary/50 transition-colors">
+                {f.q}<span className="text-muted-foreground ml-2">{open === i ? '−' : '+'}</span>
+              </button>
+              {open === i && <div className="px-6 pb-4 text-muted-foreground">{f.a}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+function genTeam(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const members = [
+  { name: 'Alex Thompson', role: 'Founder & CEO', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Maria Garcia', role: 'Creative Director', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'James Wilson', role: 'Lead Developer', img: '${PORTRAIT_IMAGES[2]}' },
+  { name: 'Sophie Chen', role: 'Operations Manager', img: '${PORTRAIT_IMAGES[3]}' },
+];
+
+export default function Team() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Meet Our Team</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {members.map((m, i) => (
+            <div key={i} className="text-center group">
+              <div className="w-40 h-40 mx-auto rounded-full overflow-hidden mb-4 ring-4 ring-border group-hover:ring-primary transition-all">
+                <img src={m.img} alt={m.name} className="w-full h-full object-cover" />
+              </div>
+              <h3 className="font-semibold text-foreground text-lg">{m.name}</h3>
+              <p className="text-muted-foreground text-sm">{m.role}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}`;
+}
+
+const SECTION_GENERATORS: Record<string, (ctx: GeneratorContext) => string> = {
+  hero: genHero, navbar: genNavbar, header: genHeader, features: genFeatures,
+  services: genServices, about: genAbout, testimonials: genTestimonials,
+  contact: genContact, footer: genFooter, pricing: genPricing,
+  gallery: genGallery, cta: genCTA, faq: genFAQ, team: genTeam,
+};
+
+/** Normalize component name to a section generator key. */
+function matchSectionGenerator(componentName: string): string | null {
+  const lower = componentName.toLowerCase().replace(/section$|component$|block$/i, '');
+  if (SECTION_GENERATORS[lower]) return lower;
+  const aliases: Record<string, string> = {
+    navigation: 'navbar', nav: 'navbar', topbar: 'navbar',
+    herosection: 'hero', herobanner: 'hero', banner: 'hero', jumbotron: 'hero',
+    featurelist: 'features', featuregrid: 'features', benefits: 'features', whyus: 'features', whychooseus: 'features',
+    servicelist: 'services', servicegrid: 'services', offerings: 'services',
+    aboutus: 'about', aboutsection: 'about', story: 'about',
+    testimonial: 'testimonials', reviews: 'testimonials', clientreviews: 'testimonials',
+    contactform: 'contact', contactus: 'contact', getintouch: 'contact',
+    footersection: 'footer', sitefooter: 'footer',
+    pricingplan: 'pricing', pricingtable: 'pricing', plans: 'pricing',
+    portfolio: 'gallery', showcase: 'gallery', work: 'gallery', projects: 'gallery',
+    calltoaction: 'cta', ctasection: 'cta', ctablock: 'cta',
+    faqsection: 'faq', questions: 'faq',
+    teamgrid: 'team', ourteam: 'team', staff: 'team', people: 'team',
+  };
+  if (aliases[lower]) return aliases[lower];
+  for (const key of Object.keys(SECTION_GENERATORS)) {
+    if (lower.includes(key)) return key;
+  }
+  return null;
+}
+
 /**
- * Scan all files for relative imports and create stub modules for any that
- * reference files not present in the bundle. This prevents the
- * "Element type is invalid: expected a string ... but got: undefined" crash.
+ * Scan all files for relative imports. For missing modules, generate REAL
+ * contextual section components using the wizard launcher context
+ * inferred from existing VFS content (industry, brand name, images).
  */
-function stubMissingRelativeImports(sandpackFiles: Record<string, string>): void {
+function generateMissingComponents(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
   const extensions = ['.tsx', '.jsx', '.ts', '.js'];
 
-  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+  const industry = detectIndustryFromVFS(sandpackFiles);
+  const images = CONTEXTUAL_IMAGES[industry] || CONTEXTUAL_IMAGES.default;
+  const brandName = extractBusinessName(sandpackFiles);
+  const ctx: GeneratorContext = { industry, images, portraits: PORTRAIT_IMAGES, brandName };
+
+  for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
 
-    // Match: import Foo from './path'  OR  import { Foo } from './path'
     const importRegex = /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"](\.\.?\/[^'"]+)['"]/g;
-    let m;
-    while ((m = importRegex.exec(content)) !== null) {
-      const rawImportPath = m[1];
-      // Resolve relative to the importing file's directory
+    let im;
+    while ((im = importRegex.exec(content)) !== null) {
+      const rawImportPath = im[1];
       const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
       let resolved = rawImportPath.startsWith('/')
         ? rawImportPath
         : `${dir}/${rawImportPath}`.replace(/\/\.\//g, '/');
 
-      // Normalize ../ segments
       const parts = resolved.split('/');
       const stack: string[] = [];
       for (const p of parts) {
@@ -693,45 +1190,47 @@ function stubMissingRelativeImports(sandpackFiles: Record<string, string>): void
       }
       resolved = '/' + stack.join('/');
 
-      // Skip CSS imports
       if (/\.(css|scss|less)$/.test(resolved)) continue;
 
-      // Check if file exists (with or without extension)
       const candidates = [resolved, ...extensions.map(ext => resolved + ext)];
-      const found = candidates.some(c => existingPaths.has(c));
+      if (candidates.some(c => existingPaths.has(c))) continue;
 
-      if (!found) {
-        // Determine the target path (add .tsx if no extension)
-        const stubPath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
-        if (!existingPaths.has(stubPath)) {
-          // Extract what names are being imported to create matching exports
-          const importStatement = m[0];
-          const namedMatch = importStatement.match(/import\s+\{([^}]+)\}/);
-          const defaultMatch = importStatement.match(/import\s+([A-Z]\w*)\s/);
+      const targetPath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
+      if (existingPaths.has(targetPath)) continue;
 
-          let stubCode = `import React from 'react';\n\n`;
-          if (namedMatch) {
-            const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
-            for (const name of names) {
-              if (/^[A-Z]/.test(name)) {
-                stubCode += `export const ${name} = ({ children, ...props }: any) => <div {...props}>{children}</div>;\n`;
-              } else {
-                stubCode += `export const ${name} = undefined;\n`;
-              }
+      const importStatement = im[0];
+      const defaultMatch = importStatement.match(/import\s+([A-Z]\w*)\s/);
+      const namedMatch = importStatement.match(/import\s+\{([^}]+)\}/);
+      const componentName = defaultMatch?.[1] || namedMatch?.[1]?.split(',')[0]?.trim()?.split(/\s+as\s+/)?.[0] || resolved.split('/').pop() || '';
+
+      const sectionKey = matchSectionGenerator(componentName);
+
+      if (sectionKey) {
+        sandpackFiles[targetPath] = SECTION_GENERATORS[sectionKey](ctx);
+        console.log(`[sandpackFilePrep] Generated real ${sectionKey} component: ${targetPath}`);
+      } else {
+        const displayName = componentName.replace(/([A-Z])/g, ' $1').trim();
+        let code = `import React from 'react';\n\n`;
+        if (namedMatch) {
+          const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+          for (const name of names) {
+            if (/^[A-Z]/.test(name)) {
+              code += `export const ${name} = ({ children, className, ...props }: any) => (\n  <div className={"py-12 px-6 " + (className || "")} {...props}>\n    <div className="max-w-7xl mx-auto">{children || <p className="text-muted-foreground text-center">${name} Section</p>}</div>\n  </div>\n);\n\n`;
+            } else {
+              code += `export const ${name} = undefined;\n`;
             }
           }
-          if (defaultMatch) {
-            const name = defaultMatch[1];
-            stubCode += `export default function ${name}({ children, ...props }: any) { return <div {...props}>{children}</div>; }\n`;
-          } else if (!namedMatch) {
-            stubCode += `export default function StubComponent({ children, ...props }: any) { return <div {...props}>{children}</div>; }\n`;
-          }
-
-          sandpackFiles[stubPath] = stubCode;
-          existingPaths.add(stubPath);
-          console.warn(`[sandpackFilePrep] Stubbed missing module: ${stubPath} (imported by ${filePath})`);
         }
+        if (defaultMatch) {
+          code += `export default function ${componentName}({ children, className, ...props }: any) {\n  return (\n    <section className={"py-16 px-6 " + (className || "")} {...props}>\n      <div className="max-w-7xl mx-auto">{children || <h2 className="text-3xl font-bold text-foreground text-center">${displayName}</h2>}</div>\n    </section>\n  );\n}\n`;
+        } else if (!namedMatch) {
+          code += `export default function ${componentName || 'Section'}({ children, className, ...props }: any) {\n  return (\n    <section className={"py-16 px-6 " + (className || "")} {...props}>\n      <div className="max-w-7xl mx-auto">{children || <h2 className="text-3xl font-bold text-foreground text-center">${displayName || 'Section'}</h2>}</div>\n    </section>\n  );\n}\n`;
+        }
+        sandpackFiles[targetPath] = code;
+        console.warn(`[sandpackFilePrep] Generated generic component: ${targetPath} (no section match for "${componentName}")`);
       }
+
+      existingPaths.add(targetPath);
     }
   }
 }

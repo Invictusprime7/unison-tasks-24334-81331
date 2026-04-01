@@ -109,6 +109,12 @@ export const useWebBuilderState = (fabricCanvas: FabricCanvas | null) => {
   const historyRef = useRef<HistoryState>({ past: [], future: [], current: null });
   const maxHistorySize = 50;
 
+  // Editor layer control
+  const setEditorLayer = useCallback((layer: EditorLayer) => {
+    setState(prev => ({ ...prev, editorLayer: layer }));
+    console.log(`[WebBuilder] Editor layer: ${layer} (fabric: ${layerRequiresFabric(layer)})`);
+  }, []);
+
   // Mode setters
   const setBuilderMode = useCallback((mode: BuilderMode) => {
     setState(prev => ({ ...prev, builderMode: mode }));

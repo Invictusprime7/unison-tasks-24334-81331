@@ -661,6 +661,81 @@ export default function App() {
 `;
 }
 
+/**
+ * Scan all files for relative imports and create stub modules for any that
+ * reference files not present in the bundle. This prevents the
+ * "Element type is invalid: expected a string ... but got: undefined" crash.
+ */
+function stubMissingRelativeImports(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+  const extensions = ['.tsx', '.jsx', '.ts', '.js'];
+
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+
+    // Match: import Foo from './path'  OR  import { Foo } from './path'
+    const importRegex = /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"](\.\.?\/[^'"]+)['"]/g;
+    let m;
+    while ((m = importRegex.exec(content)) !== null) {
+      const rawImportPath = m[1];
+      // Resolve relative to the importing file's directory
+      const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
+      let resolved = rawImportPath.startsWith('/')
+        ? rawImportPath
+        : `${dir}/${rawImportPath}`.replace(/\/\.\//g, '/');
+
+      // Normalize ../ segments
+      const parts = resolved.split('/');
+      const stack: string[] = [];
+      for (const p of parts) {
+        if (p === '..') stack.pop();
+        else if (p !== '.' && p !== '') stack.push(p);
+      }
+      resolved = '/' + stack.join('/');
+
+      // Skip CSS imports
+      if (/\.(css|scss|less)$/.test(resolved)) continue;
+
+      // Check if file exists (with or without extension)
+      const candidates = [resolved, ...extensions.map(ext => resolved + ext)];
+      const found = candidates.some(c => existingPaths.has(c));
+
+      if (!found) {
+        // Determine the target path (add .tsx if no extension)
+        const stubPath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
+        if (!existingPaths.has(stubPath)) {
+          // Extract what names are being imported to create matching exports
+          const importStatement = m[0];
+          const namedMatch = importStatement.match(/import\s+\{([^}]+)\}/);
+          const defaultMatch = importStatement.match(/import\s+([A-Z]\w*)\s/);
+
+          let stubCode = `import React from 'react';\n\n`;
+          if (namedMatch) {
+            const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+            for (const name of names) {
+              if (/^[A-Z]/.test(name)) {
+                stubCode += `export const ${name} = ({ children, ...props }: any) => <div {...props}>{children}</div>;\n`;
+              } else {
+                stubCode += `export const ${name} = undefined;\n`;
+              }
+            }
+          }
+          if (defaultMatch) {
+            const name = defaultMatch[1];
+            stubCode += `export default function ${name}({ children, ...props }: any) { return <div {...props}>{children}</div>; }\n`;
+          } else if (!namedMatch) {
+            stubCode += `export default function StubComponent({ children, ...props }: any) { return <div {...props}>{children}</div>; }\n`;
+          }
+
+          sandpackFiles[stubPath] = stubCode;
+          existingPaths.add(stubPath);
+          console.warn(`[sandpackFilePrep] Stubbed missing module: ${stubPath} (imported by ${filePath})`);
+        }
+      }
+    }
+  }
+}
+
 function pickPrimaryComponentPath(paths: string[]): string | null {
   const uniquePaths = [...new Set(paths)].filter((path) => path !== '/hooks-shim.ts');
 

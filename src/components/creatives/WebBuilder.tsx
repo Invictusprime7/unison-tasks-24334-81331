@@ -990,10 +990,8 @@ export default function App() {
       return;
     }
 
-    // Try both preview refs — VFSPreview (primary) or SimplePreview (fallback)
-    const vfsIframe = livePreviewRef.current?.getIframe?.();
-    const simpleIframe = simplePreviewRef.current?.getIframe();
-    const iframe = vfsIframe || simpleIframe;
+    // Use VFSPreview (sole preview engine)
+    const iframe = livePreviewRef.current?.getIframe?.() ?? null;
     const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document || null;
 
     if (!iframeDoc || !iframeDoc.head) {

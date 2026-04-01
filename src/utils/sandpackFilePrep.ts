@@ -1,9 +1,17 @@
 /**
  * Sandpack File Preparation Utilities
  * 
+ * THE canonical preview compiler for Unison Tasks.
+ * 
  * Sandpack's react-ts template expects files at ROOT level (e.g., /App.tsx, not /src/App.tsx).
  * Entry point MUST be /index.tsx (not /main.tsx) — Sandpack react-ts uses /index.tsx.
  * This module flattens VFS paths, processes imports, and ensures essential files exist.
+ *
+ * Pipeline:
+ *   Launcher → normalizeLauncherFiles() → source VFS
+ *   source VFS → prepareSandpackFiles() → Sandpack overlay
+ *   or:
+ *   Launcher → compileLauncherOutputForPreview() → Sandpack overlay (combines both steps)
  */
 
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
@@ -2862,4 +2870,67 @@ function sanitizeSiteBundleFilename(path: string): string {
 function sanitizeSiteBundleComponentName(path: string): string {
   const filename = sanitizeSiteBundleFilename(path);
   return filename.charAt(0).toUpperCase() + filename.slice(1) + 'Page';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Canonical Launcher → Preview Compiler
+// ═══════════════════════════════════════════════════════════════════════════════
+// This is the SINGLE function that all launchers should call to produce a
+// Sandpack-ready preview bundle. It combines normalization + compilation in
+// one step, driven by a RuntimeManifest.
+//
+// Nothing else is allowed to feed Sandpack directly.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import type { RuntimeManifest, LauncherHandoff } from '@/types/runtimeManifest';
+
+/**
+ * The ONE canonical function that converts launcher output into a Sandpack-ready
+ * preview bundle. All preview paths must flow through here.
+ *
+ * Usage:
+ *   const { previewFiles, manifest } = compileLauncherOutputForPreview(handoff);
+ *   // Feed previewFiles to Sandpack
+ *   // Use manifest for engine selection, route awareness, etc.
+ */
+export function compileLauncherOutputForPreview(
+  handoff: Pick<LauncherHandoff, 'sourceFiles' | 'runtimeManifest' | 'siteBundle'>
+): { previewFiles: Record<string, string>; manifest: RuntimeManifest } {
+  const { sourceFiles, runtimeManifest, siteBundle } = handoff;
+
+  // Step 1: If we have a SiteBundle, compile it to source VFS and merge
+  let mergedSource = { ...sourceFiles };
+  if (siteBundle) {
+    const siteBundleVFS = compileSiteBundleToVFS({
+      siteBundle,
+      entryPath: runtimeManifest.routes[0] || '/',
+    });
+    // SiteBundle VFS fills gaps — source files take priority
+    for (const [path, content] of Object.entries(siteBundleVFS)) {
+      if (!mergedSource[path]) {
+        mergedSource[path] = content;
+      }
+    }
+  }
+
+  // Step 2: Normalize launcher files (fix paths, add entry files, repair images)
+  const normalized = normalizeLauncherFiles(mergedSource, {
+    entryPoint: runtimeManifest.entryPoint,
+  });
+
+  // Step 3: Compile to Sandpack overlay (flatten /src/, inject shims, etc.)
+  const previewFiles = prepareSandpackFiles(normalized, {
+    strict: true,
+    entryPoint: runtimeManifest.entryPoint,
+  });
+
+  console.log('[compileLauncherOutputForPreview] Compiled preview:', {
+    sourceFileCount: Object.keys(sourceFiles).length,
+    previewFileCount: Object.keys(previewFiles).length,
+    engine: runtimeManifest.previewEngine,
+    routes: runtimeManifest.routes,
+    backendRequired: runtimeManifest.backendRequired,
+  });
+
+  return { previewFiles, manifest: runtimeManifest };
 }

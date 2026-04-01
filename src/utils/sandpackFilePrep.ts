@@ -701,15 +701,17 @@ interface GeneratorContext {
 function detectIndustryFromVFS(files: Record<string, string>): string {
   const allContent = Object.values(files).join(' ').toLowerCase();
   const indicators: [string, string[]][] = [
-    ['restaurant', ['menu', 'dish', 'cuisine', 'chef', 'reservation', 'dining', 'restaurant']],
-    ['salon', ['salon', 'beauty', 'hair', 'spa', 'stylist', 'treatment', 'nail']],
-    ['fitness', ['fitness', 'gym', 'workout', 'training', 'coach', 'exercise']],
-    ['medical', ['medical', 'health', 'clinic', 'doctor', 'patient', 'care', 'dental']],
-    ['saas', ['saas', 'software', 'platform', 'dashboard', 'analytics', 'api', 'startup']],
-    ['ecommerce', ['shop', 'product', 'cart', 'store', 'buy', 'price', 'ecommerce']],
-    ['portfolio', ['portfolio', 'project', 'creative', 'design', 'work', 'freelance']],
-    ['contractor', ['contractor', 'construction', 'plumbing', 'roofing', 'remodel', 'handyman']],
-    ['agency', ['agency', 'marketing', 'branding', 'campaign', 'client', 'strategy']],
+    ['restaurant', ['menu', 'dish', 'cuisine', 'chef', 'reservation', 'dining', 'restaurant', 'bistro', 'cafe']],
+    ['salon', ['salon', 'beauty', 'hair', 'spa', 'stylist', 'treatment', 'nail', 'skincare', 'facial']],
+    ['fitness', ['fitness', 'gym', 'workout', 'training', 'exercise', 'crossfit', 'yoga', 'pilates', 'membership']],
+    ['medical', ['medical', 'health', 'clinic', 'doctor', 'patient', 'dental', 'physician', 'hospital', 'healthcare']],
+    ['coaching', ['coaching', 'coach', 'consulting', 'mentor', 'mindset', 'breakthrough', 'discovery call', 'mastermind', 'transformation']],
+    ['local-service', ['plumbing', 'hvac', 'electrical', 'roofing', 'handyman', 'licensed', 'insured', 'estimate', 'emergency service']],
+    ['saas', ['saas', 'software', 'platform', 'dashboard', 'analytics', 'api', 'startup', 'integration', 'deploy']],
+    ['ecommerce', ['shop', 'product', 'cart', 'store', 'buy', 'ecommerce', 'collection', 'checkout', 'catalog']],
+    ['portfolio', ['portfolio', 'creative', 'freelance', 'selected work', 'case study', 'skillset']],
+    ['contractor', ['contractor', 'construction', 'remodel', 'renovation', 'home improvement', 'general contractor']],
+    ['agency', ['agency', 'marketing', 'branding', 'campaign', 'strategy', 'digital agency', 'creative agency']],
   ];
   for (const [industry, keywords] of indicators) {
     if (keywords.filter(k => allContent.includes(k)).length >= 2) return industry;

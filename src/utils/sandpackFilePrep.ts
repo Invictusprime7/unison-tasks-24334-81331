@@ -1340,33 +1340,17 @@ function generateMissingComponents(sandpackFiles: Record<string, string>): void 
 
       if (sectionKey) {
         let generated = SECTION_GENERATORS[sectionKey](ctx);
-        // Ensure BOTH named and default exports exist so either import style works
-        // Section generators already export default; add named export if missing
+        // Generators now produce both `export function X` and `export default X`.
+        // If the import uses a DIFFERENT name than the generator's function name,
+        // add an alias export so `import { CustomName }` resolves.
         if (namedMatch) {
           const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
           for (const name of names) {
             if (/^[A-Z]/.test(name) && !generated.includes(`export function ${name}`) && !generated.includes(`export const ${name}`)) {
-              // Re-export default under the named identifier
-              generated += `\nexport { default as ${name} } from '.';\n`;
-              // Simpler: just add a named export alias at the end
-              generated = generated.replace(
-                /export default function (\w+)/,
-                `export function ${name}$1_default`.length ? `export function $1` : `export default function $1`
-              );
-              // Actually the cleanest approach: replace `export default function X` with `export function X` + add `export default X` at end
-            }
-          }
-          // Simplest robust fix: ensure the component function name is also a named export
-          // Most generators use `export default function Hero()`. Convert to dual export.
-          const fnMatch = generated.match(/export default function (\w+)/);
-          if (fnMatch) {
-            const fnName = fnMatch[1];
-            // Already has both? Skip
-            if (!generated.includes(`export { ${fnName} }`) && !generated.includes(`export function ${fnName}`)) {
-              // Change `export default function X` to `export function X` + add `export default X` at end
-              generated = generated.replace(`export default function ${fnName}`, `export function ${fnName}`);
-              if (!generated.includes(`export default ${fnName}`)) {
-                generated += `\nexport default ${fnName};\n`;
+              // Find the generator's primary function name
+              const fnMatch = generated.match(/export function (\w+)/);
+              if (fnMatch) {
+                generated += `\nexport const ${name} = ${fnMatch[1]};\n`;
               }
             }
           }

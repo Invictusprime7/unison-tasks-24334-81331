@@ -1459,7 +1459,7 @@ export default function App() {
     if (Object.keys(pageManifest).length >= 1 && previewCode) {
       // Delay to let iframe finish loading the new content
       const timeoutId = setTimeout(() => {
-        simplePreviewRef.current?.syncPageManifest(pageManifest);
+        livePreviewRef.current?.syncPageManifest?.(pageManifest);
       }, 500);
       return () => clearTimeout(timeoutId);
     }

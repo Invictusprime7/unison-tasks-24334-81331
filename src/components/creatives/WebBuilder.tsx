@@ -2211,7 +2211,7 @@ export default function ${componentName}Page() {
       if (event.data?.type === 'REQUEST_PAGE_MANIFEST') {
         console.log('[WebBuilder] Iframe requested page manifest re-sync');
         setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
+          livePreviewRef.current?.syncPageManifest?.(pageManifest);
         }, 50);
         return;
       }

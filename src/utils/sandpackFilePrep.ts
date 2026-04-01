@@ -706,7 +706,7 @@ function extractBusinessName(files: Record<string, string>): string {
 function genHero(ctx: GeneratorContext): string {
   return `import React from 'react';
 
-export default function Hero() {
+export function Hero() {
   return (
     <section className="relative min-h-[85vh] flex items-center overflow-hidden">
       <div className="absolute inset-0 z-0">
@@ -723,7 +723,9 @@ export default function Hero() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Hero;`;
 }
 
 function genNavbar(ctx: GeneratorContext): string {

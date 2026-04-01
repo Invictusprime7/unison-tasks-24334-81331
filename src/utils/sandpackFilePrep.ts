@@ -355,6 +355,172 @@ export default {
 };
 `;
 
+// ── Industry-contextual fallback images ──────────────────────────────────────
+const CONTEXTUAL_IMAGES: Record<string, string[]> = {
+  restaurant: [
+    'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80',
+    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80',
+    'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80',
+  ],
+  salon: [
+    'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80',
+    'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=80',
+  ],
+  fitness: [
+    'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80',
+    'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80',
+  ],
+  medical: [
+    'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&q=80',
+    'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800&q=80',
+  ],
+  saas: [
+    'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80',
+    'https://images.unsplash.com/photo-1551434678-e076c223a692?w=800&q=80',
+  ],
+  ecommerce: [
+    'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80',
+    'https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=800&q=80',
+  ],
+  portfolio: [
+    'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80',
+    'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80',
+  ],
+  contractor: [
+    'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80',
+    'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80',
+  ],
+  agency: [
+    'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',
+    'https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80',
+  ],
+  default: [
+    'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',
+    'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80',
+    'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80',
+  ],
+};
+
+const PORTRAIT_IMAGES = [
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80',
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
+  'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80',
+  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&q=80',
+];
+
+/**
+ * Replace broken/fake Unsplash URLs and empty image sources with real contextual images.
+ * Catches patterns like photo-1234567890 (sequential digits = fake), empty src, and placeholder.com.
+ */
+function repairBrokenImageUrls(code: string): string {
+  let imgIndex = 0;
+  const fallbackImages = CONTEXTUAL_IMAGES.default;
+
+  // Fix fake Unsplash URLs (sequential digits like photo-1234567890)
+  code = code.replace(
+    /https:\/\/images\.unsplash\.com\/photo-(\d{10,})\?[^"'\s)]+/g,
+    (match, photoId) => {
+      // Check if digits are sequential (fake) — e.g. 1234567890
+      const isSequential = /^0?1234/.test(photoId) || /^(\d)\1+$/.test(photoId);
+      if (isSequential) {
+        const replacement = fallbackImages[imgIndex % fallbackImages.length];
+        imgIndex++;
+        return replacement;
+      }
+      return match;
+    }
+  );
+
+  // Fix placeholder.com URLs
+  code = code.replace(
+    /https?:\/\/(?:via\.)?placeholder\.com\/[^"'\s)]+/g,
+    () => {
+      const replacement = fallbackImages[imgIndex % fallbackImages.length];
+      imgIndex++;
+      return replacement;
+    }
+  );
+
+  // Fix empty src attributes
+  code = code.replace(/src=["']\s*["']/g, () => {
+    const replacement = fallbackImages[imgIndex % fallbackImages.length];
+    imgIndex++;
+    return `src="${replacement}"`;
+  });
+
+  // Fix avatar/portrait placeholder URLs (small images in testimonials)
+  code = code.replace(
+    /src=["'](https?:\/\/(?:randomuser|i\.pravatar|ui-avatars)[^"']*?)["']/g,
+    () => {
+      const replacement = PORTRAIT_IMAGES[imgIndex % PORTRAIT_IMAGES.length];
+      imgIndex++;
+      return `src="${replacement}"`;
+    }
+  );
+
+  return code;
+}
+
+/**
+ * Parse an HSL CSS variable value like "222.2 84% 4.9%" and return the lightness as a number.
+ */
+function extractLightness(hslValue: string): number | null {
+  const match = hslValue.match(/[\d.]+\s+[\d.]+%\s+([\d.]+)%/);
+  return match ? parseFloat(match[1]) : null;
+}
+
+/**
+ * Enforce minimum contrast between background/foreground pairs in CSS custom properties.
+ * If both bg and fg have similar lightness, fix the foreground to guarantee visibility.
+ */
+function enforceContrastInCSS(css: string): string {
+  const pairs = [
+    ['--background', '--foreground'],
+    ['--card', '--card-foreground'],
+    ['--primary', '--primary-foreground'],
+    ['--secondary', '--secondary-foreground'],
+    ['--muted', '--muted-foreground'],
+    ['--accent', '--accent-foreground'],
+    ['--popover', '--popover-foreground'],
+    ['--destructive', '--destructive-foreground'],
+  ];
+
+  // Extract all CSS variable values
+  const varValues: Record<string, string> = {};
+  const varRegex = /(--[\w-]+)\s*:\s*([\d.]+\s+[\d.]+%\s+[\d.]+%)/g;
+  let m;
+  while ((m = varRegex.exec(css)) !== null) {
+    varValues[m[1]] = m[2];
+  }
+
+  for (const [bgVar, fgVar] of pairs) {
+    const bgVal = varValues[bgVar];
+    const fgVal = varValues[fgVar];
+    if (!bgVal || !fgVal) continue;
+
+    const bgL = extractLightness(bgVal);
+    const fgL = extractLightness(fgVal);
+    if (bgL === null || fgL === null) continue;
+
+    const contrast = Math.abs(bgL - fgL);
+    if (contrast < 40) {
+      // Insufficient contrast — fix the foreground
+      const newFgL = bgL < 50 ? '98%' : '4.9%';
+      const fgParts = fgVal.match(/([\d.]+)\s+([\d.]+%)\s+[\d.]+%/);
+      if (fgParts) {
+        const newFgVal = `${fgParts[1]} ${fgParts[2]} ${newFgL}`;
+        css = css.replace(
+          new RegExp(`(${fgVar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:\\s*)${fgVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+          `$1${newFgVal}`
+        );
+        console.warn(`[contrast-fix] ${fgVar}: ${fgVal} → ${newFgVal} (bg lightness: ${bgL}%)`);
+      }
+    }
+  }
+
+  return css;
+}
+
 /**
  * Detect if content is raw CSS (not valid JSX/TSX).
  * Returns true if the content looks like a stylesheet rather than a React component.

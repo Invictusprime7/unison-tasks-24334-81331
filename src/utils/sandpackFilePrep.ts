@@ -1731,7 +1731,23 @@ export function prepareSandpackFiles(
     }
   }
 
-  // Always use /index.tsx — never /main.tsx
+  // ── SAFETY: Validate App.tsx has a default export ──
+  // If AI-generated App.tsx only uses named exports (e.g., `export function App`),
+  // `import App from './App'` in index.tsx resolves to undefined → crash.
+  const appContent = sandpackFiles['/App.tsx'] || sandpackFiles['/App.jsx'] || '';
+  if (appContent && !appContent.includes('export default')) {
+    const appPath = sandpackFiles['/App.tsx'] ? '/App.tsx' : '/App.jsx';
+    // Find a PascalCase named export to re-export as default
+    const namedExportMatch = appContent.match(/export\s+(?:function|const|class)\s+([A-Z]\w*)/);
+    if (namedExportMatch) {
+      sandpackFiles[appPath] = appContent + `\nexport default ${namedExportMatch[1]};\n`;
+      console.warn(`[sandpackFilePrep] App.tsx missing default export — added: export default ${namedExportMatch[1]}`);
+    } else {
+      // No usable export found — wrap in a proxy
+      sandpackFiles['/App.tsx'] = createMissingEntryApp();
+      console.warn('[sandpackFilePrep] App.tsx has no valid exports — replaced with diagnostic entry');
+    }
+  }
   if (!hasIndex) sandpackFiles['/index.tsx'] = DEFAULT_INDEX;
   
   // Remove any stale /main.tsx that might have leaked through

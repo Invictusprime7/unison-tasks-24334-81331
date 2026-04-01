@@ -584,12 +584,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         throw error;
       }
 
-      const rawContent = (data?.content || data?.code || "")
+      let rawContent = (data?.content || data?.code || "")
         .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
         .trim()
         .replace(/^```json?\s*\n?/i, "")
         .replace(/\n?```\s*$/i, "")
         .trim();
+
+      // Strip leading non-JSON prose before the opening brace (AI sometimes prepends text)
+      if (!rawContent.startsWith('{') && rawContent.includes('{"files"')) {
+        rawContent = rawContent.slice(rawContent.indexOf('{"files"'));
+      }
 
       const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
 

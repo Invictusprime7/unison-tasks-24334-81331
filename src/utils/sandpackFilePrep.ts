@@ -2538,15 +2538,71 @@ export function prepareSandpackFiles(
   files: Record<string, string>,
   options?: { strict?: boolean; entryPoint?: string }
 ): Record<string, string> {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GUARD: Unwrap JSON-wrapped file maps that leaked through as raw content.
+  // If ANY file's content is a JSON object with a "files" key, extract the
+  // actual files and merge them into the VFS instead of treating the JSON
+  // string as source code.
+  // ═══════════════════════════════════════════════════════════════════════════
+  let resolvedFiles = files;
+  const fileKeys = Object.keys(files);
+
+  // Case 1: The entire VFS has a single file whose content is a JSON files wrapper
+  // e.g. { "/App.tsx": '{"files":{"src/App.tsx":"import React..."}}' }
+  if (fileKeys.length <= 3) {
+    for (const [fPath, fContent] of Object.entries(files)) {
+      if (typeof fContent === 'string' && fContent.trimStart().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(fContent);
+          if (parsed && typeof parsed === 'object' && parsed.files && typeof parsed.files === 'object') {
+            console.warn(`[sandpackFilePrep] Unwrapping JSON files wrapper found in ${fPath}`);
+            resolvedFiles = {};
+            for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
+              if (typeof innerContent === 'string') {
+                const normalizedInner = innerPath.startsWith('/') ? innerPath : `/${innerPath}`;
+                resolvedFiles[normalizedInner] = innerContent;
+              }
+            }
+            break; // Only one wrapper expected
+          }
+        } catch {
+          // Not JSON — continue normally
+        }
+      }
+    }
+  }
+
+  // Case 2: Individual file content is a JSON wrapper (defensive per-file check)
+  const finalFiles: Record<string, string> = {};
+  for (const [path, content] of Object.entries(resolvedFiles)) {
+    if (typeof content === 'string' && content.trimStart().startsWith('{"files"')) {
+      try {
+        const parsed = JSON.parse(content);
+        if (parsed?.files && typeof parsed.files === 'object') {
+          console.warn(`[sandpackFilePrep] Per-file JSON unwrap for ${path}`);
+          for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
+            if (typeof innerContent === 'string') {
+              finalFiles[innerPath.startsWith('/') ? innerPath : `/${innerPath}`] = innerContent;
+            }
+          }
+          continue;
+        }
+      } catch {
+        // Not JSON
+      }
+    }
+    finalFiles[path] = content;
+  }
+
   const sandpackFiles: Record<string, string> = {};
   let hasApp = false;
   let hasIndex = false;
   let hasCSS = false;
   const componentFilePaths: string[] = [];
 
-  console.log('[sandpackFilePrep] Input VFS files:', Object.keys(files));
+  console.log('[sandpackFilePrep] Input VFS files:', Object.keys(finalFiles));
 
-  for (const [path, content] of Object.entries(files)) {
+  for (const [path, content] of Object.entries(finalFiles)) {
     let normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
     // Skip files Sandpack doesn't need

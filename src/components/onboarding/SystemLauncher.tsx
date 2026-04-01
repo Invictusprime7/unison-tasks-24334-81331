@@ -594,12 +594,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
 
       let vfsFiles: Record<string, string> | null = null;
+      let parsedEntryPoint: string | undefined;
       try {
         const parsed = JSON.parse(rawContent);
         if (parsed.files && typeof parsed.files === "object") {
+          parsedEntryPoint = parsed.entryPoint || undefined;
           // Use normalizeLauncherFiles to ensure consistent structure
           vfsFiles = normalizeLauncherFiles(parsed.files, {
-            entryPoint: parsed.entryPoint || undefined,
+            entryPoint: parsedEntryPoint,
           });
         }
       } catch {
@@ -617,20 +619,40 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       };
 
       if (vfsFiles && Object.keys(vfsFiles).length > 0) {
-        navigate("/web-builder", { state: { vfsFiles, ...navState } });
+        // Build RuntimeManifest — the contract between launcher and preview
+        const runtimeManifest = createRuntimeManifest(vfsFiles, {
+          entryPoint: parsedEntryPoint || '/src/App.tsx',
+          industry: generationCategory,
+          brandName: businessName.trim(),
+          aesthetic: selectedTheme?.id,
+          backendRequired: false, // Launcher output is always frontend-only
+        });
+
+        navigate("/web-builder", {
+          state: { vfsFiles, runtimeManifest, ...navState },
+        });
       } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
         const cleaned = extractCleanCode(rawContent);
         if (!cleaned || !looksLikeCode(cleaned)) {
           toast.error("AI generation produced invalid output. Try again.");
           return;
         }
+        const singleFileVfs = {
+          "/src/App.tsx": cleaned,
+          "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
+          "/src/index.css": baseCSS,
+        };
+        const runtimeManifest = createRuntimeManifest(singleFileVfs, {
+          industry: generationCategory,
+          brandName: businessName.trim(),
+          aesthetic: selectedTheme?.id,
+          backendRequired: false,
+        });
+
         navigate("/web-builder", {
           state: {
-            vfsFiles: {
-              "/src/App.tsx": cleaned,
-              "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-              "/src/index.css": baseCSS,
-            },
+            vfsFiles: singleFileVfs,
+            runtimeManifest,
             ...navState,
           },
         });

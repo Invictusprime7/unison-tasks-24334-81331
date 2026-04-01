@@ -92,6 +92,7 @@ export interface VFSPreviewHandle {
   getBackend: () => PreviewBackend;
   openInNewTab: () => void;
   getIframe: () => HTMLIFrameElement | null;
+  syncPageManifest?: (manifest: Record<string, string>) => void;
 }
 
 // ============================================================================

@@ -19,10 +19,8 @@ import { useCreatorPlayground } from "@/hooks/useCreatorPlayground";
 import { toast } from "sonner";
 import VFSMonacoEditor from './code-editor/VFSMonacoEditor';
 import { VFSCodeView } from './code-editor/VFSCodeView';
-import { SimplePreview, type SimplePreviewHandle } from '@/components/SimplePreview';
 import { VFSPreview, type VFSPreviewHandle } from '../VFSPreview';
 import { DeployButton } from '@/components/DeployButton';
-import { LiveHTMLPreview, type LiveHTMLPreviewHandle } from './LiveHTMLPreview';
 import { CollapsiblePropertiesPanel } from "./web-builder/CollapsiblePropertiesPanel";
 import { CanvasDragDropService } from "@/services/canvasDragDropService";
 import { CodePreviewDialog } from "./web-builder/CodePreviewDialog";
@@ -939,8 +937,6 @@ export default function App() {
   const splitViewDropZoneRef = useRef<HTMLDivElement>(null);
   const [selectedHTMLElement, setSelectedHTMLElement] = useState<SelectedElement | null>(null);
   const livePreviewRef = useRef<VFSPreviewHandle | null>(null);
-  const liveHtmlPreviewRef = useRef<LiveHTMLPreviewHandle | null>(null);
-  const simplePreviewRef = useRef<SimplePreviewHandle | null>(null);
 
   // Template Customizer - full DOM control
   const templateCustomizer = useTemplateCustomizer();
@@ -994,10 +990,8 @@ export default function App() {
       return;
     }
 
-    // Try both preview refs — VFSPreview (primary) or SimplePreview (fallback)
-    const vfsIframe = livePreviewRef.current?.getIframe?.();
-    const simpleIframe = simplePreviewRef.current?.getIframe();
-    const iframe = vfsIframe || simpleIframe;
+    // Use VFSPreview (sole preview engine)
+    const iframe = livePreviewRef.current?.getIframe?.() ?? null;
     const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document || null;
 
     if (!iframeDoc || !iframeDoc.head) {
@@ -1328,7 +1322,7 @@ export default function App() {
   } = virtualFS;
   
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
-  const aiVFS = useAIVFS(virtualFS, simplePreviewRef);
+  const aiVFS = useAIVFS(virtualFS, livePreviewRef);
   
   // Site builder orchestrator — provides site graph navigation, brand system, and intent routing
   // Uses project/business IDs from location state; no-ops if unavailable
@@ -1404,7 +1398,7 @@ export default function App() {
       // Sync all HTML pages to iframe cache (with small delay to ensure iframe is ready)
       const timeoutId = setTimeout(() => {
         console.log('[WebBuilder] Syncing page manifest:', pageCount, 'pages');
-        simplePreviewRef.current?.syncPageManifest(pageManifest);
+        livePreviewRef.current?.syncPageManifest?.(pageManifest);
       }, 200);
       return () => clearTimeout(timeoutId);
     }
@@ -1465,7 +1459,7 @@ export default function App() {
     if (Object.keys(pageManifest).length >= 1 && previewCode) {
       // Delay to let iframe finish loading the new content
       const timeoutId = setTimeout(() => {
-        simplePreviewRef.current?.syncPageManifest(pageManifest);
+        livePreviewRef.current?.syncPageManifest?.(pageManifest);
       }, 500);
       return () => clearTimeout(timeoutId);
     }
@@ -2174,7 +2168,7 @@ export default function ${componentName}Page() {
         }
         // Re-sync manifest to iframe so all pages are available for back-navigation
         setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
+          livePreviewRef.current?.syncPageManifest?.(pageManifest);
         }, 300);
         return;
       }
@@ -2208,7 +2202,7 @@ export default function ${componentName}Page() {
         
         // Re-sync manifest after iframe reloads
         setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
+           livePreviewRef.current?.syncPageManifest?.(pageManifest);
         }, 600);
         return;
       }
@@ -2217,7 +2211,7 @@ export default function ${componentName}Page() {
       if (event.data?.type === 'REQUEST_PAGE_MANIFEST') {
         console.log('[WebBuilder] Iframe requested page manifest re-sync');
         setTimeout(() => {
-          simplePreviewRef.current?.syncPageManifest(pageManifest);
+          livePreviewRef.current?.syncPageManifest?.(pageManifest);
         }, 50);
         return;
       }

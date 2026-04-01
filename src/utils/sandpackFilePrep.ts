@@ -361,38 +361,63 @@ const CONTEXTUAL_IMAGES: Record<string, string[]> = {
     'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80',
     'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80',
     'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80',
+    'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&q=80',
   ],
   salon: [
     'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80',
     'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=80',
+    'https://images.unsplash.com/photo-1521590832167-7228f0829e2e?w=800&q=80',
+    'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=800&q=80',
   ],
   fitness: [
     'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80',
     'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80',
+    'https://images.unsplash.com/photo-1549060279-7e168fcee0c2?w=800&q=80',
+    'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&q=80',
   ],
   medical: [
     'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&q=80',
     'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800&q=80',
+    'https://images.unsplash.com/photo-1631217868264-e5b90bb7e133?w=800&q=80',
+    'https://images.unsplash.com/photo-1666214280557-091e203c7096?w=800&q=80',
   ],
   saas: [
     'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80',
     'https://images.unsplash.com/photo-1551434678-e076c223a692?w=800&q=80',
+    'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=800&q=80',
+    'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800&q=80',
   ],
   ecommerce: [
     'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80',
     'https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=800&q=80',
+    'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=800&q=80',
+    'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&q=80',
   ],
   portfolio: [
     'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80',
     'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80',
+    'https://images.unsplash.com/photo-1558655146-9f40138edfeb?w=800&q=80',
   ],
   contractor: [
     'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80',
     'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80',
+    'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?w=800&q=80',
+    'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?w=800&q=80',
   ],
   agency: [
     'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',
     'https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80',
+    'https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=800&q=80',
+  ],
+  coaching: [
+    'https://images.unsplash.com/photo-1552581234-26160f608093?w=800&q=80',
+    'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=800&q=80',
+    'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&q=80',
+  ],
+  'local-service': [
+    'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80',
+    'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?w=800&q=80',
+    'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?w=800&q=80',
   ],
   default: [
     'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',

@@ -1123,11 +1123,137 @@ export default function Team() {
 }`;
 }
 
+// ── Industry-specific generators ──────────────────────────────────────────────
+
+function genMenu(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.default[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.default[1];
+  return `import React from 'react';
+
+const menuItems = [
+  { category: 'Starters', items: [
+    { name: 'Bruschetta', desc: 'Toasted bread with fresh tomatoes, basil, and olive oil', price: '$12', img: '${img0}' },
+    { name: 'Soup of the Day', desc: 'Chef\\'s daily selection served with artisan bread', price: '$10' },
+    { name: 'Caesar Salad', desc: 'Crisp romaine with parmesan, croutons, and house dressing', price: '$14' },
+  ]},
+  { category: 'Main Courses', items: [
+    { name: 'Grilled Salmon', desc: 'Atlantic salmon with seasonal vegetables and lemon butter', price: '$28', img: '${img1}' },
+    { name: 'Filet Mignon', desc: '8oz prime cut with truffle mashed potatoes', price: '$42' },
+    { name: 'Pasta Primavera', desc: 'Fresh pasta with garden vegetables in a light cream sauce', price: '$22' },
+  ]},
+];
+
+export function Menu() {
+  return (
+    <section id="menu" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Our Menu</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Crafted with the finest seasonal ingredients</p>
+        {menuItems.map((cat, ci) => (
+          <div key={ci} className="mb-16 last:mb-0">
+            <h3 className="text-2xl font-semibold text-primary mb-8 text-center">{cat.category}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {cat.items.map((item, ii) => (
+                <div key={ii} className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-shadow">
+                  {item.img && <img src={item.img} alt={item.name} className="w-full h-48 object-cover" />}
+                  <div className="p-5">
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="text-lg font-semibold text-card-foreground">{item.name}</h4>
+                      <span className="text-primary font-bold">{item.price}</span>
+                    </div>
+                    <p className="text-muted-foreground text-sm">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default Menu;`;
+}
+
+function genReservation(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export function Reservation() {
+  return (
+    <section id="reservation" className="py-24 bg-secondary/30">
+      <div className="max-w-4xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Make a Reservation</h2>
+        <p className="text-muted-foreground text-center mb-12 text-lg">Book your table at ${ctx.brandName}</p>
+        <form className="bg-card border border-border rounded-2xl p-8 space-y-5" onSubmit={e => e.preventDefault()}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="Full Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="Phone Number" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <input type="date" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground" />
+            <input type="time" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground" />
+            <select className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground">
+              <option>2 Guests</option><option>3 Guests</option><option>4 Guests</option><option>5 Guests</option><option>6+ Guests</option>
+            </select>
+          </div>
+          <textarea placeholder="Special Requests" rows={3} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
+          <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Reserve Table</button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+export default Reservation;`;
+}
+
+function genSpecials(ctx: GeneratorContext): string {
+  const img = ctx.images[0] || CONTEXTUAL_IMAGES.default[0];
+  return `import React from 'react';
+
+const specials = [
+  { name: 'Chef\\'s Tasting Menu', desc: 'A curated five-course experience featuring seasonal highlights.', price: '$85/person', img: '${img}' },
+  { name: 'Weekend Brunch', desc: 'Enjoy our signature brunch menu every Saturday and Sunday.', price: 'From $18' },
+  { name: 'Happy Hour', desc: 'Half-price appetizers and cocktails, Mon–Fri 4–6 PM.', price: 'From $6' },
+];
+
+export function Specials() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Today's Specials</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Don't miss our hand-picked selections</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {specials.map((s, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-shadow">
+              {s.img && <img src={s.img} alt={s.name} className="w-full h-48 object-cover" />}
+              <div className="p-6">
+                <h3 className="text-xl font-semibold text-card-foreground mb-2">{s.name}</h3>
+                <p className="text-muted-foreground mb-3">{s.desc}</p>
+                <span className="text-primary font-bold">{s.price}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Specials;`;
+}
+
+function genBooking(ctx: GeneratorContext): string {
+  return genReservation(ctx);
+}
+
 const SECTION_GENERATORS: Record<string, (ctx: GeneratorContext) => string> = {
   hero: genHero, navbar: genNavbar, header: genHeader, features: genFeatures,
   services: genServices, about: genAbout, testimonials: genTestimonials,
   contact: genContact, footer: genFooter, pricing: genPricing,
   gallery: genGallery, cta: genCTA, faq: genFAQ, team: genTeam,
+  menu: genMenu, reservation: genReservation, specials: genSpecials, booking: genBooking,
 };
 
 /** Normalize component name to a section generator key. */
@@ -1148,6 +1274,11 @@ function matchSectionGenerator(componentName: string): string | null {
     calltoaction: 'cta', ctasection: 'cta', ctablock: 'cta',
     faqsection: 'faq', questions: 'faq',
     teamgrid: 'team', ourteam: 'team', staff: 'team', people: 'team',
+    // Restaurant / food industry
+    menusection: 'menu', menulist: 'menu', foodmenu: 'menu', diningmenu: 'menu',
+    reservations: 'reservation', reservationform: 'reservation', booktable: 'reservation', tablereservation: 'reservation',
+    bookingform: 'booking', bookingwidget: 'booking', appointmentform: 'booking', schedulebooking: 'booking',
+    dailyspecials: 'specials', todaysspecials: 'specials', specialoffers: 'specials', featuredmenu: 'specials',
   };
   if (aliases[lower]) return aliases[lower];
   for (const key of Object.keys(SECTION_GENERATORS)) {

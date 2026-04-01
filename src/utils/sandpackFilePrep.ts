@@ -2759,7 +2759,6 @@ export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<
     ? Array.isArray(siteBundle.pages) ? siteBundle.pages : Object.values(siteBundle.pages)
     : [];
 
-  const brandName = siteBundle.metadata?.name || 'Our Business';
   const vfs: Record<string, string> = {};
 
   // 1. Generate page components
@@ -2767,7 +2766,6 @@ export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<
     const compName = sanitizeSiteBundleComponentName(page.path);
     const fileName = sanitizeSiteBundleFilename(page.path);
 
-    // Prefer React output, fall back to wrapped HTML
     let pageCode: string;
     if (page.output?.react) {
       pageCode = page.output.react;
@@ -2775,71 +2773,77 @@ export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<
       const html = page.output?.html || '<div>Page content not generated</div>';
       const jsx = html
         .replace(/ class="/g, ' className="')
-        .replace(/<!--([\s\\S]*?)-->/g, '{/* $1 */}')
+        .replace(/<!--([\s\S]*?)-->/g, '{/* $1 */}')
         .replace(/<br>/gi, '<br />')
         .replace(/<hr>/gi, '<hr />')
-        .replace(/<img([^>]*?)(?<!\\/)>/gi, '<img$1 />');
+        .replace(/<img([^>]*?)(?<!\/)>/gi, '<img$1 />');
 
-      pageCode = \`import React from 'react';
-
-export default function \${compName}() {
-  return (
-    <div className="page-container min-h-screen">
-      \${jsx}
-    </div>
-  );
-}\`;
+      pageCode = [
+        "import React from 'react';",
+        '',
+        'export default function ' + compName + '() {',
+        '  return (',
+        '    <div className="page-container min-h-screen">',
+        '      ' + jsx,
+        '    </div>',
+        '  );',
+        '}',
+      ].join('\n');
     }
 
-    vfs[\`/src/pages/\${fileName}.tsx\`] = pageCode;
+    vfs['/src/pages/' + fileName + '.tsx'] = pageCode;
   }
 
   // 2. Generate App.tsx with routing
-  const pageImports = pages.map(p => {
+  const importLines = pages.map(p => {
     const name = sanitizeSiteBundleComponentName(p.path);
     const file = sanitizeSiteBundleFilename(p.path);
-    return \`import \${name} from './pages/\${file}';\`;
-  }).join('\\n');
+    return 'import ' + name + " from './pages/" + file + "';";
+  });
 
-  const routes = pages.map(p => {
+  const routeLines = pages.map(p => {
     const name = sanitizeSiteBundleComponentName(p.path);
-    return \`        <Route path="\${p.path}" element={<\${name} />} />\`;
-  }).join('\\n');
+    return '        <Route path="' + p.path + '" element={<' + name + ' />} />';
+  });
 
-  vfs['/src/App.tsx'] = \`import React from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-\${pageImports}
-
-export default function App() {
-  return (
-    <HashRouter>
-      <Routes>
-\${routes}
-        <Route path="*" element={<Navigate to="\${entryPath}" replace />} />
-      </Routes>
-    </HashRouter>
-  );
-}\`;
+  vfs['/src/App.tsx'] = [
+    "import React from 'react';",
+    "import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';",
+    ...importLines,
+    '',
+    'export default function App() {',
+    '  return (',
+    '    <HashRouter>',
+    '      <Routes>',
+    ...routeLines,
+    '        <Route path="*" element={<Navigate to="' + entryPath + '" replace />} />',
+    '      </Routes>',
+    '    </HashRouter>',
+    '  );',
+    '}',
+  ].join('\n');
 
   // 3. Generate main.tsx entry
-  vfs['/src/main.tsx'] = \`import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-import './index.css';
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);\`;
+  vfs['/src/main.tsx'] = [
+    "import React from 'react';",
+    "import ReactDOM from 'react-dom/client';",
+    "import App from './App';",
+    "import './index.css';",
+    '',
+    "ReactDOM.createRoot(document.getElementById('root')!).render(",
+    '  <React.StrictMode>',
+    '    <App />',
+    '  </React.StrictMode>',
+    ');',
+  ].join('\n');
 
   // 4. Generate index.css with theme tokens
   let css = BASE_CSS;
   if (siteBundle.theme) {
     const themeVars = Object.entries(siteBundle.theme)
-      .map(([k, v]) => \`  --\${k}: \${v};\`)
-      .join('\\n');
-    css = css.replace(':root {', \`:root {\\n\${themeVars}\`);
+      .map(([k, v]) => '  --' + k + ': ' + v + ';')
+      .join('\n');
+    css = css.replace(':root {', ':root {\n' + themeVars);
   }
   vfs['/src/index.css'] = css;
 
@@ -2852,7 +2856,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 function sanitizeSiteBundleFilename(path: string): string {
   if (path === '/' || path === '') return 'Home';
-  return path.replace(/^\\//, '').replace(/\\//g, '-').replace(/[^\\w-]/g, '').replace(/^-+|-+$/g, '') || 'Page';
+  return path.replace(/^\//, '').replace(/\//g, '-').replace(/[^\w-]/g, '').replace(/^-+|-+$/g, '') || 'Page';
 }
 
 function sanitizeSiteBundleComponentName(path: string): string {

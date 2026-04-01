@@ -2714,3 +2714,152 @@ export function prepareSandpackFiles(
   console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));
   return sandpackFiles;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SiteBundle → VFS Compiler
+// ═══════════════════════════════════════════════════════════════════════════════
+// This is the CANONICAL path for SiteBundle → preview. All preview rendering
+// flows through prepareSandpackFiles(). This function converts a SiteBundle
+// into a standard /src/ VFS that prepareSandpackFiles() can then compile into
+// a Sandpack-ready overlay.
+//
+// Architecture:
+//   SiteBundle → compileSiteBundleToVFS() → /src/ VFS → prepareSandpackFiles() → Sandpack
+//
+// There is NO alternative preview path. The old SandpackRuntimeWrapper has been removed.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface SiteBundlePage {
+  path: string;
+  title?: string;
+  output?: { html?: string; react?: string };
+  sections?: Array<{ type: string; html?: string }>;
+}
+
+interface SiteBundleCompileConfig {
+  siteBundle: {
+    pages?: Record<string, SiteBundlePage> | SiteBundlePage[];
+    theme?: Record<string, any>;
+    metadata?: { name?: string; industry?: string };
+  };
+  entryPath?: string;
+  debug?: boolean;
+}
+
+/**
+ * Compile a SiteBundle into a source VFS (/src/ structure).
+ * The result can be passed directly to prepareSandpackFiles() for Sandpack rendering,
+ * or stored in the VFS context for editor use.
+ *
+ * This replaces the old SandpackRuntimeWrapper.generateSandpackFiles().
+ */
+export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<string, string> {
+  const { siteBundle, entryPath = '/', debug = false } = config;
+  const pages: SiteBundlePage[] = siteBundle.pages
+    ? Array.isArray(siteBundle.pages) ? siteBundle.pages : Object.values(siteBundle.pages)
+    : [];
+
+  const vfs: Record<string, string> = {};
+
+  // 1. Generate page components
+  for (const page of pages) {
+    const compName = sanitizeSiteBundleComponentName(page.path);
+    const fileName = sanitizeSiteBundleFilename(page.path);
+
+    let pageCode: string;
+    if (page.output?.react) {
+      pageCode = page.output.react;
+    } else {
+      const html = page.output?.html || '<div>Page content not generated</div>';
+      const jsx = html
+        .replace(/ class="/g, ' className="')
+        .replace(/<!--([\s\S]*?)-->/g, '{/* $1 */}')
+        .replace(/<br>/gi, '<br />')
+        .replace(/<hr>/gi, '<hr />')
+        .replace(/<img([^>]*?)(?<!\/)>/gi, '<img$1 />');
+
+      pageCode = [
+        "import React from 'react';",
+        '',
+        'export default function ' + compName + '() {',
+        '  return (',
+        '    <div className="page-container min-h-screen">',
+        '      ' + jsx,
+        '    </div>',
+        '  );',
+        '}',
+      ].join('\n');
+    }
+
+    vfs['/src/pages/' + fileName + '.tsx'] = pageCode;
+  }
+
+  // 2. Generate App.tsx with routing
+  const importLines = pages.map(p => {
+    const name = sanitizeSiteBundleComponentName(p.path);
+    const file = sanitizeSiteBundleFilename(p.path);
+    return 'import ' + name + " from './pages/" + file + "';";
+  });
+
+  const routeLines = pages.map(p => {
+    const name = sanitizeSiteBundleComponentName(p.path);
+    return '        <Route path="' + p.path + '" element={<' + name + ' />} />';
+  });
+
+  vfs['/src/App.tsx'] = [
+    "import React from 'react';",
+    "import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';",
+    ...importLines,
+    '',
+    'export default function App() {',
+    '  return (',
+    '    <HashRouter>',
+    '      <Routes>',
+    ...routeLines,
+    '        <Route path="*" element={<Navigate to="' + entryPath + '" replace />} />',
+    '      </Routes>',
+    '    </HashRouter>',
+    '  );',
+    '}',
+  ].join('\n');
+
+  // 3. Generate main.tsx entry
+  vfs['/src/main.tsx'] = [
+    "import React from 'react';",
+    "import ReactDOM from 'react-dom/client';",
+    "import App from './App';",
+    "import './index.css';",
+    '',
+    "ReactDOM.createRoot(document.getElementById('root')!).render(",
+    '  <React.StrictMode>',
+    '    <App />',
+    '  </React.StrictMode>',
+    ');',
+  ].join('\n');
+
+  // 4. Generate index.css with theme tokens
+  let css = BASE_CSS;
+  if (siteBundle.theme) {
+    const themeVars = Object.entries(siteBundle.theme)
+      .map(([k, v]) => '  --' + k + ': ' + v + ';')
+      .join('\n');
+    css = css.replace(':root {', ':root {\n' + themeVars);
+  }
+  vfs['/src/index.css'] = css;
+
+  if (debug) {
+    console.log('[compileSiteBundleToVFS] Generated VFS:', Object.keys(vfs));
+  }
+
+  return vfs;
+}
+
+function sanitizeSiteBundleFilename(path: string): string {
+  if (path === '/' || path === '') return 'Home';
+  return path.replace(/^\//, '').replace(/\//g, '-').replace(/[^\w-]/g, '').replace(/^-+|-+$/g, '') || 'Page';
+}
+
+function sanitizeSiteBundleComponentName(path: string): string {
+  const filename = sanitizeSiteBundleFilename(path);
+  return filename.charAt(0).toUpperCase() + filename.slice(1) + 'Page';
+}

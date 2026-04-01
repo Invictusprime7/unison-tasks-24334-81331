@@ -944,6 +944,7 @@ export function prepareSandpackFiles(
       .replace(/import\s+['"]\.\/styles\//g, "import './");
 
     processedContent = processCode(processedContent, normalizedPath);
+    processedContent = repairBrokenImageUrls(processedContent);
     processedContent = injectPreviewNavBridge(processedContent, normalizedPath);
     sandpackFiles[normalizedPath] = processedContent;
 

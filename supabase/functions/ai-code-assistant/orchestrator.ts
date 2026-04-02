@@ -325,6 +325,7 @@ async function runBuilderLane(
     imagePlacement: imagePlacement ?? undefined,
     debugMode: _debugMode,
     mode: mode ?? undefined,
+    modelUsed: providerResult.modelUsed,
   });
 
   return new Response(

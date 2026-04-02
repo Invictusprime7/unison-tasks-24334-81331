@@ -1072,7 +1072,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           
           // Truncate currentCode to stay within edge function limits
-          const MAX_CODE_LENGTH = 180_000;
+          const MAX_CODE_LENGTH = 120_000;
           const truncatedCode = currentCode && currentCode.length > MAX_CODE_LENGTH
             ? currentCode.substring(0, MAX_CODE_LENGTH) + '\n<!-- ... truncated for AI processing -->'
             : currentCode;

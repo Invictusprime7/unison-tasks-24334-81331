@@ -1028,6 +1028,14 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               attachments: _attachments.length > 0 ? _attachments : undefined,
               // Send VFS files for surgical edit context
               vfsFiles: vfsPayload,
+              // Gateway options from user config
+              gatewayOptions: gatewayConfig ? {
+                selectedModelId: gatewayConfig.selectedModelId,
+                reasoningEffort: gatewayConfig.reasoningEffort,
+                timeoutMs: gatewayConfig.timeoutMs,
+                autoModelSelection: gatewayConfig.autoModelSelection,
+                maxTokens: gatewayConfig.maxTokens,
+              } : undefined,
             },
           });
           

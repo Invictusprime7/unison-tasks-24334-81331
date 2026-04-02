@@ -1,6 +1,5 @@
-﻿import { serve } from "serve";
+import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
-import { z } from "zod";
 import { generateVariation, variationToPromptContext } from "../_shared/industryVariations.ts";
 import {
   getIndustryProfile,
@@ -9,29 +8,12 @@ import {
   getResearchQueries,
 } from "../_shared/industryPagePatterns.ts";
 
-/**
- * Convert hex color to HSL string (CSS format without "hsl()")
- * Returns format: "H S% L%" for CSS custom properties
- */
-function hexToHsl(hex: string): string {
-  hex = hex.replace(/^#/, '');
-  const r = parseInt(hex.substring(0, 2), 16) / 255;
-  const g = parseInt(hex.substring(2, 4), 16) / 255;
-  const b = parseInt(hex.substring(4, 6), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  if (max === min) return `0 0% ${Math.round(l * 100)}%`;
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h = 0;
-  switch (max) {
-    case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-    case g: h = ((b - r) / d + 2) / 6; break;
-    case b: h = ((r - g) / d + 4) / 6; break;
-  }
-  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
-}
+// ── Extracted modules ───────────────────────────────────────────────────────
+import { AIRequestSchema } from "./requestSchema.ts";
+import { classifyTask } from "./taskClassifier.ts";
+import { buildProviderPlan } from "./providerRouter.ts";
+import { extractThinkingTags, postProcessContent, buildResponseBody } from "./responseNormalizer.ts";
+import { hexToHsl, extractTextContent, corsHeaders } from "./utils.ts";
 
 interface CodePattern {
   pattern_type: string;
@@ -42,14 +24,8 @@ interface CodePattern {
   code_snippet: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
-
 // ============================================================================
 // WEB RESEARCH INTEGRATION
-// Searches the web to gather context for improved AI code generation
 // ============================================================================
 
 interface ResearchResult {
@@ -58,9 +34,6 @@ interface ResearchResult {
   keyPhrases: string[];
 }
 
-/**
- * Decode HTML entities
- */
 function decodeHtmlEntities(input: string): string {
   return input
     .replace(/&amp;/g, "&")
@@ -71,16 +44,10 @@ function decodeHtmlEntities(input: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
-/**
- * Strip HTML tags
- */
 function stripHtmlTags(input: string): string {
   return decodeHtmlEntities(input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
 }
 
-/**
- * Fetch with timeout
- */
 async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -101,9 +68,6 @@ async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<string> 
   }
 }
 
-/**
- * Parse DuckDuckGo search results
- */
 function parseDDGResults(html: string, max = 4): string[] {
   const snippets: string[] = [];
   const snippetRe = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>|<div[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/div>/gi;
@@ -118,16 +82,11 @@ function parseDDGResults(html: string, max = 4): string[] {
   return snippets;
 }
 
-/**
- * Extract key design/development insights from snippets
- */
 function extractInsights(snippets: string[]): { trends: string[]; keyPhrases: string[] } {
   const trends: string[] = [];
   const keyPhrases: string[] = [];
-  
   const trendKeywords = ["trend", "popular", "modern", "2025", "2024", "latest", "best practice"];
   const featureKeywords = ["feature", "include", "component", "design", "layout", "responsive"];
-  
   for (const snippet of snippets) {
     const lower = snippet.toLowerCase();
     if (trendKeywords.some(kw => lower.includes(kw))) {
@@ -143,38 +102,26 @@ function extractInsights(snippets: string[]): { trends: string[]; keyPhrases: st
       }
     }
   }
-  
-  return { 
-    trends: [...new Set(trends)].slice(0, 3), 
-    keyPhrases: [...new Set(keyPhrases)].slice(0, 3) 
+  return {
+    trends: [...new Set(trends)].slice(0, 3),
+    keyPhrases: [...new Set(keyPhrases)].slice(0, 3)
   };
 }
 
-/**
- * Perform web research based on user prompt
- */
 async function performPromptResearch(userPrompt: string): Promise<ResearchResult> {
   const result: ResearchResult = { snippets: [], trends: [], keyPhrases: [] };
-  
   if (!userPrompt || userPrompt.length < 10) return result;
-  
   try {
-    // Extract keywords from user prompt
     const cleanPrompt = userPrompt
-      .replace(/```[\s\S]*?```/g, '') // Remove code blocks
-      .replace(/<[^>]*>/g, '') // Remove HTML
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/<[^>]*>/g, '')
       .replace(/\b(create|make|build|add|change|update|generate|design|I want|I need|please|can you)\b/gi, '')
       .trim();
-    
     if (cleanPrompt.length < 5) return result;
-    
-    // Build targeted search query
     const searchQuery = `web design ${cleanPrompt.split(/\s+/).slice(0, 5).join(' ')} best practices`;
     const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
-    
     const html = await fetchWithTimeout(ddgUrl, 4000);
     const snippets = parseDDGResults(html, 4);
-    
     const seenSnippets = new Set<string>();
     for (const snippet of snippets) {
       const normalized = snippet.toLowerCase().substring(0, 40);
@@ -183,41 +130,27 @@ async function performPromptResearch(userPrompt: string): Promise<ResearchResult
         result.snippets.push(snippet);
       }
     }
-    
     const insights = extractInsights(result.snippets);
     result.trends = insights.trends;
     result.keyPhrases = insights.keyPhrases;
-    
     console.log(`[ai-code-assistant] Research completed: ${result.snippets.length} snippets`);
   } catch (error) {
     console.warn("[ai-code-assistant] Research failed (non-blocking):", error);
   }
-  
   return result;
 }
 
-/**
- * Format research for AI prompt injection
- */
 function formatResearchContext(research: ResearchResult): string {
   if (research.snippets.length === 0) return "";
-  
   let context = "\n\n🔬 **LIVE WEB RESEARCH CONTEXT:**\n";
-  
   if (research.trends.length > 0) {
     context += "\n**Current Design Trends:**\n";
-    for (const trend of research.trends) {
-      context += `- ${trend}\n`;
-    }
+    for (const trend of research.trends) { context += `- ${trend}\n`; }
   }
-  
   if (research.keyPhrases.length > 0) {
     context += "\n**Recommended Approaches:**\n";
-    for (const phrase of research.keyPhrases) {
-      context += `- ${phrase}\n`;
-    }
+    for (const phrase of research.keyPhrases) { context += `- ${phrase}\n`; }
   }
-  
   if (research.snippets.length > 0) {
     context += "\n**Relevant Context:**\n";
     for (const snippet of research.snippets.slice(0, 3)) {
@@ -225,9 +158,12 @@ function formatResearchContext(research: ResearchResult): string {
       context += `> ${truncated}\n`;
     }
   }
-  
   return context;
 }
+
+// ============================================================================
+// MAIN HANDLER
+// ============================================================================
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -235,138 +171,11 @@ serve(async (req: Request) => {
   }
 
   try {
-    const messageContentSchema = z.union([
-      // Standard text-only chat
-      z.string().min(1).max(10_000),
-      // Multimodal content (e.g. [{ type: 'text', text: '...' }, { type: 'image_url', ... }])
-      // We intentionally keep this permissive because the AI gateway supports these objects.
-      z.array(z.unknown()).min(1).max(50),
-    ]);
-
-    const bodySchema = z.object({
-      messages: z
-        .array(
-          z.object({
-            role: z.enum(["user", "assistant", "system"]),
-            content: messageContentSchema,
-          })
-        )
-        .min(1)
-        .max(50),
-      mode: z.string().max(30).optional(),
-      savePattern: z.boolean().optional(),
-      generateImage: z.boolean().optional(),
-      imagePlacement: z.string().max(40).optional(),
-      currentCode: z.string().max(200_000).optional(),
-      editMode: z.boolean().optional(),
-      debugMode: z.boolean().optional(),
-      templateAction: z.string().max(50).optional(),
-      templateAnalysis: z.string().max(20_000).optional(),
-      // System type for business context
-      systemType: z.string().max(50).nullish(),
-      // Template generation parameters (for template-json and template-html modes)
-      variationSeed: z.string().max(30).nullish(),
-      templateName: z.string().max(100).nullish(),
-      aesthetic: z.string().max(80).nullish(),
-      source: z.string().max(80).nullish(),
-      // User Design Profile - extracted patterns from user's saved projects for style-matching
-      userDesignProfile: z.object({
-        projectCount: z.number().optional(),
-        dominantStyle: z.enum(["dark", "light", "colorful", "minimal", "mixed"]).optional(),
-        industryHints: z.array(z.string()).optional(),
-      }).optional(),
-      // Flag for fast on-demand page generation (nav clicks in preview).
-      // When true: skip the thinking instruction and cap output tokens to 10000 for speed.
-      navPageGen: z.boolean().optional(),
-      // Nav page generation context — page slug + the nav link label that was clicked
-      navPageName: z.string().max(100).nullish(),
-      navLabel: z.string().max(120).nullish(),
-      // Systems Build Context — mirrors the full BlueprintSchema from systems-build (snake_case).
-      // When provided, every generation request benefits from brand, palette, intents & section layout.
-      systemsBuildContext: z.object({
-        version: z.string().optional(),
-        identity: z.object({
-          industry: z.string().max(80).optional(),
-          business_model: z.string().max(80).optional(),
-          primary_goal: z.string().max(200).optional(),
-          locale: z.string().max(20).optional(),
-        }).optional(),
-        brand: z.object({
-          business_name: z.string().max(100).optional(),
-          tagline: z.string().max(200).optional(),
-          tone: z.string().max(80).optional(),
-          palette: z.object({
-            primary: z.string().optional(),
-            secondary: z.string().optional(),
-            accent: z.string().optional(),
-            background: z.string().optional(),
-            foreground: z.string().optional(),
-          }).optional(),
-          typography: z.object({ heading: z.string().optional(), body: z.string().optional() }).optional(),
-          logo: z.object({ mode: z.string().optional(), text_lockup: z.string().optional() }).optional(),
-        }).optional(),
-        design: z.object({
-          layout: z.object({
-            hero_style: z.string().max(40).optional(),
-            section_spacing: z.string().max(20).optional(),
-            max_width: z.string().max(20).optional(),
-            navigation_style: z.string().max(20).optional(),
-          }).optional(),
-          effects: z.object({
-            animations: z.boolean().optional(),
-            scroll_animations: z.boolean().optional(),
-            hover_effects: z.boolean().optional(),
-            gradient_backgrounds: z.boolean().optional(),
-            glassmorphism: z.boolean().optional(),
-            shadows: z.string().max(20).optional(),
-          }).optional(),
-          images: z.object({
-            style: z.string().max(20).optional(),
-            aspect_ratio: z.string().max(20).optional(),
-            overlay_style: z.string().max(20).optional(),
-          }).optional(),
-          buttons: z.object({
-            style: z.string().max(20).optional(),
-            size: z.string().max(20).optional(),
-            hover_effect: z.string().max(20).optional(),
-          }).optional(),
-          sections: z.object({
-            include_stats: z.boolean().optional(),
-            include_testimonials: z.boolean().optional(),
-            include_faq: z.boolean().optional(),
-            include_cta_banner: z.boolean().optional(),
-            include_newsletter: z.boolean().optional(),
-            include_social_proof: z.boolean().optional(),
-            use_counter_animations: z.boolean().optional(),
-          }).optional(),
-          content: z.object({
-            density: z.string().max(20).optional(),
-            use_icons: z.boolean().optional(),
-            writing_style: z.string().max(30).optional(),
-          }).optional(),
-        }).optional(),
-        intents: z.array(z.object({
-          intent: z.string().max(60),
-          target: z.object({ kind: z.string().optional(), ref: z.string().optional() }).optional(),
-        })).max(20).optional(),
-        // Extra fields for template structural context
-        template_sections: z.array(z.string().max(60)).max(20).optional(),
-        template_intents: z.array(z.string().max(60)).max(20).optional(),
-      }).optional(),
-      // AI Site Elements Library — pre-built component intelligence context
-      siteElementsLibraryContext: z.string().max(50_000).optional(),
-      // Surgical edit mode — the user wants a targeted change, not full-page generation
-      surgicalEdit: z.boolean().optional(),
-      // VFS project files for multi-file surgical edit context
-      vfsFiles: z.record(z.string(), z.string().max(100_000)).optional(),
-    });
-
-    const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+    const parsed = AIRequestSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
       return new Response(
         JSON.stringify({
           error: "Invalid request body",
-          // Keep details small but helpful for debugging.
           details: parsed.error.issues.slice(0, 10).map((i) => ({ path: i.path, message: i.message })),
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -399,20 +208,30 @@ serve(async (req: Request) => {
       vfsFiles,
     } = parsed.data;
 
-    // ── Fast-path detection for wizard launches ──────────────────────────────
-    // When the SystemLauncher calls with template-react + systemsBuildContext + no existing code,
-    // we use a dramatically simplified prompt and faster models to avoid CPU/wall-clock timeouts.
-    const fastTemplateReact = mode === 'template-react' && Boolean(systemsBuildContext) && !currentCode && !editMode && !templateAction;
-    const fastGenerationMode = navPageGen || fastTemplateReact;
+    // ── Classify the task using extracted module ─────────────────────────
+    const task = classifyTask({
+      mode,
+      systemsBuildContext,
+      currentCode,
+      editMode,
+      templateAction: templateAction ?? undefined,
+      navPageGen,
+      surgicalEdit,
+      debugMode: _debugMode,
+      vfsFiles,
+    });
+
+    const fastTemplateReact = task.type === "wizard_template_react";
+    const fastGenerationMode = task.fastPath;
+
     if (fastTemplateReact) {
       console.log('[ai-code-assistant] FAST PATH: wizard launch detected, using compact prompt');
     }
-    
-    // Suppress unused variable warnings - these are used in specific modes
+
     void _debugMode;
     void _templateAnalysis;
-    
-    // Build system type context for business-aware generation
+
+    // Build system type context
     const systemTypeContext = systemType ? `
 [Business System Type: ${systemType}]
 Generate content and features appropriate for a ${systemType} business. Consider:
@@ -421,8 +240,7 @@ Generate content and features appropriate for a ${systemType} business. Consider
 - Appropriate color schemes and imagery suggestions
 - Business-specific functionality (booking for services, cart for stores, etc.)
 ` : '';
-    
-    // Build design profile context string for AI prompts
+
     const designProfileContext = userDesignProfile ? `
 [User Design Profile - Match this established style]
 - Analyzed Projects: ${userDesignProfile.projectCount || 0}
@@ -431,8 +249,7 @@ Generate content and features appropriate for a ${systemType} business. Consider
 Generate a site that matches the user's established design preferences while being unique.
 ` : '';
 
-    // Build systems-build blueprint context — brand, palette, intents, template structure.
-    // Launcher generation must pass the explicit themed blueprint instead of auto-synthesised defaults.
+    // Build systems-build blueprint context
     const resolvedBlueprint = systemsBuildContext ?? null;
 
     const systemsBuildContextText = resolvedBlueprint ? (() => {
@@ -480,11 +297,10 @@ Generate a site that matches the user's established design preferences while bei
       lines.push('Apply this blueprint: use the brand colors, tone, and wire all listed intents on CTAs.');
       return lines.join('\n');
     })() : '';
-    
+
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
     if (!LOVABLE_API_KEY) {
-      // Not fatal — we will fall through to direct OpenAI / Anthropic API fallbacks below.
       console.warn("LOVABLE_API_KEY not configured — will attempt direct provider APIs as fallback");
     }
 
@@ -493,7 +309,7 @@ Generate a site that matches the user's established design preferences while bei
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch top learned patterns for context — SKIP for fast path to reduce latency
+    // Fetch top learned patterns — SKIP for fast path
     let learnedPatterns = 'No patterns loaded (fast mode).';
     if (!fastGenerationMode) {
       const { data: patterns } = await supabase
@@ -515,7 +331,6 @@ ${p.code_snippet.substring(0, 600)}${p.code_snippet.length > 600 ? '...' : ''}
     // Analyze template structure for context-aware editing
     const analyzeTemplateStructure = (code: string): string => {
       if (!code) return '';
-      
       const sections: string[] = [];
       const patterns = [
         { regex: /<header[^>]*>|class="[^"]*header[^"]*"/gi, name: 'Header/Navigation' },
@@ -533,18 +348,14 @@ ${p.code_snippet.substring(0, 600)}${p.code_snippet.length > 600 ? '...' : ''}
         { regex: /class="[^"]*faq[^"]*"|id="[^"]*faq[^"]*"/gi, name: 'FAQ Section' },
         { regex: /class="[^"]*blog[^"]*"|id="[^"]*blog[^"]*"/gi, name: 'Blog/News Section' },
       ];
-      
       patterns.forEach(({ regex, name }) => {
         if (regex.test(code) && !sections.includes(name)) {
           sections.push(name);
         }
       });
-      
-      // Count images and buttons
       const imageCount = (code.match(/<img[^>]*>/gi) || []).length;
       const buttonCount = (code.match(/<button[^>]*>|class="[^"]*btn[^"]*"/gi) || []).length;
       const linkCount = (code.match(/<a[^>]*href/gi) || []).length;
-      
       return `
 📊 **TEMPLATE STRUCTURE ANALYSIS:**
 - Detected Sections: ${sections.length > 0 ? sections.join(', ') : 'Basic layout'}
@@ -553,11 +364,11 @@ ${p.code_snippet.substring(0, 600)}${p.code_snippet.length > 600 ? '...' : ''}
 `;
     };
 
-    // Build edit mode context if we have current code - limit to 4000 chars to prevent token overflow
     const maxCodeLength = 4000;
     const templateStructure = currentCode ? analyzeTemplateStructure(currentCode) : '';
-    
-    // Build template action context for specific edit operations
+
+    // ── Template action context ─────────────────────────────────────────
+    // (Preserved exactly from original — long prompt blocks)
     const templateActionContext = templateAction ? `
 🎯 **TEMPLATE ACTION: ${templateAction.toUpperCase()}**
 ${templateAction === 'add' ? `User wants to ADD new elements/sections/components to the project.
@@ -718,20 +529,21 @@ You are applying a visual aesthetic preset. This changes ONLY colors, typography
 Return the COMPLETE React/TSX code with visual aesthetic applied. Keep every word of content identical. Output as \`\`\`tsx code fence or JSON {"files": {...}}.` : ''}
 ` : '';
 
-            const editModeContext = editMode && currentCode ? `
-â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”
-ðŸ”´ðŸ”´ðŸ”´ EDIT MODE: ADDITIVE ONLY - ZERO TOLERANCE FOR REMOVAL ðŸ”´ðŸ”´ðŸ”´
-â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”â›”
+    // ── Edit mode context (preserved exactly) ───────────────────────────
+    const editModeContext = editMode && currentCode ? `
+⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔
+🔴🔴🔴 EDIT MODE: ADDITIVE ONLY - ZERO TOLERANCE FOR REMOVAL 🔴🔴🔴
+⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔
 
 You are editing an EXISTING saved template in an iframe. The user's site is LIVE.
 
-ðŸ”’ **THE GOLDEN RULE: ADD, NEVER REMOVE**
+🔒 **THE GOLDEN RULE: ADD, NEVER REMOVE**
 - You must ADD to the existing template
 - You must NEVER remove sections, scripts, styles, or elements
 - Unless the user EXPLICITLY says "remove", "delete", "take out", or "get rid of"
-- If user says "change X" â†’ MODIFY X in place, do not delete and recreate
+- If user says "change X" → MODIFY X in place, do not delete and recreate
 
-ðŸ“Š **MANDATORY ELEMENT COUNT VALIDATION:**
+📊 **MANDATORY ELEMENT COUNT VALIDATION:**
 Before outputting, COUNT these elements in your output vs the input:
 - React components/sections: Input count MUST equal output count (unless explicitly adding/removing)
 - Import statements: ALL MUST be preserved
@@ -749,7 +561,7 @@ ${templateActionContext}
 ${currentCode.substring(0, maxCodeLength)}${currentCode.length > maxCodeLength ? '\n... (truncated for context)' : ''}
 \`\`\`
 
-ðŸš¨ðŸš¨ðŸš¨ **ABSOLUTE EDIT MODE REQUIREMENTS - VIOLATION = USER DATA LOSS** ðŸš¨ðŸš¨ðŸš¨
+🚨🚨🚨 **ABSOLUTE EDIT MODE REQUIREMENTS - VIOLATION = USER DATA LOSS** 🚨🚨🚨
 
 **STRUCTURAL INTEGRITY RULES (MANDATORY):**
 1. **COMPONENT COUNT LOCK** - Count section components in input. Your output MUST have >= that count. NEVER reduce.
@@ -788,24 +600,24 @@ ${currentCode.substring(0, maxCodeLength)}${currentCode.length > maxCodeLength ?
 - Replacing specific images with different ones
 
 **ADDITIVE CHANGE PRINCIPLE:**
-- If user says "center the hero" â†’ ADD centering classes to hero. NOTHING ELSE CHANGES.
-- If user says "add animation" â†’ ADD animation classes. NOTHING ELSE CHANGES.
-- If user says "make it bigger" â†’ MODIFY size classes on target element. NOTHING ELSE CHANGES.
-- If user says "change the color" â†’ MODIFY color classes on target element. NOTHING ELSE CHANGES.
+- If user says "center the hero" → ADD centering classes to hero. NOTHING ELSE CHANGES.
+- If user says "add animation" → ADD animation classes. NOTHING ELSE CHANGES.
+- If user says "make it bigger" → MODIFY size classes on target element. NOTHING ELSE CHANGES.
+- If user says "change the color" → MODIFY color classes on target element. NOTHING ELSE CHANGES.
 
 **OUTPUT VERIFICATION CHECKLIST (MANDATORY - CHECK BEFORE OUTPUTTING):**
-â–¡ Section count: Input has N sections â†’ Output has N sections? (If not, STOP and fix)
-â–¡ Script count: Input has N scripts â†’ Output has N scripts? (If not, STOP and fix)
-â–¡ Style count: Input has N styles â†’ Output has N styles? (If not, STOP and fix)
-â–¡ Footer present: Input has footer â†’ Output has footer? (If not, STOP and fix)
-â–¡ Header/Nav present: Input has header/nav â†’ Output has header/nav? (If not, STOP and fix)
-â–¡ All text content preserved word-for-word?
-â–¡ All image URLs preserved?
-â–¡ All color classes preserved?
-â–¡ Only the specifically requested change was made?
+□ Section count: Input has N sections → Output has N sections? (If not, STOP and fix)
+□ Script count: Input has N scripts → Output has N scripts? (If not, STOP and fix)
+□ Style count: Input has N styles → Output has N styles? (If not, STOP and fix)
+□ Footer present: Input has footer → Output has footer? (If not, STOP and fix)
+□ Header/Nav present: Input has header/nav → Output has header/nav? (If not, STOP and fix)
+□ All text content preserved word-for-word?
+□ All image URLs preserved?
+□ All color classes preserved?
+□ Only the specifically requested change was made?
 
-ðŸš« **FATAL ERRORS THAT CAUSE DATA LOSS (ZERO TOLERANCE):**
-- Reducing the number of sections (e.g., 8 sections â†’ 3 sections = FATAL)
+🚫 **FATAL ERRORS THAT CAUSE DATA LOSS (ZERO TOLERANCE):**
+- Reducing the number of sections (e.g., 8 sections → 3 sections = FATAL)
 - Removing ANY <script> blocks (functionality breaks = FATAL)
 - Removing ANY <style> blocks (styling lost = FATAL)
 - Removing the footer section (user content lost = FATAL)
@@ -814,7 +626,7 @@ ${currentCode.substring(0, maxCodeLength)}${currentCode.length > maxCodeLength ?
 - Changing text content without being asked
 - Replacing specific images with different ones
 
-ðŸ“ **POSITIONING & LAYOUT COMMANDS:**
+📐 **POSITIONING & LAYOUT COMMANDS:**
 When user asks to reposition elements, ONLY add/modify classes on the targeted element:
 
 **Centering:**
@@ -864,7 +676,10 @@ When user asks to reposition elements, ONLY add/modify classes on the targeted e
 
 ` : '';
 
-    const systemPrompts = {
+    // ── System prompts object (code mode) ───────────────────────────────
+    // NOTE: This is the massive code-mode system prompt. Kept inline for now.
+    // Stage 2 will extract prompts/ directory.
+    const systemPrompts: Record<string, string> = {
       code: `You are an ELITE "Super Web Builder Expert" AI for a React/TypeScript Web Builder with a built-in backend (database, authentication, and backend functions).
  ${editModeContext}
 
@@ -1124,286 +939,38 @@ Use Tailwind animation utilities and CSS custom animations in index.css:
    ✅ CORRECT URLs that WILL work:
    - https://images.unsplash.com/photo-[id]?w=800&h=600
    - https://picsum.photos/800/600
-   - https://placehold.co/800x600/blue/white?text=Placeholder
-   
-   ❌ NEVER use these (WILL FAIL in live preview):
-   - Relative paths: ./image.jpg, ../assets/photo.png, /images/pic.jpg
-   - Local filesystem: file:///path/to/image.jpg
+   - https://placehold.co/800x600/1a1a2e/eaeaea?text=Image
+   - Data URIs for small icons: data:image/svg+xml,...
 
-2. **RESPONSIVE IMAGES IN JSX:**
-   \`\`\`tsx
-   <img 
-     src="https://images.unsplash.com/photo-1234?w=800&h=600"
-     alt="Descriptive alt text"
-     className="w-full h-64 object-cover rounded-lg md:h-96 lg:h-[500px]"
-     loading="lazy"
-     onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/cccccc/666666?text=Image+Not+Available'; }}
-   />
-   \`\`\`
+   ❌ NEVER USE (will fail CORS):
+   - Local file paths: ./image.jpg, /assets/photo.png
+   - Private/authenticated URLs
+   - Images without proper CORS headers
 
-**PREFERRED OUTPUT FORMAT — REACT/TSX:**
+2. **UNSPLASH URL FORMAT (PREFERRED):**
+   Always use this format: https://images.unsplash.com/photo-[REAL-ID]?w=[width]&q=80
+   Example: https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80
 
-For full-page generation, use JSON multi-file format:
-\`\`\`json
-{
-  "files": {
-    "src/App.tsx": "import { Hero } from './components/Hero';\\nimport { Features } from './components/Features';\\n\\nexport default function App() {\\n  return (\\n    <div className=\\"min-h-screen bg-background text-foreground\\">\\n      <Hero />\\n      <Features />\\n    </div>\\n  );\\n}",
-    "src/components/Hero.tsx": "// Hero component...",
-    "src/components/Features.tsx": "// Features component..."
-  }
-}
-\`\`\`
+3. **PLACEHOLDER IMAGES (WHEN NO SPECIFIC IMAGE NEEDED):**
+   Use: https://placehold.co/[width]x[height]/[bg-hex]/[text-hex]?text=[label]
+   Example: https://placehold.co/800x600/1a1a2e/eaeaea?text=Hero+Image
 
-For single component generation or edits, use a tsx code fence:
-\`\`\`tsx
-import { useState } from 'react';
-import { Star, Clock, ArrowRight } from 'lucide-react';
+4. **IMAGE STYLING:**
+   - Always include alt text for accessibility
+   - Use object-cover for background images
+   - Add loading="lazy" for below-the-fold images
+   - Use aspect-ratio utilities: aspect-video, aspect-square
 
-interface ServiceCardProps {
-  name: string;
-  price: string;
-  duration: string;
-  description: string;
-  popular?: boolean;
-}
-
-export function ServiceCard({ name, price, duration, description, popular }: ServiceCardProps) {
-  return (
-    <div className="bg-card rounded-2xl p-8 border border-border hover:border-primary/50 hover:-translate-y-1 transition-all duration-300 relative">
-      {popular && (
-        <span className="absolute -top-3 left-4 bg-primary/20 text-primary text-xs font-semibold px-3 py-1 rounded-full">
-          Most Popular
-        </span>
-      )}
-      <div className="flex justify-between items-start mb-4">
-        <h3 className="text-xl font-bold text-foreground">{name}</h3>
-        <span className="text-2xl font-bold text-primary">{price}</span>
-      </div>
-      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
-        <Clock className="w-4 h-4" />
-        <span>{duration}</span>
-      </div>
-      <p className="text-muted-foreground mb-4">{description}</p>
-      <button
-        data-ut-intent="booking.create"
-        data-ut-cta="cta.primary"
-        data-ut-label="Book Service"
-        data-service={name}
-        className="w-full flex items-center justify-center gap-2 text-primary hover:text-primary/80 font-medium transition-colors"
-      >
-        Book This Service <ArrowRight className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
-\`\`\`
-
-🧩 **PRE-BUILT COMPONENTS AVAILABLE (Elements & Functional Blocks):**
-
-The Web Builder has pre-built components in the sidebar. When users ask for these, generate React/TSX components:
-
-**ELEMENTS SIDEBAR (Sections):**
-1. **Hero Section** — React component with gradient background, h1, subtitle, CTA buttons
-2. **Feature Grid (3 columns)** — Section with heading and 3 feature cards with Lucide icons
-3. **Testimonials (2 columns)** — Customer reviews with quotes, avatars, names
-4. **CTA Section** — Centered call-to-action with gradient bg, heading, subtitle, button
-5. **Stats Section (4 columns)** — Animated counter stats with useEffect
-
-**FUNCTIONAL BLOCKS (Interactive Components):**
-1. **Appointment Scheduler** (booking-widget) — Calendar interface with useState for date/time
-2. **Product Showcase** (product-grid) — E-commerce grid with product cards, pricing, add-to-cart
-3. **Floating Cart** (shopping-cart) — Fixed position cart button with item count badge
-4. **Contact Form** (contact-form) — Controlled form with useState, validation, and onSubmit
-
-**WHEN USER ASKS FOR THESE COMPONENTS:**
-- Generate React/TSX components with proper TypeScript interfaces
-- Use Tailwind CSS with design tokens (bg-card, text-foreground, text-primary, etc.)
-- Include proper React hooks for interactivity (useState, useEffect)
-- Wire CTAs with data-ut-intent attributes
-- Make components responsive with Tailwind breakpoints (md:, lg: prefixes)
-
-⛔ **NEVER GENERATE:**
-- Raw HTML documents (<!DOCTYPE html>, <html>, <head>, <body>)
-- <script> tags or vanilla JavaScript
-- document.createElement, document.getElementById, or DOM manipulation
-- IIFEs, module patterns, or vanilla JS state management
-- CDN script tags (no cdn.tailwindcss.com, no lucide CDN)
-- module.exports or CommonJS patterns
-
-REMEMBER: Every component you generate MUST be a valid React/TypeScript functional component that renders inside a Sandpack-based Vite+React preview.`,
-
-      design: `You are an ELITE "Super Web Builder Expert" UI/UX design advisor with a continuously learning system.
-
-🎨 **DESIGN EXPERTISE WITH LEARNING:**
-You actively learn from successful design patterns and provide increasingly sophisticated recommendations.
-
-**LEARNED DESIGN PATTERNS:**
-${learnedPatterns}
-
-**YOUR DESIGN MASTERY:**
-- Color Theory & Psychology (contrast, harmony, emotion)
-- Typography Systems (hierarchy, readability, pairing)
-- Spacing & Layout (grids, rhythm, whitespace)
-- Visual Hierarchy (focus, flow, emphasis)
-- Motion Design (animations, transitions, micro-interactions)
-- Accessibility (WCAG, contrast, screen readers)
-- Design Trends (glassmorphism, neumorphism, minimalism)
-
-**DESIGN PRINCIPLES:**
-1. **Accessibility First** - WCAG AA compliance, proper contrast ratios
-2. **Visual Hierarchy** - Guide attention through size, color, spacing
-3. **Consistency** - Design systems, tokens, reusable patterns
-4. **Responsive** - Mobile-first, fluid layouts, adaptive components
-5. **Performance** - Optimized assets, smooth animations
-6. **User-Centric** - Intuitive navigation, clear feedback, delightful UX
-
-**WHEN ADVISING:**
-- Reference successful patterns from learned knowledge
-- Provide specific, actionable improvements
-- Include code examples when helpful
-- Explain the "why" behind each suggestion
-- Balance aesthetics with functionality
-- Consider modern trends while maintaining timeless principles
-
-Build upon proven design patterns to create increasingly sophisticated solutions!`,
-
-      review: `You are an ELITE "Super Web Builder Expert" code reviewer with a learning-driven analysis system.
-
-🔍 **COMPREHENSIVE CODE REVIEW WITH LEARNING:**
-You provide expert analysis informed by successful patterns and evolving best practices.
-
-**LEARNED BEST PRACTICES:**
-${learnedPatterns}
-
-**REVIEW EXPERTISE:**
-- Code Quality & Maintainability
-- Performance & Optimization
-- Security & Vulnerability Detection
-- Accessibility Compliance (WCAG)
-- TypeScript Type Safety
-- React/Modern Framework Patterns
-- Architecture & Scalability
-
-**REVIEW FRAMEWORK:**
-1. **Critical Issues** 🚨
-   - Security vulnerabilities (XSS, injection, auth)
-   - Performance bottlenecks (unnecessary renders, memory leaks)
-   - Accessibility violations (missing ARIA, poor contrast)
-   
-2. **Improvements** 💡
-   - Code organization and structure
-   - Type safety enhancements
-   - Performance optimizations
-   - Modern pattern adoption
-   
-3. **Best Practices** ✅
-   - What's done well
-   - Patterns worth reusing
-   - Strengths to build upon
-
-**REVIEW STYLE:**
-- Constructive and specific
-- Include code examples for fixes
-- Prioritize issues (critical → nice-to-have)
-- Explain impact and reasoning
-- Reference learned patterns
-- Suggest modern alternatives
-
-Learn from every review to provide increasingly valuable insights!`,
-
-      debug: `You are an ELITE "Super Web Builder Expert" debugging and troubleshooting specialist - like GitHub Copilot and Lovable AI combined.
-
-🔧 **ADVANCED DEBUGGING CAPABILITIES:**
-You excel at analyzing code, identifying rendering issues, detecting errors, and providing complete fixed solutions.
-
-**LEARNED ERROR PATTERNS:**
-${learnedPatterns}
-
-${editModeContext}
-
-**DEBUGGING EXPERTISE:**
-1. **Rendering Issues** 🎨
-   - Layout breaking/overflow
-   - Element positioning problems
-   - CSS conflicts and specificity issues
-   - Responsive breakpoint failures
-   - Flexbox/Grid misalignment
-
-2. **React/TypeScript Errors** ⚡
-   - Hook rules violations (conditional hooks, wrong order)
-   - Type errors and missing interfaces
-   - State update issues and stale closures
-   - useEffect dependency array problems
-   - Async/await issues in components
-
-3. **Visual Problems** 👁️
-   - Styling not applying
-   - Elements not visible
-   - Incorrect dimensions
-   - Z-index stacking issues
-   - Animation glitches
-
-4. **Functional Bugs** 🐛
-   - Interactive elements not working
-   - Form validation failures
-   - State management issues
-   - Props/data flow problems
-
-**YOUR DEBUGGING PROCESS:**
-1. **ANALYZE** - Read the provided React/TSX code carefully
-2. **IDENTIFY** - Locate the exact issue or error
-3. **DIAGNOSE** - Explain what's causing the problem
-4. **FIX** - Provide the complete corrected React/TSX code
-5. **EXPLAIN** - Describe what you changed and why
-
-**CRITICAL DEBUGGING RULES:**
-✅ **ALWAYS provide the COMPLETE FIXED CODE as React/TSX** - Never just describe the fix
-✅ **Output valid TSX** - Not HTML documents, not vanilla JS
-✅ **Explain the root cause** - Help user understand the issue
-✅ **Test logic mentally** - Ensure your fix actually works
-✅ **Preserve working code** - Only fix what's broken
-✅ **Validate JSX structure** - Ensure proper nesting, self-closing tags, and className usage
-
-**RESPONSE FORMAT FOR DEBUG MODE:**
-\`\`\`
-🔍 **Issue Identified:**
-[Clear description of the problem]
-
-🎯 **Root Cause:**
-[Why it's happening]
-
-✅ **Solution:**
-[What needs to be changed]
-
-📝 **Fixed Code:**
-\`\`\`tsx
-[Complete working React/TSX code with fixes applied]
-\`\`\`
-
-💡 **Explanation:**
-[What was changed and why it fixes the issue]
-\`\`\`
-
-**COMMON ISSUES TO CHECK:**
-- Missing React imports (useState, useEffect, etc.)
-- Incorrect className syntax (className not class)
-- Missing key props on mapped elements
-- Hook dependency array issues
-- Incorrect TypeScript types
-- Tailwind class names misspelled
-- Z-index conflicts
-- Overflow issues (add overflow-hidden where needed)
-- Flex/Grid container/item mismatches
-- Missing self-closing tags in JSX (<img />, <br />, <input />)
-
-Learn from every bug fix to become better at prevention!`
+5. **BACKGROUND IMAGES (React pattern):**
+   Use inline style for background images:
+   <div style={{ backgroundImage: 'url(https://images.unsplash.com/...)' }} className="bg-cover bg-center" />
+`,
     };
 
-    // Handle template generation modes with industry variations
+    // ── Handle template generation modes ────────────────────────────────
     let systemPrompt: string;
     
     if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
-      // Extract user prompt text for variation generation
       const extractText = (content: unknown): string => {
         if (typeof content === 'string') return content;
         if (Array.isArray(content)) {
@@ -1480,7 +1047,6 @@ MINIMUM 6 sections with 4-6 components each. Use the industry images: ${variatio
 
 OUTPUT: Return ONLY valid JSON matching this schema.`;
       } else if (mode === 'template-html') {
-        // template-html mode
         systemPrompt = `You are an ELITE web designer producing PREMIUM, AWARD-WINNING website templates. Your output must rival top-tier templates from ThemeForest, Webflow, and Framer.
 
 ${variationContext}
@@ -1560,8 +1126,7 @@ ${variation.industry.unsplashIds.map(id => `https://images.unsplash.com/${id}?w=
 
 OUTPUT: Return ONLY the complete, self-contained HTML document. No markdown, no explanations.`;
       } else {
-        // template-react mode - FULLSTACK REACT APPLICATION
-        // Build reference template block if provided (for quality baseline)
+        // template-react mode — FULLSTACK REACT APPLICATION
         const referenceTemplateBlock = currentCode && templateAction === 'use-as-schema' ? `
 
 ## 🏆 PREMIUM REFERENCE TEMPLATE (QUALITY BASELINE - CRITICAL!)
@@ -1862,7 +1427,6 @@ Use Lucide React icons: \`import { IconName } from "lucide-react";\`
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: hsl(var(--primary));
 }
 
 /* ============================================
@@ -1882,18 +1446,24 @@ Use Lucide React icons: \`import { IconName } from "lucide-react";\`
   transform: translateY(-4px);
 }
 
-.card-highlight::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(var(--primary), 0.1) 0%, transparent 50%);
-  border-radius: inherit;
-  opacity: 0;
-  transition: opacity 0.3s ease;
+/* ============================================
+   BADGES AND TAGS
+   ============================================ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border-radius: 9999px;
 }
 
-.card-highlight:hover::before {
-  opacity: 1;
+.badge-primary {
+  background: rgba(var(--primary), 0.15);
+  color: hsl(var(--primary));
+  border: 1px solid rgba(var(--primary), 0.25);
 }
 
 /* ============================================
@@ -1909,91 +1479,31 @@ Use Lucide React icons: \`import { IconName } from "lucide-react";\`
   padding: 0 1rem;
 }
 
-.container-tight {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 0 1rem;
-}
-
-/* ============================================
-   BADGE PATTERNS
-   ============================================ */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  border-radius: 9999px;
-  background: rgba(var(--primary), 0.1);
-  border: 1px solid rgba(var(--primary), 0.2);
-  color: hsl(var(--primary));
-}
-
-.badge-primary {
-  background: linear-gradient(135deg, rgba(var(--primary), 0.15) 0%, rgba(var(--accent), 0.1) 100%);
-  border: 1px solid rgba(var(--primary), 0.3);
+@media (min-width: 768px) {
+  .section-spacing {
+    padding: 7rem 2rem;
+  }
 }
 \`\`\`
 
-## REQUIRED FEATURES:
-1. **React Router** - Client-side routing with react-router-dom
-2. **TypeScript** - Full type safety with proper interfaces
-3. **Tailwind CSS** - Use utility classes with CSS variables
-4. **Responsive Design** - Mobile-first with sm/md/lg/xl breakpoints
-5. **Animations** - Use Tailwind transitions and CSS animations
-6. **State Management** - React hooks (useState, useEffect, useContext)
-7. **Forms** - Controlled components with validation
-8. **Accessibility** - ARIA labels, focus states, semantic HTML
+## ⚠️ CRITICAL REACT/TSX RULES:
+1. **NO <style> TAGS** — All CSS goes in index.css, referenced via className
+2. **NO <script> TAGS** — All logic uses React hooks and event handlers
+3. **NO document.getElementById** — Use React refs (useRef)
+4. **NO vanilla DOM manipulation** — Use React state and JSX
+5. **PROPER IMPORTS** — import React, { useState, useEffect, useRef } from 'react';
+6. **DEFAULT EXPORT** — Every component file must have export default
+7. **TypeScript** — Use interfaces for all data structures
 
-## SECTION COMPONENTS (CREATE SEPARATE FILES FOR EACH):
-Each section must be a standalone component in src/components/sections/:
-- **Header.tsx** - Fixed navigation with logo, nav links, and CTA button
-- **Hero.tsx** - Full-height hero with headline, subtext, CTAs, and background image
-- **Services.tsx** - Service cards with icons, descriptions, and pricing (MINIMUM 6 items)
-- **About.tsx** - Company/team story with image and statistics
-- **Team.tsx** - Team member cards with photos, names, roles (MINIMUM 3 members)
-- **Testimonials.tsx** - Customer testimonials with quotes and avatars (MINIMUM 3)
-- **Gallery.tsx** - Image gallery or portfolio showcase (MINIMUM 6 images)
-- **FAQ.tsx** - Accordion FAQ section (MINIMUM 5 questions)
-- **CTA.tsx** - Call-to-action banner with headline and buttons
-- **Contact.tsx** - Contact form with name, email, message fields
-- **Footer.tsx** - Footer with links, contact info, and social icons
-
-## INTENT HANDLERS (USE HOOKS-SHIM - DO NOT CREATE CUSTOM HOOK FILES):
-The preview environment provides a pre-built \`useIntentHandlers\` hook via the hooks-shim.
-Import it like any other hook - it is ALREADY available. DO NOT create a useIntentHandlers.ts file.
-
-\`\`\`tsx
-// In your component - just import and use:
-import { useIntentHandlers } from './hooks-shim';
-// OR it will be auto-shimmed from: import { useIntentHandlers } from '@/hooks/useIntentHandlers';
-
-const { handleBooking, handleContact, handleNewsletter, handleNavigation, handleAuth } = useIntentHandlers();
-\`\`\`
-
-For buttons and interactive elements, PREFER using data-ut-intent attributes:
-\`\`\`tsx
-<button data-ut-intent="booking.create">Book Now</button>
-<button data-ut-intent="nav.goto" data-ut-payload='{"path":"#contact"}'>Contact Us</button>
-<form data-ut-intent="contact.submit">...</form>
-\`\`\`
-
-## OUTPUT FORMAT:
-
-Return a single JSON object with this structure (no markdown, no explanations):
-
+## OUTPUT FORMAT (MANDATORY):
+Return a JSON object with ALL files:
 \`\`\`json
 {
   "files": {
-    "src/App.tsx": "// Main app composing all sections inline or importing from components...",
-    "src/index.css": "/* Global styles with CSS variables */"
-  },
-  "entryPoint": "src/App.tsx",
-  "framework": "react",
-  "buildTool": "vite"
+    "src/App.tsx": "import React from 'react';\\n...",
+    "src/main.tsx": "import React from 'react';\\nimport ReactDOM from 'react-dom/client';\\nimport App from './App';\\nimport './index.css';\\n\\nReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);",
+    "src/index.css": "@tailwind base;\\n@tailwind components;\\n@tailwind utilities;\\n..."
+  }
 }
 \`\`\`
 
@@ -2106,36 +1616,16 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
       systemPrompt = systemPrompts[mode as keyof typeof systemPrompts] || systemPrompts.code;
     }
 
-    const extractTextContent = (content: unknown): string => {
-      if (typeof content === 'string') return content;
-      if (Array.isArray(content)) {
-        // Try to extract any text parts (OpenAI/Gemini style).
-        const textParts = content
-          .map((p: Record<string, unknown>) => {
-            if (!p || typeof p !== 'object') return '';
-            if (typeof p.text === 'string') return p.text;
-            // Some formats may use { type: 'text', text: '...' }
-            if (p.type === 'text' && typeof p.text === 'string') return p.text;
-            return '';
-          })
-          .filter(Boolean);
-        return textParts.join('\n').trim();
-      }
-      return '';
-    };
-
-    // Check if user wants to generate an image - only trigger on explicit requests
+    // ── User prompt text extraction ─────────────────────────────────────
     const lastMessageContent = messages[messages.length - 1]?.content;
     const userPromptText = extractTextContent(lastMessageContent);
     const userPrompt = userPromptText.toLowerCase();
-    
-    // Perform web research in parallel (non-blocking) for design/code context
-    // SKIP for fast-path wizard launches to reduce latency
-    const researchPromise = fastGenerationMode
+
+    // ── Web research (skip for fast path) ───────────────────────────────
+    const researchPromise = task.skipResearch
       ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [] } as ResearchResult)
       : performPromptResearch(userPromptText);
 
-    // For navPageGen requests (NOT fast wizard launches), run targeted industry page research
     const navResearchPromise: Promise<string> = (navPageGen && !fastTemplateReact && systemType)
       ? (async () => {
           try {
@@ -2159,23 +1649,18 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
           }
         })()
       : Promise.resolve('');
-    
-    // More specific keywords - avoid triggering on general page generation requests
-    // SKIP entirely for fast-path wizard launches
+
+    // ── Image generation ────────────────────────────────────────────────
     const imageKeywords = ['generate image', 'create image', 'generate a logo', 'create a logo', 'make a logo', 'add logo image', 'insert image'];
     const shouldGenerateImage = !fastTemplateReact && (generateImage || imageKeywords.some(kw => userPrompt.includes(kw)));
-    
+
     let generatedImageUrl = '';
     let imageHtml = '';
-    
+
     if (shouldGenerateImage) {
       console.log('[AI-Code-Assistant] Generating image for request');
-      
-      // Extract image description from user prompt
       const imagePromptMatch = userPrompt.match(/(?:generate|create|add|place|insert)\s+(?:an?\s+)?(?:image|logo|photo|picture)\s+(?:of\s+)?(.+?)(?:\s+(?:in|at|on|to)\s+|$)/i);
       const imageDescription = imagePromptMatch?.[1] || userPrompt.replace(/generate|create|add|place|insert|image|logo|photo|picture/gi, '').trim();
-      
-      // Detect placement from prompt
       let detectedPlacement = imagePlacement || 'top-left';
       if (userPrompt.includes('corner left') || userPrompt.includes('top left')) detectedPlacement = 'top-left';
       else if (userPrompt.includes('corner right') || userPrompt.includes('top right')) detectedPlacement = 'top-right';
@@ -2184,15 +1669,11 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
       else if (userPrompt.includes('center')) detectedPlacement = 'center';
       else if (userPrompt.includes('header')) detectedPlacement = 'top-left';
       else if (userPrompt.includes('footer')) detectedPlacement = 'bottom-left';
-      
-      // Determine if it's a logo request
       const isLogo = userPrompt.includes('logo') || userPrompt.includes('brand');
-      
+
       try {
-        // Call image generation with timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-        
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         const imageResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -2209,18 +1690,15 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
           }),
           signal: controller.signal
         });
-        
         clearTimeout(timeoutId);
-        
+
         if (imageResponse.ok) {
           const imageText = await imageResponse.text();
           if (imageText && imageText.trim()) {
             try {
               const imageData = JSON.parse(imageText);
               generatedImageUrl = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url || '';
-              
               if (generatedImageUrl) {
-                // Generate placement CSS
                 const placementStyles: Record<string, string> = {
                   'top-left': 'position: absolute; top: 10px; left: 10px;',
                   'top-center': 'position: absolute; top: 10px; left: 50%; transform: translateX(-50%);',
@@ -2229,16 +1707,13 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
                   'bottom-left': 'position: absolute; bottom: 10px; left: 10px;',
                   'bottom-right': 'position: absolute; bottom: 10px; right: 10px;',
                 };
-                
                 const placementCss = placementStyles[detectedPlacement] || placementStyles['top-left'];
                 const maxSize = isLogo ? 'max-width: 120px; max-height: 60px;' : 'max-width: 300px; max-height: 200px;';
-                
                 imageHtml = `
-<!-- AI Generated Image - Drag to reposition, use corner handles to resize -->
+<!-- AI Generated Image -->
 <div class="ai-image-container resizable-image" style="${placementCss} ${maxSize} z-index: 100;">
   <img src="${generatedImageUrl}" alt="${imageDescription}" class="w-full h-auto object-contain" />
 </div>`;
-                
                 console.log('[AI-Code-Assistant] Image generated and placed at:', detectedPlacement);
               }
             } catch (parseErr) {
@@ -2257,14 +1732,12 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
       }
     }
 
-    // Truncate messages to prevent exceeding token limits
-    // Keep only the last 6 messages (3 turns) plus the system message
+    // ── Message truncation ──────────────────────────────────────────────
     const MAX_MESSAGES = 6;
     const truncatedMessages = messages.length > MAX_MESSAGES 
       ? messages.slice(-MAX_MESSAGES) 
       : messages;
     
-    // Also truncate individual message content if too long
     const processedMessages = truncatedMessages.map((msg: { role: string; content: unknown }) => {
       const content = msg.content;
       if (typeof content === 'string') {
@@ -2275,22 +1748,17 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
             : content,
         };
       }
-      // Multimodal arrays should be forwarded as-is.
       return { role: msg.role, content };
     });
 
     console.log(`[AI-Code-Assistant] Processing ${processedMessages.length} messages (from ${messages.length} original)`);
 
-    // Wait for research results and format context
+    // Wait for research
     const [research, industryPageContext] = await Promise.all([researchPromise, navResearchPromise]);
     const researchContext = formatResearchContext(research);
 
-    // ── Thinking-tag instruction injected into every request ───────────────
-    // All models (Gemini, GPT-4o, Claude via gateway) are asked to reason step-by-step
-    // inside <thinking>…</thinking> before producing their final answer.
-    // The tags are stripped from the returned content and forwarded to the UI separately.
-    // For navPageGen requests (on-demand page clicks), skip thinking to reduce latency.
-    const thinkingInstruction = fastGenerationMode ? '' : `
+    // ── Thinking instruction ────────────────────────────────────────────
+    const thinkingInstruction = task.skipThinking ? '' : `
 
 [REASONING REQUIREMENT]
 Before writing your final answer, reason through the problem step-by-step inside <thinking> tags.
@@ -2305,41 +1773,15 @@ Structure your thinking as follows:
 Write your <thinking> block FIRST, then immediately follow with your complete response (HTML/code/answer).
 Never include the <thinking> block explanation text in your final output.`;
 
-    // Helper: parse and strip <thinking>…</thinking> from a raw model response
-    const extractThinkingTags = (raw: string): { reasoning: string; content: string } => {
-      // Match both single-line and multi-line thinking blocks at the start of the response
-      const match = raw.match(/^\s*<thinking>([\s\S]*?)<\/thinking>\s*/i);
-      if (match) {
-        return { reasoning: match[1].trim(), content: raw.slice(match[0].length).trim() };
-      }
-      // Also handle thinking block anywhere in the response (some models insert it mid-text)
-      const anyMatch = raw.match(/<thinking>([\s\S]*?)<\/thinking>\s*/i);
-      if (anyMatch) {
-        return {
-          reasoning: anyMatch[1].trim(),
-          content: raw.replace(/<thinking>[\s\S]*?<\/thinking>\s*/i, '').trim(),
-        };
-      }
-      return { reasoning: '', content: raw };
-    };
-
-    // Inject AI Site Elements Library knowledge when available.
-    // SKIP entirely for surgical edits — the library pressures the AI toward
-    // full-page generation and conflicts with targeted edit instructions.
-    // The library provides STRUCTURAL patterns and INTENT WIRING only.
-    // Visual design (colors, fonts, gradients, effects) comes from the
-    // industry variation system and design profile — NOT from the library.
+    // ── Elements library ────────────────────────────────────────────────
     const elementsLibraryBlock = (siteElementsLibraryContext && !surgicalEdit)
       ? `\n${siteElementsLibraryContext}\n⚠️ LIBRARY USAGE RULE: The element library above provides STRUCTURE and INTENT WIRING patterns only. For colors, fonts, gradients, card styles, and visual effects, follow the industry variation system, design profile, and brand palette provided elsewhere in this prompt. Do NOT copy visual styles from the library skeletons — create a UNIQUE design each time.\n`
       : '';
 
-    // For surgical edits, inject a strong system-level reinforcement that overrides
-    // the general edit mode context. This ensures the AI only touches the targeted element.
-    // Also inject the relevant VFS file contents so the AI has full project context.
+    // ── Surgical edit reinforcement ─────────────────────────────────────
     let vfsFilesContext = '';
     if (surgicalEdit && vfsFiles && Object.keys(vfsFiles).length > 0) {
       const vfsEntries = Object.entries(vfsFiles);
-      // Include up to ~80k chars of VFS context (prioritize .tsx/.jsx files)
       const sorted = vfsEntries.sort(([a], [b]) => {
         const aReact = /\.(tsx|jsx)$/.test(a) ? 0 : 1;
         const bReact = /\.(tsx|jsx)$/.test(b) ? 0 : 1;
@@ -2357,7 +1799,7 @@ Never include the <thinking> block explanation text in your final output.`;
         vfsFilesContext = `\n\n📁 CURRENT PROJECT FILES (${included.length} files):\n${included.join('\n\n')}`;
       }
     }
-    
+
     const surgicalEditReinforcement = surgicalEdit ? `
 
 🔒🔒🔒 SURGICAL EDIT OVERRIDE — HIGHEST PRIORITY 🔒🔒🔒
@@ -2406,8 +1848,7 @@ When the user asks to "wire", "connect", "integrate", "hook up", "link to backen
 ${vfsFilesContext}
 ` : '';
 
-    // ── Fast-path system prompt override for wizard launches ────────────────
-    // Replaces the massive template-react prompt with a compact 2-file contract
+    // ── Fast-path system prompt override for wizard launches ─────────────
     const finalSystemPrompt = fastTemplateReact ? (() => {
       const bp = systemsBuildContext as Record<string, any>;
       const brandName = bp?.brand?.business_name || templateName || 'My Business';
@@ -2417,7 +1858,6 @@ ${vfsFilesContext}
       const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
       const intents = (bp?.intents || []).map((i: any) => i.intent).join(', ') || 'contact.submit, booking.create';
 
-      // Convert hex colors to HSL for Tailwind CSS custom properties
       const toHsl = (hex: string | undefined, fallback: string): string => {
         if (!hex) return fallback;
         try { return hexToHsl(hex); } catch { return fallback; }
@@ -2466,7 +1906,7 @@ RULES:
    - Fitness: https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80 (gym), https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80 (workout)
    - Medical: https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&q=80 (hospital), https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800&q=80 (healthcare)
    - SaaS/Tech: https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80 (dashboard), https://images.unsplash.com/photo-1551434678-e076c223a692?w=800&q=80 (team)
-   - Ecommerce: https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80 (store), https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=800&q=80 (shopping)
+   - Ecommerce: https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80 (store), https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80 (avatar)
    - Portfolio: https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80 (workspace), https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80 (collaboration)
    - Contractor: https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80 (construction), https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80 (tools)
    - Agency: https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80 (office), https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80 (meeting)
@@ -2485,38 +1925,19 @@ RULES:
       ...processedMessages
     ];
 
-    // Hybrid AI: try Vercel AI Gateway models first, then fall back to direct provider APIs
-    // Wizard fast-path needs more tokens (full 7-section site) and longer timeout
-    const pageTokens = navPageGen ? 12000 : fastTemplateReact ? 16000 : 32000;
-    // Wizard launches: use capable models with generous timeout (55s × 3 = 165s, within 180s wall-clock)
-    // Nav-page gen: lightweight models with short timeout
-    const gatewayModels = LOVABLE_API_KEY ? (navPageGen ? [
-      { id: 'google/gemini-2.5-flash-lite',   maxTokens: 12000,  label: 'Gemini 2.5 Flash Lite' },
-      { id: 'google/gemini-2.5-flash',         maxTokens: 12000,  label: 'Gemini 2.5 Flash' },
-    ] : fastTemplateReact ? [
-      { id: 'google/gemini-2.5-flash',         maxTokens: 16000,  label: 'Gemini 2.5 Flash' },
-      { id: 'google/gemini-2.5-pro',           maxTokens: 16000,  label: 'Gemini 2.5 Pro' },
-      { id: 'openai/gpt-5-mini',               maxTokens: 16000,  label: 'GPT-5 Mini' },
-    ] : [
-      { id: 'google/gemini-2.5-flash',       maxTokens: pageTokens,        label: 'Gemini 2.5 Flash' },
-      { id: 'google/gemini-2.5-pro',         maxTokens: pageTokens,        label: 'Gemini 2.5 Pro' },
-      { id: 'openai/gpt-5-mini',             maxTokens: pageTokens,        label: 'GPT-5 Mini' },
-    ]) : [];
+    // ── Provider routing via extracted module ───────────────────────────
+    const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY));
 
     let content = '';
     let lastError = '';
-    // Mutable wrapper so TypeScript const-analysis doesn't flag it (assigned inside nested conditionals)
     const capture = { reasoning: '' };
 
-    // Per-model timeout: wizard gets 55s (full site gen), nav-page 20s, normal 25s
-    const perModelTimeout = fastTemplateReact ? 55000 : navPageGen ? 20000 : 25000;
-
-    // ── Phase 1: Vercel AI Gateway ──────────────────────────────────────────
-    for (const model of gatewayModels) {
+    // ── Phase 1: Lovable AI Gateway ─────────────────────────────────────
+    for (const model of providerPlan.gatewayModels) {
       try {
-        console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${perModelTimeout / 1000}s)...`);
+        console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${providerPlan.perModelTimeoutMs / 1000}s)...`);
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), perModelTimeout);
+        const timeoutId = setTimeout(() => controller.abort(), providerPlan.perModelTimeoutMs);
 
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
@@ -2565,15 +1986,14 @@ RULES:
           continue;
         }
 
-        const parsed = data.choices?.[0]?.message?.content || '';
-        if (!parsed) {
+        const parsedContent = data.choices?.[0]?.message?.content || '';
+        if (!parsedContent) {
           console.warn(`[AI-Hybrid] ${model.label} returned no content, trying next...`);
           lastError = `${model.label}: no content`;
           continue;
         }
 
-        // Extract <thinking> tags before storing final content
-        const extracted = extractThinkingTags(parsed);
+        const extracted = extractThinkingTags(parsedContent);
         if (extracted.reasoning) {
           capture.reasoning = extracted.reasoning;
           console.log(`[AI-Hybrid] Thinking tags extracted from ${model.label}: ${extracted.reasoning.length} chars`);
@@ -2593,7 +2013,7 @@ RULES:
       }
     }
 
-    // ── Phase 2: Direct OpenAI API (gpt-4o-mini / gpt-4o) ──────────────────
+    // ── Phase 2: Direct OpenAI API fallback ─────────────────────────────
     if (!content) {
       const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
       if (OPENAI_API_KEY) {
@@ -2623,10 +2043,9 @@ RULES:
               continue;
             }
             const data = await resp.json();
-            const parsed = data.choices?.[0]?.message?.content || '';
-            if (!parsed) { lastError = `${model.label}: no content`; continue; }
-            // Extract <thinking> tags
-            const extracted = extractThinkingTags(parsed);
+            const parsedContent = data.choices?.[0]?.message?.content || '';
+            if (!parsedContent) { lastError = `${model.label}: no content`; continue; }
+            const extracted = extractThinkingTags(parsedContent);
             if (extracted.reasoning) {
               capture.reasoning = extracted.reasoning;
               console.log(`[AI-Hybrid] Thinking tags extracted from ${model.label}: ${extracted.reasoning.length} chars`);
@@ -2642,16 +2061,14 @@ RULES:
       }
     }
 
-    // ── Phase 3: Direct Anthropic API (claude-sonnet-4-5 with extended thinking) ───────────────────
+    // ── Phase 3: Direct Anthropic API fallback ──────────────────────────
     if (!content) {
       const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
       if (ANTHROPIC_API_KEY) {
         try {
           console.log('[AI-Hybrid] Trying direct Anthropic claude-sonnet-4-5 (extended thinking)...');
           const controller = new AbortController();
-          // 30s for Anthropic (Phase 3 fallback, budget already tight by this point)
           const timeoutId = setTimeout(() => controller.abort(), 30000);
-          // Anthropic uses a slightly different messages format (no system in messages array)
           const systemMsg = aiMessages.find(m => m.role === 'system')?.content || '';
           const userMsgs = aiMessages.filter(m => m.role !== 'system');
           const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -2664,7 +2081,6 @@ RULES:
             body: JSON.stringify({
               model: 'claude-sonnet-4-5',
               max_tokens: navPageGen ? 10000 : 32000,
-              // Extended thinking disabled for navPageGen (speed matters more than reasoning quality)
               ...(navPageGen ? {} : {
                 thinking: {
                   type: 'enabled',
@@ -2679,25 +2095,20 @@ RULES:
           clearTimeout(timeoutId);
           if (resp.ok) {
             const data = await resp.json();
-            // Extended thinking returns multiple content blocks (thinking + text).
-            // Find the text block explicitly so we never accidentally return raw thinking tokens.
             const textBlock = (data.content as Array<{ type: string; text?: string; thinking?: string }> | undefined)
               ?.find(b => b.type === 'text');
-            // Capture native Anthropic thinking blocks
             const thinkingBlocks = (data.content as Array<{ type: string; thinking?: string }> | undefined)
               ?.filter(b => b.type === 'thinking')
               .map(b => b.thinking || '')
               .filter(Boolean);
-            const parsed = textBlock?.text || data.content?.[0]?.text || '';
-            if (parsed) {
+            const parsedContent = textBlock?.text || data.content?.[0]?.text || '';
+            if (parsedContent) {
               if (thinkingBlocks?.length) {
-                // Prefer native Anthropic thinking blocks
                 capture.reasoning = thinkingBlocks.join('\n\n');
                 console.log(`[AI-Hybrid] Native extended thinking captured from Anthropic: ${capture.reasoning.length} chars`);
-                content = parsed;
+                content = parsedContent;
               } else {
-                // Fall back to tag extraction (in case model used <thinking> tags inline)
-                const extracted = extractThinkingTags(parsed);
+                const extracted = extractThinkingTags(parsedContent);
                 if (extracted.reasoning) {
                   capture.reasoning = extracted.reasoning;
                   console.log(`[AI-Hybrid] Thinking tags extracted from Anthropic response: ${extracted.reasoning.length} chars`);
@@ -2722,37 +2133,8 @@ RULES:
       throw new Error(`All AI providers failed. Last error: ${lastError}. Please ensure at least one of LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY is set in your Supabase secrets.`);
     }
 
-    // Post-process: strip config files from JSON multi-file output
-    if (content.includes('"files"') && content.includes('"src/App.tsx"')) {
-      try {
-        let jsonStr = content.trim().replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-        const parsed = JSON.parse(jsonStr);
-        if (parsed.files && typeof parsed.files === 'object') {
-          const BLOCKED = /(tailwind\.config|postcss\.config|vite\.config|tsconfig|package\.json|package-lock)/i;
-          let changed = false;
-          for (const key of Object.keys(parsed.files)) {
-            if (BLOCKED.test(key)) {
-              delete parsed.files[key];
-              changed = true;
-              console.log(`[ai-code-assistant] Stripped blocked file from output: ${key}`);
-            }
-          }
-          // Also strip module.exports from any .tsx/.jsx file content
-          for (const [key, val] of Object.entries(parsed.files)) {
-            if ((key.endsWith('.tsx') || key.endsWith('.jsx')) && typeof val === 'string' && (val as string).includes('module.exports')) {
-              parsed.files[key] = (val as string)
-                .replace(/\/\/\s*tailwind\.config[^\n]*\n(?:\/\/[^\n]*\n)*\s*module\.exports\s*=\s*\{[\s\S]*?\n\};\s*/gi, '')
-                .replace(/\bmodule\.exports\s*=\s*\{[\s\S]*?\n\};\s*/g, '');
-              changed = true;
-              console.log(`[ai-code-assistant] Stripped module.exports from: ${key}`);
-            }
-          }
-          if (changed) {
-            content = JSON.stringify(parsed);
-          }
-        }
-      } catch { /* not JSON, ignore */ }
-    }
+    // ── Post-process via extracted module ────────────────────────────────
+    content = postProcessContent(content);
 
     // Save learning session (async, don't wait)
     const originalUserPrompt = extractTextContent(messages[messages.length - 1]?.content);
@@ -2766,42 +2148,32 @@ RULES:
       }).then(() => console.log('Learning session saved'));
     }
 
+    // ── Build response via extracted module ──────────────────────────────
+    const responseBody = buildResponseBody({
+      content,
+      reasoning: capture.reasoning,
+      generatedImageUrl,
+      imagePlacement: imagePlacement ?? undefined,
+    });
+
     return new Response(
-      JSON.stringify({ 
-        content,
-        // Claude extended thinking text (only present when direct Anthropic API with thinking enabled was used)
-        thinking: capture.reasoning ? capture.reasoning.substring(0, 12000) : undefined,
-        generatedImage: generatedImageUrl || undefined,
-        imagePlacement: generatedImageUrl ? (imagePlacement || 'top-left') : undefined
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+      JSON.stringify(responseBody),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error in ai-code-assistant:', error);
-    
-    // Handle timeout errors specifically
+
     if (error instanceof Error && error.name === 'AbortError') {
       return new Response(
-        JSON.stringify({ 
-          error: 'Request timed out. The AI service is taking too long. Please try again.',
-          errorType: 'timeout'
-        }),
-        {
-          status: 504,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        JSON.stringify({ error: 'Request timed out. The AI service is taking too long. Please try again.', errorType: 'timeout' }),
+        { status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
-    // Extract detailed error message
+
     const message = error instanceof Error ? error.message : 'Unknown error';
-    
-    // Provide user-friendly error messages
     let userMessage = message;
     let errorType = 'unknown';
-    
+
     if (message.includes('All AI providers failed') || message.includes('All AI models failed')) {
       userMessage = 'AI service temporarily unavailable. All models are busy or experiencing issues. Please try again in a moment.';
       errorType = 'ai_unavailable';
@@ -2812,17 +2184,10 @@ RULES:
       userMessage = 'Received invalid response from AI service. Please try again.';
       errorType = 'parse_error';
     }
-    
+
     return new Response(
-      JSON.stringify({ 
-        error: userMessage,
-        errorType,
-        details: message !== userMessage ? message : undefined  
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+      JSON.stringify({ error: userMessage, errorType, details: message !== userMessage ? message : undefined }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

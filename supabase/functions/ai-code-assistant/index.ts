@@ -109,72 +109,10 @@ serve(async (req: Request) => {
     void _debugMode;
     void _templateAnalysis;
 
-    // Build system type context
-    const systemTypeContext = systemType ? `
-[Business System Type: ${systemType}]
-Generate content and features appropriate for a ${systemType} business. Consider:
-- Industry-specific sections and terminology
-- Relevant call-to-actions and conversion elements
-- Appropriate color schemes and imagery suggestions
-- Business-specific functionality (booking for services, cart for stores, etc.)
-` : '';
-
-    const designProfileContext = userDesignProfile ? `
-[User Design Profile - Match this established style]
-- Analyzed Projects: ${userDesignProfile.projectCount || 0}
-- Dominant Style: ${userDesignProfile.dominantStyle || 'mixed'}
-- Industry Experience: ${userDesignProfile.industryHints?.join(', ') || 'none'}
-Generate a site that matches the user's established design preferences while being unique.
-` : '';
-
-    // Build systems-build blueprint context
-    const resolvedBlueprint = systemsBuildContext ?? null;
-
-    const systemsBuildContextText = resolvedBlueprint ? (() => {
-      const { brand, identity, design, intents, template_sections, template_intents } = resolvedBlueprint as {
-        brand?: { business_name?: string; tagline?: string; tone?: string; palette?: Record<string, string | undefined>; typography?: { heading?: string; body?: string } };
-        identity?: { industry?: string; primary_goal?: string };
-        design?: {
-          layout?: { hero_style?: string };
-          effects?: { animations?: boolean; glassmorphism?: boolean; shadows?: string };
-          sections?: { include_stats?: boolean; include_testimonials?: boolean; include_faq?: boolean; include_cta_banner?: boolean; include_newsletter?: boolean; include_social_proof?: boolean };
-          buttons?: { style?: string };
-          content?: { writing_style?: string };
-        };
-        intents?: Array<{ intent: string }>;
-        template_sections?: string[];
-        template_intents?: string[];
-      };
-
-      const lines: string[] = ['\n[🏗️ Business Blueprint — Use for Content, Colors & Intent Wiring]'];
-      if (brand?.business_name) lines.push(`Business: ${brand.business_name}`);
-      if (brand?.tagline) lines.push(`Tagline: "${brand.tagline}"`);
-      if (identity?.industry) lines.push(`Industry: ${identity.industry.replace(/_/g, ' ')}`);
-      if (identity?.primary_goal) lines.push(`Goal: ${identity.primary_goal}`);
-      if (brand?.tone) lines.push(`Tone: ${brand.tone}`);
-      if (brand?.palette) {
-        const p = brand.palette;
-        lines.push(`Brand Colors: Primary ${p['primary'] || 'auto'} | Secondary ${p['secondary'] || 'auto'} | Accent ${p['accent'] || 'auto'} | BG ${p['background'] || 'auto'} | FG ${p['foreground'] || 'auto'}`);
-      }
-      if (brand?.typography) lines.push(`Typography: ${brand.typography.heading || 'auto'} (headings) / ${brand.typography.body || 'auto'} (body)`);
-      if (design?.layout?.hero_style) lines.push(`Hero Layout: ${design.layout.hero_style}`);
-      if (design?.effects?.glassmorphism) lines.push(`Visual FX: glassmorphism enabled`);
-      if (design?.effects?.shadows) lines.push(`Shadow Style: ${design.effects.shadows}`);
-      if (design?.buttons?.style) lines.push(`Button Style: ${design.buttons.style}`);
-      if (design?.content?.writing_style) lines.push(`Writing Style: ${design.content.writing_style}`);
-      if (design?.sections) {
-        const s = design.sections;
-        const included = (Object.entries(s) as [string, boolean | undefined][])
-          .filter(([, v]) => v)
-          .map(([k]) => k.replace('include_', '').replace(/_/g, ' '));
-        if (included.length) lines.push(`Required Sections: ${included.join(', ')}`);
-      }
-      if (intents?.length) lines.push(`Backend Intents to Wire: ${intents.map(i => i.intent).join(', ')}`);
-      if (template_sections?.length) lines.push(`Template Section Layout: ${template_sections.join(' → ')}`);
-      if (template_intents?.length) lines.push(`Existing Intent Wiring: ${template_intents.join(', ')}`);
-      lines.push('Apply this blueprint: use the brand colors, tone, and wire all listed intents on CTAs.');
-      return lines.join('\n');
-    })() : '';
+    // Build context blocks via extracted modules
+    const systemTypeContext = buildSystemTypeContext(systemType);
+    const designProfileContext = buildDesignProfileContext(userDesignProfile);
+    const systemsBuildContextText = buildSystemsBlueprintContext(systemsBuildContext);
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 

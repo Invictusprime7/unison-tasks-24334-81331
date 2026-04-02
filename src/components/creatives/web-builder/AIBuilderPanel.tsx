@@ -971,9 +971,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // For surgical edits, inject a strict prompt guard so the AI makes ONLY the targeted change
       // AND mandate that it outputs actual code, not just reasoning
+      // Use intelligent prompt for general requests; for surgical edits, still inject strict guard
       const promptForAI = isSurgicalEdit
         ? [
             '🚨 SURGICAL EDIT MODE — CHANGE ONLY THE TARGETED ELEMENT/COMPONENT 🚨',
+            '',
+            // Include structured analysis so the AI understands multi-sentence requests
+            promptAnalysis.structuredDirective,
             '',
             `User Request: ${_userContent}${_fileContext}`,
             editTargetContext,
@@ -994,21 +998,32 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             '8. Think of this like a diff — your output should be identical to the input except for the one change',
             '9. For React projects: preserve all imports, hooks, state, and component structure — only change the targeted JSX/logic',
             '10. When adding new elements or modifying styles, match the existing theme — use the same colors, fonts, spacing, and design patterns',
+            // Inject constraints from prompt analysis
+            ...promptAnalysis.constraints.map(c => {
+              const prefix = c.type === 'preserve' ? '🔒 PRESERVE' : c.type === 'avoid' ? '🚫 AVOID' : c.type === 'require' ? '✅ REQUIRE' : '🎨 MATCH';
+              return `${prefix}: ${c.description}`;
+            }),
             themeContextBlock ? `\n${themeContextBlock}` : '',
           ].filter(Boolean).join('\n')
-        : `${_userContent}${_fileContext}${richContext}`;
+        : `${intelligentPrompt}${_fileContext}${richContext}`;
 
-      // Detect templateAction for the backend
-      const detectTemplateAction = (msg: string): string | undefined => {
-        const lm = msg.toLowerCase();
-        if (lm.match(/\b(full control|revamp|overhaul|transform|reimagine)\b/)) return 'full-control';
-        if (lm.match(/\b(add|insert|include|create new|put|place)\b.*\b(section|element|component|button|image|form|card|hero|footer|header|nav)/)) return 'add';
-        if (lm.match(/\b(remove|delete|hide|get rid of|take out)\b/)) return 'remove';
-        if (lm.match(/\b(change|modify|update|edit|adjust|tweak|fix)\b/)) return 'modify';
-        if (lm.match(/\b(restyle|redesign|new look|change color|change style|theme|recolor)\b/)) return 'restyle';
-        return currentCode ? 'modify' : undefined;
-      };
-      const templateAction = detectTemplateAction(rawInput);
+      // Derive templateAction from prompt analysis instead of regex
+      const templateAction = (() => {
+        switch (promptAnalysis.intent) {
+          case 'full_generation': return 'full-control';
+          case 'add_section': return 'add';
+          case 'remove_section': return 'remove';
+          case 'restyle': return 'restyle';
+          case 'content_update':
+          case 'surgical_edit':
+          case 'fix_error':
+          case 'wire_backend':
+          case 'refactor':
+            return 'modify';
+          default:
+            return currentCode ? 'modify' : undefined;
+        }
+      })();
 
       // Call AI service with retry logic
       const MAX_RETRIES = 2;

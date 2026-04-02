@@ -231,13 +231,16 @@ async function runBuilderLane(
   // ── 6. Compact messages + builder context ──────────────────────────────
   const processedMessages = compactMessages(messages);
 
-  // Builder-priority VFS compaction
+  // Builder-priority VFS compaction (issue-aware)
+  const issueHint = detectIssueHint(previewDiagnostics ?? undefined, memory?.goalCategory);
   const builderContext = task.shouldUseCompactContext
     ? buildCompactBuilderContext({
         vfsFiles,
         changedFiles: memory?.recentChangedFiles,
         currentCode: currentCode ?? undefined,
         previewDiagnostics: previewDiagnostics ?? undefined,
+        issueHint,
+        goalCategory: memory?.goalCategory,
       })
     : { compactedFiles: '', fileCount: 0, excludedFiles: [] };
 

@@ -886,6 +886,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         isSurgical: isSurgicalEdit,
       });
 
+      // ── Phase 2: VFS & Context Assembly ──
+      liveStep('planning', 'Assembling project context...');
+
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';
       let editTargetContext = '';

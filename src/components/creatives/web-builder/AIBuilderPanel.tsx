@@ -781,49 +781,17 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     }
   }, [messages.length]);
 
-  // Simulate thinking steps for AI response
-  const simulateThinking = useCallback(async (userPrompt: string): Promise<ThinkingStep[]> => {
-    const steps: ThinkingStep[] = [];
-
-    // Run prompt intelligence analysis during thinking
-    const { analysis } = enhancePromptForAI(userPrompt);
-    
-    steps.push({
-      id: generateId(),
-      type: 'analyzing',
-      message: `Analyzing request — detected intent: ${analysis.intent}`,
-      timestamp: new Date(),
-      details: [
-        `Complexity: ${analysis.complexity}`,
-        analysis.targets.length ? `Targets: ${analysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
-        analysis.designKeywords.length ? `Design: ${analysis.designKeywords.join(', ')}` : null,
-        analysis.constraints.length ? `Constraints: ${analysis.constraints.length} detected` : null,
-      ].filter(Boolean).join(' | '),
-    });
-
-    await new Promise(r => setTimeout(r, 300));
-    
-    steps.push({
-      id: generateId(),
-      type: 'planning',
-      message: analysis.secondaryIntents.length
-        ? `Planning ${analysis.complexity} change (${1 + analysis.secondaryIntents.length} intents)...`
-        : 'Planning changes...',
-      timestamp: new Date(),
-      details: currentCode ? `Current template: ${currentCode.length} chars` : 'No existing template',
-    });
-
-    await new Promise(r => setTimeout(r, 400));
-    
-    steps.push({
-      id: generateId(),
-      type: 'generating',
-      message: 'Generating code...',
-      timestamp: new Date(),
-    });
-
-    return steps;
-  }, [currentCode]);
+  // Live thinking step pusher — updates the streaming message in real-time
+  const pushThinkingStep = useCallback((
+    streamingId: string,
+    step: ThinkingStep,
+    existingSteps: ThinkingStep[],
+  ) => {
+    existingSteps.push(step);
+    setMessages(prev => prev.map(m =>
+      m.id === streamingId ? { ...m, thinking: [...existingSteps] } : m
+    ));
+  }, []);
 
   // Send message to AI
   const handleSend = async () => {

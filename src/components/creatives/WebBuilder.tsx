@@ -1310,6 +1310,15 @@ export default function App() {
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
   const systemsBuildContextFromState = (location.state as { systemsBuildContext?: SystemsBuildContext })?.systemsBuildContext ?? null;
   
+  // Derive compiled contract from navigation state for SystemHealthPanel & preview gating
+  const compiledContract = useCompiledContract(
+    location.state ? {
+      systemsBuildContext: systemsBuildContextFromState ?? undefined,
+      systemType: systemType ?? undefined,
+      templateName: (location.state as { templateName?: string })?.templateName,
+    } : null,
+  );
+  
   // Virtual file system for code editor
   const virtualFS = useVirtualFileSystem();
   // Destructure stable callbacks for use in dependency arrays (avoids re-render loops)

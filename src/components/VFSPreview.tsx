@@ -29,7 +29,7 @@ import {
   Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SandpackProvider, SandpackPreview, SandpackLayout } from '@codesandbox/sandpack-react';
+import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';

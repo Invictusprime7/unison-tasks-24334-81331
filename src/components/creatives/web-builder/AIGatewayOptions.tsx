@@ -31,7 +31,7 @@ export interface GatewayConfig {
 }
 
 const DEFAULT_CONFIG: GatewayConfig = {
-  selectedModelId: "google/gemini-2.5-flash",
+  selectedModelId: "google/gemini-3-flash-preview",
   reasoningEffort: "none",
   timeoutMs: 45000,
   autoModelSelection: true,

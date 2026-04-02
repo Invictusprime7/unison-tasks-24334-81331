@@ -84,7 +84,11 @@ export async function runProviderLoop(opts: {
 
         if (!resp.ok) {
           const errText = await resp.text();
-          console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 200)}`);
+          console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 300)}`);
+          // For 400 errors, log full detail to help diagnose parameter issues
+          if (resp.status === 400) {
+            console.error(`[AI-Hybrid] 400 Bad Request for ${model.id}. Request body keys: ${Object.keys(reqBody).join(', ')}`);
+          }
           lastError = `${model.label}: ${resp.status}`;
           continue;
         }

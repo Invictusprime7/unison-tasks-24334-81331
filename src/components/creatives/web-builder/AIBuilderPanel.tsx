@@ -1216,6 +1216,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
       
+      // ── Phase 5: Code Extraction ──
+      liveStep('validating', 'Extracting code from response...');
       // ====== ROBUST CODE EXTRACTION (React/TSX Mode) ======
       // Extract React component code from AI response
       let generatedCode: string | null = null;

@@ -37,8 +37,10 @@ import { buildTemplateJsonPrompt, buildTemplateHtmlPrompt, buildTemplateReactPro
 import { buildEditAssistantPrompt, buildDebugAssistantPrompt, buildGeneralBuilderPrompt } from "./prompts/builderPrompts.ts";
 import { generateImageIfNeeded } from "./imageGeneration.ts";
 import { runProviderLoop } from "./aiProviderLoop.ts";
-import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext } from "./contextCompactor.ts";
+import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext, detectIssueHint } from "./contextCompactor.ts";
 import { buildSessionMemory, formatSessionMemoryBlock } from "./sessionMemory.ts";
+import { reviewPatch } from "./reviewPass.ts";
+import { buildApplyState, formatApplyStateBlock, type ApplyState } from "./applyState.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

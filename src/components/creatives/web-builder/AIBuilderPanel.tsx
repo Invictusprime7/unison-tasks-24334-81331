@@ -54,6 +54,7 @@ import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
 import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 import { vfsEventBus } from '@/services/vfsEventBus';
+import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
 
 // ============================================================================
 /**
@@ -768,13 +769,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   // Simulate thinking steps for AI response
   const simulateThinking = useCallback(async (userPrompt: string): Promise<ThinkingStep[]> => {
     const steps: ThinkingStep[] = [];
+
+    // Run prompt intelligence analysis during thinking
+    const { analysis } = enhancePromptForAI(userPrompt);
     
     steps.push({
       id: generateId(),
       type: 'analyzing',
-      message: 'Analyzing request...',
+      message: `Analyzing request — detected intent: ${analysis.intent}`,
       timestamp: new Date(),
-      details: `User prompt: "${userPrompt.substring(0, 100)}${userPrompt.length > 100 ? '...' : ''}"`,
+      details: [
+        `Complexity: ${analysis.complexity}`,
+        analysis.targets.length ? `Targets: ${analysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
+        analysis.designKeywords.length ? `Design: ${analysis.designKeywords.join(', ')}` : null,
+        analysis.constraints.length ? `Constraints: ${analysis.constraints.length} detected` : null,
+      ].filter(Boolean).join(' | '),
     });
 
     await new Promise(r => setTimeout(r, 300));
@@ -782,7 +791,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     steps.push({
       id: generateId(),
       type: 'planning',
-      message: 'Planning changes...',
+      message: analysis.secondaryIntents.length
+        ? `Planning ${analysis.complexity} change (${1 + analysis.secondaryIntents.length} intents)...`
+        : 'Planning changes...',
       timestamp: new Date(),
       details: currentCode ? `Current template: ${currentCode.length} chars` : 'No existing template',
     });
@@ -856,14 +867,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         isStreaming: true,
       }]);
 
-      // Detect whether this is a targeted (surgical) edit or a full generation
-      const rawInput = _userContent; // input is already cleared; use the captured value
-      const lowerInput = rawInput.toLowerCase();
-      const isFullGeneration = !!lowerInput.match(/\b(full control|full reign|revamp|overhaul|transform|reimagine|build|create|generate|make)\b.*\b(landing page|page|website|store|site|template)\b/);
-      const hasSurgicalKeyword = !isFullGeneration && !!(
-        lowerInput.match(/\b(change|modify|update|edit|adjust|tweak|fix|add|insert|include|remove|delete|hide|replace|restyle|redesign|change color|change style|move|swap|reposition|resize|enlarge|shrink|center|align|increase|decrease|make the|make it|set the|set it|should be|needs to be|wire|connect|hook up|integrate|link|bind|attach|submit|send data|save data|api|backend|database|supabase|fetch|endpoint)\b/)
-      );
-      const isSurgicalEdit = hasSurgicalKeyword && !!currentCode;
+      // ── Prompt Intelligence: analyze the raw user text ──
+      const rawInput = _userContent;
+      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
+      const isSurgicalEdit = detectedSurgical && !!currentCode;
+
+      // Log prompt analysis for debugging
+      console.log('[AIBuilderPanel] Prompt analysis:', {
+        intent: promptAnalysis.intent,
+        secondary: promptAnalysis.secondaryIntents,
+        complexity: promptAnalysis.complexity,
+        targets: promptAnalysis.targets.length,
+        constraints: promptAnalysis.constraints.length,
+        designKeywords: promptAnalysis.designKeywords,
+        isSurgical: isSurgicalEdit,
+      });
 
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';
@@ -963,9 +981,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // For surgical edits, inject a strict prompt guard so the AI makes ONLY the targeted change
       // AND mandate that it outputs actual code, not just reasoning
+      // Use intelligent prompt for general requests; for surgical edits, still inject strict guard
       const promptForAI = isSurgicalEdit
         ? [
             '🚨 SURGICAL EDIT MODE — CHANGE ONLY THE TARGETED ELEMENT/COMPONENT 🚨',
+            '',
+            // Include structured analysis so the AI understands multi-sentence requests
+            promptAnalysis.structuredDirective,
             '',
             `User Request: ${_userContent}${_fileContext}`,
             editTargetContext,
@@ -986,21 +1008,32 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             '8. Think of this like a diff — your output should be identical to the input except for the one change',
             '9. For React projects: preserve all imports, hooks, state, and component structure — only change the targeted JSX/logic',
             '10. When adding new elements or modifying styles, match the existing theme — use the same colors, fonts, spacing, and design patterns',
+            // Inject constraints from prompt analysis
+            ...promptAnalysis.constraints.map(c => {
+              const prefix = c.type === 'preserve' ? '🔒 PRESERVE' : c.type === 'avoid' ? '🚫 AVOID' : c.type === 'require' ? '✅ REQUIRE' : '🎨 MATCH';
+              return `${prefix}: ${c.description}`;
+            }),
             themeContextBlock ? `\n${themeContextBlock}` : '',
           ].filter(Boolean).join('\n')
-        : `${_userContent}${_fileContext}${richContext}`;
+        : `${intelligentPrompt}${_fileContext}${richContext}`;
 
-      // Detect templateAction for the backend
-      const detectTemplateAction = (msg: string): string | undefined => {
-        const lm = msg.toLowerCase();
-        if (lm.match(/\b(full control|revamp|overhaul|transform|reimagine)\b/)) return 'full-control';
-        if (lm.match(/\b(add|insert|include|create new|put|place)\b.*\b(section|element|component|button|image|form|card|hero|footer|header|nav)/)) return 'add';
-        if (lm.match(/\b(remove|delete|hide|get rid of|take out)\b/)) return 'remove';
-        if (lm.match(/\b(change|modify|update|edit|adjust|tweak|fix)\b/)) return 'modify';
-        if (lm.match(/\b(restyle|redesign|new look|change color|change style|theme|recolor)\b/)) return 'restyle';
-        return currentCode ? 'modify' : undefined;
-      };
-      const templateAction = detectTemplateAction(rawInput);
+      // Derive templateAction from prompt analysis instead of regex
+      const templateAction = (() => {
+        switch (promptAnalysis.intent) {
+          case 'full_generation': return 'full-control';
+          case 'add_section': return 'add';
+          case 'remove_section': return 'remove';
+          case 'restyle': return 'restyle';
+          case 'content_update':
+          case 'surgical_edit':
+          case 'fix_error':
+          case 'wire_backend':
+          case 'refactor':
+            return 'modify';
+          default:
+            return currentCode ? 'modify' : undefined;
+        }
+      })();
 
       // Call AI service with retry logic
       const MAX_RETRIES = 2;
@@ -1527,19 +1560,21 @@ export default function App() {
         
         // Parse edge function errors for better messaging
         if (errorMessage.includes('All AI providers failed') || errorMessage.includes('All AI models failed')) {
-          errorMessage = 'AI service unavailable — no API key is working. Please check your LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in Supabase secrets.';
+          errorMessage = 'AI service unavailable — all models failed. Try simplifying your request or check API key configuration.';
         } else if (errorMessage.includes('non-2xx status code')) {
-          errorMessage = 'AI service temporarily unavailable. Please try again in a moment.';
-        } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit')) {
+          errorMessage = 'AI service returned an error. Your request may be too long — try breaking it into smaller steps, or try again in a moment.';
+        } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
           errorMessage = 'Too many requests. Please wait a moment and try again.';
         } else if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
-          errorMessage = 'Request timed out. Try a shorter prompt or try again.';
+          errorMessage = 'Request timed out. Try a shorter or simpler prompt.';
         } else if (errorMessage.includes('Payment required') || errorMessage.includes('402')) {
           errorMessage = 'AI credits needed. Please check your subscription or API billing.';
         } else if (errorMessage.includes('401') || errorMessage.includes('authentication')) {
-          errorMessage = 'AI API key is invalid or expired. Please update your API key in Supabase secrets.';
+          errorMessage = 'AI API key is invalid or expired. Please update your API key.';
         } else if (errorMessage.includes('not available') || errorMessage.includes('LOVABLE_API_KEY')) {
-          errorMessage = 'AI service not configured. Please set OPENAI_API_KEY or LOVABLE_API_KEY in your Supabase project secrets.';
+          errorMessage = 'AI service not configured. Please set your API key in project secrets.';
+        } else if (errorMessage.includes('Invalid request body')) {
+          errorMessage = 'Request was too large or malformed. Try a shorter prompt or fewer attached files.';
         }
       } else if (typeof error === 'object' && error !== null) {
         // Handle Supabase FunctionsHttpError

@@ -137,7 +137,11 @@ async function runBuilderLane(
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
 ): Promise<Response> {
-  console.log(`[orchestrator] LANE B: ${task.type}`);
+  console.log(`[orchestrator] LANE B: ${task.type} (sub-behavior: ${
+    task.type === 'debug_fix' ? 'builder_debug' :
+    ['surgical_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type) ? 'builder_edit' :
+    'builder_generate'
+  })`);
 
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   const {

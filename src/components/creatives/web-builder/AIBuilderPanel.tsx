@@ -1709,16 +1709,19 @@ export default function App() {
       // Auto-apply fix to VFS
       if (onApplyToVFS) {
         if (fixFiles) {
-          // Normalize paths
           const normalized: Record<string, string> = {};
           for (const [p, c] of Object.entries(fixFiles)) {
             normalized[p.startsWith('/') ? p : `/${p}`] = c;
           }
+          vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
           onApplyToVFS(normalized);
+          vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
           toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
         } else if (fixCode) {
           const targetPath = error.file ? (error.file.startsWith('/') ? error.file : `/${error.file}`) : '/src/App.tsx';
+          vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
           onApplyToVFS({ [targetPath]: fixCode });
+          vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
           toast.success('✅ Debug fix applied');
         }
       }

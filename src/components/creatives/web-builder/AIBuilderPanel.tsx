@@ -1488,13 +1488,26 @@ export default function App() {
         }
 
         if (generatedCode) {
-          if (onApplyToVFS && !multiFileOutput) {
+          // Check approval gate for single-file too
+          const hasBlockingWarning = responseMeta?.requiresApproval &&
+            responseMeta.warnings?.some(w => w.severity === 'error');
+
+          if (hasBlockingWarning) {
+            console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
+            toast.warning('⚠️ Patch flagged for review — check warnings');
+          } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             onApplyToVFS({ [singleFilePath]: generatedCode });
-            toast.success(isSurgicalEdit ? '✅ Edit applied with deps' : '✅ Code applied with dependencies');
+            const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
+            toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
           } else if (onCodeGenerated) {
             onCodeGenerated(generatedCode);
             toast.success(isSurgicalEdit ? '✅ Edit applied to preview' : '✅ Code applied to preview');
+          }
+
+          // Notify about removed/blocked files from review
+          if (responseMeta?.removedFiles && responseMeta.removedFiles.length > 0) {
+            toast.info(`🛡️ ${responseMeta.removedFiles.length} file(s) blocked by safety review`);
           }
         }
       }

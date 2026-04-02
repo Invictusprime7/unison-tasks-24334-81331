@@ -324,8 +324,23 @@ const MessageItem: React.FC<{
   onRetryError?: (error: IframeError) => void;
 }> = ({ message, onViewEdits, onRetryError }) => {
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>(message.thinking || []);
-  const [showThinking, setShowThinking] = useState(false);
+  // Auto-expand thinking while streaming, auto-collapse when done
+  const [showThinking, setShowThinking] = useState(message.isStreaming ?? false);
   const [showReasoning, setShowReasoning] = useState(false);
+
+  // Keep thinking expanded while streaming, collapse when generation completes
+  useEffect(() => {
+    if (message.isStreaming) {
+      setShowThinking(true);
+    }
+  }, [message.isStreaming]);
+
+  // Sync thinking steps from parent message updates (live push)
+  useEffect(() => {
+    if (message.thinking && message.thinking.length > thinkingSteps.length) {
+      setThinkingSteps(message.thinking);
+    }
+  }, [message.thinking]);
 
   const toggleStep = (stepId: string) => {
     setThinkingSteps(prev =>

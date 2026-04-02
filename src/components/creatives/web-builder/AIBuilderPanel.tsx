@@ -857,14 +857,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         isStreaming: true,
       }]);
 
-      // Detect whether this is a targeted (surgical) edit or a full generation
-      const rawInput = _userContent; // input is already cleared; use the captured value
-      const lowerInput = rawInput.toLowerCase();
-      const isFullGeneration = !!lowerInput.match(/\b(full control|full reign|revamp|overhaul|transform|reimagine|build|create|generate|make)\b.*\b(landing page|page|website|store|site|template)\b/);
-      const hasSurgicalKeyword = !isFullGeneration && !!(
-        lowerInput.match(/\b(change|modify|update|edit|adjust|tweak|fix|add|insert|include|remove|delete|hide|replace|restyle|redesign|change color|change style|move|swap|reposition|resize|enlarge|shrink|center|align|increase|decrease|make the|make it|set the|set it|should be|needs to be|wire|connect|hook up|integrate|link|bind|attach|submit|send data|save data|api|backend|database|supabase|fetch|endpoint)\b/)
-      );
-      const isSurgicalEdit = hasSurgicalKeyword && !!currentCode;
+      // ── Prompt Intelligence: analyze the raw user text ──
+      const rawInput = _userContent;
+      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
+      const isSurgicalEdit = detectedSurgical && !!currentCode;
+
+      // Log prompt analysis for debugging
+      console.log('[AIBuilderPanel] Prompt analysis:', {
+        intent: promptAnalysis.intent,
+        secondary: promptAnalysis.secondaryIntents,
+        complexity: promptAnalysis.complexity,
+        targets: promptAnalysis.targets.length,
+        constraints: promptAnalysis.constraints.length,
+        designKeywords: promptAnalysis.designKeywords,
+        isSurgical: isSurgicalEdit,
+      });
 
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';

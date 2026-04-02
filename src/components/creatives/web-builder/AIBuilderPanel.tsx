@@ -175,6 +175,16 @@ interface Message {
   edits?: VFSEdit[];
   error?: IframeError;
   isStreaming?: boolean;
+  /** Rich metadata from the AI response */
+  meta?: {
+    actionType?: string;
+    modelUsed?: string;
+    filesDetected?: string[];
+    warnings?: Array<{ severity: string; message: string }>;
+    requiresApproval?: boolean;
+    removedFiles?: string[];
+    reviewSummary?: string;
+  };
 }
 
 export interface VFSEdit {
@@ -402,6 +412,55 @@ const MessageItem: React.FC<{
             <span className="text-xs text-blue-400/50 font-mono">Generating...</span>
           </div>
         )}
+
+        {/* Rich metadata bar — action type, model, warnings, approval */}
+        {message.meta && !message.isStreaming && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-2 pb-2 border-b border-blue-500/10">
+            {message.meta.actionType && (
+              <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-300 font-mono">
+                {message.meta.actionType}
+              </Badge>
+            )}
+            {message.meta.modelUsed && (
+              <Badge variant="outline" className="text-[10px] border-sky-500/20 text-sky-400/60 font-mono">
+                {message.meta.modelUsed.split('/').pop()}
+              </Badge>
+            )}
+            {message.meta.requiresApproval && (
+              <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-400 font-mono animate-pulse">
+                ⚠ approval recommended
+              </Badge>
+            )}
+            {message.meta.filesDetected && message.meta.filesDetected.length > 0 && (
+              <span className="text-[10px] text-blue-400/40 font-mono">
+                {message.meta.filesDetected.length} file{message.meta.filesDetected.length > 1 ? 's' : ''}
+              </span>
+            )}
+            {message.meta.removedFiles && message.meta.removedFiles.length > 0 && (
+              <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-400 font-mono">
+                {message.meta.removedFiles.length} blocked
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {/* Review warnings */}
+        {message.meta?.warnings && message.meta.warnings.length > 0 && !message.isStreaming && (
+          <div className="mb-2 space-y-1">
+            {message.meta.warnings.slice(0, 4).map((w, i) => (
+              <div key={i} className={cn(
+                "flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded",
+                w.severity === 'error' && "bg-red-500/10 text-red-400",
+                w.severity === 'warning' && "bg-amber-500/10 text-amber-400",
+                w.severity === 'info' && "bg-blue-500/10 text-blue-400/60",
+              )}>
+                <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
+                <span>{w.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <p className="text-sm text-blue-100/90 whitespace-pre-wrap">{message.content}</p>
 
         {/* View Edits Button */}
@@ -1077,6 +1136,17 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
 
+      // Extract rich metadata from response
+      const responseMeta: Message['meta'] = {
+        actionType: response.data?.actionType,
+        modelUsed: response.data?.modelUsed,
+        filesDetected: response.data?.filesDetected,
+        warnings: response.data?.warnings,
+        requiresApproval: response.data?.requiresApproval,
+        removedFiles: response.data?.removedFiles,
+        reviewSummary: response.data?.reviewSummary,
+      };
+
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
       
@@ -1376,6 +1446,7 @@ export default function App() {
               content: explanationText || aiContent,
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
+              meta: responseMeta,
               // DO NOT set `code` — we auto-apply instead of showing "Apply" buttons
               edits: edits.length > 0 ? edits : undefined,
               isStreaming: false,

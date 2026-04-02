@@ -37,8 +37,10 @@ import { buildTemplateJsonPrompt, buildTemplateHtmlPrompt, buildTemplateReactPro
 import { buildEditAssistantPrompt, buildDebugAssistantPrompt, buildGeneralBuilderPrompt } from "./prompts/builderPrompts.ts";
 import { generateImageIfNeeded } from "./imageGeneration.ts";
 import { runProviderLoop } from "./aiProviderLoop.ts";
-import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext } from "./contextCompactor.ts";
+import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext, detectIssueHint } from "./contextCompactor.ts";
 import { buildSessionMemory, formatSessionMemoryBlock } from "./sessionMemory.ts";
+import { reviewPatch } from "./reviewPass.ts";
+import { buildApplyState, formatApplyStateBlock, type ApplyState } from "./applyState.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -135,7 +137,11 @@ async function runBuilderLane(
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
 ): Promise<Response> {
-  console.log(`[orchestrator] LANE B: ${task.type}`);
+  console.log(`[orchestrator] LANE B: ${task.type} (sub-behavior: ${
+    task.type === 'debug_fix' ? 'builder_debug' :
+    ['surgical_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type) ? 'builder_edit' :
+    'builder_generate'
+  })`);
 
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   const {
@@ -225,13 +231,16 @@ async function runBuilderLane(
   // ── 6. Compact messages + builder context ──────────────────────────────
   const processedMessages = compactMessages(messages);
 
-  // Builder-priority VFS compaction
+  // Builder-priority VFS compaction (issue-aware)
+  const issueHint = detectIssueHint(previewDiagnostics ?? undefined, memory?.goalCategory);
   const builderContext = task.shouldUseCompactContext
     ? buildCompactBuilderContext({
         vfsFiles,
         changedFiles: memory?.recentChangedFiles,
         currentCode: currentCode ?? undefined,
         previewDiagnostics: previewDiagnostics ?? undefined,
+        issueHint,
+        goalCategory: memory?.goalCategory,
       })
     : { compactedFiles: '', fileCount: 0, excludedFiles: [] };
 
@@ -313,19 +322,52 @@ async function runBuilderLane(
 
   if (providerResult.earlyResponse) return providerResult.earlyResponse;
 
-  // ── 9. Post-process + response ─────────────────────────────────────────
+  // ── 9. Post-process + review pass + response ────────────────────────────
   const content = postProcessContent(providerResult.content);
+
+  // Run review pass on multi-file output
+  let reviewResult: ReturnType<typeof reviewPatch> | undefined;
+  let applyState: ApplyState | undefined;
+  try {
+    const jsonStr = content.trim().replace(/^```json?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.files && typeof parsed.files === "object") {
+      const existingFiles = vfsFiles ? Object.keys(vfsFiles) : [];
+      reviewResult = reviewPatch({
+        files: parsed.files,
+        existingFiles,
+        taskType: task.type,
+        goalCategory: memory?.goalCategory,
+      });
+      console.log(`[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`);
+
+      applyState = buildApplyState({
+        actionType: reviewResult.removedFiles.length > 0 ? 'multi_patch' : 'patch',
+        touchedFiles: Object.keys(reviewResult.cleanedFiles),
+        applyStatus: reviewResult.approved ? 'proposed' : 'proposed',
+        requiredApproval: reviewResult.requiresApproval,
+        reviewWarnings: reviewResult.warnings.map(w => w.message),
+      });
+    }
+  } catch {
+    // Not JSON multi-file output — skip review
+  }
 
   if (savePattern) saveLearningSession(parsed, content);
 
   const responseBody = buildResponseBody({
-    content,
+    content: reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content,
     reasoning: providerResult.reasoning,
     generatedImageUrl: imageResult.generatedImageUrl,
     imagePlacement: imagePlacement ?? undefined,
     debugMode: _debugMode,
     mode: mode ?? undefined,
     modelUsed: providerResult.modelUsed,
+    reviewWarnings: reviewResult?.warnings,
+    requiresApproval: reviewResult?.requiresApproval,
+    removedFiles: reviewResult?.removedFiles,
+    reviewSummary: reviewResult?.reviewSummary,
+    applyState,
   });
 
   return new Response(

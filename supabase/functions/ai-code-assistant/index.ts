@@ -1247,12 +1247,19 @@ Structure your thinking as follows:
 Write your <thinking> block FIRST, then immediately follow with your complete response (HTML/code/answer).
 Never include the <thinking> block explanation text in your final output.`;
 
-    // ── Elements library ────────────────────────────────────────────────
-    const elementsLibraryBlock = (siteElementsLibraryContext && !surgicalEdit)
-      ? `\n${siteElementsLibraryContext}\n⚠️ LIBRARY USAGE RULE: The element library above provides STRUCTURE and INTENT WIRING patterns only. For colors, fonts, gradients, card styles, and visual effects, follow the industry variation system, design profile, and brand palette provided elsewhere in this prompt. Do NOT copy visual styles from the library skeletons — create a UNIQUE design each time.\n`
-      : '';
+    // ── Context blocks via extracted modules ──────────────────────────────
+    const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, surgicalEdit);
+    const vfsFilesContext = buildVfsFilesContext(surgicalEdit, vfsFiles);
+    const surgicalEditReinforcement = buildSurgicalEditReinforcement(surgicalEdit, vfsFilesContext);
 
-    // ── Surgical edit reinforcement ─────────────────────────────────────
+    // ── Fast-path system prompt override for wizard launches ─────────────
+    const finalSystemPrompt = fastTemplateReact
+      ? buildFastPathSystemPrompt({
+          systemsBuildContext: systemsBuildContext as Record<string, any>,
+          templateName,
+          source,
+        })
+      : systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '');
     let vfsFilesContext = '';
     if (surgicalEdit && vfsFiles && Object.keys(vfsFiles).length > 0) {
       const vfsEntries = Object.entries(vfsFiles);

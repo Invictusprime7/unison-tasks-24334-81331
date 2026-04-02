@@ -37,7 +37,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 import { getFileIcon } from '@/hooks/useVirtualFileSystem';
-import { BuildOutputPanel } from './BuildOutputPanel';
+import { VFSTerminal } from './VFSTerminal';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { vfsSnapshotManager, type DiffSummary } from '@/services/vfsSnapshotManager';
 import { analyzeImportGraph, getAffectedFiles, type ImportGraph, type AffectedFiles } from '@/services/importGraphAnalyzer';
@@ -833,10 +833,13 @@ export function VFSCodeView({
         {/* ============================================================== */}
         {/* Build Output / Terminal                                         */}
         {/* ============================================================== */}
-        <BuildOutputPanel
+        <VFSTerminal
+          nodes={nodes}
+          customDeps={{}}
           isCollapsed={terminalCollapsed}
           onToggleCollapse={() => setTerminalCollapsed(v => !v)}
           maxHeight="160px"
+          onRefreshPreview={() => vfsEventBus.emit('preview:refresh', {})}
         />
 
         {/* ============================================================== */}

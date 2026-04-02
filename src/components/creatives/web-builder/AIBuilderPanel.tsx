@@ -53,6 +53,8 @@ import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
 import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
+import { vfsEventBus } from '@/services/vfsEventBus';
+import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
 
 // ============================================================================
 /**
@@ -175,6 +177,16 @@ interface Message {
   edits?: VFSEdit[];
   error?: IframeError;
   isStreaming?: boolean;
+  /** Rich metadata from the AI response */
+  meta?: {
+    actionType?: string;
+    modelUsed?: string;
+    filesDetected?: string[];
+    warnings?: Array<{ severity: string; message: string }>;
+    requiresApproval?: boolean;
+    removedFiles?: string[];
+    reviewSummary?: string;
+  };
 }
 
 export interface VFSEdit {
@@ -402,6 +414,55 @@ const MessageItem: React.FC<{
             <span className="text-xs text-blue-400/50 font-mono">Generating...</span>
           </div>
         )}
+
+        {/* Rich metadata bar — action type, model, warnings, approval */}
+        {message.meta && !message.isStreaming && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-2 pb-2 border-b border-blue-500/10">
+            {message.meta.actionType && (
+              <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-300 font-mono">
+                {message.meta.actionType}
+              </Badge>
+            )}
+            {message.meta.modelUsed && (
+              <Badge variant="outline" className="text-[10px] border-sky-500/20 text-sky-400/60 font-mono">
+                {message.meta.modelUsed.split('/').pop()}
+              </Badge>
+            )}
+            {message.meta.requiresApproval && (
+              <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-400 font-mono animate-pulse">
+                ⚠ approval recommended
+              </Badge>
+            )}
+            {message.meta.filesDetected && message.meta.filesDetected.length > 0 && (
+              <span className="text-[10px] text-blue-400/40 font-mono">
+                {message.meta.filesDetected.length} file{message.meta.filesDetected.length > 1 ? 's' : ''}
+              </span>
+            )}
+            {message.meta.removedFiles && message.meta.removedFiles.length > 0 && (
+              <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-400 font-mono">
+                {message.meta.removedFiles.length} blocked
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {/* Review warnings */}
+        {message.meta?.warnings && message.meta.warnings.length > 0 && !message.isStreaming && (
+          <div className="mb-2 space-y-1">
+            {message.meta.warnings.slice(0, 4).map((w, i) => (
+              <div key={i} className={cn(
+                "flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded",
+                w.severity === 'error' && "bg-red-500/10 text-red-400",
+                w.severity === 'warning' && "bg-amber-500/10 text-amber-400",
+                w.severity === 'info' && "bg-blue-500/10 text-blue-400/60",
+              )}>
+                <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
+                <span>{w.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <p className="text-sm text-blue-100/90 whitespace-pre-wrap">{message.content}</p>
 
         {/* View Edits Button */}
@@ -708,13 +769,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   // Simulate thinking steps for AI response
   const simulateThinking = useCallback(async (userPrompt: string): Promise<ThinkingStep[]> => {
     const steps: ThinkingStep[] = [];
+
+    // Run prompt intelligence analysis during thinking
+    const { analysis } = enhancePromptForAI(userPrompt);
     
     steps.push({
       id: generateId(),
       type: 'analyzing',
-      message: 'Analyzing request...',
+      message: `Analyzing request — detected intent: ${analysis.intent}`,
       timestamp: new Date(),
-      details: `User prompt: "${userPrompt.substring(0, 100)}${userPrompt.length > 100 ? '...' : ''}"`,
+      details: [
+        `Complexity: ${analysis.complexity}`,
+        analysis.targets.length ? `Targets: ${analysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
+        analysis.designKeywords.length ? `Design: ${analysis.designKeywords.join(', ')}` : null,
+        analysis.constraints.length ? `Constraints: ${analysis.constraints.length} detected` : null,
+      ].filter(Boolean).join(' | '),
     });
 
     await new Promise(r => setTimeout(r, 300));
@@ -722,7 +791,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     steps.push({
       id: generateId(),
       type: 'planning',
-      message: 'Planning changes...',
+      message: analysis.secondaryIntents.length
+        ? `Planning ${analysis.complexity} change (${1 + analysis.secondaryIntents.length} intents)...`
+        : 'Planning changes...',
       timestamp: new Date(),
       details: currentCode ? `Current template: ${currentCode.length} chars` : 'No existing template',
     });
@@ -796,14 +867,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         isStreaming: true,
       }]);
 
-      // Detect whether this is a targeted (surgical) edit or a full generation
-      const rawInput = _userContent; // input is already cleared; use the captured value
-      const lowerInput = rawInput.toLowerCase();
-      const isFullGeneration = !!lowerInput.match(/\b(full control|full reign|revamp|overhaul|transform|reimagine|build|create|generate|make)\b.*\b(landing page|page|website|store|site|template)\b/);
-      const hasSurgicalKeyword = !isFullGeneration && !!(
-        lowerInput.match(/\b(change|modify|update|edit|adjust|tweak|fix|add|insert|include|remove|delete|hide|replace|restyle|redesign|change color|change style|move|swap|reposition|resize|enlarge|shrink|center|align|increase|decrease|make the|make it|set the|set it|should be|needs to be|wire|connect|hook up|integrate|link|bind|attach|submit|send data|save data|api|backend|database|supabase|fetch|endpoint)\b/)
-      );
-      const isSurgicalEdit = hasSurgicalKeyword && !!currentCode;
+      // ── Prompt Intelligence: analyze the raw user text ──
+      const rawInput = _userContent;
+      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
+      const isSurgicalEdit = detectedSurgical && !!currentCode;
+
+      // Log prompt analysis for debugging
+      console.log('[AIBuilderPanel] Prompt analysis:', {
+        intent: promptAnalysis.intent,
+        secondary: promptAnalysis.secondaryIntents,
+        complexity: promptAnalysis.complexity,
+        targets: promptAnalysis.targets.length,
+        constraints: promptAnalysis.constraints.length,
+        designKeywords: promptAnalysis.designKeywords,
+        isSurgical: isSurgicalEdit,
+      });
 
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';
@@ -903,9 +981,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // For surgical edits, inject a strict prompt guard so the AI makes ONLY the targeted change
       // AND mandate that it outputs actual code, not just reasoning
+      // Use intelligent prompt for general requests; for surgical edits, still inject strict guard
       const promptForAI = isSurgicalEdit
         ? [
             '🚨 SURGICAL EDIT MODE — CHANGE ONLY THE TARGETED ELEMENT/COMPONENT 🚨',
+            '',
+            // Include structured analysis so the AI understands multi-sentence requests
+            promptAnalysis.structuredDirective,
             '',
             `User Request: ${_userContent}${_fileContext}`,
             editTargetContext,
@@ -926,21 +1008,46 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             '8. Think of this like a diff — your output should be identical to the input except for the one change',
             '9. For React projects: preserve all imports, hooks, state, and component structure — only change the targeted JSX/logic',
             '10. When adding new elements or modifying styles, match the existing theme — use the same colors, fonts, spacing, and design patterns',
+            // Inject constraints from prompt analysis
+            ...promptAnalysis.constraints.map(c => {
+              const prefix = c.type === 'preserve' ? '🔒 PRESERVE' : c.type === 'avoid' ? '🚫 AVOID' : c.type === 'require' ? '✅ REQUIRE' : '🎨 MATCH';
+              return `${prefix}: ${c.description}`;
+            }),
             themeContextBlock ? `\n${themeContextBlock}` : '',
           ].filter(Boolean).join('\n')
-        : `${_userContent}${_fileContext}${richContext}`;
+        : (() => {
+            // Budget the prompt to stay within the 50k message content limit
+            const MAX_PROMPT_CHARS = 40_000;
+            let prompt = `${intelligentPrompt}${_fileContext}`;
+            if (prompt.length + richContext.length <= MAX_PROMPT_CHARS) {
+              prompt += richContext;
+            } else {
+              // Progressively trim context to fit
+              const remaining = MAX_PROMPT_CHARS - prompt.length;
+              if (remaining > 200) {
+                prompt += richContext.slice(0, remaining);
+              }
+            }
+            return prompt;
+          })();
 
-      // Detect templateAction for the backend
-      const detectTemplateAction = (msg: string): string | undefined => {
-        const lm = msg.toLowerCase();
-        if (lm.match(/\b(full control|revamp|overhaul|transform|reimagine)\b/)) return 'full-control';
-        if (lm.match(/\b(add|insert|include|create new|put|place)\b.*\b(section|element|component|button|image|form|card|hero|footer|header|nav)/)) return 'add';
-        if (lm.match(/\b(remove|delete|hide|get rid of|take out)\b/)) return 'remove';
-        if (lm.match(/\b(change|modify|update|edit|adjust|tweak|fix)\b/)) return 'modify';
-        if (lm.match(/\b(restyle|redesign|new look|change color|change style|theme|recolor)\b/)) return 'restyle';
-        return currentCode ? 'modify' : undefined;
-      };
-      const templateAction = detectTemplateAction(rawInput);
+      // Derive templateAction from prompt analysis instead of regex
+      const templateAction = (() => {
+        switch (promptAnalysis.intent) {
+          case 'full_generation': return 'full-control';
+          case 'add_section': return 'add';
+          case 'remove_section': return 'remove';
+          case 'restyle': return 'restyle';
+          case 'content_update':
+          case 'surgical_edit':
+          case 'fix_error':
+          case 'wire_backend':
+          case 'refactor':
+            return 'modify';
+          default:
+            return currentCode ? 'modify' : undefined;
+        }
+      })();
 
       // Call AI service with retry logic
       const MAX_RETRIES = 2;
@@ -965,7 +1072,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           
           // Truncate currentCode to stay within edge function limits
-          const MAX_CODE_LENGTH = 180_000;
+          const MAX_CODE_LENGTH = 120_000;
           const truncatedCode = currentCode && currentCode.length > MAX_CODE_LENGTH
             ? currentCode.substring(0, MAX_CODE_LENGTH) + '\n<!-- ... truncated for AI processing -->'
             : currentCode;
@@ -1046,16 +1153,22 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           // Check for retryable errors
           if (response.error) {
             // Try to get the real error message from the edge function response body
-            const bodyError: string = (response.data as { error?: string } | null)?.error || '';
+            let bodyError = '';
+            if (response.data && typeof response.data === 'object' && 'error' in response.data) {
+              bodyError = (response.data as { error?: string }).error || '';
+            }
             const errorMsg = bodyError || response.error.message || '';
+            const statusCode = (response.error as any)?.status;
             const isRetryable = errorMsg.includes('non-2xx') || 
                                errorMsg.includes('timeout') ||
                                errorMsg.includes('temporarily unavailable') ||
-                               errorMsg.includes('All AI providers failed');
+                               errorMsg.includes('All AI providers failed') ||
+                               statusCode === 503 ||
+                               statusCode === 504;
             
             if (isRetryable && attempt < MAX_RETRIES) {
               console.log(`[AIBuilderPanel] Retryable error, attempt ${attempt + 1}:`, errorMsg);
-              lastError = response.error;
+              lastError = new Error(bodyError || errorMsg || 'Edge function error');
               continue;
             }
             // Throw an error with the descriptive message from the edge function
@@ -1076,6 +1189,17 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
+
+      // Extract rich metadata from response
+      const responseMeta: Message['meta'] = {
+        actionType: response.data?.actionType,
+        modelUsed: response.data?.modelUsed,
+        filesDetected: response.data?.filesDetected,
+        warnings: response.data?.warnings,
+        requiresApproval: response.data?.requiresApproval,
+        removedFiles: response.data?.removedFiles,
+        reviewSummary: response.data?.reviewSummary,
+      };
 
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
@@ -1285,16 +1409,29 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           normalizedFiles[normalizedPath] = fileContent;
         }
-        
-        if (onApplyToVFS) {
-          console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
-          onApplyToVFS(normalizedFiles);
-          toast.success('✅ Multi-file project applied with dependencies');
-        } else if (onFilesPatch) {
-          onFilesPatch(normalizedFiles);
-          toast.success('✅ Multi-file project applied to VFS');
+
+        // Check if approval is recommended before auto-applying
+        const shouldBlock = responseMeta?.requiresApproval &&
+          responseMeta.warnings?.some(w => w.severity === 'error');
+
+        if (shouldBlock) {
+          console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
+          toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
+          // Store files for manual apply later (user can use View Edits)
         } else {
-          console.warn('[AIBuilderPanel] No VFS callback available for multi-file output!');
+          if (onApplyToVFS) {
+            console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
+            vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
+            onApplyToVFS(normalizedFiles);
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
+            const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
+            toast.success(`✅ Multi-file project applied${approvalNote}`);
+          } else if (onFilesPatch) {
+            onFilesPatch(normalizedFiles);
+            toast.success('✅ Multi-file project applied to VFS');
+          } else {
+            console.warn('[AIBuilderPanel] No VFS callback available for multi-file output!');
+          }
         }
       }
 
@@ -1376,6 +1513,7 @@ export default function App() {
               content: explanationText || aiContent,
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
+              meta: responseMeta,
               // DO NOT set `code` — we auto-apply instead of showing "Apply" buttons
               edits: edits.length > 0 ? edits : undefined,
               isStreaming: false,
@@ -1406,13 +1544,28 @@ export default function App() {
         }
 
         if (generatedCode) {
-          if (onApplyToVFS && !multiFileOutput) {
+          // Check approval gate for single-file too
+          const hasBlockingWarning = responseMeta?.requiresApproval &&
+            responseMeta.warnings?.some(w => w.severity === 'error');
+
+          if (hasBlockingWarning) {
+            console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
+            toast.warning('⚠️ Patch flagged for review — check warnings');
+          } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
+            vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
             onApplyToVFS({ [singleFilePath]: generatedCode });
-            toast.success(isSurgicalEdit ? '✅ Edit applied with deps' : '✅ Code applied with dependencies');
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
+            const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
+            toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
           } else if (onCodeGenerated) {
             onCodeGenerated(generatedCode);
             toast.success(isSurgicalEdit ? '✅ Edit applied to preview' : '✅ Code applied to preview');
+          }
+
+          // Notify about removed/blocked files from review
+          if (responseMeta?.removedFiles && responseMeta.removedFiles.length > 0) {
+            toast.info(`🛡️ ${responseMeta.removedFiles.length} file(s) blocked by safety review`);
           }
         }
       }
@@ -1427,19 +1580,21 @@ export default function App() {
         
         // Parse edge function errors for better messaging
         if (errorMessage.includes('All AI providers failed') || errorMessage.includes('All AI models failed')) {
-          errorMessage = 'AI service unavailable — no API key is working. Please check your LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in Supabase secrets.';
+          errorMessage = 'AI service unavailable — all models failed. Try simplifying your request or check API key configuration.';
         } else if (errorMessage.includes('non-2xx status code')) {
-          errorMessage = 'AI service temporarily unavailable. Please try again in a moment.';
-        } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit')) {
+          errorMessage = 'AI service returned an error. Your request may be too long — try breaking it into smaller steps, or try again in a moment.';
+        } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
           errorMessage = 'Too many requests. Please wait a moment and try again.';
         } else if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
-          errorMessage = 'Request timed out. Try a shorter prompt or try again.';
+          errorMessage = 'Request timed out. Try a shorter or simpler prompt.';
         } else if (errorMessage.includes('Payment required') || errorMessage.includes('402')) {
           errorMessage = 'AI credits needed. Please check your subscription or API billing.';
         } else if (errorMessage.includes('401') || errorMessage.includes('authentication')) {
-          errorMessage = 'AI API key is invalid or expired. Please update your API key in Supabase secrets.';
+          errorMessage = 'AI API key is invalid or expired. Please update your API key.';
         } else if (errorMessage.includes('not available') || errorMessage.includes('LOVABLE_API_KEY')) {
-          errorMessage = 'AI service not configured. Please set OPENAI_API_KEY or LOVABLE_API_KEY in your Supabase project secrets.';
+          errorMessage = 'AI service not configured. Please set your API key in project secrets.';
+        } else if (errorMessage.includes('Invalid request body')) {
+          errorMessage = 'Request was too large or malformed. Try a shorter prompt or fewer attached files.';
         }
       } else if (typeof error === 'object' && error !== null) {
         // Handle Supabase FunctionsHttpError
@@ -1484,17 +1639,38 @@ export default function App() {
     setMessages(prev => [...prev, userMessage]);
 
     try {
+      // Build a compact VFS snapshot for debug context (max 5 files, truncated)
+      const debugVfs: Record<string, string> = {};
+      if (vfsFiles) {
+        // Prioritize the error file if available
+        const errorFile = error.file;
+        const entries = Object.entries(vfsFiles);
+        const prioritized = errorFile
+          ? [
+              ...entries.filter(([p]) => p.includes(errorFile)),
+              ...entries.filter(([p]) => !p.includes(errorFile)),
+            ]
+          : entries;
+        for (const [path, content] of prioritized.slice(0, 5)) {
+          debugVfs[path] = content.slice(0, 20_000);
+        }
+      }
+
+      const diagnostics = `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`;
+
+      const hasVfsContext = Object.keys(debugVfs).length > 0;
       const response = await supabase.functions.invoke('ai-code-assistant', {
         body: {
           messages: [{ role: 'user', content: errorPrompt }],
-          mode: 'debug',
-          currentCode,
+          mode: 'code',
+          currentCode: hasVfsContext ? undefined : currentCode,
           editMode: true,
           debugMode: true,
           systemType,
           templateName,
           systemsBuildContext: systemsBuildContext ?? undefined,
-          previewDiagnostics: `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`,
+          previewDiagnostics: diagnostics,
+          vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
           gatewayOptions: gatewayConfig ? {
             selectedModelId: gatewayConfig.selectedModelId,
             reasoningEffort: gatewayConfig.reasoningEffort,
@@ -1505,17 +1681,114 @@ export default function App() {
         },
       });
 
-      if (response.error) throw response.error;
+      // Handle non-2xx: response.error is set by supabase-js
+      if (response.error) {
+        // Try to extract useful message from the error body
+        let errorMsg = 'AI service returned an error';
+        const errBody = response.error;
+        if (typeof errBody === 'object' && errBody !== null) {
+          // FunctionsHttpError contains a context with body text
+          const ctx = (errBody as any).context;
+          if (ctx?.body) {
+            try {
+              const parsed = JSON.parse(typeof ctx.body === 'string' ? ctx.body : JSON.stringify(ctx.body));
+              errorMsg = parsed.error || parsed.message || errorMsg;
+            } catch {
+              errorMsg = typeof ctx.body === 'string' ? ctx.body.slice(0, 300) : errorMsg;
+            }
+          } else if ((errBody as Error).message) {
+            const msg = (errBody as Error).message;
+            if (msg.includes('non-2xx')) {
+              errorMsg = 'AI service temporarily unavailable. Please try again.';
+            } else {
+              errorMsg = msg;
+            }
+          }
+        } else if (typeof errBody === 'string') {
+          errorMsg = errBody;
+        }
+        throw new Error(errorMsg);
+      }
 
-      const fix = response.data?.code || response.data?.response;
+      // Extract fix content — edge function returns in 'content' field (JSON or code)
+      const rawContent = response.data?.content || response.data?.code || response.data?.response || '';
       
+      // Extract metadata for debug fix too
+      const debugMeta: Message['meta'] = {
+        actionType: response.data?.actionType || 'debug',
+        modelUsed: response.data?.modelUsed,
+        filesDetected: response.data?.filesDetected,
+        warnings: response.data?.warnings,
+        requiresApproval: response.data?.requiresApproval,
+        removedFiles: response.data?.removedFiles,
+        reviewSummary: response.data?.reviewSummary,
+      };
+
+      // Try to extract code from the content (same strategies as main flow)
+      let fixFiles: Record<string, string> | null = null;
+      let fixCode: string | null = null;
+      let fixExplanation = '';
+
+      if (rawContent) {
+        // Strategy 1: JSON multi-file output
+        try {
+          const jsonStr = rawContent.trim().replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+          const parsed = JSON.parse(jsonStr);
+          if (parsed.files && typeof parsed.files === 'object') {
+            fixFiles = parsed.files;
+            fixExplanation = parsed.explanation || '✅ Debug fix applied.';
+          }
+        } catch { /* not JSON */ }
+
+        // Strategy 2: Code fence extraction
+        if (!fixFiles) {
+          const fenceMatch = rawContent.match(/```(?:tsx|jsx|ts|js)?\s*\n([\s\S]*?)```/);
+          if (fenceMatch) {
+            fixCode = fenceMatch[1].trim();
+            fixExplanation = rawContent.replace(/```[\s\S]*?```/g, '').trim() || '✅ Fix applied.';
+          }
+        }
+
+        // Strategy 3: Direct code (starts with import/export)
+        if (!fixFiles && !fixCode && /^(?:import |export )/.test(rawContent.trim())) {
+          fixCode = rawContent.trim();
+          fixExplanation = '✅ Fix applied.';
+        }
+
+        // Fallback: treat entire content as explanation
+        if (!fixFiles && !fixCode) {
+          fixExplanation = rawContent;
+        }
+      }
+
+      // Auto-apply fix to VFS
+      if (onApplyToVFS) {
+        if (fixFiles) {
+          const normalized: Record<string, string> = {};
+          for (const [p, c] of Object.entries(fixFiles)) {
+            normalized[p.startsWith('/') ? p : `/${p}`] = c;
+          }
+          vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
+          onApplyToVFS(normalized);
+          vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
+          toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
+        } else if (fixCode) {
+          const targetPath = error.file ? (error.file.startsWith('/') ? error.file : `/${error.file}`) : '/src/App.tsx';
+          vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
+          onApplyToVFS({ [targetPath]: fixCode });
+          vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
+          toast.success('✅ Debug fix applied');
+        }
+      }
+
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: response.data?.response || '✅ Fix generated! Review and apply the changes below.',
+        content: fixExplanation || '✅ Fix applied! Check the preview for changes.',
         timestamp: new Date(),
-        code: fix,
+        code: fixCode || undefined,
         error,
+        meta: debugMeta,
         thinking: [
           { id: '1', type: 'analyzing', message: 'Analyzing error...', timestamp: new Date() },
           { id: '2', type: 'planning', message: 'Determining fix strategy...', timestamp: new Date() },
@@ -1526,10 +1799,11 @@ export default function App() {
       }]);
 
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: `Failed to auto-fix: ${err instanceof Error ? err.message : 'Unknown error'}. Try describing the issue manually.`,
+        content: `⚠️ Auto-fix failed: ${errMsg}\n\nTry describing the issue manually in the Code tab — include what you expected vs. what happened.`,
         timestamp: new Date(),
       }]);
     } finally {

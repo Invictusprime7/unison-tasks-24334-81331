@@ -55,8 +55,8 @@ export function buildProviderPlan(
     case "wizard_template_react":
       plan = {
         gatewayModels: [
+          { id: "google/gemini-3-flash-preview", maxTokens: 16000, label: "Gemini 3 Flash" },
           { id: "google/gemini-2.5-flash", maxTokens: 16000, label: "Gemini 2.5 Flash" },
-          { id: "google/gemini-2.5-pro", maxTokens: 16000, label: "Gemini 2.5 Pro" },
           { id: "openai/gpt-5-mini", maxTokens: 16000, label: "GPT-5 Mini" },
         ],
         perModelTimeoutMs: 55000,
@@ -69,9 +69,9 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           { id: "google/gemini-2.5-flash-lite", maxTokens: 12000, label: "Gemini 2.5 Flash Lite" },
-          { id: "google/gemini-2.5-flash", maxTokens: 12000, label: "Gemini 2.5 Flash" },
+          { id: "google/gemini-3-flash-preview", maxTokens: 12000, label: "Gemini 3 Flash" },
         ],
-        perModelTimeoutMs: 20000,
+        perModelTimeoutMs: 30000,
         fallbackMaxTokens: 10000,
       };
       break;
@@ -79,11 +79,11 @@ export function buildProviderPlan(
     case "single_file_edit":
       plan = {
         gatewayModels: [
+          { id: "google/gemini-3-flash-preview", maxTokens: 24000, label: "Gemini 3 Flash" },
           { id: "google/gemini-2.5-flash", maxTokens: 24000, label: "Gemini 2.5 Flash" },
           { id: "openai/gpt-5-mini", maxTokens: 24000, label: "GPT-5 Mini" },
-          { id: "google/gemini-2.5-pro", maxTokens: 24000, label: "Gemini 2.5 Pro" },
         ],
-        perModelTimeoutMs: 25000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 24000,
       };
       break;
@@ -92,11 +92,11 @@ export function buildProviderPlan(
     case "debug_fix":
       plan = {
         gatewayModels: [
+          { id: "google/gemini-3-flash-preview", maxTokens: 32000, label: "Gemini 3 Flash" },
           { id: "google/gemini-2.5-pro", maxTokens: 32000, label: "Gemini 2.5 Pro" },
           { id: "openai/gpt-5-mini", maxTokens: 32000, label: "GPT-5 Mini" },
-          { id: "google/gemini-2.5-flash", maxTokens: 32000, label: "Gemini 2.5 Flash" },
         ],
-        perModelTimeoutMs: 30000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
       };
       break;
@@ -106,10 +106,10 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           { id: "google/gemini-2.5-pro", maxTokens: 32000, label: "Gemini 2.5 Pro" },
-          { id: "google/gemini-2.5-flash", maxTokens: 32000, label: "Gemini 2.5 Flash" },
+          { id: "google/gemini-3-flash-preview", maxTokens: 32000, label: "Gemini 3 Flash" },
           { id: "openai/gpt-5-mini", maxTokens: 32000, label: "GPT-5 Mini" },
         ],
-        perModelTimeoutMs: 30000,
+        perModelTimeoutMs: 50000,
         fallbackMaxTokens: 32000,
       };
       break;
@@ -118,11 +118,11 @@ export function buildProviderPlan(
     default:
       plan = {
         gatewayModels: [
+          { id: "google/gemini-3-flash-preview", maxTokens: 32000, label: "Gemini 3 Flash" },
           { id: "google/gemini-2.5-flash", maxTokens: 32000, label: "Gemini 2.5 Flash" },
-          { id: "google/gemini-2.5-pro", maxTokens: 32000, label: "Gemini 2.5 Pro" },
           { id: "openai/gpt-5-mini", maxTokens: 32000, label: "GPT-5 Mini" },
         ],
-        perModelTimeoutMs: 25000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
       };
       break;

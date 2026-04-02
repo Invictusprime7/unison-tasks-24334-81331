@@ -1,6 +1,6 @@
 /**
  * AI provider call loop — gateway + direct API fallbacks.
- * Extracted from index.ts lines 1278-1477.
+ * Returns content, reasoning, and the model that succeeded.
  */
 
 import type { ProviderPlan } from "./providerRouter.ts";
@@ -10,6 +10,8 @@ import { corsHeaders } from "./utils.ts";
 export interface ProviderCallResult {
   content: string;
   reasoning: string;
+  /** Which model produced the successful response */
+  modelUsed?: string;
   /** Non-null when we should return an early HTTP response (rate limit, payment required) */
   earlyResponse?: Response;
 }
@@ -25,9 +27,14 @@ export async function runProviderLoop(opts: {
   let content = '';
   let lastError = '';
   let reasoning = '';
+  let modelUsed: string | undefined;
 
   // ── Phase 1: Lovable AI Gateway ──────────────────────────────────────
   if (lovableApiKey) {
+    // Log total prompt size for debugging
+    const totalChars = aiMessages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
+    console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
+    
     for (const model of providerPlan.gatewayModels) {
       try {
         console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${providerPlan.perModelTimeoutMs / 1000}s)...`);
@@ -39,7 +46,9 @@ export async function runProviderLoop(opts: {
           ...(model.id.startsWith('openai/') ? { max_completion_tokens: model.maxTokens } : { max_tokens: model.maxTokens }),
           messages: aiMessages,
         };
-        if (reasoningEffort && reasoningEffort !== "none") {
+        // Only send reasoning parameter for supported models and only via the correct API format
+        // The Lovable AI Gateway passes `reasoning` through for OpenAI models only
+        if (reasoningEffort && reasoningEffort !== "none" && model.id.startsWith('openai/')) {
           reqBody.reasoning = { effort: reasoningEffort };
         }
 
@@ -56,8 +65,7 @@ export async function runProviderLoop(opts: {
 
         if (resp.status === 429) {
           return {
-            content: '',
-            reasoning: '',
+            content: '', reasoning: '', modelUsed: undefined,
             earlyResponse: new Response(
               JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
               { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -66,8 +74,7 @@ export async function runProviderLoop(opts: {
         }
         if (resp.status === 402) {
           return {
-            content: '',
-            reasoning: '',
+            content: '', reasoning: '', modelUsed: undefined,
             earlyResponse: new Response(
               JSON.stringify({ error: 'Payment required. Please add credits to your workspace.' }),
               { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -77,7 +84,11 @@ export async function runProviderLoop(opts: {
 
         if (!resp.ok) {
           const errText = await resp.text();
-          console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 200)}`);
+          console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 300)}`);
+          // For 400 errors, log full detail to help diagnose parameter issues
+          if (resp.status === 400) {
+            console.error(`[AI-Hybrid] 400 Bad Request for ${model.id}. Request body keys: ${Object.keys(reqBody).join(', ')}`);
+          }
           lastError = `${model.label}: ${resp.status}`;
           continue;
         }
@@ -111,6 +122,7 @@ export async function runProviderLoop(opts: {
           console.log(`[AI-Hybrid] Thinking tags extracted from ${model.label}: ${extracted.reasoning.length} chars`);
         }
         content = extracted.content;
+        modelUsed = model.id;
         console.log(`[AI-Hybrid] Success with ${model.label}`);
         break;
       } catch (err) {
@@ -161,9 +173,9 @@ export async function runProviderLoop(opts: {
           const extracted = extractThinkingTags(parsedContent);
           if (extracted.reasoning) {
             reasoning = extracted.reasoning;
-            console.log(`[AI-Hybrid] Thinking tags extracted from ${model.label}: ${extracted.reasoning.length} chars`);
           }
           content = extracted.content;
+          modelUsed = model.id;
           console.log(`[AI-Hybrid] Success with ${model.label}`);
           break;
         } catch (err) {
@@ -215,16 +227,13 @@ export async function runProviderLoop(opts: {
           if (parsedContent) {
             if (thinkingBlocks?.length) {
               reasoning = thinkingBlocks.join('\n\n');
-              console.log(`[AI-Hybrid] Native extended thinking captured from Anthropic: ${reasoning.length} chars`);
               content = parsedContent;
             } else {
               const extracted = extractThinkingTags(parsedContent);
-              if (extracted.reasoning) {
-                reasoning = extracted.reasoning;
-                console.log(`[AI-Hybrid] Thinking tags extracted from Anthropic response: ${extracted.reasoning.length} chars`);
-              }
+              if (extracted.reasoning) reasoning = extracted.reasoning;
               content = extracted.content;
             }
+            modelUsed = 'claude-sonnet-4-5';
             console.log('[AI-Hybrid] Success with Anthropic claude-sonnet-4-5');
           } else {
             lastError = 'Anthropic: no content';
@@ -243,5 +252,5 @@ export async function runProviderLoop(opts: {
     throw new Error(`All AI providers failed. Last error: ${lastError}. Please ensure at least one of LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY is set in your Supabase secrets.`);
   }
 
-  return { content, reasoning };
+  return { content, reasoning, modelUsed };
 }

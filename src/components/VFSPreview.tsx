@@ -29,7 +29,7 @@ import {
   Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SandpackProvider, SandpackPreview, SandpackLayout } from '@codesandbox/sandpack-react';
+import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
@@ -140,6 +140,39 @@ class SandpackErrorBoundary extends Component<
     return this.props.children;
   }
 }
+
+// ============================================================================
+// Sandpack Error Listener — captures compile/runtime errors from Sandpack
+// ============================================================================
+
+const SandpackErrorListener: React.FC<{
+  onError?: (error: string) => void;
+}> = ({ onError }) => {
+  const { sandpack } = useSandpack();
+  const lastReportedRef = useRef<string>('');
+
+  useEffect(() => {
+    const status = sandpack.status;
+    const error = sandpack.error;
+
+    if (error) {
+      const msg = typeof error === 'string'
+        ? error
+        : (error as any).message
+          ? `${(error as any).title || 'Error'}: ${(error as any).message}${(error as any).path ? ` (${(error as any).path}:${(error as any).line || ''})` : ''}`
+          : String(error);
+
+      if (msg !== lastReportedRef.current) {
+        lastReportedRef.current = msg;
+        onError?.(msg);
+      }
+    } else if (status === 'idle' || status === 'running') {
+      lastReportedRef.current = '';
+    }
+  }, [sandpack.status, sandpack.error, onError]);
+
+  return null;
+};
 
 // ============================================================================
 // Helpers
@@ -263,11 +296,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         };
         onIntentTrigger?.(intent, enrichedPayload);
       }
+
+      // Capture runtime errors forwarded from Sandpack iframe
+      if (data.type === 'console' && data.log) {
+        const log = data.log;
+        if (log.method === 'error' && log.data?.length) {
+          const errorMsg = log.data.map((d: any) => typeof d === 'string' ? d : JSON.stringify(d)).join(' ');
+          if (errorMsg && !errorMsg.includes('ResizeObserver') && !errorMsg.includes('MutationRecord')) {
+            onError?.(errorMsg);
+          }
+        }
+      }
     };
     
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
-  }, [onNavigate, onIntentTrigger, businessId, siteId]);
+  }, [onNavigate, onIntentTrigger, businessId, siteId, onError]);
   
   // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {
@@ -518,6 +562,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   style={{ height: '100%', minHeight: 0 }}
                 />
               </SandpackLayout>
+              <SandpackErrorListener onError={onError} />
             </SandpackProvider>
           </SandpackErrorBoundary>
         )}

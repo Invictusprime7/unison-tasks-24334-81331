@@ -42,6 +42,11 @@ import { templateToVFSFiles } from "@/utils/templateToVFS";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
+import {
+  createBlueprintFromIndustry,
+  compileContract,
+  getIndustryProfile,
+} from "@/contracts";
 
 // Dropped file type
 interface DroppedFile {
@@ -53,29 +58,43 @@ interface DroppedFile {
   content?: string;
 }
 
-// Map chip IDs to BusinessSystemType for template lookup
-const CHIP_TO_SYSTEM: Record<string, BusinessSystemType> = {
-  local_service: "booking",
-  salon_spa: "booking",
-  restaurant: "booking",
-  ecommerce: "store",
-  creator: "portfolio",
-  coaching: "booking",
-  real_estate: "agency",
-  nonprofit: "content",
-};
-
-// Map chip IDs to industry string for the blueprint
-const CHIP_TO_INDUSTRY: Record<string, string> = {
-  local_service: "local_service",
-  salon_spa: "salon_spa",
+// Map chip IDs to canonical industry keys (matching contracts/industryMatrix)
+const CHIP_TO_CANONICAL_INDUSTRY: Record<string, string> = {
+  local_service: "local-service",
+  salon_spa: "salon",
   restaurant: "restaurant",
   ecommerce: "ecommerce",
-  creator: "creator_portfolio",
-  coaching: "coaching_consulting",
-  real_estate: "real_estate",
+  creator: "portfolio",
+  coaching: "coaching",
+  real_estate: "real-estate",
   nonprofit: "nonprofit",
 };
+
+/**
+ * Resolve canonical industry key from chip ID.
+ * Uses the contracts/industryMatrix as the single source of truth.
+ */
+function getCanonicalIndustry(chipId: string): string {
+  return CHIP_TO_CANONICAL_INDUSTRY[chipId] || 'agency';
+}
+
+/**
+ * Get the LayoutCategory for a chip (used for template/composition lookup).
+ */
+function getCategoryForChip(chipId: string): LayoutCategory {
+  const industry = getCanonicalIndustry(chipId);
+  const profile = getIndustryProfile(industry);
+  return (profile as any)?.layoutCategories?.[0] || 'landing';
+}
+
+/**
+ * Get the BusinessSystemType for a chip.
+ */
+function getSystemTypeForChip(chipId: string): BusinessSystemType {
+  const industry = getCanonicalIndustry(chipId);
+  const profile = getIndustryProfile(industry);
+  return profile?.systemType || 'agency';
+}
 
 // Industry/business prompt chips for quick actions
 const codePromptChips = [
@@ -94,26 +113,13 @@ interface SystemsAIPanelProps {
   onAuthRequired?: () => void;
 }
 
-// Map chip IDs to LayoutCategory for direct template lookup
-const CHIP_TO_CATEGORY: Record<string, LayoutCategory> = {
-  local_service: "contractor",
-  salon_spa: "salon",
-  restaurant: "restaurant",
-  ecommerce: "store",
-  creator: "portfolio",
-  coaching: "coaching",
-  real_estate: "realestate",
-  nonprofit: "nonprofit",
-};
-
 /**
  * Picks the best template reference for a given chip.
- * Prefers React composition code from the section registry; falls back to legacy HTML.
+ * Uses contract-derived system type and layout category.
  */
 function getTemplateReference(chipId: string): { templateId: string; templateHtml: string; templateCode: string; templateName: string; systemType: BusinessSystemType } | null {
-  const systemType = CHIP_TO_SYSTEM[chipId];
-  const category = CHIP_TO_CATEGORY[chipId];
-  if (!systemType || !category) return null;
+  const systemType = getSystemTypeForChip(chipId);
+  const category = getCategoryForChip(chipId);
 
   // Prefer composition-based React code
   const compositionCode = getCompositionReactCode(category);
@@ -145,112 +151,73 @@ function getTemplateReference(chipId: string): { templateId: string; templateHtm
 }
 
 /**
- * Build a minimal BusinessBlueprint from a chip selection for systems-build
+ * Build a SystemsBuildContext from a chip selection using the canonical
+ * contract pipeline (createBlueprintFromIndustry → compileContract).
+ * 
+ * This replaces the ad-hoc buildBlueprintFromChip that maintained its
+ * own palette/intent mappings outside the contracts system.
  */
-function buildBlueprintFromChip(chipId: string, prompt: string) {
+function buildContractAndContext(chipId: string, prompt: string, businessName?: string): {
+  context: SystemsBuildContext;
+  compiled: import('@/contracts').CompiledContract;
+} {
   const chip = codePromptChips.find(c => c.id === chipId);
-  const industry = CHIP_TO_INDUSTRY[chipId] || "other";
-  
-  // Industry-specific defaults
-  const INDUSTRY_DEFAULTS: Record<string, { palette: Record<string, string>; intents: string[] }> = {
-    salon_spa: { palette: { primary: "#D4A574", secondary: "#8B6F4E", accent: "#E8D5C4", background: "#1A1A2E", foreground: "#F5F5F5" }, intents: ["booking.create", "contact.submit", "newsletter.subscribe"] },
-    restaurant: { palette: { primary: "#D4A574", secondary: "#8B4513", accent: "#FFD700", background: "#1A1A1A", foreground: "#FFFFFF" }, intents: ["booking.create", "contact.submit", "newsletter.subscribe"] },
-    local_service: { palette: { primary: "#0EA5E9", secondary: "#22D3EE", accent: "#F59E0B", background: "#0F172A", foreground: "#F8FAFC" }, intents: ["quote.request", "contact.submit", "booking.create"] },
-    ecommerce: { palette: { primary: "#8B5CF6", secondary: "#A78BFA", accent: "#F59E0B", background: "#0F0F0F", foreground: "#FFFFFF" }, intents: ["newsletter.subscribe", "contact.submit"] },
-    creator: { palette: { primary: "#6366F1", secondary: "#818CF8", accent: "#F472B6", background: "#0A0A0A", foreground: "#FAFAFA" }, intents: ["contact.submit", "quote.request"] },
-    coaching: { palette: { primary: "#10B981", secondary: "#34D399", accent: "#F59E0B", background: "#0F172A", foreground: "#F8FAFC" }, intents: ["booking.create", "contact.submit", "newsletter.subscribe", "quote.request"] },
-    real_estate: { palette: { primary: "#D4AF37", secondary: "#C9B037", accent: "#1E3A5F", background: "#0A0A0A", foreground: "#FFFFFF" }, intents: ["contact.submit", "quote.request", "newsletter.subscribe"] },
-    nonprofit: { palette: { primary: "#E11D48", secondary: "#FB7185", accent: "#F59E0B", background: "#FFFFFF", foreground: "#1E293B" }, intents: ["contact.submit", "newsletter.subscribe"] },
-  };
+  const canonicalIndustry = getCanonicalIndustry(chipId);
+  const name = businessName || chip?.label || "My Business";
 
-  const defaults = INDUSTRY_DEFAULTS[chipId] || { palette: { primary: "#0EA5E9" }, intents: ["contact.submit"] };
+  // Use canonical blueprint from contracts system
+  const blueprint = createBlueprintFromIndustry(canonicalIndustry, name, {
+    prompt,
+  });
 
-  const fonts = randomFontPairing();
-  const design = generateDesignVariation();
-
-  return {
-    version: "1.0",
-    identity: {
-      industry: industry,
-      primary_goal: "Generate leads and grow the business",
-    },
-    brand: {
-      business_name: chip?.label || "My Business",
-      tagline: `Professional ${chip?.label || "business"} services you can trust`,
-      tone: "professional and friendly",
-      palette: defaults.palette,
-      typography: { heading: fonts.heading, body: fonts.body },
-    },
-    design: {
-      layout: { hero_style: design.layout.hero_style, section_spacing: design.layout.section_spacing, navigation_style: design.layout.navigation_style },
-      effects: { animations: true, scroll_animations: true, hover_effects: true, gradient_backgrounds: true, glassmorphism: design.effects.glassmorphism, shadows: design.effects.shadows },
-      sections: { include_stats: design.sections.include_stats, include_testimonials: design.sections.include_testimonials, include_faq: design.sections.include_faq, include_cta_banner: design.sections.include_cta_banner, include_newsletter: design.sections.include_newsletter, include_social_proof: design.sections.include_social_proof },
-    },
-    intents: defaults.intents.map(i => ({ intent: i })),
-  };
-}
-
-/**
- * Build a SystemsBuildContext object from a chip ID.
- * Combines the blueprint defaults (palette, intents) with structural
- * data extracted from the reference template HTML.
- */
-function buildSystemsBuildContextFromChip(chipId: string): SystemsBuildContext {
-  // buildBlueprintFromChip already returns the full snake_case BlueprintSchema shape
-  const blueprint = buildBlueprintFromChip(chipId, '');
-  const ref = getTemplateReference(chipId);
-
-  // Extract section names (data-ut-section) and intent wiring (data-ut-intent) from template
-  const template_sections: string[] = [];
-  const intentSet = new Set<string>();
-  if (ref?.templateHtml) {
-    for (const m of ref.templateHtml.matchAll(/data-ut-section="([^"]+)"/g)) template_sections.push(m[1]);
-    for (const m of ref.templateHtml.matchAll(/data-ut-intent="([^"]+)"/g)) intentSet.add(m[1]);
+  // Compile to validate
+  const compiled = compileContract(blueprint);
+  if (compiled.validation.warnings > 0) {
+    console.warn(`[SystemsAIPanel] Blueprint warnings:`, compiled.validation.issues.filter(i => i.severity === 'warning'));
   }
 
-  // Return the blueprint as-is (snake_case matches SystemsBuildContext exactly) plus template metadata
-  return {
-    version: blueprint.version,
+  // Convert to edge function's expected format (SystemsBuildContext shape)
+  const fonts = randomFontPairing();
+  const design = generateDesignVariation();
+  const compositionMeta = getCompositionMeta(getCategoryForChip(chipId));
+
+  const context: SystemsBuildContext = {
+    version: "1.0",
     identity: {
-      industry: blueprint.identity.industry,
-      primary_goal: blueprint.identity.primary_goal,
+      industry: canonicalIndustry,
+      primary_goal: blueprint.capabilities.primaryGoal,
     },
     brand: {
-      business_name: blueprint.brand.business_name,
-      tagline: blueprint.brand.tagline,
-      tone: blueprint.brand.tone,
-      palette: blueprint.brand.palette,
-      typography: blueprint.brand.typography,
+      business_name: name,
+      tagline: blueprint.identity.tagline || `Professional ${chip?.label || "business"} services you can trust`,
+      tone: "professional and friendly",
+      typography: fonts,
     },
     design: {
-      layout: blueprint.design?.layout
-        ? { hero_style: blueprint.design.layout.hero_style as string | undefined }
-        : undefined,
-      effects: blueprint.design?.effects
-        ? {
-            animations: blueprint.design.effects.animations,
-            scroll_animations: blueprint.design.effects.scroll_animations,
-            hover_effects: blueprint.design.effects.hover_effects,
-            gradient_backgrounds: blueprint.design.effects.gradient_backgrounds,
-            glassmorphism: blueprint.design.effects.glassmorphism,
-            shadows: blueprint.design.effects.shadows as string | undefined,
-          }
-        : undefined,
-      sections: blueprint.design?.sections
-        ? {
-            include_stats: blueprint.design.sections.include_stats,
-            include_testimonials: blueprint.design.sections.include_testimonials,
-            include_faq: blueprint.design.sections.include_faq,
-            include_cta_banner: blueprint.design.sections.include_cta_banner,
-            include_newsletter: blueprint.design.sections.include_newsletter,
-            include_social_proof: blueprint.design.sections.include_social_proof,
-          }
-        : undefined,
+      layout: { hero_style: design.layout.hero_style as string | undefined },
+      effects: {
+        animations: design.effects.animations,
+        scroll_animations: design.effects.scroll_animations,
+        hover_effects: design.effects.hover_effects,
+        gradient_backgrounds: design.effects.gradient_backgrounds,
+        glassmorphism: design.effects.glassmorphism,
+        shadows: design.effects.shadows as string | undefined,
+      },
+      sections: {
+        include_stats: design.sections.include_stats,
+        include_testimonials: design.sections.include_testimonials,
+        include_faq: design.sections.include_faq,
+        include_cta_banner: design.sections.include_cta_banner,
+        include_newsletter: design.sections.include_newsletter,
+        include_social_proof: design.sections.include_social_proof,
+      },
     },
-    intents: blueprint.intents,
-    template_sections: template_sections.slice(0, 20),
-    template_intents: [...intentSet].slice(0, 20),
+    intents: blueprint.intents.allowed.map(i => ({ intent: i })),
+    template_sections: compositionMeta?.sections,
+    template_intents: compositionMeta?.intents,
   };
+
+  return { context, compiled };
 }
 
 export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
@@ -431,7 +398,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
                 projectCount: savedProjectCount,
                 dominantStyle: designProfile?.dominantStyle,
               } : undefined,
-              systemsBuildContext: buildSystemsBuildContextFromChip(selectedCodeChip),
+              systemsBuildContext: buildContractAndContext(selectedCodeChip, codePrompt).context,
             },
           });
           toast({ 
@@ -447,7 +414,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         console.log(`[SystemsAIPanel] No pre-built template for ${selectedCodeChip}, using ai-code-assistant`);
 
         const chipLabel = codePromptChips.find(c => c.id === selectedCodeChip)?.label || "website";
-        const chipBuildContext = buildSystemsBuildContextFromChip(selectedCodeChip);
+        const chipBuildContext = buildContractAndContext(selectedCodeChip, codePrompt).context;
         const designProfileContext = hasProfile ? getDesignPromptContext() : null;
         const chipPrompt = `Create a complete, polished, production-ready ${chipLabel} website. ${codePrompt}${fileContext}`;
         const enhancedChipPrompt = designProfileContext

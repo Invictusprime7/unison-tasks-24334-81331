@@ -801,6 +801,65 @@ function aliasModuleToRelativeImport(fromFilePath: string, aliasModulePath: stri
   return toRelativeSandpackImport(fromFilePath, `/${normalizedModulePath}`);
 }
 
+function resolveUiShimDefaultImportName(modulePath: string, localName?: string): string {
+  const moduleBasename = modulePath
+    .split('/')
+    .filter(Boolean)
+    .pop()
+    ?.replace(/\.(tsx?|jsx?)$/, '') ?? '';
+
+  const uiExportMap: Record<string, string> = {
+    'accordion': 'Accordion',
+    'aspect-ratio': 'AspectRatio',
+    'avatar': 'Avatar',
+    'badge': 'Badge',
+    'breadcrumb': 'Breadcrumb',
+    'button': 'Button',
+    'calendar': 'Calendar',
+    'card': 'Card',
+    'carousel': 'Carousel',
+    'checkbox': 'Checkbox',
+    'collapsible': 'Collapsible',
+    'command': 'Command',
+    'dialog': 'Dialog',
+    'dropdown-menu': 'DropdownMenu',
+    'form': 'Form',
+    'hover-card': 'HoverCard',
+    'input': 'Input',
+    'label': 'Label',
+    'navigation-menu': 'NavigationMenu',
+    'popover': 'Popover',
+    'progress': 'Progress',
+    'radio-group': 'RadioGroup',
+    'scroll-area': 'ScrollArea',
+    'select': 'Select',
+    'separator': 'Separator',
+    'sheet': 'Sheet',
+    'skeleton': 'Skeleton',
+    'switch': 'Switch',
+    'table': 'Table',
+    'tabs': 'Tabs',
+    'textarea': 'Textarea',
+    'tooltip': 'Tooltip',
+  };
+
+  if (uiExportMap[moduleBasename]) return uiExportMap[moduleBasename];
+  if (localName && /^[A-Z]/.test(localName)) return localName;
+
+  const inferredName = moduleBasename
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
+
+  return inferredName || 'Button';
+}
+
+function formatNamedImport(exportName: string, localName?: string): string {
+  if (!localName || exportName === localName) return exportName;
+  return `${exportName} as ${localName}`;
+}
+
 /**
  * Wrap raw CSS content in a valid React component so Sandpack can render it.
  * Uses JSON.stringify to safely embed CSS as a string constant (avoids template literal parsing issues).
@@ -2600,7 +2659,10 @@ export function processCode(code: string, filePath: string): string {
         const namedMatch = match.match(/import\s+\{([^}]+)\}/);
         const defaultMatch = match.match(/import\s+(\w+)\s+from/);
         if (namedMatch) return `import { ${namedMatch[1]} } from '${uiShimImport}';`;
-        if (defaultMatch) return `import ${defaultMatch[1]} from '${uiShimImport}';`;
+        if (defaultMatch) {
+          const exportName = resolveUiShimDefaultImportName(modulePath, defaultMatch[1]);
+          return `import { ${formatNamedImport(exportName, defaultMatch[1])} } from '${uiShimImport}';`;
+        }
         return match.replace(/@\/[^'"]+/, uiShimImport.replace(/^\.\//, './'));
       }
 
@@ -2641,7 +2703,10 @@ export function processCode(code: string, filePath: string): string {
             const namedImports = importMatch[1];
             const defaultImport = importMatch[2];
             if (namedImports) return `import { ${namedImports} } from '${uiShimImport}';`;
-            if (defaultImport) return `import ${defaultImport} from '${uiShimImport}';`;
+            if (defaultImport) {
+              const exportName = resolveUiShimDefaultImportName(modulePath, defaultImport);
+              return `import { ${formatNamedImport(exportName, defaultImport)} } from '${uiShimImport}';`;
+            }
           }
           return match;
         }

@@ -1484,17 +1484,37 @@ export default function App() {
     setMessages(prev => [...prev, userMessage]);
 
     try {
+      // Build a compact VFS snapshot for debug context (max 5 files, truncated)
+      const debugVfs: Record<string, string> = {};
+      if (vfsFiles) {
+        // Prioritize the error file if available
+        const errorFile = error.file;
+        const entries = Object.entries(vfsFiles);
+        const prioritized = errorFile
+          ? [
+              ...entries.filter(([p]) => p.includes(errorFile)),
+              ...entries.filter(([p]) => !p.includes(errorFile)),
+            ]
+          : entries;
+        for (const [path, content] of prioritized.slice(0, 5)) {
+          debugVfs[path] = content.slice(0, 20_000);
+        }
+      }
+
+      const diagnostics = `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`;
+
       const response = await supabase.functions.invoke('ai-code-assistant', {
         body: {
           messages: [{ role: 'user', content: errorPrompt }],
-          mode: 'debug',
+          mode: 'code',
           currentCode,
           editMode: true,
           debugMode: true,
           systemType,
           templateName,
           systemsBuildContext: systemsBuildContext ?? undefined,
-          previewDiagnostics: `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`,
+          previewDiagnostics: diagnostics,
+          vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
           gatewayOptions: gatewayConfig ? {
             selectedModelId: gatewayConfig.selectedModelId,
             reasoningEffort: gatewayConfig.reasoningEffort,
@@ -1505,14 +1525,56 @@ export default function App() {
         },
       });
 
-      if (response.error) throw response.error;
+      // Handle non-2xx: response.error is set by supabase-js
+      if (response.error) {
+        // Try to extract useful message from the error body
+        let errorMsg = 'AI service returned an error';
+        const errBody = response.error;
+        if (typeof errBody === 'object' && errBody !== null) {
+          // FunctionsHttpError contains a context with body text
+          const ctx = (errBody as any).context;
+          if (ctx?.body) {
+            try {
+              const parsed = JSON.parse(typeof ctx.body === 'string' ? ctx.body : JSON.stringify(ctx.body));
+              errorMsg = parsed.error || parsed.message || errorMsg;
+            } catch {
+              errorMsg = typeof ctx.body === 'string' ? ctx.body.slice(0, 300) : errorMsg;
+            }
+          } else if ((errBody as Error).message) {
+            const msg = (errBody as Error).message;
+            if (msg.includes('non-2xx')) {
+              errorMsg = 'AI service temporarily unavailable. Please try again.';
+            } else {
+              errorMsg = msg;
+            }
+          }
+        } else if (typeof errBody === 'string') {
+          errorMsg = errBody;
+        }
+        throw new Error(errorMsg);
+      }
 
       const fix = response.data?.code || response.data?.response;
       
+      // Auto-apply fix to VFS if available
+      if (fix && onApplyToVFS) {
+        // Try to parse as multi-file JSON
+        try {
+          const parsed = JSON.parse(fix);
+          if (parsed.files && typeof parsed.files === 'object') {
+            onApplyToVFS(parsed.files);
+          }
+        } catch {
+          // Single file output — apply to the error file or App.tsx
+          const targetPath = error.file || '/App.tsx';
+          onApplyToVFS({ [targetPath]: fix });
+        }
+      }
+
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: response.data?.response || '✅ Fix generated! Review and apply the changes below.',
+        content: response.data?.response || '✅ Fix applied! Check the preview for changes.',
         timestamp: new Date(),
         code: fix,
         error,
@@ -1526,10 +1588,11 @@ export default function App() {
       }]);
 
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: `Failed to auto-fix: ${err instanceof Error ? err.message : 'Unknown error'}. Try describing the issue manually.`,
+        content: `⚠️ Auto-fix failed: ${errMsg}\n\nTry describing the issue manually in the Code tab — include what you expected vs. what happened.`,
         timestamp: new Date(),
       }]);
     } finally {

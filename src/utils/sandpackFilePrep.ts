@@ -2804,7 +2804,7 @@ export function prepareSandpackFiles(
 
   // Case 1: The entire VFS has a single file whose content is a JSON files wrapper
   // e.g. { "/App.tsx": '{"files":{"src/App.tsx":"import React..."}}' }
-  if (fileKeys.length <= 3) {
+  if (fileKeys.length <= 5) {
     for (const [fPath, fContent] of Object.entries(files)) {
       if (typeof fContent === 'string' && fContent.trimStart().startsWith('{')) {
         try {
@@ -2814,7 +2814,9 @@ export function prepareSandpackFiles(
             resolvedFiles = {};
             for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
               if (typeof innerContent === 'string') {
-                const normalizedInner = innerPath.startsWith('/') ? innerPath : `/${innerPath}`;
+                // Strip leading "src/" so "/src/App.tsx" becomes "/App.tsx"
+                let normalizedInner = innerPath.startsWith('/') ? innerPath : `/${innerPath}`;
+                normalizedInner = normalizedInner.replace(/^\/src\//, '/');
                 resolvedFiles[normalizedInner] = innerContent;
               }
             }
@@ -2837,7 +2839,9 @@ export function prepareSandpackFiles(
           console.warn(`[sandpackFilePrep] Per-file JSON unwrap for ${path}`);
           for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
             if (typeof innerContent === 'string') {
-              finalFiles[innerPath.startsWith('/') ? innerPath : `/${innerPath}`] = innerContent;
+              let norm = innerPath.startsWith('/') ? innerPath : `/${innerPath}`;
+              norm = norm.replace(/^\/src\//, '/');
+              finalFiles[norm] = innerContent;
             }
           }
           continue;

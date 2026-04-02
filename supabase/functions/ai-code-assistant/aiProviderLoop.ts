@@ -31,6 +31,10 @@ export async function runProviderLoop(opts: {
 
   // ── Phase 1: Lovable AI Gateway ──────────────────────────────────────
   if (lovableApiKey) {
+    // Log total prompt size for debugging
+    const totalChars = aiMessages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
+    console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
+    
     for (const model of providerPlan.gatewayModels) {
       try {
         console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${providerPlan.perModelTimeoutMs / 1000}s)...`);

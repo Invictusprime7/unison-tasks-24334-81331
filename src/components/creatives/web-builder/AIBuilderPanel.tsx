@@ -52,6 +52,7 @@ import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
+import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 
 // ============================================================================
 /**

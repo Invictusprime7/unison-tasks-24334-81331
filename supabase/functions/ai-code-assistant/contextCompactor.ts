@@ -206,7 +206,7 @@ export function buildCompactBuilderContext(opts: {
   for (const { path, content } of scored) {
     if (totalChars + content.length > maxChars) {
       // Try truncated version for high-priority files
-      if (getFilePriority(path) <= 2 && content.length > 1000) {
+      if (getFilePriority(path, issueHint, errorFiles) <= 2 && content.length > 1000) {
         const truncated = content.substring(0, Math.min(content.length, maxChars - totalChars - 200));
         included.push(`--- FILE: ${path} (truncated) ---\n${truncated}\n[...truncated]\n--- END FILE ---`);
         totalChars += truncated.length + 100;

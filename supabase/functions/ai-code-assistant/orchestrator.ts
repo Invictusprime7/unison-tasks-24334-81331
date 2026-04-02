@@ -194,12 +194,15 @@ async function runBuilderLane(
     const variation = generateVariation(templatePromptText, variationSeed ?? undefined);
     const variationContext = variationToPromptContext(variation);
 
+    // Detect if user intent overrides default design tokens
+    const userOverrideDirective = detectUserDesignOverride(userPromptText, variation);
+
     if (mode === 'template-json') {
-      basePrompt = buildTemplateJsonPrompt(variation, variationContext);
+      basePrompt = buildTemplateJsonPrompt(variation, variationContext + userOverrideDirective);
     } else if (mode === 'template-html') {
-      basePrompt = buildTemplateHtmlPrompt(variation, variationContext);
+      basePrompt = buildTemplateHtmlPrompt(variation, variationContext + userOverrideDirective);
     } else {
-      basePrompt = buildTemplateReactPrompt(variation, variationContext, currentCode ?? undefined, templateAction ?? undefined);
+      basePrompt = buildTemplateReactPrompt(variation, variationContext + userOverrideDirective, currentCode ?? undefined, templateAction ?? undefined);
     }
   } else {
     basePrompt = buildCodeModePrompt({ editModeContext, learnedPatterns });

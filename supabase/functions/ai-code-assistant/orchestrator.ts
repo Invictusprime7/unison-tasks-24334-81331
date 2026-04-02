@@ -322,19 +322,52 @@ async function runBuilderLane(
 
   if (providerResult.earlyResponse) return providerResult.earlyResponse;
 
-  // ── 9. Post-process + response ─────────────────────────────────────────
+  // ── 9. Post-process + review pass + response ────────────────────────────
   const content = postProcessContent(providerResult.content);
+
+  // Run review pass on multi-file output
+  let reviewResult: ReturnType<typeof reviewPatch> | undefined;
+  let applyState: ApplyState | undefined;
+  try {
+    const jsonStr = content.trim().replace(/^```json?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.files && typeof parsed.files === "object") {
+      const existingFiles = vfsFiles ? Object.keys(vfsFiles) : [];
+      reviewResult = reviewPatch({
+        files: parsed.files,
+        existingFiles,
+        taskType: task.type,
+        goalCategory: memory?.goalCategory,
+      });
+      console.log(`[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`);
+
+      applyState = buildApplyState({
+        actionType: reviewResult.removedFiles.length > 0 ? 'multi_patch' : 'patch',
+        touchedFiles: Object.keys(reviewResult.cleanedFiles),
+        applyStatus: reviewResult.approved ? 'proposed' : 'proposed',
+        requiredApproval: reviewResult.requiresApproval,
+        reviewWarnings: reviewResult.warnings.map(w => w.message),
+      });
+    }
+  } catch {
+    // Not JSON multi-file output — skip review
+  }
 
   if (savePattern) saveLearningSession(parsed, content);
 
   const responseBody = buildResponseBody({
-    content,
+    content: reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content,
     reasoning: providerResult.reasoning,
     generatedImageUrl: imageResult.generatedImageUrl,
     imagePlacement: imagePlacement ?? undefined,
     debugMode: _debugMode,
     mode: mode ?? undefined,
     modelUsed: providerResult.modelUsed,
+    reviewWarnings: reviewResult?.warnings,
+    requiresApproval: reviewResult?.requiresApproval,
+    removedFiles: reviewResult?.removedFiles,
+    reviewSummary: reviewResult?.reviewSummary,
+    applyState,
   });
 
   return new Response(

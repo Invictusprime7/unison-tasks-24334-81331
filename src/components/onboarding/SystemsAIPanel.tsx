@@ -42,6 +42,11 @@ import { templateToVFSFiles } from "@/utils/templateToVFS";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
+import {
+  createBlueprintFromIndustry,
+  compileContract,
+  getIndustryProfile,
+} from "@/contracts";
 
 // Dropped file type
 interface DroppedFile {

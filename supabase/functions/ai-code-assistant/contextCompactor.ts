@@ -169,8 +169,12 @@ export function buildCompactBuilderContext(opts: {
   currentCode?: string;
   previewDiagnostics?: string;
   maxChars?: number;
+  issueHint?: CompactionIssueHint;
+  goalCategory?: string;
 }): BuilderCompactContext {
   const { vfsFiles, changedFiles, currentCode, previewDiagnostics, maxChars = 80_000 } = opts;
+  const issueHint = opts.issueHint || detectIssueHint(previewDiagnostics, opts.goalCategory);
+  const errorFiles = extractErrorFiles(previewDiagnostics);
 
   if (!vfsFiles || Object.keys(vfsFiles).length === 0) {
     return { compactedFiles: '', fileCount: 0, excludedFiles: [] };

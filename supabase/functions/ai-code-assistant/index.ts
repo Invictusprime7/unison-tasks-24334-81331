@@ -8,12 +8,25 @@ import {
   getResearchQueries,
 } from "../_shared/industryPagePatterns.ts";
 
-// ── Extracted modules ───────────────────────────────────────────────────────
+// ── Extracted modules (Stage 1) ─────────────────────────────────────────────
 import { AIRequestSchema } from "./requestSchema.ts";
 import { classifyTask } from "./taskClassifier.ts";
 import { buildProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags, postProcessContent, buildResponseBody } from "./responseNormalizer.ts";
 import { hexToHsl, extractTextContent, corsHeaders } from "./utils.ts";
+
+// ── Extracted modules (Stage 2) ─────────────────────────────────────────────
+import { performPromptResearch, formatResearchContext, type ResearchResult } from "./webResearch.ts";
+import {
+  buildSystemTypeContext,
+  buildDesignProfileContext,
+  buildSystemsBlueprintContext,
+  analyzeTemplateStructure,
+  buildElementsLibraryBlock,
+  buildVfsFilesContext,
+  buildFastPathSystemPrompt,
+} from "./contextBuilders.ts";
+import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditReinforcement } from "./prompts/editPrompts.ts";
 
 interface CodePattern {
   pattern_type: string;

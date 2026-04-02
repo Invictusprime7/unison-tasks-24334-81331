@@ -143,6 +143,7 @@ async function runBuilderLane(
     templateAction, systemType, variationSeed, templateName, aesthetic, source,
     userDesignProfile, systemsBuildContext, navPageGen = false, navPageName, navLabel,
     siteElementsLibraryContext, surgicalEdit = false, vfsFiles, gatewayOptions,
+    previewDiagnostics, recentChangedFiles,
   } = parsed;
 
   // ── 1. Session memory (Lane B only) ────────────────────────────────────
@@ -157,6 +158,8 @@ async function runBuilderLane(
         vfsFiles,
         currentCode: currentCode ?? undefined,
         debugMode: _debugMode,
+        previewDiagnostics: previewDiagnostics ?? undefined,
+        recentChangedFiles: recentChangedFiles ?? undefined,
       })
     : undefined;
   const memoryBlock = formatSessionMemoryBlock(memory);

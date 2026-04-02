@@ -1490,9 +1490,11 @@ export default function App() {
           mode: 'debug',
           currentCode,
           editMode: true,
+          debugMode: true,
           systemType,
           templateName,
           systemsBuildContext: systemsBuildContext ?? undefined,
+          previewDiagnostics: `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`,
           gatewayOptions: gatewayConfig ? {
             selectedModelId: gatewayConfig.selectedModelId,
             reasoningEffort: gatewayConfig.reasoningEffort,

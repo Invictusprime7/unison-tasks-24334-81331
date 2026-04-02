@@ -296,11 +296,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         };
         onIntentTrigger?.(intent, enrichedPayload);
       }
+
+      // Capture runtime errors forwarded from Sandpack iframe
+      if (data.type === 'console' && data.log) {
+        const log = data.log;
+        if (log.method === 'error' && log.data?.length) {
+          const errorMsg = log.data.map((d: any) => typeof d === 'string' ? d : JSON.stringify(d)).join(' ');
+          if (errorMsg && !errorMsg.includes('ResizeObserver') && !errorMsg.includes('MutationRecord')) {
+            onError?.(errorMsg);
+          }
+        }
+      }
     };
     
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
-  }, [onNavigate, onIntentTrigger, businessId, siteId]);
+  }, [onNavigate, onIntentTrigger, businessId, siteId, onError]);
   
   // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {

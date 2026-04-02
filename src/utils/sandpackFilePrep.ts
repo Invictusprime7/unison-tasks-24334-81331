@@ -2804,7 +2804,7 @@ export function prepareSandpackFiles(
 
   // Case 1: The entire VFS has a single file whose content is a JSON files wrapper
   // e.g. { "/App.tsx": '{"files":{"src/App.tsx":"import React..."}}' }
-  if (fileKeys.length <= 3) {
+  if (fileKeys.length <= 5) {
     for (const [fPath, fContent] of Object.entries(files)) {
       if (typeof fContent === 'string' && fContent.trimStart().startsWith('{')) {
         try {

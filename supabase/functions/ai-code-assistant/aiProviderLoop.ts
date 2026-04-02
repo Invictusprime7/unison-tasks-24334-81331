@@ -19,8 +19,9 @@ export async function runProviderLoop(opts: {
   providerPlan: ProviderPlan;
   navPageGen: boolean;
   lovableApiKey?: string;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, navPageGen, lovableApiKey } = opts;
+  const { aiMessages, providerPlan, navPageGen, lovableApiKey, reasoningEffort } = opts;
   let content = '';
   let lastError = '';
   let reasoning = '';
@@ -33,17 +34,22 @@ export async function runProviderLoop(opts: {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), providerPlan.perModelTimeoutMs);
 
+        const reqBody: Record<string, unknown> = {
+          model: model.id,
+          ...(model.id.startsWith('openai/') ? { max_completion_tokens: model.maxTokens } : { max_tokens: model.maxTokens }),
+          messages: aiMessages,
+        };
+        if (reasoningEffort && reasoningEffort !== "none") {
+          reqBody.reasoning = { effort: reasoningEffort };
+        }
+
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${lovableApiKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            model: model.id,
-            ...(model.id.startsWith('openai/') ? { max_completion_tokens: model.maxTokens } : { max_tokens: model.maxTokens }),
-            messages: aiMessages,
-          }),
+          body: JSON.stringify(reqBody),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);

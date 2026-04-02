@@ -1153,16 +1153,22 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           // Check for retryable errors
           if (response.error) {
             // Try to get the real error message from the edge function response body
-            const bodyError: string = (response.data as { error?: string } | null)?.error || '';
+            let bodyError = '';
+            if (response.data && typeof response.data === 'object' && 'error' in response.data) {
+              bodyError = (response.data as { error?: string }).error || '';
+            }
             const errorMsg = bodyError || response.error.message || '';
+            const statusCode = (response.error as any)?.status;
             const isRetryable = errorMsg.includes('non-2xx') || 
                                errorMsg.includes('timeout') ||
                                errorMsg.includes('temporarily unavailable') ||
-                               errorMsg.includes('All AI providers failed');
+                               errorMsg.includes('All AI providers failed') ||
+                               statusCode === 503 ||
+                               statusCode === 504;
             
             if (isRetryable && attempt < MAX_RETRIES) {
               console.log(`[AIBuilderPanel] Retryable error, attempt ${attempt + 1}:`, errorMsg);
-              lastError = response.error;
+              lastError = new Error(bodyError || errorMsg || 'Edge function error');
               continue;
             }
             // Throw an error with the descriptive message from the edge function

@@ -1056,6 +1056,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         }
       })();
 
+      // ── Phase 3: AI Gateway Call ──
+      liveStep('generating', 'Calling AI model...', gatewayConfig?.selectedModelId || 'auto-select');
+
       // Call AI service with retry logic
       const MAX_RETRIES = 2;
       let response = null;

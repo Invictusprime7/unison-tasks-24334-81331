@@ -8,12 +8,25 @@ import {
   getResearchQueries,
 } from "../_shared/industryPagePatterns.ts";
 
-// ── Extracted modules ───────────────────────────────────────────────────────
+// ── Extracted modules (Stage 1) ─────────────────────────────────────────────
 import { AIRequestSchema } from "./requestSchema.ts";
 import { classifyTask } from "./taskClassifier.ts";
 import { buildProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags, postProcessContent, buildResponseBody } from "./responseNormalizer.ts";
 import { hexToHsl, extractTextContent, corsHeaders } from "./utils.ts";
+
+// ── Extracted modules (Stage 2) ─────────────────────────────────────────────
+import { performPromptResearch, formatResearchContext, type ResearchResult } from "./webResearch.ts";
+import {
+  buildSystemTypeContext,
+  buildDesignProfileContext,
+  buildSystemsBlueprintContext,
+  analyzeTemplateStructure,
+  buildElementsLibraryBlock,
+  buildVfsFilesContext,
+  buildFastPathSystemPrompt,
+} from "./contextBuilders.ts";
+import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditReinforcement } from "./prompts/editPrompts.ts";
 
 interface CodePattern {
   pattern_type: string;
@@ -24,142 +37,7 @@ interface CodePattern {
   code_snippet: string;
 }
 
-// ============================================================================
-// WEB RESEARCH INTEGRATION
-// ============================================================================
-
-interface ResearchResult {
-  snippets: string[];
-  trends: string[];
-  keyPhrases: string[];
-}
-
-function decodeHtmlEntities(input: string): string {
-  return input
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
-}
-
-function stripHtmlTags(input: string): string {
-  return decodeHtmlEntities(input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
-}
-
-async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<string> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; WebBuilderAI/1.0)",
-        "Accept": "text/html,application/xhtml+xml",
-      },
-    });
-    if (!res.ok) return "";
-    return await res.text();
-  } catch {
-    return "";
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-function parseDDGResults(html: string, max = 4): string[] {
-  const snippets: string[] = [];
-  const snippetRe = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>|<div[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/div>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = snippetRe.exec(html)) && snippets.length < max) {
-    const raw = match[1] || match[2] || "";
-    const snippet = stripHtmlTags(raw);
-    if (snippet && snippet.length > 30) {
-      snippets.push(snippet);
-    }
-  }
-  return snippets;
-}
-
-function extractInsights(snippets: string[]): { trends: string[]; keyPhrases: string[] } {
-  const trends: string[] = [];
-  const keyPhrases: string[] = [];
-  const trendKeywords = ["trend", "popular", "modern", "2025", "2024", "latest", "best practice"];
-  const featureKeywords = ["feature", "include", "component", "design", "layout", "responsive"];
-  for (const snippet of snippets) {
-    const lower = snippet.toLowerCase();
-    if (trendKeywords.some(kw => lower.includes(kw))) {
-      const sentences = snippet.split(/[.!?]+/).filter(s => s.trim().length > 20);
-      if (sentences[0] && trendKeywords.some(kw => sentences[0].toLowerCase().includes(kw))) {
-        trends.push(sentences[0].trim());
-      }
-    }
-    if (featureKeywords.some(kw => lower.includes(kw))) {
-      const sentences = snippet.split(/[.!?]+/).filter(s => s.trim().length > 20);
-      if (sentences[0] && featureKeywords.some(kw => sentences[0].toLowerCase().includes(kw))) {
-        keyPhrases.push(sentences[0].trim());
-      }
-    }
-  }
-  return {
-    trends: [...new Set(trends)].slice(0, 3),
-    keyPhrases: [...new Set(keyPhrases)].slice(0, 3)
-  };
-}
-
-async function performPromptResearch(userPrompt: string): Promise<ResearchResult> {
-  const result: ResearchResult = { snippets: [], trends: [], keyPhrases: [] };
-  if (!userPrompt || userPrompt.length < 10) return result;
-  try {
-    const cleanPrompt = userPrompt
-      .replace(/```[\s\S]*?```/g, '')
-      .replace(/<[^>]*>/g, '')
-      .replace(/\b(create|make|build|add|change|update|generate|design|I want|I need|please|can you)\b/gi, '')
-      .trim();
-    if (cleanPrompt.length < 5) return result;
-    const searchQuery = `web design ${cleanPrompt.split(/\s+/).slice(0, 5).join(' ')} best practices`;
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
-    const html = await fetchWithTimeout(ddgUrl, 4000);
-    const snippets = parseDDGResults(html, 4);
-    const seenSnippets = new Set<string>();
-    for (const snippet of snippets) {
-      const normalized = snippet.toLowerCase().substring(0, 40);
-      if (!seenSnippets.has(normalized)) {
-        seenSnippets.add(normalized);
-        result.snippets.push(snippet);
-      }
-    }
-    const insights = extractInsights(result.snippets);
-    result.trends = insights.trends;
-    result.keyPhrases = insights.keyPhrases;
-    console.log(`[ai-code-assistant] Research completed: ${result.snippets.length} snippets`);
-  } catch (error) {
-    console.warn("[ai-code-assistant] Research failed (non-blocking):", error);
-  }
-  return result;
-}
-
-function formatResearchContext(research: ResearchResult): string {
-  if (research.snippets.length === 0) return "";
-  let context = "\n\n🔬 **LIVE WEB RESEARCH CONTEXT:**\n";
-  if (research.trends.length > 0) {
-    context += "\n**Current Design Trends:**\n";
-    for (const trend of research.trends) { context += `- ${trend}\n`; }
-  }
-  if (research.keyPhrases.length > 0) {
-    context += "\n**Recommended Approaches:**\n";
-    for (const phrase of research.keyPhrases) { context += `- ${phrase}\n`; }
-  }
-  if (research.snippets.length > 0) {
-    context += "\n**Relevant Context:**\n";
-    for (const snippet of research.snippets.slice(0, 3)) {
-      const truncated = snippet.length > 150 ? snippet.substring(0, 150) + "..." : snippet;
-      context += `> ${truncated}\n`;
-    }
-  }
-  return context;
-}
+// Web research functions moved to ./webResearch.ts
 
 // ============================================================================
 // MAIN HANDLER
@@ -231,72 +109,10 @@ serve(async (req: Request) => {
     void _debugMode;
     void _templateAnalysis;
 
-    // Build system type context
-    const systemTypeContext = systemType ? `
-[Business System Type: ${systemType}]
-Generate content and features appropriate for a ${systemType} business. Consider:
-- Industry-specific sections and terminology
-- Relevant call-to-actions and conversion elements
-- Appropriate color schemes and imagery suggestions
-- Business-specific functionality (booking for services, cart for stores, etc.)
-` : '';
-
-    const designProfileContext = userDesignProfile ? `
-[User Design Profile - Match this established style]
-- Analyzed Projects: ${userDesignProfile.projectCount || 0}
-- Dominant Style: ${userDesignProfile.dominantStyle || 'mixed'}
-- Industry Experience: ${userDesignProfile.industryHints?.join(', ') || 'none'}
-Generate a site that matches the user's established design preferences while being unique.
-` : '';
-
-    // Build systems-build blueprint context
-    const resolvedBlueprint = systemsBuildContext ?? null;
-
-    const systemsBuildContextText = resolvedBlueprint ? (() => {
-      const { brand, identity, design, intents, template_sections, template_intents } = resolvedBlueprint as {
-        brand?: { business_name?: string; tagline?: string; tone?: string; palette?: Record<string, string | undefined>; typography?: { heading?: string; body?: string } };
-        identity?: { industry?: string; primary_goal?: string };
-        design?: {
-          layout?: { hero_style?: string };
-          effects?: { animations?: boolean; glassmorphism?: boolean; shadows?: string };
-          sections?: { include_stats?: boolean; include_testimonials?: boolean; include_faq?: boolean; include_cta_banner?: boolean; include_newsletter?: boolean; include_social_proof?: boolean };
-          buttons?: { style?: string };
-          content?: { writing_style?: string };
-        };
-        intents?: Array<{ intent: string }>;
-        template_sections?: string[];
-        template_intents?: string[];
-      };
-
-      const lines: string[] = ['\n[🏗️ Business Blueprint — Use for Content, Colors & Intent Wiring]'];
-      if (brand?.business_name) lines.push(`Business: ${brand.business_name}`);
-      if (brand?.tagline) lines.push(`Tagline: "${brand.tagline}"`);
-      if (identity?.industry) lines.push(`Industry: ${identity.industry.replace(/_/g, ' ')}`);
-      if (identity?.primary_goal) lines.push(`Goal: ${identity.primary_goal}`);
-      if (brand?.tone) lines.push(`Tone: ${brand.tone}`);
-      if (brand?.palette) {
-        const p = brand.palette;
-        lines.push(`Brand Colors: Primary ${p['primary'] || 'auto'} | Secondary ${p['secondary'] || 'auto'} | Accent ${p['accent'] || 'auto'} | BG ${p['background'] || 'auto'} | FG ${p['foreground'] || 'auto'}`);
-      }
-      if (brand?.typography) lines.push(`Typography: ${brand.typography.heading || 'auto'} (headings) / ${brand.typography.body || 'auto'} (body)`);
-      if (design?.layout?.hero_style) lines.push(`Hero Layout: ${design.layout.hero_style}`);
-      if (design?.effects?.glassmorphism) lines.push(`Visual FX: glassmorphism enabled`);
-      if (design?.effects?.shadows) lines.push(`Shadow Style: ${design.effects.shadows}`);
-      if (design?.buttons?.style) lines.push(`Button Style: ${design.buttons.style}`);
-      if (design?.content?.writing_style) lines.push(`Writing Style: ${design.content.writing_style}`);
-      if (design?.sections) {
-        const s = design.sections;
-        const included = (Object.entries(s) as [string, boolean | undefined][])
-          .filter(([, v]) => v)
-          .map(([k]) => k.replace('include_', '').replace(/_/g, ' '));
-        if (included.length) lines.push(`Required Sections: ${included.join(', ')}`);
-      }
-      if (intents?.length) lines.push(`Backend Intents to Wire: ${intents.map(i => i.intent).join(', ')}`);
-      if (template_sections?.length) lines.push(`Template Section Layout: ${template_sections.join(' → ')}`);
-      if (template_intents?.length) lines.push(`Existing Intent Wiring: ${template_intents.join(', ')}`);
-      lines.push('Apply this blueprint: use the brand colors, tone, and wire all listed intents on CTAs.');
-      return lines.join('\n');
-    })() : '';
+    // Build context blocks via extracted modules
+    const systemTypeContext = buildSystemTypeContext(systemType);
+    const designProfileContext = buildDesignProfileContext(userDesignProfile);
+    const systemsBuildContextText = buildSystemsBlueprintContext(systemsBuildContext);
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
@@ -328,353 +144,11 @@ ${p.code_snippet.substring(0, 600)}${p.code_snippet.length > 600 ? '...' : ''}
 `).join('\n') : 'No learned patterns yet - but I will learn from every successful interaction!';
     }
 
-    // Analyze template structure for context-aware editing
-    const analyzeTemplateStructure = (code: string): string => {
-      if (!code) return '';
-      const sections: string[] = [];
-      const patterns = [
-        { regex: /<header[^>]*>|class="[^"]*header[^"]*"/gi, name: 'Header/Navigation' },
-        { regex: /<nav[^>]*>|class="[^"]*nav[^"]*"/gi, name: 'Navigation' },
-        { regex: /class="[^"]*hero[^"]*"|id="[^"]*hero[^"]*"/gi, name: 'Hero Section' },
-        { regex: /class="[^"]*feature[^"]*"|id="[^"]*feature[^"]*"/gi, name: 'Features Section' },
-        { regex: /class="[^"]*about[^"]*"|id="[^"]*about[^"]*"/gi, name: 'About Section' },
-        { regex: /class="[^"]*pricing[^"]*"|id="[^"]*pricing[^"]*"/gi, name: 'Pricing Section' },
-        { regex: /class="[^"]*testimonial[^"]*"|id="[^"]*testimonial[^"]*"/gi, name: 'Testimonials' },
-        { regex: /class="[^"]*team[^"]*"|id="[^"]*team[^"]*"/gi, name: 'Team Section' },
-        { regex: /class="[^"]*contact[^"]*"|id="[^"]*contact[^"]*"|<form[^>]*>/gi, name: 'Contact/Form Section' },
-        { regex: /class="[^"]*cta[^"]*"|id="[^"]*cta[^"]*"/gi, name: 'Call-to-Action' },
-        { regex: /<footer[^>]*>|class="[^"]*footer[^"]*"/gi, name: 'Footer' },
-        { regex: /class="[^"]*gallery[^"]*"|id="[^"]*gallery[^"]*"/gi, name: 'Gallery/Portfolio' },
-        { regex: /class="[^"]*faq[^"]*"|id="[^"]*faq[^"]*"/gi, name: 'FAQ Section' },
-        { regex: /class="[^"]*blog[^"]*"|id="[^"]*blog[^"]*"/gi, name: 'Blog/News Section' },
-      ];
-      patterns.forEach(({ regex, name }) => {
-        if (regex.test(code) && !sections.includes(name)) {
-          sections.push(name);
-        }
-      });
-      const imageCount = (code.match(/<img[^>]*>/gi) || []).length;
-      const buttonCount = (code.match(/<button[^>]*>|class="[^"]*btn[^"]*"/gi) || []).length;
-      const linkCount = (code.match(/<a[^>]*href/gi) || []).length;
-      return `
-📊 **TEMPLATE STRUCTURE ANALYSIS:**
-- Detected Sections: ${sections.length > 0 ? sections.join(', ') : 'Basic layout'}
-- Images: ${imageCount} | Buttons: ${buttonCount} | Links: ${linkCount}
-- Approximate Size: ${code.length} characters
-`;
-    };
-
-    const maxCodeLength = 4000;
+    // Template structure + action + edit context via extracted modules
     const templateStructure = currentCode ? analyzeTemplateStructure(currentCode) : '';
+    const templateActionCtx = buildTemplateActionContext(templateAction ?? undefined);
+    const editModeContext = buildEditModeContext(editMode, currentCode, templateStructure, templateActionCtx);
 
-    // ── Template action context ─────────────────────────────────────────
-    // (Preserved exactly from original — long prompt blocks)
-    const templateActionContext = templateAction ? `
-🎯 **TEMPLATE ACTION: ${templateAction.toUpperCase()}**
-${templateAction === 'add' ? `User wants to ADD new elements/sections/components to the project.
-- For React projects: create new component files or add JSX to existing components
-- Identify the best location for new content based on the site component map
-- Maintain existing design patterns, imports, and component structure
-- If adding a section to a page: import and render it in the parent component (App.tsx or relevant page)
-- Output modified files in JSON format: {"files": {"/path": "content"}}` : ''}
-${templateAction === 'remove' ? `User wants to REMOVE elements/sections/components from the project.
-- For React projects: remove the component usage from the parent, clean up unused imports
-- Carefully remove ONLY what's specified
-- Clean up any orphaned styles, imports, or empty containers
-- Maintain structural integrity after removal` : ''}
-${templateAction === 'modify' ? `User wants to MODIFY existing elements/sections/components.
-- For React projects: identify which file contains the targeted component using the site component map
-- Make targeted changes to ONLY that component's JSX, styles, or logic
-- Preserve all imports, hooks, state, props, and other component structure
-- Output only the modified file(s), not the entire project
-- Update only the specified properties/content` : ''}
-${templateAction === 'suggest' ? `User wants UI/UX SUGGESTIONS for improvement.
-- Analyze current template for improvements
-- Suggest specific, actionable enhancements
-- Provide code examples for each suggestion
-- Consider accessibility, performance, and UX best practices` : ''}
-${templateAction === 'restyle' ? `User wants to RESTYLE the template/component visually.
-- For React projects: modify className props and CSS/style on targeted elements
-- Change colors, fonts, spacing as requested
-- Maintain layout and structure
-- Ensure consistent styling across all sections` : ''}
-${templateAction === 'full-control' ? `🚀 **FULL CREATIVE CONTROL MODE - AI HAS COMPLETE AUTHORITY**
-
-You have FULL AUTHORITY to make ANY UI/UX decisions to improve this template. The user trusts your expertise.
-
-🎨 **YOU CAN AND SHOULD:**
-
-**VISUAL DESIGN:**
-- Completely restyle colors, fonts, typography, spacing
-- Add gradients, shadows, animations, transitions
-- Implement glassmorphism, neumorphism, or any modern design trend
-- Change backgrounds, add patterns, textures, or visual effects
-- Adjust all spacing, padding, margins for better visual rhythm
-- Add micro-interactions and hover effects
-
-**LAYOUT & STRUCTURE:**
-- Reorder sections for better user flow and conversion
-- Add new sections (hero, features, testimonials, FAQ, CTA, etc.)
-- Remove redundant or weak sections
-- Reorganize grid layouts (2-col → 3-col, etc.)
-- Add responsive breakpoints where missing
-- Implement better visual hierarchy
-
-**CONTENT & COPY:**
-- Rewrite headlines for impact and clarity
-- Improve button labels for better conversion
-- Add compelling subheadings and descriptions
-- Enhance placeholder text to be more realistic
-- Add social proof elements (stats, testimonials, badges)
-- Improve CTAs with urgency and value props
-
-**FUNCTIONALITY:**
-- Make static elements dynamic (counters, carousels, tabs)
-- Add interactive components (accordions, modals, tooltips)
-- Implement cart → checkout flows for e-commerce
-- Add form validation and user feedback
-- Implement scroll animations and reveals
-- Add progress indicators and loading states
-
-**E-COMMERCE ENHANCEMENTS:**
-- Add product cards with proper data-ut-intent="cart.add"
-- Implement shopping cart with item count badge
-- Add checkout flow with data-ut-intent="checkout.start"
-- Include price displays, quantity selectors, variant pickers
-- Add "Add to Cart" animations and feedback
-- Include trust badges and security indicators
-
-**CONVERSION OPTIMIZATION:**
-- Add sticky headers/CTAs for key actions
-- Implement exit-intent triggers (conceptual placement)
-- Add urgency elements (limited time, stock counters)
-- Include trust signals throughout
-- Optimize form placement and length
-- Add multi-step forms for complex flows
-
-**BACKEND WIRING (REQUIRED):**
-- Wire all CTAs with appropriate data-ut-intent attributes:
-  - Booking: data-ut-intent="booking.create"
-  - Contact: data-ut-intent="contact.submit"
-  - Newsletter: data-ut-intent="newsletter.subscribe"
-  - E-commerce: data-ut-intent="cart.add", "cart.view", "checkout.start"
-  - Auth: data-ut-intent="auth.signup", "auth.signin"
-  - Quotes: data-ut-intent="quote.request"
-- Include proper data-* attributes for payload (data-product-id, data-price, etc.)
-- Add data-ut-cta labels for CTA tracking
-
-**OUTPUT REQUIREMENTS:**
-1. Return COMPLETE, PRODUCTION-READY React/TSX components
-2. Use Tailwind CSS with design token classes (bg-primary, text-foreground, etc.)
-3. Use CSS-in-JS or index.css for custom animations (NOT <style> tags)
-4. Use React hooks for interactivity (NOT <script> tags)
-5. Ensure responsive design (mobile-first with sm:, md:, lg: breakpoints)
-6. Wire ALL conversion elements with data-ut-intent
-7. For multi-file: output JSON {"files": {"src/App.tsx": "...", ...}}. For single file: use \`\`\`tsx code fence.
-
-📦 **STRUCTURED OUTPUT FORMATS (ADVANCED):**
-For targeted modifications, use these formats:
-
-**Multi-file React patches (PREFERRED):**
-\`\`\`json
-{"files": {"src/components/Hero.tsx": "...component content...", "src/components/Features.tsx": "...component content..."}}
-\`\`\`
-
-**Single file edit:**
-\`\`\`tsx
-// Complete component with changes applied
-\`\`\`
-
-Use JSON multi-file format when making changes across files; use tsx code fences for single-file edits.
-
-🎯 **YOUR GOAL:** Transform this template into a HIGH-CONVERTING, VISUALLY STUNNING, FULLY FUNCTIONAL React application that you would be proud to showcase.` : ''}
-${templateAction === 'apply-design-preset' ? `🎨 **DESIGN PRESET APPLICATION MODE - VISUAL STYLING ONLY**
-
-You are applying a visual aesthetic preset. This changes ONLY colors, typography, and formatting.
-
-⚠️ **CRITICAL: PRESERVE ALL TEMPLATE CONTENT EXACTLY AS-IS**
-- ALL text content, headings, paragraphs, lists, labels, placeholders must stay identical
-- ALL industry-specific language (service names, menu items, product names, descriptions) must remain unchanged
-- The template's business context, purpose, and copy must remain EXACTLY the same
-- Do NOT rewrite, rephrase, or substitute any text content regardless of industry
-
-✅ **YOU MUST ONLY CHANGE (visual styling):**
-- Font families (e.g., font-sans → font-serif, add Google Fonts via class)
-- Font sizes (text-sm, text-lg, text-xl, etc.)
-- Font weights (font-normal, font-medium, font-bold, font-extrabold)
-- Text colors (text-gray-900 → text-slate-800, text-cyan-400, etc.)
-- Background colors (bg-white → bg-slate-900, bg-gradient-to-r, etc.)
-- Border colors, radius, and styles
-- Accent/primary colors for buttons, links, and highlights
-- Gradient colors and directions
-- Shadow effects
-- Text decoration, letter spacing, uppercase/lowercase styling
-- Hover/focus color states
-
-🚫 **YOU MUST NEVER CHANGE:**
-- ANY text content, headings, descriptions, labels, or placeholder text
-- Business-specific terms (they belong to the industry, not the aesthetic)
-- Layout structure (flex, grid, columns, rows, spacing, padding, margins)
-- Section order or arrangement
-- Images, icons, logos, or any visual assets
-- Button positions, sizes, or container layouts
-- Form structures and input placements
-- Navigation structure
-- ANY data-ut-intent, data-intent, data-ut-cta, data-no-intent attributes
-- Form inputs, interactive element functionality
-- JSX structure or component hierarchy
-- React hooks or state management
-
-🎯 **OUTPUT:**
-Return the COMPLETE React/TSX code with visual aesthetic applied. Keep every word of content identical. Output as \`\`\`tsx code fence or JSON {"files": {...}}.` : ''}
-` : '';
-
-    // ── Edit mode context (preserved exactly) ───────────────────────────
-    const editModeContext = editMode && currentCode ? `
-⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔
-🔴🔴🔴 EDIT MODE: ADDITIVE ONLY - ZERO TOLERANCE FOR REMOVAL 🔴🔴🔴
-⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔
-
-You are editing an EXISTING saved template in an iframe. The user's site is LIVE.
-
-🔒 **THE GOLDEN RULE: ADD, NEVER REMOVE**
-- You must ADD to the existing template
-- You must NEVER remove sections, scripts, styles, or elements
-- Unless the user EXPLICITLY says "remove", "delete", "take out", or "get rid of"
-- If user says "change X" → MODIFY X in place, do not delete and recreate
-
-📊 **MANDATORY ELEMENT COUNT VALIDATION:**
-Before outputting, COUNT these elements in your output vs the input:
-- React components/sections: Input count MUST equal output count (unless explicitly adding/removing)
-- Import statements: ALL MUST be preserved
-- Hooks (useState, useEffect, etc.): ALL MUST be preserved
-- JSX elements (header, nav, footer): MUST be preserved exactly
-- data-ut-intent attributes: ALL MUST be preserved
-- Form elements: ALL MUST be preserved
-
-WARNING: **IF YOUR OUTPUT HAS FEWER COMPONENTS THAN INPUT = FATAL ERROR**
-
-${templateStructure}
-${templateActionContext}
-**CURRENT CODE (${currentCode.length > maxCodeLength ? 'truncated' : 'full'}):**
-\`\`\`tsx
-${currentCode.substring(0, maxCodeLength)}${currentCode.length > maxCodeLength ? '\n... (truncated for context)' : ''}
-\`\`\`
-
-🚨🚨🚨 **ABSOLUTE EDIT MODE REQUIREMENTS - VIOLATION = USER DATA LOSS** 🚨🚨🚨
-
-**STRUCTURAL INTEGRITY RULES (MANDATORY):**
-1. **COMPONENT COUNT LOCK** - Count section components in input. Your output MUST have >= that count. NEVER reduce.
-2. **IMPORT LOCK** - Preserve ALL import statements EXACTLY. NEVER remove imports.
-3. **HOOKS LOCK** - Preserve ALL React hooks (useState, useEffect, etc.) EXACTLY. NEVER remove or simplify.
-4. **TEXT CONTENT LOCK** - DO NOT change any text, headings, paragraphs, button labels UNLESS specifically requested
-5. **IMAGE URLs LOCK** - NEVER modify src attributes on images unless requested
-6. **COLOR PALETTE LOCK** - NEVER change bg-*, text-*, border-* Tailwind classes unless requested
-7. **FONT CLASSES LOCK** - NEVER change font-*, text-size, leading-* unless requested
-8. **DATA ATTRIBUTES LOCK** - ALL data-* attributes MUST be preserved exactly
-
-**ADDITIVE CHANGE PRINCIPLE:**
-- If user says "center the hero" → ADD centering classes to hero. NOTHING ELSE CHANGES.
-- If user says "add animation" → ADD animation classes. NOTHING ELSE CHANGES.
-- If user says "make it bigger" → MODIFY size classes on target element. NOTHING ELSE CHANGES.
-- If user says "change the color" → MODIFY color classes on target element. NOTHING ELSE CHANGES.
-
-**OUTPUT VERIFICATION CHECKLIST (MANDATORY - CHECK BEFORE OUTPUTTING):**
-□ Component count: Input has N sections → Output has N sections? (If not, STOP and fix)
-□ Import count: Input has N imports → Output has N imports? (If not, STOP and fix)
-□ Footer present: Input has footer → Output has footer? (If not, STOP and fix)
-□ Header/Nav present: Input has header/nav → Output has header/nav? (If not, STOP and fix)
-□ All text content preserved word-for-word?
-□ All image URLs preserved?
-□ All Tailwind classes preserved?
-□ Only the specifically requested change was made?
-
-🚫 **FATAL ERRORS THAT CAUSE DATA LOSS (ZERO TOLERANCE):**
-- Reducing the number of components/sections (e.g., 8 sections → 3 sections = FATAL)
-- Removing ANY import statements (build breaks = FATAL)
-- Removing ANY React hooks (functionality breaks = FATAL)
-- Removing the footer component (user content lost = FATAL)
-- Generating a "simplified" or "cleaner" version (DATA LOSS = FATAL)
-- Outputting a "new" component instead of editing existing (DATA LOSS = FATAL)
-- Changing text content without being asked
-- Replacing specific images with different ones
-
-**ADDITIVE CHANGE PRINCIPLE:**
-- If user says "center the hero" → ADD centering classes to hero. NOTHING ELSE CHANGES.
-- If user says "add animation" → ADD animation classes. NOTHING ELSE CHANGES.
-- If user says "make it bigger" → MODIFY size classes on target element. NOTHING ELSE CHANGES.
-- If user says "change the color" → MODIFY color classes on target element. NOTHING ELSE CHANGES.
-
-**OUTPUT VERIFICATION CHECKLIST (MANDATORY - CHECK BEFORE OUTPUTTING):**
-□ Section count: Input has N sections → Output has N sections? (If not, STOP and fix)
-□ Script count: Input has N scripts → Output has N scripts? (If not, STOP and fix)
-□ Style count: Input has N styles → Output has N styles? (If not, STOP and fix)
-□ Footer present: Input has footer → Output has footer? (If not, STOP and fix)
-□ Header/Nav present: Input has header/nav → Output has header/nav? (If not, STOP and fix)
-□ All text content preserved word-for-word?
-□ All image URLs preserved?
-□ All color classes preserved?
-□ Only the specifically requested change was made?
-
-🚫 **FATAL ERRORS THAT CAUSE DATA LOSS (ZERO TOLERANCE):**
-- Reducing the number of sections (e.g., 8 sections → 3 sections = FATAL)
-- Removing ANY <script> blocks (functionality breaks = FATAL)
-- Removing ANY <style> blocks (styling lost = FATAL)
-- Removing the footer section (user content lost = FATAL)
-- Generating a "simplified" or "cleaner" version (DATA LOSS = FATAL)
-- Outputting a "new" template instead of editing existing (DATA LOSS = FATAL)
-- Changing text content without being asked
-- Replacing specific images with different ones
-
-📐 **POSITIONING & LAYOUT COMMANDS:**
-When user asks to reposition elements, ONLY add/modify classes on the targeted element:
-
-**Centering:**
-- "center" / "center horizontally" → mx-auto (block) or justify-center (flex) or text-center (text)
-- "center vertically" → items-center (flex) or my-auto
-- "center both" → flex items-center justify-center
-
-**Alignment:**
-- "left" / "align left" → text-left, justify-start, mr-auto
-- "right" / "align right" → text-right, justify-end, ml-auto
-- "top" → items-start, mt-0
-- "bottom" → items-end, mt-auto
-
-**Flexbox Layout:**
-- "make flex" / "use flexbox" → flex
-- "flex row" → flex flex-row
-- "flex column" → flex flex-col
-- "space between" → flex justify-between
-- "space around" → flex justify-around
-- "space evenly" → flex justify-evenly
-- "wrap" → flex flex-wrap
-- "gap" → gap-4 (adjust number as needed)
-
-**Grid Layout:**
-- "make grid" → grid
-- "2 columns" → grid grid-cols-2
-- "3 columns" → grid grid-cols-3
-- "4 columns" → grid grid-cols-4
-- "responsive grid" → grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3
-
-**Positioning:**
-- "fixed" → fixed
-- "absolute" → absolute
-- "relative" → relative
-- "sticky" → sticky top-0
-- "full width" → w-full
-- "full height" → h-full or min-h-screen
-
-**Spacing:**
-- "add padding" → p-4, p-6, p-8
-- "add margin" → m-4, m-6, m-8
-- "remove spacing" → p-0 m-0
-
-**Container Widths:**
-- "max width" → max-w-4xl mx-auto, max-w-6xl mx-auto
-- "container" → container mx-auto px-4
-
-` : '';
 
     // ── System prompts object (code mode) ───────────────────────────────
     // NOTE: This is the massive code-mode system prompt. Kept inline for now.
@@ -1773,152 +1247,21 @@ Structure your thinking as follows:
 Write your <thinking> block FIRST, then immediately follow with your complete response (HTML/code/answer).
 Never include the <thinking> block explanation text in your final output.`;
 
-    // ── Elements library ────────────────────────────────────────────────
-    const elementsLibraryBlock = (siteElementsLibraryContext && !surgicalEdit)
-      ? `\n${siteElementsLibraryContext}\n⚠️ LIBRARY USAGE RULE: The element library above provides STRUCTURE and INTENT WIRING patterns only. For colors, fonts, gradients, card styles, and visual effects, follow the industry variation system, design profile, and brand palette provided elsewhere in this prompt. Do NOT copy visual styles from the library skeletons — create a UNIQUE design each time.\n`
-      : '';
-
-    // ── Surgical edit reinforcement ─────────────────────────────────────
-    let vfsFilesContext = '';
-    if (surgicalEdit && vfsFiles && Object.keys(vfsFiles).length > 0) {
-      const vfsEntries = Object.entries(vfsFiles);
-      const sorted = vfsEntries.sort(([a], [b]) => {
-        const aReact = /\.(tsx|jsx)$/.test(a) ? 0 : 1;
-        const bReact = /\.(tsx|jsx)$/.test(b) ? 0 : 1;
-        return aReact - bReact;
-      });
-      let totalChars = 0;
-      const MAX_VFS_CHARS = 80_000;
-      const included: string[] = [];
-      for (const [path, content] of sorted) {
-        if (totalChars + content.length > MAX_VFS_CHARS) continue;
-        included.push(`--- FILE: ${path} ---\n${content}\n--- END FILE ---`);
-        totalChars += content.length;
-      }
-      if (included.length > 0) {
-        vfsFilesContext = `\n\n📁 CURRENT PROJECT FILES (${included.length} files):\n${included.join('\n\n')}`;
-      }
-    }
-
-    const surgicalEditReinforcement = surgicalEdit ? `
-
-🔒🔒🔒 SURGICAL EDIT OVERRIDE — HIGHEST PRIORITY 🔒🔒🔒
-This is a SURGICAL EDIT request. The user wants ONE specific change.
-
-⚠️ MANDATORY OUTPUT FORMAT ⚠️
-You MUST output the modified code. Do NOT just explain what you would do.
-For multi-file React projects, output JSON: {"files": {"/path/file.tsx": "...full file content..."}, "explanation": "Brief summary"}
-For single-file edits, output the COMPLETE modified file content in a \`\`\`tsx code fence.
-NEVER respond with only text/reasoning — ALWAYS include the actual code with the change applied.
-
-FOR REACT/TSX PROJECTS:
-- If the user's prompt targets a specific component or section, output ONLY the modified file(s) using JSON format: {"files": {"/path/file.tsx": "...content..."}}
-- Preserve ALL imports, hooks, state declarations, and component structure in the file — only change the targeted JSX, logic, or styles.
-- If the edit targets a child component in a separate file, output only that child file — not the parent.
-- Keep all React patterns intact: hooks order, conditional rendering, map calls, event handlers.
-- For style changes on React components: modify only the className or style prop on the targeted element.
-
-FOR HTML TEMPLATES:
-- Output the COMPLETE template HTML, but with ONLY the requested element modified.
-
-UNIVERSAL RULES:
-EVERY other section, element, style, script, text, image, color, font, and data attribute MUST remain BYTE-FOR-BYTE IDENTICAL to the input.
-Think of this as applying a minimal diff — if a line wasn't mentioned by the user, it MUST NOT change.
-DO NOT "improve", reorganize, or modernize unmentioned parts of the code.
-DO NOT add new sections or components unless explicitly asked.
-DO NOT remove any sections, scripts, components, or styles.
-If the user asks to change ONE element's color, ONLY that element's color class changes. Nothing else.
-
-⚠️ CRITICAL STYLE PRESERVATION ⚠️
-- Copy ALL CSS/style blocks from the input VERBATIM — character for character.
-- DO NOT rewrite, reformat, consolidate, minify, or "clean up" any CSS.
-- DO NOT change CSS custom properties, color values, font-family declarations, or animation keyframes.
-- DO NOT change Tailwind utility classes on elements you were NOT asked to modify.
-- If the user asks to change element X, ONLY modify classes/styles on element X. Leave ALL other elements' classes untouched.
-- DO NOT change background colors, gradients, border-radius, box-shadow, or any visual property on ANY element not targeted by the user.
-
-⚠️ BACKEND / WIRING EDITS — EXTRA RULES ⚠️
-When the user asks to "wire", "connect", "integrate", "hook up", "link to backend", "add API call", "submit data", "save to database", or similar backend-wiring requests:
-- You are ONLY allowed to add/modify script blocks, event handlers, data attributes (data-*), form attributes, or fetch/API call logic.
-- You MUST NOT change ANY visual styling: no class changes, no inline style changes, no CSS modifications.
-- You MUST NOT rearrange, rewrite, or "improve" any HTML/JSX structure or element order.
-- The ONLY acceptable changes are functional: adding event listeners, fetch calls, form handlers, hooks, state.
-- Copy the entire file as-is and ONLY inject the minimal code needed for the backend wiring.
-🔒🔒🔒 END SURGICAL EDIT OVERRIDE 🔒🔒🔒
-${vfsFilesContext}
-` : '';
+    // ── Context blocks via extracted modules ──────────────────────────────
+    const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, surgicalEdit);
+    const vfsFilesContext = buildVfsFilesContext(surgicalEdit, vfsFiles);
+    const surgicalEditReinforcement = buildSurgicalEditReinforcement(surgicalEdit, vfsFilesContext);
 
     // ── Fast-path system prompt override for wizard launches ─────────────
-    const finalSystemPrompt = fastTemplateReact ? (() => {
-      const bp = systemsBuildContext as Record<string, any>;
-      const brandName = bp?.brand?.business_name || templateName || 'My Business';
-      const industry = bp?.identity?.industry || source || 'professional services';
-      const tone = bp?.brand?.tone || 'professional and friendly';
-      const palette = bp?.brand?.palette || {};
-      const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
-      const intents = (bp?.intents || []).map((i: any) => i.intent).join(', ') || 'contact.submit, booking.create';
+    const finalSystemPrompt = fastTemplateReact
+      ? buildFastPathSystemPrompt({
+          systemsBuildContext: systemsBuildContext as Record<string, any>,
+          templateName,
+          source,
+        })
+      : systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '');
 
-      const toHsl = (hex: string | undefined, fallback: string): string => {
-        if (!hex) return fallback;
-        try { return hexToHsl(hex); } catch { return fallback; }
-      };
-      const primaryHsl = toHsl(palette.primary, '221.2 83.2% 53.3%');
-      const secondaryHsl = toHsl(palette.secondary, '160 84.1% 39.4%');
-      const accentHsl = toHsl(palette.accent, '38 92.1% 50.2%');
-      const backgroundHsl = toHsl(palette.background, '222.2 84% 4.9%');
-      const foregroundHsl = toHsl(palette.foreground, '210 40% 98%');
 
-      return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
-
-BUSINESS: "${brandName}" — ${industry}
-TONE: ${tone}
-SECTIONS: ${sections.join(' → ')}
-INTENTS TO WIRE: ${intents}
-
-BRAND COLORS — HSL values for CSS custom properties (no hsl() wrapper, just the values):
---primary: ${primaryHsl}
---primary-foreground: 210 40% 98%
---secondary: ${secondaryHsl}
---secondary-foreground: 210 40% 98%
---accent: ${accentHsl}
---accent-foreground: 210 40% 98%
---background: ${backgroundHsl}
---foreground: ${foregroundHsl}
---muted: 217.2 32.6% 17.5%
---muted-foreground: 215 20.2% 65.1%
---border: 217.2 32.6% 17.5%
---card: 222.2 84% 4.9%
---card-foreground: 210 40% 98%
---ring: 224.3 76.3% 48%
---radius: 0.75rem
-
-RULES:
-1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
-2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
-3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports.
-4. In App.tsx use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
-5. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
-6. Wire CTAs with data-ut-intent attributes: data-ut-intent="booking.create", data-ut-intent="contact.submit"
-7. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
-8. Images: use REAL Unsplash URLs that match the industry context. Examples by industry:
-   - Restaurant: https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80 (dining room), https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80 (food plating)
-   - Salon/Beauty: https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80 (salon interior), https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=80 (styling)
-   - Fitness: https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80 (gym), https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80 (workout)
-   - Medical: https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&q=80 (hospital), https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800&q=80 (healthcare)
-   - SaaS/Tech: https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80 (dashboard), https://images.unsplash.com/photo-1551434678-e076c223a692?w=800&q=80 (team)
-   - Ecommerce: https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80 (store), https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80 (avatar)
-   - Portfolio: https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80 (workspace), https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80 (collaboration)
-   - Contractor: https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80 (construction), https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80 (tools)
-   - Agency: https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80 (office), https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80 (meeting)
-   For people/testimonials: https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80, https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80, https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80
-   NEVER use fake/placeholder URLs like "photo-1234567890" — every image MUST load.
-9. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above
-10. MINIMUM 7 distinct sections, each with rich content
-11. Dark theme, premium glassmorphism + gradient effects, responsive (sm:/md:/lg:)
-12. export default function App() — must be the default export
-13. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object
-14. CONTRAST RULE: --foreground MUST be visually distinct from --background. If background is dark (lightness < 30%), foreground MUST be light (lightness > 80%). If background is light (lightness > 70%), foreground MUST be dark (lightness < 25%). Same rule applies to --card vs --card-foreground, --primary vs --primary-foreground. NEVER make text invisible.`;
-    })() : systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '');
 
     const aiMessages = [
       { role: 'system', content: finalSystemPrompt },

@@ -379,6 +379,38 @@ async function runBuilderLane(
   );
 }
 
+// ── User Design Override Detection ──────────────────────────────────────────
+
+const DESIGN_OVERRIDE_PATTERNS: Array<{ pattern: RegExp; category: string }> = [
+  { pattern: /\b(earthy|warm|cool|pastel|neon|muted|soft|vibrant|dark|light|bright)\s*(tone|color|palette|scheme|theme)/i, category: 'palette' },
+  { pattern: /\b(change|make|use|switch|set)\s+(the\s+)?(color|colours|palette|scheme|theme)\s+(to|as|like)/i, category: 'palette' },
+  { pattern: /\b(serif|sans.?serif|monospace|handwritten|script)\s*(font|typography)/i, category: 'typography' },
+  { pattern: /\b(change|make|use|switch|set)\s+(the\s+)?(font|typography|typeface)/i, category: 'typography' },
+  { pattern: /\b(minimalist|brutalist|glassmorphism|neumorphism|retro|vintage|modern|elegant|playful)/i, category: 'style' },
+  { pattern: /#[0-9a-f]{3,8}\b/i, category: 'palette' },
+  { pattern: /\brgb[a]?\s*\(/i, category: 'palette' },
+  { pattern: /\bhsl[a]?\s*\(/i, category: 'palette' },
+];
+
+function detectUserDesignOverride(userPrompt: string, variation: TemplateVariation): string {
+  const matches = DESIGN_OVERRIDE_PATTERNS.filter(p => p.pattern.test(userPrompt));
+  if (matches.length === 0) return '';
+
+  const categories = [...new Set(matches.map(m => m.category))];
+  const overrideBlock = `
+
+## ⚡ USER DESIGN OVERRIDE DETECTED
+The user's request explicitly asks for design changes. **Their request takes absolute priority** over the default "${variation.colorScheme.name}" palette above.
+Override categories: ${categories.join(', ')}
+
+**Rules for this override:**
+${categories.includes('palette') ? '- REPLACE the default color palette with colors that match the user\'s description.\n' : ''}${categories.includes('typography') ? '- REPLACE the default fonts with typography that matches the user\'s description.\n' : ''}${categories.includes('style') ? '- ADAPT the visual style (effects, layout density, decorative elements) to match the user\'s description.\n' : ''}- Keep the industry context (${variation.industry.name}) — do NOT change the subject matter, copy, or business logic.
+- Update the brandKit in your response to reflect the new design tokens.
+`;
+  console.log(`[orchestrator] Design override detected: ${categories.join(', ')}`);
+  return overrideBlock;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 async function fetchLearnedPatterns(): Promise<string> {

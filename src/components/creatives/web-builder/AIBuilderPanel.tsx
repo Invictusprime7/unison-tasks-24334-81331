@@ -54,6 +54,7 @@ import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
 import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 import { vfsEventBus } from '@/services/vfsEventBus';
+import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
 
 // ============================================================================
 /**

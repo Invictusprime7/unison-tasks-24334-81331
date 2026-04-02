@@ -201,16 +201,29 @@ export function buildResponseBody(opts: {
   debugMode?: boolean;
   mode?: string;
   modelUsed?: string;
+  reviewWarnings?: Array<{ severity: WarningSeverity; message: string }>;
+  requiresApproval?: boolean;
+  removedFiles?: string[];
+  reviewSummary?: string;
+  applyState?: Record<string, unknown>;
 }): Record<string, unknown> {
   const fileInfo = detectFileStatuses(opts.content);
+
+  // Merge auto-detected warnings with review warnings
+  const autoWarnings = detectWarnings(opts.content) || [];
+  const allWarnings = [...autoWarnings, ...(opts.reviewWarnings || [])];
 
   const meta: RichResponseMeta = {
     actionType: detectActionType(opts.content, opts.debugMode ?? false),
     filesDetected: fileInfo?.files,
     fileStatuses: fileInfo?.statuses,
-    warnings: detectWarnings(opts.content),
+    warnings: allWarnings.length > 0 ? allWarnings : undefined,
     mode: opts.mode,
+    requiresApproval: opts.requiresApproval,
     modelUsed: opts.modelUsed,
+    removedFiles: opts.removedFiles,
+    reviewSummary: opts.reviewSummary,
+    applyState: opts.applyState,
   };
 
   return {

@@ -1355,16 +1355,27 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           normalizedFiles[normalizedPath] = fileContent;
         }
-        
-        if (onApplyToVFS) {
-          console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
-          onApplyToVFS(normalizedFiles);
-          toast.success('✅ Multi-file project applied with dependencies');
-        } else if (onFilesPatch) {
-          onFilesPatch(normalizedFiles);
-          toast.success('✅ Multi-file project applied to VFS');
+
+        // Check if approval is recommended before auto-applying
+        const shouldBlock = responseMeta?.requiresApproval &&
+          responseMeta.warnings?.some(w => w.severity === 'error');
+
+        if (shouldBlock) {
+          console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
+          toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
+          // Store files for manual apply later (user can use View Edits)
         } else {
-          console.warn('[AIBuilderPanel] No VFS callback available for multi-file output!');
+          if (onApplyToVFS) {
+            console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
+            onApplyToVFS(normalizedFiles);
+            const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
+            toast.success(`✅ Multi-file project applied${approvalNote}`);
+          } else if (onFilesPatch) {
+            onFilesPatch(normalizedFiles);
+            toast.success('✅ Multi-file project applied to VFS');
+          } else {
+            console.warn('[AIBuilderPanel] No VFS callback available for multi-file output!');
+          }
         }
       }
 

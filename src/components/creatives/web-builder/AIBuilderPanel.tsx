@@ -175,6 +175,16 @@ interface Message {
   edits?: VFSEdit[];
   error?: IframeError;
   isStreaming?: boolean;
+  /** Rich metadata from the AI response */
+  meta?: {
+    actionType?: string;
+    modelUsed?: string;
+    filesDetected?: string[];
+    warnings?: Array<{ severity: string; message: string }>;
+    requiresApproval?: boolean;
+    removedFiles?: string[];
+    reviewSummary?: string;
+  };
 }
 
 export interface VFSEdit {

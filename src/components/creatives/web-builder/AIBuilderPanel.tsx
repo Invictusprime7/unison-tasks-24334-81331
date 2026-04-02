@@ -1560,19 +1560,21 @@ export default function App() {
         
         // Parse edge function errors for better messaging
         if (errorMessage.includes('All AI providers failed') || errorMessage.includes('All AI models failed')) {
-          errorMessage = 'AI service unavailable — no API key is working. Please check your LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in Supabase secrets.';
+          errorMessage = 'AI service unavailable — all models failed. Try simplifying your request or check API key configuration.';
         } else if (errorMessage.includes('non-2xx status code')) {
-          errorMessage = 'AI service temporarily unavailable. Please try again in a moment.';
-        } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit')) {
+          errorMessage = 'AI service returned an error. Your request may be too long — try breaking it into smaller steps, or try again in a moment.';
+        } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
           errorMessage = 'Too many requests. Please wait a moment and try again.';
         } else if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
-          errorMessage = 'Request timed out. Try a shorter prompt or try again.';
+          errorMessage = 'Request timed out. Try a shorter or simpler prompt.';
         } else if (errorMessage.includes('Payment required') || errorMessage.includes('402')) {
           errorMessage = 'AI credits needed. Please check your subscription or API billing.';
         } else if (errorMessage.includes('401') || errorMessage.includes('authentication')) {
-          errorMessage = 'AI API key is invalid or expired. Please update your API key in Supabase secrets.';
+          errorMessage = 'AI API key is invalid or expired. Please update your API key.';
         } else if (errorMessage.includes('not available') || errorMessage.includes('LOVABLE_API_KEY')) {
-          errorMessage = 'AI service not configured. Please set OPENAI_API_KEY or LOVABLE_API_KEY in your Supabase project secrets.';
+          errorMessage = 'AI service not configured. Please set your API key in project secrets.';
+        } else if (errorMessage.includes('Invalid request body')) {
+          errorMessage = 'Request was too large or malformed. Try a shorter prompt or fewer attached files.';
         }
       } else if (typeof error === 'object' && error !== null) {
         // Handle Supabase FunctionsHttpError

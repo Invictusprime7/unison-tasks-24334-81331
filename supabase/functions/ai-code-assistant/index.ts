@@ -281,12 +281,13 @@ ${p.code_snippet.substring(0, 600)}${p.code_snippet.length > 600 ? '...' : ''}
     ];
 
     // ── 13. Call AI providers ────────────────────────────────────────────
-    const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY));
+    const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY), gatewayOptions);
     const providerResult = await runProviderLoop({
       aiMessages,
       providerPlan,
       navPageGen,
       lovableApiKey: LOVABLE_API_KEY ?? undefined,
+      reasoningEffort: gatewayOptions?.reasoningEffort,
     });
 
     if (providerResult.earlyResponse) {

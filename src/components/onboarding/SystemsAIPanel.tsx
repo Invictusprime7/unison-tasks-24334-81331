@@ -414,7 +414,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         console.log(`[SystemsAIPanel] No pre-built template for ${selectedCodeChip}, using ai-code-assistant`);
 
         const chipLabel = codePromptChips.find(c => c.id === selectedCodeChip)?.label || "website";
-        const chipBuildContext = buildSystemsBuildContextFromChip(selectedCodeChip);
+        const chipBuildContext = buildContractAndContext(selectedCodeChip, codePrompt).context;
         const designProfileContext = hasProfile ? getDesignPromptContext() : null;
         const chipPrompt = `Create a complete, polished, production-ready ${chipLabel} website. ${codePrompt}${fileContext}`;
         const enhancedChipPrompt = designProfileContext

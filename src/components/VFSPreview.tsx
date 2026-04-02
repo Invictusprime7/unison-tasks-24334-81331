@@ -142,6 +142,43 @@ class SandpackErrorBoundary extends Component<
 }
 
 // ============================================================================
+// Sandpack Error Listener — captures compile/runtime errors from Sandpack
+// ============================================================================
+
+const SandpackErrorListener: React.FC<{
+  onError?: (error: string) => void;
+}> = ({ onError }) => {
+  const { sandpack } = useSandpack();
+  const lastReportedRef = useRef<string>('');
+
+  useEffect(() => {
+    // Check for Sandpack bundler errors
+    const status = sandpack.status;
+    const errors = sandpack.errors;
+
+    if (errors && errors.length > 0) {
+      const errorMessages = errors.map((e: any) => {
+        if (typeof e === 'string') return e;
+        if (e.message) return `${e.title || 'Error'}: ${e.message}${e.path ? ` (${e.path}:${e.line || ''})` : ''}`;
+        return String(e);
+      });
+
+      const combined = errorMessages.join('\n');
+      // Deduplicate: only report if the error string changed
+      if (combined !== lastReportedRef.current) {
+        lastReportedRef.current = combined;
+        errorMessages.forEach((msg: string) => onError?.(msg));
+      }
+    } else if (status === 'idle' || status === 'running') {
+      // Clear last reported when errors resolve
+      lastReportedRef.current = '';
+    }
+  }, [sandpack.status, sandpack.errors, onError]);
+
+  return null;
+};
+
+// ============================================================================
 // Helpers
 // ============================================================================
 

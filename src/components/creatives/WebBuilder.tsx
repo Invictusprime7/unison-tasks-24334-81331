@@ -11,7 +11,7 @@ import {
   Monitor, Tablet, Smartphone,
   Sparkles, Code, Undo2, Redo2, Save, Keyboard, Zap, RefreshCcw,
   ChevronsDown, ChevronsUp, ArrowDown, ArrowUp, FileCode, Copy, Maximize2, Trash2,
-  FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch
+  FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch, Shield
 } from "lucide-react";
 import { CloudPanel } from "./web-builder/CloudPanel";
 import { CreatorPlaygroundModal } from "./web-builder/CreatorPlaygroundModal";

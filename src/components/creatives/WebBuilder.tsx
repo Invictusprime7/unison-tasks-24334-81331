@@ -4591,6 +4591,14 @@ ${html}
                                cloudState.business?.name?.toLowerCase().includes('contractor') ? 'contractor' : undefined}
                     />
                   </TabsContent>
+                  <TabsContent value="health" className="flex-1 m-0 min-h-0 overflow-auto p-2">
+                    <SystemHealthPanel
+                      contract={compiledContract}
+                      onPublishCheck={() => {
+                        toast.info('Running publish checks...');
+                      }}
+                    />
+                  </TabsContent>
                 </Tabs>
               </TabsContent>
             </Tabs>

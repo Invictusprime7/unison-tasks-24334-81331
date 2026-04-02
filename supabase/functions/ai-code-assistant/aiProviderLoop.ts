@@ -19,8 +19,9 @@ export async function runProviderLoop(opts: {
   providerPlan: ProviderPlan;
   navPageGen: boolean;
   lovableApiKey?: string;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, navPageGen, lovableApiKey } = opts;
+  const { aiMessages, providerPlan, navPageGen, lovableApiKey, reasoningEffort } = opts;
   let content = '';
   let lastError = '';
   let reasoning = '';

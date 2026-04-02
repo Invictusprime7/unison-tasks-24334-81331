@@ -2633,6 +2633,30 @@ export function processCode(code: string, filePath: string): string {
       if (/\.(css|scss|less)$/.test(modulePath)) return match;
 
       if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
+        // Redirect relative components/ui/* imports to the UI shim
+        if (/components\/ui(\/|$)/.test(modulePath)) {
+          const uiShimImport = toRelativeSandpackImport(filePath, '/ui-shim');
+          const importMatch = match.match(/import\s+(?:\{([^}]+)\}|([\w]+))/);
+          if (importMatch) {
+            const namedImports = importMatch[1];
+            const defaultImport = importMatch[2];
+            if (namedImports) return `import { ${namedImports} } from '${uiShimImport}';`;
+            if (defaultImport) return `import ${defaultImport} from '${uiShimImport}';`;
+          }
+          return match;
+        }
+        // Redirect relative lib/utils imports to the utils shim
+        if (/lib\/utils/.test(modulePath)) {
+          const utilsShimImport = toRelativeSandpackImport(filePath, '/lib-utils-shim');
+          const importMatch = match.match(/import\s+(?:\{([^}]+)\}|([\w]+))/);
+          if (importMatch) {
+            const namedImports = importMatch[1];
+            const defaultImport = importMatch[2];
+            if (namedImports) return `import { ${namedImports} } from '${utilsShimImport}';`;
+            if (defaultImport) return `import ${defaultImport} from '${utilsShimImport}';`;
+          }
+          return match;
+        }
         if (modulePath.includes('hooks/')) {
           const importMatch = match.match(/import\s+(?:\{([^}]+)\}|([\w]+))/);
           if (importMatch) {

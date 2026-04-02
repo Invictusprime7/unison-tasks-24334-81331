@@ -611,6 +611,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'code' | 'debug'>('code');
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 

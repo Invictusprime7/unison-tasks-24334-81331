@@ -54,6 +54,15 @@ Never include the <thinking> block explanation text in your final output.`;
 
 // ── Builder-priority compaction (Lane B) ────────────────────────────────────
 
+/** Issue-aware context categories for dynamic prioritization */
+export type CompactionIssueHint =
+  | "routing"    // prefer route/layout/nav files
+  | "import"     // prefer files mentioned in errors
+  | "crash"      // prefer entry files + changed files
+  | "intent"     // prefer CTA/intent-wired components
+  | "style"      // prefer current page/component files only
+  | "general";   // default priority
+
 /** Priority tiers for VFS files — lower number = higher priority */
 const FILE_PRIORITY: Array<{ pattern: RegExp; tier: number }> = [
   { pattern: /\/src\/App\.tsx$/, tier: 0 },
@@ -67,11 +76,77 @@ const FILE_PRIORITY: Array<{ pattern: RegExp; tier: number }> = [
   { pattern: /\.(css|scss)$/, tier: 5 },
 ];
 
-function getFilePriority(path: string): number {
+/** Issue-specific priority boosts — applied on top of base priority */
+const ISSUE_BOOSTS: Record<CompactionIssueHint, Array<{ pattern: RegExp; boost: number }>> = {
+  routing: [
+    { pattern: /\/(routes|router|Router|Layout|layout|Nav|nav|AppRoutes)/i, boost: -4 },
+    { pattern: /\/src\/App\.tsx$/, boost: -3 },
+    { pattern: /\/src\/pages\//, boost: -2 },
+  ],
+  import: [], // dynamic — handled via errorFiles param
+  crash: [
+    { pattern: /\/src\/App\.tsx$/, boost: -3 },
+    { pattern: /\/src\/main\.tsx$/, boost: -3 },
+  ],
+  intent: [
+    { pattern: /data-ut-intent|intent|CTA|cta|contact|form|submit/i, boost: -3 },
+    { pattern: /\/src\/components\//, boost: -1 },
+  ],
+  style: [
+    { pattern: /\.(css|scss)$/, boost: -3 },
+    { pattern: /\/index\.css$/, boost: -4 },
+    { pattern: /\/src\/components\//, boost: -1 },
+  ],
+  general: [],
+};
+
+function getFilePriority(path: string, issueHint?: CompactionIssueHint, errorFiles?: Set<string>): number {
+  let priority = 9;
   for (const { pattern, tier } of FILE_PRIORITY) {
-    if (pattern.test(path)) return tier;
+    if (pattern.test(path)) { priority = tier; break; }
   }
-  return 9;
+
+  // Apply issue-specific boosts
+  if (issueHint && ISSUE_BOOSTS[issueHint]) {
+    for (const { pattern, boost } of ISSUE_BOOSTS[issueHint]) {
+      if (pattern.test(path)) { priority += boost; break; }
+    }
+  }
+
+  // For import issues, boost files mentioned in errors
+  if (issueHint === "import" && errorFiles?.has(path)) {
+    priority = Math.max(0, priority - 5);
+  }
+
+  return Math.max(0, priority);
+}
+
+/**
+ * Detect the issue type from diagnostics/error text to guide compaction.
+ */
+export function detectIssueHint(diagnostics?: string, goalCategory?: string): CompactionIssueHint {
+  if (!diagnostics && !goalCategory) return "general";
+
+  const combined = `${diagnostics || ""} ${goalCategory || ""}`.toLowerCase();
+
+  if (/\b(route|router|navigate|redirect|404|not found|page not|layout)\b/.test(combined)) return "routing";
+  if (/\b(import|module|cannot find|resolve|from '|from ")\b/.test(combined)) return "import";
+  if (/\b(crash|uncaught|fatal|white screen|blank|mount|render)\b/.test(combined)) return "crash";
+  if (/\b(intent|submit|wire|connect|hook up|cta|form action)\b/.test(combined)) return "intent";
+  if (/\b(style|color|font|css|theme|restyle|design|appearance|ui)\b/.test(combined)) return "style";
+
+  return "general";
+}
+
+/**
+ * Extract file paths mentioned in error diagnostics text.
+ */
+export function extractErrorFiles(diagnostics?: string): Set<string> {
+  if (!diagnostics) return new Set();
+  const files = new Set<string>();
+  const matches = diagnostics.matchAll(/(?:at\s+|in\s+|File:\s*|from\s+['"])([^\s:'"]+\.(?:tsx?|jsx?|css))/gi);
+  for (const m of matches) files.add(m[1]);
+  return files;
 }
 
 export interface BuilderCompactContext {

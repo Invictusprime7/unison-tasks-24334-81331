@@ -52,6 +52,7 @@ import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
+import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 
 // ============================================================================
 /**
@@ -610,6 +611,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'code' | 'debug'>('code');
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1628,6 +1630,13 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* AI Gateway Options */}
+          <AIGatewayOptions
+            config={gatewayConfig}
+            onChange={setGatewayConfig}
+            className="flex-shrink-0 border-t border-blue-500/20"
+          />
 
           {/* Input with Retro Styling + File Drop */}
           <div className="flex-shrink-0 mt-auto p-3 border-t border-blue-500/20 bg-[#0a0f1e]">

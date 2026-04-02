@@ -169,14 +169,26 @@ function detectDuplicateComponents(files: Record<string, string>): string[] {
 
 // ── Internal import validation ──────────────────────────────────────────────
 
+function normalizePath(p: string): string {
+  // Ensure leading slash, collapse doubles
+  const clean = ("/" + p).replace(/\/+/g, "/");
+  return clean;
+}
+
 function checkInternalImports(
   files: Record<string, string>,
   existingFiles: string[],
 ): string[] {
-  const allPaths = new Set([
-    ...Object.keys(files),
-    ...existingFiles,
-  ]);
+  // Build a normalized set of all known paths (with and without /src prefix)
+  const allPaths = new Set<string>();
+  for (const p of [...Object.keys(files), ...existingFiles]) {
+    const norm = normalizePath(p);
+    allPaths.add(norm);
+    // Also add without file extension so resolution works both ways
+    const noExt = norm.replace(/\.(ts|tsx|js|jsx)$/, "");
+    allPaths.add(noExt);
+  }
+
   const broken: string[] = [];
 
   for (const [filePath, content] of Object.entries(files)) {
@@ -185,9 +197,9 @@ function checkInternalImports(
     );
     for (const match of importMatches) {
       const importPath = match[1];
-      const dir = filePath.substring(0, filePath.lastIndexOf("/"));
+      const dir = normalizePath(filePath).substring(0, normalizePath(filePath).lastIndexOf("/"));
       const resolved = resolveRelativePath(dir, importPath);
-      const extensions = ["", ".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx"];
+      const extensions = ["", ".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx", "/index"];
       const exists = extensions.some(ext => allPaths.has(resolved + ext));
       if (!exists) {
         broken.push(`${filePath}: import '${importPath}' not found`);

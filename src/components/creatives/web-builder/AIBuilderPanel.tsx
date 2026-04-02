@@ -1368,7 +1368,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         } else {
           if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
+            vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
             onApplyToVFS(normalizedFiles);
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
             toast.success(`✅ Multi-file project applied${approvalNote}`);
           } else if (onFilesPatch) {

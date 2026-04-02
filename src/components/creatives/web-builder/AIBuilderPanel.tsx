@@ -1503,11 +1503,12 @@ export default function App() {
 
       const diagnostics = `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`;
 
+      const hasVfsContext = Object.keys(debugVfs).length > 0;
       const response = await supabase.functions.invoke('ai-code-assistant', {
         body: {
           messages: [{ role: 'user', content: errorPrompt }],
           mode: 'code',
-          currentCode,
+          currentCode: hasVfsContext ? undefined : currentCode,
           editMode: true,
           debugMode: true,
           systemType,

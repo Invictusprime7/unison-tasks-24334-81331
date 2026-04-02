@@ -1136,6 +1136,17 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
 
+      // Extract rich metadata from response
+      const responseMeta: Message['meta'] = {
+        actionType: response.data?.actionType,
+        modelUsed: response.data?.modelUsed,
+        filesDetected: response.data?.filesDetected,
+        warnings: response.data?.warnings,
+        requiresApproval: response.data?.requiresApproval,
+        removedFiles: response.data?.removedFiles,
+        reviewSummary: response.data?.reviewSummary,
+      };
+
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
       

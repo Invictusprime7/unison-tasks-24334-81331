@@ -194,6 +194,7 @@ export function buildResponseBody(opts: {
   imagePlacement?: string;
   debugMode?: boolean;
   mode?: string;
+  modelUsed?: string;
 }): Record<string, unknown> {
   const fileInfo = detectFileStatuses(opts.content);
 

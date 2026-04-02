@@ -230,6 +230,7 @@ async function runBuilderLane(
         vfsFiles,
         changedFiles: memory?.recentChangedFiles,
         currentCode: currentCode ?? undefined,
+        previewDiagnostics: previewDiagnostics ?? undefined,
       })
     : { compactedFiles: '', fileCount: 0, excludedFiles: [] };
 

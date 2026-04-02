@@ -562,6 +562,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   style={{ height: '100%', minHeight: 0 }}
                 />
               </SandpackLayout>
+              <SandpackErrorListener onError={onError} />
             </SandpackProvider>
           </SandpackErrorBoundary>
         )}

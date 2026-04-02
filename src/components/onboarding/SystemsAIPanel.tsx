@@ -215,14 +215,6 @@ function buildContractAndContext(chipId: string, prompt: string, businessName?: 
     intents: blueprint.intents.allowed.map(i => ({ intent: i })),
     template_sections: compositionMeta?.sections,
     template_intents: compositionMeta?.intents,
-    // Pass compiled contract data for richer context
-    _contract: {
-      capabilities: blueprint.capabilities.enabled as string[],
-      primaryCta: blueprint.intents.primaryCta,
-      requiredTables: compiled.requiredTables,
-      intentBindings: compiled.intentBindings as any[],
-      pages: compiled.pages as any[],
-    },
   };
 
   return { context, compiled };

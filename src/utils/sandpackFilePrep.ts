@@ -2839,7 +2839,9 @@ export function prepareSandpackFiles(
           console.warn(`[sandpackFilePrep] Per-file JSON unwrap for ${path}`);
           for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
             if (typeof innerContent === 'string') {
-              finalFiles[innerPath.startsWith('/') ? innerPath : `/${innerPath}`] = innerContent;
+              let norm = innerPath.startsWith('/') ? innerPath : `/${innerPath}`;
+              norm = norm.replace(/^\/src\//, '/');
+              finalFiles[norm] = innerContent;
             }
           }
           continue;

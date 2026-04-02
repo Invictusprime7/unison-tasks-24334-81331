@@ -2584,6 +2584,26 @@ export function processCode(code: string, filePath: string): string {
   processed = processed.replace(
     /^(import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
     (match, importPrefix, modulePath, importSuffix) => {
+      // Shim @/lib/utils → real cn() function
+      if (modulePath === 'lib/utils') {
+        const utilsShimImport = toRelativeSandpackImport(filePath, '/lib-utils-shim');
+        const namedMatch = match.match(/import\s+\{([^}]+)\}/);
+        const defaultMatch = match.match(/import\s+(\w+)\s+from/);
+        if (namedMatch) return `import { ${namedMatch[1]} } from '${utilsShimImport}';`;
+        if (defaultMatch) return `import ${defaultMatch[1]} from '${utilsShimImport}';`;
+        return `import { cn } from '${utilsShimImport}';`;
+      }
+
+      // Shim @/components/ui/* → real React component stubs
+      if (modulePath.startsWith('components/ui/') || modulePath.startsWith('components/ui')) {
+        const uiShimImport = toRelativeSandpackImport(filePath, '/ui-shim');
+        const namedMatch = match.match(/import\s+\{([^}]+)\}/);
+        const defaultMatch = match.match(/import\s+(\w+)\s+from/);
+        if (namedMatch) return `import { ${namedMatch[1]} } from '${uiShimImport}';`;
+        if (defaultMatch) return `import ${defaultMatch[1]} from '${uiShimImport}';`;
+        return match.replace(/@\/[^'"]+/, uiShimImport.replace(/^\.\//, './'));
+      }
+
       if (modulePath.startsWith('hooks/') || modulePath === 'hooks') {
         const namedMatch = match.match(/import\s+\{([^}]+)\}/);
         const defaultMatch = match.match(/import\s+(\w+)\s+from/);

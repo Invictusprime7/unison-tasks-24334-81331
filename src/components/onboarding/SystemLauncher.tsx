@@ -35,6 +35,8 @@ import {
   randomFontPairing,
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
+import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
+import { createRuntimeManifest } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,
   getCompositionMeta,
@@ -46,7 +48,6 @@ import {
   type IndustryTag,
   type PremiumSectionReference,
 } from "@/sections/references";
-import { createLaunchState, type LaunchState } from "@/types/launchState";
 
 // ============================================================================
 // Types
@@ -583,32 +584,30 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         throw error;
       }
 
-      const rawContent = (data?.content || data?.code || "")
+      let rawContent = (data?.content || data?.code || "")
         .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
         .trim()
         .replace(/^```json?\s*\n?/i, "")
         .replace(/\n?```\s*$/i, "")
         .trim();
 
+      // Strip leading non-JSON prose before the opening brace (AI sometimes prepends text)
+      if (!rawContent.startsWith('{') && rawContent.includes('{"files"')) {
+        rawContent = rawContent.slice(rawContent.indexOf('{"files"'));
+      }
+
       const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
 
       let vfsFiles: Record<string, string> | null = null;
+      let parsedEntryPoint: string | undefined;
       try {
         const parsed = JSON.parse(rawContent);
         if (parsed.files && typeof parsed.files === "object") {
-          vfsFiles = { ...parsed.files };
-          // Ensure entry files exist for Sandpack compatibility
-          const hasMain = vfsFiles["/src/main.tsx"] || vfsFiles["src/main.tsx"] || vfsFiles["/main.tsx"];
-          if (!hasMain) {
-            vfsFiles["/src/main.tsx"] = `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`;
-          }
-          // Ensure index.css has semantic tokens if AI omitted them
-          const cssKey = vfsFiles["/src/index.css"] ? "/src/index.css" : vfsFiles["src/index.css"] ? "src/index.css" : null;
-          if (cssKey && !vfsFiles[cssKey].includes("--primary:")) {
-            vfsFiles[cssKey] = baseCSS + "\n" + vfsFiles[cssKey];
-          } else if (!cssKey) {
-            vfsFiles["/src/index.css"] = baseCSS;
-          }
+          parsedEntryPoint = parsed.entryPoint || undefined;
+          // Use normalizeLauncherFiles to ensure consistent structure
+          vfsFiles = normalizeLauncherFiles(parsed.files, {
+            entryPoint: parsedEntryPoint,
+          });
         }
       } catch {
         // single-file output
@@ -622,41 +621,45 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemName: system.name,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
-        intentRuntime: true,
-      };
-
-      // Create LaunchState wrapping the wizard output
-      const createNavPayload = (files: Record<string, string>) => {
-        const launchState: LaunchState = createLaunchState({
-          systemType: selectedSystem as any,
-          systemName: system.name,
-          businessName: businessName.trim(),
-          templateName: navState.templateName,
-          templateCategory: generationCategory,
-          aesthetic: selectedTheme?.id,
-          vfsFiles: files,
-          preloadedIntents: canonicalIntents,
-          blueprint: blueprint as any,
-          ...navState,
-        });
-        
-        return { launchState, ...navState, vfsFiles: files };
       };
 
       if (vfsFiles && Object.keys(vfsFiles).length > 0) {
-        navigate("/web-builder", { state: createNavPayload(vfsFiles) });
+        // Build RuntimeManifest — the contract between launcher and preview
+        const runtimeManifest = createRuntimeManifest(vfsFiles, {
+          entryPoint: parsedEntryPoint || '/src/App.tsx',
+          industry: generationCategory,
+          brandName: businessName.trim(),
+          aesthetic: selectedTheme?.id,
+          backendRequired: false, // Launcher output is always frontend-only
+        });
+
+        navigate("/web-builder", {
+          state: { vfsFiles, runtimeManifest, ...navState },
+        });
       } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
         const cleaned = extractCleanCode(rawContent);
         if (!cleaned || !looksLikeCode(cleaned)) {
           toast.error("AI generation produced invalid output. Try again.");
           return;
         }
+        const singleFileVfs = {
+          "/src/App.tsx": cleaned,
+          "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
+          "/src/index.css": baseCSS,
+        };
+        const runtimeManifest = createRuntimeManifest(singleFileVfs, {
+          industry: generationCategory,
+          brandName: businessName.trim(),
+          aesthetic: selectedTheme?.id,
+          backendRequired: false,
+        });
+
         navigate("/web-builder", {
-          state: createNavPayload({
-            "/src/App.tsx": cleaned,
-            "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-            "/src/index.css": baseCSS,
-          }),
+          state: {
+            vfsFiles: singleFileVfs,
+            runtimeManifest,
+            ...navState,
+          },
         });
       } else {
         toast.error("AI generation produced no output. Try again.");

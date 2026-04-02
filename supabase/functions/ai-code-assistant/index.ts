@@ -2407,16 +2407,14 @@ ${vfsFilesContext}
 ` : '';
 
     // ── Fast-path system prompt override for wizard launches ────────────────
-    // Replaces the massive template-react prompt with a compact multi-file contract
+    // Replaces the massive template-react prompt with a compact 2-file contract
     const finalSystemPrompt = fastTemplateReact ? (() => {
-      // deno-lint-ignore no-explicit-any
       const bp = systemsBuildContext as Record<string, any>;
       const brandName = bp?.brand?.business_name || templateName || 'My Business';
       const industry = bp?.identity?.industry || source || 'professional services';
       const tone = bp?.brand?.tone || 'professional and friendly';
       const palette = bp?.brand?.palette || {};
       const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
-      // deno-lint-ignore no-explicit-any
       const intents = (bp?.intents || []).map((i: any) => i.intent).join(', ') || 'contact.submit, booking.create';
 
       // Convert hex colors to HSL for Tailwind CSS custom properties
@@ -2430,15 +2428,7 @@ ${vfsFilesContext}
       const backgroundHsl = toHsl(palette.background, '222.2 84% 4.9%');
       const foregroundHsl = toHsl(palette.foreground, '210 40% 98%');
 
-      // Build a section→component map for the prompt
-      const sectionComponents = sections.map((s: string) => {
-        const name = s.charAt(0).toUpperCase() + s.slice(1).replace(/[-_](\w)/g, (_: string, c: string) => c.toUpperCase());
-        return { section: s, component: name, file: `src/components/${name}.tsx` };
-      });
-      const componentFileList = sectionComponents.map((sc: { file: string; component: string; section: string }) => `"${sc.file}": "// ${sc.component} component"`).join(',\n    ');
-      const componentImports = sectionComponents.map((sc: { component: string }) => `import ${sc.component} from './components/${sc.component}';`).join('\\n');
-
-      return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a multi-file React application.
+      return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
 
 BUSINESS: "${brandName}" — ${industry}
 TONE: ${tone}
@@ -2462,32 +2452,32 @@ BRAND COLORS — HSL values for CSS custom properties (no hsl() wrapper, just th
 --ring: 224.3 76.3% 48%
 --radius: 0.75rem
 
-ARCHITECTURE:
-Generate separate component files. App.tsx imports and composes them.
-
-Required files:
-  "src/App.tsx"        — imports each section component and renders them in order
-  "src/index.css"      — global styles with Tailwind directives + :root CSS vars
-  ${componentFileList}
-
-Each component file: export default function ComponentName() { return <section>...</section>; }
-App.tsx imports: ${componentImports}
-
 RULES:
-1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "...", "src/components/Hero.tsx": "...", ...}}
-2. EVERY section MUST be a separate file under src/components/ — do NOT inline sections in App.tsx
-3. Each component file uses: import React from 'react'; and optionally lucide-react icons. NO other imports.
-4. App.tsx imports all components with relative paths: import Hero from './components/Hero';
-5. Use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
-6. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
-7. Wire CTAs with data-ut-intent attributes: data-ut-intent="booking.create", data-ut-intent="contact.submit"
-8. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
-9. Images: use real Unsplash URLs like https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80
-10. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above
-11. MINIMUM 7 distinct section components, each with rich content (multiple cards, items, etc.)
-12. App.tsx: export default function App() — must be the default export
-13. Dark theme, premium glassmorphism + gradient effects, responsive (sm:/md:/lg:)
-14. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object`;
+1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
+2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
+3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports.
+4. In App.tsx use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
+5. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
+6. Wire CTAs with data-ut-intent attributes: data-ut-intent="booking.create", data-ut-intent="contact.submit"
+7. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
+8. Images: use REAL Unsplash URLs that match the industry context. Examples by industry:
+   - Restaurant: https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80 (dining room), https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80 (food plating)
+   - Salon/Beauty: https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80 (salon interior), https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=80 (styling)
+   - Fitness: https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80 (gym), https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80 (workout)
+   - Medical: https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&q=80 (hospital), https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800&q=80 (healthcare)
+   - SaaS/Tech: https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80 (dashboard), https://images.unsplash.com/photo-1551434678-e076c223a692?w=800&q=80 (team)
+   - Ecommerce: https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80 (store), https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=800&q=80 (shopping)
+   - Portfolio: https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80 (workspace), https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80 (collaboration)
+   - Contractor: https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80 (construction), https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80 (tools)
+   - Agency: https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80 (office), https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80 (meeting)
+   For people/testimonials: https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80, https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80, https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80
+   NEVER use fake/placeholder URLs like "photo-1234567890" — every image MUST load.
+9. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above
+10. MINIMUM 7 distinct sections, each with rich content
+11. Dark theme, premium glassmorphism + gradient effects, responsive (sm:/md:/lg:)
+12. export default function App() — must be the default export
+13. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object
+14. CONTRAST RULE: --foreground MUST be visually distinct from --background. If background is dark (lightness < 30%), foreground MUST be light (lightness > 80%). If background is light (lightness > 70%), foreground MUST be dark (lightness < 25%). Same rule applies to --card vs --card-foreground, --primary vs --primary-foreground. NEVER make text invisible.`;
     })() : systemPrompt + surgicalEditReinforcement + researchContext + industryPageContext + systemTypeContext + designProfileContext + systemsBuildContextText + elementsLibraryBlock + thinkingInstruction + (generatedImageUrl ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.` : '');
 
     const aiMessages = [
@@ -2735,7 +2725,7 @@ RULES:
     // Post-process: strip config files from JSON multi-file output
     if (content.includes('"files"') && content.includes('"src/App.tsx"')) {
       try {
-        const jsonStr = content.trim().replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+        let jsonStr = content.trim().replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         const parsed = JSON.parse(jsonStr);
         if (parsed.files && typeof parsed.files === 'object') {
           const BLOCKED = /(tailwind\.config|postcss\.config|vite\.config|tsconfig|package\.json|package-lock)/i;

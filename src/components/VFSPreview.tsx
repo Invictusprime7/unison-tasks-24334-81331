@@ -152,28 +152,24 @@ const SandpackErrorListener: React.FC<{
   const lastReportedRef = useRef<string>('');
 
   useEffect(() => {
-    // Check for Sandpack bundler errors
     const status = sandpack.status;
-    const errors = sandpack.errors;
+    const error = sandpack.error;
 
-    if (errors && errors.length > 0) {
-      const errorMessages = errors.map((e: any) => {
-        if (typeof e === 'string') return e;
-        if (e.message) return `${e.title || 'Error'}: ${e.message}${e.path ? ` (${e.path}:${e.line || ''})` : ''}`;
-        return String(e);
-      });
+    if (error) {
+      const msg = typeof error === 'string'
+        ? error
+        : (error as any).message
+          ? `${(error as any).title || 'Error'}: ${(error as any).message}${(error as any).path ? ` (${(error as any).path}:${(error as any).line || ''})` : ''}`
+          : String(error);
 
-      const combined = errorMessages.join('\n');
-      // Deduplicate: only report if the error string changed
-      if (combined !== lastReportedRef.current) {
-        lastReportedRef.current = combined;
-        errorMessages.forEach((msg: string) => onError?.(msg));
+      if (msg !== lastReportedRef.current) {
+        lastReportedRef.current = msg;
+        onError?.(msg);
       }
     } else if (status === 'idle' || status === 'running') {
-      // Clear last reported when errors resolve
       lastReportedRef.current = '';
     }
-  }, [sandpack.status, sandpack.errors, onError]);
+  }, [sandpack.status, sandpack.error, onError]);
 
   return null;
 };

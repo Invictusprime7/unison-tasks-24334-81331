@@ -1015,7 +1015,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             }),
             themeContextBlock ? `\n${themeContextBlock}` : '',
           ].filter(Boolean).join('\n')
-        : `${intelligentPrompt}${_fileContext}${richContext}`;
+        : (() => {
+            // Budget the prompt to stay within the 50k message content limit
+            const MAX_PROMPT_CHARS = 40_000;
+            let prompt = `${intelligentPrompt}${_fileContext}`;
+            if (prompt.length + richContext.length <= MAX_PROMPT_CHARS) {
+              prompt += richContext;
+            } else {
+              // Progressively trim context to fit
+              const remaining = MAX_PROMPT_CHARS - prompt.length;
+              if (remaining > 200) {
+                prompt += richContext.slice(0, remaining);
+              }
+            }
+            return prompt;
+          })();
 
       // Derive templateAction from prompt analysis instead of regex
       const templateAction = (() => {
@@ -1058,7 +1072,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           
           // Truncate currentCode to stay within edge function limits
-          const MAX_CODE_LENGTH = 180_000;
+          const MAX_CODE_LENGTH = 120_000;
           const truncatedCode = currentCode && currentCode.length > MAX_CODE_LENGTH
             ? currentCode.substring(0, MAX_CODE_LENGTH) + '\n<!-- ... truncated for AI processing -->'
             : currentCode;
@@ -1139,16 +1153,22 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           // Check for retryable errors
           if (response.error) {
             // Try to get the real error message from the edge function response body
-            const bodyError: string = (response.data as { error?: string } | null)?.error || '';
+            let bodyError = '';
+            if (response.data && typeof response.data === 'object' && 'error' in response.data) {
+              bodyError = (response.data as { error?: string }).error || '';
+            }
             const errorMsg = bodyError || response.error.message || '';
+            const statusCode = (response.error as any)?.status;
             const isRetryable = errorMsg.includes('non-2xx') || 
                                errorMsg.includes('timeout') ||
                                errorMsg.includes('temporarily unavailable') ||
-                               errorMsg.includes('All AI providers failed');
+                               errorMsg.includes('All AI providers failed') ||
+                               statusCode === 503 ||
+                               statusCode === 504;
             
             if (isRetryable && attempt < MAX_RETRIES) {
               console.log(`[AIBuilderPanel] Retryable error, attempt ${attempt + 1}:`, errorMsg);
-              lastError = response.error;
+              lastError = new Error(bodyError || errorMsg || 'Edge function error');
               continue;
             }
             // Throw an error with the descriptive message from the edge function

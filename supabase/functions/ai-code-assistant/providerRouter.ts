@@ -83,7 +83,7 @@ export function buildProviderPlan(
           { id: "openai/gpt-5-mini", maxTokens: 24000, label: "GPT-5 Mini" },
           { id: "google/gemini-2.5-pro", maxTokens: 24000, label: "Gemini 2.5 Pro" },
         ],
-        perModelTimeoutMs: 25000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 24000,
       };
       break;
@@ -96,7 +96,7 @@ export function buildProviderPlan(
           { id: "google/gemini-2.5-pro", maxTokens: 32000, label: "Gemini 2.5 Pro" },
           { id: "openai/gpt-5-mini", maxTokens: 32000, label: "GPT-5 Mini" },
         ],
-        perModelTimeoutMs: 25000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
       };
       break;
@@ -109,7 +109,7 @@ export function buildProviderPlan(
           { id: "google/gemini-2.5-flash", maxTokens: 32000, label: "Gemini 2.5 Flash" },
           { id: "openai/gpt-5-mini", maxTokens: 32000, label: "GPT-5 Mini" },
         ],
-        perModelTimeoutMs: 30000,
+        perModelTimeoutMs: 50000,
         fallbackMaxTokens: 32000,
       };
       break;
@@ -122,7 +122,7 @@ export function buildProviderPlan(
           { id: "google/gemini-2.5-pro", maxTokens: 32000, label: "Gemini 2.5 Pro" },
           { id: "openai/gpt-5-mini", maxTokens: 32000, label: "GPT-5 Mini" },
         ],
-        perModelTimeoutMs: 25000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
       };
       break;

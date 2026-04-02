@@ -106,6 +106,7 @@ serve(async (req: Request) => {
       siteElementsLibraryContext,
       surgicalEdit = false,
       vfsFiles,
+      gatewayOptions,
     } = parsed.data;
 
     // ── 2. Classify task ─────────────────────────────────────────────────

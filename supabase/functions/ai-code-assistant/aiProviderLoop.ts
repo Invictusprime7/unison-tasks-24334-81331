@@ -34,12 +34,6 @@ export async function runProviderLoop(opts: {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), providerPlan.perModelTimeoutMs);
 
-        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
-            'Content-Type': 'application/json',
-          },
           const reqBody: Record<string, unknown> = {
             model: model.id,
             ...(model.id.startsWith('openai/') ? { max_completion_tokens: model.maxTokens } : { max_tokens: model.maxTokens }),
@@ -51,14 +45,14 @@ export async function runProviderLoop(opts: {
           }
 
           const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(reqBody),
-          signal: controller.signal,
-        });
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${lovableApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(reqBody),
+            signal: controller.signal,
+          });
         clearTimeout(timeoutId);
 
         if (resp.status === 429) {

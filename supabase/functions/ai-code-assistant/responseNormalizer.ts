@@ -95,6 +95,12 @@ export interface RichResponseMeta {
   requiresApproval?: boolean;
   /** Model that produced this response (for transparency) */
   modelUsed?: string;
+  /** Files that were removed during review */
+  removedFiles?: string[];
+  /** Review pass summary */
+  reviewSummary?: string;
+  /** Apply state for the frontend to track */
+  applyState?: Record<string, unknown>;
 }
 
 /**

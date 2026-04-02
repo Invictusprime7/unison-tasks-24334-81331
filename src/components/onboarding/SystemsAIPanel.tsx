@@ -398,7 +398,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
                 projectCount: savedProjectCount,
                 dominantStyle: designProfile?.dominantStyle,
               } : undefined,
-              systemsBuildContext: buildSystemsBuildContextFromChip(selectedCodeChip),
+              systemsBuildContext: buildContractAndContext(selectedCodeChip, codePrompt).context,
             },
           });
           toast({ 

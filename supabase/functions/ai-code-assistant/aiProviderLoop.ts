@@ -46,7 +46,9 @@ export async function runProviderLoop(opts: {
           ...(model.id.startsWith('openai/') ? { max_completion_tokens: model.maxTokens } : { max_tokens: model.maxTokens }),
           messages: aiMessages,
         };
-        if (reasoningEffort && reasoningEffort !== "none") {
+        // Only send reasoning parameter for supported models and only via the correct API format
+        // The Lovable AI Gateway passes `reasoning` through for OpenAI models only
+        if (reasoningEffort && reasoningEffort !== "none" && model.id.startsWith('openai/')) {
           reqBody.reasoning = { effort: reasoningEffort };
         }
 

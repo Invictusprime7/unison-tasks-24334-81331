@@ -1197,10 +1197,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         throw lastError || new Error('AI service failed after retries');
       }
 
+      // ── Phase 4: Response Processing ──
+      const modelUsed = response.data?.modelUsed || gatewayConfig?.selectedModelId || 'unknown';
+      liveStep('validating', `Response received from ${modelUsed}`);
+
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
-
-      // Extract rich metadata from response
       const responseMeta: Message['meta'] = {
         actionType: response.data?.actionType,
         modelUsed: response.data?.modelUsed,

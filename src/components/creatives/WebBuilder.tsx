@@ -4548,6 +4548,10 @@ ${html}
                       <GitBranch className="h-3 w-3 mr-1" />
                       Workflows
                     </TabsTrigger>
+                    <TabsTrigger value="health" className="text-[9px] px-1.5 py-0.5 data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+                      <Shield className="h-3 w-3 mr-1" />
+                      Health
+                    </TabsTrigger>
                   </TabsList>
                   <TabsContent value="intents" className="flex-1 m-0 min-h-0 overflow-hidden">
                     <IntentDirectoryPanel

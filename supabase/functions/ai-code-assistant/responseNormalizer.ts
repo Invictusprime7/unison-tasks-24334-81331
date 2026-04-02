@@ -204,6 +204,7 @@ export function buildResponseBody(opts: {
     fileStatuses: fileInfo?.statuses,
     warnings: detectWarnings(opts.content),
     mode: opts.mode,
+    modelUsed: opts.modelUsed,
   };
 
   return {

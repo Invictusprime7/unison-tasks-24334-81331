@@ -1631,6 +1631,13 @@ export default function App() {
             </div>
           )}
 
+          {/* AI Gateway Options */}
+          <AIGatewayOptions
+            config={gatewayConfig}
+            onChange={setGatewayConfig}
+            className="flex-shrink-0 border-t border-blue-500/20"
+          />
+
           {/* Input with Retro Styling + File Drop */}
           <div className="flex-shrink-0 mt-auto p-3 border-t border-blue-500/20 bg-[#0a0f1e]">
             {/* Hidden file input */}

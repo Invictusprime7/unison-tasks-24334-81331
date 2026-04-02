@@ -194,6 +194,7 @@ export function buildResponseBody(opts: {
   imagePlacement?: string;
   debugMode?: boolean;
   mode?: string;
+  modelUsed?: string;
 }): Record<string, unknown> {
   const fileInfo = detectFileStatuses(opts.content);
 
@@ -203,6 +204,7 @@ export function buildResponseBody(opts: {
     fileStatuses: fileInfo?.statuses,
     warnings: detectWarnings(opts.content),
     mode: opts.mode,
+    modelUsed: opts.modelUsed,
   };
 
   return {

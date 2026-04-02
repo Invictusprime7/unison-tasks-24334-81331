@@ -117,6 +117,7 @@ async function runWizardLane(
     generatedImageUrl: '',
     imagePlacement: imagePlacement ?? undefined,
     mode: 'template-react',
+    modelUsed: providerResult.modelUsed,
   });
 
   return new Response(
@@ -324,6 +325,7 @@ async function runBuilderLane(
     imagePlacement: imagePlacement ?? undefined,
     debugMode: _debugMode,
     mode: mode ?? undefined,
+    modelUsed: providerResult.modelUsed,
   });
 
   return new Response(

@@ -2950,6 +2950,8 @@ export function prepareSandpackFiles(
   delete sandpackFiles['/main.jsx'];
 
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
+  sandpackFiles['/lib-utils-shim.ts'] = LIB_UTILS_SHIM;
+  sandpackFiles['/ui-shim.tsx'] = UI_COMPONENTS_SHIM;
 
   // ── Generate real components for missing relative imports ──
   // Run BEFORE App.tsx export validation so generated sub-components exist first.

@@ -1,0 +1,57 @@
+// supabase/functions/ai-code-assistant/utils.ts
+// Shared utility functions extracted from index.ts.
+
+/**
+ * Convert hex color to HSL string (CSS format without "hsl()").
+ * Returns format: "H S% L%" for CSS custom properties.
+ */
+export function hexToHsl(hex: string): string {
+  hex = hex.replace(/^#/, "");
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return `0 0% ${Math.round(l * 100)}%`;
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  switch (max) {
+    case r:
+      h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+      break;
+    case g:
+      h = ((b - r) / d + 2) / 6;
+      break;
+    case b:
+      h = ((r - g) / d + 4) / 6;
+      break;
+  }
+  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+}
+
+/**
+ * Extract text content from message content (string or multimodal array).
+ */
+export function extractTextContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const textParts = content
+      .map((p: Record<string, unknown>) => {
+        if (!p || typeof p !== "object") return "";
+        if (typeof p.text === "string") return p.text;
+        if (p.type === "text" && typeof p.text === "string") return p.text;
+        return "";
+      })
+      .filter(Boolean);
+    return textParts.join("\n").trim();
+  }
+  return "";
+}
+
+export const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};

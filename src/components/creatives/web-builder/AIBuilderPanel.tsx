@@ -52,6 +52,7 @@ import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
+import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 
 // ============================================================================
 /**
@@ -610,6 +611,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'code' | 'debug'>('code');
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1026,6 +1028,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               attachments: _attachments.length > 0 ? _attachments : undefined,
               // Send VFS files for surgical edit context
               vfsFiles: vfsPayload,
+              // Preview diagnostics for Lane B session memory
+              previewDiagnostics: iframeErrors.length > 0
+                ? iframeErrors.slice(0, 3).map(e => `${e.type}: ${e.message}${e.file ? ` (${e.file}:${e.line})` : ''}`).join('\n')
+                : undefined,
+              // Gateway options from user config
+              gatewayOptions: gatewayConfig ? {
+                selectedModelId: gatewayConfig.selectedModelId,
+                reasoningEffort: gatewayConfig.reasoningEffort,
+                timeoutMs: gatewayConfig.timeoutMs,
+                autoModelSelection: gatewayConfig.autoModelSelection,
+                maxTokens: gatewayConfig.maxTokens,
+              } : undefined,
             },
           });
           
@@ -1476,9 +1490,18 @@ export default function App() {
           mode: 'debug',
           currentCode,
           editMode: true,
+          debugMode: true,
           systemType,
           templateName,
           systemsBuildContext: systemsBuildContext ?? undefined,
+          previewDiagnostics: `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`,
+          gatewayOptions: gatewayConfig ? {
+            selectedModelId: gatewayConfig.selectedModelId,
+            reasoningEffort: gatewayConfig.reasoningEffort,
+            timeoutMs: gatewayConfig.timeoutMs,
+            autoModelSelection: gatewayConfig.autoModelSelection,
+            maxTokens: gatewayConfig.maxTokens,
+          } : undefined,
         },
       });
 
@@ -1628,6 +1651,13 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* AI Gateway Options */}
+          <AIGatewayOptions
+            config={gatewayConfig}
+            onChange={setGatewayConfig}
+            className="flex-shrink-0 border-t border-blue-500/20"
+          />
 
           {/* Input with Retro Styling + File Drop */}
           <div className="flex-shrink-0 mt-auto p-3 border-t border-blue-500/20 bg-[#0a0f1e]">

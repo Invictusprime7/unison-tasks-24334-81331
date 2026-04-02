@@ -11,7 +11,7 @@ import {
   Monitor, Tablet, Smartphone,
   Sparkles, Code, Undo2, Redo2, Save, Keyboard, Zap, RefreshCcw,
   ChevronsDown, ChevronsUp, ArrowDown, ArrowUp, FileCode, Copy, Maximize2, Trash2,
-  FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch
+  FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch, Shield
 } from "lucide-react";
 import { CloudPanel } from "./web-builder/CloudPanel";
 import { CreatorPlaygroundModal } from "./web-builder/CreatorPlaygroundModal";
@@ -68,6 +68,7 @@ import { DemoIntentOverlay, type DemoIntentOverlayConfig } from "./web-builder/D
 import { ResearchOverlay, type ResearchOverlayPayload } from "./web-builder/ResearchOverlay";
 import { decideIntentUx } from "@/runtime/intentUx";
 import SystemHealthPanel from "@/components/web-builder/SystemHealthPanel";
+import { useCompiledContract } from "@/hooks/useCompiledContract";
 import type { BusinessSystemType } from "@/data/templates/types";
 import { normalizeTemplateForCtaContract, type TemplateCtaAnalysis } from "@/utils/ctaContract";
 import { supabase } from "@/integrations/supabase/client";
@@ -1308,6 +1309,15 @@ export default function App() {
   const customDomainFromState = (location.state as { customDomain?: string })?.customDomain;
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
   const systemsBuildContextFromState = (location.state as { systemsBuildContext?: SystemsBuildContext })?.systemsBuildContext ?? null;
+  
+  // Derive compiled contract from navigation state for SystemHealthPanel & preview gating
+  const compiledContract = useCompiledContract(
+    location.state ? {
+      systemsBuildContext: systemsBuildContextFromState ?? undefined,
+      systemType: systemType ?? undefined,
+      templateName: (location.state as { templateName?: string })?.templateName,
+    } : null,
+  );
   
   // Virtual file system for code editor
   const virtualFS = useVirtualFileSystem();
@@ -4538,6 +4548,10 @@ ${html}
                       <GitBranch className="h-3 w-3 mr-1" />
                       Workflows
                     </TabsTrigger>
+                    <TabsTrigger value="health" className="text-[9px] px-1.5 py-0.5 data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+                      <Shield className="h-3 w-3 mr-1" />
+                      Health
+                    </TabsTrigger>
                   </TabsList>
                   <TabsContent value="intents" className="flex-1 m-0 min-h-0 overflow-hidden">
                     <IntentDirectoryPanel
@@ -4575,6 +4589,14 @@ ${html}
                       industry={cloudState.business?.name?.toLowerCase().includes('salon') ? 'salon' : 
                                cloudState.business?.name?.toLowerCase().includes('restaurant') ? 'restaurant' : 
                                cloudState.business?.name?.toLowerCase().includes('contractor') ? 'contractor' : undefined}
+                    />
+                  </TabsContent>
+                  <TabsContent value="health" className="flex-1 m-0 min-h-0 overflow-auto p-2">
+                    <SystemHealthPanel
+                      contract={compiledContract}
+                      onPublishCheck={() => {
+                        toast.info('Running publish checks...');
+                      }}
                     />
                   </TabsContent>
                 </Tabs>

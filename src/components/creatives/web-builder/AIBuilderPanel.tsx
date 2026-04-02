@@ -1015,7 +1015,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             }),
             themeContextBlock ? `\n${themeContextBlock}` : '',
           ].filter(Boolean).join('\n')
-        : `${intelligentPrompt}${_fileContext}${richContext}`;
+        : (() => {
+            // Budget the prompt to stay within the 50k message content limit
+            const MAX_PROMPT_CHARS = 40_000;
+            let prompt = `${intelligentPrompt}${_fileContext}`;
+            if (prompt.length + richContext.length <= MAX_PROMPT_CHARS) {
+              prompt += richContext;
+            } else {
+              // Progressively trim context to fit
+              const remaining = MAX_PROMPT_CHARS - prompt.length;
+              if (remaining > 200) {
+                prompt += richContext.slice(0, remaining);
+              }
+            }
+            return prompt;
+          })();
 
       // Derive templateAction from prompt analysis instead of regex
       const templateAction = (() => {

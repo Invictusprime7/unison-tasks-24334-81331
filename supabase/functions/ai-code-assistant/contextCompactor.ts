@@ -182,11 +182,13 @@ export function buildCompactBuilderContext(opts: {
 
   const changedSet = new Set(changedFiles || []);
 
-  // Score and sort files
+  // Score and sort files with issue-aware prioritization
   const scored = Object.entries(vfsFiles).map(([path, content]) => {
-    let priority = getFilePriority(path);
+    let priority = getFilePriority(path, issueHint, errorFiles);
     // Boost changed files
     if (changedSet.has(path)) priority = Math.max(0, priority - 3);
+    // Boost error-referenced files
+    if (errorFiles.has(path)) priority = Math.max(0, priority - 4);
     return { path, content, priority };
   }).sort((a, b) => a.priority - b.priority);
 

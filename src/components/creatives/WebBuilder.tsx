@@ -4958,12 +4958,15 @@ ${html}
                         businessId={businessId || undefined}
                         onReady={() => console.log('[WebBuilder] VFSPreview ready')}
                         onError={(err) => {
-                          toast.error(`Preview error: ${err}`);
-                          setIframeErrors(prev => [...prev, {
-                            type: 'runtime',
-                            message: err,
-                            timestamp: new Date(),
-                          }]);
+                          setIframeErrors(prev => {
+                            const isDuplicate = prev.slice(-5).some(e => e.message === err);
+                            if (isDuplicate) return prev;
+                            const next = prev.length >= 20 ? prev.slice(-19) : prev;
+                            const errorType = err.includes('SyntaxError') || err.includes('Unexpected token') ? 'syntax' as const
+                              : err.includes('fetch') || err.includes('network') || err.includes('CORS') ? 'network' as const
+                              : 'runtime' as const;
+                            return [...next, { type: errorType, message: err, timestamp: new Date() }];
+                          });
                         }}
                       />
                   </div>

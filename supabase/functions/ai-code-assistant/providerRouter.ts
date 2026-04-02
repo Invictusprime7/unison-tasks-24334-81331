@@ -83,7 +83,7 @@ export function buildProviderPlan(
           { id: "openai/gpt-5-mini", maxTokens: 24000, label: "GPT-5 Mini" },
           { id: "google/gemini-2.5-pro", maxTokens: 24000, label: "Gemini 2.5 Pro" },
         ],
-        perModelTimeoutMs: 25000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 24000,
       };
       break;

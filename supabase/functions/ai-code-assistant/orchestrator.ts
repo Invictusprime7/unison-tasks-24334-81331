@@ -117,6 +117,7 @@ async function runWizardLane(
     generatedImageUrl: '',
     imagePlacement: imagePlacement ?? undefined,
     mode: 'template-react',
+    modelUsed: providerResult.modelUsed,
   });
 
   return new Response(

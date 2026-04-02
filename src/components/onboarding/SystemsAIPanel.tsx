@@ -58,58 +58,43 @@ interface DroppedFile {
   content?: string;
 }
 
-// Map chip IDs to BusinessSystemType for template lookup
-const CHIP_TO_SYSTEM: Record<string, BusinessSystemType> = {
-  local_service: "booking",
-  salon_spa: "booking",
-  restaurant: "booking",
-  ecommerce: "store",
-  creator: "portfolio",
-  coaching: "booking",
-  real_estate: "agency",
-  nonprofit: "content",
-};
-
-// Map chip IDs to industry string for the blueprint
-const CHIP_TO_INDUSTRY: Record<string, string> = {
-  local_service: "local_service",
-  salon_spa: "salon_spa",
-  restaurant: "restaurant",
-  ecommerce: "ecommerce",
-  creator: "creator_portfolio",
-  coaching: "coaching_consulting",
-  real_estate: "real_estate",
-  nonprofit: "nonprofit",
-};
-
-// Industry/business prompt chips for quick actions
-const codePromptChips = [
-  { id: "local_service", label: "Local Service", icon: Wrench, color: "bg-blue-500/10 text-blue-600 border-blue-200 hover:bg-blue-500/20", prompt: "Create a professional website for a local service business like plumbing, HVAC, or electrical with service areas, booking form, testimonials, and emergency contact" },
-  { id: "salon_spa", label: "Salon & Spa", icon: Scissors, color: "bg-pink-500/10 text-pink-600 border-pink-200 hover:bg-pink-500/20", prompt: "Create an elegant salon or spa website with service menu, appointment booking, stylist profiles, gallery, and gift card section" },
-  { id: "restaurant", label: "Restaurant", icon: Utensils, color: "bg-orange-500/10 text-orange-600 border-orange-200 hover:bg-orange-500/20", prompt: "Create a restaurant website with menu display, online ordering, reservation system, location/hours, and photo gallery" },
-  { id: "ecommerce", label: "E-commerce", icon: ShoppingBag, color: "bg-purple-500/10 text-purple-600 border-purple-200 hover:bg-purple-500/20", prompt: "Create an e-commerce storefront with product catalog, shopping cart, checkout flow, and customer reviews" },
-  { id: "creator", label: "Creator", icon: Palette, color: "bg-indigo-500/10 text-indigo-600 border-indigo-200 hover:bg-indigo-500/20", prompt: "Create a creator portfolio website with project showcase, about section, client testimonials, and contact form" },
-  { id: "coaching", label: "Coaching", icon: Users, color: "bg-green-500/10 text-green-600 border-green-200 hover:bg-green-500/20", prompt: "Create a coaching or consulting website with services offered, booking calendar, client success stories, and free resource downloads" },
-  { id: "real_estate", label: "Real Estate", icon: Home, color: "bg-cyan-500/10 text-cyan-600 border-cyan-200 hover:bg-cyan-500/20", prompt: "Create a real estate agent website with property listings, search filters, agent bio, market insights, and contact form" },
-  { id: "nonprofit", label: "Nonprofit", icon: Heart, color: "bg-rose-500/10 text-rose-600 border-rose-200 hover:bg-rose-500/20", prompt: "Create a nonprofit organization website with mission statement, donation form, volunteer signup, events calendar, and impact stories" },
-];
-
-interface SystemsAIPanelProps {
-  user: User | null;
-  onAuthRequired?: () => void;
-}
-
-// Map chip IDs to LayoutCategory for direct template lookup
-const CHIP_TO_CATEGORY: Record<string, LayoutCategory> = {
-  local_service: "contractor",
+// Map chip IDs to canonical industry keys (matching contracts/industryMatrix)
+const CHIP_TO_CANONICAL_INDUSTRY: Record<string, string> = {
+  local_service: "local-service",
   salon_spa: "salon",
   restaurant: "restaurant",
-  ecommerce: "store",
+  ecommerce: "ecommerce",
   creator: "portfolio",
   coaching: "coaching",
-  real_estate: "realestate",
+  real_estate: "real-estate",
   nonprofit: "nonprofit",
 };
+
+/**
+ * Resolve canonical industry key from chip ID.
+ * Uses the contracts/industryMatrix as the single source of truth.
+ */
+function getCanonicalIndustry(chipId: string): string {
+  return CHIP_TO_CANONICAL_INDUSTRY[chipId] || 'agency';
+}
+
+/**
+ * Get the LayoutCategory for a chip (used for template/composition lookup).
+ */
+function getCategoryForChip(chipId: string): LayoutCategory {
+  const industry = getCanonicalIndustry(chipId);
+  const profile = getIndustryProfile(industry);
+  return (profile as any)?.layoutCategories?.[0] || 'landing';
+}
+
+/**
+ * Get the BusinessSystemType for a chip.
+ */
+function getSystemTypeForChip(chipId: string): BusinessSystemType {
+  const industry = getCanonicalIndustry(chipId);
+  const profile = getIndustryProfile(industry);
+  return profile?.systemType || 'agency';
+}
 
 /**
  * Picks the best template reference for a given chip.

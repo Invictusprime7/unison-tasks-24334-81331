@@ -836,24 +836,44 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     const _userContent = userContent;
 
     try {
-      // Simulate thinking process
-      const thinkingSteps = await simulateThinking(input);
-      
-      // Add streaming message
+      // Initialize live thinking cascade
+      const thinkingSteps: ThinkingStep[] = [];
       const streamingId = generateId();
+      
+      // Add streaming message immediately (visible with empty thinking)
       setMessages(prev => [...prev, {
         id: streamingId,
         role: 'assistant',
         content: '',
         timestamp: new Date(),
-        thinking: thinkingSteps,
+        thinking: [],
         isStreaming: true,
       }]);
 
-      // ── Prompt Intelligence: analyze the raw user text ──
+      // Helper to push a live step
+      const liveStep = (type: ThinkingStep['type'], message: string, details?: string) => {
+        pushThinkingStep(streamingId, {
+          id: generateId(),
+          type,
+          message,
+          timestamp: new Date(),
+          details,
+        }, thinkingSteps);
+      };
+
+      // ── Phase 1: Prompt Intelligence ──
+      liveStep('analyzing', 'Parsing natural language request...');
+
       const rawInput = _userContent;
       const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
       const isSurgicalEdit = detectedSurgical && !!currentCode;
+
+      liveStep('analyzing', `Intent: ${promptAnalysis.intent} · Complexity: ${promptAnalysis.complexity}`, [
+        promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
+        promptAnalysis.designKeywords.length ? `Design cues: ${promptAnalysis.designKeywords.join(', ')}` : null,
+        promptAnalysis.constraints.length ? `${promptAnalysis.constraints.length} constraints detected` : null,
+        isSurgicalEdit ? '🎯 Surgical edit mode' : isFullGeneration ? '🏗️ Full generation mode' : null,
+      ].filter(Boolean).join(' | '));
 
       // Log prompt analysis for debugging
       console.log('[AIBuilderPanel] Prompt analysis:', {

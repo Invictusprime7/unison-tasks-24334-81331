@@ -909,6 +909,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             const target = resolveEditTarget(rawInput, analysis);
             if (target) {
               resolvedTargetFile = target.file;
+              liveStep('planning', `🎯 Edit target: ${target.component} in ${target.file}`, `Confidence: ${target.confidence}`);
               const targetFileContent = vfsFiles[target.file];
               const contentSnippet = targetFileContent
                 ? targetFileContent.slice(0, 8000)

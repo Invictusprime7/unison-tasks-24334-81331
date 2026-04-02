@@ -2814,7 +2814,9 @@ export function prepareSandpackFiles(
             resolvedFiles = {};
             for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
               if (typeof innerContent === 'string') {
-                const normalizedInner = innerPath.startsWith('/') ? innerPath : `/${innerPath}`;
+                // Strip leading "src/" so "/src/App.tsx" becomes "/App.tsx"
+                let normalizedInner = innerPath.startsWith('/') ? innerPath : `/${innerPath}`;
+                normalizedInner = normalizedInner.replace(/^\/src\//, '/');
                 resolvedFiles[normalizedInner] = innerContent;
               }
             }

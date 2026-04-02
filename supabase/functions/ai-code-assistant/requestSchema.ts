@@ -112,6 +112,13 @@ export const AIRequestSchema = z.object({
   siteElementsLibraryContext: z.string().max(50_000).optional(),
   surgicalEdit: z.boolean().optional(),
   vfsFiles: z.record(z.string(), z.string().max(100_000)).optional(),
+  gatewayOptions: z.object({
+    selectedModelId: z.string().max(80).optional(),
+    reasoningEffort: z.enum(["none", "low", "medium", "high"]).optional(),
+    timeoutMs: z.number().min(5000).max(120000).optional(),
+    autoModelSelection: z.boolean().optional(),
+    maxTokens: z.number().min(1000).max(128000).optional(),
+  }).optional(),
 });
 
 export type AIRequest = z.infer<typeof AIRequestSchema>;

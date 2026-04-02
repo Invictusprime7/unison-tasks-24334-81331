@@ -18,11 +18,24 @@ export interface ProviderPlan {
   fallbackMaxTokens: number;
 }
 
+export interface GatewayOverrides {
+  selectedModelId?: string;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
+  timeoutMs?: number;
+  autoModelSelection?: boolean;
+  maxTokens?: number;
+}
+
 /**
  * Build the provider/model plan for a classified task.
- * Preserves the exact model selection logic from the original index.ts.
+ * When gatewayOverrides are provided and autoModelSelection is false,
+ * the user's chosen model takes priority (Lane B only).
  */
-export function buildProviderPlan(task: ClassifiedTask, hasLovableKey: boolean): ProviderPlan {
+export function buildProviderPlan(
+  task: ClassifiedTask,
+  hasLovableKey: boolean,
+  overrides?: GatewayOverrides,
+): ProviderPlan {
   if (!hasLovableKey) {
     return {
       gatewayModels: [],
@@ -31,9 +44,12 @@ export function buildProviderPlan(task: ClassifiedTask, hasLovableKey: boolean):
     };
   }
 
+  // Build default plan first
+  let plan: ProviderPlan;
+
   switch (task.type) {
     case "nav_page_generation":
-      return {
+      plan = {
         gatewayModels: [
           { id: "google/gemini-2.5-flash-lite", maxTokens: 12000, label: "Gemini 2.5 Flash Lite" },
           { id: "google/gemini-2.5-flash", maxTokens: 12000, label: "Gemini 2.5 Flash" },
@@ -41,9 +57,10 @@ export function buildProviderPlan(task: ClassifiedTask, hasLovableKey: boolean):
         perModelTimeoutMs: 20000,
         fallbackMaxTokens: 10000,
       };
+      break;
 
     case "wizard_template_react":
-      return {
+      plan = {
         gatewayModels: [
           { id: "google/gemini-2.5-flash", maxTokens: 16000, label: "Gemini 2.5 Flash" },
           { id: "google/gemini-2.5-pro", maxTokens: 16000, label: "Gemini 2.5 Pro" },
@@ -52,9 +69,10 @@ export function buildProviderPlan(task: ClassifiedTask, hasLovableKey: boolean):
         perModelTimeoutMs: 55000,
         fallbackMaxTokens: 16000,
       };
+      break;
 
     default:
-      return {
+      plan = {
         gatewayModels: [
           { id: "google/gemini-2.5-flash", maxTokens: 32000, label: "Gemini 2.5 Flash" },
           { id: "google/gemini-2.5-pro", maxTokens: 32000, label: "Gemini 2.5 Pro" },
@@ -63,5 +81,24 @@ export function buildProviderPlan(task: ClassifiedTask, hasLovableKey: boolean):
         perModelTimeoutMs: 25000,
         fallbackMaxTokens: 32000,
       };
+      break;
   }
+
+  // Apply user overrides (only for non-wizard tasks to protect Lane A)
+  if (overrides && task.type !== "wizard_template_react") {
+    if (overrides.autoModelSelection === false && overrides.selectedModelId) {
+      const tokens = overrides.maxTokens ?? plan.gatewayModels[0]?.maxTokens ?? 32000;
+      const modelId = overrides.selectedModelId;
+      const label = modelId.split("/").pop() ?? modelId;
+      // Put user-selected model first, keep others as fallbacks
+      const userModel: ModelSpec = { id: modelId, maxTokens: tokens, label };
+      const fallbacks = plan.gatewayModels.filter(m => m.id !== modelId);
+      plan.gatewayModels = [userModel, ...fallbacks];
+    }
+    if (overrides.timeoutMs) {
+      plan.perModelTimeoutMs = overrides.timeoutMs;
+    }
+  }
+
+  return plan;
 }

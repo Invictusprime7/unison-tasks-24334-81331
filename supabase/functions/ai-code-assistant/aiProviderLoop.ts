@@ -40,11 +40,23 @@ export async function runProviderLoop(opts: {
             'Authorization': `Bearer ${lovableApiKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
+          const reqBody: Record<string, unknown> = {
             model: model.id,
             ...(model.id.startsWith('openai/') ? { max_completion_tokens: model.maxTokens } : { max_tokens: model.maxTokens }),
             messages: aiMessages,
-          }),
+          };
+          // Inject reasoning effort if user specified one and it's not "none"
+          if (reasoningEffort && reasoningEffort !== "none") {
+            reqBody.reasoning = { effort: reasoningEffort };
+          }
+
+          const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(reqBody),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);

@@ -61,11 +61,11 @@ export function useCompiledContract(
 
     // 3. Heuristic from systemType
     if (navState.systemType) {
-      const industry = getIndustryForSystemType(navState.systemType as BusinessSystemType);
-      if (industry) {
+      const profiles = getIndustryForSystemType(navState.systemType as BusinessSystemType);
+      if (profiles.length > 0) {
         try {
           const blueprint = createBlueprintFromIndustry(
-            industry,
+            profiles[0].industry,
             navState.templateName || 'My Business',
           );
           return compileContract(blueprint, options);

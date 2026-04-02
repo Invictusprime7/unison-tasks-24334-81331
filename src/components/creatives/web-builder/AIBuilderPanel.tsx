@@ -1489,6 +1489,13 @@ export default function App() {
           systemType,
           templateName,
           systemsBuildContext: systemsBuildContext ?? undefined,
+          gatewayOptions: gatewayConfig ? {
+            selectedModelId: gatewayConfig.selectedModelId,
+            reasoningEffort: gatewayConfig.reasoningEffort,
+            timeoutMs: gatewayConfig.timeoutMs,
+            autoModelSelection: gatewayConfig.autoModelSelection,
+            maxTokens: gatewayConfig.maxTokens,
+          } : undefined,
         },
       });
 

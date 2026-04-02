@@ -111,6 +111,8 @@ export const AIRequestSchema = z.object({
   }).optional(),
   siteElementsLibraryContext: z.string().max(50_000).optional(),
   surgicalEdit: z.boolean().optional(),
+  previewDiagnostics: z.string().max(5_000).optional(),
+  recentChangedFiles: z.array(z.string().max(200)).max(20).optional(),
   vfsFiles: z.record(z.string(), z.string().max(100_000)).optional(),
   gatewayOptions: z.object({
     selectedModelId: z.string().max(80).optional(),

@@ -1626,30 +1626,82 @@ export default function App() {
         throw new Error(errorMsg);
       }
 
-      const fix = response.data?.code || response.data?.response;
+      // Extract fix content — edge function returns in 'content' field (JSON or code)
+      const rawContent = response.data?.content || response.data?.code || response.data?.response || '';
       
-      // Auto-apply fix to VFS if available
-      if (fix && onApplyToVFS) {
-        // Try to parse as multi-file JSON
+      // Extract metadata for debug fix too
+      const debugMeta: Message['meta'] = {
+        actionType: response.data?.actionType || 'debug',
+        modelUsed: response.data?.modelUsed,
+        filesDetected: response.data?.filesDetected,
+        warnings: response.data?.warnings,
+        requiresApproval: response.data?.requiresApproval,
+        removedFiles: response.data?.removedFiles,
+        reviewSummary: response.data?.reviewSummary,
+      };
+
+      // Try to extract code from the content (same strategies as main flow)
+      let fixFiles: Record<string, string> | null = null;
+      let fixCode: string | null = null;
+      let fixExplanation = '';
+
+      if (rawContent) {
+        // Strategy 1: JSON multi-file output
         try {
-          const parsed = JSON.parse(fix);
+          const jsonStr = rawContent.trim().replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+          const parsed = JSON.parse(jsonStr);
           if (parsed.files && typeof parsed.files === 'object') {
-            onApplyToVFS(parsed.files);
+            fixFiles = parsed.files;
+            fixExplanation = parsed.explanation || '✅ Debug fix applied.';
           }
-        } catch {
-          // Single file output — apply to the error file or App.tsx
-          const targetPath = error.file || '/App.tsx';
-          onApplyToVFS({ [targetPath]: fix });
+        } catch { /* not JSON */ }
+
+        // Strategy 2: Code fence extraction
+        if (!fixFiles) {
+          const fenceMatch = rawContent.match(/```(?:tsx|jsx|ts|js)?\s*\n([\s\S]*?)```/);
+          if (fenceMatch) {
+            fixCode = fenceMatch[1].trim();
+            fixExplanation = rawContent.replace(/```[\s\S]*?```/g, '').trim() || '✅ Fix applied.';
+          }
+        }
+
+        // Strategy 3: Direct code (starts with import/export)
+        if (!fixFiles && !fixCode && /^(?:import |export )/.test(rawContent.trim())) {
+          fixCode = rawContent.trim();
+          fixExplanation = '✅ Fix applied.';
+        }
+
+        // Fallback: treat entire content as explanation
+        if (!fixFiles && !fixCode) {
+          fixExplanation = rawContent;
+        }
+      }
+
+      // Auto-apply fix to VFS
+      if (onApplyToVFS) {
+        if (fixFiles) {
+          // Normalize paths
+          const normalized: Record<string, string> = {};
+          for (const [p, c] of Object.entries(fixFiles)) {
+            normalized[p.startsWith('/') ? p : `/${p}`] = c;
+          }
+          onApplyToVFS(normalized);
+          toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
+        } else if (fixCode) {
+          const targetPath = error.file ? (error.file.startsWith('/') ? error.file : `/${error.file}`) : '/src/App.tsx';
+          onApplyToVFS({ [targetPath]: fixCode });
+          toast.success('✅ Debug fix applied');
         }
       }
 
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: response.data?.response || '✅ Fix applied! Check the preview for changes.',
+        content: fixExplanation || '✅ Fix applied! Check the preview for changes.',
         timestamp: new Date(),
-        code: fix,
+        code: fixCode || undefined,
         error,
+        meta: debugMeta,
         thinking: [
           { id: '1', type: 'analyzing', message: 'Analyzing error...', timestamp: new Date() },
           { id: '2', type: 'planning', message: 'Determining fix strategy...', timestamp: new Date() },

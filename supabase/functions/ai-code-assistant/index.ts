@@ -18,6 +18,8 @@ serve(async (req: Request) => {
   }
 
   try {
+    const startMs = Date.now();
+
     // ── 1. Validate request ──────────────────────────────────────────────
     const parsed = AIRequestSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
@@ -43,8 +45,12 @@ serve(async (req: Request) => {
       vfsFiles: parsed.data.vfsFiles,
     });
 
+    console.log(`[ai-code-assistant] task=${task.type} fastPath=${task.fastPath} elapsed-classify=${Date.now() - startMs}ms`);
+
     // ── 3. Orchestrate ───────────────────────────────────────────────────
-    return await runAssistantOrchestrator(parsed.data, task, corsHeaders);
+    const response = await runAssistantOrchestrator(parsed.data, task, corsHeaders);
+    console.log(`[ai-code-assistant] completed task=${task.type} total=${Date.now() - startMs}ms`);
+    return response;
 
   } catch (error) {
     console.error('Error in ai-code-assistant:', error);

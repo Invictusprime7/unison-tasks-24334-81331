@@ -53,6 +53,7 @@ import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
 import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
+import { vfsEventBus } from '@/services/vfsEventBus';
 
 // ============================================================================
 /**
@@ -1367,7 +1368,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         } else {
           if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
+            vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
             onApplyToVFS(normalizedFiles);
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
             toast.success(`✅ Multi-file project applied${approvalNote}`);
           } else if (onFilesPatch) {
@@ -1497,7 +1500,9 @@ export default function App() {
             toast.warning('⚠️ Patch flagged for review — check warnings');
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
+            vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
             onApplyToVFS({ [singleFilePath]: generatedCode });
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
             toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
           } else if (onCodeGenerated) {
@@ -1704,16 +1709,19 @@ export default function App() {
       // Auto-apply fix to VFS
       if (onApplyToVFS) {
         if (fixFiles) {
-          // Normalize paths
           const normalized: Record<string, string> = {};
           for (const [p, c] of Object.entries(fixFiles)) {
             normalized[p.startsWith('/') ? p : `/${p}`] = c;
           }
+          vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
           onApplyToVFS(normalized);
+          vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
           toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
         } else if (fixCode) {
           const targetPath = error.file ? (error.file.startsWith('/') ? error.file : `/${error.file}`) : '/src/App.tsx';
+          vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
           onApplyToVFS({ [targetPath]: fixCode });
+          vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
           toast.success('✅ Debug fix applied');
         }
       }

@@ -27,6 +27,8 @@ export type VFSEventType =
   | 'batch:complete'
   | 'deps:resolved'
   | 'deps:error'
+  | 'deps:install'
+  | 'deps:remove'
   | 'preview:sync'
   | 'preview:refresh'
   | 'preview:error'
@@ -35,6 +37,7 @@ export type VFSEventType =
   | 'ai:apply:start'
   | 'ai:apply:complete'
   | 'ai:apply:error'
+  | 'ai:terminal:exec'
   | 'build:log'
   | 'build:error'
   | 'build:success';

@@ -273,8 +273,7 @@ function formatTimestamp(date: Date): string {
 const ThinkingStepItem: React.FC<{
   step: ThinkingStep;
   isLast: boolean;
-  onToggle: () => void;
-}> = ({ step, isLast, onToggle }) => {
+}> = ({ step, isLast }) => {
   const icons = {
     analyzing: <Sparkles className="w-3 h-3 text-blue-400 animate-pulse" />,
     planning: <FileCode className="w-3 h-3 text-sky-400" />,
@@ -294,20 +293,14 @@ const ThinkingStepItem: React.FC<{
         {!isLast && <div className="w-px h-4 bg-blue-500/20" />}
       </div>
       <div className="flex-1 min-w-0">
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-1 text-xs text-blue-400/70 hover:text-blue-400 transition-colors w-full text-left"
-        >
-          {step.details && (
-            step.isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />
-          )}
+        <div className="flex items-center gap-1 text-xs text-blue-400/70 w-full text-left">
           <span className="truncate font-mono">{step.message}</span>
-          <span className="text-blue-400/30 text-[10px] ml-auto font-mono">{formatTimestamp(step.timestamp)}</span>
-        </button>
-        {step.isExpanded && step.details && (
-          <pre className="mt-1 p-2 bg-black/40 border border-blue-500/20 rounded text-[10px] text-blue-400/50 overflow-x-auto font-mono">
+          <span className="text-blue-400/30 text-[10px] ml-auto font-mono shrink-0">{formatTimestamp(step.timestamp)}</span>
+        </div>
+        {step.details && (
+          <div className="mt-1 px-2 py-1.5 bg-black/40 border border-blue-500/20 rounded text-[10px] text-blue-400/50 font-mono leading-relaxed">
             {step.details}
-          </pre>
+          </div>
         )}
       </div>
     </div>
@@ -324,16 +317,9 @@ const MessageItem: React.FC<{
   onRetryError?: (error: IframeError) => void;
 }> = ({ message, onViewEdits, onRetryError }) => {
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>(message.thinking || []);
-  // Auto-expand thinking while streaming, auto-collapse when done
-  const [showThinking, setShowThinking] = useState(message.isStreaming ?? false);
-  const [showReasoning, setShowReasoning] = useState(false);
-
-  // Keep thinking expanded while streaming, collapse when generation completes
-  useEffect(() => {
-    if (message.isStreaming) {
-      setShowThinking(true);
-    }
-  }, [message.isStreaming]);
+  // Thinking is always visible — user can hide via toggle
+  const [showThinking, setShowThinking] = useState(true);
+  const [showReasoning, setShowReasoning] = useState(true);
 
   // Sync thinking steps from parent message updates (live push)
   useEffect(() => {
@@ -341,12 +327,6 @@ const MessageItem: React.FC<{
       setThinkingSteps(message.thinking);
     }
   }, [message.thinking]);
-
-  const toggleStep = (stepId: string) => {
-    setThinkingSteps(prev =>
-      prev.map(s => s.id === stepId ? { ...s, isExpanded: !s.isExpanded } : s)
-    );
-  };
 
   if (message.role === 'user') {
     return (
@@ -371,22 +351,23 @@ const MessageItem: React.FC<{
   // Assistant message with cascade thinking
   return (
     <div className="mb-4">
-      {/* AI Extended Reasoning — shown for all models when thinking tags are present */}
+      {/* AI Extended Reasoning — always visible, user can hide */}
       {message.claudeReasoning && (
         <div className="mb-2 rounded-lg border border-violet-500/30 bg-violet-950/30 overflow-hidden">
-          <button
-            onClick={() => setShowReasoning(!showReasoning)}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-violet-300/80 hover:text-violet-200 transition-colors font-mono"
-          >
-            {showReasoning ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          <div className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-violet-300/80 font-mono">
             <Brain className="w-3 h-3 text-violet-400" />
             <Zap className="w-3 h-3 text-amber-400" />
             <span className="font-semibold">AI Reasoning</span>
-            <span className="ml-auto text-violet-400/40 text-[10px]">{message.claudeReasoning.length.toLocaleString()} chars</span>
-          </button>
+            <span className="text-violet-400/40 text-[10px]">{message.claudeReasoning.length.toLocaleString()} chars</span>
+            <button
+              onClick={() => setShowReasoning(!showReasoning)}
+              className="ml-auto text-violet-400/40 hover:text-violet-300 transition-colors text-[10px] font-mono"
+            >
+              {showReasoning ? 'hide' : 'show'}
+            </button>
+          </div>
           {showReasoning && (
             <div className="px-3 pb-3">
-              <div className="text-[10px] text-violet-300/40 font-mono mb-1 uppercase tracking-widest">Extended Reasoning · Internal Thought Process</div>
               <pre className="text-[11px] text-violet-100/70 whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-y-auto rounded bg-black/30 p-2 border border-violet-500/10">
                 {message.claudeReasoning}
               </pre>
@@ -395,17 +376,19 @@ const MessageItem: React.FC<{
         </div>
       )}
 
-      {/* Thinking Process (collapsible cascade) */}
+      {/* Thinking Process — always visible, user can hide */}
       {thinkingSteps.length > 0 && (
         <div className="mb-2">
-          <button
-            onClick={() => setShowThinking(!showThinking)}
-            className="flex items-center gap-1 text-xs text-blue-400/50 hover:text-blue-400/70 transition-colors mb-1 font-mono"
-          >
-            {showThinking ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          <div className="flex items-center gap-1 text-xs text-blue-400/60 mb-1 font-mono">
             <Sparkles className="w-3 h-3 text-blue-400" />
-            <span>AI Thinking ({thinkingSteps.length} steps)</span>
-          </button>
+            <span>Pipeline ({thinkingSteps.length} steps)</span>
+            <button
+              onClick={() => setShowThinking(!showThinking)}
+              className="ml-auto text-blue-400/40 hover:text-blue-400 transition-colors text-[10px] font-mono"
+            >
+              {showThinking ? 'hide' : 'show'}
+            </button>
+          </div>
           {showThinking && (
             <div className="ml-2 pl-2 border-l border-blue-500/20">
               {thinkingSteps.map((step, i) => (
@@ -413,7 +396,6 @@ const MessageItem: React.FC<{
                   key={step.id}
                   step={step}
                   isLast={i === thinkingSteps.length - 1}
-                  onToggle={() => toggleStep(step.id)}
                 />
               ))}
             </div>

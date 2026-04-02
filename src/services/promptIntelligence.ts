@@ -55,6 +55,28 @@ export interface AnalyzedPrompt {
   styleRefs: string[];
 }
 
+export interface PromptEnhancementOptions {
+  maxLength?: number;
+  rawExcerptMax?: number;
+}
+
+function clampText(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
+function truncateMiddle(value: string, max: number): string {
+  if (value.length <= max) return value;
+  if (max <= 40) return clampText(value, max);
+
+  const separator = '\n…\n';
+  const remaining = max - separator.length;
+  const head = Math.max(16, Math.ceil(remaining * 0.72));
+  const tail = Math.max(12, remaining - head);
+
+  return `${value.slice(0, head).trimEnd()}${separator}${value.slice(value.length - tail).trimStart()}`;
+}
+
 // ── Intent Detection ────────────────────────────────────────────────────────
 
 const INTENT_PATTERNS: Array<{ intent: PromptIntent; patterns: RegExp[] }> = [
@@ -341,26 +363,32 @@ function buildStructuredDirective(analysis: Omit<AnalyzedPrompt, 'structuredDire
   lines.push(`Complexity: ${analysis.complexity}`);
 
   if (analysis.targets.length > 0) {
-    const targetDescs = analysis.targets.map(t =>
+    const targetDescs = analysis.targets.slice(0, 6).map(t =>
       [t.section, t.element, t.component, t.file].filter(Boolean).join('/')
-    );
-    lines.push(`Targets: ${targetDescs.join(', ')}`);
+    ).filter(Boolean).map(target => clampText(target, 80));
+    const overflow = analysis.targets.length - targetDescs.length;
+    lines.push(`Targets: ${targetDescs.join(', ')}${overflow > 0 ? ` (+${overflow} more)` : ''}`);
   }
 
   if (analysis.designKeywords.length > 0) {
-    lines.push(`Design direction: ${analysis.designKeywords.join(', ')}`);
+    const keywords = analysis.designKeywords.slice(0, 8);
+    lines.push(`Design direction: ${keywords.join(', ')}${analysis.designKeywords.length > keywords.length ? '…' : ''}`);
   }
 
   if (analysis.styleRefs.length > 0) {
-    lines.push(`Style refs: ${analysis.styleRefs.join(', ')}`);
+    const refs = analysis.styleRefs.slice(0, 8).map(ref => clampText(ref, 40));
+    lines.push(`Style refs: ${refs.join(', ')}${analysis.styleRefs.length > refs.length ? '…' : ''}`);
   }
 
   if (analysis.constraints.length > 0) {
-    for (const c of analysis.constraints) {
+    for (const c of analysis.constraints.slice(0, 6)) {
       const prefix = c.type === 'preserve' ? '🔒 KEEP' :
                      c.type === 'avoid' ? '🚫 AVOID' :
                      c.type === 'require' ? '✅ REQUIRE' : '🎨 MATCH';
-      lines.push(`${prefix}: ${c.description}`);
+      lines.push(`${prefix}: ${clampText(c.description, 120)}`);
+    }
+    if (analysis.constraints.length > 6) {
+      lines.push(`✅ REQUIRE: honor the remaining ${analysis.constraints.length - 6} user constraints as well`);
     }
   }
 
@@ -406,16 +434,18 @@ export function analyzePrompt(rawText: string): AnalyzedPrompt {
  * For short/simple prompts, returns the original text unchanged.
  * For rich paragraphs, prepends a structured analysis block.
  */
-export function enhancePromptForAI(rawText: string): {
+export function enhancePromptForAI(rawText: string, options: PromptEnhancementOptions = {}): {
   enhancedPrompt: string;
   analysis: AnalyzedPrompt;
   isSurgical: boolean;
   isFullGen: boolean;
 } {
   const analysis = analyzePrompt(rawText);
+  const maxLength = Math.max(1200, options.maxLength ?? 8500);
+  const rawExcerptMax = Math.max(600, options.rawExcerptMax ?? 5000);
 
   // For very short prompts (< 30 chars), skip enhancement
-  if (rawText.length < 30 && analysis.complexity === 'simple') {
+  if (rawText.length < 30 && analysis.complexity === 'simple' && rawText.length <= maxLength) {
     return {
       enhancedPrompt: rawText,
       analysis,
@@ -424,8 +454,16 @@ export function enhancePromptForAI(rawText: string): {
     };
   }
 
-  // Build enhanced prompt: structured directive + original text
-  const enhanced = `${analysis.structuredDirective}\n\n[USER REQUEST]\n${rawText}`;
+  const directiveBudget = Math.max(700, Math.min(2200, Math.floor(maxLength * 0.42)));
+  const directive = truncateMiddle(analysis.structuredDirective, directiveBudget);
+  const requestHeader = '[USER REQUEST]\n';
+  const availableForRaw = Math.max(0, maxLength - directive.length - requestHeader.length - 2);
+  const requestBody = availableForRaw > 0
+    ? truncateMiddle(rawText, Math.min(rawExcerptMax, availableForRaw))
+    : '';
+  const enhanced = requestBody
+    ? `${directive}\n\n${requestHeader}${requestBody}`
+    : directive;
 
   return {
     enhancedPrompt: enhanced,

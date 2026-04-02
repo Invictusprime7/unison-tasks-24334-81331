@@ -1446,6 +1446,7 @@ export default function App() {
               content: explanationText || aiContent,
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
+              meta: responseMeta,
               // DO NOT set `code` — we auto-apply instead of showing "Apply" buttons
               edits: edits.length > 0 ? edits : undefined,
               isStreaming: false,

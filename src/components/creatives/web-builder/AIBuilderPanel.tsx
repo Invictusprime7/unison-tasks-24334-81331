@@ -324,8 +324,23 @@ const MessageItem: React.FC<{
   onRetryError?: (error: IframeError) => void;
 }> = ({ message, onViewEdits, onRetryError }) => {
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>(message.thinking || []);
-  const [showThinking, setShowThinking] = useState(false);
+  // Auto-expand thinking while streaming, auto-collapse when done
+  const [showThinking, setShowThinking] = useState(message.isStreaming ?? false);
   const [showReasoning, setShowReasoning] = useState(false);
+
+  // Keep thinking expanded while streaming, collapse when generation completes
+  useEffect(() => {
+    if (message.isStreaming) {
+      setShowThinking(true);
+    }
+  }, [message.isStreaming]);
+
+  // Sync thinking steps from parent message updates (live push)
+  useEffect(() => {
+    if (message.thinking && message.thinking.length > thinkingSteps.length) {
+      setThinkingSteps(message.thinking);
+    }
+  }, [message.thinking]);
 
   const toggleStep = (stepId: string) => {
     setThinkingSteps(prev =>
@@ -766,49 +781,17 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     }
   }, [messages.length]);
 
-  // Simulate thinking steps for AI response
-  const simulateThinking = useCallback(async (userPrompt: string): Promise<ThinkingStep[]> => {
-    const steps: ThinkingStep[] = [];
-
-    // Run prompt intelligence analysis during thinking
-    const { analysis } = enhancePromptForAI(userPrompt);
-    
-    steps.push({
-      id: generateId(),
-      type: 'analyzing',
-      message: `Analyzing request — detected intent: ${analysis.intent}`,
-      timestamp: new Date(),
-      details: [
-        `Complexity: ${analysis.complexity}`,
-        analysis.targets.length ? `Targets: ${analysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
-        analysis.designKeywords.length ? `Design: ${analysis.designKeywords.join(', ')}` : null,
-        analysis.constraints.length ? `Constraints: ${analysis.constraints.length} detected` : null,
-      ].filter(Boolean).join(' | '),
-    });
-
-    await new Promise(r => setTimeout(r, 300));
-    
-    steps.push({
-      id: generateId(),
-      type: 'planning',
-      message: analysis.secondaryIntents.length
-        ? `Planning ${analysis.complexity} change (${1 + analysis.secondaryIntents.length} intents)...`
-        : 'Planning changes...',
-      timestamp: new Date(),
-      details: currentCode ? `Current template: ${currentCode.length} chars` : 'No existing template',
-    });
-
-    await new Promise(r => setTimeout(r, 400));
-    
-    steps.push({
-      id: generateId(),
-      type: 'generating',
-      message: 'Generating code...',
-      timestamp: new Date(),
-    });
-
-    return steps;
-  }, [currentCode]);
+  // Live thinking step pusher — updates the streaming message in real-time
+  const pushThinkingStep = useCallback((
+    streamingId: string,
+    step: ThinkingStep,
+    existingSteps: ThinkingStep[],
+  ) => {
+    existingSteps.push(step);
+    setMessages(prev => prev.map(m =>
+      m.id === streamingId ? { ...m, thinking: [...existingSteps] } : m
+    ));
+  }, []);
 
   // Send message to AI
   const handleSend = async () => {
@@ -853,24 +836,44 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     const _userContent = userContent;
 
     try {
-      // Simulate thinking process
-      const thinkingSteps = await simulateThinking(input);
-      
-      // Add streaming message
+      // Initialize live thinking cascade
+      const thinkingSteps: ThinkingStep[] = [];
       const streamingId = generateId();
+      
+      // Add streaming message immediately (visible with empty thinking)
       setMessages(prev => [...prev, {
         id: streamingId,
         role: 'assistant',
         content: '',
         timestamp: new Date(),
-        thinking: thinkingSteps,
+        thinking: [],
         isStreaming: true,
       }]);
 
-      // ── Prompt Intelligence: analyze the raw user text ──
+      // Helper to push a live step
+      const liveStep = (type: ThinkingStep['type'], message: string, details?: string) => {
+        pushThinkingStep(streamingId, {
+          id: generateId(),
+          type,
+          message,
+          timestamp: new Date(),
+          details,
+        }, thinkingSteps);
+      };
+
+      // ── Phase 1: Prompt Intelligence ──
+      liveStep('analyzing', 'Parsing natural language request...');
+
       const rawInput = _userContent;
       const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
       const isSurgicalEdit = detectedSurgical && !!currentCode;
+
+      liveStep('analyzing', `Intent: ${promptAnalysis.intent} · Complexity: ${promptAnalysis.complexity}`, [
+        promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
+        promptAnalysis.designKeywords.length ? `Design cues: ${promptAnalysis.designKeywords.join(', ')}` : null,
+        promptAnalysis.constraints.length ? `${promptAnalysis.constraints.length} constraints detected` : null,
+        isSurgicalEdit ? '🎯 Surgical edit mode' : isFullGeneration ? '🏗️ Full generation mode' : null,
+      ].filter(Boolean).join(' | '));
 
       // Log prompt analysis for debugging
       console.log('[AIBuilderPanel] Prompt analysis:', {
@@ -882,6 +885,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         designKeywords: promptAnalysis.designKeywords,
         isSurgical: isSurgicalEdit,
       });
+
+      // ── Phase 2: VFS & Context Assembly ──
+      liveStep('planning', 'Assembling project context...');
 
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';
@@ -903,6 +909,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             const target = resolveEditTarget(rawInput, analysis);
             if (target) {
               resolvedTargetFile = target.file;
+              liveStep('planning', `🎯 Edit target: ${target.component} in ${target.file}`, `Confidence: ${target.confidence}`);
               const targetFileContent = vfsFiles[target.file];
               const contentSnippet = targetFileContent
                 ? targetFileContent.slice(0, 8000)
@@ -1049,6 +1056,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         }
       })();
 
+      // ── Phase 3: AI Gateway Call ──
+      liveStep('generating', 'Calling AI model...', gatewayConfig?.selectedModelId || 'auto-select');
+
       // Call AI service with retry logic
       const MAX_RETRIES = 2;
       let response = null;
@@ -1187,10 +1197,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         throw lastError || new Error('AI service failed after retries');
       }
 
+      // ── Phase 4: Response Processing ──
+      const modelUsed = response.data?.modelUsed || gatewayConfig?.selectedModelId || 'unknown';
+      liveStep('validating', `Response received from ${modelUsed}`);
+
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
-
-      // Extract rich metadata from response
       const responseMeta: Message['meta'] = {
         actionType: response.data?.actionType,
         modelUsed: response.data?.modelUsed,
@@ -1204,6 +1216,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
       
+      // ── Phase 5: Code Extraction ──
+      liveStep('validating', 'Extracting code from response...');
       // ====== ROBUST CODE EXTRACTION (React/TSX Mode) ======
       // Extract React component code from AI response
       let generatedCode: string | null = null;
@@ -1391,6 +1405,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // Handle multi-file output — prefer orchestrator, fall back to legacy callback
       if (multiFileOutput) {
+        liveStep('validating', `Multi-file output: ${Object.keys(multiFileOutput).length} files detected`, Object.keys(multiFileOutput).join(', '));
         console.log('[AIBuilderPanel] Multi-file output detected:', Object.keys(multiFileOutput));
         
         // Normalize paths, filter config files, and strip module.exports from component content
@@ -1423,6 +1438,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
             onApplyToVFS(normalizedFiles);
+            liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
             vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
             toast.success(`✅ Multi-file project applied${approvalNote}`);
@@ -1555,6 +1571,7 @@ export default function App() {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
             onApplyToVFS({ [singleFilePath]: generatedCode });
+            liveStep('complete', `✅ Applied to ${singleFilePath}`);
             vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
             toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);

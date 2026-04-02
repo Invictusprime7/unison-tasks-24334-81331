@@ -833,10 +833,13 @@ export function VFSCodeView({
         {/* ============================================================== */}
         {/* Build Output / Terminal                                         */}
         {/* ============================================================== */}
-        <BuildOutputPanel
+        <VFSTerminal
+          nodes={nodes}
+          customDeps={{}}
           isCollapsed={terminalCollapsed}
           onToggleCollapse={() => setTerminalCollapsed(v => !v)}
           maxHeight="160px"
+          onRefreshPreview={() => vfsEventBus.emit('preview:refresh', {})}
         />
 
         {/* ============================================================== */}

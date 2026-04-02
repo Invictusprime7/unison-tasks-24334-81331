@@ -1500,7 +1500,9 @@ export default function App() {
             toast.warning('⚠️ Patch flagged for review — check warnings');
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
+            vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
             onApplyToVFS({ [singleFilePath]: generatedCode });
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
             toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
           } else if (onCodeGenerated) {

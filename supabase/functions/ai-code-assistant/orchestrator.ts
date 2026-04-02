@@ -8,7 +8,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { generateVariation, variationToPromptContext } from "../_shared/industryVariations.ts";
+import { generateVariation, variationToPromptContext, type TemplateVariation } from "../_shared/industryVariations.ts";
 import {
   getIndustryProfile,
   matchPagePattern,

@@ -93,6 +93,7 @@ import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilde
 import { useAIVFS } from '@/hooks/useAIVFS';
 import { getTemplateReactCodeWithCSS } from '@/data/templates/utils';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
+import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
@@ -2859,7 +2860,10 @@ export default ${componentName}Page;`;
 
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (navState?.vfsFiles) {
-      const vfsFiles = { ...navState.vfsFiles };
+      // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist
+      const vfsFiles = normalizeLauncherFiles({ ...navState.vfsFiles }, {
+        entryPoint: navState.entryPoint,
+      });
       const normalizedEntryPoint = navState.entryPoint
         ? (navState.entryPoint.startsWith('/') ? navState.entryPoint : `/${navState.entryPoint}`)
         : null;
@@ -2990,7 +2994,9 @@ export default ${componentName}Page;`;
       }
 
         nextFiles['/src/App.tsx'] = nextCode;
-        replaceProjectFiles(nextFiles, {
+        // Normalize to ensure main.tsx and index.css exist
+        const normalizedFiles = normalizeLauncherFiles(nextFiles);
+        replaceProjectFiles(normalizedFiles, {
           activePath: '/src/App.tsx',
           entryContent: nextCode,
         });
@@ -3055,7 +3061,14 @@ ${sectionsJsx}
   );
 }
 `;
-      
+      // Wire through VFS so preview stays in sync
+      const templateFiles = normalizeLauncherFiles({
+        '/src/App.tsx': reactCode,
+      });
+      replaceProjectFiles(templateFiles, {
+        activePath: '/src/App.tsx',
+        entryContent: reactCode,
+      });
       setEditorCode(reactCode);
       setPreviewCode(reactCode);
       setViewMode('code');

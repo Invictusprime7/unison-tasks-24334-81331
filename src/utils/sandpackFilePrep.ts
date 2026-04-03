@@ -2777,9 +2777,64 @@ export function processCode(code: string, filePath: string): string {
         return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
       }
 
-      // Unknown npm package — pass through to Sandpack for real resolution.
-      // The dependency extractor will pick it up and add it to customSetup.dependencies.
-      return match;
+      // ── Shim known problematic packages that AI commonly imports ──
+      // react-scroll: AI generates Link/Element/scroller imports — replace with native scroll behavior
+      if (modulePath === 'react-scroll' || modulePath.startsWith('react-scroll/')) {
+        console.warn(`[processCode] Shimming react-scroll import in ${filePath}`);
+        const namedMatch = match.match(/import\s+\{([^}]+)\}/);
+        const defaultMatch = match.match(/import\s+(\w+)\s+from/);
+        // Generate inline shims for commonly used react-scroll exports
+        const shimLines: string[] = [];
+        if (namedMatch) {
+          const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/));
+          for (const [orig, alias] of names) {
+            const localName = alias || orig;
+            if (/^(Link|Element|ScrollLink|ScrollElement)$/i.test(orig)) {
+              shimLines.push(`const ${localName} = ({ children, to, smooth, spy, offset, duration, ...props }: any) => { const handleClick = () => { const el = document.getElementById(to); if (el) el.scrollIntoView({ behavior: 'smooth' }); }; return React.createElement('a', { ...props, onClick: handleClick, style: { cursor: 'pointer', ...props.style } }, children); };`);
+            } else if (/^(animateScroll|scroller)$/i.test(orig)) {
+              shimLines.push(`const ${localName} = { scrollTo: (id: string) => { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); }, scrollToTop: () => window.scrollTo({ top: 0, behavior: 'smooth' }) };`);
+            } else if (/^Events?$/i.test(orig)) {
+              shimLines.push(`const ${localName} = { scrollEvent: { register: () => {}, remove: () => {} } };`);
+            } else {
+              shimLines.push(`const ${localName} = (props: any) => React.createElement('div', props, props.children);`);
+            }
+          }
+        } else if (defaultMatch) {
+          shimLines.push(`const ${defaultMatch[1]} = { Link: ({ children, to, ...props }: any) => { const handleClick = () => { const el = document.getElementById(to); if (el) el.scrollIntoView({ behavior: 'smooth' }); }; return React.createElement('a', { ...props, onClick: handleClick, style: { cursor: 'pointer' } }, children); } };`);
+        }
+        return shimLines.length > 0
+          ? `// [Preview] Shimmed: ${modulePath}\n${shimLines.join('\n')}`
+          : `// [Preview] Stripped: ${modulePath}`;
+      }
+
+      // Unknown npm package — stub it to prevent Sandpack resolution failures
+      // that cause "Element type is invalid" when the package can't be found or
+      // exports differ from what the AI expects
+      const unknownNamedMatch = match.match(/import\s+\{([^}]+)\}/);
+      const unknownDefaultMatch = match.match(/import\s+(\w+)\s+from/);
+      const unknownStarMatch = match.match(/import\s+\*\s+as\s+(\w+)/);
+      if (unknownNamedMatch) {
+        console.warn(`[processCode] Stubbing unknown npm import: ${modulePath} in ${filePath}`);
+        const names = unknownNamedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/));
+        const stubs = names.map(([orig, alias]) => {
+          const localName = alias || orig;
+          // PascalCase → React component stub; camelCase → noop function; UPPER_CASE → empty object
+          if (/^[A-Z]/.test(orig)) {
+            return `const ${localName} = ({ children, ...props }: any) => React.createElement('div', props, children);`;
+          }
+          return `const ${localName} = (() => {}) as any;`;
+        });
+        return `// [Preview] Stubbed: ${modulePath}\n${stubs.join('\n')}`;
+      }
+      if (unknownStarMatch) {
+        console.warn(`[processCode] Stubbing unknown npm namespace import: ${modulePath} in ${filePath}`);
+        return `// [Preview] Stubbed: ${modulePath}\nconst ${unknownStarMatch[1]} = new Proxy({}, { get: (_, key) => typeof key === 'string' && /^[A-Z]/.test(key) ? (({ children, ...props }: any) => React.createElement('div', props, children)) : (() => {}) }) as any;`;
+      }
+      if (unknownDefaultMatch) {
+        console.warn(`[processCode] Stubbing unknown npm default import: ${modulePath} in ${filePath}`);
+        return `// [Preview] Stubbed: ${modulePath}\nconst ${unknownDefaultMatch[1]} = new Proxy(({ children, ...props }: any) => React.createElement('div', props, children), { get: (target, key) => typeof key === 'string' && /^[A-Z]/.test(key) ? (({ children, ...props }: any) => React.createElement('div', props, children)) : key === 'default' ? target : (() => {}) }) as any;`;
+      }
+      return `// [Preview] Stripped unknown import: ${modulePath}`;
     }
   );
 

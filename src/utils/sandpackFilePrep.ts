@@ -2967,10 +2967,13 @@ export function processCode(code: string, filePath: string): string {
   processed = processed.replace(
     /\{`(https?:\/\/[^`]*?\$\{[^}]*\}[^`]*?)`\}/g,
     (_match, inner: string) => {
-      // If it contains ${...} with non-identifier content (numbers, commas, question marks), it's broken
-      const hasInvalidExpr = /\$\{[^}]*[,?|&]/.test(inner);
+      // Detect broken template expressions: arithmetic on Unsplash IDs, commas, queries, etc.
+      const hasInvalidExpr = /\$\{[^}]*[,?|&]/.test(inner) ||
+        /\$\{\s*\d+[a-zA-Z-]/.test(inner) ||         // e.g. ${1472099645785-5658abf4ff4e}
+        /\$\{[^}]*\+[^}]*\}/.test(inner) ||           // e.g. ${someId + i}
+        /\$\{[^}]*photo-/.test(inner);                 // e.g. ${...photo-xxx...}
       if (hasInvalidExpr) {
-        // Try to extract a clean URL from the mess
+        // Try to extract a clean Unsplash photo URL
         const urlMatch = inner.match(/(https?:\/\/images\.unsplash\.com\/photo-[a-zA-Z0-9-]+)\??/);
         if (urlMatch) {
           return `"${urlMatch[1]}?w=800&q=80"`;

@@ -94,6 +94,7 @@ import { useAIVFS } from '@/hooks/useAIVFS';
 import { getTemplateReactCodeWithCSS } from '@/data/templates/utils';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
+import { completeAestheticCSS, isValidAesthetic } from '@/utils/aestheticToCSS';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -2851,6 +2852,33 @@ export default ${componentName}Page;`;
       const normalizedEntryPoint = navState.entryPoint
         ? (navState.entryPoint.startsWith('/') ? navState.entryPoint : `/${navState.entryPoint}`)
         : null;
+
+      // Apply aesthetic CSS if provided and valid
+      if (navState.aesthetic && isValidAesthetic(navState.aesthetic)) {
+        const aestheticCSS = completeAestheticCSS(navState.aesthetic);
+        
+        // Apply to /src/index.css or create it
+        if (vfsFiles["/src/index.css"]) {
+          // Prepend aesthetic CSS to existing stylesheet
+          if (!vfsFiles["/src/index.css"].includes('/* AESTHETIC:')) {
+            vfsFiles["/src/index.css"] = aestheticCSS + '\n\n' + vfsFiles["/src/index.css"];
+          }
+        } else {
+          // Create /src/index.css with aesthetic CSS
+          vfsFiles["/src/index.css"] = aestheticCSS;
+        }
+        
+        // Also apply to any other CSS files (multi-file VFS support)
+        Object.entries(vfsFiles).forEach(([path, content]) => {
+          if (path.endsWith('.css') && path !== '/src/index.css' && !path.includes('shim')) {
+            if (typeof content === 'string' && !content.includes('/* AESTHETIC:')) {
+              vfsFiles[path] = aestheticCSS + '\n\n' + content;
+            }
+          }
+        });
+        
+        console.log('[WebBuilder] Applied aesthetic theme:', navState.aesthetic);
+      }
 
       // Extract embedded TEMPLATE_STYLES/TEMPLATE_CSS from App.tsx and route to CSS file
       const appKey = vfsFiles["/src/App.tsx"] ? "/src/App.tsx" : vfsFiles["/App.tsx"] ? "/App.tsx" : null;

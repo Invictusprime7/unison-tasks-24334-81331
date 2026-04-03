@@ -541,3 +541,59 @@ export function parseAICommands(text: string): string[] {
     .map(l => l.trim())
     .filter(l => l.length > 0 && !l.startsWith('#') && !l.startsWith('//'));
 }
+
+/**
+ * Execute a terminal command for AI integration
+ * Wrapper around processCommand that handles both strings and parsed commands
+ */
+export async function executeTerminalCommand(
+  input: string,
+  ctx: CommandContext
+): Promise<CommandResult> {
+  return processCommand(input, ctx);
+}
+
+/**
+ * Get structured diagnostic information for AI
+ * Provides machine-readable output about VFS state, dependencies, and issues
+ */
+export function getDiagnosticsForAI(ctx: CommandContext): Record<string, unknown> {
+  const fileMap = vfsToFileMap(ctx.nodes);
+  const files = getFilePaths(ctx.nodes);
+
+  // Analyze imports and dependencies
+  const importIssues: string[] = [];
+  const tsFiles = files.filter(f => f.endsWith('.tsx') || f.endsWith('.ts'));
+
+  tsFiles.forEach(file => {
+    const content = fileMap.get(file) || '';
+    // Basic import validation
+    const importMatches = content.match(/from ['"]([^'"]+)['"]/g) || [];
+    importMatches.forEach(importStr => {
+      const moduleName = importStr.match(/from ['"]([^'"]+)['"]/)?.[1];
+      if (moduleName && !moduleName.startsWith('.') && !moduleName.startsWith('/')) {
+        // Check if it's in dependencies
+        if (!ctx.currentDeps[moduleName] && !SANDPACK_ALLOWED_IMPORTS.includes(moduleName)) {
+          importIssues.push(`${file}: Missing dependency "${moduleName}"`);
+        }
+      }
+    });
+  });
+
+  return {
+    vfs: {
+      fileCount: files.length,
+      files: files,
+      totalSize: files.reduce((sum, f) => sum + (fileMap.get(f)?.length || 0), 0),
+    },
+    dependencies: {
+      count: Object.keys(ctx.currentDeps).length,
+      packages: ctx.currentDeps,
+    },
+    issues: {
+      importIssues: importIssues,
+      missingFiles: [],
+      count: importIssues.length,
+    },
+  };
+}

@@ -1,0 +1,44 @@
+# Preview Service Infrastructure
+# Docker Compose for local development and testing
+
+version: '3.8'
+
+services:
+  # Preview Gateway - API server that manages sessions
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - GATEWAY_URL=http://localhost:3001
+      - PREVIEW_IMAGE=unison-preview-worker:latest
+      - CONTAINER_NETWORK=preview-service_preview-network
+      - MAX_SESSIONS=10
+      - SESSION_TIMEOUT=300000
+      - LOG_LEVEL=debug
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/preview-sessions:/tmp/preview-sessions
+    networks:
+      - preview-network
+    depends_on:
+      - worker-base
+    restart: unless-stopped
+
+  # Base worker image (built once, used by gateway to spawn containers)
+  worker-base:
+    build:
+      context: ./worker
+      dockerfile: ../Dockerfile
+    image: unison-preview-worker:latest
+    command: echo "Base image built"
+    networks:
+      - preview-network
+
+networks:
+  preview-network:
+    driver: bridge

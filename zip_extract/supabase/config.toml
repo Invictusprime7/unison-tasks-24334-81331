@@ -1,0 +1,118 @@
+project_id = "oruwtgdjurstvhgqcvbv"
+
+[functions.gohighlevel-crm]
+verify_jwt = false
+
+[functions.template-automation]
+verify_jwt = false
+
+[functions.ai-code-assistant]
+verify_jwt = false
+
+[functions.ai-design-assistant]
+verify_jwt = false
+
+[functions.generate-image]
+verify_jwt = false
+
+[functions.generate-ai-template]
+verify_jwt = false
+
+[functions.generate-template]
+verify_jwt = false
+
+[functions.generate-template-image]
+verify_jwt = false
+
+[functions.generate-page]
+verify_jwt = false
+
+[functions.copy-rewrite]
+verify_jwt = false
+
+[functions.publish-site]
+verify_jwt = false
+
+[functions.web-builder-ai]
+verify_jwt = false
+
+[functions.ai-web-assistant]
+verify_jwt = false
+
+[functions.workflow-trigger]
+verify_jwt = false
+
+[functions.workflow-cron]
+verify_jwt = false
+
+[functions.workflow-job-processor]
+verify_jwt = false
+
+[functions.form-submit]
+verify_jwt = false
+
+[functions.research]
+verify_jwt = false
+
+[functions.plugin-event-ingest]
+verify_jwt = false
+
+[functions.agent-runner]
+verify_jwt = false
+
+[functions.systems-build]
+verify_jwt = false
+
+[functions.systems-classify]
+verify_jwt = false
+
+[functions.systems-compile]
+verify_jwt = false
+
+[functions.install-system]
+verify_jwt = false
+
+[functions.automation-event]
+verify_jwt = false
+
+[functions.automation-runtime]
+verify_jwt = false
+
+[functions.builder-actions]
+verify_jwt = false
+
+[functions.builder-provision]
+verify_jwt = false
+
+[functions.builder-provision-lite]
+verify_jwt = false
+
+[functions.create-booking]
+verify_jwt = false
+
+[functions.create-lead]
+verify_jwt = false
+
+[functions.create-lead-lite]
+verify_jwt = false
+
+[functions.generate-fullstack-app]
+verify_jwt = false
+
+[functions.intent-action]
+verify_jwt = false
+
+[functions.intent-booking]
+verify_jwt = false
+
+[functions.intent-router]
+verify_jwt = false
+
+[functions.intent-router-lite]
+verify_jwt = false
+
+[functions.save-email-provider]
+verify_jwt = false
+
+[functions.template-backend]
+verify_jwt = false

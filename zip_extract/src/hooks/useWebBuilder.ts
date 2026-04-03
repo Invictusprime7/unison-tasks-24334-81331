@@ -1,0 +1,229 @@
+import { useState, useCallback } from 'react';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+
+export interface BuilderProject {
+  id: string;
+  name: string;
+  description?: string;
+  pages: BuilderPage[];
+  settings: BuilderSettings;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BuilderPage {
+  id: string;
+  name: string;
+  path: string;
+  components: any[];
+  seo: PageSEO;
+  canvasData?: any;
+}
+
+export interface PageSEO {
+  title: string;
+  description: string;
+  keywords?: string[];
+  ogImage?: string;
+}
+
+export interface BuilderSettings {
+  theme: {
+    primaryColor: string;
+    secondaryColor: string;
+    fontFamily: string;
+  };
+  domain?: string;
+  favicon?: string;
+}
+
+export const useWebBuilder = () => {
+  const [currentProject, setCurrentProject] = useState<BuilderProject | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const createProject = useCallback(async (name: string, description?: string) => {
+    setLoading(true);
+    try {
+      const newProject: BuilderProject = {
+        id: crypto.randomUUID(),
+        name,
+        description,
+        pages: [{
+          id: crypto.randomUUID(),
+          name: 'Home',
+          path: '/',
+          components: [],
+          seo: {
+            title: name,
+            description: description || '',
+          },
+        }],
+        settings: {
+          theme: {
+            primaryColor: '#3b82f6',
+            secondaryColor: '#8b5cf6',
+            fontFamily: 'Inter, sans-serif',
+          },
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      setCurrentProject(newProject);
+      toast.success('Project created successfully!');
+      return newProject;
+    } catch (error) {
+      console.error('Error creating project:', error);
+      toast.error('Failed to create project');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const addPage = useCallback((pageName: string, path: string) => {
+    if (!currentProject) return;
+
+    const newPage: BuilderPage = {
+      id: crypto.randomUUID(),
+      name: pageName,
+      path,
+      components: [],
+      seo: {
+        title: `${pageName} | ${currentProject.name}`,
+        description: '',
+      },
+    };
+
+    setCurrentProject({
+      ...currentProject,
+      pages: [...currentProject.pages, newPage],
+      updated_at: new Date().toISOString(),
+    });
+
+    toast.success(`Page "${pageName}" added!`);
+  }, [currentProject]);
+
+  const updatePageSEO = useCallback((pageId: string, seo: Partial<PageSEO>) => {
+    if (!currentProject) return;
+
+    setCurrentProject({
+      ...currentProject,
+      pages: currentProject.pages.map(page =>
+        page.id === pageId
+          ? { ...page, seo: { ...page.seo, ...seo } }
+          : page
+      ),
+      updated_at: new Date().toISOString(),
+    });
+  }, [currentProject]);
+
+  const exportProject = useCallback((format: 'html' | 'react' | 'json') => {
+    if (!currentProject) {
+      toast.error('No project to export');
+      return null;
+    }
+
+    try {
+      let exported: any;
+
+      switch (format) {
+        case 'html':
+          exported = generateHTML(currentProject);
+          break;
+        case 'react':
+          exported = generateReact(currentProject);
+          break;
+        case 'json':
+          exported = JSON.stringify(currentProject, null, 2);
+          break;
+      }
+
+      // Download the export
+      const blob = new Blob([exported], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${currentProject.name}.${format === 'react' ? 'jsx' : format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Project exported as ${format.toUpperCase()}`);
+      return exported;
+    } catch (error) {
+      console.error('Error exporting project:', error);
+      toast.error('Failed to export project');
+      return null;
+    }
+  }, [currentProject]);
+
+  return {
+    currentProject,
+    loading,
+    createProject,
+    addPage,
+    updatePageSEO,
+    exportProject,
+  };
+};
+
+// Helper functions for export
+function generateHTML(project: BuilderProject): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${project.pages[0]?.seo.title || project.name}</title>
+  <meta name="description" content="${project.pages[0]?.seo.description || ''}">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: ${project.settings.theme.fontFamily}; }
+    :root {
+      --primary-color: ${project.settings.theme.primaryColor};
+      --secondary-color: ${project.settings.theme.secondaryColor};
+    }
+  </style>
+</head>
+<body>
+  <!-- Generated by Web Builder -->
+  <div id="app">
+    ${project.pages.map(page => `
+      <!-- ${page.name} -->
+      <section data-page="${page.path}">
+        <!-- Components will be rendered here -->
+      </section>
+    `).join('\n')}
+  </div>
+</body>
+</html>`;
+}
+
+function generateReact(project: BuilderProject): string {
+  return `import React from 'react';
+
+// ${project.name}
+// Auto-generated by Web Builder
+
+const theme = ${JSON.stringify(project.settings.theme, null, 2)};
+
+${project.pages.map(page => `
+function ${page.name.replace(/\s/g, '')}Page() {
+  return (
+    <div className="page" data-path="${page.path}">
+      <h1>${page.seo.title}</h1>
+      {/* Components will be rendered here */}
+    </div>
+  );
+}
+`).join('\n')}
+
+export default function App() {
+  return (
+    <div style={{ fontFamily: theme.fontFamily }}>
+      ${project.pages.map(page => `<${page.name.replace(/\s/g, '')}Page />`).join('\n      ')}
+    </div>
+  );
+}`;
+}

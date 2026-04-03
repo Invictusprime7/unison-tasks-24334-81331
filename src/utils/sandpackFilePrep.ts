@@ -1087,7 +1087,9 @@ export function Header() {
       </div>
     </header>
   );
-}`;
+}
+
+export default Header;`;
 }
 
 function genFeatures(ctx: GeneratorContext): string {

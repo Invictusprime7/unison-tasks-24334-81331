@@ -273,8 +273,7 @@ function formatTimestamp(date: Date): string {
 const ThinkingStepItem: React.FC<{
   step: ThinkingStep;
   isLast: boolean;
-  onToggle: () => void;
-}> = ({ step, isLast, onToggle }) => {
+}> = ({ step, isLast }) => {
   const icons = {
     analyzing: <Sparkles className="w-3 h-3 text-blue-400 animate-pulse" />,
     planning: <FileCode className="w-3 h-3 text-sky-400" />,
@@ -294,20 +293,14 @@ const ThinkingStepItem: React.FC<{
         {!isLast && <div className="w-px h-4 bg-blue-500/20" />}
       </div>
       <div className="flex-1 min-w-0">
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-1 text-xs text-blue-400/70 hover:text-blue-400 transition-colors w-full text-left"
-        >
-          {step.details && (
-            step.isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />
-          )}
+        <div className="flex items-center gap-1 text-xs text-blue-400/70 w-full text-left">
           <span className="truncate font-mono">{step.message}</span>
-          <span className="text-blue-400/30 text-[10px] ml-auto font-mono">{formatTimestamp(step.timestamp)}</span>
-        </button>
-        {step.isExpanded && step.details && (
-          <pre className="mt-1 p-2 bg-black/40 border border-blue-500/20 rounded text-[10px] text-blue-400/50 overflow-x-auto font-mono">
+          <span className="text-blue-400/30 text-[10px] ml-auto font-mono shrink-0">{formatTimestamp(step.timestamp)}</span>
+        </div>
+        {step.details && (
+          <div className="mt-1 px-2 py-1.5 bg-black/40 border border-blue-500/20 rounded text-[10px] text-blue-400/50 font-mono leading-relaxed">
             {step.details}
-          </pre>
+          </div>
         )}
       </div>
     </div>
@@ -324,14 +317,16 @@ const MessageItem: React.FC<{
   onRetryError?: (error: IframeError) => void;
 }> = ({ message, onViewEdits, onRetryError }) => {
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>(message.thinking || []);
-  const [showThinking, setShowThinking] = useState(false);
-  const [showReasoning, setShowReasoning] = useState(false);
+  // Thinking is always visible — user can hide via toggle
+  const [showThinking, setShowThinking] = useState(true);
+  const [showReasoning, setShowReasoning] = useState(true);
 
-  const toggleStep = (stepId: string) => {
-    setThinkingSteps(prev =>
-      prev.map(s => s.id === stepId ? { ...s, isExpanded: !s.isExpanded } : s)
-    );
-  };
+  // Sync thinking steps from parent message updates (live push)
+  useEffect(() => {
+    if (message.thinking && message.thinking.length > thinkingSteps.length) {
+      setThinkingSteps(message.thinking);
+    }
+  }, [message.thinking]);
 
   if (message.role === 'user') {
     return (
@@ -356,22 +351,23 @@ const MessageItem: React.FC<{
   // Assistant message with cascade thinking
   return (
     <div className="mb-4">
-      {/* AI Extended Reasoning — shown for all models when thinking tags are present */}
+      {/* AI Extended Reasoning — always visible, user can hide */}
       {message.claudeReasoning && (
         <div className="mb-2 rounded-lg border border-violet-500/30 bg-violet-950/30 overflow-hidden">
-          <button
-            onClick={() => setShowReasoning(!showReasoning)}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-violet-300/80 hover:text-violet-200 transition-colors font-mono"
-          >
-            {showReasoning ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          <div className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-violet-300/80 font-mono">
             <Brain className="w-3 h-3 text-violet-400" />
             <Zap className="w-3 h-3 text-amber-400" />
             <span className="font-semibold">AI Reasoning</span>
-            <span className="ml-auto text-violet-400/40 text-[10px]">{message.claudeReasoning.length.toLocaleString()} chars</span>
-          </button>
+            <span className="text-violet-400/40 text-[10px]">{message.claudeReasoning.length.toLocaleString()} chars</span>
+            <button
+              onClick={() => setShowReasoning(!showReasoning)}
+              className="ml-auto text-violet-400/40 hover:text-violet-300 transition-colors text-[10px] font-mono"
+            >
+              {showReasoning ? 'hide' : 'show'}
+            </button>
+          </div>
           {showReasoning && (
             <div className="px-3 pb-3">
-              <div className="text-[10px] text-violet-300/40 font-mono mb-1 uppercase tracking-widest">Extended Reasoning · Internal Thought Process</div>
               <pre className="text-[11px] text-violet-100/70 whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-y-auto rounded bg-black/30 p-2 border border-violet-500/10">
                 {message.claudeReasoning}
               </pre>
@@ -380,17 +376,19 @@ const MessageItem: React.FC<{
         </div>
       )}
 
-      {/* Thinking Process (collapsible cascade) */}
+      {/* Thinking Process — always visible, user can hide */}
       {thinkingSteps.length > 0 && (
         <div className="mb-2">
-          <button
-            onClick={() => setShowThinking(!showThinking)}
-            className="flex items-center gap-1 text-xs text-blue-400/50 hover:text-blue-400/70 transition-colors mb-1 font-mono"
-          >
-            {showThinking ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          <div className="flex items-center gap-1 text-xs text-blue-400/60 mb-1 font-mono">
             <Sparkles className="w-3 h-3 text-blue-400" />
-            <span>AI Thinking ({thinkingSteps.length} steps)</span>
-          </button>
+            <span>Pipeline ({thinkingSteps.length} steps)</span>
+            <button
+              onClick={() => setShowThinking(!showThinking)}
+              className="ml-auto text-blue-400/40 hover:text-blue-400 transition-colors text-[10px] font-mono"
+            >
+              {showThinking ? 'hide' : 'show'}
+            </button>
+          </div>
           {showThinking && (
             <div className="ml-2 pl-2 border-l border-blue-500/20">
               {thinkingSteps.map((step, i) => (
@@ -398,7 +396,6 @@ const MessageItem: React.FC<{
                   key={step.id}
                   step={step}
                   isLast={i === thinkingSteps.length - 1}
-                  onToggle={() => toggleStep(step.id)}
                 />
               ))}
             </div>
@@ -766,49 +763,17 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     }
   }, [messages.length]);
 
-  // Simulate thinking steps for AI response
-  const simulateThinking = useCallback(async (userPrompt: string): Promise<ThinkingStep[]> => {
-    const steps: ThinkingStep[] = [];
-
-    // Run prompt intelligence analysis during thinking
-    const { analysis } = enhancePromptForAI(userPrompt);
-    
-    steps.push({
-      id: generateId(),
-      type: 'analyzing',
-      message: `Analyzing request — detected intent: ${analysis.intent}`,
-      timestamp: new Date(),
-      details: [
-        `Complexity: ${analysis.complexity}`,
-        analysis.targets.length ? `Targets: ${analysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
-        analysis.designKeywords.length ? `Design: ${analysis.designKeywords.join(', ')}` : null,
-        analysis.constraints.length ? `Constraints: ${analysis.constraints.length} detected` : null,
-      ].filter(Boolean).join(' | '),
-    });
-
-    await new Promise(r => setTimeout(r, 300));
-    
-    steps.push({
-      id: generateId(),
-      type: 'planning',
-      message: analysis.secondaryIntents.length
-        ? `Planning ${analysis.complexity} change (${1 + analysis.secondaryIntents.length} intents)...`
-        : 'Planning changes...',
-      timestamp: new Date(),
-      details: currentCode ? `Current template: ${currentCode.length} chars` : 'No existing template',
-    });
-
-    await new Promise(r => setTimeout(r, 400));
-    
-    steps.push({
-      id: generateId(),
-      type: 'generating',
-      message: 'Generating code...',
-      timestamp: new Date(),
-    });
-
-    return steps;
-  }, [currentCode]);
+  // Live thinking step pusher — updates the streaming message in real-time
+  const pushThinkingStep = useCallback((
+    streamingId: string,
+    step: ThinkingStep,
+    existingSteps: ThinkingStep[],
+  ) => {
+    existingSteps.push(step);
+    setMessages(prev => prev.map(m =>
+      m.id === streamingId ? { ...m, thinking: [...existingSteps] } : m
+    ));
+  }, []);
 
   // Send message to AI
   const handleSend = async () => {
@@ -853,24 +818,44 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     const _userContent = userContent;
 
     try {
-      // Simulate thinking process
-      const thinkingSteps = await simulateThinking(input);
-      
-      // Add streaming message
+      // Initialize live thinking cascade
+      const thinkingSteps: ThinkingStep[] = [];
       const streamingId = generateId();
+      
+      // Add streaming message immediately (visible with empty thinking)
       setMessages(prev => [...prev, {
         id: streamingId,
         role: 'assistant',
         content: '',
         timestamp: new Date(),
-        thinking: thinkingSteps,
+        thinking: [],
         isStreaming: true,
       }]);
 
-      // ── Prompt Intelligence: analyze the raw user text ──
+      // Helper to push a live step
+      const liveStep = (type: ThinkingStep['type'], message: string, details?: string) => {
+        pushThinkingStep(streamingId, {
+          id: generateId(),
+          type,
+          message,
+          timestamp: new Date(),
+          details,
+        }, thinkingSteps);
+      };
+
+      // ── Phase 1: Prompt Intelligence ──
+      liveStep('analyzing', 'Parsing natural language request...');
+
       const rawInput = _userContent;
       const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
       const isSurgicalEdit = detectedSurgical && !!currentCode;
+
+      liveStep('analyzing', `Intent: ${promptAnalysis.intent} · Complexity: ${promptAnalysis.complexity}`, [
+        promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
+        promptAnalysis.designKeywords.length ? `Design cues: ${promptAnalysis.designKeywords.join(', ')}` : null,
+        promptAnalysis.constraints.length ? `${promptAnalysis.constraints.length} constraints detected` : null,
+        isSurgicalEdit ? '🎯 Surgical edit mode' : isFullGeneration ? '🏗️ Full generation mode' : null,
+      ].filter(Boolean).join(' | '));
 
       // Log prompt analysis for debugging
       console.log('[AIBuilderPanel] Prompt analysis:', {
@@ -882,6 +867,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         designKeywords: promptAnalysis.designKeywords,
         isSurgical: isSurgicalEdit,
       });
+
+      // ── Phase 2: VFS & Context Assembly ──
+      liveStep('planning', 'Assembling project context...');
 
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';
@@ -903,6 +891,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             const target = resolveEditTarget(rawInput, analysis);
             if (target) {
               resolvedTargetFile = target.file;
+              liveStep('planning', `🎯 Edit target: ${target.component} in ${target.file}`, `Confidence: ${target.confidence}`);
               const targetFileContent = vfsFiles[target.file];
               const contentSnippet = targetFileContent
                 ? targetFileContent.slice(0, 8000)
@@ -1049,6 +1038,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         }
       })();
 
+      // ── Phase 3: AI Gateway Call ──
+      liveStep('generating', 'Calling AI model...', gatewayConfig?.selectedModelId || 'auto-select');
+
       // Call AI service with retry logic
       const MAX_RETRIES = 2;
       let response = null;
@@ -1187,10 +1179,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         throw lastError || new Error('AI service failed after retries');
       }
 
+      // ── Phase 4: Response Processing ──
+      const modelUsed = response.data?.modelUsed || gatewayConfig?.selectedModelId || 'unknown';
+      liveStep('validating', `Response received from ${modelUsed}`);
+
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
-
-      // Extract rich metadata from response
       const responseMeta: Message['meta'] = {
         actionType: response.data?.actionType,
         modelUsed: response.data?.modelUsed,
@@ -1204,6 +1198,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
       
+      // ── Phase 5: Code Extraction ──
+      liveStep('validating', 'Extracting code from response...');
       // ====== ROBUST CODE EXTRACTION (React/TSX Mode) ======
       // Extract React component code from AI response
       let generatedCode: string | null = null;
@@ -1391,6 +1387,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // Handle multi-file output — prefer orchestrator, fall back to legacy callback
       if (multiFileOutput) {
+        liveStep('validating', `Multi-file output: ${Object.keys(multiFileOutput).length} files detected`, Object.keys(multiFileOutput).join(', '));
         console.log('[AIBuilderPanel] Multi-file output detected:', Object.keys(multiFileOutput));
         
         // Normalize paths, filter config files, and strip module.exports from component content
@@ -1423,6 +1420,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
             onApplyToVFS(normalizedFiles);
+            liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
             vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
             toast.success(`✅ Multi-file project applied${approvalNote}`);
@@ -1555,6 +1553,7 @@ export default function App() {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
             onApplyToVFS({ [singleFilePath]: generatedCode });
+            liveStep('complete', `✅ Applied to ${singleFilePath}`);
             vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
             toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);

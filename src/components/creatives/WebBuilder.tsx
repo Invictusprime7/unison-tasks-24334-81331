@@ -3061,7 +3061,14 @@ ${sectionsJsx}
   );
 }
 `;
-      
+      // Wire through VFS so preview stays in sync
+      const templateFiles = normalizeLauncherFiles({
+        '/src/App.tsx': reactCode,
+      });
+      replaceProjectFiles(templateFiles, {
+        activePath: '/src/App.tsx',
+        entryContent: reactCode,
+      });
       setEditorCode(reactCode);
       setPreviewCode(reactCode);
       setViewMode('code');

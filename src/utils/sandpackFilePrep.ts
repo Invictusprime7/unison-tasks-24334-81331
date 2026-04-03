@@ -194,8 +194,44 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
  */
 const DEFAULT_INDEX = `import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import * as AppModule from './App';
 import './index.css';
+
+// ── Runtime guard: intercept undefined components BEFORE they crash React ──
+// This prevents "Element type is invalid" errors by replacing undefined/null
+// component references with a visible placeholder instead of a hard crash.
+const _origCreateElement = React.createElement;
+const _undefinedComponents = new Set<string>();
+(React as any).createElement = function SafeCreateElement(type: any, ...args: any[]) {
+  if (type === undefined || type === null) {
+    // Collect info for debugging
+    const caller = new Error().stack?.split('\\n')[2]?.trim() || 'unknown';
+    const id = caller.slice(0, 80);
+    if (!_undefinedComponents.has(id)) {
+      _undefinedComponents.add(id);
+      console.error('[Preview] Undefined component intercepted. Caller:', caller);
+    }
+    return _origCreateElement('div', {
+      style: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', margin: 2, borderRadius: 6, border: '1px dashed hsl(0 60% 50%)', background: 'hsl(0 60% 97%)', color: 'hsl(0 60% 40%)', fontSize: 11, fontFamily: 'monospace' },
+      title: 'This component resolved to undefined — check imports',
+    }, '⚠ missing component');
+  }
+  return _origCreateElement(type, ...args);
+};
+
+// ── Robust App resolution: handle default + named exports gracefully ──
+const App = (() => {
+  if (AppModule.default && (typeof AppModule.default === 'function' || (typeof AppModule.default === 'object' && (AppModule.default as any).$$typeof))) {
+    return AppModule.default;
+  }
+  for (const [key, value] of Object.entries(AppModule)) {
+    if (key === '__esModule' || key === 'default') continue;
+    if (/^[A-Z]/.test(key) && (typeof value === 'function' || (typeof value === 'object' && value !== null && (value as any).$$typeof))) {
+      return value;
+    }
+  }
+  return null;
+})();
 
 // Configure Tailwind CDN with semantic design tokens
 if (typeof window !== 'undefined' && (window as any).tailwind) {
@@ -233,7 +269,7 @@ if (typeof window !== 'undefined' && (window as any).tailwind) {
 ${PREVIEW_NAV_BRIDGE}
 __initLovablePreviewNavBridge();
 
-// Error boundary to catch undefined component crashes gracefully
+// Error boundary as secondary safety net
 class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
@@ -269,13 +305,26 @@ class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { ha
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <PreviewErrorBoundary>
-      <App />
-    </PreviewErrorBoundary>
-  </React.StrictMode>
-);
+if (App) {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <PreviewErrorBoundary>
+        <App />
+      </PreviewErrorBoundary>
+    </React.StrictMode>
+  );
+} else {
+  // App module has no valid export — render diagnostic
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: 32 }}>
+      <div style={{ textAlign: 'center', maxWidth: 420 }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
+        <h2 style={{ fontSize: 18, marginBottom: 8 }}>No renderable component found</h2>
+        <p style={{ color: '#888', fontSize: 14 }}>App.tsx does not export a valid React component. Check that it uses "export default" or a named PascalCase export.</p>
+      </div>
+    </div>
+  );
+}
 `;
 
 const HOOKS_SHIM = `

@@ -910,6 +910,37 @@ function findRenderableComponent(mod) {
 
 const PreviewEntry = findRenderableComponent(PreviewEntryModule);
 
+// Error boundary to catch render errors from PreviewEntry
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', backgroundColor: '#f5f5f5' }}>
+          <div style={{ textAlign: 'center', maxWidth: 500, padding: 32, backgroundColor: 'white', borderRadius: 8, border: '1px solid #e5e5e5', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+            <h2 style={{ fontSize: 18, marginBottom: 8, color: '#d32f2f' }}>Component Render Error</h2>
+            <p style={{ color: '#888', fontSize: 14, marginBottom: 16 }}>An error occurred while rendering the preview component.</p>
+            <div style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, textAlign: 'left', fontSize: 12, color: '#666', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto' }}>
+              {this.state.error?.toString()}
+            </div>
+            <p style={{ color: '#aaa', fontSize: 12, marginTop: 16 }}>Source: ${targetPath}</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function App() {
   if (!PreviewEntry) {
     return (
@@ -923,7 +954,11 @@ export default function App() {
     );
   }
 
-  return <PreviewEntry />;
+  return (
+    <ErrorBoundary>
+      <PreviewEntry />
+    </ErrorBoundary>
+  );
 }
 `;
 }

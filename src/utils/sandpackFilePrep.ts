@@ -3446,11 +3446,13 @@ export function prepareSandpackFiles(
   // ── Generate real components for missing relative imports ──
   // Run BEFORE App.tsx export validation so generated sub-components exist first.
   // Run up to 3 passes to resolve transitive imports (generated components may import others).
+  // Re-run autoInjectMissingJsxImports each pass so generated files also get imports injected.
   for (let pass = 0; pass < 3; pass++) {
     const beforeCount = Object.keys(sandpackFiles).length;
     generateMissingComponents(sandpackFiles);
     if (Object.keys(sandpackFiles).length === beforeCount) break;
     console.log(`[sandpackFilePrep] Component generation pass ${pass + 1}: ${Object.keys(sandpackFiles).length - beforeCount} new files`);
+    autoInjectMissingJsxImports(sandpackFiles);
   }
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {

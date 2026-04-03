@@ -1163,7 +1163,9 @@ export function Services() {
       </div>
     </section>
   );
-}`;
+
+
+export default Services;}`;
 }
 
 function genAbout(ctx: GeneratorContext): string {
@@ -1226,7 +1228,9 @@ export function Testimonials() {
       </div>
     </section>
   );
-}`;
+
+
+export default Testimonials;}`;
 }
 
 function genContact(ctx: GeneratorContext): string {
@@ -1260,7 +1264,9 @@ export function Contact() {
       </div>
     </section>
   );
-}`;
+
+
+export default Contact;}`;
 }
 
 function genFooter(ctx: GeneratorContext): string {
@@ -1305,7 +1311,9 @@ export function Footer() {
       </div>
     </footer>
   );
-}`;
+
+
+export default Footer;}`;
 }
 
 function genPricing(_ctx: GeneratorContext): string {
@@ -1337,7 +1345,9 @@ export function Pricing() {
       </div>
     </section>
   );
-}`;
+
+
+export default Pricing;}`;
 }
 
 function genGallery(_ctx: GeneratorContext): string {
@@ -1367,7 +1377,9 @@ export function Gallery() {
       </div>
     </section>
   );
-}`;
+
+
+export default Gallery;}`;
 }
 
 function genCTA(ctx: GeneratorContext): string {
@@ -1386,7 +1398,9 @@ export function CTA() {
       </div>
     </section>
   );
-}`;
+
+
+export default CTA;}`;
 }
 
 function genFAQ(_ctx: GeneratorContext): string {
@@ -1418,7 +1432,9 @@ export function FAQ() {
       </div>
     </section>
   );
-}`;
+
+
+export default FAQ;}`;
 }
 
 function genTeam(_ctx: GeneratorContext): string {
@@ -1450,7 +1466,9 @@ export function Team() {
       </div>
     </section>
   );
-}`;
+
+
+export default Team;}`;
 }
 
 // ── Industry-specific generators ──────────────────────────────────────────────

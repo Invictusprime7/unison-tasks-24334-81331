@@ -1120,7 +1120,9 @@ export function Features() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Features;`;
 }
 
 function genServices(ctx: GeneratorContext): string {

@@ -78,6 +78,9 @@ export const SANDPACK_DEPENDENCIES: Record<string, string> = {
   'vaul': 'latest',
   'next-themes': 'latest',
 
+  // Scroll & navigation
+  'react-scroll': 'latest',
+
   // Backend/workflow
   'inngest': 'latest',
 };

@@ -1192,7 +1192,9 @@ export function About() {
       </div>
     </section>
   );
-}`;
+}
+
+export default About;`;
 }
 
 function genTestimonials(ctx: GeneratorContext): string {

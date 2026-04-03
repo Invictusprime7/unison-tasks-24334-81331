@@ -1298,6 +1298,47 @@ export default function App() {
     }
   }, [location.search]);
 
+  // Load pre-generated VFS files from SystemLauncher (wizard flow)
+  // SystemLauncher passes vfsFiles via navigation state after AI generation
+  useEffect(() => {
+    if (location.state?.vfsFiles) {
+      const vfsFiles = (location.state as { vfsFiles?: Record<string, string> })?.vfsFiles;
+      if (vfsFiles && Object.keys(vfsFiles).length > 0) {
+        console.log('[WebBuilder] Loading VFS files from SystemLauncher:', Object.keys(vfsFiles));
+        virtualFS.importFiles(vfsFiles);
+        
+        // Find entry point (prefer /src/App.tsx, fallback to /index.html, then any file)
+        const entry = vfsFiles['/src/App.tsx'] || vfsFiles['/index.html'] || vfsFiles['/App.tsx'] || Object.values(vfsFiles)[0];
+        if (entry) {
+          setEditorCode(entry);
+          setPreviewCode(entry);
+          console.log('[WebBuilder] Loaded entry point with content length:', entry.length);
+        }
+        
+        // Extract metadata from location.state if available
+        const templateName = (location.state as { templateName?: string })?.templateName;
+        const aesthetic = (location.state as { aesthetic?: string })?.aesthetic;
+        const startInPreview = (location.state as { startInPreview?: boolean })?.startInPreview ?? true;
+        
+        if (templateName) {
+          setCurrentTemplateName(templateName);
+          setSaveProjectName(templateName);
+        }
+        
+        // Start in preview mode by default for wizard-generated sites
+        if (startInPreview) {
+          setViewMode('canvas');
+          toast(`${templateName || 'Site'} generated!`, {
+            description: `${aesthetic || 'Professional'} - Preview your AI-generated website`,
+          });
+        }
+        
+        // Clear navigation state after loading to prevent re-importing on subsequent renders
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, []); // Run only on mount, not on location changes
+
   // Get full cloud context from location state (from CloudProjects or System Launcher)
   const projectId = (location.state as { projectId?: string })?.projectId;
   const systemType = (location.state as { systemType?: string })?.systemType;

@@ -31,6 +31,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
+import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
@@ -93,6 +94,10 @@ export interface VFSPreviewHandle {
   openInNewTab: () => void;
   getIframe: () => HTMLIFrameElement | null;
   syncPageManifest?: (manifest: Record<string, string>) => void;
+  // AI/Terminal operations
+  executeCommand?: (cmd: string) => Promise<string | null>;
+  executeDiagnostics?: () => Promise<void>;
+  getVFSSnapshot?: () => Record<string, string>;
 }
 
 // ============================================================================
@@ -224,6 +229,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   // Docker preview service
   const dockerService = usePreviewService();
+  
+  // AI execution and terminal bridge
+  const previewAI = usePreviewAI();
   
   // Check if Docker gateway is explicitly configured (local dev only)
   const dockerGatewayConfigured = !!import.meta.env.VITE_PREVIEW_GATEWAY_URL;
@@ -408,7 +416,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     getBackend: () => backend,
     openInNewTab: handleOpenInNewTab,
     getIframe: () => iframeRef.current,
-  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab]);
+    // AI/Terminal operations
+    executeCommand: previewAI.executeCommand,
+    executeDiagnostics: previewAI.analyzeCurrent,
+    getVFSSnapshot: previewAI.getVFSSnapshot,
+  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab, previewAI]);
   
   // Docker preview URL
   const dockerUrl = useMemo(() => {

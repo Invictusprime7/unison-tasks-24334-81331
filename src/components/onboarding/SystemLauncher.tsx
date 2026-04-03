@@ -48,6 +48,7 @@ import {
   type IndustryTag,
   type PremiumSectionReference,
 } from "@/sections/references";
+import { useLaunch } from "@/contexts/useLaunchHooks";
 
 // ============================================================================
 // Types
@@ -404,6 +405,7 @@ const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData
 
 export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const navigate = useNavigate();
+  const { setLaunch } = useLaunch();
 
   // Wizard state
   const [step, setStep] = useState<WizardStep>("industry");
@@ -633,6 +635,22 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           backendRequired: false, // Launcher output is always frontend-only
         });
 
+        // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
+        const launchState = {
+          systemType: selectedSystem as any,
+          systemName: system.name,
+          businessName: businessName.trim(),
+          templateName: `${businessName.trim()} Site`,
+          templateCategory: generationCategory,
+          blueprint,
+          vfsFiles,
+          aesthetic: selectedTheme?.id,
+          preloadedIntents: canonicalIntents,
+          startInPreview: true,
+          createdAt: new Date().toISOString(),
+        };
+        setLaunch(launchState);
+
         navigate("/web-builder", {
           state: { vfsFiles, runtimeManifest, ...navState },
         });
@@ -653,6 +671,22 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           aesthetic: selectedTheme?.id,
           backendRequired: false,
         });
+
+        // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
+        const launchState = {
+          systemType: selectedSystem as any,
+          systemName: system.name,
+          businessName: businessName.trim(),
+          templateName: `${businessName.trim()} Site`,
+          templateCategory: generationCategory,
+          blueprint,
+          vfsFiles: singleFileVfs,
+          aesthetic: selectedTheme?.id,
+          preloadedIntents: canonicalIntents,
+          startInPreview: true,
+          createdAt: new Date().toISOString(),
+        };
+        setLaunch(launchState);
 
         navigate("/web-builder", {
           state: {

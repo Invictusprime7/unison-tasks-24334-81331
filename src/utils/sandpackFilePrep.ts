@@ -2538,6 +2538,106 @@ function matchSectionGenerator(componentName: string): string | null {
   return null;
 }
 
+// ── Built-in HTML/React elements that should NOT be treated as custom components ──
+const BUILTIN_JSX_ELEMENTS = new Set([
+  'React', 'Fragment', 'Suspense', 'StrictMode',
+  // Common variable names that look PascalCase but aren't components
+  'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'Map', 'Set', 'Promise',
+  'Error', 'JSON', 'Math', 'RegExp', 'Symbol', 'Proxy', 'Reflect',
+  // Component from error boundary / React internals
+  'Component', 'PureComponent',
+]);
+
+/**
+ * Scan JSX in all files for PascalCase component usage (e.g. `<Gallery />`)
+ * that has NO corresponding import statement. For each missing component,
+ * inject a relative import pointing to `./components/ComponentName`.
+ * This ensures `generateMissingComponents` (which only scans import statements)
+ * will then synthesize the actual component file.
+ */
+function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+
+  for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
+    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+
+    // Extract all PascalCase component names used in JSX: <ComponentName or <ComponentName>
+    const jsxUsages = new Set<string>();
+    const jsxPattern = /<([A-Z][A-Za-z0-9]+)[\s/>]/g;
+    let m;
+    while ((m = jsxPattern.exec(content)) !== null) {
+      const name = m[1];
+      if (!BUILTIN_JSX_ELEMENTS.has(name)) {
+        jsxUsages.add(name);
+      }
+    }
+
+    if (jsxUsages.size === 0) continue;
+
+    // Find all currently imported names in this file
+    const importedNames = new Set<string>();
+    const importNamePattern = /import\s+(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from/g;
+    let im;
+    while ((im = importNamePattern.exec(content)) !== null) {
+      if (im[1]) importedNames.add(im[1]);
+      if (im[2]) {
+        im[2].split(',').forEach(n => {
+          const cleaned = n.trim().split(/\s+as\s+/).pop()?.trim();
+          if (cleaned) importedNames.add(cleaned);
+        });
+      }
+    }
+
+    // Also check for local function/const/class declarations
+    const localDeclPattern = /(?:function|const|class|let|var)\s+([A-Z]\w*)/g;
+    let ld;
+    while ((ld = localDeclPattern.exec(content)) !== null) {
+      importedNames.add(ld[1]);
+    }
+
+    // Find missing components
+    const missing: string[] = [];
+    for (const name of jsxUsages) {
+      if (importedNames.has(name)) continue;
+      missing.push(name);
+    }
+
+    if (missing.length === 0) continue;
+
+    // Inject import statements for missing components
+    const imports = missing.map(name => {
+      // Check if the component file already exists somewhere in the VFS
+      const possiblePaths = [
+        `/components/${name}.tsx`, `/${name}.tsx`,
+        `/components/${name}.jsx`, `/${name}.jsx`,
+        `/pages/${name}.tsx`, `/pages/${name}.jsx`,
+      ];
+      const existing = possiblePaths.find(p => existingPaths.has(p));
+      const importPath = existing
+        ? toRelativeSandpackImport(filePath, existing.replace(/\.(tsx|jsx)$/, ''))
+        : `./components/${name}`;
+      return `import ${name} from '${importPath}';`;
+    }).join('\n');
+
+    // Insert imports after the last existing import line
+    const lines = content.split('\n');
+    let lastImportIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*import\s/.test(lines[i])) lastImportIdx = i;
+    }
+
+    if (lastImportIdx >= 0) {
+      lines.splice(lastImportIdx + 1, 0, imports);
+    } else {
+      // No imports at all — prepend
+      lines.unshift(imports);
+    }
+
+    sandpackFiles[filePath] = lines.join('\n');
+    console.log(`[sandpackFilePrep] Auto-injected imports for ${missing.join(', ')} in ${filePath}`);
+  }
+}
+
 /**
  * Scan all files for relative imports. For missing modules, generate REAL
  * contextual section components using the wizard launcher context

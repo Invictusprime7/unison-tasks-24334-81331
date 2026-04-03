@@ -31,6 +31,14 @@ interface ProviderScore {
   reason: string;
 }
 
+const PROVIDER_ENV_CHECKS: Record<ProviderType, boolean> = {
+  claude: Boolean(import.meta.env.VITE_CLAUDE_API_KEY || import.meta.env.VITE_LOVABLE_API_KEY),
+  openai: Boolean(import.meta.env.VITE_OPENAI_API_KEY),
+  gemini: Boolean(import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GOOGLE_API_KEY),
+  local: false,
+  ollama: Boolean(import.meta.env.VITE_OLLAMA_BASE_URL),
+};
+
 /**
  * Smart router that selects optimal AI provider based on metrics
  */
@@ -56,7 +64,7 @@ export class AIProviderRouter {
     Object.entries(defaults).forEach(([key, metrics]) => {
       this.providers.set(key as ProviderType, {
         ...metrics,
-        isHealthy: process.env[`${key.toUpperCase()}_API_KEY`] ? true : false,
+        isHealthy: PROVIDER_ENV_CHECKS[key as ProviderType],
       });
     });
   }

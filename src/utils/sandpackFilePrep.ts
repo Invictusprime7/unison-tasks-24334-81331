@@ -889,6 +889,69 @@ export default function App() {
 `;
 }
 
+function toPascalCaseIdentifier(filePath: string): string {
+  const basename = filePath
+    .split('/')
+    .filter(Boolean)
+    .pop()
+    ?.replace(/\.(tsx|jsx|ts|js)$/, '') ?? 'App';
+
+  return basename
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('') || 'App';
+}
+
+function findBestComponentExportName(content: string, filePath: string): string | null {
+  if (/export\s+default\b/.test(content) || /export\s*\{[^}]*\bas\s+default\b[^}]*\}/.test(content)) {
+    return null;
+  }
+
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const pushCandidate = (name: string) => {
+    if (!/^[A-Z][A-Za-z0-9_]*$/.test(name) || seen.has(name)) return;
+    seen.add(name);
+    candidates.push(name);
+  };
+
+  for (const match of content.matchAll(/export\s+(?:async\s+)?function\s+([A-Z][A-Za-z0-9_]*)/g)) {
+    pushCandidate(match[1]);
+  }
+  for (const match of content.matchAll(/export\s+(?:const|let|var|class)\s+([A-Z][A-Za-z0-9_]*)/g)) {
+    pushCandidate(match[1]);
+  }
+  for (const match of content.matchAll(/(?:const|let|var|function|class)\s+([A-Z][A-Za-z0-9_]*)/g)) {
+    pushCandidate(match[1]);
+  }
+
+  for (const match of content.matchAll(/export\s*\{([^}]+)\}/g)) {
+    const specifiers = match[1].split(',');
+    for (const specifier of specifiers) {
+      const [localName] = specifier.trim().split(/\s+as\s+/i);
+      if (localName) pushCandidate(localName.trim());
+    }
+  }
+
+  const preferred = toPascalCaseIdentifier(filePath);
+  if (seen.has(preferred)) return preferred;
+  if (seen.has('App')) return 'App';
+  return candidates[0] || null;
+}
+
+function ensureDefaultExportForReactModule(content: string, filePath: string): string {
+  if (!/\.(tsx|jsx)$/.test(filePath)) return content;
+  if (/export\s+default\b/.test(content) || /export\s*\{[^}]*\bas\s+default\b[^}]*\}/.test(content)) {
+    return content;
+  }
+
+  const exportName = findBestComponentExportName(content, filePath);
+  if (!exportName) return content;
+
+  return `${content}\nexport default ${exportName};\n`;
+}
+
 function createProxyApp(targetPath: string): string {
   const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
 
@@ -2981,6 +3044,9 @@ export function normalizeLauncherFiles(
     if (normalized.endsWith('.css')) {
       sanitized = enforceContrastInCSS(sanitized);
     }
+    if (/\.(tsx|jsx)$/.test(normalized)) {
+      sanitized = ensureDefaultExportForReactModule(sanitized, normalized);
+    }
     out[normalized] = sanitized;
   }
 
@@ -3291,11 +3357,11 @@ export function prepareSandpackFiles(
   const appContent = sandpackFiles['/App.tsx'] || sandpackFiles['/App.jsx'] || '';
   if (appContent && !appContent.includes('export default')) {
     const appPath = sandpackFiles['/App.tsx'] ? '/App.tsx' : '/App.jsx';
-    // Find a PascalCase named export to re-export as default
-    const namedExportMatch = appContent.match(/export\s+(?:function|const|class)\s+([A-Z]\w*)/);
-    if (namedExportMatch) {
-      sandpackFiles[appPath] = appContent + `\nexport default ${namedExportMatch[1]};\n`;
-      console.warn(`[sandpackFilePrep] App.tsx missing default export — added: export default ${namedExportMatch[1]}`);
+    const ensured = ensureDefaultExportForReactModule(appContent, appPath);
+    if (ensured !== appContent) {
+      const exportName = findBestComponentExportName(appContent, appPath);
+      sandpackFiles[appPath] = ensured;
+      console.warn(`[sandpackFilePrep] App.tsx missing default export — added: export default ${exportName}`);
     } else {
       // No usable export found — wrap in a proxy
       sandpackFiles['/App.tsx'] = createMissingEntryApp();
@@ -3310,10 +3376,7 @@ export function prepareSandpackFiles(
     if (filePath === '/index.tsx' || filePath === '/hooks-shim.ts') continue;
     if (content.includes('export default')) continue;
 
-    const namedMatch = content.match(/export\s+(?:function|const|class)\s+([A-Z]\w*)/);
-    if (namedMatch) {
-      sandpackFiles[filePath] = content + `\nexport default ${namedMatch[1]};\n`;
-    }
+    sandpackFiles[filePath] = ensureDefaultExportForReactModule(content, filePath);
   }
 
   // Ensure template.css exists if any file imports it

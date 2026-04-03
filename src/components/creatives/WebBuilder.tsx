@@ -91,10 +91,11 @@ import { BusinessSetupSuggestions } from "@/components/onboarding/BusinessSetupS
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilder";
 import { useAIVFS } from '@/hooks/useAIVFS';
-import { getTemplateReactCodeWithCSS } from '@/data/templates/utils';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { completeAestheticCSS, isValidAesthetic } from '@/utils/aestheticToCSS';
+import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
+import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -1298,47 +1299,6 @@ export default function App() {
     }
   }, [location.search]);
 
-  // Load pre-generated VFS files from SystemLauncher (wizard flow)
-  // SystemLauncher passes vfsFiles via navigation state after AI generation
-  useEffect(() => {
-    if (location.state?.vfsFiles) {
-      const vfsFiles = (location.state as { vfsFiles?: Record<string, string> })?.vfsFiles;
-      if (vfsFiles && Object.keys(vfsFiles).length > 0) {
-        console.log('[WebBuilder] Loading VFS files from SystemLauncher:', Object.keys(vfsFiles));
-        virtualFS.importFiles(vfsFiles);
-        
-        // Find entry point (prefer /src/App.tsx, fallback to /index.html, then any file)
-        const entry = vfsFiles['/src/App.tsx'] || vfsFiles['/index.html'] || vfsFiles['/App.tsx'] || Object.values(vfsFiles)[0];
-        if (entry) {
-          setEditorCode(entry);
-          setPreviewCode(entry);
-          console.log('[WebBuilder] Loaded entry point with content length:', entry.length);
-        }
-        
-        // Extract metadata from location.state if available
-        const templateName = (location.state as { templateName?: string })?.templateName;
-        const aesthetic = (location.state as { aesthetic?: string })?.aesthetic;
-        const startInPreview = (location.state as { startInPreview?: boolean })?.startInPreview ?? true;
-        
-        if (templateName) {
-          setCurrentTemplateName(templateName);
-          setSaveProjectName(templateName);
-        }
-        
-        // Start in preview mode by default for wizard-generated sites
-        if (startInPreview) {
-          setViewMode('canvas');
-          toast(`${templateName || 'Site'} generated!`, {
-            description: `${aesthetic || 'Professional'} - Preview your AI-generated website`,
-          });
-        }
-        
-        // Clear navigation state after loading to prevent re-importing on subsequent renders
-        window.history.replaceState({}, document.title);
-      }
-    }
-  }, []); // Run only on mount, not on location changes
-
   // Get full cloud context from location state (from CloudProjects or System Launcher)
   const projectId = (location.state as { projectId?: string })?.projectId;
   const systemType = (location.state as { systemType?: string })?.systemType;
@@ -1656,6 +1616,99 @@ export default function ${componentName}Page() {
   // Keep a stable ref to virtualFS so the sync effect doesn't re-run every render
   const virtualFSRef = useRef(virtualFS);
   virtualFSRef.current = virtualFS;
+
+  const selectEditableEntryPath = useCallback((
+    files: Record<string, string>,
+    preferredPath?: string | null,
+  ): string | null => {
+    if (preferredPath && files[preferredPath]) {
+      return preferredPath;
+    }
+
+    if (files['/src/App.tsx']) {
+      return '/src/App.tsx';
+    }
+
+    if (files['/App.tsx']) {
+      return '/App.tsx';
+    }
+
+    return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path))
+      || Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path))
+      || Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path))
+      || (files['/index.html'] ? '/index.html' : null)
+      || Object.keys(files)[0]
+      || null;
+  }, []);
+
+  const syncBuilderFromFiles = useCallback((
+    files: Record<string, string>,
+    preferredPath?: string | null,
+  ) => {
+    const entryPath = selectEditableEntryPath(files, preferredPath);
+    if (!entryPath) {
+      return null;
+    }
+
+    const entrySource = files[entryPath];
+    if (!entrySource) {
+      return null;
+    }
+
+    const safeEntrySource = /\.(tsx|jsx)$/.test(entryPath)
+      ? ensureReactImports(entrySource)
+      : entrySource;
+
+    setActivePagePath(entryPath);
+    lastSyncedCodeRef.current = safeEntrySource;
+    setEditorCode(safeEntrySource);
+    setPreviewCode(safeEntrySource);
+
+    return {
+      entryPath,
+      entrySource: safeEntrySource,
+    };
+  }, [selectEditableEntryPath]);
+
+  const importBuilderFiles = useCallback((
+    incomingFiles: Record<string, string>,
+    options?: {
+      preferredPath?: string | null;
+      entryPoint?: string | null;
+    },
+  ) => {
+    const normalizedEntryPoint = options?.entryPoint
+      ? (options.entryPoint.startsWith('/') ? options.entryPoint : `/${options.entryPoint}`)
+      : undefined;
+    const normalizedFiles = normalizeLauncherFiles({ ...incomingFiles }, {
+      entryPoint: normalizedEntryPoint,
+    });
+
+    const appKey = normalizedFiles['/src/App.tsx']
+      ? '/src/App.tsx'
+      : normalizedFiles['/App.tsx']
+        ? '/App.tsx'
+        : null;
+
+    if (appKey && !normalizedFiles['/src/template.css']) {
+      const { cleanCode, css } = extractEmbeddedCSS(normalizedFiles[appKey]);
+      if (css) {
+        normalizedFiles[appKey] = cleanCode;
+        normalizedFiles['/src/template.css'] = css;
+      }
+    }
+
+    vfsImportFiles(normalizedFiles);
+    const syncedEntry = syncBuilderFromFiles(
+      normalizedFiles,
+      options?.preferredPath || normalizedEntryPoint || null,
+    );
+
+    return {
+      files: normalizedFiles,
+      syncedEntry,
+    };
+  }, [syncBuilderFromFiles, vfsImportFiles]);
   
   // Effect A: previewCode → VFS  (one-way sync, runs when AI/templates/page-nav set previewCode)
   useEffect(() => {
@@ -2208,15 +2261,23 @@ export default function ${componentName}Page() {
       if (event.data?.type === 'NAV_PAGE_SWITCH') {
         const { pagePath, pageName } = event.data;
         console.log('[WebBuilder] Page switch from iframe:', pagePath, pageName);
-        const targetPath = pagePath || `/${pageName}.html`;
-        // Update active page path and editor code WITHOUT touching previewCode
-        // Touching previewCode triggers iframe re-render which destroys the in-iframe navigation
+        const normalizedPath = (pagePath || `/${pageName || ''}`).trim();
+        const normalizedName = normalizedPath
+          .replace(/^\//, '')
+          .replace(/\.html?$/i, '')
+          .replace(/[^a-zA-Z0-9-]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        const componentName = normalizedName
+          .replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase())
+          .replace(/^\w/, c => c.toUpperCase());
+        const targetPath = !normalizedName || normalizedName === 'index' || normalizedName === 'home'
+          ? '/src/App.tsx'
+          : `/src/pages/${componentName}.tsx`;
         const vfsFiles = virtualFS.getSandpackFiles();
-        const pageContent = vfsFiles[targetPath];
+        const pageContent = vfsFiles[targetPath] || (pagePath ? vfsFiles[pagePath] : undefined);
         if (pageContent) {
-          setActivePagePath(targetPath);
-          lastSyncedCodeRef.current = pageContent;
-          setEditorCode(pageContent);
+          syncBuilderFromFiles(vfsFiles, targetPath);
         }
         // Re-sync manifest to iframe so all pages are available for back-navigation
         setTimeout(() => {
@@ -2230,27 +2291,46 @@ export default function ${componentName}Page() {
       if (event.data?.type === 'NAV_PAGE_REPLACE') {
         const { pagePath, pageName, pageContent, cacheScript } = event.data;
         console.log('[WebBuilder] NAV_PAGE_REPLACE:', pagePath, pageName);
-        const targetPath = pagePath || `/${pageName}.html`;
+        const normalizedPath = (pagePath || `/${pageName || ''}`).trim();
+        const normalizedName = normalizedPath
+          .replace(/^\//, '')
+          .replace(/\.html?$/i, '')
+          .replace(/[^a-zA-Z0-9-]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        const componentName = normalizedName
+          .replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase())
+          .replace(/^\w/, c => c.toUpperCase());
+        const targetPath = !normalizedName || normalizedName === 'index' || normalizedName === 'home'
+          ? '/src/App.tsx'
+          : `/src/pages/${componentName}.tsx`;
         const rawContent = pageContent || '';
-        
-        // Inject cache restoration script into <head> so it runs before the intent listener IIFE
-        let previewContent = rawContent;
         if (cacheScript) {
-          const cacheTag = `<script id="page-cache-restore">${cacheScript}</script>`;
-          if (previewContent.includes('</head>')) {
-            previewContent = previewContent.replace('</head>', `${cacheTag}\n</head>`);
-          } else if (previewContent.toLowerCase().includes('<body')) {
-            previewContent = previewContent.replace(/<body/i, `${cacheTag}\n<body`);
-          } else {
-            previewContent = cacheTag + '\n' + previewContent;
-          }
+          console.log('[WebBuilder] Ignoring cacheScript for VFS-first NAV_PAGE_REPLACE flow');
         }
-        
-        // Update preview code — this triggers codeToHtml which injects intent wiring
-        setActivePagePath(targetPath);
-        lastSyncedCodeRef.current = previewContent;
-        setPreviewCode(previewContent);
-        setEditorCode(rawContent); // Editor shows clean HTML without cache scripts
+
+        const converted = templateToVFSFiles(rawContent, componentName || 'Page');
+        const convertedEntry = converted['/src/App.tsx'] || converted['/App.tsx'] || '';
+        if (!convertedEntry) {
+          console.warn('[WebBuilder] NAV_PAGE_REPLACE conversion failed for path:', targetPath);
+          toast.error('Could not convert page payload into React source');
+          return;
+        }
+
+        const vfsPatch: Record<string, string> = {
+          [targetPath]: convertedEntry,
+        };
+        if (converted['/src/template.css']) {
+          vfsPatch['/src/template.css'] = converted['/src/template.css'];
+        }
+        if (converted['/src/index.css']) {
+          vfsPatch['/src/index.css'] = converted['/src/index.css'];
+        }
+
+        importBuilderFiles(vfsPatch, {
+          preferredPath: targetPath,
+          entryPoint: targetPath,
+        });
         
         // Re-sync manifest after iframe reloads
         setTimeout(() => {
@@ -2289,10 +2369,7 @@ export default function ${componentName}Page() {
         const existingPage = vfsFiles[vfsPath];
         
         if (existingPage) {
-          // Page exists in VFS - open in editor
-          setActivePagePath(vfsPath);
-          lastSyncedCodeRef.current = existingPage;
-          setEditorCode(existingPage);
+          syncBuilderFromFiles(vfsFiles, vfsPath);
           toast(`Navigated to ${label || path}`, { description: 'React page loaded from VFS' });
         } else {
           // Page doesn't exist - trigger AI generation
@@ -2823,15 +2900,11 @@ export default ${componentName}Page;`;
       if (pageContent) {
         const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase()).replace(/^\w/, c => c.toUpperCase());
         const vfsPath = `/src/pages/${componentName}.tsx`;
-        
-        // Force update the preview by setting the code
-        lastSyncedCodeRef.current = pageContent;
-        setPreviewCode(pageContent);
-        setEditorCode(pageContent);
-        
-        // Store in VFS as React component for future navigation
-        virtualFS.importFiles({ [vfsPath]: pageContent });
-        setActivePagePath(vfsPath);
+
+        importBuilderFiles(templateToVFSFiles(pageContent, componentName), {
+          preferredPath: vfsPath,
+          entryPoint: vfsPath,
+        });
       }
     };
     
@@ -2841,7 +2914,7 @@ export default ${componentName}Page;`;
       window.removeEventListener('message', handleNavPageGenerate);
       window.removeEventListener('message', handleNavPageReload);
     };
-  }, [triggerPageGeneration]);
+  }, [triggerPageGeneration, importBuilderFiles]);
   
   // Clear draft when template is saved
   const clearDraft = useCallback(() => {
@@ -2889,10 +2962,12 @@ export default ${componentName}Page;`;
 
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (navState?.vfsFiles) {
-      const vfsFiles = { ...navState.vfsFiles };
       const normalizedEntryPoint = navState.entryPoint
         ? (navState.entryPoint.startsWith('/') ? navState.entryPoint : `/${navState.entryPoint}`)
         : null;
+      const vfsFiles = normalizeLauncherFiles({ ...navState.vfsFiles }, {
+        entryPoint: normalizedEntryPoint || undefined,
+      });
 
       // Apply aesthetic CSS if provided and valid
       if (navState.aesthetic && isValidAesthetic(navState.aesthetic)) {
@@ -2921,38 +2996,11 @@ export default ${componentName}Page;`;
         console.log('[WebBuilder] Applied aesthetic theme:', navState.aesthetic);
       }
 
-      // Extract embedded TEMPLATE_STYLES/TEMPLATE_CSS from App.tsx and route to CSS file
-      const appKey = vfsFiles["/src/App.tsx"] ? "/src/App.tsx" : vfsFiles["/App.tsx"] ? "/App.tsx" : null;
-      if (appKey && !vfsFiles["/src/template.css"]) {
-        const { cleanCode, css } = extractEmbeddedCSS(vfsFiles[appKey]);
-        if (css) {
-          vfsFiles[appKey] = cleanCode;
-          vfsFiles["/src/template.css"] = css;
-        }
-      }
-
       if (Object.keys(vfsFiles).length > 0) {
-        virtualFS.importFiles(vfsFiles);
-
-        const editableEntryPath = vfsFiles["/src/App.tsx"]
-          ? "/src/App.tsx"
-          : vfsFiles["/App.tsx"]
-            ? "/App.tsx"
-            : Object.keys(vfsFiles).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) ||
-              (normalizedEntryPoint && vfsFiles[normalizedEntryPoint] ? normalizedEntryPoint : null) ||
-              Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path)) ||
-              Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
-              activePagePath;
-        const entry = vfsFiles[editableEntryPath];
-
-        if (entry) {
-          // Ensure React imports are present
-          const safeEntry = ensureReactImports(entry);
-          setActivePagePath(editableEntryPath);
-          lastSyncedCodeRef.current = safeEntry;
-          setEditorCode(safeEntry);
-          setPreviewCode(safeEntry);
-        }
+        importBuilderFiles(vfsFiles, {
+          preferredPath: normalizedEntryPoint || activePagePath,
+          entryPoint: normalizedEntryPoint,
+        });
 
         // Keep builder metadata in sync for VFS-first launches
         if (navState.templateName) setCurrentTemplateName(navState.templateName);
@@ -3021,27 +3069,10 @@ export default ${componentName}Page;`;
         }
       }, 300);
       
-      // Ensure code is pure React/TSX — wrap any remaining HTML as safety net
-      const isRawHTML = !generatedCode.includes('import ') && !generatedCode.includes('export default') &&
-        (generatedCode.trim().startsWith('<!DOCTYPE') || generatedCode.trim().startsWith('<html') ||
-        generatedCode.includes('<!-- ') || (generatedCode.includes('class=') && !generatedCode.includes('className=')));
-      if (isRawHTML) {
-        const result = getTemplateReactCodeWithCSS({ code: generatedCode, title: templateName || 'Template' });
-        setEditorCode(result.code);
-        setPreviewCode(result.code);
-        // Ensure template.css exists in VFS when component imports it
-        if (result.css) {
-          vfsImportFiles({ '/src/template.css': result.css });
-        }
-      } else {
-        // Extract any legacy TEMPLATE_STYLES/TEMPLATE_CSS from React code
-        const { cleanCode, css } = extractEmbeddedCSS(generatedCode);
-        setEditorCode(cleanCode);
-        setPreviewCode(cleanCode);
-        if (css) {
-          vfsImportFiles({ '/src/template.css': css });
-        }
-      }
+      importBuilderFiles(
+        templateToVFSFiles(generatedCode, templateName || 'Template'),
+        { preferredPath: '/src/App.tsx', entryPoint: '/src/App.tsx' },
+      );
       
       // Set system type for intent routing if AI generated with system context
       if (navSystemType && !activeSystemType) {
@@ -3102,8 +3133,10 @@ ${sectionsJsx}
 }
 `;
       
-      setEditorCode(reactCode);
-      setPreviewCode(reactCode);
+      importBuilderFiles(templateToVFSFiles(reactCode, componentTitle), {
+        preferredPath: '/src/App.tsx',
+        entryPoint: '/src/App.tsx',
+      });
       setViewMode('code');
       toast(`${templateName || generatedTemplate.name} loaded!`, {
         description: `${aesthetic || generatedTemplate.description} - View and edit in Code Editor`,
@@ -3111,13 +3144,15 @@ ${sectionsJsx}
       importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
     }
-  }, [location.state, activePagePath, activeSystemType, creatorPlayground, virtualFS, vfsImportFiles]);
+  }, [location.state, activePagePath, activeSystemType, creatorPlayground, virtualFS, importBuilderFiles]);
 
   // Handle AI code generation
   const handleAICodeGenerated = (code: string) => {
     console.log('[WebBuilder] AI code received:', code.substring(0, 100));
-    setEditorCode(code);
-    setPreviewCode(code);
+    importBuilderFiles(templateToVFSFiles(code, currentTemplateName || 'AI Template'), {
+      preferredPath: '/src/App.tsx',
+      entryPoint: '/src/App.tsx',
+    });
     setViewMode('canvas'); // Switch to canvas view to show the generated template preview
     toast('AI Template Generated!', {
       description: 'Glass UI template is ready for preview',
@@ -3219,9 +3254,10 @@ ${html}
       }
     }
     
-    // Set the code in both editor and preview
-    setEditorCode(code);
-    setPreviewCode(code);
+    importBuilderFiles(templateToVFSFiles(code, template.name), {
+      preferredPath: '/src/App.tsx',
+      entryPoint: '/src/App.tsx',
+    });
     
     // Track the current template ID and name for re-save
     templateFiles.setCurrentTemplateId(template.id);
@@ -3235,7 +3271,7 @@ ${html}
     toast.success(`Opened "${template.name}"`, {
       description: 'Template loaded - you can continue editing',
     });
-  }, [templateFiles, integrateCSSIntoHTML]);
+  }, [templateFiles, integrateCSSIntoHTML, importBuilderFiles]);
 
   // Handle template selection from LayoutTemplatesPanel (used by FloatingDock)
   const handleSelectTemplate = useCallback((
@@ -3260,18 +3296,15 @@ ${html}
     });
     setTemplateCtaAnalysis(normalized.analysis);
     
-    // Directly set the code - SimplePreview will render it
-    setEditorCode(normalized.code);
-    setPreviewCode(normalized.code);
-    
-    // Also import to VFS for code editor
-    const files = templateToVFSFiles(normalized.code, name);
-    vfsImportFiles(files);
+    importBuilderFiles(templateToVFSFiles(normalized.code, name), {
+      preferredPath: '/src/App.tsx',
+      entryPoint: '/src/App.tsx',
+    });
     
     toast.success(`Loaded template: ${name}`, {
       description: 'Template loaded into preview'
     });
-  }, [systemType, manifestIdFromState, vfsImportFiles]);
+  }, [systemType, manifestIdFromState, importBuilderFiles]);
 
   // Handle section layout swap from SectionLayoutPicker
   const handleSwapSection = useCallback((sectionId: string, variantId: string) => {
@@ -3288,18 +3321,16 @@ ${html}
       return;
     }
 
-    setEditorCode(swappedCode);
-    setPreviewCode(swappedCode);
-
-    // Sync to VFS
-    const files = templateToVFSFiles(swappedCode, currentTemplateName || 'Untitled');
-    vfsImportFiles(files);
+    importBuilderFiles(templateToVFSFiles(swappedCode, currentTemplateName || 'Untitled'), {
+      preferredPath: activePagePath,
+      entryPoint: activePagePath,
+    });
 
     const variant = getVariantById(variantId as VariantId);
     toast.success(`Swapped ${sectionId} → ${variant?.name || variantId}`, {
       description: 'Section layout updated, theme preserved',
     });
-  }, [previewCode, currentTemplateName, vfsImportFiles]);
+  }, [previewCode, currentTemplateName, activePagePath, importBuilderFiles]);
 
   // Handle saving current template
   // Helper to get final TSX with customizer overrides baked in
@@ -3829,31 +3860,19 @@ ${html}
     }
   };
 
+  const canonicalBuildArtifacts = useMemo(() => {
+    const sourceFiles = getSandpackFiles();
+    return buildCanonicalArtifacts(sourceFiles, {
+      entryPoint: activePagePath,
+      title: currentTemplateName || 'Unison Site',
+    });
+  }, [getSandpackFiles, activePagePath, currentTemplateName, virtualFS.nodes]);
+
   const handleExport = (format: string) => {
-    // Prefer preview code if available (live HTML preview), otherwise use fabric canvas
-    if (previewCode) {
-      // Extract HTML body content
-      const bodyMatch = previewCode.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-      const htmlContent = bodyMatch ? bodyMatch[1] : previewCode;
-      
-      // Extract CSS from style tags
-      const styleMatches = previewCode.match(/<style[^>]*>([\s\S]*?)<\/style>/gi);
-      const cssContent = styleMatches 
-        ? styleMatches.map(s => s.replace(/<style[^>]*>|<\/style>/gi, '')).join('\n\n')
-        : '';
-      
-      // Extract JavaScript from script tags
-      const scriptMatches = previewCode.match(/<script[^>]*>([\s\S]*?)<\/script>/gi);
-      const jsContent = scriptMatches 
-        ? scriptMatches
-            .map(s => s.replace(/<script[^>]*>|<\/script>/gi, ''))
-            .filter(s => s.trim())
-            .join('\n\n')
-        : '';
-      
-      setExportHtml(htmlContent);
-      setExportCss(cssContent);
-      setExportJs(jsContent);
+    if (canonicalBuildArtifacts) {
+      setExportHtml(canonicalBuildArtifacts.exportHtml);
+      setExportCss(canonicalBuildArtifacts.exportCss);
+      setExportJs(canonicalBuildArtifacts.exportJs);
       setExportProjectName(currentTemplateName || 'my-project');
       setExportDialogOpen(true);
       return;
@@ -4318,7 +4337,7 @@ ${html}
               <span className="text-xs font-bold">{currentTemplateName ? 'Update' : 'Save'}</span>
             </Button>
             <DeployButton
-              files={{ 'index.html': previewCode }}
+              files={canonicalBuildArtifacts?.deployFiles || {}}
               defaultSiteName={currentTemplateName || 'unison-site'}
               variant="ghost"
               size="sm"
@@ -4409,14 +4428,9 @@ ${html}
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
                   if (result.success) {
-                    // Update editor/preview state from the main entry file
-                    const entry = files['/index.html'] || files['/src/App.tsx'] || files['/App.tsx'];
-                    console.log('[WebBuilder] Entry file for preview:', entry ? (entry.substring(0, 100) + '...') : 'NOT FOUND');
-                    if (entry) {
-                      setEditorCode(entry);
-                      setPreviewCode(entry);
-                      console.log('[WebBuilder] Updated previewCode state');
-                    }
+                    const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
+                    const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
+                    console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
                     setViewMode('canvas');
                     console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,', 
                       Object.keys(result.dependencies.dependencies).length, 'deps');
@@ -4478,17 +4492,11 @@ ${html}
                   console.log('[WebBuilder] Auto-wired intents:', normalized.analysis.intents);
                   console.log('[WebBuilder] Normalized code length:', normalized.code.length);
                   
-                  setEditorCode(normalized.code);
-                  setPreviewCode(normalized.code);
-                  
-                  // Immediately sync to VFS for instant preview update
-                  const vfsFiles = virtualFS.getSandpackFiles();
-                  const isReactVFS = Object.keys(vfsFiles).some(f => /\.(tsx|jsx)$/.test(f));
-                  const targetPath = pageTabs.length > 1
-                    ? activePagePath
-                    : isReactVFS ? '/src/App.tsx' : '/index.html';
-                  virtualFS.importFiles({ ...vfsFiles, [targetPath]: normalized.code });
-                  console.log('[WebBuilder] VFS updated directly:', targetPath);
+                  importBuilderFiles(templateToVFSFiles(normalized.code, currentTemplateName || 'AI Generated'), {
+                    preferredPath: activePagePath,
+                    entryPoint: activePagePath,
+                  });
+                  console.log('[WebBuilder] VFS updated via importBuilderFiles');
                   
                   console.log('[WebBuilder] setPreviewCode called, switching to canvas view');
                   setViewMode('canvas');
@@ -4504,7 +4512,6 @@ ${html}
 
                   const effectiveSystemType = (activeSystemType || (systemType as BusinessSystemType) || null) as BusinessSystemType | null;
                   const normalizedFiles = { ...files };
-                  const entry = files["/index.html"] || files["/src/App.tsx"] || files["/App.tsx"];
                   
                   if (files["/index.html"]) {
                     const normalized = normalizeTemplateForCtaContract({
@@ -4516,13 +4523,10 @@ ${html}
                     console.log('[WebBuilder] Auto-wired intents in file patch:', normalized.analysis.intents);
                   }
                   
-                  virtualFS.importFiles(normalizedFiles);
-
-                  if (entry) {
-                    const finalEntry = normalizedFiles["/index.html"] || normalizedFiles["/src/App.tsx"] || normalizedFiles["/App.tsx"];
-                    setEditorCode(finalEntry);
-                    setPreviewCode(finalEntry);
-                  }
+                  importBuilderFiles(normalizedFiles, {
+                    preferredPath: activePagePath,
+                    entryPoint: activePagePath,
+                  });
 
                   setViewMode('canvas');
                   toast.success('Files updated', { description: 'Approved patch plan applied to project files' });
@@ -4590,7 +4594,14 @@ ${html}
                   siteSEO={pageSEO.siteSEO}
                   pageSEOMap={pageSEO.pageSEOMap}
                   isSaving={pageSEO.isSaving}
-                  activePageKey={activePagePath === '/index.html' ? 'home' : activePagePath.replace(/^\//, '').replace(/\.html$/, '')}
+                  activePageKey={
+                    activePagePath === '/src/App.tsx' || activePagePath === '/App.tsx'
+                      ? 'home'
+                      : activePagePath
+                        .replace(/^\/src\/pages\//, '')
+                        .replace(/^\//, '')
+                        .replace(/\.(tsx|jsx|html)$/, '')
+                  }
                   pageKeys={vfsPageKeys}
                   onUpdateSiteSEO={pageSEO.updateSiteSEO}
                   onUpdatePageSEO={pageSEO.updatePageSEO}
@@ -5222,15 +5233,13 @@ ${html}
               onAIEditComplete={async (selector, newHtml) => {
                 const res = applyElementHtmlUpdate(previewCode, selector, newHtml);
                 if (res.ok) {
-                  setEditorCode(res.code);
-                  setPreviewCode(res.code);
-                  // Sync change to VFS so it persists across navigation
-                  const targetPath = pageTabs.length > 1 ? activePagePath : '/index.html';
-                  const vfsFiles = virtualFS.getSandpackFiles();
-                  virtualFS.importFiles({ ...vfsFiles, [targetPath]: res.code });
-                  setSelectedHTMLElement(null);
-                  toast.success('Element updated by AI');
-                  return true;
+                    importBuilderFiles(templateToVFSFiles(res.code, currentTemplateName || 'Element Edit'), {
+                      preferredPath: activePagePath,
+                      entryPoint: activePagePath,
+                    });
+                    setSelectedHTMLElement(null);
+                    toast.success('Element updated by AI');
+                    return true;
                 } else {
                   toast.error('AI edit could not be applied — element not found');
                   return false;

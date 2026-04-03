@@ -2,17 +2,18 @@
  * Launch-to-Sandpack Converter
  * 
  * Converts LaunchState + VFS files into Sandpack-compatible format.
- * Bridges the gap between SystemLauncher output and SandpackRuntimeWrapper.
+ * This is a thin launch-aware adapter over the canonical preview compiler.
  * 
  * Strategy:
- * - If we have LaunchState with metadata, use it to enhance Sandpack setup
- * - Extract routes from bundle metadata
- * - Prepare semantic CSS variables based on aesthetic
- * - Inject intent metadata into preview files
+ * - Normalize launcher output into source VFS
+ * - Ensure launch theme/intents are represented in source files
+ * - Delegate final compilation to prepareSandpackFiles()
  */
 
 import type { LaunchState } from '@/types/launchState';
-import type { SandpackFiles } from '@/runtime/preview/SandpackRuntimeWrapper';
+import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+
+export type SandpackFiles = Record<string, string>;
 
 // ============================================================================
 // Main Converter
@@ -39,7 +40,11 @@ export function launchStateToSandpackFiles(
 ): SandpackFiles {
   const { launchState, vfsFiles, debug = false } = config;
 
-  const files: SandpackFiles = {};
+  const normalizedFiles = normalizeLauncherFiles(vfsFiles, {
+    entryPoint: '/src/App.tsx',
+  });
+
+  const files: SandpackFiles = { ...normalizedFiles };
 
   // ========================================================================
   // 1. Copy all VFS files (preserve structure)
@@ -52,13 +57,13 @@ export function launchStateToSandpackFiles(
   // 2. Ensure theme CSS variables are available
   // ========================================================================
   const cssKey = 
-    vfsFiles['/src/index.css'] 
-    || vfsFiles['src/index.css'] 
-    || vfsFiles['/index.css']
+    normalizedFiles['/src/index.css'] 
+    || normalizedFiles['src/index.css'] 
+    || normalizedFiles['/index.css']
     || '/src/index.css';  // fallback
 
   const themeCss = generateThemeCss(launchState);
-  const existingCss = vfsFiles[cssKey] || '';
+  const existingCss = files[cssKey] || '';
   
   // Only prepend if existing CSS doesn't already have theme vars
   if (!existingCss.includes('--primary:') && !existingCss.includes('--primary ')) {
@@ -68,33 +73,19 @@ export function launchStateToSandpackFiles(
   // ========================================================================
   // 3. Inject launch metadata as script comment for dev tools
   // ========================================================================
-  if (debug) {
-    files['/launch-metadata.json'] = {
-      code: JSON.stringify(
-        {
-          systemType: launchState.systemType,
-          businessName: launchState.businessName,
-          aesthetic: launchState.aesthetic,
-          preloadedIntents: launchState.preloadedIntents,
-          createdAt: launchState.createdAt,
-        },
-        null,
-        2
-      ),
-      hidden: true,
-      readOnly: true,
-    };
-  }
-
   // ========================================================================
   // 4. If intent runtime is enabled, ensure entry file can access intents
   // ========================================================================
   if (launchState.intentRuntime && launchState.preloadedIntents.length > 0) {
     // Find main entry file and enhance it
     const entryKey = 
-      vfsFiles['/src/main.tsx']
-      || vfsFiles['/src/App.tsx']
-      || vfsFiles['/src/index.tsx'];
+      '/src/main.tsx' in files
+        ? '/src/main.tsx'
+        : '/src/App.tsx' in files
+          ? '/src/App.tsx'
+          : '/src/index.tsx' in files
+            ? '/src/index.tsx'
+            : null;
 
     if (entryKey && typeof files[entryKey] === 'string') {
       // Ensure it has proper imports for intent runtime
@@ -109,7 +100,26 @@ export function launchStateToSandpackFiles(
     }
   }
 
-  return files;
+  const previewFiles = prepareSandpackFiles(files, {
+    entryPoint: '/src/App.tsx',
+    aesthetic: launchState.aesthetic,
+  });
+
+  if (debug) {
+    previewFiles['/launch-metadata.json'] = JSON.stringify(
+      {
+        systemType: launchState.systemType,
+        businessName: launchState.businessName,
+        aesthetic: launchState.aesthetic,
+        preloadedIntents: launchState.preloadedIntents,
+        createdAt: launchState.createdAt,
+      },
+      null,
+      2
+    );
+  }
+
+  return previewFiles;
 }
 
 // ============================================================================

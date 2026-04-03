@@ -31,6 +31,7 @@ import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types"
 import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
+import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import {
   createBlueprintFromIndustry,
@@ -344,25 +345,28 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       const normalizedEntryPoint = typeof data?.entryPoint === "string"
         ? (data.entryPoint.startsWith("/") ? data.entryPoint : `/${data.entryPoint}`)
         : null;
-      const entryPath = normalizedEntryPoint && reactFiles?.[normalizedEntryPoint]
+      const normalizedFiles = reactFiles
+        ? normalizeLauncherFiles(reactFiles, { entryPoint: normalizedEntryPoint || undefined })
+        : null;
+      const entryPath = normalizedEntryPoint && normalizedFiles?.[normalizedEntryPoint]
         ? normalizedEntryPoint
-        : reactFiles?.["/src/App.tsx"]
+        : normalizedFiles?.["/src/App.tsx"]
           ? "/src/App.tsx"
-          : reactFiles?.["/App.tsx"]
+          : normalizedFiles?.["/App.tsx"]
             ? "/App.tsx"
-            : reactFiles
-              ? Object.keys(reactFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
-                Object.keys(reactFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
+            : normalizedFiles
+              ? Object.keys(normalizedFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
+                Object.keys(normalizedFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
                 null
               : null;
-      const code = entryPath ? reactFiles?.[entryPath] || "" : "";
+      const code = entryPath ? normalizedFiles?.[entryPath] || "" : "";
 
-      if (!reactFiles || Object.keys(reactFiles).length === 0 || !code || code.length < 50) {
+      if (!normalizedFiles || Object.keys(normalizedFiles).length === 0 || !code || code.length < 50) {
         throw new Error("Launcher must return structured VFS files for Web Builder");
       }
 
       setGeneratedCode(code);
-      setGeneratedVfsFiles(reactFiles);
+      setGeneratedVfsFiles(normalizedFiles);
       setGeneratedEntryPoint(entryPath);
       setGeneratedSystemsBuildContext(blueprint);
       

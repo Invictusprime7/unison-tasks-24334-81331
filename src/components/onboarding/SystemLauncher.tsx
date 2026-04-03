@@ -36,6 +36,7 @@ import {
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
 import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
+import { extractLauncherFilesPayload, sanitizeLauncherResponseText } from "@/utils/launcherPayload";
 import { createRuntimeManifest } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,
@@ -586,17 +587,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         throw error;
       }
 
-      let rawContent = (data?.content || data?.code || "")
-        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-        .trim()
-        .replace(/^```json?\s*\n?/i, "")
-        .replace(/\n?```\s*$/i, "")
-        .trim();
-
-      // Strip leading non-JSON prose before the opening brace (AI sometimes prepends text)
-      if (!rawContent.startsWith('{') && rawContent.includes('{"files"')) {
-        rawContent = rawContent.slice(rawContent.indexOf('{"files"'));
-      }
+      const rawContent = sanitizeLauncherResponseText(data?.content || data?.code || "");
       
       const navState = {
         templateName: `${businessName.trim()} Site`,
@@ -614,13 +605,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      if (typeof rawContent !== "string" || !rawContent.startsWith("{")) {
-        const parsed = JSON.parse(rawContent) as { files: Record<string, string> };
+      const parsedFiles = extractLauncherFilesPayload(rawContent);
+
+      if (parsedFiles) {
         const vfsFiles: Record<string, string> = {};
-        for (const [path, content] of Object.entries(parsed.files)) {
+        for (const [path, content] of Object.entries(parsedFiles)) {
           vfsFiles[path] = content;
         }
-        const runtimeManifest = createRuntimeManifest(vfsFiles, {
+        const normalizedVfsFiles = normalizeLauncherFiles(vfsFiles, {
+          entryPoint: '/src/App.tsx',
+        });
+
+        const runtimeManifest = createRuntimeManifest(normalizedVfsFiles, {
           industry: generationCategory,
           brandName: businessName.trim(),
           aesthetic: selectedTheme?.id,
@@ -635,7 +631,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           templateName: `${businessName.trim()} Site`,
           templateCategory: generationCategory as any,
           blueprint: blueprint as any,
-          vfsFiles,
+          vfsFiles: normalizedVfsFiles,
           aesthetic: selectedTheme?.id,
           preloadedIntents: canonicalIntents,
           startInPreview: true,
@@ -646,7 +642,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
         navigate("/web-builder", {
           state: { 
-            vfsFiles, 
+            vfsFiles: normalizedVfsFiles, 
             runtimeManifest, 
             templateName: navState.templateName,
             aesthetic: navState.aesthetic,
@@ -671,7 +667,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
           "/src/index.css": baseCSS,
         };
-        const runtimeManifest = createRuntimeManifest(singleFileVfs, {
+        const normalizedSingleFileVfs = normalizeLauncherFiles(singleFileVfs, {
+          entryPoint: '/src/App.tsx',
+        });
+
+        const runtimeManifest = createRuntimeManifest(normalizedSingleFileVfs, {
           industry: generationCategory,
           brandName: businessName.trim(),
           aesthetic: selectedTheme?.id,
@@ -686,7 +686,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           templateName: `${businessName.trim()} Site`,
           templateCategory: generationCategory as any,
           blueprint: blueprint as any,
-          vfsFiles: singleFileVfs,
+          vfsFiles: normalizedSingleFileVfs,
           aesthetic: selectedTheme?.id,
           preloadedIntents: canonicalIntents,
           startInPreview: true,
@@ -697,7 +697,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
         navigate("/web-builder", {
           state: {
-            vfsFiles: singleFileVfs,
+            vfsFiles: normalizedSingleFileVfs,
             runtimeManifest,
             templateName: navState.templateName,
             aesthetic: navState.aesthetic,

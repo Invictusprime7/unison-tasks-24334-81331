@@ -566,14 +566,14 @@ export function getDiagnosticsForAI(ctx: CommandContext): Record<string, unknown
   const tsFiles = files.filter(f => f.endsWith('.tsx') || f.endsWith('.ts'));
 
   tsFiles.forEach(file => {
-    const content = fileMap.get(file) || '';
+    const content = fileMap[file] || '';
     // Basic import validation
-    const importMatches = content.match(/from ['"]([^'"]+)['"]/g) || [];
+    const importMatches: string[] = content.match(/from ['"]([^'"]+)['"]/g) ?? [];
     importMatches.forEach(importStr => {
       const moduleName = importStr.match(/from ['"]([^'"]+)['"]/)?.[1];
       if (moduleName && !moduleName.startsWith('.') && !moduleName.startsWith('/')) {
         // Check if it's in dependencies
-        if (!ctx.currentDeps[moduleName] && !SANDPACK_ALLOWED_IMPORTS.includes(moduleName)) {
+        if (!ctx.currentDeps[moduleName] && !SANDPACK_ALLOWED_IMPORTS.has(moduleName)) {
           importIssues.push(`${file}: Missing dependency "${moduleName}"`);
         }
       }
@@ -584,7 +584,7 @@ export function getDiagnosticsForAI(ctx: CommandContext): Record<string, unknown
     vfs: {
       fileCount: files.length,
       files: files,
-      totalSize: files.reduce((sum, f) => sum + (fileMap.get(f)?.length || 0), 0),
+      totalSize: files.reduce((sum, f) => sum + (fileMap[f]?.length || 0), 0),
     },
     dependencies: {
       count: Object.keys(ctx.currentDeps).length,

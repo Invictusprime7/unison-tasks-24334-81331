@@ -99,6 +99,7 @@ export interface VFSContextValue {
 }
 
 export const VFSContext = createContext<VFSContextValue | null>(null);
+export default VFSContext;
 
 // ============================================================================
 // Provider

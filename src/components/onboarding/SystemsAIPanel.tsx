@@ -39,6 +39,8 @@ import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types"
 import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
 import { cn } from "@/lib/utils";
 import { templateToVFSFiles } from "@/utils/templateToVFS";
+import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
+import { extractLauncherFilesPayload, sanitizeLauncherResponseText } from "@/utils/launcherPayload";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
@@ -465,7 +467,31 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           throw chipError;
         }
 
-        const chipContent = (chipData?.content as string) || "";
+        const chipContent = sanitizeLauncherResponseText((chipData?.content as string) || (chipData?.code as string) || "");
+        const chipStructuredFiles = extractLauncherFilesPayload(chipContent);
+
+        if (chipStructuredFiles && Object.keys(chipStructuredFiles).length > 0) {
+          const chipVfsFiles = normalizeLauncherFiles(chipStructuredFiles, { entryPoint: '/src/App.tsx' });
+          const generatedCode = chipVfsFiles['/src/App.tsx'] || chipVfsFiles['/App.tsx'] || Object.values(chipVfsFiles)[0] || '';
+
+          sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(chipVfsFiles));
+          setDroppedFiles([]);
+          navigate("/web-builder", {
+            state: {
+              vfsFiles: chipVfsFiles,
+              generatedCode,
+              templateName: `AI ${chipLabel}`,
+              aesthetic: "modern",
+              startInPreview: true,
+              systemType: ref?.systemType,
+              userDesignProfile: hasProfile ? { projectCount: savedProjectCount, dominantStyle: designProfile?.dominantStyle } : undefined,
+              systemsBuildContext: chipBuildContext,
+            },
+          });
+          toast({ title: "Website generated!", description: "Opening in Web Builder..." });
+          return;
+        }
+
         const chipHtmlStart = chipContent.includes('<!DOCTYPE') ? chipContent.indexOf('<!DOCTYPE') : chipContent.indexOf('<html');
         const chipHtmlEnd = chipContent.lastIndexOf('</html>');
         const chipHtml = chipHtmlStart !== -1 && chipHtmlEnd !== -1
@@ -547,7 +573,30 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         throw freeformError;
       }
 
-      const freeformContent = (freeformData?.content as string) || "";
+      const freeformContent = sanitizeLauncherResponseText((freeformData?.content as string) || (freeformData?.code as string) || "");
+      const freeformStructuredFiles = extractLauncherFilesPayload(freeformContent);
+
+      if (freeformStructuredFiles && Object.keys(freeformStructuredFiles).length > 0) {
+        const freeVfsFiles = normalizeLauncherFiles(freeformStructuredFiles, { entryPoint: '/src/App.tsx' });
+        const generatedCode = freeVfsFiles['/src/App.tsx'] || freeVfsFiles['/App.tsx'] || Object.values(freeVfsFiles)[0] || '';
+
+        sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(freeVfsFiles));
+        setDroppedFiles([]);
+        navigate("/web-builder", {
+          state: {
+            vfsFiles: freeVfsFiles,
+            generatedCode,
+            templateName: "AI Generated",
+            aesthetic: "modern",
+            startInPreview: true,
+            systemType: "content",
+            userDesignProfile: hasProfile ? { projectCount: savedProjectCount, dominantStyle: designProfile?.dominantStyle } : undefined,
+          },
+        });
+        toast({ title: "Code generated!", description: "Opening in Web Builder..." });
+        return;
+      }
+
       // Extract clean HTML directly - prefer <!DOCTYPE html> boundaries
       const freeHtmlStart = freeformContent.includes('<!DOCTYPE') ? freeformContent.indexOf('<!DOCTYPE') : freeformContent.indexOf('<html');
       const freeHtmlEnd = freeformContent.lastIndexOf('</html>');

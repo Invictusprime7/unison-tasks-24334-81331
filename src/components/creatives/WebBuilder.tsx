@@ -2860,7 +2860,10 @@ export default ${componentName}Page;`;
 
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (navState?.vfsFiles) {
-      const vfsFiles = { ...navState.vfsFiles };
+      // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist
+      const vfsFiles = normalizeLauncherFiles({ ...navState.vfsFiles }, {
+        entryPoint: navState.entryPoint,
+      });
       const normalizedEntryPoint = navState.entryPoint
         ? (navState.entryPoint.startsWith('/') ? navState.entryPoint : `/${navState.entryPoint}`)
         : null;

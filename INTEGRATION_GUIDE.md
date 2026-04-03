@@ -14,9 +14,11 @@ Three new infrastructure pieces are live:
 
 ### 2. LaunchContext React Provider
 - Located: `src/contexts/LaunchContext.tsx`
-- Exports: `useLaunch()` hook for optional launch access
-- Exports: `useLaunchRequired()` hook for mandatory access
-- Features: setLaunch, updateLaunch, clearLaunch, isFreshLaunch
+- Exports: `LaunchProvider` component (wraps your app for launch state access)
+- Helper file: `src/contexts/useLaunchHooks.ts`
+  - Export: `useLaunch()` hook for optional launch access
+  - Export: `useLaunchRequired()` hook for mandatory access
+- Features available: setLaunch, updateLaunch, clearLaunch, isFreshLaunch
 
 ### 3. Launch-to-Sandpack Converter
 - Located: `src/utils/launchToSandpack.ts`
@@ -90,7 +92,7 @@ export function App() {
 
 **A. Add launch awareness to other components**
 ```typescript
-import { useLaunch } from '@/contexts/LaunchContext';
+import { useLaunch } from '@/contexts/useLaunchHooks';
 
 export function MyComponent() {
   const { launch } = useLaunch();

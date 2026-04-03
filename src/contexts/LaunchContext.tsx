@@ -18,7 +18,7 @@ import type { LaunchState, LaunchContextType } from '@/types/launchState';
 // Context Creation
 // ============================================================================
 
-const LaunchContext = createContext<LaunchContextType | null>(null);
+export const LaunchContext = createContext<LaunchContextType | null>(null);
 
 // ============================================================================
 // Provider Component
@@ -47,42 +47,5 @@ export const LaunchProvider: React.FC<LaunchProviderProps> = ({ children }) => {
     </LaunchContext.Provider>
   );
 };
-
-// ============================================================================
-// Hook
-// ============================================================================
-
-/**
- * Use launch state anywhere in the app
- * 
- * Returns null if no active launch (not in LaunchProvider or launch not started)
- * Use in components that need to know about the current launch context.
- */
-export function useLaunch(): LaunchContextType {
-  const ctx = useContext(LaunchContext);
-  if (!ctx) {
-    // Return a neutral context instead of throwing - allows optional usage
-    return {
-      launch: null,
-      setLaunch: () => {},
-      updateLaunch: () => {},
-      isFreshLaunch: false,
-      clearLaunch: () => {},
-    };
-  }
-  return ctx;
-}
-
-/**
- * Strict hook - throws if LaunchContext is not available
- * Use in components that REQUIRE launch state
- */
-export function useLaunchRequired(): LaunchContextType {
-  const ctx = useContext(LaunchContext);
-  if (!ctx) {
-    throw new Error('useLaunchRequired() must be used inside <LaunchProvider>');
-  }
-  return ctx;
-}
 
 export default LaunchContext;

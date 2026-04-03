@@ -150,7 +150,7 @@ Sandpack (renders live React)
 
 **Check if we're in a fresh launch:**
 ```typescript
-import { useLaunch } from '@/contexts/LaunchContext';
+import { useLaunch } from '@/contexts/useLaunchHooks';
 
 export function MyComponent() {
   const { launch, isFreshLaunch } = useLaunch();

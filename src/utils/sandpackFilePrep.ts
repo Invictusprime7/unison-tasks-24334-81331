@@ -192,7 +192,7 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
  * DEFAULT_INDEX — the canonical Sandpack entry point.
  * Sandpack react-ts uses /index.tsx, NOT /main.tsx.
  */
-const DEFAULT_INDEX = `import React from 'react';
+const DEFAULT_INDEX = `import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
@@ -233,9 +233,47 @@ if (typeof window !== 'undefined' && (window as any).tailwind) {
 ${PREVIEW_NAV_BRIDGE}
 __initLovablePreviewNavBridge();
 
+// Error boundary to catch undefined component crashes gracefully
+class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: any) {
+    console.error('[Preview] Render crash:', error.message, info?.componentStack?.slice(0, 500));
+  }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement('div', {
+        style: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: 32, background: '#0a0a0a', color: '#e5e5e5' }
+      },
+        React.createElement('div', { style: { maxWidth: 480, textAlign: 'center' } },
+          React.createElement('div', { style: { fontSize: 48, marginBottom: 16 } }, '⚠️'),
+          React.createElement('h2', { style: { fontSize: 20, fontWeight: 600, marginBottom: 8 } }, 'Preview render error'),
+          React.createElement('p', { style: { color: '#a3a3a3', fontSize: 14, marginBottom: 16, lineHeight: 1.6 } }, this.state.error?.message || 'A component failed to render. This usually means an import resolved to undefined.'),
+          React.createElement('details', { style: { textAlign: 'left', fontSize: 12, color: '#737373', marginBottom: 16 } },
+            React.createElement('summary', { style: { cursor: 'pointer', marginBottom: 8 } }, 'Technical details'),
+            React.createElement('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, String(this.state.error?.stack || '').slice(0, 600))
+          ),
+          React.createElement('button', {
+            onClick: () => { this.setState({ hasError: false, error: null }); },
+            style: { padding: '8px 20px', borderRadius: 6, border: '1px solid #333', background: '#1a1a1a', color: '#e5e5e5', cursor: 'pointer', fontSize: 14 }
+          }, 'Retry')
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <PreviewErrorBoundary>
+      <App />
+    </PreviewErrorBoundary>
   </React.StrictMode>
 );
 `;

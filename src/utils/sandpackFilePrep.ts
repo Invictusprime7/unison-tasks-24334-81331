@@ -192,7 +192,7 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
  * DEFAULT_INDEX — the canonical Sandpack entry point.
  * Sandpack react-ts uses /index.tsx, NOT /main.tsx.
  */
-const DEFAULT_INDEX = `import React from 'react';
+const DEFAULT_INDEX = `import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
@@ -233,9 +233,47 @@ if (typeof window !== 'undefined' && (window as any).tailwind) {
 ${PREVIEW_NAV_BRIDGE}
 __initLovablePreviewNavBridge();
 
+// Error boundary to catch undefined component crashes gracefully
+class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: any) {
+    console.error('[Preview] Render crash:', error.message, info?.componentStack?.slice(0, 500));
+  }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement('div', {
+        style: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: 32, background: '#0a0a0a', color: '#e5e5e5' }
+      },
+        React.createElement('div', { style: { maxWidth: 480, textAlign: 'center' } },
+          React.createElement('div', { style: { fontSize: 48, marginBottom: 16 } }, '⚠️'),
+          React.createElement('h2', { style: { fontSize: 20, fontWeight: 600, marginBottom: 8 } }, 'Preview render error'),
+          React.createElement('p', { style: { color: '#a3a3a3', fontSize: 14, marginBottom: 16, lineHeight: 1.6 } }, this.state.error?.message || 'A component failed to render. This usually means an import resolved to undefined.'),
+          React.createElement('details', { style: { textAlign: 'left', fontSize: 12, color: '#737373', marginBottom: 16 } },
+            React.createElement('summary', { style: { cursor: 'pointer', marginBottom: 8 } }, 'Technical details'),
+            React.createElement('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, String(this.state.error?.stack || '').slice(0, 600))
+          ),
+          React.createElement('button', {
+            onClick: () => { this.setState({ hasError: false, error: null }); },
+            style: { padding: '8px 20px', borderRadius: 6, border: '1px solid #333', background: '#1a1a1a', color: '#e5e5e5', cursor: 'pointer', fontSize: 14 }
+          }, 'Retry')
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <PreviewErrorBoundary>
+      <App />
+    </PreviewErrorBoundary>
   </React.StrictMode>
 );
 `;
@@ -2739,9 +2777,64 @@ export function processCode(code: string, filePath: string): string {
         return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
       }
 
-      // Unknown npm package — pass through to Sandpack for real resolution.
-      // The dependency extractor will pick it up and add it to customSetup.dependencies.
-      return match;
+      // ── Shim known problematic packages that AI commonly imports ──
+      // react-scroll: AI generates Link/Element/scroller imports — replace with native scroll behavior
+      if (modulePath === 'react-scroll' || modulePath.startsWith('react-scroll/')) {
+        console.warn(`[processCode] Shimming react-scroll import in ${filePath}`);
+        const namedMatch = match.match(/import\s+\{([^}]+)\}/);
+        const defaultMatch = match.match(/import\s+(\w+)\s+from/);
+        // Generate inline shims for commonly used react-scroll exports
+        const shimLines: string[] = [];
+        if (namedMatch) {
+          const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/));
+          for (const [orig, alias] of names) {
+            const localName = alias || orig;
+            if (/^(Link|Element|ScrollLink|ScrollElement)$/i.test(orig)) {
+              shimLines.push(`const ${localName} = ({ children, to, smooth, spy, offset, duration, ...props }: any) => { const handleClick = () => { const el = document.getElementById(to); if (el) el.scrollIntoView({ behavior: 'smooth' }); }; return React.createElement('a', { ...props, onClick: handleClick, style: { cursor: 'pointer', ...props.style } }, children); };`);
+            } else if (/^(animateScroll|scroller)$/i.test(orig)) {
+              shimLines.push(`const ${localName} = { scrollTo: (id: string) => { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); }, scrollToTop: () => window.scrollTo({ top: 0, behavior: 'smooth' }) };`);
+            } else if (/^Events?$/i.test(orig)) {
+              shimLines.push(`const ${localName} = { scrollEvent: { register: () => {}, remove: () => {} } };`);
+            } else {
+              shimLines.push(`const ${localName} = (props: any) => React.createElement('div', props, props.children);`);
+            }
+          }
+        } else if (defaultMatch) {
+          shimLines.push(`const ${defaultMatch[1]} = { Link: ({ children, to, ...props }: any) => { const handleClick = () => { const el = document.getElementById(to); if (el) el.scrollIntoView({ behavior: 'smooth' }); }; return React.createElement('a', { ...props, onClick: handleClick, style: { cursor: 'pointer' } }, children); } };`);
+        }
+        return shimLines.length > 0
+          ? `// [Preview] Shimmed: ${modulePath}\n${shimLines.join('\n')}`
+          : `// [Preview] Stripped: ${modulePath}`;
+      }
+
+      // Unknown npm package — stub it to prevent Sandpack resolution failures
+      // that cause "Element type is invalid" when the package can't be found or
+      // exports differ from what the AI expects
+      const unknownNamedMatch = match.match(/import\s+\{([^}]+)\}/);
+      const unknownDefaultMatch = match.match(/import\s+(\w+)\s+from/);
+      const unknownStarMatch = match.match(/import\s+\*\s+as\s+(\w+)/);
+      if (unknownNamedMatch) {
+        console.warn(`[processCode] Stubbing unknown npm import: ${modulePath} in ${filePath}`);
+        const names = unknownNamedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/));
+        const stubs = names.map(([orig, alias]) => {
+          const localName = alias || orig;
+          // PascalCase → React component stub; camelCase → noop function; UPPER_CASE → empty object
+          if (/^[A-Z]/.test(orig)) {
+            return `const ${localName} = ({ children, ...props }: any) => React.createElement('div', props, children);`;
+          }
+          return `const ${localName} = (() => {}) as any;`;
+        });
+        return `// [Preview] Stubbed: ${modulePath}\n${stubs.join('\n')}`;
+      }
+      if (unknownStarMatch) {
+        console.warn(`[processCode] Stubbing unknown npm namespace import: ${modulePath} in ${filePath}`);
+        return `// [Preview] Stubbed: ${modulePath}\nconst ${unknownStarMatch[1]} = new Proxy({}, { get: (_, key) => typeof key === 'string' && /^[A-Z]/.test(key) ? (({ children, ...props }: any) => React.createElement('div', props, children)) : (() => {}) }) as any;`;
+      }
+      if (unknownDefaultMatch) {
+        console.warn(`[processCode] Stubbing unknown npm default import: ${modulePath} in ${filePath}`);
+        return `// [Preview] Stubbed: ${modulePath}\nconst ${unknownDefaultMatch[1]} = new Proxy(({ children, ...props }: any) => React.createElement('div', props, children), { get: (target, key) => typeof key === 'string' && /^[A-Z]/.test(key) ? (({ children, ...props }: any) => React.createElement('div', props, children)) : key === 'default' ? target : (() => {}) }) as any;`;
+      }
+      return `// [Preview] Stripped unknown import: ${modulePath}`;
     }
   );
 

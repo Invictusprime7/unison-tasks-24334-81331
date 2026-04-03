@@ -41,3 +41,6 @@ vs code loveable migration.txt
 
 supabase.exe
 *.tar.gz
+
+# Backup/archive directories
+zip_extract/

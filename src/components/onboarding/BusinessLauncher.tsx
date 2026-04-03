@@ -31,6 +31,7 @@ import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types"
 import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
+import { createRuntimeManifest } from "@/types/runtimeManifest";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import {
   createBlueprintFromIndustry,
@@ -76,6 +77,10 @@ function getSystemTypeForChip(chipId: string): BusinessSystemType {
   const industry = getCanonicalIndustry(chipId);
   const profile = getIndustryProfile(industry);
   return profile?.systemType || 'agency';
+}
+
+function isRenderableEntryPath(path: string): boolean {
+  return /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path);
 }
 
 /**
@@ -344,7 +349,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       const normalizedEntryPoint = typeof data?.entryPoint === "string"
         ? (data.entryPoint.startsWith("/") ? data.entryPoint : `/${data.entryPoint}`)
         : null;
-      const entryPath = normalizedEntryPoint && reactFiles?.[normalizedEntryPoint]
+      const entryPath = normalizedEntryPoint && reactFiles?.[normalizedEntryPoint] && isRenderableEntryPath(normalizedEntryPoint)
         ? normalizedEntryPoint
         : reactFiles?.["/src/App.tsx"]
           ? "/src/App.tsx"
@@ -352,7 +357,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
             ? "/App.tsx"
             : reactFiles
               ? Object.keys(reactFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
-                Object.keys(reactFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
+                Object.keys(reactFiles).find((path) => isRenderableEntryPath(path)) ||
                 null
               : null;
       const code = entryPath ? reactFiles?.[entryPath] || "" : "";
@@ -409,10 +414,17 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       return;
     }
 
+    const runtimeManifest = createRuntimeManifest(generatedVfsFiles, {
+      entryPoint: generatedEntryPoint || '/src/App.tsx',
+      industry: selectedChip ? getCanonicalIndustry(selectedChip) : undefined,
+      backendRequired: false,
+    });
+
     navigate("/web-builder", {
       state: {
         vfsFiles: generatedVfsFiles,
-        entryPoint: generatedEntryPoint,
+        entryPoint: runtimeManifest.entryPoint,
+        runtimeManifest,
         templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
         aesthetic: "modern",
         startInPreview: true,

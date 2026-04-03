@@ -36,7 +36,7 @@ import {
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
 import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
-import { createRuntimeManifest } from "@/types/runtimeManifest";
+import { createRuntimeManifest, type LauncherHandoff } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,
   getCompositionMeta,
@@ -600,14 +600,25 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       let vfsFiles: Record<string, string> | null = null;
       let parsedEntryPoint: string | undefined;
+      let parsedSiteBundle: LauncherHandoff["siteBundle"] | undefined;
       try {
         const parsed = JSON.parse(rawContent);
         if (parsed.files && typeof parsed.files === "object") {
           parsedEntryPoint = parsed.entryPoint || undefined;
+          if (parsed.siteBundle && typeof parsed.siteBundle === "object") {
+            parsedSiteBundle = parsed.siteBundle as LauncherHandoff["siteBundle"];
+          }
+          const normalizedParsedEntryPoint = parsedEntryPoint
+            ? (parsedEntryPoint.startsWith("/") ? parsedEntryPoint : `/${parsedEntryPoint}`)
+            : undefined;
+          const safeEntryPoint = normalizedParsedEntryPoint && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(normalizedParsedEntryPoint)
+            ? undefined
+            : normalizedParsedEntryPoint;
           // Use normalizeLauncherFiles to ensure consistent structure
           vfsFiles = normalizeLauncherFiles(parsed.files, {
-            entryPoint: parsedEntryPoint,
+            entryPoint: safeEntryPoint,
           });
+          parsedEntryPoint = safeEntryPoint;
         }
       } catch {
         // single-file output
@@ -634,7 +645,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         });
 
         navigate("/web-builder", {
-          state: { vfsFiles, runtimeManifest, ...navState },
+          state: {
+            vfsFiles,
+            runtimeManifest,
+            entryPoint: runtimeManifest.entryPoint,
+            siteBundle: parsedSiteBundle,
+            ...navState,
+          },
         });
       } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
         const cleaned = extractCleanCode(rawContent);
@@ -658,6 +675,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           state: {
             vfsFiles: singleFileVfs,
             runtimeManifest,
+            entryPoint: runtimeManifest.entryPoint,
             ...navState,
           },
         });

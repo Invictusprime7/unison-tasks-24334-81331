@@ -2810,6 +2810,46 @@ export function processCode(code: string, filePath: string): string {
  * Normalize raw launcher/wizard VFS files before handing off to the Web Builder.
  * Ensures consistent paths, entry files, and CSS tokens.
  */
+function normalizeLauncherPath(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+
+  if (/^\/(App|main|index)\.(tsx|jsx|ts|js)$/.test(normalized) || normalized === '/index.css') {
+    return `/src${normalized}`;
+  }
+
+  if (/^\/(pages|components|styles)\//.test(normalized)) {
+    return `/src${normalized}`;
+  }
+
+  return normalized;
+}
+
+function isBootstrapSourceEntry(path?: string | null): boolean {
+  return !!path && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(path);
+}
+
+function pickRenderableLauncherEntry(
+  files: Record<string, string>,
+  preferredEntryPoint?: string,
+): string | null {
+  const normalizedPreferred = preferredEntryPoint ? normalizeLauncherPath(preferredEntryPoint) : null;
+
+  if (normalizedPreferred && files[normalizedPreferred] && !isBootstrapSourceEntry(normalizedPreferred)) {
+    return normalizedPreferred;
+  }
+
+  return (
+    Object.keys(files).find((path) => /\/src\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(path)) ||
+    Object.keys(files).find((path) => /\/src\/pages\/.+\.(tsx|jsx)$/.test(path)) ||
+    Object.keys(files).find(
+      (path) =>
+        /\/src\/.+\.(tsx|jsx)$/.test(path) &&
+        !/\/(App|main|index)\.(tsx|jsx)$/.test(path),
+    ) ||
+    null
+  );
+}
+
 export function normalizeLauncherFiles(
   files: Record<string, string>,
   options?: { entryPoint?: string }
@@ -2818,7 +2858,7 @@ export function normalizeLauncherFiles(
 
   // Normalize all paths to have leading slash
   for (const [path, content] of Object.entries(files)) {
-    const normalized = path.startsWith('/') ? path : `/${path}`;
+    const normalized = normalizeLauncherPath(path);
     // Sanitize image URLs and enforce contrast in all files
     let sanitized = content;
     if (/\.(tsx?|jsx?|css)$/.test(normalized)) {
@@ -2850,19 +2890,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   }
 
   // Ensure /src/App.tsx exists — derive from entryPoint or first page component
-  if (!out['/src/App.tsx']) {
-    const entryPoint = options?.entryPoint;
-    let targetImport: string | null = null;
-
-    if (entryPoint && out[entryPoint]) {
-      targetImport = entryPoint;
-    } else {
-      // Find a page or component to use as entry
-      targetImport =
-        Object.keys(out).find(p => /\/src\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(p)) ||
-        Object.keys(out).find(p => /\/src\/pages\/.+\.(tsx|jsx)$/.test(p)) ||
-        Object.keys(out).find(p => /\/src\/.*\.(tsx|jsx)$/.test(p) && !/\/(main|index)\.(tsx|jsx)$/.test(p));
-    }
+  if (!out['/src/App.tsx'] && !out['/src/App.jsx']) {
+    const targetImport = pickRenderableLauncherEntry(out, options?.entryPoint);
 
     if (targetImport) {
       const importPath = targetImport.replace('/src/', './').replace(/\.(tsx|jsx)$/, '');
@@ -3289,7 +3318,12 @@ function sanitizeSiteBundleFilename(path: string): string {
 
 function sanitizeSiteBundleComponentName(path: string): string {
   const filename = sanitizeSiteBundleFilename(path);
-  return filename.charAt(0).toUpperCase() + filename.slice(1) + 'Page';
+  const pascalName = filename
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join('');
+  return (pascalName || 'Page') + 'Page';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

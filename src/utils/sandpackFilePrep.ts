@@ -1163,9 +1163,9 @@ export function Services() {
       </div>
     </section>
   );
+}
 
-
-export default Services;}`;
+export default Services;`;
 }
 
 function genAbout(ctx: GeneratorContext): string {
@@ -1228,9 +1228,9 @@ export function Testimonials() {
       </div>
     </section>
   );
+}
 
-
-export default Testimonials;}`;
+export default Testimonials;`;
 }
 
 function genContact(ctx: GeneratorContext): string {
@@ -1264,9 +1264,9 @@ export function Contact() {
       </div>
     </section>
   );
+}
 
-
-export default Contact;}`;
+export default Contact;`;
 }
 
 function genFooter(ctx: GeneratorContext): string {
@@ -1311,9 +1311,9 @@ export function Footer() {
       </div>
     </footer>
   );
+}
 
-
-export default Footer;}`;
+export default Footer;`;
 }
 
 function genPricing(_ctx: GeneratorContext): string {
@@ -1345,9 +1345,9 @@ export function Pricing() {
       </div>
     </section>
   );
+}
 
-
-export default Pricing;}`;
+export default Pricing;`;
 }
 
 function genGallery(_ctx: GeneratorContext): string {
@@ -1377,9 +1377,9 @@ export function Gallery() {
       </div>
     </section>
   );
+}
 
-
-export default Gallery;}`;
+export default Gallery;`;
 }
 
 function genCTA(ctx: GeneratorContext): string {
@@ -1398,9 +1398,9 @@ export function CTA() {
       </div>
     </section>
   );
+}
 
-
-export default CTA;}`;
+export default CTA;`;
 }
 
 function genFAQ(_ctx: GeneratorContext): string {
@@ -1432,9 +1432,9 @@ export function FAQ() {
       </div>
     </section>
   );
+}
 
-
-export default FAQ;}`;
+export default FAQ;`;
 }
 
 function genTeam(_ctx: GeneratorContext): string {
@@ -1466,9 +1466,9 @@ export function Team() {
       </div>
     </section>
   );
+}
 
-
-export default Team;}`;
+export default Team;`;
 }
 
 // ── Industry-specific generators ──────────────────────────────────────────────
@@ -2886,6 +2886,13 @@ function pickPrimaryComponentPath(paths: string[]): string | null {
     || null;
 }
 
+function repairMalformedDefaultExportClosures(content: string): string {
+  return content.replace(
+    /export\s+default\s+([A-Z]\w*)\s*;\s*\}/g,
+    '}\n\nexport default $1;'
+  );
+}
+
 /**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
@@ -2897,6 +2904,8 @@ export function processCode(code: string, filePath: string): string {
 
   let processed = code;
   const hooksShimImport = toRelativeSandpackImport(filePath, '/hooks-shim');
+
+  processed = repairMalformedDefaultExportClosures(processed);
 
   // Strip leaked markdown code-fence artifacts (```, </code></pre>)
   processed = processed.replace(/\s*```\s*$/g, '');
@@ -3390,6 +3399,12 @@ export function prepareSandpackFiles(
     generateMissingComponents(sandpackFiles);
     if (Object.keys(sandpackFiles).length === beforeCount) break;
     console.log(`[sandpackFilePrep] Component generation pass ${pass + 1}: ${Object.keys(sandpackFiles).length - beforeCount} new files`);
+  }
+
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (/\.(tsx?|jsx?)$/.test(filePath)) {
+      sandpackFiles[filePath] = repairMalformedDefaultExportClosures(content);
+    }
   }
 
   repairLocalImportContracts(sandpackFiles);

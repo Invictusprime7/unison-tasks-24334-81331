@@ -93,7 +93,8 @@ import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilde
 import { useAIVFS } from '@/hooks/useAIVFS';
 import { getTemplateReactCodeWithCSS } from '@/data/templates/utils';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
-import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
+import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
+import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
@@ -2834,16 +2835,21 @@ export default ${componentName}Page;`;
       startInPreview?: boolean;
       systemType?: string;
       entryPoint?: string;
+      runtimeManifest?: RuntimeManifest;
+      siteBundle?: LauncherHandoff['siteBundle'];
     } | null;
 
     const navStateSignature = navState
       ? JSON.stringify({
           hasVfsFiles: !!navState.vfsFiles,
+          hasSiteBundle: !!navState.siteBundle,
           vfsKeys: navState.vfsFiles ? Object.keys(navState.vfsFiles).sort() : [],
           generatedCodeLength: navState.generatedCode?.length ?? 0,
           templateName: navState.templateName ?? null,
           systemType: navState.systemType ?? null,
           entryPoint: navState.entryPoint ?? null,
+          runtimeEntryPoint: navState.runtimeManifest?.entryPoint ?? null,
+          routeCount: navState.runtimeManifest?.routes?.length ?? 0,
         })
       : null;
 
@@ -2851,7 +2857,33 @@ export default ${componentName}Page;`;
       return;
     }
 
-    if (navState?.startInPreview && !navState?.vfsFiles) {
+    const launcherEntryPoint = navState?.runtimeManifest?.entryPoint ?? navState?.entryPoint;
+    const launcherSourceFiles = (() => {
+      if (!navState) return null;
+
+      const siteBundleFiles = navState.siteBundle
+        ? compileSiteBundleToVFS({
+            siteBundle: navState.siteBundle,
+            entryPath: navState.runtimeManifest?.routes?.[0] || '/',
+          })
+        : null;
+
+      if (navState.vfsFiles) {
+        const mergedFiles = { ...navState.vfsFiles };
+        if (siteBundleFiles) {
+          for (const [path, content] of Object.entries(siteBundleFiles)) {
+            if (!mergedFiles[path]) {
+              mergedFiles[path] = content;
+            }
+          }
+        }
+        return mergedFiles;
+      }
+
+      return siteBundleFiles;
+    })();
+
+    if (navState?.startInPreview && !launcherSourceFiles) {
       toast.error('Launcher preview requires structured VFS files from the industry pipeline.');
       importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
@@ -2859,13 +2891,13 @@ export default ${componentName}Page;`;
     }
 
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
-    if (navState?.vfsFiles) {
+    if (launcherSourceFiles) {
       // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist
-      const vfsFiles = normalizeLauncherFiles({ ...navState.vfsFiles }, {
-        entryPoint: navState.entryPoint,
+      const vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
+        entryPoint: launcherEntryPoint,
       });
-      const normalizedEntryPoint = navState.entryPoint
-        ? (navState.entryPoint.startsWith('/') ? navState.entryPoint : `/${navState.entryPoint}`)
+      const normalizedEntryPoint = launcherEntryPoint
+        ? (launcherEntryPoint.startsWith('/') ? launcherEntryPoint : `/${launcherEntryPoint}`)
         : null;
 
       // Extract embedded TEMPLATE_STYLES/TEMPLATE_CSS from App.tsx and route to CSS file

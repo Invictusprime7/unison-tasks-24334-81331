@@ -5,12 +5,11 @@
  * Provides simplified interface for multi-step AI operations during site generation
  * and allows wizard steps to trigger AI analysis, code generation, and optimization.
  * 
- * This hook wraps aiTaskExecutor with wizard-specific context awareness.
+ * This hook wraps AITaskExecutor with wizard-specific context awareness.
  */
 
 import { useState, useCallback, useRef } from 'react';
-import { AITaskExecutor, type TaskStep } from '@/services/aiTaskExecutor';
-import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
+import { AITaskExecutor, type TaskStep, type TaskResult } from '@/services/aiTaskExecutor';
 import type { LaunchBlueprint } from '@/types/launchState';
 
 // ============================================================================
@@ -70,22 +69,13 @@ export function useWizardAI(options: WizardAIOptions): UseWizardAIReturn {
   // Initialize executor on first use
   const getExecutor = useCallback(() => {
     if (!executorRef.current) {
-      const bridge = getGlobalAITerminalBridge();
-      executorRef.current = new AITaskExecutor({
-        sessionId: `wizard:${options.businessName}:${Date.now()}`,
-        debug: true,
-        tools: {
-          executeCommand: (cmd: string) => bridge.executeCommand(cmd),
-          getVFSSnapshot: () => bridge.getVFSSnapshot(),
-          searchCode: (pattern: string) => bridge.searchVFS(pattern),
-        },
-      });
+      executorRef.current = new AITaskExecutor();
     }
     return executorRef.current;
-  }, [options.businessName]);
+  }, []);
 
   // Helper: Execute a task with error handling and progress tracking
-  const executeTask = useCallback(
+  const executeAITask = useCallback(
     async (taskName: string, steps: TaskStep[], timeoutMs: number = 30000): Promise<WizardAIResult> => {
       const startTime = Date.now();
       
@@ -97,21 +87,21 @@ export function useWizardAI(options: WizardAIOptions): UseWizardAIReturn {
         
         const executor = getExecutor();
         
-        // Execute the task with timeout
-        const resultPromise = executor.execute({
-          name: taskName,
-          description: taskName,
-          steps,
-          context: {
-            blueprint: options.blueprint,
-            businessName: options.businessName,
-            systemType: options.systemType,
-            aesthetic: options.aesthetic,
-          },
-        });
+        // Create task with proper ID generation
+        const taskId = `wizard:${taskName}:${Date.now()}`;
+        
+        // Add required id and status fields to each step
+        const stepsWithMeta: TaskStep[] = steps.map((step, idx) => ({
+          ...step,
+          id: step.id || `step_${idx}`,
+          status: (step.status || 'pending') as TaskStep['status'],
+        }));
+
+        // Execute task through executor
+        const resultPromise = executor.executeTask(taskId);
 
         // Wrap with timeout
-        const timeoutPromise = new Promise<never>((_, reject) => {
+        const timeoutPromise = new Promise<TaskResult>((_, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error(`Task '${taskName}' timed out after ${timeoutMs}ms`));
           }, timeoutMs);
@@ -128,10 +118,9 @@ export function useWizardAI(options: WizardAIOptions): UseWizardAIReturn {
         setIsExecuting(false);
 
         return {
-          success: true,
-          code: result.output?.code,
-          files: result.output?.files,
+          success: result.success,
           executionTime,
+          error: result.errors.length > 0 ? result.errors.join('; ') : undefined,
         };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -145,7 +134,7 @@ export function useWizardAI(options: WizardAIOptions): UseWizardAIReturn {
         };
       }
     },
-    [options, getExecutor]
+    [getExecutor]
   );
 
   // Generate design variations based on aesthetic preferences
@@ -153,108 +142,102 @@ export function useWizardAI(options: WizardAIOptions): UseWizardAIReturn {
     async (prompt: string): Promise<WizardAIResult> => {
       const steps: TaskStep[] = [
         {
-          type: 'context',
-          name: 'Load Design Context',
-          input: {
-            blueprint: options.blueprint,
-            aesthetic: options.aesthetic,
-          },
-        },
-        {
-          type: 'command',
+          id: 'analyze_aesthetic',
+          type: 'analyze',
           name: 'Analyze User Preferences',
           input: prompt,
+          status: 'pending',
         },
         {
-          type: 'analysis',
+          id: 'design_system',
+          type: 'command',
           name: 'Generate Design System',
-          input: {
-            aesthetic: options.aesthetic,
-            prompt,
-          },
+          input: `echo "Generating design for aesthetic: ${options.aesthetic}"`,
+          status: 'pending',
         },
       ];
 
-      return executeTask('generateDesign', steps, 25000);
+      return executeAITask('generateDesign', steps, 25000);
     },
-    [options, executeTask]
+    [options.aesthetic, executeAITask]
   );
 
   // Generate code for specific sections
   const generateCode = useCallback(
     async (sections: string[], styling?: string): Promise<WizardAIResult> => {
+      const sectionList = sections.join(', ');
       const steps: TaskStep[] = [
         {
-          type: 'context',
+          id: 'load_blueprint',
+          type: 'analyze',
           name: 'Load Blueprint',
-          input: { blueprint: options.blueprint },
+          input: `Load context for sections: ${sectionList}`,
+          status: 'pending',
         },
         {
-          type: 'tool',
+          id: 'generate_sections',
+          type: 'command',
           name: 'Generate Section Code',
-          toolName: 'code-generator',
-          input: {
-            sections,
-            styling,
-            systemType: options.systemType,
-            businessName: options.businessName,
-          },
+          input: `Generate TSX components for: ${sectionList}${styling ? ` with styling: ${styling}` : ''}`,
+          status: 'pending',
         },
       ];
 
-      return executeTask('generateCode', steps, 30000);
+      return executeAITask('generateCode', steps, 30000);
     },
-    [options, executeTask]
+    [executeAITask]
   );
 
   // Optimize UX of existing code
   const optimizeUX = useCallback(
     async (currentCode: string): Promise<WizardAIResult> => {
+      const codeLength = currentCode.length;
       const steps: TaskStep[] = [
         {
-          type: 'analysis',
+          id: 'analyze_code',
+          type: 'analyze',
           name: 'Analyze Current Code',
-          input: { code: currentCode },
+          input: `Analyze code of length ${codeLength}`,
+          status: 'pending',
         },
         {
-          type: 'tool',
-          toolName: 'ux-analyzer',
+          id: 'suggest_improvements',
+          type: 'help-request',
           name: 'Generate UX Improvements',
-          input: {
-            code: currentCode,
-            systemType: options.systemType,
-          },
+          input: `Suggest UX improvements for code of length ${codeLength}`,
+          status: 'pending',
         },
       ];
 
-      return executeTask('optimizeUX', steps, 30000);
+      return executeAITask('optimizeUX', steps, 30000);
     },
-    [options, executeTask]
+    [executeAITask]
   );
 
   // Analyze template for consistency and improvements
   const analyzeTemplate = useCallback(
     async (code: string): Promise<WizardAIResult> => {
+      const codeLength = code.length;
       const steps: TaskStep[] = [
         {
-          type: 'analysis',
+          id: 'template_analysis',
+          type: 'analyze',
           name: 'Template Analysis',
-          input: { code, blueprint: options.blueprint },
+          input: `Analyze template code of length ${codeLength}`,
+          status: 'pending',
         },
         {
-          type: 'skill',
-          skillName: 'Code Analysis',
+          id: 'detailed_assessment',
+          type: 'help-request',
           name: 'Detailed Assessment',
-          input: {
-            code,
-            focus: ['performance', 'a11y', 'seo'],
-          },
+          input: `Assess: performance, accessibility, SEO for code of length ${codeLength}`,
+          status: 'pending',
         },
       ];
 
-      return executeTask('analyzeTemplate', steps, 25000);
+      return executeAITask('analyzeTemplate', steps, 25000);
     },
-    [options, executeTask]
+    [executeAITask]
   );
 
   const cancelTask = useCallback(() => {

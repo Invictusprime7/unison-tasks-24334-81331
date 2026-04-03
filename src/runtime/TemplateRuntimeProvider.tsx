@@ -1,7 +1,7 @@
 /**
  * TemplateRuntimeProvider - Pre-wired template runtime context
  * 
- * Wraps preview components (SimplePreview, VFSPreview) with:
+ * Wraps VFSPreview with:
  * 1. Business context (businessId, siteId)
  * 2. Auth session (Supabase Auth)
  * 3. Fully-wired intent managers

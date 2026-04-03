@@ -959,6 +959,12 @@ export default function App() {
     (location.state as any)?.generatedTemplate
   );
   const [showLauncher, setShowLauncher] = useState(!hasIncomingContent);
+  const routeStateHasStructuredProject = !!(
+    (location.state as any)?.vfsFiles ||
+    (location.state as any)?.generatedCode ||
+    (location.state as any)?.generatedTemplate ||
+    (location.state as any)?.siteBundle
+  );
 
   // Parse template when previewCode changes (but NOT when customizer is applying overrides)
   useEffect(() => {
@@ -1619,17 +1625,37 @@ export default function ${componentName}Page() {
   
   // Effect A: previewCode → VFS  (one-way sync, runs when AI/templates/page-nav set previewCode)
   useEffect(() => {
+    if (routeStateHasStructuredProject && !importedRouteStateRef.current) {
+      console.log('[WebBuilder] Effect A deferred until route-state project import completes');
+      return;
+    }
+
     // Sync if previewCode has content and actually changed since last sync
     if (previewCode && previewCode !== lastSyncedCodeRef.current) {
       console.log('[WebBuilder] Effect A: Syncing previewCode to VFS, length:', previewCode.length);
       // All code is TSX — import directly to VFS as the active page file
       const targetPath = activePagePath.endsWith('.tsx') ? activePagePath : '/src/App.tsx';
-      virtualFSRef.current.importFiles({
-        [targetPath]: previewCode,
-      });
+      const currentFiles = virtualFSRef.current.getSandpackFiles();
+      const needsProjectScaffold =
+        targetPath === '/src/App.tsx' &&
+        (!currentFiles['/src/main.tsx'] || !currentFiles['/src/index.css']);
+
+      const importPayload = needsProjectScaffold
+        ? normalizeLauncherFiles(
+            {
+              ...currentFiles,
+              [targetPath]: previewCode,
+            },
+            { entryPoint: targetPath }
+          )
+        : {
+            [targetPath]: previewCode,
+          };
+
+      virtualFSRef.current.importFiles(importPayload);
       lastSyncedCodeRef.current = previewCode;
     }
-  }, [previewCode, activePagePath]);
+  }, [previewCode, activePagePath, routeStateHasStructuredProject]);
   
   // NOTE: Effect B (VFS→previewCode) has been REMOVED.
   // Previously, it watched virtualFS.nodes and called setPreviewCode() whenever the

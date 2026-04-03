@@ -2574,6 +2574,18 @@ export default function ${componentName}Page() {
   const [isGeneratingPage, setIsGeneratingPage] = useState(false);
   const [currentNavPage, setCurrentNavPage] = useState<string | null>(null);
 
+  const replaceProjectFiles = useCallback((
+    files: Record<string, string>,
+    options?: { activePath?: string; entryContent?: string }
+  ) => {
+    const activePath = options?.activePath || '/src/App.tsx';
+    vfsResetToEmpty();
+    setGeneratedPages({});
+    setActivePagePath(activePath);
+    lastSyncedCodeRef.current = options?.entryContent ?? files[activePath] ?? '';
+    vfsImportFiles(files);
+  }, [vfsImportFiles, vfsResetToEmpty]);
+
   /**
    * Trigger AI page generation with full context injection (React/TSX only).
    * Called by the label classifier when a redirect-worthy button is clicked
@@ -2863,8 +2875,6 @@ export default ${componentName}Page;`;
       }
 
       if (Object.keys(vfsFiles).length > 0) {
-        virtualFS.importFiles(vfsFiles);
-
         const editableEntryPath = vfsFiles["/src/App.tsx"]
           ? "/src/App.tsx"
           : vfsFiles["/App.tsx"]
@@ -2874,13 +2884,18 @@ export default ${componentName}Page;`;
               Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path)) ||
               Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
               activePagePath;
-        const entry = vfsFiles[editableEntryPath];
+        const entry = editableEntryPath ? vfsFiles[editableEntryPath] : undefined;
+        const safeEntry = entry ? ensureReactImports(entry) : undefined;
+        const importedFiles = editableEntryPath && safeEntry && entry !== safeEntry
+          ? { ...vfsFiles, [editableEntryPath]: safeEntry }
+          : vfsFiles;
 
-        if (entry) {
-          // Ensure React imports are present
-          const safeEntry = ensureReactImports(entry);
-          setActivePagePath(editableEntryPath);
-          lastSyncedCodeRef.current = safeEntry;
+        replaceProjectFiles(importedFiles, {
+          activePath: editableEntryPath || '/src/App.tsx',
+          entryContent: safeEntry,
+        });
+
+        if (safeEntry) {
           setEditorCode(safeEntry);
           setPreviewCode(safeEntry);
         }
@@ -2929,14 +2944,17 @@ export default ${componentName}Page;`;
       const { templateName, aesthetic, startInPreview, systemType: navSystemType } = navState;
       // Sanitize AI output — strip prose/reasoning, keep only code
       const rawCode = navState.generatedCode;
-      const generatedCode = extractCleanCode(rawCode);
-      if (!generatedCode || !looksLikeCode(generatedCode)) {
+        const generatedCode = extractCleanCode(rawCode);
+        if (!generatedCode || !looksLikeCode(generatedCode)) {
         console.warn('[WebBuilder] Rejected generatedCode — looks like prose, not code');
         toast.error('Generated content was not valid code. Please try again.');
         return;
       }
       console.log('[WebBuilder] Loading template code:', templateName, 'startInPreview:', startInPreview, 'systemType:', navSystemType);
       if (templateName) setCurrentTemplateName(templateName);
+
+        let nextCode = generatedCode;
+        const nextFiles: Record<string, string> = {};
       
       // Auto-hydrate Creator's Playground from AI-generated content
       setTimeout(() => {
@@ -2956,23 +2974,28 @@ export default ${componentName}Page;`;
       const isRawHTML = !generatedCode.includes('import ') && !generatedCode.includes('export default') &&
         (generatedCode.trim().startsWith('<!DOCTYPE') || generatedCode.trim().startsWith('<html') ||
         generatedCode.includes('<!-- ') || (generatedCode.includes('class=') && !generatedCode.includes('className=')));
-      if (isRawHTML) {
-        const result = getTemplateReactCodeWithCSS({ code: generatedCode, title: templateName || 'Template' });
-        setEditorCode(result.code);
-        setPreviewCode(result.code);
-        // Ensure template.css exists in VFS when component imports it
-        if (result.css) {
-          vfsImportFiles({ '/src/template.css': result.css });
-        }
-      } else {
+        if (isRawHTML) {
+          const result = getTemplateReactCodeWithCSS({ code: generatedCode, title: templateName || 'Template' });
+          nextCode = result.code;
+          if (result.css) {
+            nextFiles['/src/template.css'] = result.css;
+          }
+        } else {
         // Extract any legacy TEMPLATE_STYLES/TEMPLATE_CSS from React code
         const { cleanCode, css } = extractEmbeddedCSS(generatedCode);
-        setEditorCode(cleanCode);
-        setPreviewCode(cleanCode);
+          nextCode = cleanCode;
         if (css) {
-          vfsImportFiles({ '/src/template.css': css });
+            nextFiles['/src/template.css'] = css;
         }
       }
+
+        nextFiles['/src/App.tsx'] = nextCode;
+        replaceProjectFiles(nextFiles, {
+          activePath: '/src/App.tsx',
+          entryContent: nextCode,
+        });
+        setEditorCode(nextCode);
+        setPreviewCode(nextCode);
       
       // Set system type for intent routing if AI generated with system context
       if (navSystemType && !activeSystemType) {
@@ -3042,7 +3065,7 @@ ${sectionsJsx}
       importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
     }
-  }, [location.state, activePagePath, activeSystemType, creatorPlayground, virtualFS, vfsImportFiles]);
+  }, [location.state, activePagePath, activeSystemType, creatorPlayground, replaceProjectFiles, virtualFS]);
 
   // Handle AI code generation
   const handleAICodeGenerated = (code: string) => {

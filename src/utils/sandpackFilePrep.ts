@@ -3139,6 +3139,12 @@ export function prepareSandpackFiles(
   sandpackFiles['/lib-utils-shim.ts'] = LIB_UTILS_SHIM;
   sandpackFiles['/ui-shim.tsx'] = UI_COMPONENTS_SHIM;
 
+  // ── AUTO-INJECT imports for JSX-used but un-imported components ──
+  // AI often generates <Gallery /> in App.tsx without a corresponding import.
+  // Detect PascalCase JSX usage and inject missing import statements before
+  // the generateMissingComponents pass (which only scans import statements).
+  autoInjectMissingJsxImports(sandpackFiles);
+
   // ── Generate real components for missing relative imports ──
   // Run BEFORE App.tsx export validation so generated sub-components exist first.
   // Run up to 3 passes to resolve transitive imports (generated components may import others).

@@ -929,34 +929,11 @@ class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
-      return (
-        <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', backgroundColor: '#f5f5f5' }}>
-          <div style={{ textAlign: 'center', maxWidth: 600, padding: 32, backgroundColor: 'white', borderRadius: 8, border: '1px solid #e5e5e5', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
-            <h2 style={{ fontSize: 18, marginBottom: 8, color: '#d32f2f', fontWeight: 500 }}>Component Render Error</h2>
-            <p style={{ color: '#888', fontSize: 14, marginBottom: 16, lineHeight: '1.5' }}>An error occurred while rendering the preview component. Check the browser console for details.</p>
-            <div style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, textAlign: 'left', fontSize: 12, color: '#666', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto', marginBottom: 12 }}>
-              <div style={{ fontWeight: 'bold', color: '#333', marginBottom: 4 }}>Error:</div>
-              {this.state.error?.toString()}
-              {this.state.errorInfo && (
-                <>
-                  <div style={{ fontWeight: 'bold', color: '#333', marginTop: 12, marginBottom: 4 }}>Stack:</div>
-                  {this.state.errorInfo.componentStack}
-                </>
-              )}
-            </div>
-            <div style={{ backgroundColor: '#f9f9f9', padding: 12, borderRadius: 4, textAlign: 'left', fontSize: 11, color: '#666', border: '1px solid #eee' }}>
-              <div style={{ fontWeight: 'bold', color: '#333', marginBottom: 6 }}>Debugging Tips:</div>
-              <ul style={{ margin: 0, paddingLeft: 20 }}>
-                <li>Check the browser console (F12) for detailed error messages</li>
-                <li>Verify all imported components exist and export a valid React component</li>
-                <li>Ensure components use 'export default' or named PascalCase exports</li>
-                <li>Source: ${targetPath}</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      );
+      return React.createElement('div', {
+        style: { display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', backgroundColor: '#f5f5f5' }
+      }, React.createElement('div', {
+        style: { textAlign: 'center', maxWidth: 600, padding: 32, backgroundColor: 'white', borderRadius: 8, border: '1px solid #e5e5e5', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
+      }, React.createElement('div', { style: { fontSize: 32, marginBottom: 12 } }, '⚠️'), React.createElement('h2', { style: { fontSize: 18, marginBottom: 8, color: '#d32f2f', fontWeight: 500 } }, 'Component Render Error'), React.createElement('p', { style: { color: '#888', fontSize: 14, marginBottom: 16, lineHeight: '1.5' } }, 'An error occurred while rendering the preview component. Check the browser console for details.'), React.createElement('div', { style: { backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, textAlign: 'left', fontSize: 12, color: '#666', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto', marginBottom: 12 } }, React.createElement('div', { style: { fontWeight: 'bold', color: '#333', marginBottom: 4 } }, 'Error:'), this.state.error?.toString(), this.state.errorInfo && React.createElement(React.Fragment, null, React.createElement('div', { style: { fontWeight: 'bold', color: '#333', marginTop: 12, marginBottom: 4 } }, 'Stack:'), this.state.errorInfo.componentStack)), React.createElement('div', { style: { backgroundColor: '#f9f9f9', padding: 12, borderRadius: 4, textAlign: 'left', fontSize: 11, color: '#666', border: '1px solid #eee' } }, React.createElement('div', { style: { fontWeight: 'bold', color: '#333', marginBottom: 6 } }, 'Debugging Tips:'), React.createElement('ul', { style: { margin: 0, paddingLeft: 20 } }, React.createElement('li', null, 'Check the browser console (F12) for detailed error messages'), React.createElement('li', null, 'Verify all imported components exist and export a valid React component'), React.createElement('li', null, 'Ensure components use \'export default\' or named PascalCase exports'), React.createElement('li', null, 'Source: ${targetPath}')))));
     }
 
     return this.props.children;
@@ -965,22 +942,14 @@ class ErrorBoundary extends React.Component {
 
 export default function App() {
   if (!PreviewEntry) {
-    return (
-      <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui' }}>
-        <div style={{ textAlign: 'center', maxWidth: 420, padding: 32 }}>
-          <h2 style={{ fontSize: 18, marginBottom: 8 }}>No renderable component found</h2>
-          <p style={{ color: '#888', fontSize: 14 }}>The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.</p>
-          <p style={{ color: '#aaa', fontSize: 12, marginTop: 12 }}>Source: ${targetPath}</p>
-        </div>
-      </div>
-    );
+    return React.createElement('div', {
+      style: { display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui' }
+    }, React.createElement('div', {
+      style: { textAlign: 'center', maxWidth: 420, padding: 32 }
+    }, React.createElement('h2', { style: { fontSize: 18, marginBottom: 8 } }, 'No renderable component found'), React.createElement('p', { style: { color: '#888', fontSize: 14 } }, 'The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.'), React.createElement('p', { style: { color: '#aaa', fontSize: 12, marginTop: 12 } }, 'Source: ${targetPath}')));
   }
 
-  return (
-    <ErrorBoundary>
-      <PreviewEntry />
-    </ErrorBoundary>
-  );
+  return React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry));
 }
 `;
 }

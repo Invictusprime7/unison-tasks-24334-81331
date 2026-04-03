@@ -12,7 +12,7 @@ import { ExternalLink, RefreshCw, AlertTriangle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DeployButton } from '@/components/DeployButton';
 import { PreviewOverlayManager } from '@/components/preview/PreviewOverlayManager';
-import VFSContext from '@/contexts/VFSContext';
+import { VFSContext } from '@/contexts/VFSContext';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 
 /**

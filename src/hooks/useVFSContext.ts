@@ -5,7 +5,7 @@
  */
 
 import { useContext } from 'react';
-import VFSContext, { type VFSContextValue } from '@/contexts/VFSContext';
+import { VFSContext, type VFSContextValue } from '@/contexts/VFSContext';
 export type { DiffSummary } from '@/services/vfsSnapshotManager';
 
 // ============================================================================

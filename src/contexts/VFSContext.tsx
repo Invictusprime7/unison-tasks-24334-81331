@@ -98,7 +98,7 @@ export interface VFSContextValue {
   getDiff: (snapshotId?: string) => DiffSummary | null;
 }
 
-const VFSContext = createContext<VFSContextValue | null>(null);
+export const VFSContext = createContext<VFSContextValue | null>(null);
 
 // ============================================================================
 // Provider
@@ -372,5 +372,3 @@ export function VFSProvider({
     </VFSContext.Provider>
   );
 }
-
-export default VFSContext;

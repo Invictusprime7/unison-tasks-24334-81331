@@ -21,6 +21,14 @@ export function useCloud() {
   return context;
 }
 
+/**
+ * Strict hook - throws if CloudContext is not available
+ * Alias for useCloud()
+ */
+export function useCloudRequired() {
+  return useCloud();
+}
+
 // Safe version that returns null if not in provider
 export function useCloudSafe() {
   return useContext(CloudContext);

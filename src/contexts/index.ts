@@ -11,8 +11,8 @@ export { LaunchContext } from './LaunchContextDef';
 export { useLaunch, useLaunchRequired } from './useLaunchHooks';
 
 // VFS Context - Virtual file system management
-export { VFSProvider } from './VFSContext';
-export { useVFS, useVFSRequired } from './VFSContext';
+export { VFSProvider, VFSContext } from './VFSContext';
+export { useVFS, useVFSRequired } from './useVFSHooks';
 
 // Cloud Context - Cloud data and operations
 export { CloudProvider } from './CloudContext';

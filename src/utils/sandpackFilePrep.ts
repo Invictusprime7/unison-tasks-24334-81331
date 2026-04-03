@@ -2638,6 +2638,143 @@ function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): voi
   }
 }
 
+function resolveRelativeModuleTarget(
+  filePath: string,
+  rawImportPath: string,
+  existingPaths: Set<string>,
+): string | null {
+  const extensions = ['.tsx', '.jsx', '.ts', '.js'];
+  const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
+  let resolved = rawImportPath.startsWith('/')
+    ? rawImportPath
+    : `${dir}/${rawImportPath}`.replace(/\/\.\//g, '/');
+
+  const parts = resolved.split('/');
+  const stack: string[] = [];
+  for (const part of parts) {
+    if (part === '..') stack.pop();
+    else if (part !== '.' && part !== '') stack.push(part);
+  }
+
+  resolved = '/' + stack.join('/');
+  const candidates = /\.\w+$/.test(resolved)
+    ? [resolved]
+    : [resolved, ...extensions.map((ext) => `${resolved}${ext}`)];
+
+  return candidates.find((candidate) => existingPaths.has(candidate)) || null;
+}
+
+function inspectModuleExports(content: string): {
+  hasDefault: boolean;
+  named: Set<string>;
+  primaryName: string | null;
+} {
+  const named = new Set<string>();
+  const exportPatterns = [
+    /export\s+function\s+([A-Z]\w*)/g,
+    /export\s+const\s+([A-Z]\w*)/g,
+    /export\s+class\s+([A-Z]\w*)/g,
+  ];
+
+  for (const pattern of exportPatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(content)) !== null) {
+      named.add(match[1]);
+    }
+  }
+
+  const reExportPattern = /export\s*\{([^}]+)\}/g;
+  let reExportMatch: RegExpExecArray | null;
+  while ((reExportMatch = reExportPattern.exec(content)) !== null) {
+    reExportMatch[1]
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach((part) => {
+        const [sourceName, aliasName] = part.split(/\s+as\s+/).map((item) => item.trim());
+        const exportName = aliasName || sourceName;
+        if (/^[A-Z]/.test(exportName)) {
+          named.add(exportName);
+        }
+      });
+  }
+
+  const hasDefault = /export\s+default\b/.test(content);
+  const primaryName =
+    content.match(/export\s+default\s+function\s+([A-Z]\w*)/)?.[1] ||
+    content.match(/export\s+default\s+class\s+([A-Z]\w*)/)?.[1] ||
+    content.match(/export\s+default\s+([A-Z]\w*)\s*;?/)?.[1] ||
+    [...named][0] ||
+    null;
+
+  return { hasDefault, named, primaryName };
+}
+
+function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+
+  for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+
+    const namedImportRegex = /^import\s+\{([^}]+)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?\s*$/gm;
+    let content = originalContent;
+
+    content = content.replace(namedImportRegex, (statement, specifierBlock: string, rawImportPath: string) => {
+      const targetPath = resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths);
+      if (!targetPath) return statement;
+
+      const targetContent = sandpackFiles[targetPath];
+      if (!targetContent) return statement;
+
+      const moduleExports = inspectModuleExports(targetContent);
+      const specifiers = specifierBlock
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => {
+          const [imported, local] = part.split(/\s+as\s+/).map((value) => value.trim());
+          return { imported, local: local || imported };
+        });
+
+      const missingPascalExports = specifiers.filter(
+        ({ imported }) => /^[A-Z]/.test(imported) && !moduleExports.named.has(imported),
+      );
+
+      if (missingPascalExports.length === 0) return statement;
+
+      if (moduleExports.primaryName) {
+        let patchedTarget = targetContent;
+        let changed = false;
+
+        for (const { imported } of missingPascalExports) {
+          if (patchedTarget.includes(`export const ${imported} = ${moduleExports.primaryName};`)) continue;
+          patchedTarget += `\nexport const ${imported} = ${moduleExports.primaryName};\n`;
+          changed = true;
+        }
+
+        if (changed) {
+          sandpackFiles[targetPath] = patchedTarget;
+          console.warn(`[sandpackFilePrep] Repaired named exports for ${targetPath}: ${missingPascalExports.map((item) => item.imported).join(', ')}`);
+        }
+
+        return statement;
+      }
+
+      if (moduleExports.hasDefault && specifiers.length === 1) {
+        const localName = specifiers[0].local;
+        console.warn(`[sandpackFilePrep] Rewriting named import to default import in ${filePath}: ${specifiers[0].imported} -> ${localName}`);
+        return `import ${localName} from '${rawImportPath}';`;
+      }
+
+      return statement;
+    });
+
+    if (content !== originalContent) {
+      sandpackFiles[filePath] = content;
+    }
+  }
+}
+
 /**
  * Scan all files for relative imports. For missing modules, generate REAL
  * contextual section components using the wizard launcher context
@@ -3254,6 +3391,8 @@ export function prepareSandpackFiles(
     if (Object.keys(sandpackFiles).length === beforeCount) break;
     console.log(`[sandpackFilePrep] Component generation pass ${pass + 1}: ${Object.keys(sandpackFiles).length - beforeCount} new files`);
   }
+
+  repairLocalImportContracts(sandpackFiles);
 
   // ── SAFETY: Validate App.tsx has a default export ──
   // If AI-generated App.tsx only uses named exports (e.g., `export function App`),

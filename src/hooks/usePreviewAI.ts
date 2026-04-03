@@ -15,7 +15,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { globalAIBridge } from '@/services/aiExecutionBridge';
-import type { DiagnosticReport } from '@/services/terminalCommands';
+import type { AICommandRequest, AIRuntimeRequest } from '@/types/aiTerminalIntegration';
 
 // ============================================================================
 // Types
@@ -49,12 +49,12 @@ export interface UsePreviewAIReturn {
   executeRuntime: (code: string) => Promise<unknown>;
   
   // Code analysis
-  analyzeCurrent: () => Promise<DiagnosticReport | null>;
+  analyzeCurrent: () => Promise<PreviewDiagnostic[] | null>;
   fixIssues: (issues: PreviewDiagnostic[]) => Promise<boolean>;
   
   // VFS operations
   getVFSSnapshot: () => Record<string, string>;
-  searchCode: (pattern: string) => Array<{ path: string; matches: string[] }>;
+  searchCode: (pattern: string, content: string) => Array<{ path: string; matches: string[] }>;
   
   // Help and guidance
   requestHelp: (topic: string) => Promise<string>;
@@ -95,14 +95,20 @@ export function usePreviewAI(): UsePreviewAIReturn {
       recordEvent('command_execution', { command, commandId });
       
       const bridge = getGlobalAITerminalBridge();
-      const result = await bridge.executeCommand(command);
+      const request: AICommandRequest = {
+        id: commandId,
+        command,
+        structured: false,
+      };
+      const result = await bridge.executeCommand(request);
       
       const duration = Date.now() - startTime;
+      const outputText = result?.output?.map((line: any) => line.text).join('\n') || '';
       const cmdRecord: PreviewCommand = {
         id: commandId,
         command,
         timestamp: startTime,
-        result: result || undefined,
+        result: outputText,
         duration,
       };
       
@@ -110,7 +116,7 @@ export function usePreviewAI(): UsePreviewAIReturn {
       setCommandHistory((prev) => [cmdRecord, ...prev].slice(0, 50)); // Keep last 50
       recordEvent('command_success', { command, duration, commandId });
       
-      return result;
+      return outputText || null;
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -140,7 +146,11 @@ export function usePreviewAI(): UsePreviewAIReturn {
       recordEvent('runtime_execution', { codeLength: code.length });
       
       const bridge = getGlobalAITerminalBridge();
-      const result = await bridge.executeRuntime(code);
+      const request: AIRuntimeRequest = {
+        id: `runtime:${Date.now()}`,
+        command: code,
+      };
+      const result = await bridge.executeRuntime(request);
       
       recordEvent('runtime_success', { codeLength: code.length });
       return result;
@@ -154,17 +164,39 @@ export function usePreviewAI(): UsePreviewAIReturn {
   }, []);
 
   // Analyze current preview code for issues
-  const analyzeCurrent = useCallback(async (): Promise<DiagnosticReport | null> => {
+  const analyzeCurrent = useCallback(async (): Promise<PreviewDiagnostic[] | null> => {
     try {
       setIsExecuting(true);
       recordEvent('analysis_start');
       
-      // Get diagnostics from terminal bridge
+      // Get VFS snapshot and analyze for common issues
       const bridge = getGlobalAITerminalBridge();
-      const report = await bridge.getDiagnosticsForAI();
+      const vfsSnapshot = bridge.getVFSSnapshot();
       
-      recordEvent('analysis_complete', { issueCount: report?.issues?.length || 0 });
-      return report;
+      // Parse files for issues
+      const diags: PreviewDiagnostic[] = [];
+      Object.entries(vfsSnapshot).forEach(([path, content]) => {
+        const issues = [];
+        // Basic linting: check for common errors
+        if (content.includes('import') && !content.includes('from')) {
+          issues.push({
+            type: 'error' as const,
+            message: 'Invalid import statement',
+            line: 1,
+          });
+        }
+        if (issues.length > 0) {
+          diags.push({
+            fileId: path,
+            fileName: path.split('/').pop() || path,
+            issues,
+            timestamp: Date.now(),
+          });
+        }
+      });
+      
+      recordEvent('analysis_complete', { issueCount: diags.length });
+      return diags.length > 0 ? diags : null;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       recordEvent('analysis_error', { error: errorMsg });
@@ -183,7 +215,7 @@ export function usePreviewAI(): UsePreviewAIReturn {
       recordEvent('fix_issues', { issueCount: issues.length });
       
       // Use AI execution bridge to intelligently fix issues
-      const session = globalAIBridge.createSession(sessionIdRef.current);
+      const session = globalAIBridge.createSession();
       
       for (const diagnostic of issues) {
         for (const issue of diagnostic.issues) {
@@ -215,9 +247,22 @@ export function usePreviewAI(): UsePreviewAIReturn {
   }, []);
 
   // Search VFS for code patterns
-  const searchCode = useCallback((pattern: string): Array<{ path: string; matches: string[] }> => {
+  const searchCode = useCallback((pattern: string, content: string): Array<{ path: string; matches: string[] }> => {
     const bridge = getGlobalAITerminalBridge();
-    return bridge.searchVFS(pattern);
+    const snapshot = bridge.getVFSSnapshot();
+    const results: Array<{ path: string; matches: string[] }> = [];
+    
+    Object.entries(snapshot).forEach(([path, fileContent]) => {
+      if (fileContent.includes(pattern)) {
+        const lines = fileContent.split('\n');
+        const matches = lines.filter(line => line.includes(pattern));
+        if (matches.length > 0) {
+          results.push({ path, matches });
+        }
+      }
+    });
+    
+    return results;
   }, []);
 
   // Request AI help on a topic
@@ -226,11 +271,14 @@ export function usePreviewAI(): UsePreviewAIReturn {
       recordEvent('help_requested', { topic });
       
       // Use execution bridge to get contextual help
-      const session = globalAIBridge.createSession(sessionIdRef.current);
-      const help = await session.requestHelp(topic);
+      const bridge = getGlobalAITerminalBridge();
+      const response = await bridge.requestHelp({
+        type: 'suggest-command',
+        problem: topic,
+      });
       
       recordEvent('help_provided', { topic });
-      return help || `No help available for ${topic}`;
+      return response.suggestion || `No help available for ${topic}`;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       recordEvent('help_error', { topic, error: errorMsg });
@@ -243,11 +291,14 @@ export function usePreviewAI(): UsePreviewAIReturn {
     try {
       recordEvent('error_explanation_requested', { error });
       
-      const session = globalAIBridge.createSession(sessionIdRef.current);
-      const explanation = await session.getMessage('user', `Explain this error: ${error}`);
+      const bridge = getGlobalAITerminalBridge();
+      const response = await bridge.requestHelp({
+        type: 'explain-issue',
+        problem: error,
+      });
       
       recordEvent('error_explained');
-      return explanation || 'Unable to explain error';
+      return response.suggestion || 'Unable to explain error';
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       recordEvent('explanation_error', { error: errorMsg });

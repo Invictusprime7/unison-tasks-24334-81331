@@ -418,7 +418,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     getIframe: () => iframeRef.current,
     // AI/Terminal operations
     executeCommand: previewAI.executeCommand,
-    executeDiagnostics: previewAI.analyzeCurrent,
+    executeDiagnostics: async () => { await previewAI.analyzeCurrent(); },
     getVFSSnapshot: previewAI.getVFSSnapshot,
   }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab, previewAI]);
   

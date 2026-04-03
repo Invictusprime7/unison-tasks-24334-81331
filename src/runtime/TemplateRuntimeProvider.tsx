@@ -771,7 +771,7 @@ function createNavigationManager(): IntentManagers['navigation'] {
     },
     external: (url) => {
       // Never open new tabs — route as in-page navigation
-      const pageName = url.replace(/^https?:\/\/[^\/]+\/?/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'external';
+      const pageName = url.replace(/^https?:\/\/[^/]+\/?/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'external';
       window.postMessage({ type: 'NAV_PAGE_GENERATE', pageName, payload: { url } }, '*');
     },
     back: () => {

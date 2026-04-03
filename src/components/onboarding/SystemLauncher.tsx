@@ -597,24 +597,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       if (!rawContent.startsWith('{') && rawContent.includes('{"files"')) {
         rawContent = rawContent.slice(rawContent.indexOf('{"files"'));
       }
-
-      const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
-
-      let vfsFiles: Record<string, string> | null = null;
-      let parsedEntryPoint: string | undefined;
-      try {
-        const parsed = JSON.parse(rawContent);
-        if (parsed.files && typeof parsed.files === "object") {
-          parsedEntryPoint = parsed.entryPoint || undefined;
-          // Use normalizeLauncherFiles to ensure consistent structure
-          vfsFiles = normalizeLauncherFiles(parsed.files, {
-            entryPoint: parsedEntryPoint,
-          });
-        }
-      } catch {
-        // single-file output
-      }
-
+      
       const navState = {
         templateName: `${businessName.trim()} Site`,
         aesthetic: selectedTheme?.id,
@@ -624,15 +607,24 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         preloadedIntents: canonicalIntents,
         startInPreview: true,
       };
+      
+      // Multiple generation attempted - now prepare launch state
+      if (!rawContent || rawContent.length === 0) {
+        toast.error("AI generation produced no output. Try again.");
+        return;
+      }
 
-      if (vfsFiles && Object.keys(vfsFiles).length > 0) {
-        // Build RuntimeManifest — the contract between launcher and preview
+      if (typeof rawContent !== "string" || !rawContent.startsWith("{")) {
+        const parsed = JSON.parse(rawContent) as { files: Record<string, string> };
+        const vfsFiles: Record<string, string> = {};
+        for (const [path, content] of Object.entries(parsed.files)) {
+          vfsFiles[path] = content;
+        }
         const runtimeManifest = createRuntimeManifest(vfsFiles, {
-          entryPoint: parsedEntryPoint || '/src/App.tsx',
           industry: generationCategory,
           brandName: businessName.trim(),
           aesthetic: selectedTheme?.id,
-          backendRequired: false, // Launcher output is always frontend-only
+          backendRequired: false,
         });
 
         // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
@@ -641,18 +633,29 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           systemName: system.name,
           businessName: businessName.trim(),
           templateName: `${businessName.trim()} Site`,
-          templateCategory: generationCategory,
-          blueprint,
+          templateCategory: generationCategory as any,
+          blueprint: blueprint as any,
           vfsFiles,
           aesthetic: selectedTheme?.id,
           preloadedIntents: canonicalIntents,
           startInPreview: true,
+          intentRuntime: true,
           createdAt: new Date().toISOString(),
         };
         setLaunch(launchState);
 
         navigate("/web-builder", {
-          state: { vfsFiles, runtimeManifest, ...navState },
+          state: { 
+            vfsFiles, 
+            runtimeManifest, 
+            templateName: navState.templateName,
+            aesthetic: navState.aesthetic,
+            templateCategory: navState.templateCategory,
+            systemType: navState.systemType,
+            systemName: navState.systemName,
+            preloadedIntents: navState.preloadedIntents,
+            startInPreview: navState.startInPreview,
+          },
         });
       } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
         const cleaned = extractCleanCode(rawContent);
@@ -660,6 +663,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           toast.error("AI generation produced invalid output. Try again.");
           return;
         }
+        
+        const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
+        
         const singleFileVfs = {
           "/src/App.tsx": cleaned,
           "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
@@ -678,12 +684,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           systemName: system.name,
           businessName: businessName.trim(),
           templateName: `${businessName.trim()} Site`,
-          templateCategory: generationCategory,
-          blueprint,
+          templateCategory: generationCategory as any,
+          blueprint: blueprint as any,
           vfsFiles: singleFileVfs,
           aesthetic: selectedTheme?.id,
           preloadedIntents: canonicalIntents,
           startInPreview: true,
+          intentRuntime: true,
           createdAt: new Date().toISOString(),
         };
         setLaunch(launchState);
@@ -692,7 +699,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           state: {
             vfsFiles: singleFileVfs,
             runtimeManifest,
-            ...navState,
+            templateName: navState.templateName,
+            aesthetic: navState.aesthetic,
+            templateCategory: navState.templateCategory,
+            systemType: navState.systemType,
+            systemName: navState.systemName,
+            preloadedIntents: navState.preloadedIntents,
+            startInPreview: navState.startInPreview,
           },
         });
       } else {

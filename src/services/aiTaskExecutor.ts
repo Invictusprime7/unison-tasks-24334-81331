@@ -218,17 +218,21 @@ export class AITaskExecutor {
       },
     }, async (input) => {
       const taskId = `task_${Date.now()}`;
+      const validStepTypes = ['command', 'runtime', 'help-request', 'analyze', 'conditional'];
       const task: AITask = {
         id: taskId,
         name: String(input.name),
         description: String(input.description || ''),
-        steps: (Array.isArray(input.steps) ? input.steps : []).map((step: any, idx: number) => ({
-          id: `step_${idx}`,
-          name: String(step.name),
-          type: String(step.type),
-          input: String(step.input),
-          status: 'pending',
-        })),
+        steps: (Array.isArray(input.steps) ? input.steps : []).map((step: any, idx: number) => {
+          const stepType = String(step.type);
+          return {
+            id: `step_${idx}`,
+            name: String(step.name),
+            type: (validStepTypes.includes(stepType) ? stepType : 'command') as TaskStep['type'],
+            input: String(step.input),
+            status: 'pending' as const,
+          };
+        }),
         createdAt: Date.now(),
         status: 'pending',
       };

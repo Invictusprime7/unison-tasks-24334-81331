@@ -1065,7 +1065,9 @@ export function Navbar() {
       </div>
     </nav>
   );
-}`;
+}
+
+export default Navbar;`;
 }
 
 function genHeader(ctx: GeneratorContext): string {

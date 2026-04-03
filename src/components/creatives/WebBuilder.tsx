@@ -2994,7 +2994,9 @@ export default ${componentName}Page;`;
       }
 
         nextFiles['/src/App.tsx'] = nextCode;
-        replaceProjectFiles(nextFiles, {
+        // Normalize to ensure main.tsx and index.css exist
+        const normalizedFiles = normalizeLauncherFiles(nextFiles);
+        replaceProjectFiles(normalizedFiles, {
           activePath: '/src/App.tsx',
           entryContent: nextCode,
         });

@@ -3424,7 +3424,10 @@ export function prepareSandpackFiles(
     }
   }
 
-  if (!hasIndex) sandpackFiles['/index.tsx'] = DEFAULT_INDEX;
+  // ALWAYS use our controlled entry point — it includes the createElement safety
+  // guard, error boundary, Tailwind CDN config, and nav bridge. VFS-provided
+  // index.tsx/main.tsx are just boilerplate mounts that lack these protections.
+  sandpackFiles['/index.tsx'] = DEFAULT_INDEX;
 
   // Remove any stale /main.tsx that might have leaked through
   delete sandpackFiles['/main.tsx'];

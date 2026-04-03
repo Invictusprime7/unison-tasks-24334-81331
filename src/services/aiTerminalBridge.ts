@@ -183,7 +183,10 @@ export class AITerminalBridge {
       const nodePath = path ? `${path}/${node.name}` : node.name;
       if ('children' in node) {
         // Folder
-        node.children?.forEach(child => traverse(child, nodePath));
+        const children = (node as any).children;
+        if (Array.isArray(children)) {
+          children.forEach(child => traverse(child, nodePath));
+        }
       } else {
         // File
         snapshot[nodePath] = (node as any).content || '';

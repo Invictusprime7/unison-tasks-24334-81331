@@ -93,6 +93,7 @@ import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilde
 import { useAIVFS } from '@/hooks/useAIVFS';
 import { getTemplateReactCodeWithCSS } from '@/data/templates/utils';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
+import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {

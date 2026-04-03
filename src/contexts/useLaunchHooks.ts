@@ -7,7 +7,7 @@
 
 import { useContext } from 'react';
 import type { LaunchContextType } from '@/types/launchState';
-import { LaunchContext } from './LaunchContext';
+import { LaunchContext } from './LaunchContextDef';
 
 /**
  * Use launch state anywhere in the app

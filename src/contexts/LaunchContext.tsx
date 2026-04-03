@@ -11,14 +11,9 @@
  * a single source for launch metadata and VFS files.
  */
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { useContext, useState, ReactNode } from 'react';
 import type { LaunchState, LaunchContextType } from '@/types/launchState';
-
-// ============================================================================
-// Context Creation
-// ============================================================================
-
-export const LaunchContext = createContext<LaunchContextType | null>(null);
+import { LaunchContext } from './LaunchContextDef';
 
 // ============================================================================
 // Provider Component

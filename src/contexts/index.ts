@@ -7,6 +7,7 @@
 // LaunchContext - State management for wizard-launched projects
 export { LaunchProvider } from './LaunchContext';
 export type { LaunchProviderProps } from './LaunchContext';
+export { LaunchContext } from './LaunchContextDef';
 export { useLaunch, useLaunchRequired } from './useLaunchHooks';
 
 // VFS Context - Virtual file system management

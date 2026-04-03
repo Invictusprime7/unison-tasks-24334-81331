@@ -22,6 +22,7 @@
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
 import { LAUNCHER_BASE_THEME } from '@/sections/themes';
 import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
+import { completeAestheticCSS, isValidAesthetic } from '@/utils/aestheticToCSS';
 
 const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
 
@@ -3047,7 +3048,7 @@ export default function App() {
  */
 export function prepareSandpackFiles(
   files: Record<string, string>,
-  options?: { strict?: boolean; entryPoint?: string }
+  options?: { strict?: boolean; entryPoint?: string; aesthetic?: string }
 ): Record<string, string> {
   // ═══════════════════════════════════════════════════════════════════════════
   // GUARD: Unwrap JSON-wrapped file maps that leaked through as raw content.
@@ -3202,13 +3203,40 @@ export function prepareSandpackFiles(
     if (normalizedPath.endsWith('.css')) hasCSS = true;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // AESTHETIC THREADING: Apply selected aesthetic colors to ALL CSS files
+  // This ensures template rendering respects user's aesthetic choice (modern,
+  // editorial, futuristic, etc.) across multi-file VFS structures.
+  // ─────────────────────────────────────────────────────────────────────────
+  const aestheticCSS = options?.aesthetic && isValidAesthetic(options.aesthetic)
+    ? completeAestheticCSS(options.aesthetic)
+    : '';
+
+  if (aestheticCSS) {
+    console.log(`[prepareSandpackFiles] Applying aesthetic: ${options?.aesthetic}`);
+    
+    // Apply aesthetic CSS to ALL existing CSS files (multi-file VFS support)
+    for (const [filePath, content] of Object.entries(sandpackFiles)) {
+      if (filePath.endsWith('.css') && !filePath.includes('shim')) {
+        // Prepend aesthetic CSS variables to each stylesheet
+        // Uses a wrapper comment to identify aesthetic-injected section
+        if (!sandpackFiles[filePath].includes('/* AESTHETIC:')) {
+          sandpackFiles[filePath] = aestheticCSS + '\n\n' + content;
+        }
+      }
+    }
+  }
+
   if (!hasCSS) {
-    sandpackFiles['/index.css'] = BASE_CSS;
+    // No CSS file exists — create /index.css with defaults
+    const baseCSS = aestheticCSS || BASE_CSS;
+    sandpackFiles['/index.css'] = baseCSS;
   } else {
-    // Ensure semantic CSS variables exist even when user/Launcher provides CSS.
-    const existingCSS = sandpackFiles['/index.css'] || '';
-    if (existingCSS && !existingCSS.includes('--primary:')) {
-      sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingCSS;
+    // CSS exists — ensure semantic variables are prepended
+    const existingIndexCSS = sandpackFiles['/index.css'] || '';
+    if (existingIndexCSS && !existingIndexCSS.includes('--primary:')) {
+      const varsToUse = aestheticCSS || SEMANTIC_CSS_VARS;
+      sandpackFiles['/index.css'] = varsToUse + '\n' + existingIndexCSS;
     }
   }
 
@@ -3599,10 +3627,11 @@ export function compileLauncherOutputForPreview(
     entryPoint: runtimeManifest.entryPoint,
   });
 
-  // Step 3: Compile to Sandpack overlay (flatten /src/, inject shims, etc.)
+  // Step 3: Compile to Sandpack overlay (flatten /src/, inject shims, apply aesthetic, etc.)
   const previewFiles = prepareSandpackFiles(normalized, {
     strict: true,
     entryPoint: runtimeManifest.entryPoint,
+    aesthetic: runtimeManifest.aesthetic,  // Thread aesthetic through to CSS injection
   });
 
   console.log('[compileLauncherOutputForPreview] Compiled preview:', {
@@ -3611,6 +3640,7 @@ export function compileLauncherOutputForPreview(
     engine: runtimeManifest.previewEngine,
     routes: runtimeManifest.routes,
     backendRequired: runtimeManifest.backendRequired,
+    aesthetic: runtimeManifest.aesthetic,
   });
 
   return { previewFiles, manifest: runtimeManifest };

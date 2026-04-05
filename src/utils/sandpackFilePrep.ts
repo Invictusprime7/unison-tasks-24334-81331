@@ -3154,12 +3154,16 @@ export function processCode(code: string, filePath: string): string {
   const lucideImportRe = /import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?/g;
   let lucideMatch: RegExpExecArray | null;
   while ((lucideMatch = lucideImportRe.exec(code)) !== null) {
-    const names = lucideMatch[1].split(',')
+    // Collapse all whitespace (including newlines) before splitting
+    const rawNames = lucideMatch[1].replace(/\s+/g, ' ');
+    const names = rawNames.split(',')
       .map(n => n.trim())
       .filter(Boolean)
       .map(n => {
         const parts = n.split(/\s+as\s+/);
-        return { original: parts[0].trim(), alias: (parts[1] || parts[0]).trim() };
+        const orig = parts[0].replace(/\s+/g, '');
+        const al = (parts[1] || parts[0]).replace(/\s+/g, '');
+        return { original: orig, alias: al };
       });
     for (const name of names) {
       if (__seenLucideAliases.has(name.alias)) continue;
@@ -3447,10 +3451,59 @@ export function normalizeLauncherFiles(
   files: Record<string, string>,
   options?: { entryPoint?: string }
 ): Record<string, string> {
+  // ── Unwrap JSON envelope leaked into file content ──────────────────────
+  // The AI sometimes wraps output in {"files":{...}} — if ANY file's content
+  // is such a wrapper, extract the inner files and replace the input map.
+  let resolvedFiles = files;
+  for (const [fPath, fContent] of Object.entries(files)) {
+    if (typeof fContent === 'string' && fContent.trimStart().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(fContent);
+        if (parsed && typeof parsed === 'object' && parsed.files && typeof parsed.files === 'object') {
+          console.warn(`[normalizeLauncherFiles] Unwrapping JSON envelope in ${fPath}`);
+          resolvedFiles = {};
+          for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
+            if (typeof innerContent === 'string') {
+              resolvedFiles[innerPath] = innerContent;
+            }
+          }
+          // Also check for entryPoint in the JSON envelope
+          if (parsed.entryPoint && !options?.entryPoint) {
+            options = { ...options, entryPoint: parsed.entryPoint };
+          }
+          break;
+        }
+      } catch {
+        // Not valid JSON — check if JSON is embedded mid-file
+        const jsonIdx = fContent.indexOf('{"files"');
+        if (jsonIdx > 0) {
+          try {
+            const embedded = JSON.parse(fContent.slice(jsonIdx));
+            if (embedded?.files && typeof embedded.files === 'object') {
+              console.warn(`[normalizeLauncherFiles] Extracting embedded JSON from ${fPath}`);
+              resolvedFiles = {};
+              for (const [innerPath, innerContent] of Object.entries(embedded.files)) {
+                if (typeof innerContent === 'string') {
+                  resolvedFiles[innerPath] = innerContent;
+                }
+              }
+              if (embedded.entryPoint && !options?.entryPoint) {
+                options = { ...options, entryPoint: embedded.entryPoint };
+              }
+              break;
+            }
+          } catch {
+            // Not JSON either
+          }
+        }
+      }
+    }
+  }
+
   const out: Record<string, string> = {};
 
   // Normalize all paths to have leading slash
-  for (const [path, content] of Object.entries(files)) {
+  for (const [path, content] of Object.entries(resolvedFiles)) {
     const normalized = normalizeLauncherPath(path);
     // Sanitize image URLs and enforce contrast in all files
     let sanitized = content;

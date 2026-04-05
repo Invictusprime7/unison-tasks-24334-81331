@@ -17,7 +17,7 @@ import { terminalOrchestrator, type CommandSpec } from './terminalOrchestrator';
 // Types
 // ============================================================================
 
-export type DebugMode = 'surgical-edit' | 'debug-agent' | 'security-review';
+export type DebugMode = 'debug-agent';
 
 export type AgentStepType = 
   | 'context-gather'
@@ -142,9 +142,9 @@ class DebugAgentServiceImpl {
       selectedFiles: input.selectedFiles ?? [],
       pendingCommands: [],
       iteration: 0,
-      maxIterations: input.maxIterations ?? (input.mode === 'surgical-edit' ? 3 : 10),
+      maxIterations: input.maxIterations ?? 10,
       tokensUsed: 0,
-      tokenBudget: input.tokenBudget ?? (input.mode === 'surgical-edit' ? 20000 : 80000),
+      tokenBudget: input.tokenBudget ?? 80000,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };

@@ -3080,7 +3080,6 @@ export function processCode(code: string, filePath: string): string {
       return lines.join('\n');
     }
   );
-  }
 
   let processed = code;
   const hooksShimImport = toRelativeSandpackImport(filePath, '/hooks-shim');

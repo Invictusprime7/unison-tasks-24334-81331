@@ -3022,6 +3022,33 @@ export function processCode(code: string, filePath: string): string {
   // lookups with fallback aliases for commonly-missing social-media icons.
   // Handles multiple import statements without duplicate declarations.
   const __LUCIDE_ALIAS_MAP: Record<string, string> = {
+    // Canonical brand icon spellings → exact lucide-react export names
+    facebook: 'Facebook',
+    facebookicon: 'FacebookIcon',
+    FacebookLogo: 'Facebook',
+    twitter: 'Twitter',
+    twittericon: 'TwitterIcon',
+    TwitterLogo: 'Twitter',
+    XTwitter: 'Twitter',
+    TwitterX: 'Twitter',
+    instagram: 'Instagram',
+    instagramicon: 'InstagramIcon',
+    InstagramLogo: 'Instagram',
+    github: 'Github',
+    githubicon: 'GithubIcon',
+    GitHub: 'Github',
+    GitHubIcon: 'GithubIcon',
+    GithubLogo: 'Github',
+    linkedin: 'Linkedin',
+    linkedinicon: 'LinkedinIcon',
+    LinkedIn: 'Linkedin',
+    LinkedInIcon: 'LinkedinIcon',
+    LinkedinLogo: 'Linkedin',
+    youtube: 'Youtube',
+    youtubeicon: 'YoutubeIcon',
+    YouTube: 'Youtube',
+    YouTubeIcon: 'YoutubeIcon',
+    YoutubeLogo: 'Youtube',
     // Social media icons missing from lucide-react → best visual alternative
     TikTok: 'Music', Tiktok: 'Music',
     Pinterest: 'Pin', Pintrest: 'Pin',
@@ -3047,6 +3074,22 @@ export function processCode(code: string, filePath: string): string {
 
   let __lucideImportDone = false;
   const __allLucideIcons: Array<{ original: string; alias: string }> = [];
+  const __seenLucideAliases = new Set<string>();
+
+  const getLucideLookupCandidates = (original: string): string[] => {
+    const trimmed = original.trim();
+    const normalized = trimmed.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const pascalized = normalized
+      ? normalized.charAt(0).toUpperCase() + normalized.slice(1)
+      : trimmed;
+
+    return Array.from(new Set([
+      trimmed,
+      __LUCIDE_ALIAS_MAP[trimmed],
+      __LUCIDE_ALIAS_MAP[normalized],
+      pascalized,
+    ].filter((value): value is string => Boolean(value))));
+  };
 
   // Collect all lucide-react imports
   const lucideImportRe = /import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?/g;
@@ -3059,7 +3102,11 @@ export function processCode(code: string, filePath: string): string {
         const parts = n.split(/\s+as\s+/);
         return { original: parts[0].trim(), alias: (parts[1] || parts[0]).trim() };
       });
-    __allLucideIcons.push(...names);
+    for (const name of names) {
+      if (__seenLucideAliases.has(name.alias)) continue;
+      __seenLucideAliases.add(name.alias);
+      __allLucideIcons.push(name);
+    }
   }
 
   if (__allLucideIcons.length > 0) {
@@ -3072,10 +3119,8 @@ export function processCode(code: string, filePath: string): string {
         `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`,
       ];
       for (const { original, alias } of __allLucideIcons) {
-        const fallbackName = __LUCIDE_ALIAS_MAP[original];
-        const lookup = fallbackName
-          ? `__LucideIcons['${original}'] || __LucideIcons['${fallbackName}'] || __LucideFallback`
-          : `__LucideIcons['${original}'] || __LucideFallback`;
+        const candidates = getLucideLookupCandidates(original);
+        const lookup = `${candidates.map((name) => `__LucideIcons['${name}']`).join(' || ')} || __LucideFallback`;
         lines.push(`const ${alias} = ${lookup};`);
       }
       return lines.join('\n');

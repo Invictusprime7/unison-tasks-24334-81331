@@ -2942,6 +2942,37 @@ function repairMalformedDefaultExportClosures(content: string): string {
   );
 }
 
+function forceClassicReactJsxRuntime(content: string): string {
+  if (!content || !/\.(tsx?|jsx?)$/.test('x.tsx')) return content;
+
+  let patched = content;
+
+  patched = patched.replace(
+    /^\s*import\s+\{?\s*jsx(?:DEV| as \w+)?\s*,?\s*jsxs?(?: as \w+)?\s*,?\s*Fragment(?: as \w+)?\s*\}?\s+from\s+['"]react\/jsx-runtime['"];?\s*$/gm,
+    ''
+  );
+  patched = patched.replace(
+    /^\s*import\s+\{?\s*jsxDEV(?: as \w+)?\s*,?\s*Fragment(?: as \w+)?\s*\}?\s+from\s+['"]react\/jsx-dev-runtime['"];?\s*$/gm,
+    ''
+  );
+
+  const hasJsxFactoryUsage = /\bjsx(?:DEV)?\(|\bjsxs\(|\bFragment\b/.test(patched);
+  if (!hasJsxFactoryUsage) {
+    return patched.replace(/\n{3,}/g, '\n\n');
+  }
+
+  patched = patched.replace(/\b_jsxDEV\(/g, 'React.createElement(');
+  patched = patched.replace(/\bjsxDEV\(/g, 'React.createElement(');
+  patched = patched.replace(/\b_jsxs\(/g, 'React.createElement(');
+  patched = patched.replace(/\bjsxs\(/g, 'React.createElement(');
+  patched = patched.replace(/\b_jsx\(/g, 'React.createElement(');
+  patched = patched.replace(/\bjsx\(/g, 'React.createElement(');
+
+  patched = patched.replace(/\bFragment\b/g, 'React.Fragment');
+
+  return patched.replace(/\n{3,}/g, '\n\n');
+}
+
 /**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
@@ -3372,6 +3403,7 @@ export function prepareSandpackFiles(
       processedContent = ensureReactImports(processedContent);
       // Fix broken SVG elements (dc.path, svg.circle, etc.)
       processedContent = sanitizeSvgElements(processedContent);
+      processedContent = forceClassicReactJsxRuntime(processedContent);
     }
 
     processedContent = processedContent

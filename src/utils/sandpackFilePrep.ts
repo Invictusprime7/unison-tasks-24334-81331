@@ -3018,34 +3018,69 @@ export function processCode(code: string, filePath: string): string {
   }
 
   // ── Safe lucide-react imports ──────────────────────────────────────────
-  // Transform: import { Icon1, Icon2 } from 'lucide-react';
-  // Into:      import * as __LucideIcons from 'lucide-react';
-  //            const Icon1 = __LucideIcons['Icon1'] || __LucideFallback;
-  //            const Icon2 = __LucideIcons['Icon2'] || __LucideFallback;
-  // This prevents "Element type is invalid" crashes when the AI uses icon
-  // names that don't exist in the installed lucide-react version.
-  code = code.replace(
-    /import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?/g,
-    (_match, names: string) => {
-      const iconNames = names.split(',')
-        .map(n => n.trim())
-        .filter(Boolean)
-        .map(n => {
-          const parts = n.split(/\s+as\s+/);
-          return { original: parts[0].trim(), alias: (parts[1] || parts[0]).trim() };
-        });
-      if (iconNames.length === 0) return _match;
+  // Transform all `import { Icon } from 'lucide-react'` into safe namespace
+  // lookups with fallback aliases for commonly-missing social-media icons.
+  // Handles multiple import statements without duplicate declarations.
+  const __LUCIDE_ALIAS_MAP: Record<string, string> = {
+    // Social media icons missing from lucide-react → best visual alternative
+    TikTok: 'Music', Tiktok: 'Music',
+    Pinterest: 'Pin', Pintrest: 'Pin',
+    Snapchat: 'Camera', SnapChat: 'Camera',
+    WhatsApp: 'MessageCircle', Whatsapp: 'MessageCircle',
+    Telegram: 'Send',
+    Discord: 'MessageSquare',
+    Reddit: 'MessageCircle',
+    Threads: 'AtSign',
+    Signal: 'Radio',
+    WeChat: 'MessageCircle', Wechat: 'MessageCircle',
+    Spotify: 'Music',
+    SoundCloud: 'CloudRain', Soundcloud: 'CloudRain',
+    Vimeo: 'Video',
+    Behance: 'Palette',
+    Medium: 'BookOpen',
+    Mastodon: 'Globe',
+    // Common AI hallucinations
+    ShieldCheck: 'Shield',
+    BadgeCheck: 'Award',
+    UserCheck: 'UserCheck',
+  };
+
+  let __lucideImportDone = false;
+  const __allLucideIcons: Array<{ original: string; alias: string }> = [];
+
+  // Collect all lucide-react imports
+  const lucideImportRe = /import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?/g;
+  let lucideMatch: RegExpExecArray | null;
+  while ((lucideMatch = lucideImportRe.exec(code)) !== null) {
+    const names = lucideMatch[1].split(',')
+      .map(n => n.trim())
+      .filter(Boolean)
+      .map(n => {
+        const parts = n.split(/\s+as\s+/);
+        return { original: parts[0].trim(), alias: (parts[1] || parts[0]).trim() };
+      });
+    __allLucideIcons.push(...names);
+  }
+
+  if (__allLucideIcons.length > 0) {
+    code = code.replace(lucideImportRe, (_match) => {
+      if (__lucideImportDone) return '/* lucide import merged above */';
+      __lucideImportDone = true;
 
       const lines: string[] = [
         `import * as __LucideIcons from 'lucide-react';`,
         `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`,
       ];
-      for (const { original, alias } of iconNames) {
-        lines.push(`const ${alias} = __LucideIcons['${original}'] || __LucideFallback;`);
+      for (const { original, alias } of __allLucideIcons) {
+        const fallbackName = __LUCIDE_ALIAS_MAP[original];
+        const lookup = fallbackName
+          ? `__LucideIcons['${original}'] || __LucideIcons['${fallbackName}'] || __LucideFallback`
+          : `__LucideIcons['${original}'] || __LucideFallback`;
+        lines.push(`const ${alias} = ${lookup};`);
       }
       return lines.join('\n');
-    }
-  );
+    });
+  }
 
   // ── Safe framer-motion imports ─────────────────────────────────────────
   // The AI frequently imports { motion, AnimatePresence } from 'framer-motion'.

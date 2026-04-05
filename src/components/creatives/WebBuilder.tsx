@@ -543,6 +543,14 @@ ${specificPrompt}
 8. **RESPONSIVE** — Mobile-first with md: and lg: breakpoints.
 9. **FOOTER** — Match the main page footer style.
 10. **NO HTML DOCUMENTS** — Do NOT output <!DOCTYPE html> or <html> tags. This is a React component.
+11. **INTENT WIRING** — Wire ALL interactive buttons with data-ut-intent attributes:
+    - Contact/form buttons: data-ut-intent="contact.submit"
+    - Booking buttons: data-ut-intent="booking.create"
+    - Newsletter: data-ut-intent="newsletter.subscribe"
+    - CTA buttons: data-ut-intent="cta.primary"
+    - Quote requests: data-ut-intent="quote.request"
+    - Forms: <form data-ut-intent="contact.submit">
+    - Anchor links: <a href="#section" data-ut-intent="nav.anchor">
 
 ${options?.businessContext ? `📊 BUSINESS CONTEXT:\n${options.businessContext}` : ''}
 

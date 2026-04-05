@@ -151,10 +151,36 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
 
   document.addEventListener('click', function (event) {
     const target = event.target as HTMLElement | null;
-    const el = target?.closest?.('a[href], [data-ut-intent="nav.goto"], [data-ut-path]') as HTMLElement | null;
+    const el = target?.closest?.('a[href], [data-ut-intent], [data-ut-path], button[data-ut-intent]') as HTMLElement | null;
     if (!el) return;
 
+    const utIntent = el.getAttribute('data-ut-intent') || '';
     const path = el.getAttribute('data-ut-path') || el.getAttribute('href') || '';
+
+    // ── Intent bridge: forward non-nav intents to parent as INTENT_TRIGGER ──
+    if (utIntent && utIntent !== 'nav.goto' && utIntent !== 'nav.anchor' && utIntent !== 'nav.external') {
+      event.preventDefault();
+      event.stopPropagation();
+      const reqId = 'intent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      const intentPayload: Record<string, unknown> = {};
+      // Collect data-ut-* attributes as payload
+      for (const attr of Array.from(el.attributes)) {
+        if (attr.name.startsWith('data-ut-') && attr.name !== 'data-ut-intent') {
+          intentPayload[attr.name.replace('data-ut-', '')] = attr.value;
+        }
+      }
+      intentPayload.buttonLabel = el.textContent ? el.textContent.trim().substring(0, 60) : '';
+      intentPayload.source = 'preview';
+      window.parent.postMessage({
+        type: 'INTENT_TRIGGER',
+        intent: utIntent,
+        payload: intentPayload,
+        requestId: reqId,
+      }, '*');
+      return;
+    }
+
+    // ── Anchor scroll ──
     if (!path || path === '#' || path.startsWith('http') || path.startsWith('mailto:') || path.startsWith('tel:') || path.startsWith('javascript:')) return;
 
     if (path.startsWith('#')) {
@@ -180,9 +206,42 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     }, '*');
   }, true);
 
+  // ── Form submission bridge: intercept forms with data-ut-intent ──
+  document.addEventListener('submit', function (event) {
+    const form = event.target as HTMLFormElement;
+    if (!form || form.tagName !== 'FORM') return;
+    const formIntent = form.getAttribute('data-ut-intent');
+    if (!formIntent) return;
+    event.preventDefault();
+    const formData = new FormData(form);
+    const payload: Record<string, unknown> = {};
+    formData.forEach((value, key) => { payload[key] = value.toString(); });
+    payload.source = 'preview-form';
+    window.parent.postMessage({
+      type: 'INTENT_TRIGGER',
+      intent: formIntent,
+      payload,
+      requestId: 'form-' + Date.now(),
+    }, '*');
+  }, true);
+
+  // ── Message handlers for navigation and intent commands ──
   window.addEventListener('message', function (event) {
     if (event.data?.type === 'NAV_ROUTE' && event.data.route) {
       window.location.hash = event.data.route;
+    }
+    // Handle intent commands from parent (e.g. booking.scroll)
+    if (event.data?.type === 'INTENT_COMMAND') {
+      const { command, requestId: cmdReqId } = event.data;
+      let handled = false;
+      if (command === 'booking.scroll') {
+        const bookingEl = document.querySelector('[data-ut-intent="booking.create"], form[data-ut-intent*="booking"], #booking, .booking, [id*="book"]');
+        if (bookingEl) {
+          bookingEl.scrollIntoView({ behavior: 'smooth' });
+          handled = true;
+        }
+      }
+      window.parent.postMessage({ type: 'INTENT_COMMAND_RESULT', command, requestId: cmdReqId, handled }, '*');
     }
   });
 }

@@ -3025,7 +3025,7 @@ export function processCode(code: string, filePath: string): string {
   // This prevents "Element type is invalid" crashes when the AI uses icon
   // names that don't exist in the installed lucide-react version.
   code = code.replace(
-    /^import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?\s*$/gm,
+    /import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?/g,
     (_match, names: string) => {
       const iconNames = names.split(',')
         .map(n => n.trim())
@@ -3051,7 +3051,7 @@ export function processCode(code: string, filePath: string): string {
   // The AI frequently imports { motion, AnimatePresence } from 'framer-motion'.
   // If framer-motion fails to load or specific exports are missing, provide safe fallbacks.
   code = code.replace(
-    /^import\s+\{([^}]+)\}\s+from\s+['"]framer-motion['"];?\s*$/gm,
+    /import\s+\{([^}]+)\}\s+from\s+['"]framer-motion['"];?/g,
     (_match, names: string) => {
       const fmNames = names.split(',')
         .map(n => n.trim())

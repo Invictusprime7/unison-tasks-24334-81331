@@ -210,7 +210,19 @@ RULES:
 3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
 4. In App.tsx use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
 5. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
-6. Wire CTAs with data-ut-intent attributes: data-ut-intent="booking.create", data-ut-intent="contact.submit"
+6. Wire ALL interactive buttons with data-ut-intent attributes. EVERY button/CTA must have one:
+   - Contact/form buttons: data-ut-intent="contact.submit"
+   - Booking/appointment buttons: data-ut-intent="booking.create"
+   - Newsletter subscribe: data-ut-intent="newsletter.subscribe"
+   - Get started/sign up: data-ut-intent="lead.capture"
+   - Call to action buttons: data-ut-intent="cta.primary" or data-ut-intent="cta.secondary"
+   - Quote/estimate request: data-ut-intent="quote.request"
+   - View pricing/plans: data-ut-intent="nav.anchor" href="#pricing"
+   - Learn more: data-ut-intent="nav.anchor" href="#about"
+   - Phone/call: <a href="tel:..." data-ut-intent="contact.call">
+   - Email: <a href="mailto:..." data-ut-intent="contact.email">
+   Example: <button data-ut-intent="booking.create" className="...">Book Now</button>
+   Forms should use: <form data-ut-intent="contact.submit">
 7. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
 8. Images: use ONLY these VERIFIED Unsplash URLs (they are guaranteed to load):
    HERO/BACKGROUND by industry:

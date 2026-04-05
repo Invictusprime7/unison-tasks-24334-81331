@@ -2943,32 +2943,62 @@ function repairMalformedDefaultExportClosures(content: string): string {
 }
 
 function forceClassicReactJsxRuntime(content: string): string {
-  if (!content || !/\.(tsx?|jsx?)$/.test('x.tsx')) return content;
+  if (!content) return content;
 
   let patched = content;
+  const hasJsxSyntax = /<([A-Za-z][\w.:~-]*)[\s/>]|<>|<\/>|<\/([A-Za-z][\w.:~-]*)>/.test(patched);
+  const hasCompiledJsxRuntimeImport = /from\s+['"]react\/jsx(?:-dev)?-runtime['"]/.test(patched);
+  const hasReactValueImport =
+    /^\s*import\s+React(?:\s*,|\s+from)\s+from\s+['"]react['"]/m.test(patched) ||
+    /^\s*import\s+\*\s+as\s+React\s+from\s+['"]react['"]/m.test(patched);
 
-  patched = patched.replace(
-    /^\s*import\s+\{?\s*jsx(?:DEV| as \w+)?\s*,?\s*jsxs?(?: as \w+)?\s*,?\s*Fragment(?: as \w+)?\s*\}?\s+from\s+['"]react\/jsx-runtime['"];?\s*$/gm,
-    ''
-  );
-  patched = patched.replace(
-    /^\s*import\s+\{?\s*jsxDEV(?: as \w+)?\s*,?\s*Fragment(?: as \w+)?\s*\}?\s+from\s+['"]react\/jsx-dev-runtime['"];?\s*$/gm,
-    ''
-  );
+  if (hasCompiledJsxRuntimeImport) {
+    patched = patched.replace(
+      /^\s*import\s+\{?\s*jsx(?:DEV| as \w+)?\s*,?\s*jsxs?(?: as \w+)?\s*,?\s*Fragment(?: as \w+)?\s*\}?\s+from\s+['"]react\/jsx-runtime['"];?\s*$/gm,
+      ''
+    );
+    patched = patched.replace(
+      /^\s*import\s+\{?\s*jsxDEV(?: as \w+)?\s*,?\s*Fragment(?: as \w+)?\s*\}?\s+from\s+['"]react\/jsx-dev-runtime['"];?\s*$/gm,
+      ''
+    );
+    patched = patched.replace(/\b_jsxDEV\(/g, 'React.createElement(');
+    patched = patched.replace(/\bjsxDEV\(/g, 'React.createElement(');
+    patched = patched.replace(/\b_jsxs\(/g, 'React.createElement(');
+    patched = patched.replace(/\bjsxs\(/g, 'React.createElement(');
+    patched = patched.replace(/\b_jsx\(/g, 'React.createElement(');
+    patched = patched.replace(/\bjsx\(/g, 'React.createElement(');
+    patched = patched.replace(/\bFragment\b/g, 'React.Fragment');
 
-  const hasJsxFactoryUsage = /\bjsx(?:DEV)?\(|\bjsxs\(|\bFragment\b/.test(patched);
-  if (!hasJsxFactoryUsage) {
+    if (!hasReactValueImport) {
+      patched = `import * as React from 'react';\n${patched.replace(/^\n+/, '')}`;
+    }
+
     return patched.replace(/\n{3,}/g, '\n\n');
   }
 
-  patched = patched.replace(/\b_jsxDEV\(/g, 'React.createElement(');
-  patched = patched.replace(/\bjsxDEV\(/g, 'React.createElement(');
-  patched = patched.replace(/\b_jsxs\(/g, 'React.createElement(');
-  patched = patched.replace(/\bjsxs\(/g, 'React.createElement(');
-  patched = patched.replace(/\b_jsx\(/g, 'React.createElement(');
-  patched = patched.replace(/\bjsx\(/g, 'React.createElement(');
+  if (!hasJsxSyntax) {
+    return patched.replace(/\n{3,}/g, '\n\n');
+  }
 
-  patched = patched.replace(/\bFragment\b/g, 'React.Fragment');
+  patched = patched.replace(/^\s*\/\*\*?\s*@jsxRuntime\s+[^\n*]+\*\/\s*\n?/gm, '');
+  patched = patched.replace(/^\s*\/\*\*?\s*@jsxImportSource\s+[^\n*]+\*\/\s*\n?/gm, '');
+  patched = patched.replace(/^\s*\/\*\*?\s*@jsx\s+[^\n*]+\*\/\s*\n?/gm, '');
+  patched = patched.replace(/^\s*\/\*\*?\s*@jsxFrag\s+[^\n*]+\*\/\s*\n?/gm, '');
+
+  const pragmaBlock = [
+    '/** @jsxRuntime classic */',
+    '/** @jsx React.createElement */',
+    '/** @jsxFrag React.Fragment */',
+  ].join('\n');
+
+  patched = `${pragmaBlock}\n${patched.replace(/^\n+/, '')}`;
+
+  if (!hasReactValueImport) {
+    patched = patched.replace(
+      pragmaBlock,
+      `${pragmaBlock}\nimport * as React from 'react';`
+    );
+  }
 
   return patched.replace(/\n{3,}/g, '\n\n');
 }

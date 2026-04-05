@@ -2942,15 +2942,20 @@ function repairMalformedDefaultExportClosures(content: string): string {
   );
 }
 
+function hasReactValueImport(content: string): boolean {
+  return (
+    /^\s*import\s+(?:React\b(?:\s*,[\s\S]*?)?|\*\s+as\s+React\b)\s+from\s+['"]react['"]/m.test(content) ||
+    /^\s*import\s+\{[\s\S]*\bdefault\s+as\s+React\b[\s\S]*\}\s+from\s+['"]react['"]/m.test(content)
+  );
+}
+
 function forceClassicReactJsxRuntime(content: string): string {
   if (!content) return content;
 
   let patched = content;
   const hasJsxSyntax = /<([A-Za-z][\w.:~-]*)[\s/>]|<>|<\/>|<\/([A-Za-z][\w.:~-]*)>/.test(patched);
   const hasCompiledJsxRuntimeImport = /from\s+['"]react\/jsx(?:-dev)?-runtime['"]/.test(patched);
-  const hasReactValueImport =
-    /^\s*import\s+React(?:\s*,|\s+from)\s+from\s+['"]react['"]/m.test(patched) ||
-    /^\s*import\s+\*\s+as\s+React\s+from\s+['"]react['"]/m.test(patched);
+  const alreadyHasReactValueImport = hasReactValueImport(patched);
 
   if (hasCompiledJsxRuntimeImport) {
     patched = patched.replace(
@@ -2969,7 +2974,7 @@ function forceClassicReactJsxRuntime(content: string): string {
     patched = patched.replace(/\bjsx\(/g, 'React.createElement(');
     patched = patched.replace(/\bFragment\b/g, 'React.Fragment');
 
-    if (!hasReactValueImport) {
+    if (!alreadyHasReactValueImport) {
       patched = `import * as React from 'react';\n${patched.replace(/^\n+/, '')}`;
     }
 
@@ -2993,7 +2998,7 @@ function forceClassicReactJsxRuntime(content: string): string {
 
   patched = `${pragmaBlock}\n${patched.replace(/^\n+/, '')}`;
 
-  if (!hasReactValueImport) {
+  if (!alreadyHasReactValueImport) {
     patched = patched.replace(
       pragmaBlock,
       `${pragmaBlock}\nimport * as React from 'react';`

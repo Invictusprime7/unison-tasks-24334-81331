@@ -44,30 +44,7 @@ export interface DebugAgentPanelProps {
 // Sub-components
 // ============================================================================
 
-const ModeSelector: React.FC<{ mode: DebugMode; onModeChange: (m: DebugMode) => void }> = ({ mode, onModeChange }) => (
-  <div className="flex gap-1 p-1 bg-black/40 rounded-lg border border-blue-500/20">
-    {([
-      { value: 'surgical-edit' as const, icon: Pencil, label: 'Edit', color: 'blue' },
-      { value: 'debug-agent' as const, icon: Bot, label: 'Agent', color: 'amber' },
-      { value: 'security-review' as const, icon: Shield, label: 'Security', color: 'red' },
-    ]).map(({ value, icon: Icon, label, color }) => (
-      <button
-        key={value}
-        onClick={() => onModeChange(value)}
-        className={cn(
-          'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono transition-all',
-          mode === value
-            ? `bg-${color}-500/20 text-${color}-400 border border-${color}-500/30 shadow-[0_0_8px_rgba(59,130,246,0.2)]`
-            : 'text-muted-foreground/50 hover:text-muted-foreground/80 hover:bg-white/5'
-        )}
-      >
-        <Icon className="w-3 h-3" />
-        {label}
-      </button>
-    ))}
-  </div>
-);
-
+// Mode selector removed — single unified Debug Agent handles all tasks
 const DiagnosticItem: React.FC<{ diag: Diagnostic }> = ({ diag }) => (
   <div className="flex items-start gap-2 py-1.5 px-2 rounded bg-black/20 border border-white/5">
     <div className={cn(
@@ -272,7 +249,7 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
   vfsFiles,
   isFixing,
 }) => {
-  const [mode, setMode] = useState<DebugMode>('debug-agent');
+  const mode: DebugMode = 'debug-agent';
   const [taskInput, setTaskInput] = useState('');
   const [session, setSession] = useState<DebugSession | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticSnapshot>(() => diagnosticsAggregator.getSnapshot());
@@ -305,19 +282,15 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
 
     const newSession = debugAgentService.startSession({
       task: taskInput.trim(),
-      goal: mode === 'security-review' ? 'Find and report security vulnerabilities' : 'Fix the described issue',
+      goal: 'Analyze, debug, and fix the described issue',
       mode,
     });
 
-    // For security review, run immediately
-    if (mode === 'security-review' && vfsFiles) {
-      debugAgentService.runSecurityReview(newSession.id, vfsFiles);
-    }
-
-    // For debug-agent, gather context
-    if (mode === 'debug-agent' && vfsFiles) {
+    // Always gather context and run security review together
+    if (vfsFiles) {
       const fileTree = Object.keys(vfsFiles);
       debugAgentService.gatherContext(newSession.id, vfsFiles, fileTree);
+      debugAgentService.runSecurityReview(newSession.id, vfsFiles);
     }
 
     setTaskInput('');
@@ -379,9 +352,31 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
         </div>
       </div>
 
-      {/* Mode Selector */}
-      <div className="px-3 py-2 border-b border-white/5">
-        <ModeSelector mode={mode} onModeChange={setMode} />
+      {/* Quick actions toolbar */}
+      <div className="px-3 py-2 border-b border-white/5 flex gap-1 flex-wrap">
+        {[
+          { label: 'Typecheck', icon: CheckCircle2, cmd: 'tsc --noEmit' },
+          { label: 'Lint', icon: Search, cmd: 'npx eslint src/' },
+          { label: 'Test', icon: Play, cmd: 'npx vitest --run' },
+          { label: 'Build', icon: Zap, cmd: 'npx vite build' },
+          { label: 'Security', icon: Shield, cmd: '__security_scan__' },
+        ].map(({ label, icon: Icon, cmd }) => (
+          <button
+            key={label}
+            onClick={() => {
+              if (cmd === '__security_scan__' && vfsFiles) {
+                const s = session ?? debugAgentService.startSession({ task: `Security scan`, goal: 'Find vulnerabilities', mode: 'debug-agent' });
+                debugAgentService.runSecurityReview(s.id, vfsFiles);
+              } else {
+                terminalOrchestrator.propose(cmd, `Run ${label.toLowerCase()}`, { expectedResult: 'Pass with no errors' });
+              }
+            }}
+            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono text-foreground/50 hover:text-foreground/80 hover:bg-white/5 border border-white/5 transition-all"
+          >
+            <Icon className="w-3 h-3" />
+            {label}
+          </button>
+        ))}
       </div>
 
       <ScrollArea className="flex-1">
@@ -395,11 +390,7 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
                 <Textarea
                   value={taskInput}
                   onChange={(e) => setTaskInput(e.target.value)}
-                  placeholder={
-                    mode === 'surgical-edit' ? 'Describe the specific fix needed...' :
-                    mode === 'debug-agent' ? "Describe what's broken or what you want to debug..." :
-                    'Describe what to scan for security issues...'
-                  }
+                  placeholder="Describe the issue, edit task, or what to debug..."
                   className="min-h-[60px] max-h-[100px] bg-black/40 border-white/10 text-sm resize-none text-foreground/80 placeholder:text-foreground/20 focus:border-amber-400/50"
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleStartSession(); } }}
                 />
@@ -409,8 +400,8 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
                   disabled={!taskInput.trim() || isFixing}
                   className="w-full gap-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold shadow-[0_0_15px_rgba(245,158,11,0.3)]"
                 >
-                  {mode === 'security-review' ? <Shield className="w-3 h-3" /> : mode === 'debug-agent' ? <Bot className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
-                  {mode === 'surgical-edit' ? 'Start Edit' : mode === 'debug-agent' ? 'Start Agent' : 'Run Scan'}
+                  <Bot className="w-3 h-3" />
+                  Start Debug Agent
                 </Button>
               </div>
             ) : (

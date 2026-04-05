@@ -55,6 +55,7 @@ import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/ht
 import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
+import { DebugAgentPanel } from './DebugAgentPanel';
 
 // ============================================================================
 /**
@@ -1929,12 +1930,14 @@ export default function App() {
           </div>
         </TabsContent>
 
-        {/* Debug Tab */}
+        {/* Debug Tab — Enhanced with Edit/Agent/Security modes */}
         <TabsContent value="debug" className="flex-1 flex flex-col m-0 min-h-0 data-[state=inactive]:hidden">
-          <DebugPanel
-            errors={iframeErrors}
+          <DebugAgentPanel
+            iframeErrors={iframeErrors}
             onFixError={handleFixError}
             onClearErrors={onClearErrors}
+            onApplyPatch={onApplyToVFS}
+            vfsFiles={vfsFiles}
             isFixing={isFixing}
           />
         </TabsContent>

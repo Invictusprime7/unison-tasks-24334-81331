@@ -397,7 +397,7 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
                   onChange={(e) => setTaskInput(e.target.value)}
                   placeholder={
                     mode === 'surgical-edit' ? 'Describe the specific fix needed...' :
-                    mode === 'debug-agent' ? 'Describe what's broken or what you want to debug...' :
+                    mode === 'debug-agent' ? "Describe what's broken or what you want to debug..." :
                     'Describe what to scan for security issues...'
                   }
                   className="min-h-[60px] max-h-[100px] bg-black/40 border-white/10 text-sm resize-none text-foreground/80 placeholder:text-foreground/20 focus:border-amber-400/50"

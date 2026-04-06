@@ -46,12 +46,27 @@ describe("RuntimeConfigSchema", () => {
 describe("IntentDefinitionSchema", () => {
   it("validates a correct intent definition", () => {
     const result = IntentDefinitionSchema.safeParse({
-      id: "contact.submit",
-      type: "action",
-      label: "Submit Contact Form",
-      handler: "edge-function",
+      intentId: "contact.submit",
+      category: "form",
+      description: "Submit contact form",
+      paramsSchema: { type: "object" },
+      handler: {
+        kind: "edge",
+        edgeFunction: { name: "handle-contact", path: "/functions/v1/handle-contact", method: "POST" },
+      },
     });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects invalid category", () => {
+    const result = IntentDefinitionSchema.safeParse({
+      intentId: "x",
+      category: "invalid",
+      description: "test",
+      paramsSchema: {},
+      handler: { kind: "client" },
+    });
+    expect(result.success).toBe(false);
   });
 });
 

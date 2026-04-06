@@ -1,12 +1,8 @@
 /**
- * DebugAgentPanel — Enhanced Debug tab with Edit/Agent/Security modes
+ * DebugAgentPanel — Unified Debug Agent with 5-channel diagnostics
  * 
- * Sections:
- * - Issue: user prompt, selected file, scope toggle
- * - Context: files included, diagnostics count, preview session
- * - Plan: what the agent thinks is wrong
- * - Proposed changes: diff viewer with accept/reject per hunk
- * - Verification: latest typecheck, preview status, runtime errors
+ * Channels: Editor | Preview | Terminal | Workspace | Unison
+ * Each channel shows health status and grouped diagnostics.
  */
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
@@ -14,17 +10,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
-  Bug, Shield, Pencil, Bot, Send, Loader2, CheckCircle2, XCircle,
+  Bug, Shield, Bot, Send, Loader2, CheckCircle2, XCircle,
   AlertTriangle, ChevronDown, ChevronRight, FileCode, Terminal,
   Play, RotateCcw, Eye, Trash2, Check, X, Sparkles, Zap,
-  Search, FolderOpen, Activity,
+  Search, FolderOpen, Activity, Code, Globe, Layers, Workflow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { debugAgentService, type DebugSession, type DebugMode, type AgentStep } from '@/services/debugAgentService';
-import { diagnosticsAggregator, type DiagnosticSnapshot, type Diagnostic } from '@/services/diagnosticsAggregator';
-import { workspacePatchEngine, type PatchSet, type FilePatch } from '@/services/workspacePatchEngine';
+import { debugAgentService, type DebugSession, type AgentStep } from '@/services/debugAgentService';
+import { diagnosticsAggregator, type DiagnosticSnapshot, type Diagnostic, type DiagnosticChannel, type ChannelHealth } from '@/services/diagnosticsAggregator';
+import { workspacePatchEngine, type PatchSet } from '@/services/workspacePatchEngine';
 import { terminalOrchestrator, type CommandSpec } from '@/services/terminalOrchestrator';
 
 // ============================================================================
@@ -41,33 +36,96 @@ export interface DebugAgentPanelProps {
 }
 
 // ============================================================================
+// Channel health indicator
+// ============================================================================
+
+const CHANNEL_META: Record<DiagnosticChannel, { icon: React.ElementType; label: string; color: string }> = {
+  editor: { icon: Code, label: 'Editor', color: 'text-blue-400' },
+  preview: { icon: Globe, label: 'Preview', color: 'text-purple-400' },
+  terminal: { icon: Terminal, label: 'Terminal', color: 'text-amber-400' },
+  workspace: { icon: Layers, label: 'Workspace', color: 'text-sky-400' },
+  unison: { icon: Workflow, label: 'Unison', color: 'text-emerald-400' },
+};
+
+const ChannelHealthBar: React.FC<{
+  channels: ChannelHealth[];
+  activeChannel: DiagnosticChannel | null;
+  onSelect: (ch: DiagnosticChannel | null) => void;
+}> = ({ channels, activeChannel, onSelect }) => (
+  <div className="flex gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
+    <button
+      onClick={() => onSelect(null)}
+      className={cn(
+        'flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono transition-all border',
+        !activeChannel ? 'bg-white/10 border-white/20 text-foreground/80' : 'border-transparent text-foreground/40 hover:text-foreground/60'
+      )}
+    >
+      All
+    </button>
+    {channels.map(ch => {
+      const meta = CHANNEL_META[ch.channel];
+      const Icon = meta.icon;
+      const isActive = activeChannel === ch.channel;
+      return (
+        <button
+          key={ch.channel}
+          onClick={() => onSelect(isActive ? null : ch.channel)}
+          className={cn(
+            'flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono transition-all border',
+            isActive ? 'bg-white/10 border-white/20' : 'border-transparent hover:bg-white/5',
+            ch.status === 'error' && 'text-red-400',
+            ch.status === 'warning' && 'text-amber-400',
+            ch.status === 'healthy' && 'text-foreground/40',
+          )}
+        >
+          <Icon className="w-3 h-3" />
+          <span>{meta.label}</span>
+          {ch.errorCount > 0 && (
+            <span className="px-1 rounded-full bg-red-500/20 text-red-400 text-[8px]">{ch.errorCount}</span>
+          )}
+          {ch.errorCount === 0 && ch.warningCount > 0 && (
+            <span className="px-1 rounded-full bg-amber-500/20 text-amber-400 text-[8px]">{ch.warningCount}</span>
+          )}
+          {ch.status === 'healthy' && <span className="w-1.5 h-1.5 rounded-full bg-green-500/60" />}
+        </button>
+      );
+    })}
+  </div>
+);
+
+// ============================================================================
 // Sub-components
 // ============================================================================
 
-// Mode selector removed — single unified Debug Agent handles all tasks
-const DiagnosticItem: React.FC<{ diag: Diagnostic }> = ({ diag }) => (
-  <div className="flex items-start gap-2 py-1.5 px-2 rounded bg-black/20 border border-white/5">
-    <div className={cn(
-      'w-1.5 h-1.5 rounded-full mt-1.5 shrink-0',
-      diag.severity === 'error' && 'bg-red-400',
-      diag.severity === 'warning' && 'bg-amber-400',
-      diag.severity === 'info' && 'bg-blue-400',
-    )} />
-    <div className="flex-1 min-w-0">
-      <div className="flex items-center gap-1.5">
-        <Badge variant="outline" className="text-[9px] h-4 border-white/10 text-muted-foreground/60">
-          {diag.source}
-        </Badge>
-        {diag.file && (
-          <span className="text-[9px] text-muted-foreground/40 font-mono truncate">
-            {diag.file}{diag.line ? `:${diag.line}` : ''}
-          </span>
-        )}
+const DiagnosticItem: React.FC<{ diag: Diagnostic }> = ({ diag }) => {
+  const channelMeta = CHANNEL_META[diag.channel];
+  return (
+    <div className="flex items-start gap-2 py-1.5 px-2 rounded bg-black/20 border border-white/5">
+      <div className={cn(
+        'w-1.5 h-1.5 rounded-full mt-1.5 shrink-0',
+        diag.severity === 'error' && 'bg-red-400',
+        diag.severity === 'warning' && 'bg-amber-400',
+        diag.severity === 'info' && 'bg-blue-400',
+      )} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Badge variant="outline" className={cn('text-[8px] h-3.5 border-white/10', channelMeta.color)}>
+            {diag.source}
+          </Badge>
+          {diag.file && (
+            <span className="text-[9px] text-muted-foreground/40 font-mono truncate">
+              {diag.file}{diag.line ? `:${diag.line}` : ''}
+            </span>
+          )}
+          {diag.code && (
+            <span className="text-[8px] text-muted-foreground/30 font-mono">{diag.code}</span>
+          )}
+        </div>
+        <p className="text-[11px] text-foreground/70 mt-0.5 leading-tight">{diag.message}</p>
       </div>
-      <p className="text-[11px] text-foreground/70 mt-0.5 leading-tight">{diag.message}</p>
     </div>
-  </div>
-);
+  );
+};
 
 const StepItem: React.FC<{ step: AgentStep; isLast: boolean }> = ({ step, isLast }) => {
   const [expanded, setExpanded] = useState(false);
@@ -242,22 +300,16 @@ const CommandApproval: React.FC<{
 // ============================================================================
 
 export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
-  iframeErrors,
-  onFixError,
-  onClearErrors,
-  onApplyPatch,
-  vfsFiles,
-  isFixing,
+  iframeErrors, onFixError, onClearErrors, onApplyPatch, vfsFiles, isFixing,
 }) => {
-  const mode: DebugMode = 'debug-agent';
   const [taskInput, setTaskInput] = useState('');
   const [session, setSession] = useState<DebugSession | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticSnapshot>(() => diagnosticsAggregator.getSnapshot());
   const [patchSets, setPatchSets] = useState<PatchSet[]>([]);
   const [pendingCommands, setPendingCommands] = useState<CommandSpec[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [activeChannel, setActiveChannel] = useState<DiagnosticChannel | null>(null);
 
-  // Subscribe to services
   useEffect(() => {
     const unsubs = [
       debugAgentService.subscribe(setSession),
@@ -270,32 +322,26 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
     return () => unsubs.forEach(u => u());
   }, []);
 
-  // Sync iframe errors into diagnostics aggregator
   useEffect(() => {
-    if (iframeErrors.length > 0) {
-      diagnosticsAggregator.ingestIframeErrors(iframeErrors);
-    }
+    if (iframeErrors.length > 0) diagnosticsAggregator.ingestIframeErrors(iframeErrors);
   }, [iframeErrors]);
 
   const handleStartSession = useCallback(() => {
     if (!taskInput.trim()) return;
-
     const newSession = debugAgentService.startSession({
       task: taskInput.trim(),
       goal: 'Analyze, debug, and fix the described issue',
-      mode,
+      mode: 'debug-agent',
     });
-
-    // Always gather context and run security review together
     if (vfsFiles) {
       const fileTree = Object.keys(vfsFiles);
       debugAgentService.gatherContext(newSession.id, vfsFiles, fileTree);
       debugAgentService.runSecurityReview(newSession.id, vfsFiles);
+      debugAgentService.validateUnisonIntegrity(newSession.id, vfsFiles);
     }
-
     setTaskInput('');
     setIsRunning(true);
-  }, [taskInput, mode, vfsFiles]);
+  }, [taskInput, vfsFiles]);
 
   const handleApplyPatch = useCallback((patchSetId: string) => {
     const files = workspacePatchEngine.getAcceptedFiles(patchSetId);
@@ -306,11 +352,14 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
   }, [onApplyPatch]);
 
   const activePatchSet = useMemo(() => {
-    if (session?.activePatchSetId) {
-      return workspacePatchEngine.getPatchSet(session.activePatchSetId);
-    }
-    return patchSets[0]; // Latest
+    if (session?.activePatchSetId) return workspacePatchEngine.getPatchSet(session.activePatchSetId);
+    return patchSets[0];
   }, [session, patchSets]);
+
+  const filteredDiagnostics = useMemo(() => {
+    if (!activeChannel) return diagnostics.diagnostics.slice(0, 15);
+    return diagnostics.diagnostics.filter(d => d.channel === activeChannel).slice(0, 20);
+  }, [diagnostics, activeChannel]);
 
   const verificationBadge = useMemo(() => {
     if (!session?.verificationStatus) return null;
@@ -352,8 +401,15 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
         </div>
       </div>
 
+      {/* 5-Channel Health Bar */}
+      <ChannelHealthBar
+        channels={diagnostics.channels}
+        activeChannel={activeChannel}
+        onSelect={setActiveChannel}
+      />
+
       {/* Quick actions toolbar */}
-      <div className="px-3 py-2 border-b border-white/5 flex gap-1 flex-wrap">
+      <div className="px-3 py-1.5 border-b border-white/5 flex gap-1 flex-wrap">
         {[
           { label: 'Typecheck', icon: CheckCircle2, cmd: 'tsc --noEmit' },
           { label: 'Lint', icon: Search, cmd: 'npx eslint src/' },
@@ -365,7 +421,7 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
             key={label}
             onClick={() => {
               if (cmd === '__security_scan__' && vfsFiles) {
-                const s = session ?? debugAgentService.startSession({ task: `Security scan`, goal: 'Find vulnerabilities', mode: 'debug-agent' });
+                const s = session ?? debugAgentService.startSession({ task: 'Security scan', goal: 'Find vulnerabilities', mode: 'debug-agent' });
                 debugAgentService.runSecurityReview(s.id, vfsFiles);
               } else {
                 terminalOrchestrator.propose(cmd, `Run ${label.toLowerCase()}`, { expectedResult: 'Pass with no errors' });
@@ -426,34 +482,34 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
             )}
           </section>
 
-          {/* Section: Diagnostics */}
+          {/* Section: Diagnostics — grouped by channel */}
           <section>
             <h3 className="text-[10px] text-foreground/40 font-mono uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-              Diagnostics
+              {activeChannel ? `${CHANNEL_META[activeChannel].label} Diagnostics` : 'All Diagnostics'}
               <span className="text-foreground/20">
                 {diagnostics.errorCount}E / {diagnostics.warningCount}W
               </span>
             </h3>
             <div className="space-y-1">
-              {diagnostics.diagnostics.length === 0 ? (
+              {filteredDiagnostics.length === 0 ? (
                 <div className="text-center py-4">
                   <CheckCircle2 className="w-6 h-6 text-green-500/30 mx-auto mb-1" />
-                  <p className="text-[11px] text-foreground/30 font-mono">No issues detected</p>
+                  <p className="text-[11px] text-foreground/30 font-mono">
+                    {activeChannel ? `${CHANNEL_META[activeChannel].label}: No issues` : 'No issues detected'}
+                  </p>
                 </div>
               ) : (
-                diagnostics.diagnostics.slice(0, 10).map(d => (
-                  <DiagnosticItem key={d.id} diag={d} />
-                ))
+                filteredDiagnostics.map(d => <DiagnosticItem key={d.id} diag={d} />)
               )}
-              {diagnostics.diagnostics.length > 10 && (
+              {!activeChannel && diagnostics.diagnostics.length > 15 && (
                 <p className="text-[9px] text-foreground/20 text-center font-mono">
-                  +{diagnostics.diagnostics.length - 10} more
+                  +{diagnostics.diagnostics.length - 15} more
                 </p>
               )}
             </div>
           </section>
 
-          {/* Section: Agent Steps (Plan) */}
+          {/* Section: Agent Steps */}
           {session && session.steps.length > 0 && (
             <section>
               <h3 className="text-[10px] text-foreground/40 font-mono uppercase tracking-wider mb-1.5">Agent Steps</h3>
@@ -477,7 +533,7 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
             </section>
           )}
 
-          {/* Section: Proposed Changes (Diff Review) */}
+          {/* Section: Proposed Changes */}
           {activePatchSet && activePatchSet.status !== 'applied' && (
             <section>
               <h3 className="text-[10px] text-foreground/40 font-mono uppercase tracking-wider mb-1.5">Proposed Changes</h3>
@@ -501,25 +557,30 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
             <section>
               <h3 className="text-[10px] text-foreground/40 font-mono uppercase tracking-wider mb-1.5">Verification</h3>
               <div className="p-2 bg-black/20 border border-white/10 rounded space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-foreground/40 font-mono">Preview Status</span>
-                  {diagnostics.errorCount === 0
-                    ? <Badge variant="outline" className="text-[9px] border-green-500/30 text-green-400">Clean</Badge>
-                    : <Badge variant="outline" className="text-[9px] border-red-500/30 text-red-400">{diagnostics.errorCount} errors</Badge>
-                  }
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-foreground/40 font-mono">Runtime Errors</span>
-                  {iframeErrors.length === 0
-                    ? <Badge variant="outline" className="text-[9px] border-green-500/30 text-green-400">None</Badge>
-                    : <Badge variant="outline" className="text-[9px] border-red-500/30 text-red-400">{iframeErrors.length}</Badge>
-                  }
-                </div>
+                {diagnostics.channels.map(ch => {
+                  const meta = CHANNEL_META[ch.channel];
+                  const Icon = meta.icon;
+                  return (
+                    <div key={ch.channel} className="flex items-center justify-between">
+                      <span className={cn('text-[10px] font-mono flex items-center gap-1', meta.color)}>
+                        <Icon className="w-3 h-3" /> {meta.label}
+                      </span>
+                      <Badge variant="outline" className={cn(
+                        'text-[9px]',
+                        ch.status === 'healthy' && 'border-green-500/30 text-green-400',
+                        ch.status === 'warning' && 'border-amber-500/30 text-amber-400',
+                        ch.status === 'error' && 'border-red-500/30 text-red-400',
+                      )}>
+                        {ch.status === 'healthy' ? 'Clean' : `${ch.errorCount}E ${ch.warningCount}W`}
+                      </Badge>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
 
-          {/* Legacy error list for quick fix without starting a session */}
+          {/* Legacy quick-fix for preview errors without session */}
           {!session && iframeErrors.length > 0 && (
             <section>
               <h3 className="text-[10px] text-foreground/40 font-mono uppercase tracking-wider mb-1.5">Preview Errors</h3>

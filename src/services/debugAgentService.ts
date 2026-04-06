@@ -12,7 +12,7 @@
 import { diagnosticsAggregator, type Diagnostic, type DiagnosticSnapshot, type DiagnosticChannel } from './diagnosticsAggregator';
 import { workspacePatchEngine, type PatchSet, type FilePatch } from './workspacePatchEngine';
 import { terminalOrchestrator, type CommandSpec } from './terminalOrchestrator';
-import { getGraphSummaryForAI } from './importGraphAnalyzer';
+import { analyzeImportGraph, getGraphSummaryForAI } from './importGraphAnalyzer';
 
 // ============================================================================
 // Types

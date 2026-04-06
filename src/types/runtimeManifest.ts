@@ -14,7 +14,15 @@
 
 // ─── Core Manifest ──────────────────────────────────────────────────────────
 
-export type PreviewEngine = 'sandpack' | 'docker';
+/**
+ * LauncherEngine — the preview engine used by the Launcher/Editor handoff.
+ * NOT the same as siteBundle.ts PreviewEngine ("simple"|"vfs"|"worker").
+ * This governs how the preview is hosted (sandpack vs docker).
+ */
+export type LauncherEngine = 'sandpack' | 'docker';
+
+/** @deprecated Use LauncherEngine — kept for backward compat */
+export type PreviewEngine = LauncherEngine;
 
 export interface RuntimeManifest {
   /** Canonical entry point path (e.g. "/src/App.tsx") */
@@ -24,7 +32,7 @@ export interface RuntimeManifest {
   backendRequired: boolean;
 
   /** Which preview engine to use — determined by backendRequired + feature flags */
-  previewEngine: PreviewEngine;
+  previewEngine: LauncherEngine;
 
   /** Declared routes for the site */
   routes: string[];
@@ -144,7 +152,7 @@ export function createRuntimeManifest(
 export function resolvePreviewEngine(
   manifest: RuntimeManifest,
   capabilities: { dockerAvailable?: boolean } = {}
-): { engine: PreviewEngine; frontendOnly: boolean } {
+): { engine: LauncherEngine; frontendOnly: boolean } {
   if (manifest.previewEngine === 'docker' && !capabilities.dockerAvailable) {
     return { engine: 'sandpack', frontendOnly: true };
   }

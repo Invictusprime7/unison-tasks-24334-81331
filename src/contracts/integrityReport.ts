@@ -190,14 +190,14 @@ function validateBundleStructure(bundle: SiteBundle): IntegrityCheckResult[] {
   }
 
   // Site identity
-  if (bundle.site?.name?.trim()) {
-    results.push(pass('bundle-structure', 'site-name', 'Site name', `Site: ${bundle.site.name}`));
+  if (bundle.site?.siteId?.trim()) {
+    results.push(pass('bundle-structure', 'site-id', 'Site identity', `Site ID: ${bundle.site.siteId}`));
   } else {
-    results.push(fail('bundle-structure', 'site-name', 'Site name', 'error', 'Site name is empty'));
+    results.push(fail('bundle-structure', 'site-id', 'Site identity', 'error', 'Site ID is empty'));
   }
 
-  // Pages exist
-  const pageCount = bundle.manifest?.pages ? Object.keys(bundle.manifest.pages).length : 0;
+  // Pages exist (pages are on bundle.pages, not manifest)
+  const pageCount = bundle.pages ? Object.keys(bundle.pages).length : 0;
   if (pageCount > 0) {
     results.push(pass('bundle-structure', 'has-pages', 'Pages exist', `${pageCount} page(s) defined`));
   } else {
@@ -205,9 +205,9 @@ function validateBundleStructure(bundle: SiteBundle): IntegrityCheckResult[] {
   }
 
   // Home page exists
-  if (bundle.manifest?.pages) {
-    const hasHome = Object.values(bundle.manifest.pages).some(
-      (p: any) => p.role === 'home' || p.path === '/' || p.pageId === 'home'
+  if (bundle.pages) {
+    const hasHome = Object.values(bundle.pages).some(
+      (p) => p.path === '/' || p.pageId === 'home'
     );
     if (hasHome) {
       results.push(pass('bundle-structure', 'has-home', 'Home page', 'Home page exists'));
@@ -393,12 +393,12 @@ function validateCrossConsistency(bundle: SiteBundle, contract: CompiledContract
   const results: IntegrityCheckResult[] = [];
 
   // Bundle pages match contract pages
-  const bundlePages = bundle.manifest?.pages ? Object.keys(bundle.manifest.pages) : [];
+  const bundlePages = bundle.pages ? Object.keys(bundle.pages) : [];
   const contractPages = contract.pages.map(p => p.path);
 
   if (bundlePages.length > 0 && contractPages.length > 0) {
     const bundlePaths = new Set(
-      Object.values(bundle.manifest?.pages || {}).map((p: any) => p.path).filter(Boolean)
+      Object.values(bundle.pages || {}).map((p) => p.path).filter(Boolean)
     );
     const contractPaths = new Set(contractPages);
 

@@ -230,8 +230,7 @@ class DebugAgentServiceImpl {
     // Build import graph
     let importGraphSummary = 'Import graph not available';
     try {
-      const graph = analyzeImportGraph(vfsFiles);
-      importGraphSummary = getGraphSummaryForAI(graph);
+      importGraphSummary = getGraphSummaryForAI(vfsFiles);
     } catch { importGraphSummary = 'Import graph analysis failed'; }
 
     // Channel-specific diagnostics

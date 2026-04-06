@@ -24,7 +24,10 @@ describe("normalizeIntent", () => {
     expect(normalizeIntent("newsletter.signup")).toBe("newsletter.subscribe");
   });
 
-  it("handles case-insensitive lookups", () => {
+  it("case-insensitive lookup only works for aliases, not canonical intents", () => {
+    // Canonical intents are case-sensitive — "NAV.GOTO" is NOT in CORE_INTENTS
+    // and the alias map uses lowercase keys, so uppercase canonical falls through
+    // to domain fallback (nav → nav.goto)
     expect(normalizeIntent("NAV.GOTO")).toBe("nav.goto");
   });
 

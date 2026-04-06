@@ -71,7 +71,7 @@ describe("runIntegrityReport", () => {
 
   it("validates route integrity - has root route", () => {
     const contract = makeMinimalContract();
-    const report = runIntegrityReport(null, contract);
+    const report = runIntegrityReport(null, contract, { includeInfos: true });
     const rootCheck = report.checks.find(c => c.checkId === 'has-root-route');
     expect(rootCheck?.passed).toBe(true);
   });
@@ -110,7 +110,7 @@ describe("runIntegrityReport", () => {
 
   it("validates workflow validity", () => {
     const contract = makeMinimalContract();
-    const report = runIntegrityReport(null, contract);
+    const report = runIntegrityReport(null, contract, { includeInfos: true });
     const wfChecks = report.checks.filter(c => c.category === 'workflow-validity');
     expect(wfChecks.some(c => c.checkId === 'has-automation-pack' && c.passed)).toBe(true);
     expect(wfChecks.some(c => c.checkId === 'crm-pipeline' && c.passed)).toBe(true);
@@ -126,7 +126,7 @@ describe("runIntegrityReport", () => {
 
   it("validates provisioning status", () => {
     const contract = makeMinimalContract();
-    const report = runIntegrityReport(null, contract);
+    const report = runIntegrityReport(null, contract, { includeInfos: true });
     const provChecks = report.checks.filter(c => c.category === 'provisioning');
     expect(provChecks.some(c => c.checkId === 'preview-ready' && c.passed)).toBe(true);
     expect(provChecks.some(c => c.checkId === 'production-ready' && c.passed)).toBe(true);

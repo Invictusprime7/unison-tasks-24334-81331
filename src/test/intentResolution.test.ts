@@ -24,13 +24,10 @@ describe("normalizeIntent", () => {
     expect(normalizeIntent("newsletter.signup")).toBe("newsletter.subscribe");
   });
 
-  it("case-insensitive: lowercased aliases resolve, but uppercase canonical falls through to domain fallback", () => {
-    // BUG DOCUMENTED: normalizeIntent lowercases for alias lookup but
-    // the domain fallback uses parts[0] from the original (uppercase) input,
-    // which doesn't match the lowercase domainFallbacks keys.
-    // "NAV.GOTO" → alias miss → domain "NAV" ≠ "nav" → returns as-is.
-    // This is a known gap — intents should always be lowercase.
-    expect(normalizeIntent("NAV.GOTO")).toBe("NAV.GOTO");
+  it("handles case-insensitive lookups for canonical intents", () => {
+    expect(normalizeIntent("NAV.GOTO")).toBe("nav.goto");
+    expect(normalizeIntent("Pay.Checkout")).toBe("pay.checkout");
+    expect(normalizeIntent("BOOKING.CREATE")).toBe("booking.create");
   });
 
   it("applies domain-based fallback for unknown intents with known domains", () => {

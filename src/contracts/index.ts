@@ -81,3 +81,12 @@ export {
   type ProvisioningCheckItem,
   type ProvisioningStatus,
 } from './provisioningValidator';
+
+// Integrity Report
+export {
+  runIntegrityReport,
+  type IntegrityReport,
+  type IntegrityCheckResult,
+  type IntegrityCategory,
+  type IntegrityReportOptions,
+} from './integrityReport';

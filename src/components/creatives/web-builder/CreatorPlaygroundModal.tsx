@@ -361,7 +361,10 @@ function PagesSection({ playground, onPageSelect, onPageAdd, onPageRemove }: {
 // Section: Funnels
 // ============================================================================
 
-function FunnelsSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
+function FunnelsSection({ playground, onFunnelCreate }: { 
+  playground: UseCreatorPlaygroundReturn;
+  onFunnelCreate?: (funnelId: string, stepPages: { pageId: string; title: string; path: string; role: FunnelRole }[]) => void;
+}) {
   const [newName, setNewName] = useState("");
   const [expandedFunnel, setExpandedFunnel] = useState<string | null>(null);
   const funnels = Object.values(playground.pageRegistry.funnels);

@@ -56,6 +56,8 @@ import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
 import { DebugAgentPanel } from './DebugAgentPanel';
+import { interpretPrompt, type TaskPlan } from '@/unison';
+import { TaskPlanSteps } from './TaskPlanSteps';
 
 // ============================================================================
 /**
@@ -178,6 +180,8 @@ interface Message {
   edits?: VFSEdit[];
   error?: IframeError;
   isStreaming?: boolean;
+  /** Unison TaskPlan for this message */
+  taskPlan?: TaskPlan;
   /** Rich metadata from the AI response */
   meta?: {
     actionType?: string;
@@ -375,6 +379,11 @@ const MessageItem: React.FC<{
             </div>
           )}
         </div>
+      )}
+
+      {/* Unison Task Plan */}
+      {message.taskPlan && (
+        <TaskPlanSteps plan={message.taskPlan} className="mb-2" />
       )}
 
       {/* Thinking Process — always visible, user can hide */}
@@ -759,8 +768,37 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         isSurgical: isSurgicalEdit,
       });
 
-      // ── Phase 2: VFS & Context Assembly ──
-      liveStep('planning', 'Assembling project context...');
+      // ── Phase 1b: Unison Task Interpretation ──
+      liveStep('analyzing', 'Running Unison task planner...');
+      
+      const projectContext: import('@/unison').ProjectContext = {
+        provisionedCapabilities: [],
+        existingFiles: vfsFiles ? Object.keys(vfsFiles) : [],
+        existingPages: [],
+        builderMode: currentCode ? 'edit' : 'generate',
+        hasBusinessId: !!systemsBuildContext?.brand?.business_name,
+        installedWorkflows: [],
+      };
+      
+      const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContent, projectContext);
+      
+      liveStep('analyzing', `Plan: ${taskPlan.steps.length} steps · route: ${taskPlan.route}`,
+        `Confidence: ${Math.round(taskPlan.intent.confidence * 100)}% · Complexity: ${taskPlan.estimatedComplexity}`
+      );
+      
+      // Attach task plan to the streaming message
+      setMessages(prev => prev.map(m =>
+        m.id === streamingId ? { ...m, taskPlan } : m
+      ));
+
+      console.log('[AIBuilderPanel] Unison plan:', {
+        route: taskPlan.route,
+        steps: taskPlan.steps.length,
+        complexity: taskPlan.estimatedComplexity,
+        confidence: taskPlan.intent.confidence,
+        outcome: unisonFeedback.outcome,
+      });
+
 
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';

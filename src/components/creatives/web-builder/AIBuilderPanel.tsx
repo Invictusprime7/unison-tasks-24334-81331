@@ -777,6 +777,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         existingPages: [],
         builderMode: (currentCode ? 'edit' : 'generate') as 'generate' | 'edit' | 'debug' | 'preview',
         hasBusinessId: !!systemsBuildContext?.brand?.business_name,
+        installedWorkflows: [] as string[],
       };
       
       const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContent, projectContext);

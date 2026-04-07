@@ -381,6 +381,11 @@ const MessageItem: React.FC<{
         </div>
       )}
 
+      {/* Unison Task Plan */}
+      {message.taskPlan && (
+        <TaskPlanSteps plan={message.taskPlan} className="mb-2" />
+      )}
+
       {/* Thinking Process — always visible, user can hide */}
       {thinkingSteps.length > 0 && (
         <div className="mb-2">

@@ -101,6 +101,9 @@ export function CreatorPlaygroundModal({
   onOpenChange,
   playground,
   onPageSelect,
+  onPageAdd,
+  onPageRemove,
+  onFunnelCreate,
   businessId = null,
   initialSection,
 }: CreatorPlaygroundModalProps) {

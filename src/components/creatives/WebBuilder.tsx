@@ -1404,6 +1404,12 @@ export default function App() {
       p.isMain ? "home" : p.path.replace(/^\//, '').replace(/\.html$/, '')
     );
   }, [pageTabs]);
+
+  // Route conflict detection from playground registry
+  const routeConflicts = useMemo(
+    () => detectRouteConflicts(creatorPlayground.pageRegistry),
+    [creatorPlayground.pageRegistry]
+  );
   
   // Page manifest for async multi-page navigation (all HTML pages from VFS)
   const pageManifest = useMemo(() => {

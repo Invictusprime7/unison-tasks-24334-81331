@@ -82,6 +82,12 @@ interface CreatorPlaygroundModalProps {
   onOpenChange: (open: boolean) => void;
   playground: UseCreatorPlaygroundReturn;
   onPageSelect?: (pageId: string) => void;
+  /** Called after a page is added via the playground — wire to VFS file creation */
+  onPageAdd?: (pageId: string, title: string, path: string, pageType: BuilderPageType) => void;
+  /** Called after a page is removed — wire to VFS file deletion */
+  onPageRemove?: (pageId: string, path: string) => void;
+  /** Called after a funnel is created with auto-generated steps — wire to VFS scaffolding */
+  onFunnelCreate?: (funnelId: string, stepPages: { pageId: string; title: string; path: string; role: FunnelRole }[]) => void;
   businessId?: string | null;
   initialSection?: Section;
 }
@@ -95,6 +101,9 @@ export function CreatorPlaygroundModal({
   onOpenChange,
   playground,
   onPageSelect,
+  onPageAdd,
+  onPageRemove,
+  onFunnelCreate,
   businessId = null,
   initialSection,
 }: CreatorPlaygroundModalProps) {
@@ -186,8 +195,8 @@ export function CreatorPlaygroundModal({
               <div className="p-5">
                 {activeSection === "launch" && <SetupWizardPanel wizard={setupWizard} businessId={businessId} />}
                 {activeSection === "overview" && <OverviewSection playground={playground} onNavigate={setActiveSection} />}
-                {activeSection === "pages" && <PagesSection playground={playground} onPageSelect={onPageSelect} />}
-                {activeSection === "funnels" && <FunnelsSection playground={playground} />}
+                {activeSection === "pages" && <PagesSection playground={playground} onPageSelect={onPageSelect} onPageAdd={onPageAdd} onPageRemove={onPageRemove} />}
+                {activeSection === "funnels" && <FunnelsSection playground={playground} onFunnelCreate={onFunnelCreate} />}
                 {activeSection === "products" && <ProductsSection playground={playground} />}
                 {activeSection === "services" && <ServicesSection playground={playground} />}
                 {activeSection === "forms" && <FormsSection playground={playground} />}
@@ -270,7 +279,12 @@ function OverviewSection({ playground, onNavigate }: { playground: UseCreatorPla
 // Section: Pages
 // ============================================================================
 
-function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlaygroundReturn; onPageSelect?: (id: string) => void }) {
+function PagesSection({ playground, onPageSelect, onPageAdd, onPageRemove }: { 
+  playground: UseCreatorPlaygroundReturn; 
+  onPageSelect?: (id: string) => void;
+  onPageAdd?: (pageId: string, title: string, path: string, pageType: BuilderPageType) => void;
+  onPageRemove?: (pageId: string, path: string) => void;
+}) {
   const [newTitle, setNewTitle] = useState("");
   const [newPath, setNewPath] = useState("");
   const [newType, setNewType] = useState<BuilderPageType>("custom");
@@ -283,6 +297,7 @@ function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlay
     setNewTitle("");
     setNewPath("");
     setNewType("custom");
+    onPageAdd?.(page.pageId, page.title, page.path, page.pageType);
     onPageSelect?.(page.pageId);
   };
 
@@ -333,7 +348,7 @@ function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlay
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); playground.setHomePage(page.pageId); }}><Star className="h-3 w-3" /></Button>
               )}
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); playground.duplicatePage(page.pageId); }}><Copy className="h-3 w-3" /></Button>
-              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={e => { e.stopPropagation(); playground.removePage(page.pageId); }}><Trash2 className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={e => { e.stopPropagation(); playground.removePage(page.pageId); onPageRemove?.(page.pageId, page.path); }}><Trash2 className="h-3 w-3" /></Button>
             </div>
           </div>
         ))}
@@ -346,7 +361,10 @@ function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlay
 // Section: Funnels
 // ============================================================================
 
-function FunnelsSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
+function FunnelsSection({ playground, onFunnelCreate }: { 
+  playground: UseCreatorPlaygroundReturn;
+  onFunnelCreate?: (funnelId: string, stepPages: { pageId: string; title: string; path: string; role: FunnelRole }[]) => void;
+}) {
   const [newName, setNewName] = useState("");
   const [expandedFunnel, setExpandedFunnel] = useState<string | null>(null);
   const funnels = Object.values(playground.pageRegistry.funnels);

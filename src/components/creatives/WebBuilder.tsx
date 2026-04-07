@@ -86,6 +86,7 @@ import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
 import { extractPageTabs, type PageTab } from "./web-builder/PageNavigationBar";
+import { PageRouteBar, detectRouteConflicts } from "./web-builder/PageRouteBar";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { BusinessSetupSuggestions } from "@/components/onboarding/BusinessSetupSuggestions";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
@@ -915,7 +916,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(true);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
   const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
-  const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | undefined>(undefined);
+  const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | undefined>(undefined);
   const [aiPanelOpen, setAiPanelOpen] = useState(true); // AI panel open by default for easy access
   const [iframeErrors, setIframeErrors] = useState<IframeError[]>([]);
   const dragDropServiceRef = useRef<CanvasDragDropService>(CanvasDragDropService.getInstance());
@@ -1403,6 +1404,12 @@ export default function App() {
       p.isMain ? "home" : p.path.replace(/^\//, '').replace(/\.html$/, '')
     );
   }, [pageTabs]);
+
+  // Route conflict detection from playground registry
+  const routeConflicts = useMemo(
+    () => detectRouteConflicts(creatorPlayground.pageRegistry),
+    [creatorPlayground.pageRegistry]
+  );
   
   // Page manifest for async multi-page navigation (all HTML pages from VFS)
   const pageManifest = useMemo(() => {
@@ -4807,6 +4814,40 @@ export default function ${componentName}() {
 
         {/* Center Canvas Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-transparent relative">
+          {/* Page Route Bar — registry-driven page info & switching */}
+          <PageRouteBar
+            activePagePath={activePagePath}
+            pageRegistry={creatorPlayground.pageRegistry}
+            routeConflicts={routeConflicts}
+            onNavigateToPage={(pageId) => {
+              const page = creatorPlayground.pageRegistry.pages[pageId];
+              if (!page?.path) return;
+              const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+              const componentName = sanitized
+                .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
+                .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
+              const vfsPath = `/src/pages/${componentName}.tsx`;
+              const vfsFiles = virtualFS.getSandpackFiles();
+              if (vfsFiles[vfsPath]) {
+                handleSelectPage(vfsPath);
+              } else if (vfsFiles['/src/App.tsx'] && page.isHome) {
+                handleSelectPage('/src/App.tsx');
+              } else {
+                toast.info(`Page "${page.title}" not yet in VFS — open Playground to scaffold it`);
+              }
+            }}
+            onToggleNavVisibility={(pageId, visible) => {
+              creatorPlayground.updatePage(pageId, { showInNav: visible });
+            }}
+            onSetHomePage={(pageId) => {
+              creatorPlayground.setHomePage(pageId);
+              toast.success('Homepage updated');
+            }}
+            onOpenPlayground={(section) => {
+              setPlaygroundInitialSection(section);
+              setPlaygroundModalOpen(true);
+            }}
+          />
           {/* Main Content Area - Canvas/Code/Split View */}
           <div 
             ref={canvasContainerRef}

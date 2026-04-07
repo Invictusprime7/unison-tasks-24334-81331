@@ -1514,6 +1514,9 @@ export default function App() {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
             onApplyToVFS({ [singleFilePath]: generatedCode });
+            advancePlanStep(taskPlan, 'refresh_preview', 'done');
+            advancePlanStep(taskPlan, 'validate', 'done');
+            advancePlanStep(taskPlan, 'report', 'done');
             liveStep('complete', `✅ Applied to ${singleFilePath}`);
             vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';

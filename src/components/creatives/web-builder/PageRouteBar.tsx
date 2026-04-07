@@ -84,10 +84,8 @@ export function PageRouteBar({
     return { name: funnel.name, step: stepIdx + 1, total: funnel.steps.length };
   }, [activePage, pageRegistry.funnels]);
 
-  if (allPages.length === 0) return null;
-
   return (
-    <div className="h-8 bg-[#0a0a14]/90 backdrop-blur-sm border-b border-border/20 flex items-center px-2 gap-1.5 shrink-0 z-10">
+    <div className="h-8 bg-background/90 backdrop-blur-sm border-b border-border/20 flex items-center px-2 gap-1.5 shrink-0 z-10">
       {/* Page Switcher Dropdown */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

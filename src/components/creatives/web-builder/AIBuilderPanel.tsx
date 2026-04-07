@@ -768,8 +768,36 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         isSurgical: isSurgicalEdit,
       });
 
-      // ── Phase 2: VFS & Context Assembly ──
-      liveStep('planning', 'Assembling project context...');
+      // ── Phase 1b: Unison Task Interpretation ──
+      liveStep('analyzing', 'Running Unison task planner...');
+      
+      const projectContext = {
+        provisionedCapabilities: [] as string[],
+        existingFiles: vfsFiles ? Object.keys(vfsFiles) : [],
+        existingPages: [],
+        builderMode: (currentCode ? 'edit' : 'generate') as 'generate' | 'edit' | 'debug' | 'preview',
+        hasBusinessId: !!systemsBuildContext?.brand?.business_name,
+      };
+      
+      const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContent, projectContext);
+      
+      liveStep('analyzing', `Plan: ${taskPlan.steps.length} steps · route: ${taskPlan.route}`,
+        `Confidence: ${Math.round(taskPlan.intent.confidence * 100)}% · Complexity: ${taskPlan.estimatedComplexity}`
+      );
+      
+      // Attach task plan to the streaming message
+      setMessages(prev => prev.map(m =>
+        m.id === streamingId ? { ...m, taskPlan } : m
+      ));
+
+      console.log('[AIBuilderPanel] Unison plan:', {
+        route: taskPlan.route,
+        steps: taskPlan.steps.length,
+        complexity: taskPlan.estimatedComplexity,
+        confidence: taskPlan.intent.confidence,
+        outcome: unisonFeedback.outcome,
+      });
+
 
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';

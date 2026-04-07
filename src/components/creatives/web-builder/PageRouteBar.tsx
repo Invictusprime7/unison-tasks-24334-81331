@@ -180,7 +180,7 @@ export function PageRouteBar({
         </Button>
       )}
       {activePage?.isHome && (
-        <Home className="h-3 w-3 text-amber-400" title="Homepage" />
+        <Home className="h-3 w-3 text-amber-400" />
       )}
 
       {/* Nav visibility toggle */}

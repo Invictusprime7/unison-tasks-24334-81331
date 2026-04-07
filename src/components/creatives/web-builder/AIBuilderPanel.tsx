@@ -1129,6 +1129,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       }
 
       // ── Phase 4: Response Processing ──
+      advancePlanStep(taskPlan, 'generate', 'done');
+      advancePlanStep(taskPlan, 'patch', 'running');
       const modelUsed = response.data?.modelUsed || gatewayConfig?.selectedModelId || 'unknown';
       liveStep('validating', `Response received from ${modelUsed}`);
 

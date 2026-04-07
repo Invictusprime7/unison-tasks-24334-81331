@@ -1,6 +1,7 @@
 /**
  * TaskPlanSteps — Renders Unison TaskPlan steps as a visual cascade
- * in the AI Builder panel, showing the interpretation pipeline output.
+ * in the AI Builder panel, showing the interpretation pipeline output
+ * with real-time step status tracking.
  */
 
 import React, { useState } from 'react';
@@ -22,9 +23,13 @@ import {
   Zap,
   AlertTriangle,
   Target,
+  Loader2,
+  XCircle,
+  SkipForward,
+  Circle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { TaskPlan, PlanStep, PlanStepType, NLRoute } from '@/unison/nlTypes';
+import type { TaskPlan, PlanStep, PlanStepType, PlanStepStatus, NLRoute } from '@/unison/nlTypes';
 
 // ============================================================================
 // Step icon mapping
@@ -58,6 +63,14 @@ const STEP_COLORS: Record<PlanStepType, string> = {
   refresh_preview: 'text-sky-300',
   validate: 'text-green-400',
   report: 'text-blue-400/60',
+};
+
+const STATUS_STYLES: Record<PlanStepStatus, { border: string; bg: string; text: string }> = {
+  pending: { border: 'border-blue-500/10', bg: 'bg-black/30', text: 'text-blue-100/40' },
+  running: { border: 'border-blue-400/50', bg: 'bg-blue-500/15', text: 'text-blue-100/90' },
+  done: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-300/80' },
+  failed: { border: 'border-red-500/30', bg: 'bg-red-500/10', text: 'text-red-300/80' },
+  skipped: { border: 'border-blue-500/5', bg: 'bg-black/20', text: 'text-blue-100/25' },
 };
 
 const ROUTE_LABELS: Partial<Record<NLRoute, string>> = {
@@ -95,12 +108,28 @@ export const TaskPlanSteps: React.FC<TaskPlanStepsProps> = ({ plan, className })
   const routeLabel = ROUTE_LABELS[plan.route] || plan.route;
   const needsConfirm = plan.requiresUserConfirmation;
 
+  // Compute progress
+  const doneCount = plan.steps.filter(s => s.status === 'done').length;
+  const failedCount = plan.steps.filter(s => s.status === 'failed').length;
+  const runningCount = plan.steps.filter(s => s.status === 'running').length;
+  const allDone = doneCount === plan.steps.length;
+  const hasRunning = runningCount > 0;
+  const hasFailed = failedCount > 0;
+
+  const progressPct = plan.steps.length > 0
+    ? Math.round((doneCount / plan.steps.length) * 100)
+    : 0;
+
   return (
     <div className={cn(
-      'rounded-lg border overflow-hidden mb-2',
-      needsConfirm
-        ? 'border-amber-500/30 bg-amber-950/20'
-        : 'border-blue-500/20 bg-blue-950/20',
+      'rounded-lg border overflow-hidden mb-2 transition-colors duration-300',
+      allDone
+        ? 'border-emerald-500/25 bg-emerald-950/15'
+        : hasFailed
+          ? 'border-red-500/25 bg-red-950/15'
+          : needsConfirm
+            ? 'border-amber-500/30 bg-amber-950/20'
+            : 'border-blue-500/20 bg-blue-950/20',
       className,
     )}>
       {/* Header */}
@@ -108,33 +137,66 @@ export const TaskPlanSteps: React.FC<TaskPlanStepsProps> = ({ plan, className })
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-2 w-full px-3 py-1.5 text-xs font-mono hover:bg-white/5 transition-colors"
       >
-        <Target className={cn('w-3 h-3', needsConfirm ? 'text-amber-400' : 'text-blue-400')} />
-        <span className={cn('font-semibold', needsConfirm ? 'text-amber-300' : 'text-blue-300')}>
+        {hasRunning ? (
+          <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />
+        ) : allDone ? (
+          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+        ) : hasFailed ? (
+          <XCircle className="w-3 h-3 text-red-400" />
+        ) : (
+          <Target className={cn('w-3 h-3', needsConfirm ? 'text-amber-400' : 'text-blue-400')} />
+        )}
+
+        <span className={cn(
+          'font-semibold',
+          allDone ? 'text-emerald-300' : hasFailed ? 'text-red-300' : needsConfirm ? 'text-amber-300' : 'text-blue-300',
+        )}>
           Task Plan
         </span>
+
         <Badge
           variant="outline"
           className={cn(
             'text-[9px] px-1.5 py-0',
-            needsConfirm
-              ? 'border-amber-500/40 text-amber-400'
-              : 'border-blue-500/30 text-blue-400',
+            allDone
+              ? 'border-emerald-500/30 text-emerald-400'
+              : needsConfirm
+                ? 'border-amber-500/40 text-amber-400'
+                : 'border-blue-500/30 text-blue-400',
           )}
         >
           {routeLabel}
         </Badge>
+
+        {/* Progress indicator */}
         <span className="text-[10px] text-blue-400/40 ml-auto mr-1">
-          {plan.steps.length} steps · complexity {plan.estimatedComplexity}
+          {doneCount}/{plan.steps.length} steps
+          {hasRunning && ' · running'}
+          {allDone && ' · done'}
         </span>
+
         {expanded
           ? <ChevronDown className="w-3 h-3 text-blue-400/40" />
           : <ChevronRight className="w-3 h-3 text-blue-400/40" />
         }
       </button>
 
+      {/* Progress bar */}
+      {(hasRunning || allDone) && (
+        <div className="h-[2px] bg-blue-500/10 mx-3">
+          <div
+            className={cn(
+              'h-full transition-all duration-500 ease-out rounded-full',
+              allDone ? 'bg-emerald-400/60' : 'bg-blue-400/50',
+            )}
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      )}
+
       {/* Steps */}
       {expanded && (
-        <div className="px-3 pb-2">
+        <div className="px-3 pb-2 pt-1">
           {/* Confirmation warning */}
           {needsConfirm && plan.confirmationReason && (
             <div className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 mb-1.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
@@ -171,35 +233,56 @@ export const TaskPlanSteps: React.FC<TaskPlanStepsProps> = ({ plan, className })
 const PlanStepRow: React.FC<{ step: PlanStep; isLast: boolean }> = ({ step, isLast }) => {
   const icon = STEP_ICONS[step.type] || <Wrench className="w-3 h-3" />;
   const color = STEP_COLORS[step.type] || 'text-blue-400';
+  const statusStyle = STATUS_STYLES[step.status];
+
+  const statusIcon = (() => {
+    switch (step.status) {
+      case 'running':
+        return <Loader2 className="w-2.5 h-2.5 text-blue-400 animate-spin" />;
+      case 'done':
+        return <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />;
+      case 'failed':
+        return <XCircle className="w-2.5 h-2.5 text-red-400" />;
+      case 'skipped':
+        return <SkipForward className="w-2.5 h-2.5 text-blue-400/25" />;
+      default:
+        return <Circle className="w-2 h-2 text-blue-400/20" />;
+    }
+  })();
 
   return (
-    <div className="flex items-center gap-2 py-0.5 group">
+    <div className={cn(
+      'flex items-center gap-2 py-0.5 group transition-all duration-300',
+      step.status === 'running' && 'bg-blue-500/5 rounded px-1 -mx-1',
+    )}>
+      {/* Step type icon */}
       <div className={cn(
-        'w-4 h-4 rounded flex items-center justify-center bg-black/30 border border-blue-500/10 group-hover:border-blue-500/30 transition-colors',
-        color,
+        'w-4 h-4 rounded flex items-center justify-center border transition-colors duration-300',
+        statusStyle.bg,
+        statusStyle.border,
+        step.status === 'done' ? 'text-emerald-400' : step.status === 'failed' ? 'text-red-400' : color,
       )}>
-        {icon}
+        {step.status === 'running' ? <Loader2 className="w-3 h-3 animate-spin" /> : icon}
       </div>
-      <span className="text-[11px] text-blue-100/70 font-mono flex-1 truncate group-hover:text-blue-100/90 transition-colors">
+
+      {/* Description */}
+      <span className={cn(
+        'text-[11px] font-mono flex-1 truncate transition-colors duration-300',
+        statusStyle.text,
+        step.status === 'done' && 'line-through decoration-emerald-500/30',
+      )}>
         {step.description}
       </span>
-      {step.targets.length > 0 && (
+
+      {/* Targets */}
+      {step.targets.length > 0 && step.status !== 'skipped' && (
         <span className="text-[9px] text-blue-400/25 font-mono flex-shrink-0">
           {step.targets.join(',')}
         </span>
       )}
-      {/* Complexity dots */}
-      <div className="flex gap-px flex-shrink-0">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div
-            key={i}
-            className={cn(
-              'w-1 h-1 rounded-full',
-              i < step.complexity ? 'bg-blue-400/50' : 'bg-blue-400/10',
-            )}
-          />
-        ))}
-      </div>
+
+      {/* Status indicator */}
+      <div className="flex-shrink-0">{statusIcon}</div>
     </div>
   );
 };

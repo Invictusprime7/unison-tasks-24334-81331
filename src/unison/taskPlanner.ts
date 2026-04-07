@@ -126,6 +126,7 @@ export function createPlan(
     targets: t.targets,
     dependsOn: i > 0 ? [/* previous step ID filled below */] : [],
     complexity: t.complexity,
+    status: 'pending' as const,
   }));
 
   // Wire sequential dependencies
@@ -142,6 +143,7 @@ export function createPlan(
       targets: ['database', 'config'],
       dependsOn: [],
       complexity: 3,
+      status: 'pending',
     };
     // Make all existing steps depend on this
     steps.forEach(s => {

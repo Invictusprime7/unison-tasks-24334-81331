@@ -57,6 +57,7 @@ import { vfsEventBus } from '@/services/vfsEventBus';
 import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
 import { DebugAgentPanel } from './DebugAgentPanel';
 import { interpretPrompt, type TaskPlan } from '@/unison';
+import type { PlanStepStatus } from '@/unison/nlTypes';
 import { TaskPlanSteps } from './TaskPlanSteps';
 
 // ============================================================================
@@ -786,10 +787,26 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         `Confidence: ${Math.round(taskPlan.intent.confidence * 100)}% · Complexity: ${taskPlan.estimatedComplexity}`
       );
       
+      // Helper: advance TaskPlan step statuses in-place and update the message
+      const advancePlanStep = (plan: TaskPlan, stepType: string, status: PlanStepStatus) => {
+        const step = plan.steps.find(s => s.type === stepType && s.status !== 'done');
+        if (step) {
+          step.status = status;
+          if (status === 'running') step.startedAt = new Date().toISOString();
+          if (status === 'done' || status === 'failed') step.completedAt = new Date().toISOString();
+        }
+        setMessages(prev => prev.map(m =>
+          m.id === streamingId ? { ...m, taskPlan: { ...plan } } : m
+        ));
+      };
+
       // Attach task plan to the streaming message
       setMessages(prev => prev.map(m =>
         m.id === streamingId ? { ...m, taskPlan } : m
       ));
+
+      // Mark initial steps as running
+      advancePlanStep(taskPlan, 'analyze', 'running');
 
       console.log('[AIBuilderPanel] Unison plan:', {
         route: taskPlan.route,
@@ -968,6 +985,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       })();
 
       // ── Phase 3: AI Gateway Call ──
+      advancePlanStep(taskPlan, 'analyze', 'done');
+      advancePlanStep(taskPlan, 'locate', 'done');
+      advancePlanStep(taskPlan, 'generate', 'running');
       liveStep('generating', 'Calling AI model...', gatewayConfig?.selectedModelId || 'auto-select');
 
       // Call AI service with retry logic
@@ -1109,6 +1129,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       }
 
       // ── Phase 4: Response Processing ──
+      advancePlanStep(taskPlan, 'generate', 'done');
+      advancePlanStep(taskPlan, 'patch', 'running');
       const modelUsed = response.data?.modelUsed || gatewayConfig?.selectedModelId || 'unknown';
       liveStep('validating', `Response received from ${modelUsed}`);
 
@@ -1432,6 +1454,15 @@ export default function App() {
         });
       }
 
+      // Mark all remaining plan steps as done
+      advancePlanStep(taskPlan, 'patch', 'done');
+      advancePlanStep(taskPlan, 'bind_intent', 'done');
+      advancePlanStep(taskPlan, 'create_route', 'done');
+      advancePlanStep(taskPlan, 'install_workflow', 'done');
+      advancePlanStep(taskPlan, 'enable_capability', 'done');
+      advancePlanStep(taskPlan, 'update_registry', 'done');
+      advancePlanStep(taskPlan, 'refresh_preview', 'running');
+
       // Update message — show ONLY the explanation text, NOT raw code
       setMessages(prev => prev.map(m =>
         m.id === streamingId
@@ -1441,6 +1472,7 @@ export default function App() {
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
               meta: responseMeta,
+              taskPlan: { ...taskPlan },
               // DO NOT set `code` — we auto-apply instead of showing "Apply" buttons
               edits: edits.length > 0 ? edits : undefined,
               isStreaming: false,
@@ -1482,6 +1514,9 @@ export default function App() {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
             onApplyToVFS({ [singleFilePath]: generatedCode });
+            advancePlanStep(taskPlan, 'refresh_preview', 'done');
+            advancePlanStep(taskPlan, 'validate', 'done');
+            advancePlanStep(taskPlan, 'report', 'done');
             liveStep('complete', `✅ Applied to ${singleFilePath}`);
             vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';

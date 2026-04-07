@@ -4412,9 +4412,94 @@ ${html}
         initialSection={playgroundInitialSection}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
-          if (page?.path) {
-            toast.info(`Selected page: ${page.title}`, { description: page.path });
+          if (!page?.path) return;
+          // Derive VFS path from registry path
+          const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+          const componentName = sanitized
+            .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
+            .replace(/^(.)/, (_, c: string) => c.toUpperCase());
+          const vfsPath = `/src/pages/${componentName}.tsx`;
+          const vfsFiles = virtualFS.getSandpackFiles();
+          if (vfsFiles[vfsPath]) {
+            // Page exists in VFS — navigate to it
+            handleSelectPage(vfsPath);
+          } else {
+            // Page not yet in VFS — toast the path for awareness
+            toast.info(`Page "${page.title}" registered at ${page.path}`, {
+              description: 'Generate content via AI or create the file manually',
+            });
           }
+          setPlaygroundModalOpen(false);
+        }}
+        onPageAdd={(pageId, title, path, pageType) => {
+          // Auto-scaffold a VFS file when a page is added via playground
+          const sanitized = path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+          const componentName = sanitized
+            .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
+            .replace(/^(.)/, (_, c: string) => c.toUpperCase());
+          const vfsPath = `/src/pages/${componentName}.tsx`;
+          const vfsFiles = virtualFS.getSandpackFiles();
+          if (vfsFiles[vfsPath]) return; // Already exists
+          const label = title || sanitized.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          const newPageCode = `import { Link } from 'react-router-dom';
+
+export default function ${componentName}Page() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="border-b border-border/40 px-6 py-4">
+        <nav className="flex items-center gap-6">
+          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">Home</Link>
+          <span className="text-sm text-foreground font-medium">${label}</span>
+        </nav>
+      </header>
+      <main className="max-w-4xl mx-auto px-6 py-16">
+        <h1 className="text-4xl font-bold mb-6">${label}</h1>
+        <p className="text-muted-foreground text-lg">This is the ${label} page. Start editing to add your content.</p>
+      </main>
+    </div>
+  );
+}
+`;
+          virtualFS.importFiles({ [vfsPath]: newPageCode });
+          toast.success(`Page "${label}" scaffolded in VFS`);
+        }}
+        onPageRemove={(_pageId, path) => {
+          const sanitized = path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+          const componentName = sanitized
+            .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
+            .replace(/^(.)/, (_, c: string) => c.toUpperCase());
+          const vfsPath = `/src/pages/${componentName}.tsx`;
+          handleRemovePage(vfsPath);
+        }}
+        onFunnelCreate={(funnelId, stepPages) => {
+          // Auto-scaffold all funnel step pages in VFS
+          const newFiles: Record<string, string> = {};
+          const funnelSlug = funnelId.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+          stepPages.forEach((step, idx) => {
+            const componentName = step.title.replace(/\s+/g, '').replace(/^(.)/, (_, c: string) => c.toUpperCase());
+            const vfsPath = `/src/pages/funnels/${funnelSlug}/${componentName}.tsx`;
+            const nextStep = stepPages[idx + 1];
+            const nextLink = nextStep
+              ? `<Link to="${nextStep.path}" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">Continue →</Link>`
+              : `<p className="text-lg text-muted-foreground">You're all set!</p>`;
+            newFiles[vfsPath] = `import { Link } from 'react-router-dom';
+
+export default function ${componentName}() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <main className="max-w-2xl mx-auto px-6 py-16 text-center">
+        <div className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary mb-4">Step ${idx + 1} · ${step.role}</div>
+        <h1 className="text-4xl font-bold mb-6">${step.title}</h1>
+        <p className="text-muted-foreground text-lg mb-8">This is the ${step.role} step of your funnel.</p>
+        ${nextLink}
+      </main>
+    </div>
+  );
+}
+`;
+          });
+          virtualFS.importFiles(newFiles);
+          toast.success(`Funnel scaffolded: ${stepPages.length} pages created in VFS`);
         }}
       />
 

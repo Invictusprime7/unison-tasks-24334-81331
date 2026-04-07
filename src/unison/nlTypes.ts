@@ -130,6 +130,8 @@ export type PlanStepType =
   | 'validate'
   | 'report';
 
+export type PlanStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+
 export interface PlanStep {
   id: string;
   type: PlanStepType;
@@ -140,6 +142,12 @@ export interface PlanStep {
   dependsOn: string[];
   /** Estimated complexity: 1-5 */
   complexity: number;
+  /** Runtime status — updated as execution progresses */
+  status: PlanStepStatus;
+  /** When the step started running */
+  startedAt?: string;
+  /** When the step completed */
+  completedAt?: string;
 }
 
 export interface TaskPlan {

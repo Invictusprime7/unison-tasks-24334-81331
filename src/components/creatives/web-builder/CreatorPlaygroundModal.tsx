@@ -82,6 +82,12 @@ interface CreatorPlaygroundModalProps {
   onOpenChange: (open: boolean) => void;
   playground: UseCreatorPlaygroundReturn;
   onPageSelect?: (pageId: string) => void;
+  /** Called after a page is added via the playground — wire to VFS file creation */
+  onPageAdd?: (pageId: string, title: string, path: string, pageType: BuilderPageType) => void;
+  /** Called after a page is removed — wire to VFS file deletion */
+  onPageRemove?: (pageId: string, path: string) => void;
+  /** Called after a funnel is created with auto-generated steps — wire to VFS scaffolding */
+  onFunnelCreate?: (funnelId: string, stepPages: { pageId: string; title: string; path: string; role: FunnelRole }[]) => void;
   businessId?: string | null;
   initialSection?: Section;
 }

@@ -985,6 +985,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       })();
 
       // ── Phase 3: AI Gateway Call ──
+      advancePlanStep(taskPlan, 'analyze', 'done');
+      advancePlanStep(taskPlan, 'locate', 'done');
+      advancePlanStep(taskPlan, 'generate', 'running');
       liveStep('generating', 'Calling AI model...', gatewayConfig?.selectedModelId || 'auto-select');
 
       // Call AI service with retry logic

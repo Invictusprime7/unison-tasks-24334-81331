@@ -279,7 +279,12 @@ function OverviewSection({ playground, onNavigate }: { playground: UseCreatorPla
 // Section: Pages
 // ============================================================================
 
-function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlaygroundReturn; onPageSelect?: (id: string) => void }) {
+function PagesSection({ playground, onPageSelect, onPageAdd, onPageRemove }: { 
+  playground: UseCreatorPlaygroundReturn; 
+  onPageSelect?: (id: string) => void;
+  onPageAdd?: (pageId: string, title: string, path: string, pageType: BuilderPageType) => void;
+  onPageRemove?: (pageId: string, path: string) => void;
+}) {
   const [newTitle, setNewTitle] = useState("");
   const [newPath, setNewPath] = useState("");
   const [newType, setNewType] = useState<BuilderPageType>("custom");
@@ -292,6 +297,7 @@ function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlay
     setNewTitle("");
     setNewPath("");
     setNewType("custom");
+    onPageAdd?.(page.pageId, page.title, page.path, page.pageType);
     onPageSelect?.(page.pageId);
   };
 

@@ -771,13 +771,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // ── Phase 1b: Unison Task Interpretation ──
       liveStep('analyzing', 'Running Unison task planner...');
       
-      const projectContext = {
-        provisionedCapabilities: [] as string[],
+      const projectContext: import('@/unison').ProjectContext = {
+        provisionedCapabilities: [],
         existingFiles: vfsFiles ? Object.keys(vfsFiles) : [],
         existingPages: [],
-        builderMode: (currentCode ? 'edit' : 'generate') as 'generate' | 'edit' | 'debug' | 'preview',
+        builderMode: currentCode ? 'edit' : 'generate',
         hasBusinessId: !!systemsBuildContext?.brand?.business_name,
-        installedWorkflows: [] as string[],
+        installedWorkflows: [],
       };
       
       const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContent, projectContext);

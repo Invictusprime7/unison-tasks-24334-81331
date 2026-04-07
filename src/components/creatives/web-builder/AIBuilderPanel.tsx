@@ -180,6 +180,8 @@ interface Message {
   edits?: VFSEdit[];
   error?: IframeError;
   isStreaming?: boolean;
+  /** Unison TaskPlan for this message */
+  taskPlan?: TaskPlan;
   /** Rich metadata from the AI response */
   meta?: {
     actionType?: string;

@@ -348,7 +348,7 @@ function PagesSection({ playground, onPageSelect, onPageAdd, onPageRemove }: {
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); playground.setHomePage(page.pageId); }}><Star className="h-3 w-3" /></Button>
               )}
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); playground.duplicatePage(page.pageId); }}><Copy className="h-3 w-3" /></Button>
-              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={e => { e.stopPropagation(); playground.removePage(page.pageId); }}><Trash2 className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={e => { e.stopPropagation(); playground.removePage(page.pageId); onPageRemove?.(page.pageId, page.path); }}><Trash2 className="h-3 w-3" /></Button>
             </div>
           </div>
         ))}

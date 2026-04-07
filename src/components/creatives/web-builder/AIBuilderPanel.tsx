@@ -787,10 +787,26 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         `Confidence: ${Math.round(taskPlan.intent.confidence * 100)}% · Complexity: ${taskPlan.estimatedComplexity}`
       );
       
+      // Helper: advance TaskPlan step statuses in-place and update the message
+      const advancePlanStep = (plan: TaskPlan, stepType: string, status: PlanStepStatus) => {
+        const step = plan.steps.find(s => s.type === stepType && s.status !== 'done');
+        if (step) {
+          step.status = status;
+          if (status === 'running') step.startedAt = new Date().toISOString();
+          if (status === 'done' || status === 'failed') step.completedAt = new Date().toISOString();
+        }
+        setMessages(prev => prev.map(m =>
+          m.id === streamingId ? { ...m, taskPlan: { ...plan } } : m
+        ));
+      };
+
       // Attach task plan to the streaming message
       setMessages(prev => prev.map(m =>
         m.id === streamingId ? { ...m, taskPlan } : m
       ));
+
+      // Mark initial steps as running
+      advancePlanStep(taskPlan, 'analyze', 'running');
 
       console.log('[AIBuilderPanel] Unison plan:', {
         route: taskPlan.route,

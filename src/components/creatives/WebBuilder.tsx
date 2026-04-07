@@ -4814,6 +4814,40 @@ export default function ${componentName}() {
 
         {/* Center Canvas Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-transparent relative">
+          {/* Page Route Bar — registry-driven page info & switching */}
+          <PageRouteBar
+            activePagePath={activePagePath}
+            pageRegistry={creatorPlayground.pageRegistry}
+            routeConflicts={routeConflicts}
+            onNavigateToPage={(pageId) => {
+              const page = creatorPlayground.pageRegistry.pages[pageId];
+              if (!page?.path) return;
+              const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+              const componentName = sanitized
+                .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
+                .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
+              const vfsPath = `/src/pages/${componentName}.tsx`;
+              const vfsFiles = virtualFS.getSandpackFiles();
+              if (vfsFiles[vfsPath]) {
+                handleSelectPage(vfsPath);
+              } else if (vfsFiles['/src/App.tsx'] && page.isHome) {
+                handleSelectPage('/src/App.tsx');
+              } else {
+                toast.info(`Page "${page.title}" not yet in VFS — open Playground to scaffold it`);
+              }
+            }}
+            onToggleNavVisibility={(pageId, visible) => {
+              creatorPlayground.updatePage(pageId, { showInNav: visible });
+            }}
+            onSetHomePage={(pageId) => {
+              creatorPlayground.setHomePage(pageId);
+              toast.success('Homepage updated');
+            }}
+            onOpenPlayground={(section) => {
+              setPlaygroundInitialSection(section);
+              setPlaygroundModalOpen(true);
+            }}
+          />
           {/* Main Content Area - Canvas/Code/Split View */}
           <div 
             ref={canvasContainerRef}

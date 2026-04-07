@@ -195,8 +195,8 @@ export function CreatorPlaygroundModal({
               <div className="p-5">
                 {activeSection === "launch" && <SetupWizardPanel wizard={setupWizard} businessId={businessId} />}
                 {activeSection === "overview" && <OverviewSection playground={playground} onNavigate={setActiveSection} />}
-                {activeSection === "pages" && <PagesSection playground={playground} onPageSelect={onPageSelect} />}
-                {activeSection === "funnels" && <FunnelsSection playground={playground} />}
+                {activeSection === "pages" && <PagesSection playground={playground} onPageSelect={onPageSelect} onPageAdd={onPageAdd} onPageRemove={onPageRemove} />}
+                {activeSection === "funnels" && <FunnelsSection playground={playground} onFunnelCreate={onFunnelCreate} />}
                 {activeSection === "products" && <ProductsSection playground={playground} />}
                 {activeSection === "services" && <ServicesSection playground={playground} />}
                 {activeSection === "forms" && <FormsSection playground={playground} />}

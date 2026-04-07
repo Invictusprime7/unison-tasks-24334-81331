@@ -23,6 +23,7 @@ export type {
   CapabilityStatus,
   CapabilityValidationResult,
   PlanStepType,
+  PlanStepStatus,
   PlanStep,
   TaskPlan,
   InterpretationFeedback,

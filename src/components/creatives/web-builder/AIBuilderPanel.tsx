@@ -56,6 +56,8 @@ import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
 import { DebugAgentPanel } from './DebugAgentPanel';
+import { interpretPrompt, type TaskPlan } from '@/unison';
+import { TaskPlanSteps } from './TaskPlanSteps';
 
 // ============================================================================
 /**

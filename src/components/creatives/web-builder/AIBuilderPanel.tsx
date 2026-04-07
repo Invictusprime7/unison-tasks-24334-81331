@@ -1454,6 +1454,15 @@ export default function App() {
         });
       }
 
+      // Mark all remaining plan steps as done
+      advancePlanStep(taskPlan, 'patch', 'done');
+      advancePlanStep(taskPlan, 'bind_intent', 'done');
+      advancePlanStep(taskPlan, 'create_route', 'done');
+      advancePlanStep(taskPlan, 'install_workflow', 'done');
+      advancePlanStep(taskPlan, 'enable_capability', 'done');
+      advancePlanStep(taskPlan, 'update_registry', 'done');
+      advancePlanStep(taskPlan, 'refresh_preview', 'running');
+
       // Update message — show ONLY the explanation text, NOT raw code
       setMessages(prev => prev.map(m =>
         m.id === streamingId
@@ -1463,6 +1472,7 @@ export default function App() {
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
               meta: responseMeta,
+              taskPlan: { ...taskPlan },
               // DO NOT set `code` — we auto-apply instead of showing "Apply" buttons
               edits: edits.length > 0 ? edits : undefined,
               isStreaming: false,

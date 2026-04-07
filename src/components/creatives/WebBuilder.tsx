@@ -1405,6 +1405,13 @@ export default function App() {
     );
   }, [pageTabs]);
 
+  // Seed default "Home" page into registry when it's empty and VFS has App.tsx
+  useEffect(() => {
+    if (Object.keys(creatorPlayground.pageRegistry.pages).length === 0) {
+      creatorPlayground.addPage("Home", "/", "home", { showInNav: true, isHome: true });
+    }
+  }, []); // run once on mount
+
   // Route conflict detection from playground registry
   const routeConflicts = useMemo(
     () => detectRouteConflicts(creatorPlayground.pageRegistry),

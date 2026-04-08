@@ -98,7 +98,8 @@ import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpack
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
-import { resolveIntentTarget, persistTopology, recoverTopology } from '@/utils/topologyResolver';
+import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
+import { scaffoldMissingTopologyPages } from '@/utils/topologyVFSScaffolder';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -1423,9 +1424,36 @@ export default function App() {
       sitePlan = recoverTopology();
     }
 
+    // If still no plan, try DB recovery (async, will re-run effect logic)
+    if (!sitePlan) {
+      recoverTopologyFromDb().then(dbPlan => {
+        if (dbPlan && dbPlan.pages.length > 0 && Object.keys(creatorPlayground.pageRegistry.pages).length <= 1) {
+          persistTopology(dbPlan);
+          activeSitePlanRef.current = dbPlan;
+          const registry = populateRegistryFromTopology(dbPlan);
+          for (const page of Object.values(registry.pages)) {
+            creatorPlayground.addPage(page.title, page.path, page.pageType, {
+              showInNav: page.showInNav, isHome: page.isHome, navOrder: page.navOrder,
+              seo: page.seo, redirectRules: page.redirectRules, createdBy: page.createdBy,
+            });
+          }
+          const existingFiles = virtualFS.getSandpackFiles();
+          const missingFiles = scaffoldMissingTopologyPages(dbPlan, existingFiles);
+          if (Object.keys(missingFiles).length > 0) {
+            virtualFS.importFiles(missingFiles);
+          }
+          console.log('[WebBuilder] Recovered topology from DB');
+        }
+      });
+      return; // will be handled by async callback
+    }
+
     if (sitePlan && sitePlan.pages.length > 0) {
-      // Persist for refresh survival
+      // Persist for refresh survival (session + DB)
       persistTopology(sitePlan);
+      persistTopologyToDb(sitePlan).then(id => {
+        if (id) console.log('[WebBuilder] Topology persisted to DB, draft:', id);
+      });
       activeSitePlanRef.current = sitePlan;
 
       // Populate from structured topology — the canonical path
@@ -1443,6 +1471,14 @@ export default function App() {
       console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
       if (sitePlan.validationErrors?.length) {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
+      }
+
+      // Auto-scaffold any topology pages missing from VFS
+      const existingFiles = virtualFS.getSandpackFiles();
+      const missingFiles = scaffoldMissingTopologyPages(sitePlan, existingFiles);
+      if (Object.keys(missingFiles).length > 0) {
+        virtualFS.importFiles(missingFiles);
+        console.log(`[WebBuilder] Auto-scaffolded ${Object.keys(missingFiles).length} missing topology pages:`, Object.keys(missingFiles));
       }
     } else {
       // Fallback: seed single Home page
@@ -2432,6 +2468,17 @@ export default function ${componentName}Page() {
           const pageName = resolvedRoute.replace(/^\//, '') || 'home';
           const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase());
           const vfsPath = `/src/pages/${componentName}.tsx`;
+          
+          // Auto-scaffold if page doesn't exist in VFS yet
+          const vfsFiles = virtualFS.getSandpackFiles();
+          if (!vfsFiles[vfsPath] && sitePlan) {
+            const missingFiles = scaffoldMissingTopologyPages(sitePlan, vfsFiles);
+            if (missingFiles[vfsPath]) {
+              virtualFS.importFiles({ [vfsPath]: missingFiles[vfsPath] });
+              console.log(`[WebBuilder] Auto-scaffolded missing page on nav: ${vfsPath}`);
+            }
+          }
+
           setActivePagePath(vfsPath);
           if (source && requestId) {
             source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolvedRoute }, '*');
@@ -2439,8 +2486,9 @@ export default function ${componentName}Page() {
           toast(`Navigated to ${buttonLabel || resolvedRoute}`);
           sendResultToIframe({ success: true });
         } else {
-          toast('Page not found', { description: `Could not resolve target for "${buttonLabel}"` });
-          sendResultToIframe({ success: false });
+          // Fallback: try generating via AI
+          const targetName = classification.suggestedPageType || buttonLabel || 'page';
+          triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
         }
         return;
       }

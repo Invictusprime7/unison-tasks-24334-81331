@@ -7,6 +7,7 @@
 
 import type { PageRegistry } from '@/types/pageRegistry';
 import type { GeneratedSitePlan, RedirectBinding } from '@/contracts/siteTopologyPlanner';
+import { supabase } from '@/integrations/supabase/client';
 
 // ============================================================================
 // Route Resolution
@@ -130,8 +131,91 @@ export function clearTopology(): void {
 }
 
 // ============================================================================
-// Validation
+// Database Persistence (builder_drafts.metadata)
 // ============================================================================
+
+/**
+ * Save site plan to the database via builder_drafts metadata.
+ * Requires authenticated user.
+ */
+export async function persistTopologyToDb(
+  plan: GeneratedSitePlan,
+  draftId?: string
+): Promise<string | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.warn('[TopologyResolver] No auth user, skipping DB persist');
+      return null;
+    }
+
+    const metadata = JSON.parse(JSON.stringify({
+      sitePlan: plan,
+      persistedAt: new Date().toISOString(),
+    }));
+
+    if (draftId) {
+      // Update existing draft
+      const { error } = await supabase
+        .from('builder_drafts')
+        .update({ metadata, updated_at: new Date().toISOString() })
+        .eq('id', draftId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+      return draftId;
+    } else {
+      // Create new draft with topology
+      const { data, error } = await supabase
+        .from('builder_drafts')
+        .insert([{
+          user_id: user.id,
+          code: '',
+          metadata,
+        }])
+        .select('id')
+        .single();
+      if (error) throw error;
+      return data?.id || null;
+    }
+  } catch (err) {
+    console.warn('[TopologyResolver] Failed to persist topology to DB:', err);
+    return null;
+  }
+}
+
+/**
+ * Recover a site plan from the database.
+ */
+export async function recoverTopologyFromDb(
+  draftId?: string
+): Promise<GeneratedSitePlan | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    let query = supabase
+      .from('builder_drafts')
+      .select('metadata')
+      .eq('user_id', user.id);
+
+    if (draftId) {
+      query = query.eq('id', draftId);
+    } else {
+      query = query.order('updated_at', { ascending: false }).limit(1);
+    }
+
+    const { data, error } = await query.single();
+    if (error || !data?.metadata) return null;
+
+    const meta = data.metadata as Record<string, unknown>;
+    if (meta.sitePlan) {
+      return meta.sitePlan as GeneratedSitePlan;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Validate a site plan for common structural issues.

@@ -239,8 +239,73 @@ function planFromProfile(
     pages[0].isHome = true;
   }
 
-  // 2. Infer CTA redirects based on industry primary intent
+  // 2. Build funnels from industry conversion patterns
+  const funnels: FunnelPlan[] = [];
   const primaryIntent = options?.primaryIntent || profile.primaryIntent;
+
+  // Booking funnel: landing → booking → thank you
+  if (primaryIntent.startsWith('booking.')) {
+    const bookingPage = pages.find(p => p.role === 'booking');
+    const thankYouPage = pages.find(p => p.role === 'thank_you');
+    const homePage = pages.find(p => p.isHome);
+    if (homePage && bookingPage) {
+      const funnelId = generateUUID();
+      const steps: FunnelPlan['steps'] = [
+        { pageId: homePage.id, role: 'entry', sortOrder: 0 },
+        { pageId: bookingPage.id, role: 'offer', sortOrder: 1 },
+      ];
+      if (thankYouPage) {
+        steps.push({ pageId: thankYouPage.id, role: 'confirmation', sortOrder: 2 });
+      }
+      // Tag pages with funnelId
+      bookingPage.funnelId = funnelId;
+      if (thankYouPage) thankYouPage.funnelId = funnelId;
+      funnels.push({ funnelId, name: 'Booking Funnel', steps });
+    }
+  }
+
+  // E-commerce funnel: shop → checkout → thank you
+  if (primaryIntent === 'cart.add') {
+    const shopPage = pages.find(p => p.role === 'shop');
+    const checkoutPage = pages.find(p => p.role === 'checkout');
+    const thankYouPage = pages.find(p => p.role === 'thank_you');
+    if (shopPage && checkoutPage) {
+      const funnelId = generateUUID();
+      const steps: FunnelPlan['steps'] = [
+        { pageId: shopPage.id, role: 'offer', sortOrder: 0 },
+        { pageId: checkoutPage.id, role: 'checkout', sortOrder: 1 },
+      ];
+      if (thankYouPage) {
+        steps.push({ pageId: thankYouPage.id, role: 'confirmation', sortOrder: 2 });
+      }
+      shopPage.funnelId = funnelId;
+      checkoutPage.funnelId = funnelId;
+      if (thankYouPage) thankYouPage.funnelId = funnelId;
+      funnels.push({ funnelId, name: 'Purchase Funnel', steps });
+    }
+  }
+
+  // Lead capture funnel: home → contact → thank you
+  if (primaryIntent.startsWith('contact.') || primaryIntent.startsWith('quote.')) {
+    const contactPage = pages.find(p => p.role === 'contact');
+    const thankYouPage = pages.find(p => p.role === 'thank_you');
+    const homePage = pages.find(p => p.isHome);
+    if (homePage && contactPage) {
+      const funnelId = generateUUID();
+      const steps: FunnelPlan['steps'] = [
+        { pageId: homePage.id, role: 'entry', sortOrder: 0 },
+        { pageId: contactPage.id, role: 'offer', sortOrder: 1 },
+      ];
+      if (thankYouPage) {
+        steps.push({ pageId: thankYouPage.id, role: 'confirmation', sortOrder: 2 });
+      }
+      contactPage.funnelId = funnelId;
+      if (thankYouPage) thankYouPage.funnelId = funnelId;
+      funnels.push({ funnelId, name: 'Lead Capture Funnel', steps });
+    }
+  }
+
+  // 3. Infer CTA redirects based on industry primary intent
   const contactPage = pages.find(p => p.role === 'contact');
   const bookingPage = pages.find(p => p.role === 'booking');
   const servicesPage = pages.find(p => p.role === 'services');
@@ -303,17 +368,22 @@ function planFromProfile(
     }
   }
 
-  return {
+  const plan: GeneratedSitePlan = {
     siteId,
     industry: profile.industry,
     businessName,
     homePageId,
     pages,
     navItems,
-    funnels: [],
+    funnels,
     redirects,
     generatedAt: new Date().toISOString(),
   };
+
+  // 4. Validate the plan
+  plan.validationErrors = validateSitePlan(plan);
+
+  return plan;
 }
 
 function planGenericTopology(businessName: string): GeneratedSitePlan {

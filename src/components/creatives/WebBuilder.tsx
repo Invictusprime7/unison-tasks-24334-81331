@@ -4863,7 +4863,7 @@ export default function ${componentName}() {
                 handleSelectPage('/src/App.tsx');
               } else {
                 // Auto-scaffold the missing page into VFS
-                const pageRole = page.role || 'custom';
+                const pageRole = (page as any).role || 'custom';
                 const scaffoldCode = [
                   "import React from 'react';",
                   "",

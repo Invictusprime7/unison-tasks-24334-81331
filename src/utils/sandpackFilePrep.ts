@@ -3767,25 +3767,39 @@ export function prepareSandpackFiles(
   // If App.tsx already has a Router, any page component that also wraps itself
   // in <BrowserRouter>/<HashRouter>/<Router> will cause a "cannot render Router
   // inside another Router" crash. Strip them from all non-App files.
+  // Also handles aliased usage like `BrowserRouter as Router` → `<Router>`.
   const appFile = sandpackFiles['/App.tsx'] || sandpackFiles['/App.jsx'] || '';
   const appHasRouter = /(?:BrowserRouter|HashRouter|MemoryRouter|Router)\s*>/.test(appFile);
   if (appHasRouter) {
     for (const [filePath, content] of Object.entries(sandpackFiles)) {
       if (filePath === '/App.tsx' || filePath === '/App.jsx') continue;
       if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
-      if (/(?:BrowserRouter|HashRouter|MemoryRouter)\s*>/.test(content)) {
-        // Strip the Router wrapper: remove import, opening tag, and closing tag
+
+      // Detect aliased router imports like `BrowserRouter as Router`
+      const aliasMatch = content.match(/(?:BrowserRouter|HashRouter|MemoryRouter)\s+as\s+(\w+)/);
+      const routerAlias = aliasMatch ? aliasMatch[1] : null;
+
+      // Build list of all Router-like tag names to strip
+      const routerTags = ['BrowserRouter', 'HashRouter', 'MemoryRouter'];
+      if (routerAlias && !routerTags.includes(routerAlias)) {
+        routerTags.push(routerAlias);
+      }
+      const routerTagPattern = routerTags.join('|');
+      const tagRegex = new RegExp(`(?:${routerTagPattern})\\s*>`, '');
+
+      if (tagRegex.test(content)) {
         let fixed = content
           .replace(/import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g, (match) => {
             // Keep non-Router imports from the same line
-            const otherImports = match.match(/\b(?:Routes|Route|Link|Navigate|useNavigate|useLocation|useParams|NavLink|Outlet)\b/g);
+            const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
+            const otherImports = match.match(new RegExp(`\\b(?:${keepTokens.join('|')})\\b`, 'g'));
             if (otherImports && otherImports.length > 0) {
               return `import { ${otherImports.join(', ')} } from 'react-router-dom';\n`;
             }
             return '';
           })
-          .replace(/<(?:BrowserRouter|HashRouter|MemoryRouter)(?:\s[^>]*)?>/g, '')
-          .replace(/<\/(?:BrowserRouter|HashRouter|MemoryRouter)>/g, '');
+          .replace(new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, 'g'), '')
+          .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
         if (fixed !== content) {
           sandpackFiles[filePath] = fixed;
           console.warn(`[sandpackFilePrep] Stripped nested Router from ${filePath}`);

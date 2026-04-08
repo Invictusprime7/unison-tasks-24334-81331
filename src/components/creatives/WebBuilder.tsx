@@ -4862,7 +4862,30 @@ export default function ${componentName}() {
               } else if (vfsFiles['/src/App.tsx'] && page.isHome) {
                 handleSelectPage('/src/App.tsx');
               } else {
-                toast.info(`Page "${page.title}" not yet in VFS — open Playground to scaffold it`);
+                // Auto-scaffold the missing page into VFS
+                const pageRole = (page as any).role || 'custom';
+                const scaffoldCode = [
+                  "import React from 'react';",
+                  "",
+                  `export default function ${componentName}Page() {`,
+                  "  return (",
+                  '    <div className="min-h-screen bg-background text-foreground">',
+                  '      <section className="py-20 px-6">',
+                  '        <div className="max-w-4xl mx-auto">',
+                  `          <h1 className="text-4xl md:text-5xl font-bold mb-6">${page.title || componentName}</h1>`,
+                  `          <p className="text-lg text-muted-foreground leading-relaxed mb-8">Welcome to the ${page.title || componentName} page.</p>`,
+                  '          <div className="rounded-2xl border border-border bg-card p-8">',
+                  '            <p className="text-muted-foreground">Start customizing this page with your content.</p>',
+                  '          </div>',
+                  '        </div>',
+                  '      </section>',
+                  '    </div>',
+                  "  );",
+                  "}",
+                ].join('\n');
+                virtualFS.importFiles({ [vfsPath]: scaffoldCode });
+                toast.success(`Scaffolded "${page.title}" page`);
+                setTimeout(() => handleSelectPage(vfsPath), 100);
               }
             }}
             onToggleNavVisibility={(pageId, visible) => {

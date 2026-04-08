@@ -3763,6 +3763,37 @@ export function prepareSandpackFiles(
   sandpackFiles['/lib-utils-shim.ts'] = LIB_UTILS_SHIM;
   sandpackFiles['/ui-shim.tsx'] = UI_COMPONENTS_SHIM;
 
+  // ── SAFETY: Strip Router wrappers from non-App files ──
+  // If App.tsx already has a Router, any page component that also wraps itself
+  // in <BrowserRouter>/<HashRouter>/<Router> will cause a "cannot render Router
+  // inside another Router" crash. Strip them from all non-App files.
+  const appFile = sandpackFiles['/App.tsx'] || sandpackFiles['/App.jsx'] || '';
+  const appHasRouter = /(?:BrowserRouter|HashRouter|MemoryRouter|Router)\s*>/.test(appFile);
+  if (appHasRouter) {
+    for (const [filePath, content] of Object.entries(sandpackFiles)) {
+      if (filePath === '/App.tsx' || filePath === '/App.jsx') continue;
+      if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+      if (/(?:BrowserRouter|HashRouter|MemoryRouter)\s*>/.test(content)) {
+        // Strip the Router wrapper: remove import, opening tag, and closing tag
+        let fixed = content
+          .replace(/import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g, (match) => {
+            // Keep non-Router imports from the same line
+            const otherImports = match.match(/\b(?:Routes|Route|Link|Navigate|useNavigate|useLocation|useParams|NavLink|Outlet)\b/g);
+            if (otherImports && otherImports.length > 0) {
+              return `import { ${otherImports.join(', ')} } from 'react-router-dom';\n`;
+            }
+            return '';
+          })
+          .replace(/<(?:BrowserRouter|HashRouter|MemoryRouter)(?:\s[^>]*)?>/g, '')
+          .replace(/<\/(?:BrowserRouter|HashRouter|MemoryRouter)>/g, '');
+        if (fixed !== content) {
+          sandpackFiles[filePath] = fixed;
+          console.warn(`[sandpackFilePrep] Stripped nested Router from ${filePath}`);
+        }
+      }
+    }
+  }
+
   // ── AUTO-INJECT imports for JSX-used but un-imported components ──
   // AI often generates <Gallery /> in App.tsx without a corresponding import.
   // Detect PascalCase JSX usage and inject missing import statements before

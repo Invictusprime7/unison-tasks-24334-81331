@@ -1450,9 +1450,7 @@ export default function App() {
       const existingFiles = virtualFS.getSandpackFiles();
       const missingFiles = scaffoldMissingTopologyPages(sitePlan, existingFiles);
       if (Object.keys(missingFiles).length > 0) {
-        for (const [path, content] of Object.entries(missingFiles)) {
-          virtualFS.writeFile(path, content);
-        }
+        virtualFS.importFiles(missingFiles);
         console.log(`[WebBuilder] Auto-scaffolded ${Object.keys(missingFiles).length} missing topology pages:`, Object.keys(missingFiles));
       }
     } else {
@@ -2449,7 +2447,7 @@ export default function ${componentName}Page() {
           if (!vfsFiles[vfsPath] && sitePlan) {
             const missingFiles = scaffoldMissingTopologyPages(sitePlan, vfsFiles);
             if (missingFiles[vfsPath]) {
-              virtualFS.writeFile(vfsPath, missingFiles[vfsPath]);
+              virtualFS.importFiles({ [vfsPath]: missingFiles[vfsPath] });
               console.log(`[WebBuilder] Auto-scaffolded missing page on nav: ${vfsPath}`);
             }
           }

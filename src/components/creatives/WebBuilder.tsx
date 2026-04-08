@@ -98,7 +98,7 @@ import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpack
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
-import { resolveIntentTarget, persistTopology, recoverTopology } from '@/utils/topologyResolver';
+import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { scaffoldMissingTopologyPages } from '@/utils/topologyVFSScaffolder';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {

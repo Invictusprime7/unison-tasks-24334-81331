@@ -642,6 +642,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemName: system.name,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
+        sitePlan,
       };
 
       if (vfsFiles && Object.keys(vfsFiles).length > 0) {

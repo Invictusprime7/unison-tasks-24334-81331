@@ -507,6 +507,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
 
+      // ── Step 2: Generate site topology BEFORE file generation ──
+      const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
+        primaryIntent: industryProfile?.primaryIntent,
+      });
+      console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
+
       const blueprint = {
         version: "1.0",
         identity: {

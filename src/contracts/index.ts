@@ -90,3 +90,14 @@ export {
   type IntegrityCategory,
   type IntegrityReportOptions,
 } from './integrityReport';
+
+// Site Topology Planner
+export {
+  planSiteTopology,
+  populateRegistryFromTopology,
+  type GeneratedSitePlan,
+  type PageRouteNode,
+  type RedirectBinding,
+  type FunnelPlan,
+  type PageRole,
+} from './siteTopologyPlanner';

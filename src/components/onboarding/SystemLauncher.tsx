@@ -31,6 +31,10 @@ import {
   getAllowedIntents,
 } from "@/contracts";
 import {
+  planSiteTopology,
+  type GeneratedSitePlan,
+} from "@/contracts/siteTopologyPlanner";
+import {
   generateDesignVariation,
   randomFontPairing,
 } from "@/utils/designVariation";

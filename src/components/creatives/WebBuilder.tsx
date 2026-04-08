@@ -1407,15 +1407,27 @@ export default function App() {
     );
   }, [pageTabs]);
 
+  // Active site plan ref for intent resolution
+  const activeSitePlanRef = useRef<GeneratedSitePlan | null>(null);
+
   // Hydrate PageRegistry from site topology plan (if launcher provided one),
   // otherwise seed a default "Home" page.
   useEffect(() => {
     if (Object.keys(creatorPlayground.pageRegistry.pages).length > 0) return;
 
     const navState = location.state as { sitePlan?: GeneratedSitePlan } | null;
-    const sitePlan = navState?.sitePlan;
+    let sitePlan = navState?.sitePlan || null;
+
+    // Try recovering from session storage if not in nav state
+    if (!sitePlan) {
+      sitePlan = recoverTopology();
+    }
 
     if (sitePlan && sitePlan.pages.length > 0) {
+      // Persist for refresh survival
+      persistTopology(sitePlan);
+      activeSitePlanRef.current = sitePlan;
+
       // Populate from structured topology — the canonical path
       const registry = populateRegistryFromTopology(sitePlan);
       for (const page of Object.values(registry.pages)) {
@@ -1428,7 +1440,10 @@ export default function App() {
           createdBy: page.createdBy,
         });
       }
-      console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages`);
+      console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
+      if (sitePlan.validationErrors?.length) {
+        console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
+      }
     } else {
       // Fallback: seed single Home page
       creatorPlayground.addPage("Home", "/", "home", { showInNav: true, isHome: true });

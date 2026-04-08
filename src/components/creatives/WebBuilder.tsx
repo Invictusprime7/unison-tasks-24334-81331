@@ -97,6 +97,7 @@ import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
+import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';

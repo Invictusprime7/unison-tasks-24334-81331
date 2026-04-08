@@ -1425,8 +1425,11 @@ export default function App() {
     }
 
     if (sitePlan && sitePlan.pages.length > 0) {
-      // Persist for refresh survival
+      // Persist for refresh survival (session + DB)
       persistTopology(sitePlan);
+      persistTopologyToDb(sitePlan).then(id => {
+        if (id) console.log('[WebBuilder] Topology persisted to DB, draft:', id);
+      });
       activeSitePlanRef.current = sitePlan;
 
       // Populate from structured topology — the canonical path

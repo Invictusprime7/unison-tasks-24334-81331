@@ -149,10 +149,10 @@ export async function persistTopologyToDb(
       return null;
     }
 
-    const metadata = {
+    const metadata = JSON.parse(JSON.stringify({
       sitePlan: plan,
       persistedAt: new Date().toISOString(),
-    };
+    }));
 
     if (draftId) {
       // Update existing draft
@@ -167,11 +167,11 @@ export async function persistTopologyToDb(
       // Create new draft with topology
       const { data, error } = await supabase
         .from('builder_drafts')
-        .insert({
+        .insert([{
           user_id: user.id,
           code: '',
           metadata,
-        })
+        }])
         .select('id')
         .single();
       if (error) throw error;

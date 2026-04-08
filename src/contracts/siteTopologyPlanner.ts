@@ -543,3 +543,47 @@ function getCTALabel(intent: string): string {
   };
   return map[intent] || 'Get Started';
 }
+
+// ============================================================================
+// Validation
+// ============================================================================
+
+function validateSitePlan(plan: GeneratedSitePlan): string[] {
+  const errors: string[] = [];
+
+  if (!plan.homePageId) {
+    errors.push('No home page defined');
+  } else if (!plan.pages.find(p => p.id === plan.homePageId)) {
+    errors.push('Home page ID does not match any page');
+  }
+
+  // Duplicate slugs
+  const slugs = new Map<string, string>();
+  for (const page of plan.pages) {
+    const existing = slugs.get(page.route);
+    if (existing) {
+      errors.push(`Duplicate route "${page.route}" on pages "${existing}" and "${page.name}"`);
+    } else {
+      slugs.set(page.route, page.name);
+    }
+  }
+
+  // Orphan redirect targets
+  const pageIds = new Set(plan.pages.map(p => p.id));
+  for (const r of plan.redirects) {
+    if (!pageIds.has(r.targetPageId)) {
+      errors.push(`Redirect "${r.sourceElementLabel}" targets unknown page`);
+    }
+  }
+
+  // Funnel step references
+  for (const funnel of plan.funnels) {
+    for (const step of funnel.steps) {
+      if (!pageIds.has(step.pageId)) {
+        errors.push(`Funnel "${funnel.name}" step references unknown page`);
+      }
+    }
+  }
+
+  return errors;
+}

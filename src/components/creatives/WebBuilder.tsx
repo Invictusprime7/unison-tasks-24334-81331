@@ -1424,6 +1424,30 @@ export default function App() {
       sitePlan = recoverTopology();
     }
 
+    // If still no plan, try DB recovery (async, will re-run effect logic)
+    if (!sitePlan) {
+      recoverTopologyFromDb().then(dbPlan => {
+        if (dbPlan && dbPlan.pages.length > 0 && Object.keys(creatorPlayground.pageRegistry.pages).length <= 1) {
+          persistTopology(dbPlan);
+          activeSitePlanRef.current = dbPlan;
+          const registry = populateRegistryFromTopology(dbPlan);
+          for (const page of Object.values(registry.pages)) {
+            creatorPlayground.addPage(page.title, page.path, page.pageType, {
+              showInNav: page.showInNav, isHome: page.isHome, navOrder: page.navOrder,
+              seo: page.seo, redirectRules: page.redirectRules, createdBy: page.createdBy,
+            });
+          }
+          const existingFiles = virtualFS.getSandpackFiles();
+          const missingFiles = scaffoldMissingTopologyPages(dbPlan, existingFiles);
+          if (Object.keys(missingFiles).length > 0) {
+            virtualFS.importFiles(missingFiles);
+          }
+          console.log('[WebBuilder] Recovered topology from DB');
+        }
+      });
+      return; // will be handled by async callback
+    }
+
     if (sitePlan && sitePlan.pages.length > 0) {
       // Persist for refresh survival (session + DB)
       persistTopology(sitePlan);

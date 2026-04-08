@@ -2407,6 +2407,44 @@ export default function ${componentName}Page() {
       const classification = classifyLabel(buttonLabel, elementCtx);
       console.log('[WebBuilder] Label classification:', buttonLabel, classification);
 
+      // ── nav.goto_page: resolve targetPageId via topology registry ──
+      if (intent === 'nav.goto_page') {
+        const targetPageId = (payload as any)?.targetPageId;
+        const sitePlan = activeSitePlanRef.current;
+        let resolvedRoute: string | null = null;
+
+        if (sitePlan) {
+          resolvedRoute = resolveIntentTarget(
+            creatorPlayground.pageRegistry,
+            sitePlan.redirects,
+            null,
+            buttonLabel || ''
+          );
+        }
+
+        // Fallback: direct targetPageId lookup in registry
+        if (!resolvedRoute && targetPageId) {
+          const page = creatorPlayground.pageRegistry.pages[targetPageId];
+          if (page) resolvedRoute = page.path;
+        }
+
+        if (resolvedRoute) {
+          const pageName = resolvedRoute.replace(/^\//, '') || 'home';
+          const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase());
+          const vfsPath = `/src/pages/${componentName}.tsx`;
+          setActivePagePath(vfsPath);
+          if (source && requestId) {
+            source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolvedRoute }, '*');
+          }
+          toast(`Navigated to ${buttonLabel || resolvedRoute}`);
+          sendResultToIframe({ success: true });
+        } else {
+          toast('Page not found', { description: `Could not resolve target for "${buttonLabel}"` });
+          sendResultToIframe({ success: false });
+        }
+        return;
+      }
+
       // ── Navigation intents: handle directly without hitting handleIntent ──
       if (intent === 'nav.goto') {
         const path = (payload as any)?.path;

@@ -98,6 +98,7 @@ import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpack
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
+import { resolveIntentTarget, persistTopology, recoverTopology } from '@/utils/topologyResolver';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -1406,15 +1407,27 @@ export default function App() {
     );
   }, [pageTabs]);
 
+  // Active site plan ref for intent resolution
+  const activeSitePlanRef = useRef<GeneratedSitePlan | null>(null);
+
   // Hydrate PageRegistry from site topology plan (if launcher provided one),
   // otherwise seed a default "Home" page.
   useEffect(() => {
     if (Object.keys(creatorPlayground.pageRegistry.pages).length > 0) return;
 
     const navState = location.state as { sitePlan?: GeneratedSitePlan } | null;
-    const sitePlan = navState?.sitePlan;
+    let sitePlan = navState?.sitePlan || null;
+
+    // Try recovering from session storage if not in nav state
+    if (!sitePlan) {
+      sitePlan = recoverTopology();
+    }
 
     if (sitePlan && sitePlan.pages.length > 0) {
+      // Persist for refresh survival
+      persistTopology(sitePlan);
+      activeSitePlanRef.current = sitePlan;
+
       // Populate from structured topology — the canonical path
       const registry = populateRegistryFromTopology(sitePlan);
       for (const page of Object.values(registry.pages)) {
@@ -1427,7 +1440,10 @@ export default function App() {
           createdBy: page.createdBy,
         });
       }
-      console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages`);
+      console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
+      if (sitePlan.validationErrors?.length) {
+        console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
+      }
     } else {
       // Fallback: seed single Home page
       creatorPlayground.addPage("Home", "/", "home", { showInNav: true, isHome: true });
@@ -2390,6 +2406,44 @@ export default function ${componentName}Page() {
       // Classify the label to decide behavior
       const classification = classifyLabel(buttonLabel, elementCtx);
       console.log('[WebBuilder] Label classification:', buttonLabel, classification);
+
+      // ── nav.goto_page: resolve targetPageId via topology registry ──
+      if (intent === 'nav.goto_page') {
+        const targetPageId = (payload as any)?.targetPageId;
+        const sitePlan = activeSitePlanRef.current;
+        let resolvedRoute: string | null = null;
+
+        if (sitePlan) {
+          resolvedRoute = resolveIntentTarget(
+            creatorPlayground.pageRegistry,
+            sitePlan.redirects,
+            null,
+            buttonLabel || ''
+          );
+        }
+
+        // Fallback: direct targetPageId lookup in registry
+        if (!resolvedRoute && targetPageId) {
+          const page = creatorPlayground.pageRegistry.pages[targetPageId];
+          if (page) resolvedRoute = page.path;
+        }
+
+        if (resolvedRoute) {
+          const pageName = resolvedRoute.replace(/^\//, '') || 'home';
+          const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase());
+          const vfsPath = `/src/pages/${componentName}.tsx`;
+          setActivePagePath(vfsPath);
+          if (source && requestId) {
+            source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolvedRoute }, '*');
+          }
+          toast(`Navigated to ${buttonLabel || resolvedRoute}`);
+          sendResultToIframe({ success: true });
+        } else {
+          toast('Page not found', { description: `Could not resolve target for "${buttonLabel}"` });
+          sendResultToIframe({ success: false });
+        }
+        return;
+      }
 
       // ── Navigation intents: handle directly without hitting handleIntent ──
       if (intent === 'nav.goto') {

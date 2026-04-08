@@ -37,6 +37,7 @@ import {
   createBlueprintFromIndustry,
   compileContract,
   getIndustryProfile,
+  planSiteTopology,
   type BusinessBlueprint,
 } from "@/contracts";
 
@@ -420,6 +421,15 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       backendRequired: false,
     });
 
+    // Generate site topology for the builder
+    const industryKey = selectedChip ? getCanonicalIndustry(selectedChip) : 'general';
+    const businessName = extractBusinessName(prompt);
+    const industryProfile = getIndustryProfile(industryKey);
+    const sitePlan = planSiteTopology(industryKey, businessName, {
+      primaryIntent: industryProfile?.primaryIntent,
+    });
+    console.log(`[BusinessLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, ${sitePlan.funnels.length} funnels`);
+
     navigate("/web-builder", {
       state: {
         vfsFiles: generatedVfsFiles,
@@ -430,6 +440,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
         startInPreview: true,
         systemType: selectedChip ? getSystemTypeForChip(selectedChip) : undefined,
         systemsBuildContext: generatedSystemsBuildContext ?? undefined,
+        sitePlan,
       },
     });
     handleClose();

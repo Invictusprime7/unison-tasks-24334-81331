@@ -383,6 +383,7 @@ function planFromProfile(
   // 4. Validate the plan
   plan.validationErrors = validateSitePlan(plan);
 
+
   return plan;
 }
 

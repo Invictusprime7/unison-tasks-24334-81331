@@ -97,6 +97,7 @@ import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
+import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -1405,9 +1406,30 @@ export default function App() {
     );
   }, [pageTabs]);
 
-  // Seed default "Home" page into registry when it's empty and VFS has App.tsx
+  // Hydrate PageRegistry from site topology plan (if launcher provided one),
+  // otherwise seed a default "Home" page.
   useEffect(() => {
-    if (Object.keys(creatorPlayground.pageRegistry.pages).length === 0) {
+    if (Object.keys(creatorPlayground.pageRegistry.pages).length > 0) return;
+
+    const navState = location.state as { sitePlan?: GeneratedSitePlan } | null;
+    const sitePlan = navState?.sitePlan;
+
+    if (sitePlan && sitePlan.pages.length > 0) {
+      // Populate from structured topology — the canonical path
+      const registry = populateRegistryFromTopology(sitePlan);
+      for (const page of Object.values(registry.pages)) {
+        creatorPlayground.addPage(page.title, page.path, page.pageType, {
+          showInNav: page.showInNav,
+          isHome: page.isHome,
+          navOrder: page.navOrder,
+          seo: page.seo,
+          redirectRules: page.redirectRules,
+          createdBy: page.createdBy,
+        });
+      }
+      console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages`);
+    } else {
+      // Fallback: seed single Home page
       creatorPlayground.addPage("Home", "/", "home", { showInNav: true, isHome: true });
     }
   }, []); // run once on mount

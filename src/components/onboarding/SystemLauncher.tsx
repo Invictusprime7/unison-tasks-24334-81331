@@ -31,6 +31,10 @@ import {
   getAllowedIntents,
 } from "@/contracts";
 import {
+  planSiteTopology,
+  type GeneratedSitePlan,
+} from "@/contracts/siteTopologyPlanner";
+import {
   generateDesignVariation,
   randomFontPairing,
 } from "@/utils/designVariation";
@@ -503,6 +507,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
 
+      // ── Step 2: Generate site topology BEFORE file generation ──
+      const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
+        primaryIntent: industryProfile?.primaryIntent,
+      });
+      console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
+
       const blueprint = {
         version: "1.0",
         identity: {
@@ -632,6 +642,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemName: system.name,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
+        sitePlan,
       };
 
       if (vfsFiles && Object.keys(vfsFiles).length > 0) {

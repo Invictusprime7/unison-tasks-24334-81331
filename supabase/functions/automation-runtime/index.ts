@@ -546,6 +546,15 @@ async function executeNode(
     
     case "condition":
       return await evaluateCondition(supabase, config, context);
+
+    case "ghl_create_contact":
+      return await ghlCreateContact(supabase, config, context);
+
+    case "ghl_update_contact":
+      return await ghlUpdateContact(config, context);
+
+    case "ghl_sync":
+      return await ghlSync(config, context);
     
     default:
       console.log(`[automation-runtime] Unknown action type: ${node.action_type}`);

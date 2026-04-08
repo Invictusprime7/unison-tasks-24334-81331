@@ -93,6 +93,9 @@ export interface GeneratedSitePlan {
   funnels: FunnelPlan[];
   redirects: RedirectBinding[];
   generatedAt: string;
+  /** Validation errors detected during planning */
+  validationErrors?: string[];
+
 }
 
 // ============================================================================

@@ -832,6 +832,151 @@ function evaluateCondition(_supabase: SupabaseClient, config: Record<string, unk
   };
 }
 
+// ============================================================================
+// GoHighLevel CRM Actions
+// ============================================================================
+
+const GHL_API_BASE = 'https://services.leadconnectorhq.com';
+
+function getGhlHeaders(): Record<string, string> {
+  const apiKey = Deno.env.get('GOHIGHLEVEL_API_KEY');
+  if (!apiKey) throw new Error('GOHIGHLEVEL_API_KEY not configured');
+  return {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'Version': '2021-07-28',
+  };
+}
+
+async function ghlCreateContact(
+  supabase: SupabaseClient,
+  config: Record<string, unknown>,
+  context: RunContext
+): Promise<Record<string, unknown>> {
+  const locationId = config.locationId as string;
+  if (!locationId) return { created: false, reason: 'No GHL locationId configured' };
+
+  const contact = context.contact || {};
+  const payload = context.payload || {};
+
+  const body: Record<string, unknown> = {
+    locationId,
+    firstName: contact.name?.split(' ')[0] || payload.name as string || '',
+    lastName: contact.name?.split(' ').slice(1).join(' ') || '',
+    email: contact.email || payload.email as string || '',
+    phone: contact.phone || payload.phone as string || '',
+    source: `Unison:${context.intent}`,
+    ...(config.customFields ? { customFields: config.customFields } : {}),
+  };
+
+  try {
+    const res = await fetch(`${GHL_API_BASE}/contacts/`, {
+      method: 'POST',
+      headers: getGhlHeaders(),
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.error('[automation-runtime] GHL create contact failed:', res.status, data);
+      return { created: false, status: res.status, error: data };
+    }
+
+    // Sync GHL contact ID back to local CRM
+    const ghlContactId = data.contact?.id;
+    if (ghlContactId && context.contact?.id) {
+      await supabase
+        .from('crm_contacts')
+        .update({ ghl_contact_id: ghlContactId } as Record<string, unknown>)
+        .eq('id', context.contact.id);
+    }
+
+    console.log('[automation-runtime] GHL contact created:', ghlContactId);
+    return { created: true, ghlContactId, data: data.contact };
+  } catch (err) {
+    return { created: false, reason: String(err) };
+  }
+}
+
+async function ghlUpdateContact(
+  config: Record<string, unknown>,
+  context: RunContext
+): Promise<Record<string, unknown>> {
+  const ghlContactId = config.ghlContactId as string || (context.contact as Record<string, unknown>)?.ghl_contact_id as string;
+  if (!ghlContactId) return { updated: false, reason: 'No GHL contact ID' };
+
+  const updates: Record<string, unknown> = {};
+  if (config.tags) updates.tags = config.tags;
+  if (config.customFields) updates.customFields = config.customFields;
+  if (config.dnd !== undefined) updates.dnd = config.dnd;
+  if (config.assignedTo) updates.assignedTo = config.assignedTo;
+
+  // Allow dynamic field mapping from context
+  const fieldMap = config.fieldMap as Record<string, string> | undefined;
+  if (fieldMap) {
+    for (const [ghlField, contextPath] of Object.entries(fieldMap)) {
+      const keys = contextPath.split('.');
+      let val: unknown = context;
+      for (const k of keys) {
+        val = (val as Record<string, unknown>)?.[k];
+      }
+      if (val !== undefined) updates[ghlField] = val;
+    }
+  }
+
+  try {
+    const res = await fetch(`${GHL_API_BASE}/contacts/${ghlContactId}`, {
+      method: 'PUT',
+      headers: getGhlHeaders(),
+      body: JSON.stringify(updates),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      return { updated: false, status: res.status, error: data };
+    }
+
+    console.log('[automation-runtime] GHL contact updated:', ghlContactId);
+    return { updated: true, ghlContactId, data: data.contact };
+  } catch (err) {
+    return { updated: false, reason: String(err) };
+  }
+}
+
+async function ghlSync(
+  config: Record<string, unknown>,
+  context: RunContext
+): Promise<Record<string, unknown>> {
+  // Generic GHL API proxy action for workflows
+  const action = config.action as string;
+  if (!action) return { synced: false, reason: 'No GHL action specified' };
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  try {
+    const { data, error } = await supabase.functions.invoke('gohighlevel-crm', {
+      body: {
+        action,
+        contactId: config.contactId || context.contact?.id,
+        locationId: config.locationId,
+        ...config.params as Record<string, unknown>,
+      },
+    });
+
+    if (error) {
+      return { synced: false, error: error.message };
+    }
+
+    console.log(`[automation-runtime] GHL sync (${action}) complete`);
+    return { synced: true, action, data };
+  } catch (err) {
+    return { synced: false, reason: String(err) };
+  }
+}
+
 // Template interpolation
 function interpolate(template: string, context: RunContext): string {
   if (!template) return template;

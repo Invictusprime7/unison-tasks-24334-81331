@@ -100,6 +100,7 @@ import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { scaffoldMissingTopologyPages } from '@/utils/topologyVFSScaffolder';
+import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -4989,7 +4990,7 @@ export default function ${componentName}() {
                 ].join('\n');
                 
                 // Regenerate canonical router to include the new page
-                const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry, businessName || undefined);
+                const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry);
                 const filesToImport: Record<string, string> = { [vfsPath]: scaffoldCode };
                 if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
                 

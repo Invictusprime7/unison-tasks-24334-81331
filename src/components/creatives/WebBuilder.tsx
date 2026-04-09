@@ -99,7 +99,7 @@ import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
-import { scaffoldMissingTopologyPages, scaffoldMissingTopologyPagesWithRouter } from '@/utils/topologyVFSScaffolder';
+import { scaffoldMissingTopologyPagesWithRouter, getTopologyPagesForAIGeneration } from '@/utils/topologyVFSScaffolder';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
@@ -1444,7 +1444,13 @@ export default function App() {
           if (Object.keys(missingFiles).length > 0) {
             virtualFS.importFiles(missingFiles);
           }
-          console.log('[WebBuilder] Recovered topology from DB');
+          // Trigger AI generation for placeholder pages
+          const pagesToGenerate = getTopologyPagesForAIGeneration(dbPlan, existingFiles);
+          for (const page of pagesToGenerate) {
+            const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
+            triggerPageGenRef.current(pageName, page.title, null);
+          }
+          console.log('[WebBuilder] Recovered topology from DB, AI generating', pagesToGenerate.length, 'pages');
         }
       });
       return; // will be handled by async callback
@@ -1476,12 +1482,25 @@ export default function App() {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }
 
-      // Auto-scaffold any topology pages missing from VFS + regenerate router
+      // Auto-scaffold placeholders + router for missing pages
       const existingFiles = virtualFS.getSandpackFiles();
       const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, creatorPlayground.pageRegistry);
       if (Object.keys(missingFiles).length > 0) {
         virtualFS.importFiles(missingFiles);
-        console.log(`[WebBuilder] Auto-scaffolded ${Object.keys(missingFiles).length} missing topology pages:`, Object.keys(missingFiles));
+        console.log(`[WebBuilder] Scaffolded ${Object.keys(missingFiles).length} placeholder pages:`, Object.keys(missingFiles));
+      }
+
+      // Trigger AI generation to replace placeholders with real content
+      const pagesToGenerate = getTopologyPagesForAIGeneration(sitePlan, existingFiles);
+      if (pagesToGenerate.length > 0) {
+        console.log(`[WebBuilder] AI generating ${pagesToGenerate.length} pages from topology`);
+        // Stagger AI calls to avoid rate limits
+        pagesToGenerate.forEach((page, idx) => {
+          const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
+          setTimeout(() => {
+            triggerPageGenRef.current(pageName, page.title, null);
+          }, idx * 1500); // 1.5s stagger between pages
+        });
       }
     } else {
       // Fallback: seed single Home page
@@ -2444,14 +2463,12 @@ export default function ${componentName}Page() {
           const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase());
           const vfsPath = `/src/pages/${componentName}.tsx`;
           
-          // Auto-scaffold if page doesn't exist in VFS yet
+          // Auto-generate via AI if page doesn't exist in VFS yet
           const vfsFiles = virtualFS.getSandpackFiles();
-          if (!vfsFiles[vfsPath] && sitePlan) {
-            const missingFiles = scaffoldMissingTopologyPages(sitePlan, vfsFiles);
-            if (missingFiles[vfsPath]) {
-              virtualFS.importFiles({ [vfsPath]: missingFiles[vfsPath] });
-              console.log(`[WebBuilder] Auto-scaffolded missing page on nav: ${vfsPath}`);
-            }
+          if (!vfsFiles[vfsPath]) {
+            // Trigger AI generation instead of stub scaffolding
+            triggerPageGenRef.current(pageName, buttonLabel || pageName, source, requestId);
+            return;
           }
 
           setActivePagePath(vfsPath);

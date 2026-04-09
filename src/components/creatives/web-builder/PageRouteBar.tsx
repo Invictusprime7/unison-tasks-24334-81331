@@ -59,21 +59,46 @@ export function PageRouteBar({
     [pageRegistry.pages]
   );
 
-  // Match active VFS path to a registry page
+  // Match active VFS path to a registry page — prefer exact filePath match
   const activePage = useMemo(() => {
     if (allPages.length === 0) return null;
-    // Try to match by deriving component name from path
+    
+    // 1. Exact filePath match (most reliable)
+    const byFilePath = allPages.find((p) => p.filePath === activePagePath);
+    if (byFilePath) return byFilePath;
+    
+    // 2. Derive component name from VFS path and match
     const pathSegment = activePagePath
       .replace(/^\/src\/pages\//, "")
       .replace(/^\/src\//, "")
       .replace(/\.(tsx|jsx|ts|js)$/, "")
-      .replace(/^funnels\/[^/]+\//, ""); // strip funnel dir prefix
+      .replace(/^funnels\/[^/]+\//, "");
     
-    return allPages.find((p) => {
+    const vfsSlug = pathSegment.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    
+    const bySlug = allPages.find((p) => {
+      // Match by route slug
       const registrySlug = p.path.replace(/^\//, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
-      const vfsSlug = pathSegment.replace(/[^a-z0-9]/gi, "").toLowerCase();
-      return registrySlug === vfsSlug || p.title.replace(/[^a-z0-9]/gi, "").toLowerCase() === vfsSlug;
-    }) || (activePagePath.includes("App") ? allPages.find((p) => p.isHome) : null);
+      if (registrySlug === vfsSlug) return true;
+      // Match by title
+      if (p.title.replace(/[^a-z0-9]/gi, "").toLowerCase() === vfsSlug) return true;
+      // Match by derived filePath
+      if (p.filePath) {
+        const fpSlug = p.filePath
+          .replace(/^\/src\/pages\//, "")
+          .replace(/\.(tsx|jsx|ts|js)$/, "")
+          .replace(/[^a-z0-9]/gi, "")
+          .toLowerCase();
+        if (fpSlug === vfsSlug) return true;
+      }
+      return false;
+    });
+    if (bySlug) return bySlug;
+    
+    // 3. App.tsx → home page
+    if (activePagePath.includes("App")) return allPages.find((p) => p.isHome) || null;
+    
+    return null;
   }, [allPages, activePagePath]);
 
   const funnelInfo = useMemo(() => {

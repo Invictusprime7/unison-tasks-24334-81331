@@ -4596,9 +4596,9 @@ ${html}
             handleSelectPage(vfsPath);
             livePreviewRef.current?.navigateToRoute(page.path);
           } else {
-            toast.info(`Page "${page.title}" registered at ${page.path}`, {
-              description: 'Generate content via AI or create the file manually',
-            });
+            // Trigger AI generation for missing page
+            const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
+            triggerPageGenRef.current(pageName, page.title, null);
           }
           setPlaygroundModalOpen(false);
         }}
@@ -4611,28 +4611,18 @@ ${html}
           const vfsPath = `/src/pages/${componentName}.tsx`;
           const vfsFiles = virtualFS.getSandpackFiles();
           if (vfsFiles[vfsPath]) return; // Already exists
+          // Trigger AI generation for the new page
+          const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || sanitized;
           const label = title || sanitized.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-          const newPageCode = `import React from 'react';
-
-export default function ${componentName}Page() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <section className="py-20 px-6">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold mb-6">${label}</h1>
-          <p className="text-muted-foreground text-lg">This is the ${label} page. Start editing to add your content.</p>
-        </div>
-      </section>
-    </div>
-  );
-}
-`;
-          // Also regenerate canonical router to include the new page
+          creatorPlayground.updatePage(pageId, { filePath: vfsPath });
+          
+          // Regenerate canonical router first so the route is registered
           const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry);
-          const filesToImport: Record<string, string> = { [vfsPath]: newPageCode };
-          if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
-          virtualFS.importFiles(filesToImport);
-          toast.success(`Page "${label}" scaffolded in VFS`);
+          if (routerCode) virtualFS.importFiles({ '/src/App.tsx': routerCode });
+          
+          // Then trigger AI generation
+          triggerPageGenRef.current(pageName, label, null);
+          toast.success(`Generating "${label}" page with AI...`);
         }}
         onPageRemove={(_pageId, path) => {
           const sanitized = path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
@@ -5005,42 +4995,10 @@ export default function ${componentName}() {
                 handleSelectPage('/src/App.tsx');
                 livePreviewRef.current?.navigateToRoute('/');
               } else {
-                // Auto-scaffold the missing page via topology scaffolder
-                const componentName = vfsPath.split('/').pop()?.replace('.tsx', '') || 'Page';
-                const scaffoldCode = [
-                  "import React from 'react';",
-                  "",
-                  `export default function ${componentName}Page() {`,
-                  "  return (",
-                  '    <div className="min-h-screen bg-background text-foreground">',
-                  '      <section className="py-20 px-6">',
-                  '        <div className="max-w-4xl mx-auto">',
-                  `          <h1 className="text-4xl md:text-5xl font-bold mb-6">${page.title || componentName}</h1>`,
-                  `          <p className="text-lg text-muted-foreground leading-relaxed mb-8">Welcome to the ${page.title || componentName} page.</p>`,
-                  '          <div className="rounded-2xl border border-border bg-card p-8">',
-                  '            <p className="text-muted-foreground">Start customizing this page with your content.</p>',
-                  '          </div>',
-                  '        </div>',
-                  '      </section>',
-                  '    </div>',
-                  "  );",
-                  "}",
-                ].join('\n');
-                
-                // Regenerate canonical router to include the new page
-                const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry);
-                const filesToImport: Record<string, string> = { [vfsPath]: scaffoldCode };
-                if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
-                
-                // Update page's filePath in registry
+                // Trigger AI generation for missing page (replaces stub scaffolding)
+                const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
                 creatorPlayground.updatePage(pageId, { filePath: vfsPath });
-                
-                virtualFS.importFiles(filesToImport);
-                toast.success(`Scaffolded "${page.title}" page`);
-                setTimeout(() => {
-                  handleSelectPage(vfsPath);
-                  livePreviewRef.current?.navigateToRoute(page.path);
-                }, 200);
+                triggerPageGenRef.current(pageName, page.title, null);
               }
             }}
             onToggleNavVisibility={(pageId, visible) => {

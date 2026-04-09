@@ -499,6 +499,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const handleSystemSelect = (systemId: BusinessSystemType) => {
     setSelectedSystem(systemId);
     setSelectedTemplate(null);
+    setStep("questions");
+  };
+
+  const handleQuestionsNext = () => {
     setStep("templates");
   };
 
@@ -510,14 +514,26 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setStep("aesthetic");
   };
 
+  const toggleCustomerNeed = (need: CustomerNeed) => {
+    setCustomerNeeds(prev => prev.includes(need) ? prev.filter(n => n !== need) : [...prev, need]);
+  };
+
+  const togglePageChoice = (page: PageChoice) => {
+    setSelectedPages(prev => prev.includes(page) ? prev.filter(p => p !== page) : [...prev, page]);
+  };
+
   const handleBack = () => {
     if (step === "aesthetic") {
       setStep("templates");
       setSelectedTheme(null);
     } else if (step === "templates") {
+      setStep("questions");
+      setSelectedTemplate(null);
+    } else if (step === "questions") {
       setStep("industry");
       setSelectedSystem(null);
-      setSelectedTemplate(null);
+    }
+  };
     }
   };
 

@@ -34,6 +34,28 @@ export function scaffoldMissingTopologyPages(
 }
 
 /**
+ * Scaffold missing pages AND regenerate the canonical router (App.tsx).
+ * This is the preferred entry point — it guarantees every scaffolded
+ * page is also routable in the preview.
+ */
+export function scaffoldMissingTopologyPagesWithRouter(
+  plan: GeneratedSitePlan,
+  existingFiles: Record<string, string>,
+  registry: PageRegistry
+): Record<string, string> {
+  const newFiles = scaffoldMissingTopologyPages(plan, existingFiles);
+  
+  // Always regenerate the canonical router so all pages are routable
+  const mergedFiles = { ...existingFiles, ...newFiles };
+  const routerCode = generateCanonicalRouter(registry, plan.businessName);
+  if (routerCode) {
+    newFiles['/src/App.tsx'] = routerCode;
+  }
+  
+  return newFiles;
+}
+
+/**
  * Check which topology pages are missing from the VFS.
  */
 export function getMissingTopologyPages(
@@ -342,7 +364,7 @@ function generateThankYouContent(page: PageRouteNode): string {
             <span className="text-6xl mb-6 block">✅</span>
             <h1 className="text-4xl font-bold mb-4">${page.title}</h1>
             <p className="text-xl text-muted-foreground mb-8">Your request has been received. We'll be in touch shortly.</p>
-            <a href="/" className="inline-block px-8 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-colors">Back to Home</a>
+            <a href="/" data-ut-intent="nav.goto_page" data-ut-path="/" data-ut-target-page-id="home" className="inline-block px-8 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-colors">Back to Home</a>
           </div>
         </section>`;
 }

@@ -1393,8 +1393,58 @@ export default function App() {
   // Store latest rewire function in ref to avoid stale closures in setTimeout
   const autoRewireHtmlIntentsRef = useRef<((fileId: string, content: string) => void) | null>(null);
   
-  // Multi-page navigation state
+  // Multi-page navigation state — split into three concerns
   const [activePagePath, setActivePagePath] = useState<string>('/src/App.tsx');
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [activePreviewRoute, setActivePreviewRoute] = useState<string>('/');
+
+  /**
+   * Canonical navigation function — the ONLY path for page switching.
+   * Resolves pageId → route → filePath, updates all three state slices,
+   * opens editor file, and navigates preview.
+   */
+  const navigateToBuilderPage = useCallback((
+    pageId: string,
+    options?: { openFile?: boolean; updatePreview?: boolean }
+  ) => {
+    const { openFile = true, updatePreview = true } = options || {};
+    const page = creatorPlayground.pageRegistry.pages[pageId];
+    if (!page) {
+      console.warn('[WebBuilder] navigateToBuilderPage: page not found:', pageId);
+      return;
+    }
+
+    const vfsFiles = virtualFS.getSandpackFiles();
+    const resolved = resolveNavigationTarget(
+      { pageId },
+      creatorPlayground.pageRegistry,
+      vfsFiles,
+    );
+
+    // Update all three state slices
+    setActivePageId(pageId);
+    setActivePreviewRoute(resolved.route || '/');
+
+    if (resolved.existsInVFS && resolved.filePath && openFile) {
+      setActivePagePath(resolved.filePath);
+      handleSelectPage(resolved.filePath);
+    } else if (page.isHome && openFile) {
+      setActivePagePath('/src/App.tsx');
+      handleSelectPage('/src/App.tsx');
+    }
+
+    if (updatePreview) {
+      livePreviewRef.current?.navigateToRoute(resolved.route || '/');
+    }
+
+    // If file doesn't exist in VFS, trigger AI generation as fallback
+    if (!resolved.existsInVFS && !page.isHome) {
+      const fp = resolved.filePath || deriveFilePath(page);
+      const pageName = fp.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
+      creatorPlayground.updatePage(pageId, { filePath: fp });
+      triggerPageGenRef.current(pageName, page.title, null);
+    }
+  }, [creatorPlayground.pageRegistry, virtualFS, handleSelectPage]);
   
   // Derive page tabs from VFS
   const pageTabs = useMemo(() => {

@@ -78,7 +78,7 @@ function generateTopologyPage(
   const navPages = plan.pages.filter(p => plan.navItems.includes(p.id));
 
   const navLinks = navPages.map(p =>
-    `          <a href="${p.route}" data-ut-intent="nav.goto_page" data-ut-path="${p.route}" data-ut-target-page-id="${p.id}" className="text-sm ${p.id === page.id ? 'text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground'} transition-colors">${p.title}</a>`
+    `          <a href="#${p.route}" data-ut-intent="nav.goto_page" data-ut-path="${p.route}" data-ut-target-page-id="${p.id}" className="text-sm ${p.id === page.id ? 'text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground'} transition-colors">${p.title}</a>`
   ).join('\n');
 
   return `import React from 'react';
@@ -89,7 +89,7 @@ export default function ${componentName}() {
       {/* Navigation */}
       <header className="border-b border-border/40 backdrop-blur-sm bg-background/80 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-16">
-          <a href="/" className="text-xl font-bold">${plan.businessName || 'Home'}</a>
+          <a href="#/" className="text-xl font-bold">${plan.businessName || 'Home'}</a>
           <nav className="hidden md:flex items-center gap-6">
 ${navLinks}
           </nav>

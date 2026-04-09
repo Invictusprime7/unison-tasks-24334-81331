@@ -77,7 +77,19 @@ export function patchVFSWithRouter(
 
 function pagesToRoutes(pages: BuilderPage[]): RouteEntry[] {
   return pages.map(p => {
-    const slug = p.path.replace(/^\//, '') || 'home';
+    // Prefer filePath from registry (set by topology planner)
+    if (p.filePath) {
+      const componentName = extractComponentName(p.filePath);
+      return {
+        route: p.path,
+        componentName,
+        importPath: vfsPathToImport(p.filePath),
+        isHome: p.isHome,
+      };
+    }
+
+    // Fallback: derive from route slug
+    const slug = p.path.replace(/^\//, '') || 'Home';
     const componentName = slug
       .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
       .replace(/^(.)/, (_, c: string) => c.toUpperCase())
@@ -85,7 +97,7 @@ function pagesToRoutes(pages: BuilderPage[]): RouteEntry[] {
     
     return {
       route: p.path,
-      componentName: componentName + 'Page',
+      componentName,
       importPath: `./pages/${componentName}`,
       isHome: p.isHome,
     };
@@ -121,16 +133,15 @@ function buildRouterCode(routes: RouteEntry[], businessName?: string): string {
     `import ${r.componentName} from '${r.importPath}';`
   ).join('\n');
 
-  const routeElements = uniqueRoutes.map(r => {
-    if (r.isHome || r === homeRoute) {
-      return `        <Route path="/" element={<${r.componentName} />} />`;
-    }
-    return `        <Route path="${r.route}" element={<${r.componentName} />} />`;
-  });
+  const routeElements: string[] = [];
 
-  // Add non-home route for home page if it has a slug other than /
-  if (homeRoute && homeRoute.route !== '/') {
-    routeElements.unshift(`        <Route path="/" element={<${homeRoute.componentName} />} />`);
+  // Home route always gets "/"
+  routeElements.push(`        <Route path="/" element={<${homeRoute.componentName} />} />`);
+
+  // Non-home routes
+  for (const r of uniqueRoutes) {
+    if (r === homeRoute || r.isHome) continue;
+    routeElements.push(`        <Route path="${r.route}" element={<${r.componentName} />} />`);
   }
 
   // Add catch-all

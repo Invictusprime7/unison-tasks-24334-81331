@@ -65,15 +65,27 @@ export function PageRouteBar({
     [pageRegistry.pages]
   );
 
-  // Match active VFS path to a registry page — prefer exact filePath match
+  // Resolve active page — priority: activePageId → activePreviewRoute → filePath fallback
   const activePage = useMemo(() => {
     if (allPages.length === 0) return null;
-    
-    // 1. Exact filePath match (most reliable)
+
+    // 1. Direct pageId match (strongest — from navigateToBuilderPage)
+    if (activePageIdProp) {
+      const byId = pageRegistry.pages[activePageIdProp];
+      if (byId) return byId;
+    }
+
+    // 2. Match by preview route
+    if (activePreviewRoute && activePreviewRoute !== '/') {
+      const byRoute = allPages.find(p => p.path === activePreviewRoute);
+      if (byRoute) return byRoute;
+    }
+
+    // 3. Exact filePath match (editor file fallback)
     const byFilePath = allPages.find((p) => p.filePath === activePagePath);
     if (byFilePath) return byFilePath;
     
-    // 2. Derive component name from VFS path and match
+    // 4. Derive component name from VFS path and match
     const pathSegment = activePagePath
       .replace(/^\/src\/pages\//, "")
       .replace(/^\/src\//, "")
@@ -83,12 +95,9 @@ export function PageRouteBar({
     const vfsSlug = pathSegment.replace(/[^a-z0-9]/gi, "").toLowerCase();
     
     const bySlug = allPages.find((p) => {
-      // Match by route slug
       const registrySlug = p.path.replace(/^\//, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
       if (registrySlug === vfsSlug) return true;
-      // Match by title
       if (p.title.replace(/[^a-z0-9]/gi, "").toLowerCase() === vfsSlug) return true;
-      // Match by derived filePath
       if (p.filePath) {
         const fpSlug = p.filePath
           .replace(/^\/src\/pages\//, "")
@@ -101,11 +110,14 @@ export function PageRouteBar({
     });
     if (bySlug) return bySlug;
     
-    // 3. App.tsx → home page
+    // 5. App.tsx → home page
     if (activePagePath.includes("App")) return allPages.find((p) => p.isHome) || null;
     
+    // 6. Root route → home page
+    if (activePreviewRoute === '/') return allPages.find((p) => p.isHome) || null;
+    
     return null;
-  }, [allPages, activePagePath]);
+  }, [allPages, activePageIdProp, activePreviewRoute, activePagePath, pageRegistry.pages]);
 
   const funnelInfo = useMemo(() => {
     if (!activePage?.funnelId) return null;

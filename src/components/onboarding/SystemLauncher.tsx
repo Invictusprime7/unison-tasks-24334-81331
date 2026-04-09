@@ -929,7 +929,159 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             </motion.div>
           )}
 
-          {/* ══ Step 2: Templates ══ */}
+          {/* ══ Step 2: Questions ══ */}
+          {step === "questions" && selectedSystem && (
+            <motion.div
+              key="questions"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="flex flex-col"
+            >
+              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleBack}
+                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                <div>
+                  <h2 className="text-lg font-bold text-white tracking-tight">Tell us about your goals</h2>
+                  <p className="text-xs text-white/30">
+                    This helps us auto-configure your site structure
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide space-y-6">
+                {/* Q1: Primary Goal */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    What is the main goal of your site?
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {PRIMARY_GOALS.map((goal) => {
+                      const isSelected = primaryGoal === goal.id;
+                      return (
+                        <button
+                          key={goal.id}
+                          onClick={() => setPrimaryGoal(isSelected ? null : goal.id)}
+                          className={cn(
+                            "relative p-3 rounded-xl text-left transition-all duration-200",
+                            "border focus:outline-none overflow-hidden",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 ring-1 ring-cyan-500/20"
+                              : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.12]"
+                          )}
+                        >
+                          <div className="text-xl mb-1.5">{goal.icon}</div>
+                          <div className="text-xs font-semibold text-white/85 mb-0.5">{goal.label}</div>
+                          <div className="text-[10px] text-white/25 leading-relaxed">{goal.description}</div>
+                          {isSelected && (
+                            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute top-2 right-2 w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center">
+                              <Check className="h-2.5 w-2.5 text-[#07080F]" />
+                            </motion.div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Q2: Customer Needs */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    What do your customers need to do? <span className="text-white/20">(select all)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {CUSTOMER_NEEDS.map((need) => {
+                      const isSelected = customerNeeds.includes(need.id);
+                      return (
+                        <button
+                          key={need.id}
+                          onClick={() => toggleCustomerNeed(need.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200",
+                            "border focus:outline-none",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 text-cyan-400"
+                              : "bg-white/[0.02] border-white/[0.06] text-white/50 hover:bg-white/[0.04] hover:text-white/70"
+                          )}
+                        >
+                          <span>{need.icon}</span>
+                          {need.label}
+                          {isSelected && <Check className="h-3 w-3 text-cyan-400 ml-1" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Q3: Page Checklist */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    Which pages should your site have? <span className="text-white/20">(select all)</span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {PAGE_CHOICES.map((page) => {
+                      const isSelected = selectedPages.includes(page.id);
+                      return (
+                        <button
+                          key={page.id}
+                          onClick={() => togglePageChoice(page.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-medium transition-all duration-200",
+                            "border focus:outline-none",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 text-cyan-400"
+                              : "bg-white/[0.02] border-white/[0.06] text-white/40 hover:bg-white/[0.04] hover:text-white/60"
+                          )}
+                        >
+                          <span>{page.icon}</span>
+                          {page.label}
+                          {isSelected && <Check className="h-3 w-3 text-cyan-400 ml-auto" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+                <div className="flex-1 text-xs text-white/30">
+                  {primaryGoal && (
+                    <span className="flex items-center gap-1.5">
+                      <Check className="h-3 w-3 text-cyan-400" />
+                      <span className="text-cyan-400/70">
+                        {PRIMARY_GOALS.find(g => g.id === primaryGoal)?.label}
+                      </span>
+                      {customerNeeds.length > 0 && (
+                        <span className="text-white/20">• {customerNeeds.length} needs • {selectedPages.length} pages</span>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  onClick={handleQuestionsNext}
+                  disabled={!primaryGoal}
+                  className={cn(
+                    "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
+                    "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
+                    "transition-all disabled:opacity-30"
+                  )}
+                >
+                  Continue
+                  <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ══ Step 3: Templates ══ */}
           {step === "templates" && selectedSystem && (
             <motion.div
               key="templates"

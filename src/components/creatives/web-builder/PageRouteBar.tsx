@@ -25,8 +25,12 @@ import type { BuilderPage, PageRegistry } from "@/types/pageRegistry";
 // ============================================================================
 
 interface PageRouteBarProps {
-  /** Current active VFS path */
+  /** Current active VFS path (editor file — fallback for page resolution) */
   activePagePath: string;
+  /** Primary: stable page ID from navigateToBuilderPage */
+  activePageId?: string | null;
+  /** Current preview route */
+  activePreviewRoute?: string;
   /** The full page registry from creator playground */
   pageRegistry: PageRegistry;
   /** Callback to navigate to a page */

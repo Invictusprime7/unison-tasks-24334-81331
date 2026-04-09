@@ -134,9 +134,9 @@ export function CreatorPlaygroundModal({
     creatorData: playground.creatorData,
     pageRegistry: playground.pageRegistry,
     bindings,
-    calendars: {},
-    popups: {},
-  }), [playground.creatorData, playground.pageRegistry, bindings]);
+    calendars,
+    popups,
+  }), [playground.creatorData, playground.pageRegistry, bindings, calendars, popups]);
 
   const validations = useMemo(() => validatePlayground(playgroundState, vfsFiles), [playgroundState, vfsFiles]);
   const validationSummary = useMemo(() => getValidationSummary(validations), [validations]);

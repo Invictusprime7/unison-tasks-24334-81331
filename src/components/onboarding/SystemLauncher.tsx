@@ -534,8 +534,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       setSelectedSystem(null);
     }
   };
-    }
-  };
 
   const handleLaunch = async () => {
     if (!selectedSystem) return;

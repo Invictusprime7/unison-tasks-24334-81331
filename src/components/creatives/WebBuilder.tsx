@@ -4552,7 +4552,6 @@ ${html}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;
-          // Derive VFS path from registry path
           const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
           const componentName = sanitized
             .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
@@ -4560,10 +4559,9 @@ ${html}
           const vfsPath = `/src/pages/${componentName}.tsx`;
           const vfsFiles = virtualFS.getSandpackFiles();
           if (vfsFiles[vfsPath]) {
-            // Page exists in VFS — navigate to it
             handleSelectPage(vfsPath);
+            livePreviewRef.current?.navigateToRoute(page.path);
           } else {
-            // Page not yet in VFS — toast the path for awareness
             toast.info(`Page "${page.title}" registered at ${page.path}`, {
               description: 'Generate content via AI or create the file manually',
             });
@@ -4580,26 +4578,26 @@ ${html}
           const vfsFiles = virtualFS.getSandpackFiles();
           if (vfsFiles[vfsPath]) return; // Already exists
           const label = title || sanitized.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-          const newPageCode = `import { Link } from 'react-router-dom';
+          const newPageCode = `import React from 'react';
 
 export default function ${componentName}Page() {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border/40 px-6 py-4">
-        <nav className="flex items-center gap-6">
-          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">Home</Link>
-          <span className="text-sm text-foreground font-medium">${label}</span>
-        </nav>
-      </header>
-      <main className="max-w-4xl mx-auto px-6 py-16">
-        <h1 className="text-4xl font-bold mb-6">${label}</h1>
-        <p className="text-muted-foreground text-lg">This is the ${label} page. Start editing to add your content.</p>
-      </main>
+      <section className="py-20 px-6">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-4xl font-bold mb-6">${label}</h1>
+          <p className="text-muted-foreground text-lg">This is the ${label} page. Start editing to add your content.</p>
+        </div>
+      </section>
     </div>
   );
 }
 `;
-          virtualFS.importFiles({ [vfsPath]: newPageCode });
+          // Also regenerate canonical router to include the new page
+          const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry);
+          const filesToImport: Record<string, string> = { [vfsPath]: newPageCode };
+          if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
+          virtualFS.importFiles(filesToImport);
           toast.success(`Page "${label}" scaffolded in VFS`);
         }}
         onPageRemove={(_pageId, path) => {

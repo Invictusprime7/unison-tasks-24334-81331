@@ -3,7 +3,7 @@
  * with internal sidebar navigation + content area.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,13 +19,16 @@ import {
   FileText, ShoppingBag, Briefcase, GitBranch, Settings,
   Plus, Trash2, Copy, Home, Eye, EyeOff, GripVertical,
   ArrowRight, ChevronDown, ChevronUp, Star, FormInput,
-  Gauge, Zap, Rocket,
+  Gauge, Zap, Rocket, Link2, ShieldCheck, AlertTriangle,
+  CheckCircle, Info, XCircle,
 } from "lucide-react";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
 import { useSetupWizard } from "@/hooks/useSetupWizard";
 import { cn } from "@/lib/utils";
 import type { UseCreatorPlaygroundReturn } from "@/hooks/useCreatorPlayground";
 import type { BuilderPageType, FunnelRole } from "@/types/pageRegistry";
+import type { PlaygroundBinding, PlaygroundValidation, PlaygroundState } from "@/types/playground";
+import { validatePlayground, getValidationSummary } from "@/services/playgroundValidationService";
 
 // ============================================================================
 // Constants

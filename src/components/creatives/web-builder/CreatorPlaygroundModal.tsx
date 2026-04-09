@@ -99,6 +99,10 @@ interface CreatorPlaygroundModalProps {
   initialSection?: Section;
   /** Bindings from playground materializer */
   bindings?: Record<string, PlaygroundBinding>;
+  /** Calendars from playground materializer */
+  calendars?: Record<string, PlaygroundCalendar>;
+  /** Popups from playground materializer */
+  popups?: Record<string, PlaygroundPopup>;
   /** VFS files for validation context */
   vfsFiles?: Record<string, string>;
 }
@@ -118,6 +122,8 @@ export function CreatorPlaygroundModal({
   businessId = null,
   initialSection,
   bindings = {},
+  calendars = {},
+  popups = {},
   vfsFiles = {},
 }: CreatorPlaygroundModalProps) {
   const [activeSection, setActiveSection] = useState<Section>(initialSection || "overview");

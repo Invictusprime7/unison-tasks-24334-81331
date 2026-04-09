@@ -4596,9 +4596,9 @@ ${html}
             handleSelectPage(vfsPath);
             livePreviewRef.current?.navigateToRoute(page.path);
           } else {
-            toast.info(`Page "${page.title}" registered at ${page.path}`, {
-              description: 'Generate content via AI or create the file manually',
-            });
+            // Trigger AI generation for missing page
+            const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
+            triggerPageGenRef.current(pageName, page.title, null);
           }
           setPlaygroundModalOpen(false);
         }}
@@ -4611,28 +4611,18 @@ ${html}
           const vfsPath = `/src/pages/${componentName}.tsx`;
           const vfsFiles = virtualFS.getSandpackFiles();
           if (vfsFiles[vfsPath]) return; // Already exists
+          // Trigger AI generation for the new page
+          const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || sanitized;
           const label = title || sanitized.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-          const newPageCode = `import React from 'react';
-
-export default function ${componentName}Page() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <section className="py-20 px-6">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold mb-6">${label}</h1>
-          <p className="text-muted-foreground text-lg">This is the ${label} page. Start editing to add your content.</p>
-        </div>
-      </section>
-    </div>
-  );
-}
-`;
-          // Also regenerate canonical router to include the new page
+          creatorPlayground.updatePage(pageId, { filePath: vfsPath });
+          
+          // Regenerate canonical router first so the route is registered
           const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry);
-          const filesToImport: Record<string, string> = { [vfsPath]: newPageCode };
-          if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
-          virtualFS.importFiles(filesToImport);
-          toast.success(`Page "${label}" scaffolded in VFS`);
+          if (routerCode) virtualFS.importFiles({ '/src/App.tsx': routerCode });
+          
+          // Then trigger AI generation
+          triggerPageGenRef.current(pageName, label, null);
+          toast.success(`Generating "${label}" page with AI...`);
         }}
         onPageRemove={(_pageId, path) => {
           const sanitized = path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';

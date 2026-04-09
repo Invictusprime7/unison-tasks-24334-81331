@@ -102,6 +102,9 @@ import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contract
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { scaffoldMissingTopologyPagesWithRouter, getTopologyPagesForAIGeneration } from '@/utils/topologyVFSScaffolder';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
+import { resolveNavigationTarget, deriveFilePath } from '@/services/routeNavigationService';
+import { applyTopologyChange, syncTopologyAndRouter } from '@/services/pageTopologyOrchestrator';
+import { validatePageTopology } from '@/services/pageTopologyValidator';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';

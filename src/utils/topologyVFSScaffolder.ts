@@ -7,6 +7,8 @@
  */
 
 import type { GeneratedSitePlan, PageRouteNode } from '@/contracts/siteTopologyPlanner';
+import { generateCanonicalRouter } from './topologyRouterGenerator';
+import type { PageRegistry } from '@/types/pageRegistry';
 
 // ============================================================================
 // Core: Scaffold missing pages from topology
@@ -54,7 +56,7 @@ function generateTopologyPage(
   const navPages = plan.pages.filter(p => plan.navItems.includes(p.id));
 
   const navLinks = navPages.map(p =>
-    `          <a href="${p.route}" className="text-sm ${p.id === page.id ? 'text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground'} transition-colors">${p.title}</a>`
+    `          <a href="${p.route}" data-ut-intent="nav.goto_page" data-ut-path="${p.route}" data-ut-target-page-id="${p.id}" className="text-sm ${p.id === page.id ? 'text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground'} transition-colors">${p.title}</a>`
   ).join('\n');
 
   return `import React from 'react';

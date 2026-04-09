@@ -63,16 +63,18 @@ const FUNNEL_ROLE_OPTIONS: { value: FunnelRole; label: string }[] = [
   { value: "thankyou", label: "Thank You" },
 ];
 
-type Section = "pages" | "funnels" | "products" | "services" | "forms" | "business" | "overview" | "launch" | "bindings" | "validation";
+type Section = "pages" | "funnels" | "products" | "services" | "forms" | "calendars" | "popups" | "business" | "overview" | "launch" | "bindings" | "validation";
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highlight?: boolean }[] = [
   { id: "launch", label: "Launch Wizard", icon: Rocket, highlight: true },
   { id: "overview", label: "Overview", icon: Gauge },
   { id: "pages", label: "Pages", icon: FileText },
   { id: "funnels", label: "Funnels", icon: GitBranch },
-  { id: "products", label: "Products", icon: ShoppingBag },
-  { id: "services", label: "Services", icon: Briefcase },
   { id: "forms", label: "Forms", icon: FormInput },
+  { id: "calendars", label: "Calendars", icon: Calendar },
+  { id: "products", label: "Products", icon: ShoppingBag },
+  { id: "popups", label: "Popups", icon: MessageSquare },
+  { id: "services", label: "Services", icon: Briefcase },
   { id: "bindings", label: "Bindings", icon: Link2 },
   { id: "validation", label: "Validation", icon: ShieldCheck },
   { id: "business", label: "Business Info", icon: Settings },

@@ -51,6 +51,8 @@ interface PageRouteBarProps {
 
 export function PageRouteBar({
   activePagePath,
+  activePageId: activePageIdProp,
+  activePreviewRoute,
   pageRegistry,
   onNavigateToPage,
   onToggleNavVisibility,

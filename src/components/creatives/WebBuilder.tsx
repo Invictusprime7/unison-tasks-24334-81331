@@ -99,7 +99,7 @@ import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
-import { scaffoldMissingTopologyPages } from '@/utils/topologyVFSScaffolder';
+import { scaffoldMissingTopologyPages, scaffoldMissingTopologyPagesWithRouter } from '@/utils/topologyVFSScaffolder';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
@@ -1507,17 +1507,7 @@ export default function App() {
   
   // Sync page manifest to preview iframe when VFS changes
   // This enables instant in-place navigation (no new tabs)
-  useEffect(() => {
-    const pageCount = Object.keys(pageManifest).length;
-    if (pageCount >= 1) {
-      // Sync all HTML pages to iframe cache (with small delay to ensure iframe is ready)
-      const timeoutId = setTimeout(() => {
-        console.log('[WebBuilder] Syncing page manifest:', pageCount, 'pages');
-        livePreviewRef.current?.syncPageManifest?.(pageManifest);
-      }, 200);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [pageManifest]);
+  // Page manifest sync is handled via VFS router generation — no separate sync needed
 
   // Apply variant section swaps — replace section JSX blocks in VFS source code
   useEffect(() => {
@@ -1569,16 +1559,7 @@ export default function App() {
     }
   }, [templateCustomizer.activeVariants, templateCustomizer.sections, vfsNodes, vfsUpdateFileContent, activePagePath]);
   
-  // Re-sync manifest when preview code changes (iframe reloads)
-  useEffect(() => {
-    if (Object.keys(pageManifest).length >= 1 && previewCode) {
-      // Delay to let iframe finish loading the new content
-      const timeoutId = setTimeout(() => {
-        livePreviewRef.current?.syncPageManifest?.(pageManifest);
-      }, 500);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [previewCode, pageManifest]);
+  // Router regeneration handles manifest sync — no separate sync effect needed
   
   // Handle page switching in multi-page preview
   const handleSelectPage = useCallback((path: string) => {

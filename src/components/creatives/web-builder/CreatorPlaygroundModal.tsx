@@ -246,6 +246,8 @@ export function CreatorPlaygroundModal({
                 {activeSection === "products" && <ProductsSection playground={playground} />}
                 {activeSection === "services" && <ServicesSection playground={playground} />}
                 {activeSection === "forms" && <FormsSection playground={playground} />}
+                {activeSection === "calendars" && <CalendarsSection calendars={calendars} pages={playground.pageRegistry} />}
+                {activeSection === "popups" && <PopupsSection popups={popups} pages={playground.pageRegistry} />}
                 {activeSection === "bindings" && <BindingsSection bindings={bindings} registry={playground.pageRegistry} />}
                 {activeSection === "validation" && <ValidationSection validations={validations} summary={validationSummary} />}
                 {activeSection === "business" && <BusinessSection playground={playground} />}

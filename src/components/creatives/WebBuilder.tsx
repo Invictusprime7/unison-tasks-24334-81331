@@ -5021,41 +5021,24 @@ export default function ${componentName}() {
           {/* Page Route Bar — registry-driven page info & switching */}
           <PageRouteBar
             activePagePath={activePagePath}
+            activePageId={activePageId}
+            activePreviewRoute={activePreviewRoute}
             pageRegistry={creatorPlayground.pageRegistry}
             routeConflicts={routeConflicts}
-            onNavigateToPage={(pageId) => {
-              const page = creatorPlayground.pageRegistry.pages[pageId];
-              if (!page?.path) return;
-              
-              // Use stable filePath from registry, fall back to derivation
-              const vfsPath = page.filePath || (() => {
-                const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
-                const componentName = sanitized
-                  .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
-                  .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
-                return `/src/pages/${componentName}.tsx`;
-              })();
-              
-              const vfsFiles = virtualFS.getSandpackFiles();
-              if (vfsFiles[vfsPath]) {
-                // Dual action: open in editor + navigate preview
-                handleSelectPage(vfsPath);
-                livePreviewRef.current?.navigateToRoute(page.path);
-              } else if (page.isHome) {
-                handleSelectPage('/src/App.tsx');
-                livePreviewRef.current?.navigateToRoute('/');
-              } else {
-                // Trigger AI generation for missing page (replaces stub scaffolding)
-                const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
-                creatorPlayground.updatePage(pageId, { filePath: vfsPath });
-                triggerPageGenRef.current(pageName, page.title, null);
-              }
-            }}
+            onNavigateToPage={(pageId) => navigateToBuilderPage(pageId)}
             onToggleNavVisibility={(pageId, visible) => {
               creatorPlayground.updatePage(pageId, { showInNav: visible });
             }}
             onSetHomePage={(pageId) => {
               creatorPlayground.setHomePage(pageId);
+              // Regenerate router after homepage change
+              const result = syncTopologyAndRouter(
+                creatorPlayground.pageRegistry,
+                virtualFS.getSandpackFiles(),
+              );
+              if (result.routerCode) {
+                virtualFS.importFiles({ '/src/App.tsx': result.routerCode });
+              }
               toast.success('Homepage updated');
             }}
             onOpenPlayground={(section) => {

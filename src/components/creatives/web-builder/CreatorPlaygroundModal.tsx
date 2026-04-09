@@ -243,10 +243,6 @@ export function CreatorPlaygroundModal({
                 {activeSection === "business" && <BusinessSection playground={playground} />}
               </div>
             </ScrollArea>
-          </div>
-              </div>
-            </ScrollArea>
-          </div>
         </div>
       </DialogContent>
     </Dialog>

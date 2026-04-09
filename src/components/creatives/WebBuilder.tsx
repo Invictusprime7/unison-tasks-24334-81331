@@ -102,6 +102,9 @@ import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contract
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { scaffoldMissingTopologyPagesWithRouter, getTopologyPagesForAIGeneration } from '@/utils/topologyVFSScaffolder';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
+import { resolveNavigationTarget, deriveFilePath } from '@/services/routeNavigationService';
+import { applyTopologyChange, syncTopologyAndRouter } from '@/services/pageTopologyOrchestrator';
+import { validatePageTopology } from '@/services/pageTopologyValidator';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -1393,9 +1396,10 @@ export default function App() {
   // Store latest rewire function in ref to avoid stale closures in setTimeout
   const autoRewireHtmlIntentsRef = useRef<((fileId: string, content: string) => void) | null>(null);
   
-  // Multi-page navigation state
+  // Multi-page navigation state — split into three concerns
   const [activePagePath, setActivePagePath] = useState<string>('/src/App.tsx');
-  
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [activePreviewRoute, setActivePreviewRoute] = useState<string>('/');
   // Derive page tabs from VFS
   const pageTabs = useMemo(() => {
     const vfsFiles = virtualFS.getSandpackFiles();
@@ -1636,8 +1640,54 @@ export default function App() {
       setEditorCode(pageContent);
     }
   }, [getSandpackFiles]);
+
+  /**
+   * Canonical navigation function — the ONLY path for page switching.
+   * Resolves pageId → route → filePath, updates all three state slices,
+   * opens editor file, and navigates preview.
+   */
+  const navigateToBuilderPage = useCallback((
+    pageId: string,
+    options?: { openFile?: boolean; updatePreview?: boolean }
+  ) => {
+    const { openFile = true, updatePreview = true } = options || {};
+    const page = creatorPlayground.pageRegistry.pages[pageId];
+    if (!page) {
+      console.warn('[WebBuilder] navigateToBuilderPage: page not found:', pageId);
+      return;
+    }
+
+    const vfsFiles = virtualFS.getSandpackFiles();
+    const resolved = resolveNavigationTarget(
+      { pageId },
+      creatorPlayground.pageRegistry,
+      vfsFiles,
+    );
+
+    // Update all three state slices
+    setActivePageId(pageId);
+    setActivePreviewRoute(resolved.route || '/');
+
+    if (resolved.existsInVFS && resolved.filePath && openFile) {
+      handleSelectPage(resolved.filePath);
+    } else if (page.isHome && openFile) {
+      handleSelectPage('/src/App.tsx');
+    }
+
+    if (updatePreview) {
+      livePreviewRef.current?.navigateToRoute(resolved.route || '/');
+    }
+
+    // If file doesn't exist in VFS, trigger AI generation as fallback
+    if (!resolved.existsInVFS && !page.isHome) {
+      const fp = resolved.filePath || deriveFilePath(page);
+      const pageName = fp.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
+      creatorPlayground.updatePage(pageId, { filePath: fp });
+      triggerPageGenRef.current(pageName, page.title, null);
+    }
+  }, [creatorPlayground.pageRegistry, virtualFS, handleSelectPage]);
+
   
-  // Handle adding a new page
   const handleAddPage = useCallback(() => {
     const name = prompt('Enter page name (e.g. "about", "contact"):');
     if (!name) return;
@@ -2480,82 +2530,82 @@ export default function ${componentName}Page() {
       const classification = classifyLabel(buttonLabel, elementCtx);
       console.log('[WebBuilder] Label classification:', buttonLabel, classification);
 
-      // ── nav.goto_page: resolve targetPageId via topology registry ──
+      // ── nav.goto_page: resolve via RouteNavigationService ──
       if (intent === 'nav.goto_page') {
         const targetPageId = (payload as any)?.targetPageId;
-        const sitePlan = activeSitePlanRef.current;
-        let resolvedRoute: string | null = null;
+        const vfsFiles = virtualFS.getSandpackFiles();
+        const resolved = resolveNavigationTarget(
+          { targetPageId, label: buttonLabel },
+          creatorPlayground.pageRegistry,
+          vfsFiles,
+        );
 
-        if (sitePlan) {
-          resolvedRoute = resolveIntentTarget(
-            creatorPlayground.pageRegistry,
-            sitePlan.redirects,
-            null,
-            buttonLabel || ''
-          );
-        }
-
-        // Fallback: direct targetPageId lookup in registry
-        if (!resolvedRoute && targetPageId) {
-          const page = creatorPlayground.pageRegistry.pages[targetPageId];
-          if (page) resolvedRoute = page.path;
-        }
-
-        if (resolvedRoute) {
-          const pageName = resolvedRoute.replace(/^\//, '') || 'home';
-          const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase());
-          const vfsPath = `/src/pages/${componentName}.tsx`;
-          
-          // Auto-generate via AI if page doesn't exist in VFS yet
-          const vfsFiles = virtualFS.getSandpackFiles();
-          if (!vfsFiles[vfsPath]) {
-            // Trigger AI generation instead of stub scaffolding
-            triggerPageGenRef.current(pageName, buttonLabel || pageName, source, requestId);
-            return;
+        // Fallback: try topology resolver for redirect mapping
+        if (!resolved.existsInRegistry) {
+          const sitePlan = activeSitePlanRef.current;
+          if (sitePlan) {
+            const fallbackRoute = resolveIntentTarget(
+              creatorPlayground.pageRegistry,
+              sitePlan.redirects,
+              null,
+              buttonLabel || ''
+            );
+            if (fallbackRoute) {
+              const resolved2 = resolveNavigationTarget(
+                { route: fallbackRoute },
+                creatorPlayground.pageRegistry,
+                vfsFiles,
+              );
+              if (resolved2.pageId) {
+                navigateToBuilderPage(resolved2.pageId);
+                sendResultToIframe({ success: true });
+                return;
+              }
+            }
           }
-
-          setActivePagePath(vfsPath);
-          if (source && requestId) {
-            source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolvedRoute }, '*');
-          }
-          toast(`Navigated to ${buttonLabel || resolvedRoute}`);
-          sendResultToIframe({ success: true });
-        } else {
-          // Fallback: try generating via AI
+          // Not in registry at all — generate
           const targetName = classification.suggestedPageType || buttonLabel || 'page';
           triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
+          return;
+        }
+
+        // Page exists in registry — use canonical navigation
+        if (resolved.pageId) {
+          navigateToBuilderPage(resolved.pageId);
+          if (source && requestId) {
+            source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolved.route || '/' }, '*');
+          }
+          sendResultToIframe({ success: true });
         }
         return;
       }
 
-      // ── Navigation intents: handle directly without hitting handleIntent ──
+      // ── nav.goto: resolve via RouteNavigationService ──
       if (intent === 'nav.goto') {
         const path = (payload as any)?.path;
         if (path && path.startsWith('#')) {
-          // Anchor scroll - already handled in iframe
           sendResultToIframe({ success: true });
           return;
         }
         
         if (path) {
-          // Page navigation within multi-page React VFS
-          const pageName = path.replace(/^\//, '').replace(/\.html$/, '').replace(/[^a-zA-Z0-9-]/g, '-') || 'page';
-          const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase()).replace(/^\w/, c => c.toUpperCase());
-          const vfsPath = `/src/pages/${componentName}.tsx`;
           const vfsFiles = virtualFS.getSandpackFiles();
-          const existingPage = vfsFiles[vfsPath];
-          
-          if (existingPage) {
-            // Page exists in VFS — navigate via React Router
-            setActivePagePath(vfsPath);
+          const resolved = resolveNavigationTarget(
+            { route: path, label: buttonLabel },
+            creatorPlayground.pageRegistry,
+            vfsFiles,
+          );
+
+          if (resolved.pageId) {
+            navigateToBuilderPage(resolved.pageId);
             if (source && requestId) {
-              source.postMessage({ type: 'NAV_ROUTE', requestId, route: `/${pageName}` }, '*');
+              source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolved.route || path }, '*');
             }
             toast(`Navigated to ${buttonLabel || path}`);
             sendResultToIframe({ success: true });
           } else {
-            // Page doesn't exist in VFS → generate it with AI
-            console.log('[WebBuilder] React page not in VFS, generating:', pageName, buttonLabel);
+            // Page doesn't exist in registry → generate
+            const pageName = path.replace(/^\//, '').replace(/\.html$/, '').replace(/[^a-zA-Z0-9-]/g, '-') || 'page';
             const targetName = classification.suggestedPageType || pageName || 'details';
             triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
           }
@@ -4971,41 +5021,24 @@ export default function ${componentName}() {
           {/* Page Route Bar — registry-driven page info & switching */}
           <PageRouteBar
             activePagePath={activePagePath}
+            activePageId={activePageId}
+            activePreviewRoute={activePreviewRoute}
             pageRegistry={creatorPlayground.pageRegistry}
             routeConflicts={routeConflicts}
-            onNavigateToPage={(pageId) => {
-              const page = creatorPlayground.pageRegistry.pages[pageId];
-              if (!page?.path) return;
-              
-              // Use stable filePath from registry, fall back to derivation
-              const vfsPath = page.filePath || (() => {
-                const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
-                const componentName = sanitized
-                  .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
-                  .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
-                return `/src/pages/${componentName}.tsx`;
-              })();
-              
-              const vfsFiles = virtualFS.getSandpackFiles();
-              if (vfsFiles[vfsPath]) {
-                // Dual action: open in editor + navigate preview
-                handleSelectPage(vfsPath);
-                livePreviewRef.current?.navigateToRoute(page.path);
-              } else if (page.isHome) {
-                handleSelectPage('/src/App.tsx');
-                livePreviewRef.current?.navigateToRoute('/');
-              } else {
-                // Trigger AI generation for missing page (replaces stub scaffolding)
-                const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
-                creatorPlayground.updatePage(pageId, { filePath: vfsPath });
-                triggerPageGenRef.current(pageName, page.title, null);
-              }
-            }}
+            onNavigateToPage={(pageId) => navigateToBuilderPage(pageId)}
             onToggleNavVisibility={(pageId, visible) => {
               creatorPlayground.updatePage(pageId, { showInNav: visible });
             }}
             onSetHomePage={(pageId) => {
               creatorPlayground.setHomePage(pageId);
+              // Regenerate router after homepage change
+              const result = syncTopologyAndRouter(
+                creatorPlayground.pageRegistry,
+                virtualFS.getSandpackFiles(),
+              );
+              if (result.routerCode) {
+                virtualFS.importFiles({ '/src/App.tsx': result.routerCode });
+              }
               toast.success('Homepage updated');
             }}
             onOpenPlayground={(section) => {

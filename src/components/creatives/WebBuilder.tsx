@@ -99,7 +99,7 @@ import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
-import { scaffoldMissingTopologyPages, scaffoldMissingTopologyPagesWithRouter } from '@/utils/topologyVFSScaffolder';
+import { scaffoldMissingTopologyPages, scaffoldMissingTopologyPagesWithRouter, getTopologyPagesForAIGeneration } from '@/utils/topologyVFSScaffolder';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {

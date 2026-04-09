@@ -198,6 +198,19 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     event.preventDefault();
     event.stopPropagation();
 
+    // Registry-first: try to navigate via hash route first (for existing pages)
+    // If the page exists in the router, the hash change will render it directly
+    const targetRoute = '/' + pageName;
+    
+    // Check if this is a nav.goto_page intent with a target page ID
+    const targetPageId = el.getAttribute('data-ut-target-page-id');
+    if (targetPageId || el.getAttribute('data-ut-intent') === 'nav.goto_page') {
+      // Use NAV_ROUTE for intent-tagged links — the router handles them
+      window.location.hash = targetRoute;
+      return;
+    }
+
+    // For untagged links, try hash navigation first then fall back to page generation
     window.parent.postMessage({
       type: 'NAV_PAGE_GENERATE',
       pageName,

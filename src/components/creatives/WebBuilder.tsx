@@ -2463,14 +2463,12 @@ export default function ${componentName}Page() {
           const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase());
           const vfsPath = `/src/pages/${componentName}.tsx`;
           
-          // Auto-scaffold if page doesn't exist in VFS yet
+          // Auto-generate via AI if page doesn't exist in VFS yet
           const vfsFiles = virtualFS.getSandpackFiles();
-          if (!vfsFiles[vfsPath] && sitePlan) {
-            const missingFiles = scaffoldMissingTopologyPages(sitePlan, vfsFiles);
-            if (missingFiles[vfsPath]) {
-              virtualFS.importFiles({ [vfsPath]: missingFiles[vfsPath] });
-              console.log(`[WebBuilder] Auto-scaffolded missing page on nav: ${vfsPath}`);
-            }
+          if (!vfsFiles[vfsPath]) {
+            // Trigger AI generation instead of stub scaffolding
+            triggerPageGenRef.current(pageName, buttonLabel || pageName, source, requestId);
+            return;
           }
 
           setActivePagePath(vfsPath);

@@ -57,7 +57,7 @@ import {
 // Types
 // ============================================================================
 
-type WizardStep = "industry" | "templates" | "aesthetic";
+type WizardStep = "industry" | "questions" | "templates" | "aesthetic";
 
 interface SystemLauncherProps {
   open: boolean;
@@ -66,8 +66,46 @@ interface SystemLauncherProps {
 
 const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [
   { key: "industry", num: 1, label: "Industry", sublabel: "What you do" },
-  { key: "templates", num: 2, label: "Templates", sublabel: "Pick a base" },
-  { key: "aesthetic", num: 3, label: "Launch", sublabel: "Name & style" },
+  { key: "questions", num: 2, label: "Goals", sublabel: "Your needs" },
+  { key: "templates", num: 3, label: "Templates", sublabel: "Pick a base" },
+  { key: "aesthetic", num: 4, label: "Launch", sublabel: "Name & style" },
+];
+
+// ============================================================================
+// Wizard Questions Configuration
+// ============================================================================
+
+type PrimaryGoal = "collect_leads" | "book_appointments" | "sell_offers" | "showcase_work" | "drive_calls" | "grow_email_list";
+type CustomerNeed = "request_quote" | "book_service" | "buy_offer" | "fill_form" | "browse_services";
+type PageChoice = "about" | "services" | "pricing" | "gallery" | "faq" | "contact" | "booking" | "checkout" | "blog";
+
+const PRIMARY_GOALS: { id: PrimaryGoal; label: string; icon: string; description: string }[] = [
+  { id: "collect_leads", label: "Collect Leads", icon: "📩", description: "Capture contact info and grow your pipeline" },
+  { id: "book_appointments", label: "Book Appointments", icon: "📅", description: "Let clients schedule sessions online" },
+  { id: "sell_offers", label: "Sell Offers", icon: "💰", description: "Sell products, packages, or services" },
+  { id: "showcase_work", label: "Showcase Work", icon: "🎨", description: "Display your portfolio and past projects" },
+  { id: "drive_calls", label: "Drive Calls", icon: "📞", description: "Get prospects to call or message you" },
+  { id: "grow_email_list", label: "Grow Email List", icon: "📧", description: "Build a subscriber list for marketing" },
+];
+
+const CUSTOMER_NEEDS: { id: CustomerNeed; label: string; icon: string }[] = [
+  { id: "request_quote", label: "Request a quote", icon: "📋" },
+  { id: "book_service", label: "Book a service", icon: "🗓️" },
+  { id: "buy_offer", label: "Buy an offer/package", icon: "🛒" },
+  { id: "fill_form", label: "Fill out a form", icon: "📝" },
+  { id: "browse_services", label: "Browse services/products", icon: "🔍" },
+];
+
+const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
+  { id: "about", label: "About", icon: "ℹ️" },
+  { id: "services", label: "Services", icon: "⚙️" },
+  { id: "pricing", label: "Pricing", icon: "💲" },
+  { id: "gallery", label: "Gallery", icon: "🖼️" },
+  { id: "faq", label: "FAQ", icon: "❓" },
+  { id: "contact", label: "Contact", icon: "✉️" },
+  { id: "booking", label: "Booking", icon: "📅" },
+  { id: "checkout", label: "Checkout", icon: "🛍️" },
+  { id: "blog", label: "Blog", icon: "📰" },
 ];
 
 // Map businessSystem ids → industry tags for premium templates
@@ -417,6 +455,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const [businessName, setBusinessName] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
+
+  // Questions step state
+  const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal | null>(null);
+  const [customerNeeds, setCustomerNeeds] = useState<CustomerNeed[]>([]);
+  const [selectedPages, setSelectedPages] = useState<PageChoice[]>(["about", "services", "contact"]);
 
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
 

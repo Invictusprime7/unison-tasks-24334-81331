@@ -491,6 +491,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setBusinessName("");
     setCustomPrompt("");
     setIsLaunching(false);
+    setPrimaryGoal(null);
+    setCustomerNeeds([]);
+    setSelectedPages(["about", "services", "contact"]);
   }, []);
 
   const handleSystemSelect = (systemId: BusinessSystemType) => {

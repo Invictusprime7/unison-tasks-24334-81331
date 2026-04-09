@@ -4926,11 +4926,16 @@ export default function ${componentName}() {
             onNavigateToPage={(pageId) => {
               const page = creatorPlayground.pageRegistry.pages[pageId];
               if (!page?.path) return;
-              const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
-              const componentName = sanitized
-                .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
-                .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
-              const vfsPath = `/src/pages/${componentName}.tsx`;
+              
+              // Use stable filePath from registry, fall back to derivation
+              const vfsPath = page.filePath || (() => {
+                const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+                const componentName = sanitized
+                  .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
+                  .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
+                return `/src/pages/${componentName}.tsx`;
+              })();
+              
               const vfsFiles = virtualFS.getSandpackFiles();
               if (vfsFiles[vfsPath]) {
                 // Dual action: open in editor + navigate preview
@@ -4940,7 +4945,8 @@ export default function ${componentName}() {
                 handleSelectPage('/src/App.tsx');
                 livePreviewRef.current?.navigateToRoute('/');
               } else {
-                // Auto-scaffold the missing page, regenerate router, then navigate
+                // Auto-scaffold the missing page via topology scaffolder
+                const componentName = vfsPath.split('/').pop()?.replace('.tsx', '') || 'Page';
                 const scaffoldCode = [
                   "import React from 'react';",
                   "",
@@ -4965,6 +4971,9 @@ export default function ${componentName}() {
                 const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry);
                 const filesToImport: Record<string, string> = { [vfsPath]: scaffoldCode };
                 if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
+                
+                // Update page's filePath in registry
+                creatorPlayground.updatePage(pageId, { filePath: vfsPath });
                 
                 virtualFS.importFiles(filesToImport);
                 toast.success(`Scaffolded "${page.title}" page`);

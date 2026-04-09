@@ -63,7 +63,7 @@ const FUNNEL_ROLE_OPTIONS: { value: FunnelRole; label: string }[] = [
   { value: "thankyou", label: "Thank You" },
 ];
 
-type Section = "pages" | "funnels" | "products" | "services" | "forms" | "business" | "overview" | "launch";
+type Section = "pages" | "funnels" | "products" | "services" | "forms" | "business" | "overview" | "launch" | "bindings" | "validation";
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highlight?: boolean }[] = [
   { id: "launch", label: "Launch Wizard", icon: Rocket, highlight: true },
@@ -73,6 +73,8 @@ const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highligh
   { id: "products", label: "Products", icon: ShoppingBag },
   { id: "services", label: "Services", icon: Briefcase },
   { id: "forms", label: "Forms", icon: FormInput },
+  { id: "bindings", label: "Bindings", icon: Link2 },
+  { id: "validation", label: "Validation", icon: ShieldCheck },
   { id: "business", label: "Business Info", icon: Settings },
 ];
 

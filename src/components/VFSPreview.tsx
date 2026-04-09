@@ -257,13 +257,18 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return activeFile;
   }, [activeFile]);
   
-  // Determine Sandpack entry file (from prepared/flattened files)
+  // Determine Sandpack entry file — Model B: always prefer App.tsx as the site router
   const sandpackEntryFile = useMemo(() => {
+    // Always use App.tsx as the canonical entry (site router model)
+    if (sandpackFiles['/App.tsx']) return '/App.tsx';
+    if (sandpackFiles['/App.jsx']) return '/App.jsx';
+
+    // Fallback to active file only if no App exists
     if (normalizedActiveFile && sandpackFiles[normalizedActiveFile]) {
       return normalizedActiveFile;
     }
 
-    const candidates = ['/App.tsx', '/App.jsx', '/index.tsx', '/index.jsx'];
+    const candidates = ['/index.tsx', '/index.jsx'];
     for (const candidate of candidates) {
       if (sandpackFiles[candidate]) return candidate;
     }
@@ -402,6 +407,27 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     // For Sandpack, we can't easily open in new tab — it's in-browser
   }, [backend, dockerService.session]);
 
+  // Navigate preview to a hash route via postMessage
+  const handleNavigateToRoute = useCallback((route: string) => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) {
+      // Try to find Sandpack iframe
+      const container = iframe?.closest?.('.sp-layout') || document.querySelector('.sp-preview-iframe');
+      const spIframe = container as HTMLIFrameElement;
+      if (spIframe?.contentWindow) {
+        spIframe.contentWindow.postMessage({ type: 'NAV_ROUTE', route }, '*');
+        return;
+      }
+      // Broadcast to all iframes as fallback
+      const allIframes = document.querySelectorAll('iframe');
+      allIframes.forEach(f => {
+        try { f.contentWindow?.postMessage({ type: 'NAV_ROUTE', route }, '*'); } catch {}
+      });
+      return;
+    }
+    iframe.contentWindow.postMessage({ type: 'NAV_ROUTE', route }, '*');
+  }, []);
+
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
     refresh: handleRestart,
@@ -410,7 +436,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     getBackend: () => backend,
     openInNewTab: handleOpenInNewTab,
     getIframe: () => iframeRef.current,
-  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab]);
+    navigateToRoute: handleNavigateToRoute,
+  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab, handleNavigateToRoute]);
   
   // Docker preview URL
   const dockerUrl = useMemo(() => {

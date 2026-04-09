@@ -27,7 +27,7 @@ import { useSetupWizard } from "@/hooks/useSetupWizard";
 import { cn } from "@/lib/utils";
 import type { UseCreatorPlaygroundReturn } from "@/hooks/useCreatorPlayground";
 import type { BuilderPageType, FunnelRole } from "@/types/pageRegistry";
-import type { PlaygroundBinding, PlaygroundValidation, PlaygroundState } from "@/types/playground";
+import type { PlaygroundBinding, PlaygroundValidation, PlaygroundState, PlaygroundCalendar, PlaygroundPopup } from "@/types/playground";
 import { validatePlayground, getValidationSummary } from "@/services/playgroundValidationService";
 
 // ============================================================================

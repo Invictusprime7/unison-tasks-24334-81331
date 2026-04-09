@@ -20,7 +20,7 @@ import {
   Plus, Trash2, Copy, Home, Eye, EyeOff, GripVertical,
   ArrowRight, ChevronDown, ChevronUp, Star, FormInput,
   Gauge, Zap, Rocket, Link2, ShieldCheck, AlertTriangle,
-  CheckCircle, Info, XCircle,
+  CheckCircle, Info, XCircle, Calendar, MessageSquare,
 } from "lucide-react";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
 import { useSetupWizard } from "@/hooks/useSetupWizard";

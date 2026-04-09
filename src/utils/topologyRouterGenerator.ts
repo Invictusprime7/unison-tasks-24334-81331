@@ -77,7 +77,19 @@ export function patchVFSWithRouter(
 
 function pagesToRoutes(pages: BuilderPage[]): RouteEntry[] {
   return pages.map(p => {
-    const slug = p.path.replace(/^\//, '') || 'home';
+    // Prefer filePath from registry (set by topology planner)
+    if (p.filePath) {
+      const componentName = extractComponentName(p.filePath);
+      return {
+        route: p.path,
+        componentName,
+        importPath: vfsPathToImport(p.filePath),
+        isHome: p.isHome,
+      };
+    }
+
+    // Fallback: derive from route slug
+    const slug = p.path.replace(/^\//, '') || 'Home';
     const componentName = slug
       .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
       .replace(/^(.)/, (_, c: string) => c.toUpperCase())
@@ -85,7 +97,7 @@ function pagesToRoutes(pages: BuilderPage[]): RouteEntry[] {
     
     return {
       route: p.path,
-      componentName: componentName + 'Page',
+      componentName,
       importPath: `./pages/${componentName}`,
       isHome: p.isHome,
     };

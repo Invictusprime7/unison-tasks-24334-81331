@@ -664,6 +664,181 @@ function AddFunnelStepInline({ pages, existingPageIds, onAdd }: {
 
 
 // ============================================================================
+// Section: Calendars
+// ============================================================================
+
+const BOOKING_TYPE_LABELS: Record<string, string> = {
+  appointment: "Appointment",
+  consultation: "Consultation",
+  class: "Class",
+  reservation: "Reservation",
+  general: "General",
+};
+
+function CalendarsSection({ calendars, pages }: { calendars: Record<string, PlaygroundCalendar>; pages: import("@/types/pageRegistry").PageRegistry }) {
+  const calendarList = Object.values(calendars).sort((a, b) => a.sortOrder - b.sortOrder);
+  const getPageTitle = (pageId: string) => pages.pages[pageId]?.title || pageId;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-foreground">Calendars</h2>
+        <Badge variant="outline" className="text-[10px]">{calendarList.length} calendars</Badge>
+      </div>
+
+      {calendarList.length === 0 ? (
+        <div className="text-center py-10 space-y-2">
+          <Calendar className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+          <p className="text-sm text-muted-foreground">No calendars configured yet.</p>
+          <p className="text-xs text-muted-foreground/60">Calendars are auto-created from the Wizard when your business requires booking.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {calendarList.map(cal => (
+            <div key={cal.calendarId} className="rounded-xl border border-border/30 bg-muted/10 overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="p-2 rounded-lg bg-cyan-500/10">
+                  <Calendar className="h-4 w-4 text-cyan-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground">{cal.name}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                      {BOOKING_TYPE_LABELS[cal.bookingType] || cal.bookingType}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">{cal.defaultDuration} min</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Attached Pages */}
+              {cal.attachedPageIds.length > 0 && (
+                <div className="px-4 py-2 border-t border-border/20 bg-background/30">
+                  <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1.5">Attached Pages</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {cal.attachedPageIds.map(pid => (
+                      <Badge key={pid} variant="secondary" className="text-[9px] h-4 px-1.5">{getPageTitle(pid)}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Intake form & success page */}
+              <div className="px-4 py-2 border-t border-border/20 bg-background/30 flex gap-4 text-[10px] text-muted-foreground">
+                {cal.intakeFormId && (
+                  <span>Intake form: <span className="text-foreground/70">{cal.intakeFormId}</span></span>
+                )}
+                {cal.successPageId && (
+                  <span>Success page: <span className="text-foreground/70">{getPageTitle(cal.successPageId)}</span></span>
+                )}
+                {!cal.intakeFormId && !cal.successPageId && (
+                  <span className="text-muted-foreground/40">No intake form or success page configured</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Section: Popups
+// ============================================================================
+
+const TRIGGER_LABELS: Record<string, string> = {
+  cta_click: "CTA Click",
+  timer: "Timer",
+  scroll: "Scroll",
+  exit_intent: "Exit Intent",
+  manual: "Manual",
+};
+
+const CONTENT_TYPE_LABELS: Record<string, string> = {
+  form: "Form",
+  calendar: "Calendar",
+  offer: "Offer",
+  custom: "Custom",
+};
+
+function PopupsSection({ popups, pages }: { popups: Record<string, PlaygroundPopup>; pages: import("@/types/pageRegistry").PageRegistry }) {
+  const popupList = Object.values(popups).sort((a, b) => a.sortOrder - b.sortOrder);
+  const getPageTitle = (pageId: string) => pages.pages[pageId]?.title || pageId;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-foreground">Popups</h2>
+        <Badge variant="outline" className="text-[10px]">{popupList.length} popups</Badge>
+      </div>
+
+      {popupList.length === 0 ? (
+        <div className="text-center py-10 space-y-2">
+          <MessageSquare className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+          <p className="text-sm text-muted-foreground">No popups configured yet.</p>
+          <p className="text-xs text-muted-foreground/60">Popups are auto-created from the Wizard for lead magnets, offers, and promotions.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {popupList.map(popup => (
+            <div key={popup.popupId} className="rounded-xl border border-border/30 bg-muted/10 overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="p-2 rounded-lg bg-fuchsia-500/10">
+                  <MessageSquare className="h-4 w-4 text-fuchsia-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground">{popup.name}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-fuchsia-500/30 text-fuchsia-400">
+                      {TRIGGER_LABELS[popup.trigger] || popup.trigger}
+                    </Badge>
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1.5">
+                      {CONTENT_TYPE_LABELS[popup.contentType] || popup.contentType}
+                    </Badge>
+                    {popup.showOncePerSession && (
+                      <span className="text-[9px] text-muted-foreground/50">once/session</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Trigger config */}
+              {popup.triggerConfig && (popup.triggerConfig.delayMs || popup.triggerConfig.scrollPercent) && (
+                <div className="px-4 py-1.5 border-t border-border/20 bg-background/30 text-[10px] text-muted-foreground">
+                  {popup.triggerConfig.delayMs && <span>Delay: {popup.triggerConfig.delayMs / 1000}s</span>}
+                  {popup.triggerConfig.delayMs && popup.triggerConfig.scrollPercent && <span className="mx-2">•</span>}
+                  {popup.triggerConfig.scrollPercent && <span>Scroll: {popup.triggerConfig.scrollPercent}%</span>}
+                </div>
+              )}
+
+              {/* Active on pages */}
+              {popup.activeOnPageIds.length > 0 && (
+                <div className="px-4 py-2 border-t border-border/20 bg-background/30">
+                  <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1.5">Active On</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {popup.activeOnPageIds.map(pid => (
+                      <Badge key={pid} variant="secondary" className="text-[9px] h-4 px-1.5">{getPageTitle(pid)}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Content ref */}
+              {popup.contentRefId && (
+                <div className="px-4 py-1.5 border-t border-border/20 bg-background/30 text-[10px] text-muted-foreground">
+                  Content: <span className="text-foreground/70">{popup.contentRefId}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // Section: Bindings
 // ============================================================================
 

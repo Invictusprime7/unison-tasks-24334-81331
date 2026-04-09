@@ -133,16 +133,15 @@ function buildRouterCode(routes: RouteEntry[], businessName?: string): string {
     `import ${r.componentName} from '${r.importPath}';`
   ).join('\n');
 
-  const routeElements = uniqueRoutes.map(r => {
-    if (r.isHome || r === homeRoute) {
-      return `        <Route path="/" element={<${r.componentName} />} />`;
-    }
-    return `        <Route path="${r.route}" element={<${r.componentName} />} />`;
-  });
+  const routeElements: string[] = [];
 
-  // Add non-home route for home page if it has a slug other than /
-  if (homeRoute && homeRoute.route !== '/') {
-    routeElements.unshift(`        <Route path="/" element={<${homeRoute.componentName} />} />`);
+  // Home route always gets "/"
+  routeElements.push(`        <Route path="/" element={<${homeRoute.componentName} />} />`);
+
+  // Non-home routes
+  for (const r of uniqueRoutes) {
+    if (r === homeRoute || r.isHome) continue;
+    routeElements.push(`        <Route path="${r.route}" element={<${r.componentName} />} />`);
   }
 
   // Add catch-all

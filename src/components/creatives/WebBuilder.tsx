@@ -2530,82 +2530,82 @@ export default function ${componentName}Page() {
       const classification = classifyLabel(buttonLabel, elementCtx);
       console.log('[WebBuilder] Label classification:', buttonLabel, classification);
 
-      // ── nav.goto_page: resolve targetPageId via topology registry ──
+      // ── nav.goto_page: resolve via RouteNavigationService ──
       if (intent === 'nav.goto_page') {
         const targetPageId = (payload as any)?.targetPageId;
-        const sitePlan = activeSitePlanRef.current;
-        let resolvedRoute: string | null = null;
+        const vfsFiles = virtualFS.getSandpackFiles();
+        const resolved = resolveNavigationTarget(
+          { targetPageId, label: buttonLabel },
+          creatorPlayground.pageRegistry,
+          vfsFiles,
+        );
 
-        if (sitePlan) {
-          resolvedRoute = resolveIntentTarget(
-            creatorPlayground.pageRegistry,
-            sitePlan.redirects,
-            null,
-            buttonLabel || ''
-          );
-        }
-
-        // Fallback: direct targetPageId lookup in registry
-        if (!resolvedRoute && targetPageId) {
-          const page = creatorPlayground.pageRegistry.pages[targetPageId];
-          if (page) resolvedRoute = page.path;
-        }
-
-        if (resolvedRoute) {
-          const pageName = resolvedRoute.replace(/^\//, '') || 'home';
-          const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase());
-          const vfsPath = `/src/pages/${componentName}.tsx`;
-          
-          // Auto-generate via AI if page doesn't exist in VFS yet
-          const vfsFiles = virtualFS.getSandpackFiles();
-          if (!vfsFiles[vfsPath]) {
-            // Trigger AI generation instead of stub scaffolding
-            triggerPageGenRef.current(pageName, buttonLabel || pageName, source, requestId);
-            return;
+        // Fallback: try topology resolver for redirect mapping
+        if (!resolved.existsInRegistry) {
+          const sitePlan = activeSitePlanRef.current;
+          if (sitePlan) {
+            const fallbackRoute = resolveIntentTarget(
+              creatorPlayground.pageRegistry,
+              sitePlan.redirects,
+              null,
+              buttonLabel || ''
+            );
+            if (fallbackRoute) {
+              const resolved2 = resolveNavigationTarget(
+                { route: fallbackRoute },
+                creatorPlayground.pageRegistry,
+                vfsFiles,
+              );
+              if (resolved2.pageId) {
+                navigateToBuilderPage(resolved2.pageId);
+                sendResultToIframe({ success: true });
+                return;
+              }
+            }
           }
-
-          setActivePagePath(vfsPath);
-          if (source && requestId) {
-            source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolvedRoute }, '*');
-          }
-          toast(`Navigated to ${buttonLabel || resolvedRoute}`);
-          sendResultToIframe({ success: true });
-        } else {
-          // Fallback: try generating via AI
+          // Not in registry at all — generate
           const targetName = classification.suggestedPageType || buttonLabel || 'page';
           triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
+          return;
+        }
+
+        // Page exists in registry — use canonical navigation
+        if (resolved.pageId) {
+          navigateToBuilderPage(resolved.pageId);
+          if (source && requestId) {
+            source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolved.route || '/' }, '*');
+          }
+          sendResultToIframe({ success: true });
         }
         return;
       }
 
-      // ── Navigation intents: handle directly without hitting handleIntent ──
+      // ── nav.goto: resolve via RouteNavigationService ──
       if (intent === 'nav.goto') {
         const path = (payload as any)?.path;
         if (path && path.startsWith('#')) {
-          // Anchor scroll - already handled in iframe
           sendResultToIframe({ success: true });
           return;
         }
         
         if (path) {
-          // Page navigation within multi-page React VFS
-          const pageName = path.replace(/^\//, '').replace(/\.html$/, '').replace(/[^a-zA-Z0-9-]/g, '-') || 'page';
-          const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase()).replace(/^\w/, c => c.toUpperCase());
-          const vfsPath = `/src/pages/${componentName}.tsx`;
           const vfsFiles = virtualFS.getSandpackFiles();
-          const existingPage = vfsFiles[vfsPath];
-          
-          if (existingPage) {
-            // Page exists in VFS — navigate via React Router
-            setActivePagePath(vfsPath);
+          const resolved = resolveNavigationTarget(
+            { route: path, label: buttonLabel },
+            creatorPlayground.pageRegistry,
+            vfsFiles,
+          );
+
+          if (resolved.pageId) {
+            navigateToBuilderPage(resolved.pageId);
             if (source && requestId) {
-              source.postMessage({ type: 'NAV_ROUTE', requestId, route: `/${pageName}` }, '*');
+              source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolved.route || path }, '*');
             }
             toast(`Navigated to ${buttonLabel || path}`);
             sendResultToIframe({ success: true });
           } else {
-            // Page doesn't exist in VFS → generate it with AI
-            console.log('[WebBuilder] React page not in VFS, generating:', pageName, buttonLabel);
+            // Page doesn't exist in registry → generate
+            const pageName = path.replace(/^\//, '').replace(/\.html$/, '').replace(/[^a-zA-Z0-9-]/g, '-') || 'page';
             const targetName = classification.suggestedPageType || pageName || 'details';
             triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
           }

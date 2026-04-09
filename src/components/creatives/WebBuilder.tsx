@@ -1434,12 +1434,13 @@ export default function App() {
           const registry = populateRegistryFromTopology(dbPlan);
           for (const page of Object.values(registry.pages)) {
             creatorPlayground.addPage(page.title, page.path, page.pageType, {
+              filePath: page.filePath,
               showInNav: page.showInNav, isHome: page.isHome, navOrder: page.navOrder,
               seo: page.seo, redirectRules: page.redirectRules, createdBy: page.createdBy,
             });
           }
           const existingFiles = virtualFS.getSandpackFiles();
-          const missingFiles = scaffoldMissingTopologyPages(dbPlan, existingFiles);
+          const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, creatorPlayground.pageRegistry);
           if (Object.keys(missingFiles).length > 0) {
             virtualFS.importFiles(missingFiles);
           }
@@ -1461,6 +1462,7 @@ export default function App() {
       const registry = populateRegistryFromTopology(sitePlan);
       for (const page of Object.values(registry.pages)) {
         creatorPlayground.addPage(page.title, page.path, page.pageType, {
+          filePath: page.filePath,
           showInNav: page.showInNav,
           isHome: page.isHome,
           navOrder: page.navOrder,
@@ -1474,9 +1476,9 @@ export default function App() {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }
 
-      // Auto-scaffold any topology pages missing from VFS
+      // Auto-scaffold any topology pages missing from VFS + regenerate router
       const existingFiles = virtualFS.getSandpackFiles();
-      const missingFiles = scaffoldMissingTopologyPages(sitePlan, existingFiles);
+      const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, creatorPlayground.pageRegistry);
       if (Object.keys(missingFiles).length > 0) {
         virtualFS.importFiles(missingFiles);
         console.log(`[WebBuilder] Auto-scaffolded ${Object.keys(missingFiles).length} missing topology pages:`, Object.keys(missingFiles));

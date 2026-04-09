@@ -2282,10 +2282,7 @@ export default function ${componentName}Page() {
           lastSyncedCodeRef.current = pageContent;
           setEditorCode(pageContent);
         }
-        // Re-sync manifest to iframe so all pages are available for back-navigation
-        setTimeout(() => {
-          livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 300);
+        // Navigation is handled via HashRouter — no manifest sync needed
         return;
       }
       
@@ -2316,19 +2313,13 @@ export default function ${componentName}Page() {
         setPreviewCode(previewContent);
         setEditorCode(rawContent); // Editor shows clean HTML without cache scripts
         
-        // Re-sync manifest after iframe reloads
-        setTimeout(() => {
-           livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 600);
+        // Navigation is handled via HashRouter — no manifest sync needed
         return;
       }
       
-      // Handle manifest request from iframe after in-place page navigation
+      // Handle manifest request from iframe — navigation is via HashRouter now
       if (event.data?.type === 'REQUEST_PAGE_MANIFEST') {
-        console.log('[WebBuilder] Iframe requested page manifest re-sync');
-        setTimeout(() => {
-          livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 50);
+        console.log('[WebBuilder] Iframe page manifest request — handled via router');
         return;
       }
       

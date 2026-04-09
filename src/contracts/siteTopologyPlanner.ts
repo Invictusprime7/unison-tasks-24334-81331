@@ -470,6 +470,7 @@ export function populateRegistryFromTopology(plan: GeneratedSitePlan): PageRegis
       node.route,
       pageType,
       {
+        filePath: node.filePath,
         showInNav: node.visibleInNav,
         navOrder: i * 10,
         isHome: node.isHome,

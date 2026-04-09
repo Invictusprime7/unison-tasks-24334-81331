@@ -99,7 +99,7 @@ import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
-import { scaffoldMissingTopologyPages } from '@/utils/topologyVFSScaffolder';
+import { scaffoldMissingTopologyPages, scaffoldMissingTopologyPagesWithRouter } from '@/utils/topologyVFSScaffolder';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
@@ -1434,12 +1434,13 @@ export default function App() {
           const registry = populateRegistryFromTopology(dbPlan);
           for (const page of Object.values(registry.pages)) {
             creatorPlayground.addPage(page.title, page.path, page.pageType, {
+              filePath: page.filePath,
               showInNav: page.showInNav, isHome: page.isHome, navOrder: page.navOrder,
               seo: page.seo, redirectRules: page.redirectRules, createdBy: page.createdBy,
             });
           }
           const existingFiles = virtualFS.getSandpackFiles();
-          const missingFiles = scaffoldMissingTopologyPages(dbPlan, existingFiles);
+          const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, creatorPlayground.pageRegistry);
           if (Object.keys(missingFiles).length > 0) {
             virtualFS.importFiles(missingFiles);
           }
@@ -1461,6 +1462,7 @@ export default function App() {
       const registry = populateRegistryFromTopology(sitePlan);
       for (const page of Object.values(registry.pages)) {
         creatorPlayground.addPage(page.title, page.path, page.pageType, {
+          filePath: page.filePath,
           showInNav: page.showInNav,
           isHome: page.isHome,
           navOrder: page.navOrder,
@@ -1474,9 +1476,9 @@ export default function App() {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }
 
-      // Auto-scaffold any topology pages missing from VFS
+      // Auto-scaffold any topology pages missing from VFS + regenerate router
       const existingFiles = virtualFS.getSandpackFiles();
-      const missingFiles = scaffoldMissingTopologyPages(sitePlan, existingFiles);
+      const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, creatorPlayground.pageRegistry);
       if (Object.keys(missingFiles).length > 0) {
         virtualFS.importFiles(missingFiles);
         console.log(`[WebBuilder] Auto-scaffolded ${Object.keys(missingFiles).length} missing topology pages:`, Object.keys(missingFiles));
@@ -1507,17 +1509,7 @@ export default function App() {
   
   // Sync page manifest to preview iframe when VFS changes
   // This enables instant in-place navigation (no new tabs)
-  useEffect(() => {
-    const pageCount = Object.keys(pageManifest).length;
-    if (pageCount >= 1) {
-      // Sync all HTML pages to iframe cache (with small delay to ensure iframe is ready)
-      const timeoutId = setTimeout(() => {
-        console.log('[WebBuilder] Syncing page manifest:', pageCount, 'pages');
-        livePreviewRef.current?.syncPageManifest?.(pageManifest);
-      }, 200);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [pageManifest]);
+  // Page manifest sync is handled via VFS router generation — no separate sync needed
 
   // Apply variant section swaps — replace section JSX blocks in VFS source code
   useEffect(() => {
@@ -1569,16 +1561,7 @@ export default function App() {
     }
   }, [templateCustomizer.activeVariants, templateCustomizer.sections, vfsNodes, vfsUpdateFileContent, activePagePath]);
   
-  // Re-sync manifest when preview code changes (iframe reloads)
-  useEffect(() => {
-    if (Object.keys(pageManifest).length >= 1 && previewCode) {
-      // Delay to let iframe finish loading the new content
-      const timeoutId = setTimeout(() => {
-        livePreviewRef.current?.syncPageManifest?.(pageManifest);
-      }, 500);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [previewCode, pageManifest]);
+  // Router regeneration handles manifest sync — no separate sync effect needed
   
   // Handle page switching in multi-page preview
   const handleSelectPage = useCallback((path: string) => {
@@ -2301,10 +2284,7 @@ export default function ${componentName}Page() {
           lastSyncedCodeRef.current = pageContent;
           setEditorCode(pageContent);
         }
-        // Re-sync manifest to iframe so all pages are available for back-navigation
-        setTimeout(() => {
-          livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 300);
+        // Navigation is handled via HashRouter — no manifest sync needed
         return;
       }
       
@@ -2335,19 +2315,13 @@ export default function ${componentName}Page() {
         setPreviewCode(previewContent);
         setEditorCode(rawContent); // Editor shows clean HTML without cache scripts
         
-        // Re-sync manifest after iframe reloads
-        setTimeout(() => {
-           livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 600);
+        // Navigation is handled via HashRouter — no manifest sync needed
         return;
       }
       
-      // Handle manifest request from iframe after in-place page navigation
+      // Handle manifest request from iframe — navigation is via HashRouter now
       if (event.data?.type === 'REQUEST_PAGE_MANIFEST') {
-        console.log('[WebBuilder] Iframe requested page manifest re-sync');
-        setTimeout(() => {
-          livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 50);
+        console.log('[WebBuilder] Iframe page manifest request — handled via router');
         return;
       }
       
@@ -4952,11 +4926,16 @@ export default function ${componentName}() {
             onNavigateToPage={(pageId) => {
               const page = creatorPlayground.pageRegistry.pages[pageId];
               if (!page?.path) return;
-              const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
-              const componentName = sanitized
-                .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
-                .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
-              const vfsPath = `/src/pages/${componentName}.tsx`;
+              
+              // Use stable filePath from registry, fall back to derivation
+              const vfsPath = page.filePath || (() => {
+                const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+                const componentName = sanitized
+                  .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
+                  .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
+                return `/src/pages/${componentName}.tsx`;
+              })();
+              
               const vfsFiles = virtualFS.getSandpackFiles();
               if (vfsFiles[vfsPath]) {
                 // Dual action: open in editor + navigate preview
@@ -4966,7 +4945,8 @@ export default function ${componentName}() {
                 handleSelectPage('/src/App.tsx');
                 livePreviewRef.current?.navigateToRoute('/');
               } else {
-                // Auto-scaffold the missing page, regenerate router, then navigate
+                // Auto-scaffold the missing page via topology scaffolder
+                const componentName = vfsPath.split('/').pop()?.replace('.tsx', '') || 'Page';
                 const scaffoldCode = [
                   "import React from 'react';",
                   "",
@@ -4991,6 +4971,9 @@ export default function ${componentName}() {
                 const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry);
                 const filesToImport: Record<string, string> = { [vfsPath]: scaffoldCode };
                 if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
+                
+                // Update page's filePath in registry
+                creatorPlayground.updatePage(pageId, { filePath: vfsPath });
                 
                 virtualFS.importFiles(filesToImport);
                 toast.success(`Scaffolded "${page.title}" page`);

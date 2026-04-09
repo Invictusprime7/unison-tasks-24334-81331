@@ -94,7 +94,6 @@ export interface VFSPreviewHandle {
   getIframe: () => HTMLIFrameElement | null;
   /** Navigate the preview to a hash route (e.g. "/contact") */
   navigateToRoute: (route: string) => void;
-  syncPageManifest?: (manifest: Record<string, string>) => void;
 }
 
 // ============================================================================

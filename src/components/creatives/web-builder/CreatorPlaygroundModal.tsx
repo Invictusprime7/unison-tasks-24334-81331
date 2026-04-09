@@ -208,6 +208,21 @@ export function CreatorPlaygroundModal({
                     {Object.keys(playground.creatorData.products).length}
                   </Badge>
                 )}
+                {id === "bindings" && Object.keys(bindings).length > 0 && (
+                  <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">
+                    {Object.keys(bindings).length}
+                  </Badge>
+                )}
+                {id === "validation" && validationSummary.errors > 0 && (
+                  <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-red-500/40 text-red-400 bg-red-500/10">
+                    {validationSummary.errors}
+                  </Badge>
+                )}
+                {id === "validation" && validationSummary.errors === 0 && validationSummary.warnings > 0 && (
+                  <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-amber-500/40 text-amber-400 bg-amber-500/10">
+                    {validationSummary.warnings}
+                  </Badge>
+                )}
               </button>
             ))}
           </nav>
@@ -223,7 +238,12 @@ export function CreatorPlaygroundModal({
                 {activeSection === "products" && <ProductsSection playground={playground} />}
                 {activeSection === "services" && <ServicesSection playground={playground} />}
                 {activeSection === "forms" && <FormsSection playground={playground} />}
+                {activeSection === "bindings" && <BindingsSection bindings={bindings} registry={playground.pageRegistry} />}
+                {activeSection === "validation" && <ValidationSection validations={validations} summary={validationSummary} />}
                 {activeSection === "business" && <BusinessSection playground={playground} />}
+              </div>
+            </ScrollArea>
+          </div>
               </div>
             </ScrollArea>
           </div>

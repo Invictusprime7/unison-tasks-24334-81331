@@ -115,9 +115,23 @@ export function CreatorPlaygroundModal({
   onFunnelCreate,
   businessId = null,
   initialSection,
+  bindings = {},
+  vfsFiles = {},
 }: CreatorPlaygroundModalProps) {
   const [activeSection, setActiveSection] = useState<Section>(initialSection || "overview");
   const setupWizard = useSetupWizard(businessId);
+
+  // Build playground state for validation
+  const playgroundState: PlaygroundState = useMemo(() => ({
+    creatorData: playground.creatorData,
+    pageRegistry: playground.pageRegistry,
+    bindings,
+    calendars: {},
+    popups: {},
+  }), [playground.creatorData, playground.pageRegistry, bindings]);
+
+  const validations = useMemo(() => validatePlayground(playgroundState, vfsFiles), [playgroundState, vfsFiles]);
+  const validationSummary = useMemo(() => getValidationSummary(validations), [validations]);
 
   // Allow external callers to set the initial section
   useEffect(() => {

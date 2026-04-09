@@ -652,4 +652,140 @@ function AddFunnelStepInline({ pages, existingPageIds, onAdd }: {
   );
 }
 
+
+// ============================================================================
+// Section: Bindings
+// ============================================================================
+
+const INTENT_LABELS: Record<string, string> = {
+  'nav.goto_page': 'Navigate',
+  'funnel.goto_step': 'Funnel Step',
+  'form.open': 'Open Form',
+  'popup.open': 'Open Popup',
+  'calendar.open': 'Open Calendar',
+  'checkout.start': 'Start Checkout',
+  'product.view': 'View Product',
+  'external.open': 'External Link',
+};
+
+function BindingsSection({ bindings, registry }: { bindings: Record<string, PlaygroundBinding>; registry: import("@/types/pageRegistry").PageRegistry }) {
+  const bindingList = Object.values(bindings);
+  const getPageTitle = (pageId: string) => registry.pages[pageId]?.title || pageId;
+
+  if (bindingList.length === 0) {
+    return (
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-foreground">Bindings / Actions</h3>
+        <p className="text-xs text-muted-foreground">No bindings configured yet. Bindings are auto-created when pages are generated via the Wizard.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-foreground">Bindings / Actions</h3>
+      <p className="text-[10px] text-muted-foreground mb-2">
+        Shows how pages talk to each other — CTAs, navigation, form triggers, and funnel steps.
+      </p>
+      <div className="space-y-1.5">
+        {bindingList.map(b => (
+          <div key={b.bindingId} className="flex items-center gap-2 p-2 rounded-md border border-border/40 bg-muted/10 text-xs">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-foreground font-medium truncate">{getPageTitle(b.sourcePageId)}</span>
+                <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-emerald-500/30 text-emerald-400">
+                  {INTENT_LABELS[b.intent] || b.intent}
+                </Badge>
+                <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <span className="text-foreground truncate">
+                  {b.targetType === 'page' ? getPageTitle(b.targetId) : b.targetId}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-muted-foreground">"{b.sourceLabel}"</span>
+                <span className="text-muted-foreground/50">•</span>
+                <span className="text-muted-foreground capitalize">{b.targetType}</span>
+                <span className="text-muted-foreground/50">•</span>
+                <span className={cn("text-[9px]", b.confidence >= 0.8 ? "text-emerald-400" : b.confidence >= 0.5 ? "text-amber-400" : "text-red-400")}>
+                  {(b.confidence * 100).toFixed(0)}% confidence
+                </span>
+              </div>
+            </div>
+            {b.isValid ? (
+              <CheckCircle className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Section: Validation
+// ============================================================================
+
+function ValidationSection({ validations, summary }: { validations: PlaygroundValidation[]; summary: ReturnType<typeof getValidationSummary> }) {
+  const severityIcon = (sev: PlaygroundValidation['severity']) => {
+    switch (sev) {
+      case 'error': return <XCircle className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />;
+      case 'warning': return <AlertTriangle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />;
+      case 'info': return <Info className="h-3.5 w-3.5 text-blue-400 flex-shrink-0" />;
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-foreground">Site Validation</h3>
+
+      {/* Summary */}
+      <div className="flex gap-3 mb-3">
+        <div className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium", summary.isHealthy ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30" : "bg-red-500/10 text-red-400 border border-red-500/30")}>
+          {summary.isHealthy ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+          {summary.isHealthy ? 'Healthy' : `${summary.errors} Error${summary.errors !== 1 ? 's' : ''}`}
+        </div>
+        {summary.warnings > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {summary.warnings} Warning{summary.warnings !== 1 ? 's' : ''}
+          </div>
+        )}
+        {summary.info > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/30">
+            <Info className="h-3.5 w-3.5" />
+            {summary.info} Info
+          </div>
+        )}
+      </div>
+
+      {validations.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No validation issues detected. Your site structure is clean.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {validations.map(v => (
+            <div key={v.id} className={cn(
+              "flex items-start gap-2 p-2 rounded-md border text-xs",
+              v.severity === 'error' ? "border-red-500/30 bg-red-500/5" :
+              v.severity === 'warning' ? "border-amber-500/30 bg-amber-500/5" :
+              "border-blue-500/30 bg-blue-500/5"
+            )}>
+              {severityIcon(v.severity)}
+              <div className="flex-1 min-w-0">
+                <div className="text-foreground">{v.message}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <Badge variant="outline" className="text-[8px] h-3.5 px-1 capitalize">{v.scope}</Badge>
+                  {v.targetId && <span className="text-muted-foreground text-[9px] truncate">{v.targetId}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default CreatorPlaygroundModal;

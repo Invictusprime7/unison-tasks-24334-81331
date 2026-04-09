@@ -4960,12 +4960,14 @@ export default function ${componentName}() {
               const vfsPath = `/src/pages/${componentName}.tsx`;
               const vfsFiles = virtualFS.getSandpackFiles();
               if (vfsFiles[vfsPath]) {
+                // Dual action: open in editor + navigate preview
                 handleSelectPage(vfsPath);
-              } else if (vfsFiles['/src/App.tsx'] && page.isHome) {
+                livePreviewRef.current?.navigateToRoute(page.path);
+              } else if (page.isHome) {
                 handleSelectPage('/src/App.tsx');
+                livePreviewRef.current?.navigateToRoute('/');
               } else {
-                // Auto-scaffold the missing page into VFS
-                const pageRole = (page as any).role || 'custom';
+                // Auto-scaffold the missing page, regenerate router, then navigate
                 const scaffoldCode = [
                   "import React from 'react';",
                   "",
@@ -4985,9 +4987,18 @@ export default function ${componentName}() {
                   "  );",
                   "}",
                 ].join('\n');
-                virtualFS.importFiles({ [vfsPath]: scaffoldCode });
+                
+                // Regenerate canonical router to include the new page
+                const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry, businessName || undefined);
+                const filesToImport: Record<string, string> = { [vfsPath]: scaffoldCode };
+                if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
+                
+                virtualFS.importFiles(filesToImport);
                 toast.success(`Scaffolded "${page.title}" page`);
-                setTimeout(() => handleSelectPage(vfsPath), 100);
+                setTimeout(() => {
+                  handleSelectPage(vfsPath);
+                  livePreviewRef.current?.navigateToRoute(page.path);
+                }, 200);
               }
             }}
             onToggleNavVisibility={(pageId, visible) => {

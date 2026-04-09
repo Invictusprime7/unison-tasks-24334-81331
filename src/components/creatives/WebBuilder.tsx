@@ -5148,13 +5148,54 @@ export default function ${componentName}() {
                       onNavigate={(path) => {
                         const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
                         if (pageName !== 'index') {
-                          triggerPageGenRef.current(pageName, pageName, null);
+                          // Registry-first: check if page already exists before generating
+                          const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
+                          const existingPage = registryPages.find(p => 
+                            p.path.replace(/^\//, '').toLowerCase() === pageName.toLowerCase()
+                          );
+                          const vfsFiles = virtualFS.getSandpackFiles();
+                          const sanitized = pageName.replace(/[^a-z0-9-]/gi, '-');
+                          const componentName = sanitized
+                            .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
+                            .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
+                          const vfsPath = `/src/pages/${componentName}.tsx`;
+                          
+                          if (existingPage && vfsFiles[vfsPath]) {
+                            // Page exists — navigate preview to route and open in editor
+                            handleSelectPage(vfsPath);
+                            livePreviewRef.current?.navigateToRoute(existingPage.path);
+                          } else {
+                            // Page doesn't exist — fall back to generation
+                            triggerPageGenRef.current(pageName, pageName, null);
+                          }
                         }
                       }}
                       onIntentTrigger={(intent, payload) => {
-                        if (intent === 'nav.goto' && payload.path) {
-                          const pageName = String(payload.path).replace(/^\//, '').replace(/\.html$/, '');
-                          if (pageName) triggerPageGenRef.current(pageName, String(payload.text || pageName), null);
+                        if ((intent === 'nav.goto' || intent === 'nav.goto_page') && (payload.path || payload['target-page-id'])) {
+                          const targetPageId = payload['target-page-id'] as string;
+                          const targetPath = payload.path as string;
+                          
+                          // Resolve by page ID first (deterministic), then by path
+                          if (targetPageId) {
+                            const page = creatorPlayground.pageRegistry.pages[targetPageId];
+                            if (page) {
+                              livePreviewRef.current?.navigateToRoute(page.path);
+                              return;
+                            }
+                          }
+                          
+                          const pageName = String(targetPath || '').replace(/^\//, '').replace(/\.html$/, '');
+                          if (pageName) {
+                            const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
+                            const existingPage = registryPages.find(p => 
+                              p.path.replace(/^\//, '').toLowerCase() === pageName.toLowerCase()
+                            );
+                            if (existingPage) {
+                              livePreviewRef.current?.navigateToRoute(existingPage.path);
+                            } else {
+                              triggerPageGenRef.current(pageName, String(payload.text || pageName), null);
+                            }
+                          }
                         }
                       }}
                       businessId={businessId || undefined}

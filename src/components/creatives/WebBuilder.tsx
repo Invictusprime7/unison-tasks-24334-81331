@@ -97,6 +97,7 @@ import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
+import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { scaffoldMissingTopologyPagesWithRouter, getTopologyPagesForAIGeneration } from '@/utils/topologyVFSScaffolder';
@@ -1513,7 +1514,49 @@ export default function App() {
     () => detectRouteConflicts(creatorPlayground.pageRegistry),
     [creatorPlayground.pageRegistry]
   );
-  
+
+  // Feed route conflicts + topology validation into diagnostics aggregator
+  useEffect(() => {
+    const items: Array<{ domain: 'page-registry'; message: string; severity?: 'error' | 'warning'; code?: string }> = [];
+
+    // Route conflicts
+    for (const conflict of routeConflicts) {
+      items.push({
+        domain: 'page-registry',
+        message: `Duplicate route detected: "${conflict}" — multiple pages share the same path`,
+        severity: 'error',
+        code: 'ROUTE_CONFLICT',
+      });
+    }
+
+    // Topology validation errors (from site plan)
+    const plan = activeSitePlanRef.current;
+    if (plan?.validationErrors?.length) {
+      for (const err of plan.validationErrors) {
+        items.push({
+          domain: 'page-registry',
+          message: err,
+          severity: 'warning',
+          code: 'TOPOLOGY_VALIDATION',
+        });
+      }
+    }
+
+    // Check for missing VFS files (pages in registry but not in VFS)
+    const vfsFiles = virtualFS.getSandpackFiles();
+    for (const page of Object.values(creatorPlayground.pageRegistry.pages)) {
+      if (page.filePath && !vfsFiles[page.filePath]) {
+        items.push({
+          domain: 'page-registry',
+          message: `Page "${page.title}" (${page.filePath}) is registered but missing from VFS`,
+          severity: 'warning',
+          code: 'MISSING_VFS_FILE',
+        });
+      }
+    }
+
+    diagnosticsAggregator.ingestUnisonDiagnostics(items);
+  }, [routeConflicts, creatorPlayground.pageRegistry, virtualFS.nodes]);
   // Page manifest for async multi-page navigation (all HTML pages from VFS)
   const pageManifest = useMemo(() => {
     const vfsFiles = virtualFS.getSandpackFiles();

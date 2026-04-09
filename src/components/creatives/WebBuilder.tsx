@@ -1444,7 +1444,13 @@ export default function App() {
           if (Object.keys(missingFiles).length > 0) {
             virtualFS.importFiles(missingFiles);
           }
-          console.log('[WebBuilder] Recovered topology from DB');
+          // Trigger AI generation for placeholder pages
+          const pagesToGenerate = getTopologyPagesForAIGeneration(dbPlan, existingFiles);
+          for (const page of pagesToGenerate) {
+            const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
+            triggerPageGenRef.current(pageName, page.title, null);
+          }
+          console.log('[WebBuilder] Recovered topology from DB, AI generating', pagesToGenerate.length, 'pages');
         }
       });
       return; // will be handled by async callback

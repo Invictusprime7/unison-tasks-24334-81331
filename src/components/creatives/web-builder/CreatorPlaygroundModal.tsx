@@ -95,6 +95,10 @@ interface CreatorPlaygroundModalProps {
   onFunnelCreate?: (funnelId: string, stepPages: { pageId: string; title: string; path: string; role: FunnelRole }[]) => void;
   businessId?: string | null;
   initialSection?: Section;
+  /** Bindings from playground materializer */
+  bindings?: Record<string, PlaygroundBinding>;
+  /** VFS files for validation context */
+  vfsFiles?: Record<string, string>;
 }
 
 // ============================================================================

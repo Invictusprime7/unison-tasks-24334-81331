@@ -1640,8 +1640,54 @@ export default function App() {
       setEditorCode(pageContent);
     }
   }, [getSandpackFiles]);
+
+  /**
+   * Canonical navigation function — the ONLY path for page switching.
+   * Resolves pageId → route → filePath, updates all three state slices,
+   * opens editor file, and navigates preview.
+   */
+  const navigateToBuilderPage = useCallback((
+    pageId: string,
+    options?: { openFile?: boolean; updatePreview?: boolean }
+  ) => {
+    const { openFile = true, updatePreview = true } = options || {};
+    const page = creatorPlayground.pageRegistry.pages[pageId];
+    if (!page) {
+      console.warn('[WebBuilder] navigateToBuilderPage: page not found:', pageId);
+      return;
+    }
+
+    const vfsFiles = virtualFS.getSandpackFiles();
+    const resolved = resolveNavigationTarget(
+      { pageId },
+      creatorPlayground.pageRegistry,
+      vfsFiles,
+    );
+
+    // Update all three state slices
+    setActivePageId(pageId);
+    setActivePreviewRoute(resolved.route || '/');
+
+    if (resolved.existsInVFS && resolved.filePath && openFile) {
+      handleSelectPage(resolved.filePath);
+    } else if (page.isHome && openFile) {
+      handleSelectPage('/src/App.tsx');
+    }
+
+    if (updatePreview) {
+      livePreviewRef.current?.navigateToRoute(resolved.route || '/');
+    }
+
+    // If file doesn't exist in VFS, trigger AI generation as fallback
+    if (!resolved.existsInVFS && !page.isHome) {
+      const fp = resolved.filePath || deriveFilePath(page);
+      const pageName = fp.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
+      creatorPlayground.updatePage(pageId, { filePath: fp });
+      triggerPageGenRef.current(pageName, page.title, null);
+    }
+  }, [creatorPlayground.pageRegistry, virtualFS, handleSelectPage]);
+
   
-  // Handle adding a new page
   const handleAddPage = useCallback(() => {
     const name = prompt('Enter page name (e.g. "about", "contact"):');
     if (!name) return;

@@ -26,7 +26,7 @@ export function scaffoldMissingTopologyPages(
 
   for (const page of plan.pages) {
     if (!existingFiles[page.filePath]) {
-      newFiles[page.filePath] = generateTopologyPage(page, plan);
+      newFiles[page.filePath] = generateTopologyPlaceholder(page, plan);
     }
   }
 

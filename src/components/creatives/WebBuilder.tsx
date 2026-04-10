@@ -4651,6 +4651,10 @@ ${html}
         playground={creatorPlayground}
         businessId={businessId || null}
         initialSection={playgroundInitialSection}
+        bindings={playgroundBindings}
+        calendars={playgroundCalendars}
+        popups={playgroundPopups}
+        vfsFiles={virtualFS.getSandpackFiles()}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;

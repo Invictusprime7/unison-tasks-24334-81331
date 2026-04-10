@@ -1486,6 +1486,21 @@ export default function App() {
         });
       }
       console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
+
+      // Hydrate playground materialized state (bindings, calendars, popups) from launcher
+      const materializedState = (navState as any)?.materializedPlayground;
+      if (materializedState) {
+        if (materializedState.bindings) setPlaygroundBindings(materializedState.bindings);
+        if (materializedState.calendars) setPlaygroundCalendars(materializedState.calendars);
+        if (materializedState.popups) setPlaygroundPopups(materializedState.popups);
+        // Hydrate forms into creator playground
+        if (materializedState.creatorData?.forms) {
+          for (const form of Object.values(materializedState.creatorData.forms)) {
+            creatorPlayground.addForm(form as any);
+          }
+        }
+        console.log(`[WebBuilder] Hydrated playground: ${Object.keys(materializedState.bindings || {}).length} bindings, ${Object.keys(materializedState.calendars || {}).length} calendars, ${Object.keys(materializedState.popups || {}).length} popups`);
+      }
       if (sitePlan.validationErrors?.length) {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }

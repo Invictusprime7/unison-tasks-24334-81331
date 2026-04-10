@@ -112,7 +112,37 @@ const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
   { id: "blog", label: "Blog", icon: "📰" },
 ];
 
-// Map businessSystem ids → industry tags for premium templates
+// ============================================================================
+// Playground Pipeline Mappings
+// ============================================================================
+
+const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
+  booking: 'appointment_service',
+  saas: 'saas_digital',
+  agency: 'quote_lead',
+  portfolio: 'portfolio_creator',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const SYSTEM_TO_INDUSTRY_OVERLAY: Record<BusinessSystemType, IndustryOverlay> = {
+  booking: 'salon',
+  saas: 'general',
+  agency: 'agency',
+  portfolio: 'photographer',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const GOAL_TO_NEEDS: Record<PrimaryGoal, { needsBooking?: boolean; sellsProducts?: boolean; wantsLeadCapture?: boolean }> = {
+  collect_leads: { wantsLeadCapture: true },
+  book_appointments: { needsBooking: true },
+  sell_offers: { sellsProducts: true },
+  showcase_work: {},
+  drive_calls: { wantsLeadCapture: true },
+  grow_email_list: { wantsLeadCapture: true },
+};
+
 const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
   booking: ["salon", "restaurant", "fitness"],
   saas: ["universal"],

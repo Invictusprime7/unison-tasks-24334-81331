@@ -52,6 +52,10 @@ import {
   type IndustryTag,
   type PremiumSectionReference,
 } from "@/sections/references";
+import { resolveCapabilities } from "@/services/wizardCapabilityResolver";
+import { materializePlayground } from "@/services/wizardPlaygroundMaterializer";
+import { compilePlayground } from "@/services/playgroundCompiler";
+import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
 // Types
@@ -108,7 +112,37 @@ const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
   { id: "blog", label: "Blog", icon: "📰" },
 ];
 
-// Map businessSystem ids → industry tags for premium templates
+// ============================================================================
+// Playground Pipeline Mappings
+// ============================================================================
+
+const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
+  booking: 'appointment_service',
+  saas: 'saas_digital',
+  agency: 'quote_lead',
+  portfolio: 'portfolio_creator',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const SYSTEM_TO_INDUSTRY_OVERLAY: Record<BusinessSystemType, IndustryOverlay> = {
+  booking: 'salon',
+  saas: 'general',
+  agency: 'agency',
+  portfolio: 'photographer',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const GOAL_TO_NEEDS: Record<PrimaryGoal, { needsBooking?: boolean; sellsProducts?: boolean; wantsLeadCapture?: boolean }> = {
+  collect_leads: { wantsLeadCapture: true },
+  book_appointments: { needsBooking: true },
+  sell_offers: { sellsProducts: true },
+  showcase_work: {},
+  drive_calls: { wantsLeadCapture: true },
+  grow_email_list: { wantsLeadCapture: true },
+};
+
 const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
   booking: ["salon", "restaurant", "fitness"],
   saas: ["universal"],
@@ -573,6 +607,30 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       });
       console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
 
+      // ── Step 3: Run Canonical Playground Pipeline ──
+      const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
+      const wizardSelections: WizardSelections = {
+        businessName: businessName.trim(),
+        businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
+        industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
+        primaryGoal: primaryGoal || 'collect_leads',
+        secondaryGoals: customerNeeds as string[],
+        needsBooking: goalNeeds.needsBooking || customerNeeds.includes('book_service'),
+        sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
+        wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
+        templateId: selectedTemplate?.id,
+        themeId: selectedTheme?.id,
+      };
+
+      const capabilities = resolveCapabilities(wizardSelections);
+      const { playground: materializedPlayground, warnings: materializationWarnings } = materializePlayground(wizardSelections, capabilities);
+      const compiledPlayground = compilePlayground(materializedPlayground, {}, businessName.trim());
+
+      if (materializationWarnings.length > 0) {
+        console.warn('[SystemLauncher] Materialization warnings:', materializationWarnings);
+      }
+      console.log(`[SystemLauncher] Playground materialized: ${Object.keys(materializedPlayground.bindings).length} bindings, ${Object.keys(materializedPlayground.calendars).length} calendars, ${Object.keys(materializedPlayground.popups).length} popups`);
+
       const blueprint = {
         version: "1.0",
         identity: {
@@ -703,6 +761,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         sitePlan,
+        // Playground pipeline output
+        materializedPlayground,
+        compiledPlayground,
+        wizardSelections,
       };
 
       if (vfsFiles && Object.keys(vfsFiles).length > 0) {

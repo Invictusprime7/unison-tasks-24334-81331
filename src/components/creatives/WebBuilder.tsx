@@ -925,6 +925,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
   const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
   const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | undefined>(undefined);
+  const [playgroundBindings, setPlaygroundBindings] = useState<Record<string, import('@/types/playground').PlaygroundBinding>>({});
+  const [playgroundCalendars, setPlaygroundCalendars] = useState<Record<string, import('@/types/playground').PlaygroundCalendar>>({});
+  const [playgroundPopups, setPlaygroundPopups] = useState<Record<string, import('@/types/playground').PlaygroundPopup>>({});
   const [aiPanelOpen, setAiPanelOpen] = useState(true); // AI panel open by default for easy access
   const [iframeErrors, setIframeErrors] = useState<IframeError[]>([]);
   const dragDropServiceRef = useRef<CanvasDragDropService>(CanvasDragDropService.getInstance());
@@ -1483,6 +1486,21 @@ export default function App() {
         });
       }
       console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
+
+      // Hydrate playground materialized state (bindings, calendars, popups) from launcher
+      const materializedState = (navState as any)?.materializedPlayground;
+      if (materializedState) {
+        if (materializedState.bindings) setPlaygroundBindings(materializedState.bindings);
+        if (materializedState.calendars) setPlaygroundCalendars(materializedState.calendars);
+        if (materializedState.popups) setPlaygroundPopups(materializedState.popups);
+        // Hydrate forms into creator playground
+        if (materializedState.creatorData?.forms) {
+          for (const form of Object.values(materializedState.creatorData.forms)) {
+            creatorPlayground.addForm(form as any);
+          }
+        }
+        console.log(`[WebBuilder] Hydrated playground: ${Object.keys(materializedState.bindings || {}).length} bindings, ${Object.keys(materializedState.calendars || {}).length} calendars, ${Object.keys(materializedState.popups || {}).length} popups`);
+      }
       if (sitePlan.validationErrors?.length) {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }
@@ -4633,6 +4651,10 @@ ${html}
         playground={creatorPlayground}
         businessId={businessId || null}
         initialSection={playgroundInitialSection}
+        bindings={playgroundBindings}
+        calendars={playgroundCalendars}
+        popups={playgroundPopups}
+        vfsFiles={virtualFS.getSandpackFiles()}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;

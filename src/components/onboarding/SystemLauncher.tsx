@@ -761,6 +761,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         sitePlan,
+        // Playground pipeline output
+        materializedPlayground,
+        compiledPlayground,
+        wizardSelections,
       };
 
       if (vfsFiles && Object.keys(vfsFiles).length > 0) {

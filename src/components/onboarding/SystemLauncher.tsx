@@ -607,6 +607,30 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       });
       console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
 
+      // ── Step 3: Run Canonical Playground Pipeline ──
+      const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
+      const wizardSelections: WizardSelections = {
+        businessName: businessName.trim(),
+        businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
+        industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
+        primaryGoal: primaryGoal || 'collect_leads',
+        secondaryGoals: customerNeeds as string[],
+        needsBooking: goalNeeds.needsBooking || customerNeeds.includes('book_service'),
+        sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
+        wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
+        templateId: selectedTemplate?.id,
+        themeId: selectedTheme?.id,
+      };
+
+      const capabilities = resolveCapabilities(wizardSelections);
+      const { playground: materializedPlayground, warnings: materializationWarnings } = materializePlayground(wizardSelections, capabilities);
+      const compiledPlayground = compilePlayground(materializedPlayground, {}, businessName.trim());
+
+      if (materializationWarnings.length > 0) {
+        console.warn('[SystemLauncher] Materialization warnings:', materializationWarnings);
+      }
+      console.log(`[SystemLauncher] Playground materialized: ${Object.keys(materializedPlayground.bindings).length} bindings, ${Object.keys(materializedPlayground.calendars).length} calendars, ${Object.keys(materializedPlayground.popups).length} popups`);
+
       const blueprint = {
         version: "1.0",
         identity: {

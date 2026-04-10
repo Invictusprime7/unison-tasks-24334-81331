@@ -52,6 +52,10 @@ import {
   type IndustryTag,
   type PremiumSectionReference,
 } from "@/sections/references";
+import { resolveCapabilities } from "@/services/wizardCapabilityResolver";
+import { materializePlayground } from "@/services/wizardPlaygroundMaterializer";
+import { compilePlayground } from "@/services/playgroundCompiler";
+import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
 // Types

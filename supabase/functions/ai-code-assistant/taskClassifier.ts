@@ -142,6 +142,19 @@ export function classifyTask(opts: {
     };
   }
 
+  // ── Behavioral edit (functional changes: hooks, state, handlers) ──────
+  if (behavioralEdit) {
+    return {
+      type: "behavioral_edit",
+      fastPath: false,
+      shouldUseMemory: true,
+      shouldUseCompactContext: true,
+      prefersJsonOutput: true,
+      skipResearch: true,
+      skipThinking: false,
+    };
+  }
+
   // ── Debug mode ────────────────────────────────────────────────────────
   if (debugMode) {
     return {

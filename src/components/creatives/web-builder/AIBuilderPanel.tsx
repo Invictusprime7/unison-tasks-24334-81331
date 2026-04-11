@@ -244,6 +244,8 @@ interface AIBuilderPanelProps {
   vfsFiles?: Record<string, string> | null;
   /** Direct VFS apply callback — bypasses legacy onCodeGenerated pipeline, uses AI→VFS orchestrator */
   onApplyToVFS?: (files: Record<string, string>) => void;
+  /** Preview handle ref for building component behavior maps (DOM inspection) */
+  previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
 }
 
 // ============================================================================

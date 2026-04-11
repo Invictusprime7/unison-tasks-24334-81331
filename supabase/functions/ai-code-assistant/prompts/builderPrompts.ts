@@ -159,6 +159,7 @@ EXAMPLES OF BEHAVIORAL EDITS:
 ` : '';
 
   return opts.basePrompt
+    + REACT_PRIMITIVES_KNOWLEDGE
     + editPreamble
     + behavioralBlock
     + opts.surgicalReinforcement

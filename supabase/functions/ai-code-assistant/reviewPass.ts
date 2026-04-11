@@ -230,3 +230,59 @@ function resolveRelativePath(dir: string, rel: string): string {
   }
   return "/" + parts.join("/");
 }
+
+// ── Structural preservation validation ──────────────────────────────────────
+
+function countStructuralElements(content: string) {
+  return {
+    imports: (content.match(/^import\s+/gm) || []).length,
+    hooks: (content.match(/\buse[A-Z][a-zA-Z]*\s*\(/g) || []).length,
+    components: (content.match(/(?:export\s+(?:default\s+)?)?(?:function|const)\s+[A-Z][a-zA-Z0-9]+/g) || []).length,
+    sections: (content.match(/(?:class|className)="[^"]*(?:hero|feature|about|pricing|testimonial|team|contact|cta|footer|gallery|faq|blog|header|nav)[^"]*"/gi) || []).length,
+    intents: (content.match(/data-ut-intent/g) || []).length,
+  };
+}
+
+function validateStructuralPreservation(
+  newFiles: Record<string, string>,
+  existingFilePaths: string[],
+  _originalPatchFiles: Record<string, string>,
+): Array<{ severity: "info" | "warning" | "error"; message: string }> {
+  const warnings: Array<{ severity: "info" | "warning" | "error"; message: string }> = [];
+
+  // For each file being overwritten, compare structural counts
+  for (const [path, newContent] of Object.entries(newFiles)) {
+    if (!existingFilePaths.includes(path)) continue; // new file, skip
+    if (!/\.(tsx|jsx)$/.test(path)) continue; // only check React files
+
+    const newCounts = countStructuralElements(newContent);
+
+    // Heuristic: if the new file is significantly shorter and has fewer sections, flag it
+    if (newCounts.sections === 0 && newContent.length < 500) {
+      warnings.push({
+        severity: "error",
+        message: `${path}: Output appears to be a stub/skeleton (${newContent.length} chars, 0 sections) — likely a destructive regeneration`,
+      });
+    }
+
+    // Check for suspiciously low import count in a file that should have many
+    if (newCounts.imports < 2 && newContent.length > 1000) {
+      warnings.push({
+        severity: "warning",
+        message: `${path}: Very few imports (${newCounts.imports}) for a ${newContent.length}-char file — may have dropped imports`,
+      });
+    }
+  }
+
+  // Global check: if total output across all files is very small for an edit task
+  const totalOutputChars = Object.values(newFiles).reduce((sum, c) => sum + c.length, 0);
+  const fileCount = Object.keys(newFiles).length;
+  if (fileCount > 2 && totalOutputChars < 2000) {
+    warnings.push({
+      severity: "error",
+      message: `Patch contains ${fileCount} files but only ${totalOutputChars} total chars — likely a destructive regeneration`,
+    });
+  }
+
+  return warnings;
+}

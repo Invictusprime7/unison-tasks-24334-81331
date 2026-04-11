@@ -4764,6 +4764,7 @@ export default function ${componentName}() {
                 systemsBuildContext={systemsBuildContextFromState}
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
+                previewRef={livePreviewRef}
                 onApplyToVFS={(files) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
                   const result = aiVFS.applyCode(files);

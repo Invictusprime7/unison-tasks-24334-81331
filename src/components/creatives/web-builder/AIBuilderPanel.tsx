@@ -1092,6 +1092,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               debugMode: isDebugMode,
               surgicalEdit: isSurgicalEdit,
               behavioralEdit: isBehavioralEdit,
+              targetFile: resolvedTargetFile || undefined,
               componentBehaviorContext: isBehavioralEdit ? behaviorContext : undefined,
               systemType,
               templateName,

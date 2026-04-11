@@ -9,7 +9,8 @@
  */
 
 import type { SectionType, SectionRegistryEntry, BaseSectionProps } from './types';
-import { getComponentIntelligence, type ComponentIntelligence } from '@/types/componentIntelligence';
+import type { ComponentIntelligence } from '@/types/componentIntelligence';
+import { getComponentIntelligence } from '@/services/componentIntelligenceRegistry';
 
 // Import section components
 import { NavbarSection } from './components/NavbarSection';

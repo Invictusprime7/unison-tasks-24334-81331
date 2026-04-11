@@ -51,6 +51,7 @@ import type { BusinessSystemType } from '@/data/templates/types';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
+import { buildComponentBehaviorMap, formatBehaviorMapForPrompt } from '@/services/aiVFSOrchestrator';
 import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
 import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 import { vfsEventBus } from '@/services/vfsEventBus';
@@ -243,6 +244,8 @@ interface AIBuilderPanelProps {
   vfsFiles?: Record<string, string> | null;
   /** Direct VFS apply callback — bypasses legacy onCodeGenerated pipeline, uses AI→VFS orchestrator */
   onApplyToVFS?: (files: Record<string, string>) => void;
+  /** Preview handle ref for building component behavior maps (DOM inspection) */
+  previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
 }
 
 // ============================================================================
@@ -562,6 +565,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   vfsContext,
   vfsFiles,
   onApplyToVFS,
+  previewRef,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -748,14 +752,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       liveStep('analyzing', 'Parsing natural language request...');
 
       const rawInput = _userContent;
-      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
+      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isBehavioral: detectedBehavioral, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
       const isSurgicalEdit = detectedSurgical && !!currentCode;
+      const isBehavioralEdit = detectedBehavioral && !!currentCode;
 
       liveStep('analyzing', `Intent: ${promptAnalysis.intent} · Complexity: ${promptAnalysis.complexity}`, [
         promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
         promptAnalysis.designKeywords.length ? `Design cues: ${promptAnalysis.designKeywords.join(', ')}` : null,
         promptAnalysis.constraints.length ? `${promptAnalysis.constraints.length} constraints detected` : null,
-        isSurgicalEdit ? '🎯 Surgical edit mode' : isFullGeneration ? '🏗️ Full generation mode' : null,
+        isBehavioralEdit ? '🧠 Behavioral edit mode' : isSurgicalEdit ? '🎯 Surgical edit mode' : isFullGeneration ? '🏗️ Full generation mode' : null,
       ].filter(Boolean).join(' | '));
 
       // Log prompt analysis for debugging
@@ -865,6 +870,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           currentCode.includes('export default function') ||
           currentCode.includes('export default const')
         );
+      }
+
+      // ── Phase 1c: Behavioral Edit — Build component behavior map ──
+      let behaviorContext = '';
+      if (isBehavioralEdit && vfsFiles && Object.keys(vfsFiles).length > 0) {
+        try {
+          const behaviorMap = buildComponentBehaviorMap(
+            previewRef?.current ? { getIframe: previewRef.current.getIframe } as any : { getIframe: () => null } as any,
+            vfsFiles,
+          );
+          behaviorContext = formatBehaviorMapForPrompt(behaviorMap);
+          if (behaviorContext) {
+            liveStep('analyzing', `🧠 Behavior map: ${behaviorMap.elements.length} interactive elements, ${Object.keys(behaviorMap.stateByFile).length} stateful files`);
+          }
+        } catch { /* behavior map is best-effort */ }
       }
 
       // Build theme/styling context from Systems AI blueprint so in-builder edits stay consistent
@@ -1067,6 +1087,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               currentCode: truncatedCode,
               editMode: !!currentCode,
               surgicalEdit: isSurgicalEdit,
+              behavioralEdit: isBehavioralEdit,
+              componentBehaviorContext: isBehavioralEdit ? behaviorContext : undefined,
               systemType,
               templateName,
               templateAction,

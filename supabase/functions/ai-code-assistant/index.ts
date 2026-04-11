@@ -41,6 +41,7 @@ serve(async (req: Request) => {
       templateAction: parsed.data.templateAction ?? undefined,
       navPageGen: parsed.data.navPageGen ?? false,
       surgicalEdit: parsed.data.surgicalEdit ?? false,
+      behavioralEdit: parsed.data.behavioralEdit ?? false,
       debugMode: parsed.data.debugMode ?? false,
       vfsFiles: parsed.data.vfsFiles,
     });

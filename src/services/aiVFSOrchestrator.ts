@@ -320,6 +320,227 @@ export function queryIframeState(previewHandle: PreviewHandle): {
   return result;
 }
 
+// ============================================================================
+// Component Behavior Snapshot
+// ============================================================================
+
+/** A single interactive element's behavioral metadata */
+export interface ComponentBehaviorEntry {
+  /** CSS selector path to locate this element */
+  selector: string;
+  /** HTML tag name */
+  tagName: string;
+  /** Visible text content (truncated) */
+  textContent: string;
+  /** Which VFS file renders this element (best guess) */
+  sourceFile: string | null;
+  /** Current event handler names detected on the element */
+  handlers: string[];
+  /** data-ut-intent value if present */
+  intent: string | null;
+  /** data-ut-cta value if present */
+  ctaLabel: string | null;
+  /** Key aria/role attributes */
+  role: string | null;
+  /** Whether element has existing onClick/onSubmit/onChange */
+  hasInteraction: boolean;
+}
+
+/** Full behavior snapshot of the live preview */
+export interface ComponentBehaviorMap {
+  /** Interactive elements discovered in the DOM */
+  elements: ComponentBehaviorEntry[];
+  /** React state hooks found in VFS source files: { file -> [stateVarName, ...] } */
+  stateByFile: Record<string, string[]>;
+  /** React effect hooks found: { file -> count } */
+  effectsByFile: Record<string, number>;
+  /** Custom hooks used: { file -> [hookName, ...] } */
+  hooksByFile: Record<string, string[]>;
+  /** Timestamp of snapshot */
+  snapshotAt: number;
+}
+
+/**
+ * Build a deep behavioral snapshot combining DOM inspection and VFS source parsing.
+ * This gives the AI full awareness of what interactive elements exist and their current wiring.
+ */
+export function buildComponentBehaviorMap(
+  previewHandle: PreviewHandle,
+  vfsFiles: Record<string, string>,
+): ComponentBehaviorMap {
+  const elements: ComponentBehaviorEntry[] = [];
+  const stateByFile: Record<string, string[]> = {};
+  const effectsByFile: Record<string, number> = {};
+  const hooksByFile: Record<string, string[]> = {};
+
+  // ── DOM Inspection ──
+  try {
+    const iframe = previewHandle.getIframe?.();
+    const doc = iframe?.contentDocument;
+    if (doc) {
+      const interactiveSelectors = 'button, a, [onclick], [data-ut-intent], [role="button"], input, textarea, select, form, [data-editable], [contenteditable]';
+      const els = doc.querySelectorAll(interactiveSelectors);
+
+      els.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        const handlers: string[] = [];
+
+        // Detect inline handlers
+        for (const attr of Array.from(el.attributes)) {
+          if (attr.name.startsWith('on') || attr.name === 'data-onclick') {
+            handlers.push(attr.name);
+          }
+        }
+
+        // Check for React event props via __reactProps (React 18+)
+        const reactPropsKey = Object.keys(htmlEl).find(k => k.startsWith('__reactProps'));
+        if (reactPropsKey) {
+          const props = (htmlEl as any)[reactPropsKey];
+          if (props) {
+            for (const key of Object.keys(props)) {
+              if (/^on[A-Z]/.test(key) && typeof props[key] === 'function') {
+                handlers.push(key);
+              }
+            }
+          }
+        }
+
+        // Build selector
+        let selector = htmlEl.tagName.toLowerCase();
+        if (htmlEl.id) selector += `#${htmlEl.id}`;
+        else if (htmlEl.className && typeof htmlEl.className === 'string') {
+          const cls = htmlEl.className.split(' ').filter(Boolean).slice(0, 2).join('.');
+          if (cls) selector += `.${cls}`;
+        }
+
+        elements.push({
+          selector,
+          tagName: htmlEl.tagName.toLowerCase(),
+          textContent: (htmlEl.textContent || '').trim().slice(0, 80),
+          sourceFile: null, // resolved below via VFS matching
+          handlers,
+          intent: el.getAttribute('data-ut-intent'),
+          ctaLabel: el.getAttribute('data-ut-cta'),
+          role: el.getAttribute('role'),
+          hasInteraction: handlers.length > 0 || !!el.getAttribute('data-ut-intent'),
+        });
+      });
+    }
+  } catch { /* DOM inspection is best-effort */ }
+
+  // ── VFS Source Parsing ──
+  const stateRegex = /\buse(?:State|Reducer)\s*[<(]/g;
+  const stateNameRegex = /(?:const|let)\s+\[(\w+)/g;
+  const effectRegex = /\buseEffect\s*\(/g;
+  const hookRegex = /\buse[A-Z]\w+\s*\(/g;
+  const componentNameRegex = /(?:export\s+(?:default\s+)?)?(?:function|const)\s+([A-Z]\w+)/;
+
+  for (const [filePath, content] of Object.entries(vfsFiles)) {
+    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+
+    // Extract state variable names
+    const stateVars: string[] = [];
+    let match: RegExpExecArray | null;
+    const contentLines = content;
+
+    while ((match = stateNameRegex.exec(contentLines)) !== null) {
+      // Only count if preceded by useState/useReducer on similar line
+      const lineStart = contentLines.lastIndexOf('\n', match.index);
+      const line = contentLines.slice(lineStart, match.index + match[0].length + 100);
+      if (/useState|useReducer/.test(line)) {
+        stateVars.push(match[1]);
+      }
+    }
+    if (stateVars.length) stateByFile[filePath] = stateVars;
+
+    // Count effects
+    const effects = (contentLines.match(effectRegex) || []).length;
+    if (effects) effectsByFile[filePath] = effects;
+
+    // Detect custom hooks (use* calls that aren't built-in)
+    const builtIn = new Set(['useState', 'useEffect', 'useCallback', 'useMemo', 'useRef', 'useContext', 'useReducer', 'useLayoutEffect', 'useImperativeHandle', 'useDebugValue', 'useDeferredValue', 'useTransition', 'useId', 'useSyncExternalStore', 'useInsertionEffect']);
+    const hooks: string[] = [];
+    while ((match = hookRegex.exec(contentLines)) !== null) {
+      const hookName = match[0].replace(/\s*\($/, '');
+      if (!builtIn.has(hookName) && !hooks.includes(hookName)) {
+        hooks.push(hookName);
+      }
+    }
+    if (hooks.length) hooksByFile[filePath] = hooks;
+
+    // Try to map DOM elements to this file by matching text content or component names
+    const compMatch = componentNameRegex.exec(content);
+    const componentName = compMatch?.[1];
+    if (componentName) {
+      for (const entry of elements) {
+        if (!entry.sourceFile) {
+          // Match by data-component attribute or by text content presence in source
+          if (content.includes(`data-component="${componentName}"`) ||
+              (entry.textContent.length > 5 && content.includes(entry.textContent.slice(0, 30)))) {
+            entry.sourceFile = filePath;
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    elements: elements.slice(0, 40), // cap for prompt budget
+    stateByFile,
+    effectsByFile,
+    hooksByFile,
+    snapshotAt: Date.now(),
+  };
+}
+
+/**
+ * Format the behavior map as a compact string for AI prompt context.
+ */
+export function formatBehaviorMapForPrompt(map: ComponentBehaviorMap): string {
+  if (map.elements.length === 0 && Object.keys(map.stateByFile).length === 0) {
+    return '';
+  }
+
+  const lines: string[] = ['[Component Behavior Map]'];
+
+  // Interactive elements
+  if (map.elements.length > 0) {
+    lines.push('Interactive elements:');
+    for (const el of map.elements) {
+      const parts = [`  ${el.selector}`];
+      if (el.textContent) parts.push(`"${el.textContent.slice(0, 40)}"`);
+      if (el.intent) parts.push(`intent=${el.intent}`);
+      if (el.handlers.length) parts.push(`handlers=[${el.handlers.join(',')}]`);
+      if (el.sourceFile) parts.push(`→ ${el.sourceFile}`);
+      if (!el.hasInteraction) parts.push('(no handler)');
+      lines.push(parts.join(' '));
+    }
+  }
+
+  // State by file
+  if (Object.keys(map.stateByFile).length) {
+    lines.push('State hooks:');
+    for (const [file, vars] of Object.entries(map.stateByFile)) {
+      lines.push(`  ${file}: ${vars.join(', ')}`);
+    }
+  }
+
+  // Custom hooks
+  if (Object.keys(map.hooksByFile).length) {
+    lines.push('Custom hooks:');
+    for (const [file, hooks] of Object.entries(map.hooksByFile)) {
+      lines.push(`  ${file}: ${hooks.join(', ')}`);
+    }
+  }
+
+  // Effects summary
+  if (Object.keys(map.effectsByFile).length) {
+    lines.push('Effects: ' + Object.entries(map.effectsByFile).map(([f, n]) => `${f}(${n})`).join(', '));
+  }
+
+  return lines.join('\n');
+}
+
 /**
  * Read all current VFS files and format them as context for the AI prompt.
  * This gives the AI full visibility into the current project state,

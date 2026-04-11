@@ -20,6 +20,7 @@ export function buildEditAssistantPrompt(opts: {
   blueprintContext: string;
   elementsLibrary: string;
   thinkingInstruction: string;
+  behavioralContext?: string;
 }): string {
   const editPreamble = `
 [EDIT MODE — PRECISION PRIORITY]
@@ -32,8 +33,46 @@ You are modifying an existing live project. Follow these priorities:
 6. NEVER remove sections, components, or functionality unless explicitly asked
 `;
 
+  const behavioralBlock = opts.behavioralContext ? `
+[🧠 BEHAVIORAL EDIT MODE — FUNCTIONAL CHANGES AUTHORIZED]
+You have full authority to add, modify, or rewire component BEHAVIOR and FUNCTIONALITY.
+This includes: adding useState, useEffect, useCallback, useRef hooks; creating event handlers
+(onClick, onSubmit, onChange, onKeyDown); adding conditional rendering based on state;
+creating helper functions inside components; wiring elements to open modals, toggles,
+drawers, tooltips, or any interactive UI pattern.
+
+BEHAVIORAL AWARENESS (live preview snapshot):
+${opts.behavioralContext}
+
+BEHAVIORAL EDIT RULES:
+1. READ the behavior map above to understand what interactive elements exist and what they currently do
+2. Identify the TARGET element(s) the user is referring to from the behavior map
+3. Find the SOURCE FILE for the target element (listed in the map)
+4. Add the minimum hooks/state/handlers needed to achieve the requested behavior
+5. If the element already has handlers, EXTEND them — don't replace unless asked
+6. If you need new state (e.g., isOpen, messages[], inputValue), use React useState
+7. If you need side effects (e.g., fetch data, listen for events), use useEffect
+8. For complex interactions (chat widget, cart drawer, modals), create the UI inline
+   in the same component using conditional rendering with state toggles
+9. Wire the trigger element with an onClick/onSubmit that toggles the state
+10. Preserve ALL existing visual styling — behavioral edits change LOGIC, not APPEARANCE
+    (unless the new behavior requires new UI elements, which should match existing theme)
+11. Use data-ut-intent attributes when the behavior maps to a known system intent
+12. For new interactive sub-components (e.g., chat panel), render them conditionally
+    within the existing component tree — do NOT create separate files unless
+    the component would exceed ~200 lines
+
+EXAMPLES OF BEHAVIORAL EDITS:
+- "Make the chat bubble open a chat widget" → Add isOpen state + onClick toggle + render chat panel
+- "Add a click counter to this button" → Add count state + onClick increment + display count
+- "Make this form submit to the backend" → Add onSubmit handler + fetch call + loading/success state
+- "Add a dark mode toggle" → Add isDark state + toggle handler + apply class conditionally
+- "Make this accordion collapsible" → Add openIndex state + onClick toggle + conditional rendering
+` : '';
+
   return opts.basePrompt
     + editPreamble
+    + behavioralBlock
     + opts.surgicalReinforcement
     + opts.memoryBlock
     + opts.compactedFilesBlock

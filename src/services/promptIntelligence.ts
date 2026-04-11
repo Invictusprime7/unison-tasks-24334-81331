@@ -11,6 +11,7 @@
 export type PromptIntent =
   | 'full_generation'    // build a full page/site from scratch
   | 'surgical_edit'      // change a specific element/component
+  | 'behavioral_edit'    // change functionality: add hooks, handlers, state, interactions
   | 'add_section'        // add a new section or component
   | 'remove_section'     // remove an existing section
   | 'restyle'            // change visual appearance (colors, fonts, layout)
@@ -130,6 +131,17 @@ const INTENT_PATTERNS: Array<{ intent: PromptIntent; patterns: RegExp[] }> = [
     ],
   },
   {
+    intent: 'behavioral_edit',
+    patterns: [
+      /\b(make|when|on)\b.*\b(click|clicked|press|pressed|tap|tapped|hover|submit|open|close|toggle|expand|collapse|trigger)\b/i,
+      /\b(add|create|implement|build|wire)\b.*\b(functionality|behavior|interaction|handler|event|listener|state|hook|toggle|counter|timer|animation|widget|modal|drawer|dropdown|popup|tooltip|chat|form handling)\b/i,
+      /\b(open|show|display|reveal|launch|activate|trigger)\b.*\b(a|an|the|new)?\s*(modal|dialog|drawer|sidebar|panel|menu|dropdown|popup|widget|overlay|chat|notification|toast)\b/i,
+      /\b(should|needs to|must|will)\b.*\b(open|close|toggle|expand|collapse|submit|navigate|scroll|fetch|load|count|track|animate)\b/i,
+      /\badd\b.*\b(onclick|onsubmit|onchange|onkeydown|event)\b/i,
+      /\b(collapsible|expandable|toggleable|draggable|sortable|dismissable|interactive)\b/i,
+    ],
+  },
+  {
     intent: 'surgical_edit',
     patterns: [
       /\b(change|modify|update|edit|adjust|tweak|fix|move|swap|reposition|resize|enlarge|shrink|center|align)\b.*\b(the|this|that|my)\b/i,
@@ -157,7 +169,7 @@ function detectIntents(text: string): { primary: PromptIntent; secondary: Prompt
 
   // Priority order for primary selection
   const priority: PromptIntent[] = [
-    'full_generation', 'fix_error', 'wire_backend', 'add_section',
+    'full_generation', 'fix_error', 'wire_backend', 'behavioral_edit', 'add_section',
     'remove_section', 'restyle', 'content_update', 'surgical_edit', 'refactor',
   ];
 
@@ -438,11 +450,14 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
   enhancedPrompt: string;
   analysis: AnalyzedPrompt;
   isSurgical: boolean;
+  isBehavioral: boolean;
   isFullGen: boolean;
 } {
   const analysis = analyzePrompt(rawText);
   const maxLength = Math.max(1200, options.maxLength ?? 8500);
   const rawExcerptMax = Math.max(600, options.rawExcerptMax ?? 5000);
+
+  const isBehavioral = analysis.intent === 'behavioral_edit' || analysis.secondaryIntents.includes('behavioral_edit');
 
   // For very short prompts (< 30 chars), skip enhancement
   if (rawText.length < 30 && analysis.complexity === 'simple' && rawText.length <= maxLength) {
@@ -450,6 +465,7 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
       enhancedPrompt: rawText,
       analysis,
       isSurgical: analysis.intent === 'surgical_edit' || analysis.intent === 'content_update',
+      isBehavioral,
       isFullGen: analysis.intent === 'full_generation',
     };
   }
@@ -469,6 +485,7 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
     enhancedPrompt: enhanced,
     analysis,
     isSurgical: ['surgical_edit', 'content_update', 'restyle', 'add_section', 'remove_section'].includes(analysis.intent),
+    isBehavioral,
     isFullGen: analysis.intent === 'full_generation',
   };
 }

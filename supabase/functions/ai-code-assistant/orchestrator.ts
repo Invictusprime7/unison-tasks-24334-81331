@@ -275,6 +275,21 @@ async function runBuilderLane(
       });
       break;
 
+    case "behavioral_edit":
+      finalSystemPrompt = buildEditAssistantPrompt({
+        basePrompt,
+        memoryBlock,
+        compactedFilesBlock,
+        surgicalReinforcement: surgicalEditReinforcement,
+        researchContext,
+        designContext: systemTypeContext + designProfileContext,
+        blueprintContext: systemsBuildContextText,
+        elementsLibrary: elementsLibraryBlock,
+        thinkingInstruction,
+        behavioralContext: componentBehaviorContext,
+      });
+      break;
+
     case "surgical_edit":
     case "single_file_edit":
     case "multi_file_edit":

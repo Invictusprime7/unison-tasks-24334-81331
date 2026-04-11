@@ -8,6 +8,84 @@
  */
 
 /**
+ * Shared React / TypeScript / Radix / shadcn knowledge block.
+ * Injected into every builder-lane prompt so the AI produces
+ * type-safe, conventional code that matches the VFS stack.
+ */
+const REACT_PRIMITIVES_KNOWLEDGE = `
+[📚 STACK CONVENTIONS — MANDATORY FOR ALL EDITS]
+
+**React 18+ / TypeScript patterns you MUST follow:**
+- Always use \`React.FC<Props>\` or typed function signatures with explicit return types when adding components
+- Destructure props — never use \`props.x\`; prefer \`{ onClick, className, children }: ButtonProps\`
+- Hooks order: useState → useRef → useMemo/useCallback → useEffect (never conditional)
+- Event handlers: type as \`React.MouseEvent<HTMLButtonElement>\`, \`React.ChangeEvent<HTMLInputElement>\`, etc.
+- Refs: \`useRef<HTMLDivElement>(null)\` — always pass the element type generic
+- When adding state, always provide explicit generic: \`useState<string>("")\`, \`useState<boolean>(false)\`
+- Conditional rendering: prefer \`{condition && <El />}\` or ternary — never \`condition ? <El /> : ""\`
+- Key props on mapped elements must be stable IDs, never array indices for dynamic lists
+- forwardRef components: \`React.forwardRef<HTMLDivElement, Props>((props, ref) => …)\`
+
+**Tailwind CSS conventions:**
+- Use semantic design tokens from the project's CSS variables: \`bg-primary\`, \`text-foreground\`, \`border-border\`, \`bg-muted\`, \`text-muted-foreground\`, \`bg-accent\`, \`text-accent-foreground\`
+- NEVER hardcode raw color values (\`bg-blue-500\`, \`text-white\`, \`#fff\`) — always use tokens
+- Responsive: mobile-first with \`sm:\`, \`md:\`, \`lg:\` prefixes
+- Dark mode: use \`dark:\` prefix only when the project already has dark mode tokens
+- Use \`cn()\` from \`@/lib/utils\` to merge conditional classes (clsx + tailwind-merge)
+
+**Radix UI primitives (used via shadcn/ui):**
+When the user asks for interactive UI (dialog, dropdown, tabs, accordion, tooltip, popover, etc.),
+use the project's existing shadcn components from \`@/components/ui/\`:
+- Dialog → \`import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"\`
+- DropdownMenu → \`import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"\`
+- Tabs → \`import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"\`
+- Tooltip → \`import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"\`
+- Popover → \`import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"\`
+- Accordion → \`import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"\`
+- Sheet (side drawer) → \`import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"\`
+- AlertDialog → \`import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"\`
+- Select → \`import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"\`
+- Button → \`import { Button } from "@/components/ui/button"\` (variants: default, destructive, outline, secondary, ghost, link)
+- Input → \`import { Input } from "@/components/ui/input"\`
+- Label → \`import { Label } from "@/components/ui/label"\`
+- Card → \`import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"\`
+- Badge → \`import { Badge } from "@/components/ui/badge"\`
+- Separator → \`import { Separator } from "@/components/ui/separator"\`
+- ScrollArea → \`import { ScrollArea } from "@/components/ui/scroll-area"\`
+- Switch → \`import { Switch } from "@/components/ui/switch"\`
+- Checkbox → \`import { Checkbox } from "@/components/ui/checkbox"\`
+- Slider → \`import { Slider } from "@/components/ui/slider"\`
+- Progress → \`import { Progress } from "@/components/ui/progress"\`
+- Avatar → \`import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"\`
+- Toast → use \`import { toast } from "sonner"\` — call \`toast("Message")\` or \`toast.success()\` / \`toast.error()\`
+
+CRITICAL: ALWAYS prefer these existing \`@/components/ui/*\` primitives over hand-rolling custom UI.
+If a shadcn component exists for the pattern, USE IT. Never create a raw \`<div role="dialog">\` when Dialog exists.
+Never create a custom dropdown with \`position: absolute\` when DropdownMenu exists.
+
+**Icons:**
+- Use lucide-react: \`import { IconName } from "lucide-react"\`
+- Common: ChevronDown, ChevronRight, X, Plus, Minus, Search, Menu, Settings, User, Mail, Phone, Check, AlertCircle, Info, Loader2
+- For loading states: \`<Loader2 className="h-4 w-4 animate-spin" />\`
+
+**Animation (framer-motion):**
+- Import: \`import { motion, AnimatePresence } from "framer-motion"\`
+- Entrance: \`<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>\`
+- Exit: wrap with \`<AnimatePresence>\` and add \`exit={{ opacity: 0 }}\`
+- Stagger children: use \`transition={{ delay: index * 0.1 }}\`
+
+**Form handling (when adding forms):**
+- Use react-hook-form: \`import { useForm } from "react-hook-form"\`
+- With zod: \`import { zodResolver } from "@hookform/resolvers/zod"\`
+- Pattern: \`const form = useForm<FormData>({ resolver: zodResolver(schema), defaultValues: {} })\`
+
+**Import aliasing:**
+- \`@/\` maps to \`src/\` — always use \`@/components/\`, \`@/lib/\`, \`@/hooks/\`, etc.
+- Never use relative paths like \`../../components/\` when \`@/\` alias is available
+`;
+
+
+/**
  * Build the edit assistant system prompt — for surgical, single-file, and multi-file edits.
  */
 export function buildEditAssistantPrompt(opts: {

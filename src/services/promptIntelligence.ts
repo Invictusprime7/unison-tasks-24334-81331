@@ -450,11 +450,14 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
   enhancedPrompt: string;
   analysis: AnalyzedPrompt;
   isSurgical: boolean;
+  isBehavioral: boolean;
   isFullGen: boolean;
 } {
   const analysis = analyzePrompt(rawText);
   const maxLength = Math.max(1200, options.maxLength ?? 8500);
   const rawExcerptMax = Math.max(600, options.rawExcerptMax ?? 5000);
+
+  const isBehavioral = analysis.intent === 'behavioral_edit' || analysis.secondaryIntents.includes('behavioral_edit');
 
   // For very short prompts (< 30 chars), skip enhancement
   if (rawText.length < 30 && analysis.complexity === 'simple' && rawText.length <= maxLength) {
@@ -462,6 +465,7 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
       enhancedPrompt: rawText,
       analysis,
       isSurgical: analysis.intent === 'surgical_edit' || analysis.intent === 'content_update',
+      isBehavioral,
       isFullGen: analysis.intent === 'full_generation',
     };
   }
@@ -481,6 +485,7 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
     enhancedPrompt: enhanced,
     analysis,
     isSurgical: ['surgical_edit', 'content_update', 'restyle', 'add_section', 'remove_section'].includes(analysis.intent),
+    isBehavioral,
     isFullGen: analysis.intent === 'full_generation',
   };
 }

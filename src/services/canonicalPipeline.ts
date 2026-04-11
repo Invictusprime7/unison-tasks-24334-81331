@@ -35,6 +35,7 @@ import { materializePlayground } from './wizardPlaygroundMaterializer';
 import { validatePlayground, getValidationSummary } from './playgroundValidationService';
 import { compilePlayground } from './playgroundCompiler';
 import { createRuntimeManifest } from '@/types/runtimeManifest';
+import { validateComposition } from './componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
 
 // ============================================================================
@@ -124,7 +125,7 @@ export function executeCanonicalPipeline(
   warnings.push(...materialization.warnings);
   const playground = materialization.playground;
 
-  // Stage 3: Validate
+  // Stage 3: Validate structure
   const validations = validatePlayground(playground, existingVfsFiles);
   const summary = getValidationSummary(validations);
   if (!summary.isHealthy) {
@@ -133,6 +134,19 @@ export function executeCanonicalPipeline(
     }
     for (const v of validations.filter(v => v.severity === 'warning')) {
       warnings.push(v.message);
+    }
+  }
+
+  // Stage 3b: Validate component composition via intelligence registry
+  const pages = Object.values(playground.pageRegistry.pages);
+  for (const page of pages) {
+    // Extract section types from page metadata if available
+    const sectionTypes = (page as any).sectionTypes as string[] | undefined;
+    if (sectionTypes && sectionTypes.length > 0) {
+      const compositionIssues = validateComposition(sectionTypes);
+      for (const issue of compositionIssues) {
+        warnings.push(`[${page.title}] ${issue}`);
+      }
     }
   }
 

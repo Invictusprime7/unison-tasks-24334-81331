@@ -1087,6 +1087,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               currentCode: truncatedCode,
               editMode: !!currentCode,
               surgicalEdit: isSurgicalEdit,
+              behavioralEdit: isBehavioralEdit,
+              componentBehaviorContext: isBehavioralEdit ? behaviorContext : undefined,
               systemType,
               templateName,
               templateAction,

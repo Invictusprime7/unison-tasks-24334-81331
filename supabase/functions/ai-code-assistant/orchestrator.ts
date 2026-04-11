@@ -363,6 +363,22 @@ async function runBuilderLane(
       });
       console.log(`[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`);
 
+      // ── Scope enforcement for scoped edits ──────────────────────────
+      const scopeResult = checkEditScope({
+        patchFiles: reviewResult.cleanedFiles,
+        targetFile: parsed.targetFile ?? null,
+        taskType: task.type,
+        existingFiles,
+      });
+      if (!scopeResult.inScope) {
+        console.warn(`[orchestrator] SCOPE VIOLATION: ${scopeResult.reason}`);
+        reviewResult.warnings.push({ severity: "error", message: `Scope violation: ${scopeResult.reason}` });
+        reviewResult.requiresApproval = true;
+      }
+      if (scopeResult.blockAutoApply) {
+        reviewResult.requiresApproval = true;
+      }
+
       applyState = buildApplyState({
         actionType: reviewResult.removedFiles.length > 0 ? 'multi_patch' : 'patch',
         touchedFiles: Object.keys(reviewResult.cleanedFiles),

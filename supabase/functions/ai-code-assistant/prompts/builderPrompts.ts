@@ -23,14 +23,24 @@ export function buildEditAssistantPrompt(opts: {
   behavioralContext?: string;
 }): string {
   const editPreamble = `
-[EDIT MODE — PRECISION PRIORITY]
-You are modifying an existing live project. Follow these priorities:
-1. Apply ONLY the changes the user requested — nothing more
-2. Preserve all existing imports, hooks, state, and component structure
-3. If session context shows broken imports or recent errors, address those first
-4. For multi-file edits, output JSON: {"files": {"path": "content"}}
-5. For single-file edits, output a \`\`\`tsx code fence with the complete file
-6. NEVER remove sections, components, or functionality unless explicitly asked
+[EDIT MODE — PRECISION PRIORITY — STRUCTURE PRESERVATION IS MANDATORY]
+You are modifying an existing live project. The user's site is LIVE and ANY structural loss destroys their work.
+
+CRITICAL OPERATING MODEL:
+1. READ the user's prompt carefully — apply ONLY what they asked for, NOTHING more
+2. IDENTIFY the exact element/component/section the user is referring to
+3. MODIFY only that specific target — leave everything else BYTE-FOR-BYTE identical
+4. Preserve ALL existing imports, hooks, state, event handlers, and component structure
+5. If the user says "change the hero title" — ONLY the hero title text changes. Not the hero layout, not other sections, not imports.
+6. NEVER regenerate the entire file from memory — copy the existing code and apply a minimal diff
+7. NEVER remove sections, components, imports, hooks, or functionality unless the user EXPLICITLY says "remove" or "delete"
+8. For multi-file edits, output JSON: {"files": {"path": "content"}}
+9. For single-file edits, output a \`\`\`tsx code fence with the complete file
+
+THINK OF YOURSELF AS A SURGICAL DIFF TOOL:
+- Input: the existing file + a user instruction targeting ONE element
+- Output: the same file with ONE element changed
+- If your output is shorter than the input (and user didn't ask to remove), YOU MADE AN ERROR — stop and try again
 `;
 
   const behavioralBlock = opts.behavioralContext ? `

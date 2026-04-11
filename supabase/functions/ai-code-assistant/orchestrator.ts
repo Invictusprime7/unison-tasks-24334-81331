@@ -253,8 +253,10 @@ async function runBuilderLane(
   const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, surgicalEdit);
 
   // For surgical edits, use old-style VFS context (byte-for-byte preservation)
-  const vfsFilesContext = buildVfsFilesContext(surgicalEdit, vfsFiles);
-  const surgicalEditReinforcement = buildSurgicalEditReinforcement(surgicalEdit, vfsFilesContext);
+  // For ALL edit tasks, provide VFS context for structure preservation (not just surgical)
+  const isEditTask = ['surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type);
+  const vfsFilesContext = buildVfsFilesContext(surgicalEdit || isEditTask, vfsFiles);
+  const surgicalEditReinforcement = buildSurgicalEditReinforcement(surgicalEdit || isEditTask, vfsFilesContext);
 
   const imageContext = imageResult.generatedImageUrl
     ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageResult.imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.`

@@ -11,6 +11,7 @@
 export type PromptIntent =
   | 'full_generation'    // build a full page/site from scratch
   | 'surgical_edit'      // change a specific element/component
+  | 'behavioral_edit'    // change functionality: add hooks, handlers, state, interactions
   | 'add_section'        // add a new section or component
   | 'remove_section'     // remove an existing section
   | 'restyle'            // change visual appearance (colors, fonts, layout)
@@ -127,6 +128,17 @@ const INTENT_PATTERNS: Array<{ intent: PromptIntent; patterns: RegExp[] }> = [
     patterns: [
       /\b(change|update|replace|modify|edit)\b.*\b(text|copy|heading|title|description|paragraph|label|placeholder|content|wording)\b/i,
       /\b(say|read|display|show)\b.*["'`]/i,
+    ],
+  },
+  {
+    intent: 'behavioral_edit',
+    patterns: [
+      /\b(make|when|on)\b.*\b(click|clicked|press|pressed|tap|tapped|hover|submit|open|close|toggle|expand|collapse|trigger)\b/i,
+      /\b(add|create|implement|build|wire)\b.*\b(functionality|behavior|interaction|handler|event|listener|state|hook|toggle|counter|timer|animation|widget|modal|drawer|dropdown|popup|tooltip|chat|form handling)\b/i,
+      /\b(open|show|display|reveal|launch|activate|trigger)\b.*\b(a|an|the|new)?\s*(modal|dialog|drawer|sidebar|panel|menu|dropdown|popup|widget|overlay|chat|notification|toast)\b/i,
+      /\b(should|needs to|must|will)\b.*\b(open|close|toggle|expand|collapse|submit|navigate|scroll|fetch|load|count|track|animate)\b/i,
+      /\badd\b.*\b(onclick|onsubmit|onchange|onkeydown|event)\b/i,
+      /\b(collapsible|expandable|toggleable|draggable|sortable|dismissable|interactive)\b/i,
     ],
   },
   {

@@ -8,6 +8,7 @@ export type AssistantTaskType =
   | "template_html_generation"
   | "template_react_edit"
   | "surgical_edit"
+  | "behavioral_edit"
   | "multi_file_edit"
   | "single_file_edit"
   | "debug_fix"
@@ -41,6 +42,7 @@ export function classifyTask(opts: {
   templateAction?: string;
   navPageGen: boolean;
   surgicalEdit: boolean;
+  behavioralEdit: boolean;
   debugMode: boolean;
   vfsFiles?: Record<string, string>;
 }): ClassifiedTask {

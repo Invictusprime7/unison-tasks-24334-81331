@@ -207,6 +207,7 @@ CRITICAL RULES:
 `;
 
   return opts.basePrompt
+    + REACT_PRIMITIVES_KNOWLEDGE
     + debugPreamble
     + opts.memoryBlock
     + opts.compactedFilesBlock
@@ -239,6 +240,7 @@ You are helping the user build and improve their web application.
 `;
 
   return opts.basePrompt
+    + REACT_PRIMITIVES_KNOWLEDGE
     + generalPreamble
     + opts.memoryBlock
     + opts.compactedFilesBlock

@@ -752,9 +752,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       liveStep('analyzing', 'Parsing natural language request...');
 
       const rawInput = _userContent;
-      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isBehavioral: detectedBehavioral, isFullGen: isFullGeneration } = enhancePromptForAI(rawInput);
+      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isBehavioral: detectedBehavioral, isFullGen: isFullGeneration, isDebug: detectedDebug } = enhancePromptForAI(rawInput);
       const isSurgicalEdit = detectedSurgical && !!currentCode;
       const isBehavioralEdit = detectedBehavioral && !!currentCode;
+      const isDebugMode = detectedDebug && !!currentCode;
 
       liveStep('analyzing', `Intent: ${promptAnalysis.intent} · Complexity: ${promptAnalysis.complexity}`, [
         promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
@@ -1086,6 +1087,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               mode: isSurgicalEdit && !isReactProject ? 'code' : 'template-react',
               currentCode: truncatedCode,
               editMode: !!currentCode,
+              debugMode: isDebugMode,
               surgicalEdit: isSurgicalEdit,
               behavioralEdit: isBehavioralEdit,
               componentBehaviorContext: isBehavioralEdit ? behaviorContext : undefined,

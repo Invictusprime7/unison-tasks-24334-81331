@@ -133,12 +133,18 @@ const INTENT_PATTERNS: Array<{ intent: PromptIntent; patterns: RegExp[] }> = [
   {
     intent: 'behavioral_edit',
     patterns: [
-      /\b(make|when|on)\b.*\b(click|clicked|press|pressed|tap|tapped|hover|submit|open|close|toggle|expand|collapse|trigger)\b/i,
-      /\b(add|create|implement|build|wire)\b.*\b(functionality|behavior|interaction|handler|event|listener|state|hook|toggle|counter|timer|animation|widget|modal|drawer|dropdown|popup|tooltip|chat|form handling)\b/i,
-      /\b(open|show|display|reveal|launch|activate|trigger)\b.*\b(a|an|the|new)?\s*(modal|dialog|drawer|sidebar|panel|menu|dropdown|popup|widget|overlay|chat|notification|toast)\b/i,
-      /\b(should|needs to|must|will)\b.*\b(open|close|toggle|expand|collapse|submit|navigate|scroll|fetch|load|count|track|animate)\b/i,
-      /\badd\b.*\b(onclick|onsubmit|onchange|onkeydown|event)\b/i,
-      /\b(collapsible|expandable|toggleable|draggable|sortable|dismissable|interactive)\b/i,
+      // Require explicit behavioral verbs — avoid stealing from surgical edits
+      // "when X is clicked, open Y" or "on click, toggle Z" — clear behavioral intent
+      /\b(when|on)\b\s+\w+\s+(is\s+)?(click|clicked|press|pressed|tap|tapped|hover|submit)\w*\b.*\b(open|close|toggle|show|hide|expand|collapse|trigger|launch|display)\b/i,
+      // "make the button open a modal" — behavioral wiring (requires both action verb + UI target)
+      /\b(make)\b.*\b(click|clicked|press|pressed|tap|tapped|submit)\b.*\b(open|close|toggle|show|hide|expand|collapse|trigger|launch|display)\b.*\b(modal|dialog|drawer|sidebar|panel|menu|dropdown|popup|widget|overlay|chat|notification|toast)\b/i,
+      // Explicit functionality/behavior creation
+      /\b(add|create|implement|build|wire)\b.*\b(functionality|behavior|interaction|handler|event|listener|state|hook|toggle|counter|timer|widget|modal|drawer|dropdown|popup|tooltip|chat|form handling)\b/i,
+      // "open/show/launch a modal/widget/chat" — direct UI widget creation
+      /\b(open|show|display|reveal|launch|activate|trigger)\b.*\b(a|an|the|new)\s+(modal|dialog|drawer|sidebar|panel|menu|dropdown|popup|widget|overlay|chat|notification|toast)\b/i,
+      // Explicit code-level wiring
+      /\badd\b.*\b(onclick|onsubmit|onchange|onkeydown|event\s*handler|event\s*listener)\b/i,
+      /\b(collapsible|expandable|toggleable|draggable|sortable|dismissable)\b/i,
     ],
   },
   {
@@ -451,21 +457,29 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
   analysis: AnalyzedPrompt;
   isSurgical: boolean;
   isBehavioral: boolean;
+  isDebug: boolean;
   isFullGen: boolean;
 } {
   const analysis = analyzePrompt(rawText);
   const maxLength = Math.max(1200, options.maxLength ?? 8500);
   const rawExcerptMax = Math.max(600, options.rawExcerptMax ?? 5000);
 
-  const isBehavioral = analysis.intent === 'behavioral_edit' || analysis.secondaryIntents.includes('behavioral_edit');
+  // Behavioral only when it's the PRIMARY intent — not just secondary
+  // This prevents behavioral patterns from stealing surgical/debug edits
+  const isBehavioral = analysis.intent === 'behavioral_edit';
+  const isDebug = analysis.intent === 'fix_error';
+
+  // Surgical: primary intent is surgical OR it's a targeted edit intent that isn't behavioral/debug
+  const isSurgical = ['surgical_edit', 'content_update', 'restyle', 'add_section', 'remove_section'].includes(analysis.intent);
 
   // For very short prompts (< 30 chars), skip enhancement
   if (rawText.length < 30 && analysis.complexity === 'simple' && rawText.length <= maxLength) {
     return {
       enhancedPrompt: rawText,
       analysis,
-      isSurgical: analysis.intent === 'surgical_edit' || analysis.intent === 'content_update',
+      isSurgical,
       isBehavioral,
+      isDebug,
       isFullGen: analysis.intent === 'full_generation',
     };
   }
@@ -484,8 +498,9 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
   return {
     enhancedPrompt: enhanced,
     analysis,
-    isSurgical: ['surgical_edit', 'content_update', 'restyle', 'add_section', 'remove_section'].includes(analysis.intent),
+    isSurgical,
     isBehavioral,
+    isDebug,
     isFullGen: analysis.intent === 'full_generation',
   };
 }

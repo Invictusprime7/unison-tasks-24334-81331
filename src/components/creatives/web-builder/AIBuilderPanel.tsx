@@ -872,6 +872,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         );
       }
 
+      // ── Phase 1c: Behavioral Edit — Build component behavior map ──
+      let behaviorContext = '';
+      if (isBehavioralEdit && vfsFiles && Object.keys(vfsFiles).length > 0) {
+        try {
+          const behaviorMap = buildComponentBehaviorMap(
+            previewRef?.current ? { getIframe: previewRef.current.getIframe } as any : { getIframe: () => null } as any,
+            vfsFiles,
+          );
+          behaviorContext = formatBehaviorMapForPrompt(behaviorMap);
+          if (behaviorContext) {
+            liveStep('analyzing', `🧠 Behavior map: ${behaviorMap.elements.length} interactive elements, ${Object.keys(behaviorMap.stateByFile).length} stateful files`);
+          }
+        } catch { /* behavior map is best-effort */ }
+      }
+
       // Build theme/styling context from Systems AI blueprint so in-builder edits stay consistent
       const themeContextBlock = (() => {
         if (!systemsBuildContext) return '';

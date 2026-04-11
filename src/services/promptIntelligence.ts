@@ -169,7 +169,7 @@ function detectIntents(text: string): { primary: PromptIntent; secondary: Prompt
 
   // Priority order for primary selection
   const priority: PromptIntent[] = [
-    'full_generation', 'fix_error', 'wire_backend', 'add_section',
+    'full_generation', 'fix_error', 'wire_backend', 'behavioral_edit', 'add_section',
     'remove_section', 'restyle', 'content_update', 'surgical_edit', 'refactor',
   ];
 

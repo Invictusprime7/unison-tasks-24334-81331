@@ -608,7 +608,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       });
       console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
 
-      // ── Step 3: Run Canonical Playground Pipeline ──
+      // ── Step 3: Run Canonical Pipeline (single enforced pathway) ──
       const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
       const wizardSelections: WizardSelections = {
         businessName: businessName.trim(),
@@ -623,14 +623,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         themeId: selectedTheme?.id,
       };
 
-      const capabilities = resolveCapabilities(wizardSelections);
-      const { playground: materializedPlayground, warnings: materializationWarnings } = materializePlayground(wizardSelections, capabilities);
-      const compiledPlayground = compilePlayground(materializedPlayground, {}, businessName.trim());
+      // Execute the canonical pipeline — single source of truth
+      const pipelineResult = executeCanonicalPipeline(wizardSelections);
+      const { playground: materializedPlayground, compileResult: compiledPlayground, siteBundleSnapshot, runtimeManifest: pipelineManifest } = pipelineResult;
 
-      if (materializationWarnings.length > 0) {
-        console.warn('[SystemLauncher] Materialization warnings:', materializationWarnings);
+      if (pipelineResult.warnings.length > 0) {
+        console.warn('[SystemLauncher] Pipeline warnings:', pipelineResult.warnings);
       }
-      console.log(`[SystemLauncher] Playground materialized: ${Object.keys(materializedPlayground.bindings).length} bindings, ${Object.keys(materializedPlayground.calendars).length} calendars, ${Object.keys(materializedPlayground.popups).length} popups`);
+      if (pipelineResult.errors.length > 0) {
+        console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
+      }
+      console.log(`[SystemLauncher] Canonical pipeline complete: ${Object.keys(materializedPlayground.bindings).length} bindings, ${Object.keys(materializedPlayground.calendars).length} calendars, ${Object.keys(materializedPlayground.popups).length} popups`);
 
       const blueprint = {
         version: "1.0",

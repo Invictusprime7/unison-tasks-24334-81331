@@ -139,7 +139,7 @@ async function runBuilderLane(
 ): Promise<Response> {
   console.log(`[orchestrator] LANE B: ${task.type} (sub-behavior: ${
     task.type === 'debug_fix' ? 'builder_debug' :
-    ['surgical_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type) ? 'builder_edit' :
+    ['surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type) ? 'builder_edit' :
     'builder_generate'
   })`);
 
@@ -149,7 +149,8 @@ async function runBuilderLane(
     currentCode, editMode = false, debugMode: _debugMode = false,
     templateAction, systemType, variationSeed, templateName, aesthetic, source,
     userDesignProfile, systemsBuildContext, navPageGen = false, navPageName, navLabel,
-    siteElementsLibraryContext, surgicalEdit = false, vfsFiles, gatewayOptions,
+    siteElementsLibraryContext, surgicalEdit = false, behavioralEdit = false,
+    componentBehaviorContext, vfsFiles, gatewayOptions,
     previewDiagnostics, recentChangedFiles,
   } = parsed;
 

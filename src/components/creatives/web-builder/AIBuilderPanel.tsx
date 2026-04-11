@@ -161,6 +161,42 @@ function wrapHtmlInReactComponent(html: string): string {
 // Types
 // ============================================================================
 
+/**
+ * Client-side scope guard — blocks auto-apply if a scoped edit
+ * touches unauthorized files or creates too many new files.
+ */
+function getScopedEditAutoApplyBlockReason(opts: {
+  files: Record<string, string>;
+  resolvedTargetFile: string | null;
+  existingFileKeys: string[];
+}): string | null {
+  const normalizePath = (p: string) => (p.startsWith('/') ? p : `/${p}`);
+  const paths = Object.keys(opts.files).map(normalizePath);
+
+  // If we resolved a target, the patch must include it
+  if (opts.resolvedTargetFile) {
+    const normTarget = normalizePath(opts.resolvedTargetFile);
+    if (!paths.includes(normTarget)) {
+      return `Scoped edit did not update the resolved target file (${normTarget}).`;
+    }
+  }
+
+  // Scoped edits should not produce more than 3 files
+  if (paths.length > 3) {
+    return `Scoped edit produced ${paths.length} files — likely a full regeneration.`;
+  }
+
+  // Should not create more than 1 new file
+  const existingNorm = opts.existingFileKeys.map(normalizePath);
+  const newFiles = paths.filter((p) => !existingNorm.includes(p));
+  if (newFiles.length > 1) {
+    return `Scoped edit created ${newFiles.length} new files — expected at most 1.`;
+  }
+
+  return null;
+}
+
+
 interface ThinkingStep {
   id: string;
   type: 'analyzing' | 'planning' | 'generating' | 'validating' | 'complete' | 'error' | 'reasoning';

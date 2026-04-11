@@ -1487,19 +1487,24 @@ export default function App() {
       }
       console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
 
-      // Hydrate playground materialized state (bindings, calendars, popups) from launcher
-      const materializedState = (navState as any)?.materializedPlayground;
+      // Hydrate playground state — prefer siteBundleSnapshot (canonical pipeline) over raw materializedPlayground
+      const snapshot = (navState as any)?.siteBundleSnapshot;
+      const materializedState = snapshot || (navState as any)?.materializedPlayground;
       if (materializedState) {
-        if (materializedState.bindings) setPlaygroundBindings(materializedState.bindings);
-        if (materializedState.calendars) setPlaygroundCalendars(materializedState.calendars);
-        if (materializedState.popups) setPlaygroundPopups(materializedState.popups);
+        const bindingsSource = snapshot?.bindings || materializedState.bindings;
+        const calendarsSource = snapshot?.calendars || materializedState.calendars;
+        const popupsSource = snapshot?.popups || materializedState.popups;
+        if (bindingsSource) setPlaygroundBindings(bindingsSource);
+        if (calendarsSource) setPlaygroundCalendars(calendarsSource);
+        if (popupsSource) setPlaygroundPopups(popupsSource);
         // Hydrate forms into creator playground
-        if (materializedState.creatorData?.forms) {
-          for (const form of Object.values(materializedState.creatorData.forms)) {
+        const formsSource = materializedState.creatorData?.forms;
+        if (formsSource) {
+          for (const form of Object.values(formsSource)) {
             creatorPlayground.addForm(form as any);
           }
         }
-        console.log(`[WebBuilder] Hydrated playground: ${Object.keys(materializedState.bindings || {}).length} bindings, ${Object.keys(materializedState.calendars || {}).length} calendars, ${Object.keys(materializedState.popups || {}).length} popups`);
+        console.log(`[WebBuilder] Hydrated from ${snapshot ? 'SiteBundleSnapshot (canonical)' : 'materializedPlayground'}: ${Object.keys(bindingsSource || {}).length} bindings, ${Object.keys(calendarsSource || {}).length} calendars, ${Object.keys(popupsSource || {}).length} popups`);
       }
       if (sitePlan.validationErrors?.length) {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);

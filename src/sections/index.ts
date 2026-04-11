@@ -32,7 +32,7 @@ export type {
 } from './types';
 
 // Registry
-export { getSection, getSectionComponent, getAllSections, getSectionsByCategory } from './registry';
+export { getSection, getSectionComponent, getAllSections, getSectionsByCategory, getSectionWithIntelligence, getSectionsForIndustry } from './registry';
 
 // Themes
 export { THEME_REGISTRY, getTheme } from './themes';

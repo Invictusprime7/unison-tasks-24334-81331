@@ -54,6 +54,7 @@ export function classifyTask(opts: {
     templateAction,
     navPageGen,
     surgicalEdit,
+    behavioralEdit,
     debugMode,
     vfsFiles,
   } = opts;

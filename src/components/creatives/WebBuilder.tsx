@@ -100,10 +100,15 @@ import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
-import { scaffoldMissingTopologyPagesWithRouter, getTopologyPagesForAIGeneration } from '@/utils/topologyVFSScaffolder';
-import { resolveNavigationTarget, deriveFilePath } from '@/services/routeNavigationService';
-import { applyStructuralChange, syncRouterAndValidate, regenerateRouter } from '@/services/unifiedPreviewPipeline';
-import { validatePageTopology } from '@/services/pageTopologyValidator';
+import {
+  applyStructuralChange,
+  syncRouterAndValidate,
+  regenerateRouter,
+  resolveNavigationTarget,
+  deriveFilePath,
+  scaffoldMissingTopologyPagesWithRouter,
+  getTopologyPagesForAIGeneration,
+} from '@/services/unifiedPreviewPipeline';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';

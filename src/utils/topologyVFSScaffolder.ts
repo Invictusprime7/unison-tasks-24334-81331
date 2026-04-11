@@ -9,6 +9,8 @@
 import type { GeneratedSitePlan, PageRouteNode } from '@/contracts/siteTopologyPlanner';
 import { generateCanonicalRouter } from './topologyRouterGenerator';
 import type { PageRegistry } from '@/types/pageRegistry';
+// NOTE: This module is re-exported through unifiedPreviewPipeline.
+// Consumers should import from there, not directly from this file.
 
 // ============================================================================
 // Core: Scaffold missing pages from topology

@@ -13,7 +13,7 @@
  * Lifecycle:  Registry Update → VFS Scaffold → Router Regeneration → Preview Reload
  */
 
-import type { PageRegistry } from '@/types/pageRegistry';
+import type { PageRegistry, BuilderPage } from '@/types/pageRegistry';
 import type { PlaygroundState } from '@/types/playground';
 import {
   applyTopologyChange,
@@ -24,12 +24,38 @@ import {
 } from './pageTopologyOrchestrator';
 import { generateCanonicalRouter, patchVFSWithRouter } from '@/utils/topologyRouterGenerator';
 import { recompileFromPlayground } from './canonicalPipeline';
+import {
+  resolveNavigationTarget,
+  deriveFilePath,
+  deriveRouteFromLabel,
+  type NavigationRequest,
+  type ResolvedPageTarget,
+} from './routeNavigationService';
+import { validatePageTopology, type TopologyValidationResult } from './pageTopologyValidator';
+import {
+  scaffoldMissingTopologyPages,
+  scaffoldMissingTopologyPagesWithRouter,
+  getTopologyPagesForAIGeneration,
+  getMissingTopologyPages,
+} from '@/utils/topologyVFSScaffolder';
 
 // ============================================================================
-// Re-export types so consumers only import from this module
+// Re-export types & functions so consumers only import from this module
 // ============================================================================
 
 export type { TopologyChange, TopologyChangeResult, TopologyChangeType };
+export type { NavigationRequest, ResolvedPageTarget, TopologyValidationResult };
+export type { BuilderPage };
+export {
+  resolveNavigationTarget,
+  deriveFilePath,
+  deriveRouteFromLabel,
+  validatePageTopology,
+  scaffoldMissingTopologyPages,
+  scaffoldMissingTopologyPagesWithRouter,
+  getTopologyPagesForAIGeneration,
+  getMissingTopologyPages,
+};
 
 // ============================================================================
 // Preview State

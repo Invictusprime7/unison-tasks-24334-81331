@@ -141,7 +141,9 @@ export function analyzeTemplateStructure(code: string): string {
 // ── Elements library block ───────────────────────────────────────────────────
 
 export function buildElementsLibraryBlock(siteElementsLibraryContext: unknown, surgicalEdit: boolean): string {
-  if (!siteElementsLibraryContext || surgicalEdit) return '';
+  if (!siteElementsLibraryContext) return '';
+  // Skip elements library for surgical edits to avoid noise
+  if (surgicalEdit) return '';
   return `\n${siteElementsLibraryContext}\n⚠️ LIBRARY USAGE RULE: The element library above provides STRUCTURE and INTENT WIRING patterns only. For colors, fonts, gradients, card styles, and visual effects, follow the industry variation system, design profile, and brand palette provided elsewhere in this prompt. Do NOT copy visual styles from the library skeletons — create a UNIQUE design each time.\n`;
 }
 

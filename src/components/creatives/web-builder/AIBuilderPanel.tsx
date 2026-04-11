@@ -1389,7 +1389,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         const shouldBlock = responseMeta?.requiresApproval &&
           responseMeta.warnings?.some(w => w.severity === 'error');
 
-        if (shouldBlock) {
+        // Client-side scope enforcement for scoped edits
+        const isScopedTask = isSurgicalEdit || isBehavioralEdit;
+        const scopeBlockReason = isScopedTask ? getScopedEditAutoApplyBlockReason({
+          files: normalizedFiles,
+          resolvedTargetFile,
+          existingFileKeys: vfsFiles ? Object.keys(vfsFiles) : [],
+        }) : null;
+
+        if (scopeBlockReason) {
+          console.warn('[AIBuilderPanel] SCOPE BLOCK:', scopeBlockReason);
+          toast.warning(`⚠️ Edit blocked: ${scopeBlockReason}`);
+        } else if (shouldBlock) {
           console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
           toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
           // Store files for manual apply later (user can use View Edits)

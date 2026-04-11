@@ -140,11 +140,10 @@ export function executeCanonicalPipeline(
   // Stage 3b: Validate component composition via intelligence registry
   const pages = Object.values(playground.pageRegistry.pages);
   for (const page of pages) {
-    // Extract section types from page metadata if available
     const sectionTypes = (page as any).sectionTypes as string[] | undefined;
     if (sectionTypes && sectionTypes.length > 0) {
-      const compositionIssues = validateComposition(sectionTypes);
-      for (const issue of compositionIssues) {
+      const compositionResult = validateComposition(sectionTypes as import('@/sections/types').SectionType[]);
+      for (const issue of compositionResult.issues) {
         warnings.push(`[${page.title}] ${issue}`);
       }
     }

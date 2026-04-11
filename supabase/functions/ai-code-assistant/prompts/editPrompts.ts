@@ -179,7 +179,7 @@ export function buildEditModeContext(
 ): string {
   if (!editMode || !currentCode) return '';
   
-  const maxCodeLength = 4000;
+  const maxCodeLength = 50_000;
   
   return `
 ⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔

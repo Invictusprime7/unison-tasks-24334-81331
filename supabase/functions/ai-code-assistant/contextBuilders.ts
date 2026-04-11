@@ -117,11 +117,24 @@ export function analyzeTemplateStructure(code: string): string {
   const imageCount = (code.match(/<img[^>]*>/gi) || []).length;
   const buttonCount = (code.match(/<button[^>]*>|class="[^"]*btn[^"]*"/gi) || []).length;
   const linkCount = (code.match(/<a[^>]*href/gi) || []).length;
+
+  // Structural fingerprint — React-specific
+  const importCount = (code.match(/^import\s+/gm) || []).length;
+  const hookCount = (code.match(/\buse[A-Z][a-zA-Z]*\s*\(/g) || []).length;
+  const componentDefs = (code.match(/(?:export\s+(?:default\s+)?)?(?:function|const)\s+[A-Z][a-zA-Z0-9]+/g) || []);
+  const componentNames = componentDefs.map(m => m.replace(/^.*(?:function|const)\s+/, ''));
+  const dataIntentCount = (code.match(/data-ut-intent/g) || []).length;
+  const formCount = (code.match(/<form[\s>]/gi) || []).length;
+
   return `
-📊 **TEMPLATE STRUCTURE ANALYSIS:**
-- Detected Sections: ${sections.length > 0 ? sections.join(', ') : 'Basic layout'}
+📊 **TEMPLATE STRUCTURE FINGERPRINT (DO NOT REDUCE ANY COUNT):**
+- Sections (${sections.length}): ${sections.length > 0 ? sections.join(', ') : 'Basic layout'}
+- Components (${componentNames.length}): ${componentNames.join(', ') || 'inline'}
+- Imports: ${importCount} | Hooks: ${hookCount} | Intents: ${dataIntentCount} | Forms: ${formCount}
 - Images: ${imageCount} | Buttons: ${buttonCount} | Links: ${linkCount}
-- Approximate Size: ${code.length} characters
+- Size: ${code.length} chars
+
+⚠️ STRUCTURAL CONTRACT: Your output MUST have >= ${sections.length} sections, >= ${importCount} imports, >= ${hookCount} hooks, and >= ${dataIntentCount} data-ut-intent attributes. Violation = site destruction.
 `;
 }
 

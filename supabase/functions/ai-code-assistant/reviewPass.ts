@@ -90,6 +90,18 @@ export function reviewPatch(opts: {
     summaryParts.push(`${brokenImports.length} broken imports`);
   }
 
+  // 5. Structural preservation check — detect section/component loss
+  if (taskType && ["surgical_edit", "behavioral_edit", "single_file_edit", "multi_file_edit", "template_react_edit"].includes(taskType)) {
+    const structWarnings = validateStructuralPreservation(cleanedFiles, existingFiles, files);
+    for (const sw of structWarnings) {
+      warnings.push(sw);
+      if (sw.severity === "error") requiresApproval = true;
+    }
+    if (structWarnings.length > 0) {
+      summaryParts.push(`${structWarnings.length} structural issues`);
+    }
+  }
+
   const approved = removedFiles.length === 0 && !warnings.some(w => w.severity === "error");
 
   return {

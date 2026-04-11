@@ -761,7 +761,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
         promptAnalysis.designKeywords.length ? `Design cues: ${promptAnalysis.designKeywords.join(', ')}` : null,
         promptAnalysis.constraints.length ? `${promptAnalysis.constraints.length} constraints detected` : null,
-        isBehavioralEdit ? '🧠 Behavioral edit mode' : isSurgicalEdit ? '🎯 Surgical edit mode' : isFullGeneration ? '🏗️ Full generation mode' : null,
+        isBehavioralEdit ? '🧠 Behavioral edit mode' : isDebugMode ? '🔧 Debug mode' : isSurgicalEdit ? '🎯 Surgical edit mode' : isFullGeneration ? '🏗️ Full generation mode' : null,
       ].filter(Boolean).join(' | '));
 
       // Log prompt analysis for debugging
@@ -773,6 +773,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         constraints: promptAnalysis.constraints.length,
         designKeywords: promptAnalysis.designKeywords,
         isSurgical: isSurgicalEdit,
+        isBehavioral: isBehavioralEdit,
+        isDebug: isDebugMode,
       });
 
       // ── Phase 1b: Unison Task Interpretation ──

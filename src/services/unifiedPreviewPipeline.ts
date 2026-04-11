@@ -1,35 +1,45 @@
 /**
- * Unified Preview Pipeline — THE single rendering path for all preview operations.
+ * Unified Preview Pipeline — THE single API for all preview/structure operations.
  * 
- * Every route change, page creation, page deletion, and AI generation MUST
- * flow through this pipeline. It enforces the lifecycle:
+ * This is a thin facade that delegates to:
+ *   - pageTopologyOrchestrator: structural changes (add/remove/rename pages)
+ *   - canonicalPipeline: full wizard-to-preview generation
+ *   - topologyRouterGenerator: router regeneration
  * 
- *   Registry Update → VFS Scaffold → Router Regeneration → Preview Reload
+ * Every consumer (WebBuilder, CreatorPlayground, AI generation) MUST go through
+ * this module. Direct imports of pageTopologyOrchestrator or generateCanonicalRouter
+ * from components are a code smell.
  * 
- * No preview state can exist outside this lifecycle.
+ * Lifecycle:  Registry Update → VFS Scaffold → Router Regeneration → Preview Reload
  */
 
-import type { PageRegistry, BuilderPage } from '@/types/pageRegistry';
-import type { PlaygroundState, PlaygroundBinding } from '@/types/playground';
-import { createBuilderPage } from '@/types/pageRegistry';
+import type { PageRegistry } from '@/types/pageRegistry';
+import type { PlaygroundState } from '@/types/playground';
+import {
+  applyTopologyChange,
+  syncTopologyAndRouter,
+  type TopologyChange,
+  type TopologyChangeResult,
+  type TopologyChangeType,
+} from './pageTopologyOrchestrator';
 import { generateCanonicalRouter, patchVFSWithRouter } from '@/utils/topologyRouterGenerator';
-import { deriveFilePath } from './routeNavigationService';
-import { nanoid } from 'nanoid';
+import { recompileFromPlayground } from './canonicalPipeline';
 
 // ============================================================================
-// Preview State — Single source for all preview concerns
+// Re-export types so consumers only import from this module
+// ============================================================================
+
+export type { TopologyChange, TopologyChangeResult, TopologyChangeType };
+
+// ============================================================================
+// Preview State
 // ============================================================================
 
 export interface PreviewState {
-  /** Currently active page ID */
   activePageId: string | null;
-  /** Currently active preview route */
   activeRoute: string;
-  /** All available routes */
   availableRoutes: string[];
-  /** Pages pending AI generation */
   pendingGenerations: Set<string>;
-  /** Last router regeneration timestamp */
   lastRouterUpdate: number;
 }
 
@@ -44,141 +54,94 @@ export function createInitialPreviewState(): PreviewState {
 }
 
 // ============================================================================
-// Lifecycle Operations — Atomic, transactional updates
+// Structural Operations — delegate to pageTopologyOrchestrator
 // ============================================================================
 
-export interface PreviewLifecycleResult {
-  /** Updated VFS files (includes router) */
-  vfsFiles: Record<string, string>;
-  /** Updated page registry */
-  registry: PageRegistry;
-  /** Updated preview state */
-  previewState: Partial<PreviewState>;
-  /** Whether the preview should reload */
-  shouldReload: boolean;
-  /** New router content (if changed) */
-  routerContent?: string;
-}
-
 /**
- * Add a page to the site — atomic operation that updates registry, VFS, and router.
+ * Apply a structural topology change (add/remove/rename/reorder page).
+ * This is the ONLY entry point for page mutations from the builder.
  */
-export function addPage(
+export function applyStructuralChange(
+  change: TopologyChange,
   registry: PageRegistry,
   vfsFiles: Record<string, string>,
-  options: {
-    title: string;
-    path: string;
-    pageType: BuilderPage['pageType'];
-    isHome?: boolean;
-    initialContent?: string;
-    businessName?: string;
-  },
-): PreviewLifecycleResult {
-  const pageId = `page_${nanoid(8)}`;
-  const page = createBuilderPage(pageId, options.title, options.path, options.pageType, {
-    isHome: options.isHome || false,
-    showInNav: true,
-    navOrder: Object.keys(registry.pages).length,
-    createdBy: 'manual',
-  });
-  page.filePath = deriveFilePath(page);
-
-  // 1. Update registry
-  const updatedRegistry: PageRegistry = {
-    ...registry,
-    pages: { ...registry.pages, [pageId]: page },
-    homePageId: options.isHome ? pageId : registry.homePageId,
-    version: registry.version + 1,
-  };
-
-  // 2. Update VFS
-  const updatedVfs = { ...vfsFiles };
-  if (options.initialContent) {
-    updatedVfs[page.filePath] = options.initialContent;
-  }
-
-  // 3. Regenerate router
-  const routerContent = generateCanonicalRouter(updatedRegistry, options.businessName);
-  if (routerContent) {
-    updatedVfs['/src/App.tsx'] = routerContent;
-  }
-
-  return {
-    vfsFiles: updatedVfs,
-    registry: updatedRegistry,
-    previewState: {
-      availableRoutes: deriveAvailableRoutes(updatedRegistry),
-      lastRouterUpdate: Date.now(),
-    },
-    shouldReload: true,
-    routerContent,
-  };
-}
-
-/**
- * Remove a page from the site — atomic operation.
- */
-export function removePage(
-  registry: PageRegistry,
-  vfsFiles: Record<string, string>,
-  pageId: string,
   businessName?: string,
-): PreviewLifecycleResult {
-  const page = registry.pages[pageId];
-  if (!page) {
-    return { vfsFiles, registry, previewState: {}, shouldReload: false };
-  }
+): TopologyChangeResult {
+  return applyTopologyChange(change, registry, vfsFiles, businessName);
+}
 
-  // 1. Update registry
-  const updatedPages = { ...registry.pages };
-  delete updatedPages[pageId];
+/**
+ * Regenerate router + validate after an external registry mutation.
+ */
+export function syncRouterAndValidate(
+  registry: PageRegistry,
+  vfsFiles: Record<string, string>,
+  businessName?: string,
+) {
+  return syncTopologyAndRouter(registry, vfsFiles, businessName);
+}
 
-  const updatedFunnels = { ...registry.funnels };
-  for (const [fid, funnel] of Object.entries(updatedFunnels)) {
-    const hasPage = funnel.steps.some(s => s.pageId === pageId);
-    if (hasPage) {
-      updatedFunnels[fid] = {
-        ...funnel,
-        steps: funnel.steps.filter(s => s.pageId !== pageId),
-      };
-    }
-  }
+/**
+ * Generate just the router code from a registry.
+ * Use sparingly — prefer applyStructuralChange which includes this.
+ */
+export function regenerateRouter(registry: PageRegistry, businessName?: string): string {
+  return generateCanonicalRouter(registry, businessName);
+}
 
-  const updatedRegistry: PageRegistry = {
-    pages: updatedPages,
-    funnels: updatedFunnels,
-    homePageId: registry.homePageId === pageId ? '' : registry.homePageId,
-    version: registry.version + 1,
-  };
+// ============================================================================
+// Full Rebuild — delegate to canonicalPipeline
+// ============================================================================
 
-  // 2. Remove from VFS
-  const updatedVfs = { ...vfsFiles };
-  const filePath = page.filePath || deriveFilePath(page);
-  delete updatedVfs[filePath];
+/**
+ * Full rebuild from a PlaygroundState. Used after bulk playground edits.
+ * Returns the full compile result including SiteBundleSnapshot.
+ */
+export function fullRebuildFromPlayground(
+  playground: PlaygroundState,
+  existingVfsFiles: Record<string, string> = {},
+  businessName?: string,
+  industry?: string,
+) {
+  return recompileFromPlayground(playground, existingVfsFiles, businessName, industry);
+}
 
-  // 3. Regenerate router
-  const routerContent = generateCanonicalRouter(updatedRegistry, businessName);
-  if (routerContent) {
-    updatedVfs['/src/App.tsx'] = routerContent;
-  }
+/**
+ * Quick VFS + router patch. Does NOT recompile the full pipeline.
+ * Used for cosmetic/content changes that don't affect structure.
+ */
+export function patchVFS(
+  vfsFiles: Record<string, string>,
+  registry: PageRegistry,
+  businessName?: string,
+): Record<string, string> {
+  return patchVFSWithRouter(vfsFiles, registry, businessName);
+}
+
+// ============================================================================
+// Preview State Derivation
+// ============================================================================
+
+export function derivePreviewStateFromRegistry(registry: PageRegistry): PreviewState {
+  const pages = Object.values(registry.pages);
+  const homePage = pages.find(p => p.isHome);
+
+  const routes = pages
+    .filter(p => !p.isHome)
+    .map(p => p.path)
+    .sort();
 
   return {
-    vfsFiles: updatedVfs,
-    registry: updatedRegistry,
-    previewState: {
-      availableRoutes: deriveAvailableRoutes(updatedRegistry),
-      activeRoute: '/',
-      activePageId: updatedRegistry.homePageId || null,
-      lastRouterUpdate: Date.now(),
-    },
-    shouldReload: true,
-    routerContent,
+    activePageId: homePage?.pageId || null,
+    activeRoute: '/',
+    availableRoutes: ['/', ...routes],
+    pendingGenerations: new Set(),
+    lastRouterUpdate: Date.now(),
   };
 }
 
 /**
- * Navigate to a page — resolves to canonical route and updates preview state.
+ * Navigate to a page — returns new preview state slice.
  */
 export function navigateToPage(
   registry: PageRegistry,
@@ -186,90 +149,5 @@ export function navigateToPage(
 ): Partial<PreviewState> {
   const page = registry.pages[pageId];
   if (!page) return {};
-
-  return {
-    activePageId: pageId,
-    activeRoute: page.path,
-  };
-}
-
-/**
- * Update page content in VFS and regenerate router if paths changed.
- */
-export function updatePageContent(
-  registry: PageRegistry,
-  vfsFiles: Record<string, string>,
-  pageId: string,
-  content: string,
-  businessName?: string,
-): PreviewLifecycleResult {
-  const page = registry.pages[pageId];
-  if (!page) {
-    return { vfsFiles, registry, previewState: {}, shouldReload: false };
-  }
-
-  const filePath = page.filePath || deriveFilePath(page);
-  const updatedVfs = { ...vfsFiles, [filePath]: content };
-
-  return {
-    vfsFiles: updatedVfs,
-    registry,
-    previewState: {},
-    shouldReload: true,
-  };
-}
-
-/**
- * Full rebuild — regenerate VFS and router from current registry state.
- * Used after bulk operations or AI generation completion.
- */
-export function fullRebuild(
-  registry: PageRegistry,
-  vfsFiles: Record<string, string>,
-  businessName?: string,
-): PreviewLifecycleResult {
-  // Regenerate router from registry
-  const updatedVfs = patchVFSWithRouter(vfsFiles, registry, businessName);
-  const routerContent = generateCanonicalRouter(registry, businessName);
-
-  return {
-    vfsFiles: updatedVfs,
-    registry,
-    previewState: {
-      availableRoutes: deriveAvailableRoutes(registry),
-      lastRouterUpdate: Date.now(),
-    },
-    shouldReload: true,
-    routerContent,
-  };
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function deriveAvailableRoutes(registry: PageRegistry): string[] {
-  const pages = Object.values(registry.pages);
-  const routes = pages
-    .filter(p => !p.isHome)
-    .map(p => p.path)
-    .sort();
-  return ['/', ...routes];
-}
-
-/**
- * Derive complete preview state from a registry.
- * Used for initial hydration.
- */
-export function derivePreviewStateFromRegistry(registry: PageRegistry): PreviewState {
-  const pages = Object.values(registry.pages);
-  const homePage = pages.find(p => p.isHome);
-
-  return {
-    activePageId: homePage?.pageId || null,
-    activeRoute: '/',
-    availableRoutes: deriveAvailableRoutes(registry),
-    pendingGenerations: new Set(),
-    lastRouterUpdate: Date.now(),
-  };
+  return { activePageId: pageId, activeRoute: page.path };
 }

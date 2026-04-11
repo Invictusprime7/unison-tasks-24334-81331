@@ -101,9 +101,8 @@ import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { scaffoldMissingTopologyPagesWithRouter, getTopologyPagesForAIGeneration } from '@/utils/topologyVFSScaffolder';
-import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { resolveNavigationTarget, deriveFilePath } from '@/services/routeNavigationService';
-import { applyTopologyChange, syncTopologyAndRouter } from '@/services/pageTopologyOrchestrator';
+import { applyStructuralChange, syncRouterAndValidate, regenerateRouter } from '@/services/unifiedPreviewPipeline';
 import { validatePageTopology } from '@/services/pageTopologyValidator';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {

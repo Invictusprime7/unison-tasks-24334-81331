@@ -765,9 +765,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         sitePlan,
-        // Playground pipeline output
+        // Canonical pipeline output — single source of truth
         materializedPlayground,
         compiledPlayground,
+        siteBundleSnapshot,
+        pipelineManifest,
         wizardSelections,
       };
 

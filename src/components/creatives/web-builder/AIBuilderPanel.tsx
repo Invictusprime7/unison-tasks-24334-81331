@@ -565,6 +565,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   vfsContext,
   vfsFiles,
   onApplyToVFS,
+  previewRef,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');

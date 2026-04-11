@@ -4693,7 +4693,7 @@ ${html}
           creatorPlayground.updatePage(pageId, { filePath: vfsPath });
           
           // Regenerate canonical router first so the route is registered
-          const routerCode = generateCanonicalRouter(creatorPlayground.pageRegistry);
+          const routerCode = regenerateRouter(creatorPlayground.pageRegistry);
           if (routerCode) virtualFS.importFiles({ '/src/App.tsx': routerCode });
           
           // Then trigger AI generation
@@ -5058,7 +5058,7 @@ export default function ${componentName}() {
             onSetHomePage={(pageId) => {
               creatorPlayground.setHomePage(pageId);
               // Regenerate router after homepage change
-              const result = syncTopologyAndRouter(
+              const result = syncRouterAndValidate(
                 creatorPlayground.pageRegistry,
                 virtualFS.getSandpackFiles(),
               );

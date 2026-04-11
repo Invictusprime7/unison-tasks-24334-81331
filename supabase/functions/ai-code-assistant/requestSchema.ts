@@ -112,6 +112,7 @@ export const AIRequestSchema = z.object({
   siteElementsLibraryContext: z.string().max(50_000).optional(),
   surgicalEdit: z.boolean().optional(),
   behavioralEdit: z.boolean().optional(),
+  targetFile: z.string().max(300).optional(),
   componentBehaviorContext: z.string().max(15_000).optional(),
   previewDiagnostics: z.string().max(5_000).optional(),
   recentChangedFiles: z.array(z.string().max(200)).max(20).optional(),

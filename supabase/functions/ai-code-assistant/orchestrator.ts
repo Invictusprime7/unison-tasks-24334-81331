@@ -40,6 +40,7 @@ import { runProviderLoop } from "./aiProviderLoop.ts";
 import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext, detectIssueHint } from "./contextCompactor.ts";
 import { buildSessionMemory, formatSessionMemoryBlock } from "./sessionMemory.ts";
 import { reviewPatch } from "./reviewPass.ts";
+import { checkEditScope } from "./reviewScope.ts";
 import { buildApplyState, formatApplyStateBlock, type ApplyState } from "./applyState.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -361,6 +362,22 @@ async function runBuilderLane(
         goalCategory: memory?.goalCategory,
       });
       console.log(`[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`);
+
+      // ── Scope enforcement for scoped edits ──────────────────────────
+      const scopeResult = checkEditScope({
+        patchFiles: reviewResult.cleanedFiles,
+        targetFile: parsed.targetFile ?? null,
+        taskType: task.type,
+        existingFiles,
+      });
+      if (!scopeResult.inScope) {
+        console.warn(`[orchestrator] SCOPE VIOLATION: ${scopeResult.reason}`);
+        reviewResult.warnings.push({ severity: "error", message: `Scope violation: ${scopeResult.reason}` });
+        reviewResult.requiresApproval = true;
+      }
+      if (scopeResult.blockAutoApply) {
+        reviewResult.requiresApproval = true;
+      }
 
       applyState = buildApplyState({
         actionType: reviewResult.removedFiles.length > 0 ? 'multi_patch' : 'patch',

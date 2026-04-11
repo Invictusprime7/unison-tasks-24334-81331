@@ -161,6 +161,42 @@ function wrapHtmlInReactComponent(html: string): string {
 // Types
 // ============================================================================
 
+/**
+ * Client-side scope guard — blocks auto-apply if a scoped edit
+ * touches unauthorized files or creates too many new files.
+ */
+function getScopedEditAutoApplyBlockReason(opts: {
+  files: Record<string, string>;
+  resolvedTargetFile: string | null;
+  existingFileKeys: string[];
+}): string | null {
+  const normalizePath = (p: string) => (p.startsWith('/') ? p : `/${p}`);
+  const paths = Object.keys(opts.files).map(normalizePath);
+
+  // If we resolved a target, the patch must include it
+  if (opts.resolvedTargetFile) {
+    const normTarget = normalizePath(opts.resolvedTargetFile);
+    if (!paths.includes(normTarget)) {
+      return `Scoped edit did not update the resolved target file (${normTarget}).`;
+    }
+  }
+
+  // Scoped edits should not produce more than 3 files
+  if (paths.length > 3) {
+    return `Scoped edit produced ${paths.length} files — likely a full regeneration.`;
+  }
+
+  // Should not create more than 1 new file
+  const existingNorm = opts.existingFileKeys.map(normalizePath);
+  const newFiles = paths.filter((p) => !existingNorm.includes(p));
+  if (newFiles.length > 1) {
+    return `Scoped edit created ${newFiles.length} new files — expected at most 1.`;
+  }
+
+  return null;
+}
+
+
 interface ThinkingStep {
   id: string;
   type: 'analyzing' | 'planning' | 'generating' | 'validating' | 'complete' | 'error' | 'reasoning';
@@ -1092,6 +1128,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               debugMode: isDebugMode,
               surgicalEdit: isSurgicalEdit,
               behavioralEdit: isBehavioralEdit,
+              targetFile: resolvedTargetFile || undefined,
               componentBehaviorContext: isBehavioralEdit ? behaviorContext : undefined,
               systemType,
               templateName,
@@ -1388,7 +1425,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         const shouldBlock = responseMeta?.requiresApproval &&
           responseMeta.warnings?.some(w => w.severity === 'error');
 
-        if (shouldBlock) {
+        // Client-side scope enforcement for scoped edits
+        const isScopedTask = isSurgicalEdit || isBehavioralEdit;
+        const scopeBlockReason = isScopedTask ? getScopedEditAutoApplyBlockReason({
+          files: normalizedFiles,
+          resolvedTargetFile,
+          existingFileKeys: vfsFiles ? Object.keys(vfsFiles) : [],
+        }) : null;
+
+        if (scopeBlockReason) {
+          console.warn('[AIBuilderPanel] SCOPE BLOCK:', scopeBlockReason);
+          toast.warning(`⚠️ Edit blocked: ${scopeBlockReason}`);
+        } else if (shouldBlock) {
           console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
           toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
           // Store files for manual apply later (user can use View Edits)

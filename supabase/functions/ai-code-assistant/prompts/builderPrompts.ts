@@ -119,6 +119,15 @@ THINK OF YOURSELF AS A SURGICAL DIFF TOOL:
 - Input: the existing file + a user instruction targeting ONE element
 - Output: the same file with ONE element changed
 - If your output is shorter than the input (and user didn't ask to remove), YOU MADE AN ERROR — stop and try again
+
+[STRICT FILE SCOPE — ENFORCED BY POST-GENERATION VALIDATION]
+- You may ONLY output files that are directly affected by the user's request.
+- For single-element edits (text, color, style, one section): output ONLY the file containing that element.
+- Do NOT create, rename, delete, or replace files outside the explicit target.
+- Do NOT regenerate the router, entry point (App.tsx/main.tsx), or config files unless the user explicitly asks.
+- If you output more than 3 files for a scoped edit, the system will BLOCK auto-apply.
+- If you fail to include the resolved target file, the system will BLOCK auto-apply.
+- Exceeding scope = your patch gets rejected. Stay focused.
 `;
 
   const behavioralBlock = opts.behavioralContext ? `

@@ -2670,6 +2670,41 @@ const BUILTIN_JSX_ELEMENTS = new Set([
 ]);
 
 /**
+ * Remove unused imports from a source file.
+ * Detects named imports that are never referenced in the rest of the file body.
+ */
+function removeUnusedImports(source: string): string {
+  if (!source) return source;
+
+  // Split into lines for import detection
+  return source.replace(
+    /^import\s+\{([^}]+)\}\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm,
+    (fullMatch, namedGroup: string) => {
+      const names = namedGroup.split(',').map((n: string) => n.trim()).filter(Boolean);
+      // Resolve alias: "Foo as Bar" → check usage of "Bar"
+      const usedNames = names.filter((n: string) => {
+        const alias = n.includes(' as ') ? n.split(' as ')[1].trim() : n.trim();
+        // Check if alias appears in the rest of the source (outside import statements)
+        const bodyWithoutImports = source.replace(/^import\s+.*$/gm, '');
+        // Must appear as identifier (word boundary), not just substring
+        const regex = new RegExp(`\\b${escapeRegExp(alias)}\\b`);
+        return regex.test(bodyWithoutImports);
+      });
+
+      if (usedNames.length === 0) return ''; // Remove entire import
+      if (usedNames.length === names.length) return fullMatch; // All used
+
+      // Reconstruct with only used names
+      return fullMatch.replace(`{${namedGroup}}`, `{ ${usedNames.join(', ')} }`);
+    }
+  );
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Scan JSX in all files for PascalCase component usage (e.g. `<Gallery />`)
  * that has NO corresponding import statement. For each missing component,
  * inject a relative import pointing to `./components/ComponentName`.

@@ -3879,6 +3879,22 @@ export function prepareSandpackFiles(
     }
   }
 
+  // ── CLEANUP: Remove unused imports from VFS files ──
+  // AI often imports components/icons it doesn't actually use in the template,
+  // producing "'X' is declared but its value is never read" warnings.
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx|jsx|ts|js)$/.test(filePath)) continue;
+    sandpackFiles[filePath] = removeUnusedImports(content);
+  }
+
+  // ── CLEANUP: Strip non-null assertions from .jsx files ──
+  // TypeScript non-null assertions (foo!) are invalid in plain .jsx files.
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!filePath.endsWith('.jsx')) continue;
+    // Replace non-null assertions: identifier! followed by . or [ or ) or , or ;
+    sandpackFiles[filePath] = content.replace(/(\w)\!(?=[\.\[\),;\s}])/g, '$1');
+  }
+
   // Ensure template.css exists if any file imports it
   const anyImportsTemplateCss = Object.values(sandpackFiles).some(c =>
     typeof c === 'string' && /import\s+['"]\.\/template\.css['"]/.test(c)

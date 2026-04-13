@@ -1906,23 +1906,23 @@ export default function App() {
     'Wire up the contact form',
   ];
 
+  // Whether to show conversational welcome (no real messages yet)
+  const hasConversation = messages.some(m => m.role === 'user');
+
   return (
     <div className={cn(
-      "flex flex-col h-full bg-[#060a14] border-r border-blue-500/20",
-      "shadow-[inset_0_0_30px_rgba(59,130,246,0.03)]",
+      "flex flex-col h-full bg-background border-r border-border",
       className
     )}>
-      {/* Retro Header with Blue Glow */}
-      <div className="flex items-center gap-2 px-3 py-3 border-b border-blue-500/30 bg-[#0a0f1e]">
-        <div className="p-1.5 rounded-lg bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-          <Sparkles className="w-4 h-4 text-white" />
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border bg-card/50">
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 border border-border flex items-center justify-center shadow-sm">
+          <Sparkles className="w-4 h-4 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-bold text-blue-400 drop-shadow-[0_0_5px_rgba(59,130,246,0.5)]">
-            🤖 AI Builder
-          </h2>
-          <p className="text-[10px] text-blue-300/50 truncate font-mono">
-            {templateName || 'New Project'} • {systemType || 'General'}
+          <h2 className="text-sm font-semibold text-foreground">AI Builder</h2>
+          <p className="text-[11px] text-muted-foreground truncate">
+            {templateName || 'New Project'}{systemType ? ` · ${systemType}` : ''}
           </p>
         </div>
         {onClose && (
@@ -1930,193 +1930,87 @@ export default function App() {
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="h-7 w-7 text-blue-400/50 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all duration-200"
-            title="Close AI Panel"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-lg"
+            title="Close"
           >
             <ChevronLeft className="w-4 h-4" />
           </Button>
         )}
       </div>
 
-      {/* Retro Tabs with Glow Effects */}
+      {/* Tab bar */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'code' | 'debug')} className="flex-1 flex flex-col min-h-0">
-        <TabsList className="w-full grid grid-cols-2 rounded-none h-10 bg-[#070b16] border-b border-blue-500/20">
+        <TabsList className="w-full grid grid-cols-2 rounded-none h-9 bg-card/30 border-b border-border px-1">
           <TabsTrigger
             value="code"
-            className="text-xs gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-blue-400 data-[state=active]:text-blue-400 data-[state=active]:bg-blue-500/10 data-[state=active]:shadow-[0_0_10px_rgba(59,130,246,0.3)] text-blue-400/50 hover:text-blue-400/70 transition-all duration-200"
+            className="text-xs gap-1.5 rounded-lg h-7 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground transition-all"
           >
-            <Code2 className="w-3.5 h-3.5" />
-            Code
+            <MessageSquare className="w-3.5 h-3.5" />
+            Chat
           </TabsTrigger>
           <TabsTrigger
             value="debug"
-            className="text-xs gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-amber-400 data-[state=active]:text-amber-400 data-[state=active]:bg-amber-500/10 data-[state=active]:shadow-[0_0_10px_rgba(245,158,11,0.3)] text-amber-400/50 hover:text-amber-400/70 transition-all duration-200"
+            className="text-xs gap-1.5 rounded-lg h-7 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground transition-all"
           >
             <Bug className="w-3.5 h-3.5" />
             Debug
             {iframeErrors.length > 0 && (
-              <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-[10px] flex items-center justify-center animate-pulse">
+              <Badge variant="destructive" className="ml-1 h-4 min-w-[16px] px-1 text-[10px] flex items-center justify-center">
                 {iframeErrors.length}
               </Badge>
             )}
           </TabsTrigger>
         </TabsList>
 
-        {/* Code Tab */}
+        {/* Chat Tab */}
         <TabsContent value="code" className="flex-1 flex flex-col m-0 min-h-0 data-[state=inactive]:hidden">
-          {/* Messages */}
+          {/* Messages or Welcome */}
           <ScrollArea className="flex-1" ref={scrollRef}>
             <div className="py-3 px-3">
-              {messages.map((message) => (
-                <MessageItem
-                  key={message.id}
-                  message={message}
-                  onViewEdits={handleViewEdits}
-                  onRetryError={handleFixError}
+              {!hasConversation ? (
+                <AIConversationWelcome
+                  onSelectPrompt={setInput}
+                  templateName={templateName}
                 />
-              ))}
-              {isLoading && messages[messages.length - 1]?.role === 'user' && (
-                <div className="flex items-center gap-2 text-blue-400/50 text-sm py-2 font-mono">
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-                  <span>▸ Processing...</span>
+              ) : (
+                messages.map((message) => (
+                  <AIConversationMessage
+                    key={message.id}
+                    message={message as any}
+                    onViewEdits={handleViewEdits}
+                    onRetryError={handleFixError}
+                  />
+                ))
+              )}
+              {isLoading && messages[messages.length - 1]?.role === 'user' && !messages.some(m => m.isStreaming) && (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span>Processing...</span>
                 </div>
               )}
             </div>
           </ScrollArea>
 
-          {/* Quick Prompts with Retro Style */}
-          {messages.length <= 1 && (
-            <div className="flex-shrink-0 px-3 pb-2">
-              <p className="text-[10px] text-blue-400/40 mb-1.5 font-mono">▸ Quick start:</p>
-              <div className="flex flex-wrap gap-1">
-                {quickPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => setInput(prompt)}
-                    className="text-[10px] px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 rounded border border-blue-500/20 hover:border-blue-500/40 text-blue-400/70 hover:text-blue-400 transition-all duration-200 hover:shadow-[0_0_8px_rgba(59,130,246,0.2)]"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* AI Gateway Options */}
           <AIGatewayOptions
             config={gatewayConfig}
             onChange={setGatewayConfig}
-            className="flex-shrink-0 border-t border-blue-500/20"
+            className="flex-shrink-0 border-t border-border"
           />
 
-          {/* Input with Retro Styling + File Drop */}
-          <div className="flex-shrink-0 mt-auto p-3 border-t border-blue-500/20 bg-[#0a0f1e]">
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*,.txt,.md,.ts,.tsx,.js,.jsx,.css,.html,.json,.sql,.py"
-              className="hidden"
-              onChange={async (e) => { if (e.target.files?.length) { await addFiles(e.target.files); e.target.value = ''; } }}
-            />
-
-            {/* Attached file chips */}
-            {droppedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {droppedFiles.map((f) => (
-                  <div
-                    key={f.id}
-                    className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/15 border border-blue-500/30 rounded-full text-[10px] text-blue-300 max-w-[140px]"
-                    title={f.name}
-                  >
-                    {f.type === 'image' ? (
-                      f.preview
-                        ? <img src={f.preview} alt={f.name} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
-                        : <ImageIcon className="w-3 h-3 flex-shrink-0" />
-                    ) : f.type === 'code' ? (
-                      <FileCode2 className="w-3 h-3 flex-shrink-0" />
-                    ) : (
-                      <FileText className="w-3 h-3 flex-shrink-0" />
-                    )}
-                    <span className="truncate">{f.name}</span>
-                    <button
-                      onClick={() => removeFile(f.id)}
-                      className="ml-0.5 text-blue-400/50 hover:text-red-400 transition-colors flex-shrink-0"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Drop zone + textarea */}
-            <div
-              className={cn(
-                'relative rounded-md transition-all duration-200',
-                isDragging && 'ring-2 ring-blue-400 ring-offset-1 ring-offset-[#0a0f1e]'
-              )}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              {isDragging && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-blue-500/20 border-2 border-dashed border-blue-400 pointer-events-none">
-                  <div className="flex flex-col items-center gap-1">
-                    <Paperclip className="w-5 h-5 text-blue-400" />
-                    <span className="text-[11px] text-blue-300 font-mono">Drop files here</span>
-                  </div>
-                </div>
-              )}
-              <Textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder={droppedFiles.length > 0 ? 'Add instructions for the attached files (optional)...' : 'Describe what you want to build, or drop files here...'}
-                className="min-h-[60px] max-h-[120px] bg-black/40 border-blue-500/30 text-sm resize-none text-blue-100 placeholder:text-blue-400/30 focus:border-blue-400 focus:ring-blue-400/20"
-                disabled={isLoading}
-              />
-            </div>
-
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2">
-                {/* Attach file button */}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading || droppedFiles.length >= 5}
-                  className="flex items-center gap-1 text-[10px] text-blue-400/50 hover:text-blue-400 disabled:opacity-30 transition-colors"
-                  title="Attach files (images, code, text)"
-                >
-                  <Paperclip className="w-3 h-3" />
-                  {droppedFiles.length > 0 ? `${droppedFiles.length}/5` : 'Attach'}
-                </button>
-                <span className="text-[10px] text-blue-400/20 font-mono">|</span>
-                <span className="text-[10px] text-blue-400/30 font-mono">Enter → send</span>
-              </div>
-              <Button
-                size="sm"
-                onClick={handleSend}
-                disabled={(!input.trim() && droppedFiles.length === 0) || isLoading}
-                className="gap-1.5 bg-blue-500 hover:bg-blue-400 text-white font-bold shadow-[0_0_15px_rgba(59,130,246,0.4)] hover:shadow-[0_0_20px_rgba(59,130,246,0.6)] transition-all duration-200"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Send className="w-3 h-3" />
-                )}
-                Send
-              </Button>
-            </div>
-          </div>
+          {/* Input */}
+          <AIConversationInput
+            input={input}
+            onInputChange={setInput}
+            onSend={handleSend}
+            isLoading={isLoading}
+            droppedFiles={droppedFiles}
+            onAddFiles={addFiles}
+            onRemoveFile={removeFile}
+          />
         </TabsContent>
 
-        {/* Debug Tab — Enhanced with Edit/Agent/Security modes */}
+        {/* Debug Tab */}
         <TabsContent value="debug" className="flex-1 flex flex-col m-0 min-h-0 data-[state=inactive]:hidden">
           <DebugAgentPanel
             iframeErrors={iframeErrors}

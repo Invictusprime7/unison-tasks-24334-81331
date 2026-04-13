@@ -43,8 +43,12 @@ import {
   FileText,
   FileCode2,
   X,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AIConversationMessage } from './ai-chat/AIConversationMessage';
+import { AIConversationWelcome } from './ai-chat/AIConversationWelcome';
+import { AIConversationInput } from './ai-chat/AIConversationInput';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { BusinessSystemType } from '@/data/templates/types';

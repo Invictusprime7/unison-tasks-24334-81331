@@ -1709,17 +1709,8 @@ export default function App() {
               {!hasConversation ? (
                 <AIConversationWelcome
                   onSelectPrompt={(prompt) => {
+                    pendingPromptRef.current = prompt;
                     setInput(prompt);
-                    // Auto-send after a tick so input state is set
-                    setTimeout(() => {
-                      setInput(prev => {
-                        if (prev === prompt) {
-                          // Trigger send by simulating the flow
-                          handleSend();
-                        }
-                        return prev;
-                      });
-                    }, 50);
                   }}
                   templateName={templateName}
                 />

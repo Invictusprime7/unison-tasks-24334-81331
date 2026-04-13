@@ -1898,13 +1898,6 @@ export default function App() {
     }
   };
 
-  // Quick prompts for code tab
-  const quickPrompts = [
-    'Add a hero section',
-    'Make it mobile responsive',
-    'Add smooth animations',
-    'Wire up the contact form',
-  ];
 
   // Whether to show conversational welcome (no real messages yet)
   const hasConversation = messages.some(m => m.role === 'user');

@@ -84,10 +84,35 @@ Never create a custom dropdown with \`position: absolute\` when DropdownMenu exi
 - Never use relative paths like \`../../components/\` when \`@/\` alias is available
 `;
 
-
 /**
- * Build the edit assistant system prompt — for surgical, single-file, and multi-file edits.
+ * Conversational awareness block — injected when multi-turn messages are present.
+ * Teaches the AI to behave as a collaborative partner, not a one-shot generator.
  */
+const CONVERSATION_AWARENESS = `
+[🗣️ CONVERSATIONAL MODE — MULTI-TURN INTERACTION]
+You are having an ongoing conversation with the user about their project.
+The message history contains prior exchanges — USE THEM for continuity.
+
+CONVERSATIONAL RULES:
+1. REFERENCE prior context: If the user says "make it bigger" or "change that color", 
+   look at what you previously generated/modified to understand "it" and "that"
+2. BUILD incrementally: Each response should build on prior work, not start from scratch
+3. REMEMBER decisions: If the user previously chose a color scheme, layout, or approach,
+   maintain consistency with those choices unless they explicitly ask to change
+4. ASK for clarification when ambiguous: If the user's follow-up is unclear, briefly
+   reference what you understand from context and ask what specifically they want
+5. ACKNOWLEDGE changes: When modifying something you previously built, briefly note
+   what you're changing and why (1 line max)
+6. NEVER regenerate the entire project on a follow-up message — apply the MINIMAL diff
+7. Treat "this", "that", "it", "the button", "the section" as references to the most
+   recently discussed or modified element
+
+ANTI-PATTERNS TO AVOID:
+- Generating a complete new site when the user says "change the font size"
+- Ignoring a color palette established 2 messages ago
+- Treating each message as if it's the first interaction
+- Replacing all VFS files when only one component needs a tweak
+`;
 export function buildEditAssistantPrompt(opts: {
   basePrompt: string;
   memoryBlock: string;

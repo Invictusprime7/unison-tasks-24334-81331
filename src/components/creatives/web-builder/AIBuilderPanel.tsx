@@ -857,8 +857,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
           // ── Build conversation history for multi-turn awareness ──
           // Include up to 10 prior user/assistant exchanges (compact: only role + content, capped)
-          const MAX_HISTORY_TURNS = 10;
-          const MAX_HISTORY_CHAR_PER_MSG = 2000;
+          const MAX_HISTORY_TURNS = 6;
+          const MAX_HISTORY_CHAR_PER_MSG = 1500;
           const conversationHistory: Array<{ role: string; content: string }> = [];
           const priorMessages = messages.filter(m => 
             (m.role === 'user' || m.role === 'assistant') && 
@@ -1383,8 +1383,20 @@ export default function App() {
         // Parse edge function errors for better messaging
         if (errorMessage.includes('All AI providers failed') || errorMessage.includes('All AI models failed')) {
           errorMessage = 'AI service unavailable — all models failed. Try simplifying your request or check API key configuration.';
-        } else if (errorMessage.includes('non-2xx status code')) {
-          errorMessage = 'AI service returned an error. Your request may be too long — try breaking it into smaller steps, or try again in a moment.';
+         } else if (errorMessage.includes('non-2xx status code')) {
+          // Try to extract the real error from the response data
+          try {
+            const respData = (error as any)?.context?.body ? JSON.parse((error as any).context.body) : null;
+            if (respData?.error) {
+              errorMessage = respData.error;
+            } else if (respData?.details) {
+              errorMessage = `Validation error: ${JSON.stringify(respData.details)}`;
+            } else {
+              errorMessage = 'AI service returned an error. Try simplifying your request or try again in a moment.';
+            }
+          } catch {
+            errorMessage = 'AI service returned an error. Try simplifying your request or try again in a moment.';
+          }
         } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
           errorMessage = 'Too many requests. Please wait a moment and try again.';
         } else if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {

@@ -4,7 +4,7 @@
 import { z } from "zod";
 
 const messageContentSchema = z.union([
-  z.string().min(1).max(50_000),
+  z.string().min(1).max(200_000),
   z.array(z.unknown()).min(1).max(50),
 ]);
 

@@ -1538,29 +1538,28 @@ export default function App() {
 
       // Handle non-2xx: response.error is set by supabase-js
       if (response.error) {
-        // Try to extract useful message from the error body
         let errorMsg = 'AI service returned an error';
         const errBody = response.error;
-        if (typeof errBody === 'object' && errBody !== null) {
-          // FunctionsHttpError contains a context with body text
-          const ctx = (errBody as any).context;
-          if (ctx?.body) {
-            try {
-              const parsed = JSON.parse(typeof ctx.body === 'string' ? ctx.body : JSON.stringify(ctx.body));
-              errorMsg = parsed.error || parsed.message || errorMsg;
-            } catch {
-              errorMsg = typeof ctx.body === 'string' ? ctx.body.slice(0, 300) : errorMsg;
-            }
-          } else if ((errBody as Error).message) {
-            const msg = (errBody as Error).message;
-            if (msg.includes('non-2xx')) {
-              errorMsg = 'AI service temporarily unavailable. Please try again.';
-            } else {
-              errorMsg = msg;
-            }
+        // Try reading FunctionsHttpError context (Response object)
+        try {
+          const ctx = (errBody as any)?.context;
+          if (ctx && typeof ctx?.json === 'function') {
+            const body = await ctx.json().catch(() => null);
+            if (body?.error) errorMsg = body.error;
+            else if (body?.message) errorMsg = body.message;
+          } else if (ctx?.body && typeof ctx.body === 'string') {
+            const parsed = JSON.parse(ctx.body);
+            errorMsg = parsed.error || parsed.message || errorMsg;
           }
-        } else if (typeof errBody === 'string') {
-          errorMsg = errBody;
+        } catch { /* swallow */ }
+        // Fallback to .message
+        if (errorMsg === 'AI service returned an error' && (errBody as Error)?.message) {
+          const msg = (errBody as Error).message;
+          if (msg.includes('non-2xx')) {
+            errorMsg = 'AI service temporarily unavailable. Please try again.';
+          } else {
+            errorMsg = msg;
+          }
         }
         throw new Error(errorMsg);
       }

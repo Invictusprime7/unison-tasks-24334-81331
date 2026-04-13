@@ -37,6 +37,10 @@ export interface BuilderSessionMemory {
   diagnosticsSummary?: string;
   /** Estimated project complexity tier */
   complexityTier?: "small" | "medium" | "large";
+  /** Number of conversation turns (multi-turn awareness) */
+  conversationTurnCount?: number;
+  /** Whether this is a continuation of a prior conversation */
+  isConversationContinuation?: boolean;
 }
 
 /**

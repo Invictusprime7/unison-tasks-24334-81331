@@ -58,13 +58,18 @@ export function buildSessionMemory(opts: {
   debugMode?: boolean;
   previewDiagnostics?: string;
   recentChangedFiles?: string[];
+  /** Total message count in conversation (for multi-turn awareness) */
+  messageCount?: number;
 }): BuilderSessionMemory {
+  const msgCount = opts.messageCount ?? 1;
   const memory: BuilderSessionMemory = {
     userGoal: opts.userPromptText.slice(0, 600) || undefined,
     goalCategory: categorizeGoal(opts.userPromptText, opts.debugMode ?? false),
     businessType: opts.systemType ?? opts.source ?? undefined,
     templateName: opts.templateName ?? undefined,
     aesthetic: opts.aesthetic ?? undefined,
+    conversationTurnCount: msgCount,
+    isConversationContinuation: msgCount > 1,
   };
 
   // Client-sent changed files take priority over VFS heuristic detection
@@ -225,6 +230,12 @@ export function formatSessionMemoryBlock(memory?: BuilderSessionMemory): string 
   if (!memory) return '';
 
   const lines: string[] = [];
+  
+  // Multi-turn conversation awareness
+  if (memory.isConversationContinuation && memory.conversationTurnCount) {
+    lines.push(`🔄 Conversation turn #${memory.conversationTurnCount} — Reference prior messages for context. Build on previous responses rather than starting fresh.`);
+  }
+  
   if (memory.goalCategory && memory.goalCategory !== 'general') {
     lines.push(`Intent: ${memory.goalCategory}`);
   }

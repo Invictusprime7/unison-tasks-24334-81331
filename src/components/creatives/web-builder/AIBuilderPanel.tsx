@@ -1699,14 +1699,26 @@ export default function App() {
             <div className="py-3 px-3">
               {!hasConversation ? (
                 <AIConversationWelcome
-                  onSelectPrompt={setInput}
+                  onSelectPrompt={(prompt) => {
+                    setInput(prompt);
+                    // Auto-send after a tick so input state is set
+                    setTimeout(() => {
+                      setInput(prev => {
+                        if (prev === prompt) {
+                          // Trigger send by simulating the flow
+                          handleSend();
+                        }
+                        return prev;
+                      });
+                    }, 50);
+                  }}
                   templateName={templateName}
                 />
               ) : (
-                messages.map((message) => (
+                messages.map((msg) => (
                   <AIConversationMessage
-                    key={message.id}
-                    message={message as any}
+                    key={msg.id}
+                    message={msg}
                     onViewEdits={handleViewEdits}
                     onRetryError={handleFixError}
                   />

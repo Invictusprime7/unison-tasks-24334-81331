@@ -919,13 +919,30 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           
           // Check for retryable errors
           if (response.error) {
-            // Try to get the real error message from the edge function response body
+            // Extract the real error from the FunctionsHttpError context
             let bodyError = '';
+            // First try response.data (sometimes populated even on error)
             if (response.data && typeof response.data === 'object' && 'error' in response.data) {
               bodyError = (response.data as { error?: string }).error || '';
             }
-            const errorMsg = bodyError || response.error.message || '';
+            // Then try reading the context (Response object) from FunctionsHttpError
+            if (!bodyError && response.error) {
+              try {
+                const ctx = (response.error as any)?.context;
+                if (ctx && typeof ctx?.json === 'function') {
+                  const body = await ctx.json().catch(() => null);
+                  if (body?.error) bodyError = body.error;
+                  else if (body?.details) bodyError = `Validation: ${JSON.stringify(body.details)}`;
+                } else if (ctx?.body && typeof ctx.body === 'string') {
+                  const parsed = JSON.parse(ctx.body);
+                  if (parsed?.error) bodyError = parsed.error;
+                }
+              } catch { /* swallow */ }
+            }
+            const errorMsg = bodyError || (response.error as Error).message || '';
             const statusCode = (response.error as any)?.status;
+            console.warn(`[AIBuilderPanel] Edge function error (attempt ${attempt + 1}):`, errorMsg, 'status:', statusCode);
+            
             const isRetryable = errorMsg.includes('non-2xx') || 
                                errorMsg.includes('timeout') ||
                                errorMsg.includes('temporarily unavailable') ||
@@ -934,12 +951,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                                statusCode === 504;
             
             if (isRetryable && attempt < MAX_RETRIES) {
-              console.log(`[AIBuilderPanel] Retryable error, attempt ${attempt + 1}:`, errorMsg);
               lastError = new Error(bodyError || errorMsg || 'Edge function error');
               continue;
             }
-            // Throw an error with the descriptive message from the edge function
-            throw new Error(bodyError || response.error.message || 'Edge function error');
+            // Throw with the descriptive message
+            throw new Error(bodyError || errorMsg || 'Edge function error');
           }
           
           // Success
@@ -1373,28 +1389,48 @@ export default function App() {
     } catch (error) {
       console.error('[AIBuilderPanel] Error:', error);
       
-      // Extract more descriptive error message
+      // ── Robust error extraction ──
+      // supabase.functions.invoke throws FunctionsHttpError whose `.context`
+      // is the raw Response object. We need to read it properly.
       let errorMessage = 'Unknown error';
+
+      // Helper: try to pull a message from a FunctionsHttpError context
+      const extractFromContext = async (ctx: unknown): Promise<string | null> => {
+        try {
+          // ctx may be a Response object (has .json()) or a plain object with .body
+          if (ctx && typeof ctx === 'object') {
+            if (typeof (ctx as Response).json === 'function') {
+              const body = await (ctx as Response).json();
+              if (body?.error) return body.error;
+              if (body?.details) return `Validation error: ${JSON.stringify(body.details)}`;
+            } else if ('body' in ctx) {
+              const raw = (ctx as { body?: string }).body;
+              if (raw) {
+                const parsed = JSON.parse(typeof raw === 'string' ? raw : JSON.stringify(raw));
+                if (parsed?.error) return parsed.error;
+                if (parsed?.details) return `Validation error: ${JSON.stringify(parsed.details)}`;
+              }
+            }
+          }
+        } catch { /* swallow parse errors */ }
+        return null;
+      };
+
       if (error instanceof Error) {
         errorMessage = error.message;
         
-        // Parse edge function errors for better messaging
-        if (errorMessage.includes('All AI providers failed') || errorMessage.includes('All AI models failed')) {
-          errorMessage = 'AI service unavailable — all models failed. Try simplifying your request or check API key configuration.';
-         } else if (errorMessage.includes('non-2xx status code')) {
-          // Try to extract the real error from the response data
-          try {
-            const respData = (error as any)?.context?.body ? JSON.parse((error as any).context.body) : null;
-            if (respData?.error) {
-              errorMessage = respData.error;
-            } else if (respData?.details) {
-              errorMessage = `Validation error: ${JSON.stringify(respData.details)}`;
-            } else {
-              errorMessage = 'AI service returned an error. Try simplifying your request or try again in a moment.';
-            }
-          } catch {
-            errorMessage = 'AI service returned an error. Try simplifying your request or try again in a moment.';
+        // Try to extract the real error from FunctionsHttpError context
+        const ctx = (error as any)?.context;
+        if (ctx) {
+          const extracted = await extractFromContext(ctx);
+          if (extracted) {
+            errorMessage = extracted;
           }
+        }
+
+        // Classify known error patterns for user-friendly messages
+        if (errorMessage.includes('All AI providers failed') || errorMessage.includes('All AI models failed')) {
+          errorMessage = 'AI service unavailable — all models are busy. Please try again in a moment.';
         } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
           errorMessage = 'Too many requests. Please wait a moment and try again.';
         } else if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
@@ -1407,19 +1443,16 @@ export default function App() {
           errorMessage = 'AI service not configured. Please set your API key in project secrets.';
         } else if (errorMessage.includes('Invalid request body')) {
           errorMessage = 'Request was too large or malformed. Try a shorter prompt or fewer attached files.';
+        } else if (errorMessage.includes('non-2xx status code') && !ctx) {
+          // Fallback only if we couldn't extract a real message from context
+          errorMessage = 'AI service returned an error. Try simplifying your request or try again in a moment.';
         }
       } else if (typeof error === 'object' && error !== null) {
-        // Handle Supabase FunctionsHttpError
-        const err = error as { message?: string; context?: { body?: string } };
+        const err = error as { message?: string; context?: unknown };
         errorMessage = err.message || 'Edge function error';
-        if (err.context?.body) {
-          try {
-            const body = JSON.parse(err.context.body);
-            if (body.error) errorMessage = body.error;
-            if (body.details) errorMessage += ` (${JSON.stringify(body.details)})`;
-          } catch {
-            // Ignore parse errors
-          }
+        if (err.context) {
+          const extracted = await extractFromContext(err.context);
+          if (extracted) errorMessage = extracted;
         }
       }
       
@@ -1505,29 +1538,28 @@ export default function App() {
 
       // Handle non-2xx: response.error is set by supabase-js
       if (response.error) {
-        // Try to extract useful message from the error body
         let errorMsg = 'AI service returned an error';
         const errBody = response.error;
-        if (typeof errBody === 'object' && errBody !== null) {
-          // FunctionsHttpError contains a context with body text
-          const ctx = (errBody as any).context;
-          if (ctx?.body) {
-            try {
-              const parsed = JSON.parse(typeof ctx.body === 'string' ? ctx.body : JSON.stringify(ctx.body));
-              errorMsg = parsed.error || parsed.message || errorMsg;
-            } catch {
-              errorMsg = typeof ctx.body === 'string' ? ctx.body.slice(0, 300) : errorMsg;
-            }
-          } else if ((errBody as Error).message) {
-            const msg = (errBody as Error).message;
-            if (msg.includes('non-2xx')) {
-              errorMsg = 'AI service temporarily unavailable. Please try again.';
-            } else {
-              errorMsg = msg;
-            }
+        // Try reading FunctionsHttpError context (Response object)
+        try {
+          const ctx = (errBody as any)?.context;
+          if (ctx && typeof ctx?.json === 'function') {
+            const body = await ctx.json().catch(() => null);
+            if (body?.error) errorMsg = body.error;
+            else if (body?.message) errorMsg = body.message;
+          } else if (ctx?.body && typeof ctx.body === 'string') {
+            const parsed = JSON.parse(ctx.body);
+            errorMsg = parsed.error || parsed.message || errorMsg;
           }
-        } else if (typeof errBody === 'string') {
-          errorMsg = errBody;
+        } catch { /* swallow */ }
+        // Fallback to .message
+        if (errorMsg === 'AI service returned an error' && (errBody as Error)?.message) {
+          const msg = (errBody as Error).message;
+          if (msg.includes('non-2xx')) {
+            errorMsg = 'AI service temporarily unavailable. Please try again.';
+          } else {
+            errorMsg = msg;
+          }
         }
         throw new Error(errorMsg);
       }

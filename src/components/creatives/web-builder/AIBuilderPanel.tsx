@@ -355,6 +355,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingPromptRef = useRef<string | null>(null);
+
+  // Auto-send when a welcome prompt is selected
+  useEffect(() => {
+    if (pendingPromptRef.current && input === pendingPromptRef.current && !isLoading) {
+      pendingPromptRef.current = null;
+      handleSend();
+    }
+  }, [input]);
 
   // ── File processing helpers ───────────────────────────────────────────────
   const classifyFile = (file: File): DroppedFile['type'] => {

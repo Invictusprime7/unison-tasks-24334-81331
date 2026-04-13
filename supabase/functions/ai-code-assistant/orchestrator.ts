@@ -169,6 +169,7 @@ async function runBuilderLane(
         debugMode: _debugMode,
         previewDiagnostics: previewDiagnostics ?? undefined,
         recentChangedFiles: recentChangedFiles ?? undefined,
+        messageCount: messages.length,
       })
     : undefined;
   const memoryBlock = formatSessionMemoryBlock(memory);

@@ -25,41 +25,8 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TaskPlanSteps } from '../TaskPlanSteps';
-import type { VFSEdit, IframeError } from '../AIBuilderPanel';
-
-// Re-use types from parent
-interface ThinkingStep {
-  id: string;
-  type: 'analyzing' | 'planning' | 'generating' | 'validating' | 'complete' | 'error' | 'reasoning';
-  message: string;
-  timestamp: Date;
-  details?: string;
-}
-
-interface MessageMeta {
-  actionType?: string;
-  modelUsed?: string;
-  filesDetected?: string[];
-  warnings?: Array<{ severity: string; message: string }>;
-  requiresApproval?: boolean;
-  removedFiles?: string[];
-  reviewSummary?: string;
-}
-
-export interface ConversationMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: Date;
-  thinking?: ThinkingStep[];
-  claudeReasoning?: string;
-  code?: string;
-  edits?: VFSEdit[];
-  error?: IframeError;
-  isStreaming?: boolean;
-  taskPlan?: any;
-  meta?: MessageMeta;
-}
+import type { VFSEdit, IframeError, ThinkingStep, MessageMeta, Message as ConversationMessage } from '../AIBuilderPanel';
+export type { ConversationMessage };
 
 interface Props {
   message: ConversationMessage;

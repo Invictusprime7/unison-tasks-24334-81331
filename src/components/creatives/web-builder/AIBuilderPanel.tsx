@@ -201,7 +201,7 @@ function getScopedEditAutoApplyBlockReason(opts: {
 }
 
 
-interface ThinkingStep {
+export interface ThinkingStep {
   id: string;
   type: 'analyzing' | 'planning' | 'generating' | 'validating' | 'complete' | 'error' | 'reasoning';
   message: string;
@@ -210,7 +210,17 @@ interface ThinkingStep {
   isExpanded?: boolean;
 }
 
-interface Message {
+export interface MessageMeta {
+  actionType?: string;
+  modelUsed?: string;
+  filesDetected?: string[];
+  warnings?: Array<{ severity: string; message: string }>;
+  requiresApproval?: boolean;
+  removedFiles?: string[];
+  reviewSummary?: string;
+}
+
+export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;

@@ -1115,9 +1115,34 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             }
           }
 
+          // ── Build conversation history for multi-turn awareness ──
+          // Include up to 10 prior user/assistant exchanges (compact: only role + content, capped)
+          const MAX_HISTORY_TURNS = 10;
+          const MAX_HISTORY_CHAR_PER_MSG = 2000;
+          const conversationHistory: Array<{ role: string; content: string }> = [];
+          const priorMessages = messages.filter(m => 
+            (m.role === 'user' || m.role === 'assistant') && 
+            m.content && 
+            m.content.trim().length > 0 &&
+            !m.isStreaming
+          );
+          // Take last N messages (excluding the current user message which is already in promptForAI)
+          const historySlice = priorMessages.slice(-MAX_HISTORY_TURNS);
+          for (const m of historySlice) {
+            // For assistant messages, strip thinking/reasoning artifacts and keep only the explanation
+            const content = m.role === 'assistant'
+              ? (m.content || '').slice(0, MAX_HISTORY_CHAR_PER_MSG)
+              : (m.content || '').slice(0, MAX_HISTORY_CHAR_PER_MSG);
+            if (content.trim()) {
+              conversationHistory.push({ role: m.role, content });
+            }
+          }
+          // Append the current user prompt as the final message
+          conversationHistory.push({ role: 'user', content: promptForAI });
+
           response = await supabase.functions.invoke('ai-code-assistant', {
             body: {
-              messages: [{ role: 'user', content: promptForAI }],
+              messages: conversationHistory,
               // Always use template-react for React projects (even surgical edits)
               // to ensure the AI generates React/TSX output, not raw HTML.
               // The surgicalEdit flag tells the edge function to apply surgical constraints.
@@ -1696,9 +1721,19 @@ export default function App() {
       const diagnostics = `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`;
 
       const hasVfsContext = Object.keys(debugVfs).length > 0;
+      // Build conversation history for debug context too
+      const debugHistory: Array<{ role: string; content: string }> = [];
+      const recentMsgs = messages.filter(m => 
+        (m.role === 'user' || m.role === 'assistant') && m.content?.trim() && !m.isStreaming
+      ).slice(-6);
+      for (const m of recentMsgs) {
+        debugHistory.push({ role: m.role, content: (m.content || '').slice(0, 1500) });
+      }
+      debugHistory.push({ role: 'user', content: errorPrompt });
+
       const response = await supabase.functions.invoke('ai-code-assistant', {
         body: {
-          messages: [{ role: 'user', content: errorPrompt }],
+          messages: debugHistory,
           mode: 'code',
           currentCode: hasVfsContext ? undefined : currentCode,
           editMode: true,

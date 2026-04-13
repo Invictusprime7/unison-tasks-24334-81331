@@ -192,8 +192,12 @@ EXAMPLES OF BEHAVIORAL EDITS:
 - "Make this accordion collapsible" → Add openIndex state + onClick toggle + conditional rendering
 ` : '';
 
+  // Inject conversational awareness when multi-turn history is present
+  const conversationalBlock = opts.memoryBlock.includes('Conversation turn') ? CONVERSATION_AWARENESS : '';
+
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + conversationalBlock
     + editPreamble
     + behavioralBlock
     + opts.surgicalReinforcement
@@ -240,8 +244,11 @@ CRITICAL RULES:
 - If the error is in the session context diagnostics, prioritize that
 `;
 
+  const conversationalBlock = opts.memoryBlock.includes('Conversation turn') ? CONVERSATION_AWARENESS : '';
+
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + conversationalBlock
     + debugPreamble
     + opts.memoryBlock
     + opts.compactedFilesBlock
@@ -273,8 +280,11 @@ You are helping the user build and improve their web application.
 - Match the existing project's design system and patterns
 `;
 
+  const conversationalBlock = opts.memoryBlock.includes('Conversation turn') ? CONVERSATION_AWARENESS : '';
+
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + conversationalBlock
     + generalPreamble
     + opts.memoryBlock
     + opts.compactedFilesBlock

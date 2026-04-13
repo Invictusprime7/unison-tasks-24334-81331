@@ -235,15 +235,7 @@ export interface Message {
   /** Unison TaskPlan for this message */
   taskPlan?: TaskPlan;
   /** Rich metadata from the AI response */
-  meta?: {
-    actionType?: string;
-    modelUsed?: string;
-    filesDetected?: string[];
-    warnings?: Array<{ severity: string; message: string }>;
-    requiresApproval?: boolean;
-    removedFiles?: string[];
-    reviewSummary?: string;
-  };
+  meta?: MessageMeta;
 }
 
 export interface VFSEdit {
@@ -439,20 +431,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     }
   }, [messages]);
 
-  // Initial welcome message
-  useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([{
-        id: generateId(),
-        role: 'assistant',
-        content: `👋 Welcome to the AI Builder!\n\nI can help you:\n• Generate and modify code\n• Fix errors in your preview\n• Debug Supabase integrations\n\nJust describe what you want to build or switch to Debug tab to fix errors.`,
-        timestamp: new Date(),
-        thinking: [
-          { id: '1', type: 'complete', message: 'Ready to assist', timestamp: new Date() }
-        ],
-      }]);
-    }
-  }, [messages.length]);
+  // No initial welcome message — AIConversationWelcome handles the empty state
 
   // Live thinking step pusher — updates the streaming message in real-time
   const pushThinkingStep = useCallback((

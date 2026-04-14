@@ -224,32 +224,12 @@ export const AIConversationInput: React.FC<Props> = ({
             }
           }}
           placeholder={droppedFiles.length > 0 ? 'Add instructions for attachments...' : 'What would you like to build?'}
-          className="min-h-[48px] max-h-[120px] border-0 bg-transparent text-sm resize-none shadow-none focus-visible:ring-0 pr-24 placeholder:text-muted-foreground/40"
+          className="min-h-[48px] max-h-[120px] border-0 bg-transparent text-sm resize-none shadow-none focus-visible:ring-0 pr-12 placeholder:text-muted-foreground/40"
           disabled={isLoading}
         />
 
-        {/* Action buttons */}
-        <div className="absolute right-1.5 bottom-1.5 flex items-center gap-1">
-          {/* Screenshot capture button */}
-          <button
-            onClick={capturePreviewScreenshot}
-            disabled={isLoading || isCapturing || droppedFiles.length >= 5}
-            className={cn(
-              "p-1.5 rounded-lg text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 disabled:opacity-30 transition-all",
-              isCapturing && "animate-pulse text-primary"
-            )}
-            title="Capture preview screenshot"
-          >
-            <Camera className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading || droppedFiles.length >= 5}
-            className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 disabled:opacity-30 transition-all"
-            title="Attach files"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
+        {/* Send button — inside the text field */}
+        <div className="absolute right-1.5 bottom-1.5">
           <Button
             size="icon"
             onClick={onSend}
@@ -270,8 +250,31 @@ export const AIConversationInput: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Hint */}
+      {/* Toolbar row — outside the text field */}
       <div className="flex items-center justify-between mt-1.5 px-1">
+        <div className="flex items-center gap-0.5">
+          {/* Screenshot capture */}
+          <button
+            onClick={capturePreviewScreenshot}
+            disabled={isLoading || isCapturing || droppedFiles.length >= 5}
+            className={cn(
+              "p-1.5 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 disabled:opacity-30 transition-all",
+              isCapturing && "animate-pulse text-primary"
+            )}
+            title="Capture preview screenshot"
+          >
+            <Camera className="w-3.5 h-3.5" />
+          </button>
+          {/* Attach files */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isLoading || droppedFiles.length >= 5}
+            className="p-1.5 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 disabled:opacity-30 transition-all"
+            title="Attach files"
+          >
+            <Paperclip className="w-3.5 h-3.5" />
+          </button>
+        </div>
         <span className="text-[10px] text-muted-foreground/40">
           {droppedFiles.length > 0 && `${droppedFiles.length}/5 files · `}
           Enter to send · Shift+Enter for new line

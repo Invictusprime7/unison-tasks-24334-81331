@@ -831,9 +831,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 maxElements: 10,
               });
 
-          // Build compact VFS files payload for surgical edits (only relevant files, capped)
+          // Build compact VFS files payload for ALL edit modes (not just surgical)
+          // The edge function's contextCompactor handles budget/prioritization
           let vfsPayload: Record<string, string> | undefined;
-          if (isSurgicalEdit && isReactProject && vfsFiles) {
+          if (isReactProject && vfsFiles) {
             const MAX_VFS_PAYLOAD = 120_000;
             let totalSize = 0;
             vfsPayload = {};
@@ -854,6 +855,24 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               totalSize += content.length;
             }
           }
+
+          // Build lightweight preview DOM snapshot for AI context-awareness
+          let previewSnapshot: string | undefined;
+          try {
+            const iframe = previewRef?.current?.getIframe?.();
+            const doc = iframe?.contentDocument;
+            if (doc?.body) {
+              const route = iframe?.contentWindow?.location.hash || '/';
+              const sections = Array.from(doc.querySelectorAll('section, header, nav, main, footer, [data-component]'))
+                .map(el => {
+                  const tag = el.tagName.toLowerCase();
+                  const dc = el.getAttribute('data-component');
+                  const text = (el as HTMLElement).innerText?.slice(0, 60)?.replace(/\n/g, ' ') || '';
+                  return dc ? `<${tag} data-component="${dc}"> "${text}"` : `<${tag}> "${text}"`;
+                }).slice(0, 15);
+              previewSnapshot = `[Preview DOM] Route: ${route}\nVisible sections (${sections.length}):\n${sections.join('\n')}`;
+            }
+          } catch { /* best-effort */ }
 
           // ── Build conversation history for multi-turn awareness ──
           // Include up to 10 prior user/assistant exchanges (compact: only role + content, capped)

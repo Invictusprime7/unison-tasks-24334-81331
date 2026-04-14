@@ -649,9 +649,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         );
       }
 
-      // ── Phase 1c: Behavioral Edit — Build component behavior map ──
+      // ── Phase 1c: Build component behavior map for ALL edit types ──
+      // Previously only built for behavioral edits — now provides context-awareness for all edits
       let behaviorContext = '';
-      if (isBehavioralEdit && vfsFiles && Object.keys(vfsFiles).length > 0) {
+      const isAnyEditMode = isSurgicalEdit || isBehavioralEdit || !!currentCode;
+      if (isAnyEditMode && vfsFiles && Object.keys(vfsFiles).length > 0) {
         try {
           const behaviorMap = buildComponentBehaviorMap(
             previewRef?.current ? { getIframe: previewRef.current.getIframe } as any : { getIframe: () => null } as any,

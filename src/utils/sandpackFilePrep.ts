@@ -3654,6 +3654,119 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     out['/src/index.css'] = BASE_CSS;
   }
 
+  // ── Inject conventional IDE JSON / config files ──────────────────────────
+  // Ensures the VFS looks like a real project with package.json, tsconfig, etc.
+  if (!out['/package.json']) {
+    const detectedDeps: Record<string, string> = { react: '^18.2.0', 'react-dom': '^18.2.0' };
+    // Scan source for common imports to auto-populate dependencies
+    const allCode = Object.values(out).join('\n');
+    const importMatches = allCode.matchAll(/from\s+['"]([a-z@][a-z0-9\-_@/.]*)['"]/g);
+    for (const m of importMatches) {
+      const pkg = m[1].startsWith('@') ? m[1].split('/').slice(0, 2).join('/') : m[1].split('/')[0];
+      if (pkg && !pkg.startsWith('.') && !pkg.startsWith('/') && !detectedDeps[pkg]) {
+        detectedDeps[pkg] = 'latest';
+      }
+    }
+    out['/package.json'] = JSON.stringify({
+      name: 'vfs-project',
+      private: true,
+      version: '0.0.1',
+      type: 'module',
+      scripts: {
+        dev: 'vite',
+        build: 'tsc && vite build',
+        preview: 'vite preview',
+      },
+      dependencies: detectedDeps,
+      devDependencies: {
+        '@vitejs/plugin-react-swc': '^3.5.0',
+        typescript: '^5.3.0',
+        vite: '^5.4.0',
+        tailwindcss: '^3.4.0',
+        autoprefixer: '^10.4.0',
+        postcss: '^8.4.0',
+      },
+    }, null, 2);
+  }
+
+  if (!out['/tsconfig.json']) {
+    out['/tsconfig.json'] = JSON.stringify({
+      compilerOptions: {
+        target: 'ES2020',
+        useDefineForClassFields: true,
+        lib: ['ES2020', 'DOM', 'DOM.Iterable'],
+        module: 'ESNext',
+        skipLibCheck: true,
+        moduleResolution: 'bundler',
+        allowImportingTsExtensions: true,
+        resolveJsonModule: true,
+        isolatedModules: true,
+        noEmit: true,
+        jsx: 'react-jsx',
+        strict: true,
+        noUnusedLocals: false,
+        noUnusedParameters: false,
+        noFallthroughCasesInSwitch: true,
+        baseUrl: '.',
+        paths: { '@/*': ['./src/*'] },
+      },
+      include: ['src'],
+    }, null, 2);
+  }
+
+  if (!out['/vite.config.ts']) {
+    out['/vite.config.ts'] = `import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react-swc';
+import path from 'path';
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+});
+`;
+  }
+
+  if (!out['/tailwind.config.ts']) {
+    out['/tailwind.config.ts'] = `import type { Config } from 'tailwindcss';
+
+export default {
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  theme: { extend: {} },
+  plugins: [],
+} satisfies Config;
+`;
+  }
+
+  if (!out['/postcss.config.js']) {
+    out['/postcss.config.js'] = `export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+`;
+  }
+
+  if (!out['/index.html']) {
+    out['/index.html'] = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VFS Project</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+`;
+  }
+
   // Ensure /src/App.tsx exists — derive from entryPoint or first page component
   if (!out['/src/App.tsx'] && !out['/src/App.jsx']) {
     const targetImport = pickRenderableLauncherEntry(out, options?.entryPoint);

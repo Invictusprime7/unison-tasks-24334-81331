@@ -212,6 +212,101 @@ export function distillSearchKeywords(text: string, maxKeywords = 8): string[] {
     .map(e => e.word);
 }
 
+// ── Prompt complexity scoring ────────────────────────────────────────────────
+
+export type PromptComplexity = "simple" | "moderate" | "complex" | "advanced";
+
+/**
+ * Scores prompt complexity on multiple axes and returns a tier.
+ * Used by providerRouter to auto-select the best model.
+ */
+export function scorePromptComplexity(text: string, intents: ExtractedIntent[]): {
+  tier: PromptComplexity;
+  score: number;
+  factors: string[];
+} {
+  let score = 0;
+  const factors: string[] = [];
+  const lower = text.toLowerCase();
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  const sentenceCount = text.split(/[.!?]+/).filter(s => s.trim().length > 3).length;
+
+  // ── Length / verbosity ────────────────────────────────────────────────
+  if (wordCount > 200) { score += 3; factors.push("very_long_prompt"); }
+  else if (wordCount > 80) { score += 2; factors.push("long_prompt"); }
+  else if (wordCount > 30) { score += 1; factors.push("medium_prompt"); }
+
+  // ── Multi-intent (more instructions = harder to follow) ───────────────
+  if (intents.length >= 5) { score += 3; factors.push("many_intents"); }
+  else if (intents.length >= 3) { score += 2; factors.push("multi_intent"); }
+  else if (intents.length >= 2) { score += 1; factors.push("dual_intent"); }
+
+  // ── Multi-sentence complexity ─────────────────────────────────────────
+  if (sentenceCount >= 6) { score += 2; factors.push("multi_sentence"); }
+  else if (sentenceCount >= 3) { score += 1; factors.push("several_sentences"); }
+
+  // ── Code references (inline code blocks, file names) ──────────────────
+  const codeBlockCount = (text.match(/```/g) || []).length / 2;
+  const inlineCodeCount = (text.match(/`[^`]+`/g) || []).length;
+  if (codeBlockCount >= 2 || inlineCodeCount >= 4) { score += 2; factors.push("code_heavy"); }
+  else if (codeBlockCount >= 1 || inlineCodeCount >= 1) { score += 1; factors.push("has_code"); }
+
+  // ── Technical depth markers ───────────────────────────────────────────
+  const techTerms = [
+    'api', 'endpoint', 'database', 'schema', 'migration', 'middleware',
+    'authentication', 'authorization', 'oauth', 'jwt', 'webhook',
+    'state management', 'context', 'reducer', 'useeffect', 'usememo',
+    'performance', 'optimization', 'lazy load', 'code splitting',
+    'accessibility', 'aria', 'screen reader', 'wcag',
+    'responsive', 'breakpoint', 'media query',
+    'animation', 'transition', 'keyframe', 'framer',
+    'routing', 'navigation', 'redirect', 'dynamic route',
+    'typescript', 'generic', 'interface', 'type safety',
+    'testing', 'unit test', 'integration test',
+    'deployment', 'ci/cd', 'docker', 'serverless',
+    'realtime', 'websocket', 'subscription', 'polling',
+    'internationalization', 'i18n', 'localization',
+    'seo', 'meta tags', 'structured data', 'json-ld',
+  ];
+  const techMatches = techTerms.filter(t => lower.includes(t));
+  if (techMatches.length >= 5) { score += 3; factors.push("highly_technical"); }
+  else if (techMatches.length >= 3) { score += 2; factors.push("technical"); }
+  else if (techMatches.length >= 1) { score += 1; factors.push("some_tech"); }
+
+  // ── Cross-concern requests (layout + logic + styling) ─────────────────
+  const concernAreas = {
+    layout: /\b(layout|grid|flex|position|align|center|stack|column|row)\b/i.test(text),
+    logic: /\b(state|hook|handler|event|click|submit|fetch|api|function|logic|conditional|if|when)\b/i.test(text),
+    styling: /\b(color|font|style|theme|dark|light|gradient|shadow|border|radius|spacing|padding|margin)\b/i.test(text),
+    data: /\b(data|database|table|query|crud|form|input|validation|schema)\b/i.test(text),
+    animation: /\b(animate|transition|motion|scroll|parallax|fade|slide|bounce)\b/i.test(text),
+  };
+  const concernCount = Object.values(concernAreas).filter(Boolean).length;
+  if (concernCount >= 4) { score += 3; factors.push("cross_concern"); }
+  else if (concernCount >= 3) { score += 2; factors.push("multi_concern"); }
+  else if (concernCount >= 2) { score += 1; factors.push("dual_concern"); }
+
+  // ── Ambiguity / poor grammar signals ──────────────────────────────────
+  const ambiguitySignals = [
+    text.split(/\s+and\s+/i).length - 1 >= 4,       // excessive conjunctions
+    (text.match(/,/g) || []).length >= 6,              // run-on comma splices
+    !/[.!?]/.test(text) && wordCount > 20,             // no punctuation, long
+    (text.match(/\b(also|plus|another|too|as well)\b/gi) || []).length >= 3, // piling on
+  ];
+  const ambiguityCount = ambiguitySignals.filter(Boolean).length;
+  if (ambiguityCount >= 2) { score += 2; factors.push("ambiguous_grammar"); }
+  else if (ambiguityCount >= 1) { score += 1; factors.push("slightly_ambiguous"); }
+
+  // ── Tier assignment ───────────────────────────────────────────────────
+  let tier: PromptComplexity;
+  if (score >= 10) tier = "advanced";
+  else if (score >= 6) tier = "complex";
+  else if (score >= 3) tier = "moderate";
+  else tier = "simple";
+
+  return { tier, score, factors };
+}
+
 // ── Main preprocessor ───────────────────────────────────────────────────────
 
 export interface PreprocessedPrompt {
@@ -227,9 +322,75 @@ export interface PreprocessedPrompt {
   wasNormalized: boolean;
   /** Structured intent summary for the AI system prompt */
   intentSummary: string;
+  /** Complexity tier for model selection */
+  complexity: { tier: PromptComplexity; score: number; factors: string[] };
 }
 
 export function preprocessPrompt(rawText: string): PreprocessedPrompt {
+  const original = rawText;
+
+  if (!rawText || rawText.trim().length < 3) {
+    return {
+      normalized: rawText,
+      original,
+      intents: [],
+      searchKeywords: [],
+      wasNormalized: false,
+      intentSummary: '',
+      complexity: { tier: 'simple', score: 0, factors: [] },
+    };
+  }
+
+  let text = rawText;
+
+  // 1. Fix common typos (word-boundary aware)
+  for (const [typo, fix] of Object.entries(TYPO_MAP)) {
+    const re = new RegExp(`\\b${typo}\\b`, 'gi');
+    text = text.replace(re, fix);
+  }
+
+  // 2. Strip filler words
+  text = text.replace(FILLER_PATTERN, '');
+
+  // 3. Deduplicate repeated phrases
+  text = deduplicatePhrases(text);
+
+  // 4. Normalize sentence boundaries
+  text = normalizeSentences(text);
+
+  // 5. Collapse excess whitespace
+  text = text.replace(/\s+/g, ' ').trim();
+
+  const wasNormalized = text !== original.replace(/\s+/g, ' ').trim();
+
+  // 6. Extract intents
+  const intents = extractIntents(text);
+
+  // 7. Distill search keywords (from original to preserve user language)
+  const searchKeywords = distillSearchKeywords(original);
+
+  // 8. Score complexity for model routing
+  const complexity = scorePromptComplexity(original, intents);
+
+  // 9. Build intent summary for AI context
+  let intentSummary = '';
+  if (intents.length > 0) {
+    const intentLines = intents.slice(0, 5).map(i =>
+      `- ${i.action.toUpperCase()} → ${i.target}${i.qualifiers.length > 0 ? ` (${i.qualifiers.join(', ')})` : ''}`
+    );
+    intentSummary = `\n[PARSED USER INTENTS]\n${intentLines.join('\n')}\n`;
+  }
+
+  return {
+    normalized: text,
+    original,
+    intents,
+    searchKeywords,
+    wasNormalized,
+    intentSummary,
+    complexity,
+  };
+}
   const original = rawText;
 
   if (!rawText || rawText.trim().length < 3) {

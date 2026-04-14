@@ -997,6 +997,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           if (attempt >= MAX_RETRIES) throw err;
         }
       }
+      clearTimeout(globalTimeout);
       
       if (!response || response.error) {
         throw lastError || new Error('AI service failed after retries');

@@ -42,6 +42,7 @@ import { buildSessionMemory, formatSessionMemoryBlock } from "./sessionMemory.ts
 import { reviewPatch } from "./reviewPass.ts";
 import { checkEditScope } from "./reviewScope.ts";
 import { buildApplyState, formatApplyStateBlock, type ApplyState } from "./applyState.ts";
+import { preprocessPrompt, type PreprocessedPrompt } from "./promptPreprocessor.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

@@ -791,12 +791,19 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       advancePlanStep(taskPlan, 'generate', 'running');
       liveStep('generating', 'Calling AI model...', gatewayConfig?.selectedModelId || 'auto-select');
 
-      // Call AI service with retry logic
-      const MAX_RETRIES = 2;
+      // Call AI service with retry logic — keep retries minimal to avoid long thinking loops
+      const MAX_RETRIES = 1;
       let response = null;
       let lastError = null;
       
+      // Global timeout: abort the entire request after 90s to prevent infinite thinking state
+      const globalAbort = new AbortController();
+      const globalTimeout = setTimeout(() => globalAbort.abort(), 90_000);
+      
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (globalAbort.signal.aborted) {
+          throw new Error('Request timed out. Please try a simpler prompt.');
+        }
         try {
           if (attempt > 0) {
             // Update thinking to show retry
@@ -990,6 +997,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           if (attempt >= MAX_RETRIES) throw err;
         }
       }
+      clearTimeout(globalTimeout);
       
       if (!response || response.error) {
         throw lastError || new Error('AI service failed after retries');

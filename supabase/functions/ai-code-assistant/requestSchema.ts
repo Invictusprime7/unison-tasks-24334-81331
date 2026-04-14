@@ -115,6 +115,7 @@ export const AIRequestSchema = z.object({
   targetFile: z.string().max(300).optional(),
   componentBehaviorContext: z.string().max(15_000).optional(),
   previewDiagnostics: z.string().max(5_000).optional(),
+  previewSnapshot: z.string().max(3_000).optional(),
   recentChangedFiles: z.array(z.string().max(200)).max(20).optional(),
   vfsFiles: z.record(z.string(), z.string().max(100_000)).optional(),
   attachments: z.array(z.unknown()).max(10).optional(),

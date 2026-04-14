@@ -921,8 +921,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               systemsBuildContext: systemsBuildContext ?? undefined,
               siteElementsLibraryContext,
               attachments: _attachments.length > 0 ? _attachments : undefined,
-              // Send VFS files for surgical edit context
+              // Send VFS files for edit context (all edit types, not just surgical)
               vfsFiles: vfsPayload,
+              // Preview DOM snapshot for live context awareness
+              previewSnapshot,
               // Preview diagnostics for Lane B session memory
               previewDiagnostics: iframeErrors.length > 0
                 ? iframeErrors.slice(0, 3).map(e => `${e.type}: ${e.message}${e.file ? ` (${e.file}:${e.line})` : ''}`).join('\n')

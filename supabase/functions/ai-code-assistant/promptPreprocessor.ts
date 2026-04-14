@@ -448,5 +448,6 @@ export function preprocessPrompt(rawText: string): PreprocessedPrompt {
     searchKeywords,
     wasNormalized,
     intentSummary,
+    complexity,
   };
 }

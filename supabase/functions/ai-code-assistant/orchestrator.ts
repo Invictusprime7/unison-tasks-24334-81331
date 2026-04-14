@@ -341,6 +341,16 @@ async function runBuilderLane(
     finalSystemPrompt += preprocessed.intentSummary;
   }
 
+  // Inject live preview DOM snapshot for context awareness
+  if (previewSnapshot) {
+    finalSystemPrompt += `\n\n${previewSnapshot}\nUse this to understand what the user currently sees and which elements/sections exist in the live preview.`;
+  }
+
+  // Inject component behavior context for all edit types
+  if (componentBehaviorContext) {
+    finalSystemPrompt += `\n\n[🧠 Component Behavior Map]\n${componentBehaviorContext}\nUse this to identify interactive elements, their current handlers, state, and wiring when making edits.`;
+  }
+
   const aiMessages = [
     { role: 'system', content: finalSystemPrompt },
     ...processedMessages,

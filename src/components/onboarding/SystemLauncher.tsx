@@ -599,6 +599,29 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
 
+      // ── Step 1b: Provision backend (business, membership, intent bindings, demo data) ──
+      // Maps selectedSystem (BusinessSystemType) to install-system's SystemType
+      const installSystemType = selectedSystem as string; // both use same keys: booking, store, agency, portfolio, content, saas
+      const installPromise = supabase.functions.invoke('install-system', {
+        body: {
+          systemType: installSystemType,
+          businessName: businessName.trim(),
+          templateName: selectedTemplate?.title || system.name,
+          templateCategory: generationCategory,
+          designPreset: selectedTheme?.id || undefined,
+        },
+      }).then(({ data, error }) => {
+        if (error) {
+          console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
+          return null;
+        }
+        console.log('[SystemLauncher] Backend provisioned:', data);
+        return data?.data?.businessId as string | null;
+      }).catch(err => {
+        console.warn('[SystemLauncher] install-system error (non-fatal):', err);
+        return null;
+      });
+
       // ── Step 2: Generate site topology BEFORE file generation ──
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,

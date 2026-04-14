@@ -42,6 +42,7 @@ import { buildSessionMemory, formatSessionMemoryBlock } from "./sessionMemory.ts
 import { reviewPatch } from "./reviewPass.ts";
 import { checkEditScope } from "./reviewScope.ts";
 import { buildApplyState, formatApplyStateBlock, type ApplyState } from "./applyState.ts";
+import { preprocessPrompt, type PreprocessedPrompt } from "./promptPreprocessor.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -155,8 +156,15 @@ async function runBuilderLane(
     previewDiagnostics, recentChangedFiles,
   } = parsed;
 
+  // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
+  const rawUserPromptText = extractTextContent(messages[messages.length - 1]?.content);
+  const preprocessed = preprocessPrompt(rawUserPromptText);
+  const userPromptText = preprocessed.normalized;
+  if (preprocessed.wasNormalized) {
+    console.log(`[orchestrator] Prompt normalized: ${preprocessed.intents.length} intents, ${preprocessed.searchKeywords.length} keywords`);
+  }
+
   // ── 1. Session memory (Lane B only) ────────────────────────────────────
-  const userPromptText = extractTextContent(messages[messages.length - 1]?.content);
   const memory = task.shouldUseMemory
     ? buildSessionMemory({
         userPromptText,
@@ -213,8 +221,8 @@ async function runBuilderLane(
 
   // ── 5. Parallel work: research + nav research + image ──────────────────
   const researchPromise = task.skipResearch
-    ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [] } as ResearchResult)
-    : performPromptResearch(userPromptText);
+    ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [], queriesUsed: [] } as ResearchResult)
+    : performPromptResearch(userPromptText, preprocessed.searchKeywords);
 
   const navResearchPromise: Promise<string> = (navPageGen && systemType)
     ? runNavResearch(systemType, navPageName ?? undefined, navLabel ?? undefined)
@@ -326,6 +334,11 @@ async function runBuilderLane(
         imageContext,
       });
       break;
+  }
+
+  // Inject parsed intent summary into system prompt for better understanding
+  if (preprocessed.intentSummary) {
+    finalSystemPrompt += preprocessed.intentSummary;
   }
 
   const aiMessages = [

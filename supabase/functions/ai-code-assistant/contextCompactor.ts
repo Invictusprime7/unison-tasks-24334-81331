@@ -42,14 +42,19 @@ export function buildThinkingInstruction(skip: boolean): string {
 Before writing your final answer, reason through the problem step-by-step inside <thinking> tags.
 Structure your thinking as follows:
 <thinking>
-1. UNDERSTAND: What exactly is the user asking for?
+1. UNDERSTAND: What exactly is the user asking for? Note: the user prompt may have been auto-corrected for typos/grammar — focus on their INTENT, not literal wording.
 2. ANALYSE: What does the current code/context tell me?
 3. PLAN: What approach will produce the best result?
 4. CONSIDER: Are there edge cases, accessibility concerns, or performance issues?
 5. DECIDE: Final plan before I write the output.
 </thinking>
 Write your <thinking> block FIRST, then immediately follow with your complete response (HTML/code/answer).
-Never include the <thinking> block explanation text in your final output.`;
+Never include the <thinking> block explanation text in your final output.
+
+[NATURAL LANGUAGE TOLERANCE]
+The user may write in casual, grammatically imperfect language with abbreviations, typos, or run-on sentences. 
+Always interpret their INTENT generously. If a request is ambiguous, choose the most common/useful interpretation.
+Do NOT ask for clarification on minor phrasing issues — just do the most sensible thing.`;
 }
 
 // ── Builder-priority compaction (Lane B) ────────────────────────────────────

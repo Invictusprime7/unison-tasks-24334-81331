@@ -1,13 +1,14 @@
 /**
  * Web Research Module
- * Performs lightweight DDG scraping for design trend context.
- * Extracted from index.ts — no contract changes.
+ * Performs intelligent multi-query DDG scraping for design/dev context.
+ * Enhanced with keyword-driven queries and deduplication.
  */
 
 export interface ResearchResult {
   snippets: string[];
   trends: string[];
   keyPhrases: string[];
+  queriesUsed: string[];
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -44,7 +45,7 @@ async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<string> 
   }
 }
 
-function parseDDGResults(html: string, max = 4): string[] {
+function parseDDGResults(html: string, max = 6): string[] {
   const snippets: string[] = [];
   const snippetRe = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>|<div[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/div>/gi;
   let match: RegExpExecArray | null;
@@ -61,8 +62,8 @@ function parseDDGResults(html: string, max = 4): string[] {
 function extractInsights(snippets: string[]): { trends: string[]; keyPhrases: string[] } {
   const trends: string[] = [];
   const keyPhrases: string[] = [];
-  const trendKeywords = ["trend", "popular", "modern", "2025", "2024", "latest", "best practice"];
-  const featureKeywords = ["feature", "include", "component", "design", "layout", "responsive"];
+  const trendKeywords = ["trend", "popular", "modern", "2025", "2024", "2026", "latest", "best practice", "emerging"];
+  const featureKeywords = ["feature", "include", "component", "design", "layout", "responsive", "pattern", "approach", "technique"];
   for (const snippet of snippets) {
     const lower = snippet.toLowerCase();
     if (trendKeywords.some(kw => lower.includes(kw))) {
@@ -79,37 +80,89 @@ function extractInsights(snippets: string[]): { trends: string[]; keyPhrases: st
     }
   }
   return {
-    trends: [...new Set(trends)].slice(0, 3),
-    keyPhrases: [...new Set(keyPhrases)].slice(0, 3)
+    trends: [...new Set(trends)].slice(0, 4),
+    keyPhrases: [...new Set(keyPhrases)].slice(0, 4)
   };
 }
 
-export async function performPromptResearch(userPrompt: string): Promise<ResearchResult> {
-  const result: ResearchResult = { snippets: [], trends: [], keyPhrases: [] };
-  if (!userPrompt || userPrompt.length < 10) return result;
-  try {
-    const cleanPrompt = userPrompt
-      .replace(/```[\s\S]*?```/g, '')
-      .replace(/<[^>]*>/g, '')
-      .replace(/\b(create|make|build|add|change|update|generate|design|I want|I need|please|can you)\b/gi, '')
-      .trim();
-    if (cleanPrompt.length < 5) return result;
-    const searchQuery = `web design ${cleanPrompt.split(/\s+/).slice(0, 5).join(' ')} best practices`;
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
-    const html = await fetchWithTimeout(ddgUrl, 4000);
-    const snippets = parseDDGResults(html, 4);
-    const seenSnippets = new Set<string>();
-    for (const snippet of snippets) {
-      const normalized = snippet.toLowerCase().substring(0, 40);
-      if (!seenSnippets.has(normalized)) {
-        seenSnippets.add(normalized);
-        result.snippets.push(snippet);
-      }
+// ── Multi-query strategy ────────────────────────────────────────────────────
+
+/**
+ * Build multiple search queries from distilled keywords for broader coverage.
+ */
+function buildSearchQueries(
+  userPrompt: string,
+  distilledKeywords?: string[],
+  maxQueries = 2,
+): string[] {
+  const queries: string[] = [];
+
+  // Primary query from cleaned prompt
+  const cleanPrompt = userPrompt
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\b(create|make|build|add|change|update|generate|design|I want|I need|please|can you)\b/gi, '')
+    .trim();
+
+  if (cleanPrompt.length >= 5) {
+    const primaryWords = cleanPrompt.split(/\s+/).slice(0, 6).join(' ');
+    queries.push(`web design ${primaryWords} best practices 2025`);
+  }
+
+  // Secondary query from distilled keywords (different angle)
+  if (distilledKeywords && distilledKeywords.length >= 2) {
+    const kwQuery = distilledKeywords.slice(0, 4).join(' ');
+    queries.push(`${kwQuery} UI UX implementation examples`);
+  }
+
+  return queries.slice(0, maxQueries);
+}
+
+/**
+ * Deduplicate snippets across multiple query results using normalized prefix matching.
+ */
+function deduplicateSnippets(snippets: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const snippet of snippets) {
+    const normalized = snippet.toLowerCase().substring(0, 50).replace(/\s+/g, ' ');
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      unique.push(snippet);
     }
+  }
+  return unique;
+}
+
+// ── Main research function ──────────────────────────────────────────────────
+
+export async function performPromptResearch(
+  userPrompt: string,
+  distilledKeywords?: string[],
+): Promise<ResearchResult> {
+  const result: ResearchResult = { snippets: [], trends: [], keyPhrases: [], queriesUsed: [] };
+  if (!userPrompt || userPrompt.length < 10) return result;
+
+  try {
+    const queries = buildSearchQueries(userPrompt, distilledKeywords);
+    result.queriesUsed = queries;
+
+    // Run queries in parallel (max 2 concurrent)
+    const fetchPromises = queries.map(async (query) => {
+      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const html = await fetchWithTimeout(ddgUrl, 4000);
+      return parseDDGResults(html, 4);
+    });
+
+    const allResults = await Promise.all(fetchPromises);
+    const allSnippets = deduplicateSnippets(allResults.flat());
+    result.snippets = allSnippets.slice(0, 6);
+
     const insights = extractInsights(result.snippets);
     result.trends = insights.trends;
     result.keyPhrases = insights.keyPhrases;
-    console.log(`[ai-code-assistant] Research completed: ${result.snippets.length} snippets`);
+
+    console.log(`[ai-code-assistant] Research completed: ${result.snippets.length} snippets from ${queries.length} queries`);
   } catch (error) {
     console.warn("[ai-code-assistant] Research failed (non-blocking):", error);
   }
@@ -129,7 +182,7 @@ export function formatResearchContext(research: ResearchResult): string {
   }
   if (research.snippets.length > 0) {
     context += "\n**Relevant Context:**\n";
-    for (const snippet of research.snippets.slice(0, 3)) {
+    for (const snippet of research.snippets.slice(0, 4)) {
       const truncated = snippet.length > 150 ? snippet.substring(0, 150) + "..." : snippet;
       context += `> ${truncated}\n`;
     }

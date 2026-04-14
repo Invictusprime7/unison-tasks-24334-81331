@@ -913,7 +913,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               surgicalEdit: isSurgicalEdit,
               behavioralEdit: isBehavioralEdit,
               targetFile: resolvedTargetFile || undefined,
-              componentBehaviorContext: isBehavioralEdit ? behaviorContext : undefined,
+              componentBehaviorContext: behaviorContext || undefined,
               systemType,
               templateName,
               templateAction,

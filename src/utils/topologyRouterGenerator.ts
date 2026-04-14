@@ -110,10 +110,9 @@ function extractComponentName(filePath: string): string {
 }
 
 function vfsPathToImport(filePath: string): string {
-  // /src/pages/Contact.tsx → ./pages/Contact
-  return filePath
-    .replace(/^\/src\//, './')
-    .replace(/\.(tsx|jsx|ts|js)$/, '');
+  // /src/pages/Contact.tsx → ./pages/Contact.tsx
+  // Sandpack requires file extensions in import paths
+  return filePath.replace(/^\/src\//, './');
 }
 
 function buildRouterCode(routes: RouteEntry[], businessName?: string): string {

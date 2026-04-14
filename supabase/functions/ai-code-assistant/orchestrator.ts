@@ -346,8 +346,9 @@ async function runBuilderLane(
     ...processedMessages,
   ];
 
-  // ── 8. Call AI providers ───────────────────────────────────────────────
-  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY), gatewayOptions);
+  // ── 8. Call AI providers (complexity-aware model selection) ─────────────
+  console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
+  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY), gatewayOptions, preprocessed.complexity.tier);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,

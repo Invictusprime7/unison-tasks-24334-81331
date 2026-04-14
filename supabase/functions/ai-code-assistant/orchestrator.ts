@@ -153,7 +153,7 @@ async function runBuilderLane(
     userDesignProfile, systemsBuildContext, navPageGen = false, navPageName, navLabel,
     siteElementsLibraryContext, surgicalEdit = false, behavioralEdit = false,
     componentBehaviorContext, vfsFiles, gatewayOptions,
-    previewDiagnostics, recentChangedFiles,
+    previewDiagnostics, previewSnapshot, recentChangedFiles,
   } = parsed;
 
   // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)

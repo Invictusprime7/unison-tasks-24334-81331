@@ -649,9 +649,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         );
       }
 
-      // ── Phase 1c: Behavioral Edit — Build component behavior map ──
+      // ── Phase 1c: Build component behavior map for ALL edit types ──
+      // Previously only built for behavioral edits — now provides context-awareness for all edits
       let behaviorContext = '';
-      if (isBehavioralEdit && vfsFiles && Object.keys(vfsFiles).length > 0) {
+      const isAnyEditMode = isSurgicalEdit || isBehavioralEdit || !!currentCode;
+      if (isAnyEditMode && vfsFiles && Object.keys(vfsFiles).length > 0) {
         try {
           const behaviorMap = buildComponentBehaviorMap(
             previewRef?.current ? { getIframe: previewRef.current.getIframe } as any : { getIframe: () => null } as any,
@@ -829,9 +831,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 maxElements: 10,
               });
 
-          // Build compact VFS files payload for surgical edits (only relevant files, capped)
+          // Build compact VFS files payload for ALL edit modes (not just surgical)
+          // The edge function's contextCompactor handles budget/prioritization
           let vfsPayload: Record<string, string> | undefined;
-          if (isSurgicalEdit && isReactProject && vfsFiles) {
+          if (isReactProject && vfsFiles) {
             const MAX_VFS_PAYLOAD = 120_000;
             let totalSize = 0;
             vfsPayload = {};
@@ -852,6 +855,24 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               totalSize += content.length;
             }
           }
+
+          // Build lightweight preview DOM snapshot for AI context-awareness
+          let previewSnapshot: string | undefined;
+          try {
+            const iframe = previewRef?.current?.getIframe?.();
+            const doc = iframe?.contentDocument;
+            if (doc?.body) {
+              const route = iframe?.contentWindow?.location.hash || '/';
+              const sections = Array.from(doc.querySelectorAll('section, header, nav, main, footer, [data-component]'))
+                .map(el => {
+                  const tag = el.tagName.toLowerCase();
+                  const dc = el.getAttribute('data-component');
+                  const text = (el as HTMLElement).innerText?.slice(0, 60)?.replace(/\n/g, ' ') || '';
+                  return dc ? `<${tag} data-component="${dc}"> "${text}"` : `<${tag}> "${text}"`;
+                }).slice(0, 15);
+              previewSnapshot = `[Preview DOM] Route: ${route}\nVisible sections (${sections.length}):\n${sections.join('\n')}`;
+            }
+          } catch { /* best-effort */ }
 
           // ── Build conversation history for multi-turn awareness ──
           // Include up to 10 prior user/assistant exchanges (compact: only role + content, capped)
@@ -892,7 +913,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               surgicalEdit: isSurgicalEdit,
               behavioralEdit: isBehavioralEdit,
               targetFile: resolvedTargetFile || undefined,
-              componentBehaviorContext: isBehavioralEdit ? behaviorContext : undefined,
+              componentBehaviorContext: behaviorContext || undefined,
               systemType,
               templateName,
               templateAction,
@@ -900,8 +921,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               systemsBuildContext: systemsBuildContext ?? undefined,
               siteElementsLibraryContext,
               attachments: _attachments.length > 0 ? _attachments : undefined,
-              // Send VFS files for surgical edit context
+              // Send VFS files for edit context (all edit types, not just surgical)
               vfsFiles: vfsPayload,
+              // Preview DOM snapshot for live context awareness
+              previewSnapshot,
               // Preview diagnostics for Lane B session memory
               previewDiagnostics: iframeErrors.length > 0
                 ? iframeErrors.slice(0, 3).map(e => `${e.type}: ${e.message}${e.file ? ` (${e.file}:${e.line})` : ''}`).join('\n')

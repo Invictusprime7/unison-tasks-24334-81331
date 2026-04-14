@@ -153,7 +153,7 @@ async function runBuilderLane(
     userDesignProfile, systemsBuildContext, navPageGen = false, navPageName, navLabel,
     siteElementsLibraryContext, surgicalEdit = false, behavioralEdit = false,
     componentBehaviorContext, vfsFiles, gatewayOptions,
-    previewDiagnostics, recentChangedFiles,
+    previewDiagnostics, previewSnapshot, recentChangedFiles,
   } = parsed;
 
   // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
@@ -339,6 +339,16 @@ async function runBuilderLane(
   // Inject parsed intent summary into system prompt for better understanding
   if (preprocessed.intentSummary) {
     finalSystemPrompt += preprocessed.intentSummary;
+  }
+
+  // Inject live preview DOM snapshot for context awareness
+  if (previewSnapshot) {
+    finalSystemPrompt += `\n\n${previewSnapshot}\nUse this to understand what the user currently sees and which elements/sections exist in the live preview.`;
+  }
+
+  // Inject component behavior context for all edit types
+  if (componentBehaviorContext) {
+    finalSystemPrompt += `\n\n[🧠 Component Behavior Map]\n${componentBehaviorContext}\nUse this to identify interactive elements, their current handlers, state, and wiring when making edits.`;
   }
 
   const aiMessages = [

@@ -156,8 +156,15 @@ async function runBuilderLane(
     previewDiagnostics, recentChangedFiles,
   } = parsed;
 
+  // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
+  const rawUserPromptText = extractTextContent(messages[messages.length - 1]?.content);
+  const preprocessed = preprocessPrompt(rawUserPromptText);
+  const userPromptText = preprocessed.normalized;
+  if (preprocessed.wasNormalized) {
+    console.log(`[orchestrator] Prompt normalized: ${preprocessed.intents.length} intents, ${preprocessed.searchKeywords.length} keywords`);
+  }
+
   // ── 1. Session memory (Lane B only) ────────────────────────────────────
-  const userPromptText = extractTextContent(messages[messages.length - 1]?.content);
   const memory = task.shouldUseMemory
     ? buildSessionMemory({
         userPromptText,

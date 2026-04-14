@@ -98,81 +98,36 @@ export const AIConversationInput: React.FC<Props> = ({
     try {
       let dataUrl: string | null = null;
 
-      // Strategy 1: Try canvas capture from iframe content document (same-origin only)
+      // Try html2canvas on the iframe's body (same-origin)
       try {
         const doc = iframe.contentDocument;
-        const body = doc?.body;
-        if (doc && body) {
-          // Dynamically import html2canvas
+        if (doc?.body) {
           const html2canvas = (await import('html2canvas')).default;
-          const canvas = await html2canvas(body, {
+          const canvas = await html2canvas(doc.body, {
             useCORS: true,
             allowTaint: true,
             backgroundColor: null,
-            scale: 1, // 1x for speed; 2x would be sharper but larger
+            scale: 1,
             logging: false,
             width: iframe.clientWidth || doc.documentElement.scrollWidth,
-            height: iframe.clientHeight || doc.documentElement.scrollHeight,
+            height: Math.min(iframe.clientHeight || doc.documentElement.scrollHeight, 4096),
             windowWidth: iframe.clientWidth || doc.documentElement.scrollWidth,
             windowHeight: iframe.clientHeight || doc.documentElement.scrollHeight,
           });
           dataUrl = canvas.toDataURL('image/png');
         }
       } catch {
-        // Cross-origin — fall through to strategy 2
-      }
-
-      // Strategy 2: Draw the iframe element itself onto a canvas (works for same-origin video/canvas content)
-      if (!dataUrl) {
-        try {
-          const canvas = document.createElement('canvas');
-          const rect = iframe.getBoundingClientRect();
-          canvas.width = rect.width * (window.devicePixelRatio || 1);
-          canvas.height = rect.height * (window.devicePixelRatio || 1);
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
-            // This only works for same-origin iframes
-            const win = iframe.contentWindow;
-            if (win) {
-              // Attempt using the iframe's document
-              const doc = iframe.contentDocument;
-              if (doc?.body) {
-                const html2canvas = (await import('html2canvas')).default;
-                const c = await html2canvas(doc.body, { useCORS: true, scale: 1, logging: false });
-                dataUrl = c.toDataURL('image/png');
-              }
-            }
-          }
-        } catch {
-          // Failed — give user feedback
-        }
+        // Cross-origin or other failure
       }
 
       if (!dataUrl) {
-        toast.error('Could not capture preview — try taking a manual screenshot');
+        toast.error('Could not capture preview — try a manual screenshot');
         return;
       }
 
-      // Convert data URL to a DroppedFile and add it
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const fileName = `preview-screenshot-${timestamp}.png`;
 
-      // Estimate size from base64
-      const base64Length = dataUrl.split(',')[1]?.length || 0;
-      const sizeBytes = Math.round((base64Length * 3) / 4);
-
-      const screenshotFile: DroppedFile = {
-        id: `screenshot-${Date.now()}`,
-        name: fileName,
-        type: 'image',
-        preview: dataUrl,
-        content: dataUrl,
-        size: sizeBytes,
-      };
-
-      // Use onAddFiles with a synthetic File to go through normal attachment flow
-      // But DroppedFile is the internal format — inject directly
       await onAddFiles([
         new File(
           [await (await fetch(dataUrl)).blob()],

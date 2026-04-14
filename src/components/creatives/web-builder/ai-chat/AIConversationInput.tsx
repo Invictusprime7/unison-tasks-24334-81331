@@ -1,5 +1,5 @@
 /**
- * AIConversationInput — Modern chat input with file attachment support
+ * AIConversationInput — Modern chat input with file attachment + screenshot support
  */
 
 import React, { useRef, useCallback, useState } from 'react';
@@ -14,8 +14,10 @@ import {
   FileText,
   X,
   ArrowUp,
+  Camera,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export interface DroppedFile {
   id: string;
@@ -34,6 +36,8 @@ interface Props {
   droppedFiles: DroppedFile[];
   onAddFiles: (files: FileList | File[]) => Promise<void>;
   onRemoveFile: (id: string) => void;
+  /** Ref to preview iframe for screenshot capture */
+  previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   className?: string;
 }
 
@@ -45,10 +49,12 @@ export const AIConversationInput: React.FC<Props> = ({
   droppedFiles,
   onAddFiles,
   onRemoveFile,
+  previewRef,
   className,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -70,6 +76,119 @@ export const AIConversationInput: React.FC<Props> = ({
       await onAddFiles(e.dataTransfer.files);
     }
   }, [onAddFiles]);
+
+  /**
+   * Capture the preview iframe as a screenshot and attach it as a file.
+   * Uses html2canvas for cross-origin safe rendering, falling back to
+   * canvas drawImage for same-origin iframes.
+   */
+  const capturePreviewScreenshot = useCallback(async () => {
+    if (droppedFiles.length >= 5) {
+      toast.error('Maximum 5 attachments reached');
+      return;
+    }
+
+    const iframe = previewRef?.current?.getIframe?.();
+    if (!iframe) {
+      toast.error('Preview not available');
+      return;
+    }
+
+    setIsCapturing(true);
+    try {
+      let dataUrl: string | null = null;
+
+      // Strategy 1: Try canvas capture from iframe content document (same-origin only)
+      try {
+        const doc = iframe.contentDocument;
+        const body = doc?.body;
+        if (doc && body) {
+          // Dynamically import html2canvas
+          const html2canvas = (await import('html2canvas')).default;
+          const canvas = await html2canvas(body, {
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: null,
+            scale: 1, // 1x for speed; 2x would be sharper but larger
+            logging: false,
+            width: iframe.clientWidth || doc.documentElement.scrollWidth,
+            height: iframe.clientHeight || doc.documentElement.scrollHeight,
+            windowWidth: iframe.clientWidth || doc.documentElement.scrollWidth,
+            windowHeight: iframe.clientHeight || doc.documentElement.scrollHeight,
+          });
+          dataUrl = canvas.toDataURL('image/png');
+        }
+      } catch {
+        // Cross-origin — fall through to strategy 2
+      }
+
+      // Strategy 2: Draw the iframe element itself onto a canvas (works for same-origin video/canvas content)
+      if (!dataUrl) {
+        try {
+          const canvas = document.createElement('canvas');
+          const rect = iframe.getBoundingClientRect();
+          canvas.width = rect.width * (window.devicePixelRatio || 1);
+          canvas.height = rect.height * (window.devicePixelRatio || 1);
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+            // This only works for same-origin iframes
+            const win = iframe.contentWindow;
+            if (win) {
+              // Attempt using the iframe's document
+              const doc = iframe.contentDocument;
+              if (doc?.body) {
+                const html2canvas = (await import('html2canvas')).default;
+                const c = await html2canvas(doc.body, { useCORS: true, scale: 1, logging: false });
+                dataUrl = c.toDataURL('image/png');
+              }
+            }
+          }
+        } catch {
+          // Failed — give user feedback
+        }
+      }
+
+      if (!dataUrl) {
+        toast.error('Could not capture preview — try taking a manual screenshot');
+        return;
+      }
+
+      // Convert data URL to a DroppedFile and add it
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const fileName = `preview-screenshot-${timestamp}.png`;
+
+      // Estimate size from base64
+      const base64Length = dataUrl.split(',')[1]?.length || 0;
+      const sizeBytes = Math.round((base64Length * 3) / 4);
+
+      const screenshotFile: DroppedFile = {
+        id: `screenshot-${Date.now()}`,
+        name: fileName,
+        type: 'image',
+        preview: dataUrl,
+        content: dataUrl,
+        size: sizeBytes,
+      };
+
+      // Use onAddFiles with a synthetic File to go through normal attachment flow
+      // But DroppedFile is the internal format — inject directly
+      await onAddFiles([
+        new File(
+          [await (await fetch(dataUrl)).blob()],
+          fileName,
+          { type: 'image/png' }
+        ),
+      ]);
+
+      toast.success('Preview screenshot attached');
+    } catch (err) {
+      console.error('[Screenshot] Capture failed:', err);
+      toast.error('Screenshot capture failed');
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [previewRef, droppedFiles.length, onAddFiles]);
 
   const canSend = (input.trim() || droppedFiles.length > 0) && !isLoading;
 
@@ -150,12 +269,24 @@ export const AIConversationInput: React.FC<Props> = ({
             }
           }}
           placeholder={droppedFiles.length > 0 ? 'Add instructions for attachments...' : 'What would you like to build?'}
-          className="min-h-[48px] max-h-[120px] border-0 bg-transparent text-sm resize-none shadow-none focus-visible:ring-0 pr-20 placeholder:text-muted-foreground/40"
+          className="min-h-[48px] max-h-[120px] border-0 bg-transparent text-sm resize-none shadow-none focus-visible:ring-0 pr-24 placeholder:text-muted-foreground/40"
           disabled={isLoading}
         />
 
         {/* Action buttons */}
         <div className="absolute right-1.5 bottom-1.5 flex items-center gap-1">
+          {/* Screenshot capture button */}
+          <button
+            onClick={capturePreviewScreenshot}
+            disabled={isLoading || isCapturing || droppedFiles.length >= 5}
+            className={cn(
+              "p-1.5 rounded-lg text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 disabled:opacity-30 transition-all",
+              isCapturing && "animate-pulse text-primary"
+            )}
+            title="Capture preview screenshot"
+          >
+            <Camera className="w-4 h-4" />
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading || droppedFiles.length >= 5}

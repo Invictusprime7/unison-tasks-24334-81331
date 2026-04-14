@@ -1804,6 +1804,7 @@ export default function App() {
             droppedFiles={droppedFiles}
             onAddFiles={addFiles}
             onRemoveFile={removeFile}
+            previewRef={previewRef}
           />
         </TabsContent>
 

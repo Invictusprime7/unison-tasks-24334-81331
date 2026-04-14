@@ -606,7 +606,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         body: {
           systemType: installSystemType,
           businessName: businessName.trim(),
-          templateName: selectedTemplate?.title || system.name,
+          templateName: selectedTemplate?.label || system.name,
           templateCategory: generationCategory,
           designPreset: selectedTheme?.id || undefined,
         },

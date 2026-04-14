@@ -221,8 +221,8 @@ async function runBuilderLane(
 
   // ── 5. Parallel work: research + nav research + image ──────────────────
   const researchPromise = task.skipResearch
-    ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [] } as ResearchResult)
-    : performPromptResearch(userPromptText);
+    ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [], queriesUsed: [] } as ResearchResult)
+    : performPromptResearch(userPromptText, preprocessed.searchKeywords);
 
   const navResearchPromise: Promise<string> = (navPageGen && systemType)
     ? runNavResearch(systemType, navPageName ?? undefined, navLabel ?? undefined)
@@ -334,6 +334,11 @@ async function runBuilderLane(
         imageContext,
       });
       break;
+  }
+
+  // Inject parsed intent summary into system prompt for better understanding
+  if (preprocessed.intentSummary) {
+    finalSystemPrompt += preprocessed.intentSummary;
   }
 
   const aiMessages = [

@@ -7,7 +7,7 @@
  */
 
 import type { GeneratedSitePlan, PageRouteNode } from '@/contracts/siteTopologyPlanner';
-import { generateCanonicalRouter } from './topologyRouterGenerator';
+import { generateCanonicalRouter, generateCanonicalRouterFromPlan } from './topologyRouterGenerator';
 import type { PageRegistry } from '@/types/pageRegistry';
 // NOTE: This module is re-exported through unifiedPreviewPipeline.
 // Consumers should import from there, not directly from this file.
@@ -47,9 +47,15 @@ export function scaffoldMissingTopologyPagesWithRouter(
 ): Record<string, string> {
   const newFiles = scaffoldMissingTopologyPages(plan, existingFiles);
   
-  // Always regenerate the canonical router so all pages are routable
-  const mergedFiles = { ...existingFiles, ...newFiles };
-  const routerCode = generateCanonicalRouter(registry, plan.businessName);
+  // Always regenerate the canonical router so all pages are routable.
+  // IMPORTANT: Use plan-based router generation instead of registry-based,
+  // because the registry may not be populated yet (React state updates are async).
+  // The plan is the authoritative source of truth for page structure.
+  const registryPages = Object.values(registry.pages);
+  const routerCode = registryPages.length > 0
+    ? generateCanonicalRouter(registry, plan.businessName)
+    : generateCanonicalRouterFromPlan(plan);
+  
   if (routerCode) {
     newFiles['/src/App.tsx'] = routerCode;
   }

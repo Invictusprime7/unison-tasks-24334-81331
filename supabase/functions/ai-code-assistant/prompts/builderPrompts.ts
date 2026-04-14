@@ -85,6 +85,105 @@ Never create a custom dropdown with \`position: absolute\` when DropdownMenu exi
 `;
 
 /**
+ * Elite UI/UX design knowledge block.
+ * Gives the AI deep web design fluency beyond industry-specific context,
+ * so it can reason about layout, typography, color, spacing, accessibility,
+ * and modern design patterns like a senior frontend designer.
+ */
+const ELITE_DESIGN_KNOWLEDGE = `
+[🎨 ELITE UI/UX DESIGN INTELLIGENCE — APPLY TO ALL VISUAL DECISIONS]
+
+**VISUAL HIERARCHY (most critical design skill):**
+- Size > Color > Weight > Position — users scan in this priority order
+- Primary CTA: largest, boldest, highest-contrast element on the viewport
+- Secondary actions: smaller, muted, outlined or ghost style
+- Heading scale: use a consistent type scale (e.g., 1.25 or 1.333 ratio)
+  h1 = 2.5-4rem, h2 = 1.75-2.5rem, h3 = 1.25-1.75rem, body = 1rem
+- Reading order follows F-pattern (content pages) or Z-pattern (landing pages)
+- Above the fold: hero headline + CTA + one supporting visual — nothing else competes
+
+**LAYOUT SYSTEMS & COMPOSITION:**
+- Use 12-column grid thinking even with Tailwind: grid-cols-12 with col-span-*
+- Asymmetric layouts (60/40, 70/30) create visual interest vs symmetric 50/50
+- Negative space is a design element — crowded layouts feel cheap, generous whitespace feels premium
+- Section rhythm: alternate content density (text-heavy → visual → text-heavy → CTA)
+- Max content width: 65-75ch for readability; max-w-prose or max-w-3xl for text blocks
+- Full-bleed sections (w-full bg) with contained content (max-w-7xl mx-auto) create visual breathing room
+- Card grids: 3-col desktop, 2-col tablet, 1-col mobile is the universal safe pattern
+- Sticky elements: only navbar and critical CTAs — never sticky sidebars on content pages
+- Bento grids: use varied card sizes (col-span-2 mixed with col-span-1) for visual interest
+
+**TYPOGRAPHY MASTERY:**
+- Font pairing: one display/heading font + one body font — never more than 2 families
+- Line height: headings 1.1-1.3, body text 1.5-1.75, captions 1.4
+- Letter spacing: tight (-0.02em) for large headings, normal for body, wide (0.05em) for small caps/labels
+- Font weight contrast: use 3 weights max (regular 400, medium 500/semibold 600, bold 700)
+- Text alignment: left-align body copy ALWAYS — center only for headings, CTAs, and hero text
+- Responsive font sizing: clamp(1rem, 2.5vw, 1.5rem) thinking or Tailwind text-base md:text-lg lg:text-xl
+- Truncation: use line-clamp-2/3 for card descriptions, truncate for single-line labels
+
+**COLOR THEORY & APPLICATION:**
+- 60-30-10 rule: 60% neutral/background, 30% secondary, 10% accent/primary
+- Contrast ratios: WCAG AA minimum — 4.5:1 for body text, 3:1 for large text and UI elements
+- Semantic colors: success=green, error=red, warning=amber, info=blue — never deviate
+- Dark mode: don't just invert — use elevated surfaces (gray-800 → gray-750 → gray-700) for depth
+- Gradients: subtle 2-color gradients (15-30° hue shift) feel modern; rainbow gradients feel dated
+- Opacity layers: use bg-black/50 or bg-white/80 for overlays, never solid backgrounds on modals
+- Hover states: darken by 10-15% or shift hue slightly — never change color family on hover
+
+**SPACING & RHYTHM:**
+- Use a consistent spacing scale: 4px base (Tailwind's default) — stick to 4, 8, 12, 16, 24, 32, 48, 64, 96
+- Component internal padding: p-4 (compact), p-6 (standard), p-8 (spacious)
+- Section vertical spacing: py-16 md:py-24 (standard sections), py-8 md:py-12 (dense sections)
+- Gap consistency: if cards use gap-6, ALL card grids on the page use gap-6
+- Button padding: px-4 py-2 (sm), px-6 py-3 (md), px-8 py-4 (lg) — horizontal always > vertical
+- Form field spacing: space-y-4 between fields, space-y-6 between field groups
+
+**RESPONSIVE DESIGN PATTERNS:**
+- Mobile-first: design for 375px, then enhance for 768px (md), 1024px (lg), 1280px (xl)
+- Touch targets: minimum 44x44px on mobile (min-h-[44px] min-w-[44px])
+- Navigation: horizontal on desktop → hamburger/sheet on mobile (use Sheet component)
+- Images: use aspect-ratio containers (aspect-video, aspect-square) to prevent layout shift
+- Tables: horizontal scroll on mobile (overflow-x-auto) or stack into cards
+- Modals: full-screen on mobile (sm:max-w-lg), centered dialog on desktop
+- Font sizes: never below 14px (text-sm) on mobile for readability
+
+**MODERN UI PATTERNS (2024-2026):**
+- Glass morphism: backdrop-blur-xl bg-white/10 border border-white/20
+- Subtle shadows: shadow-sm for cards, shadow-lg for dropdowns, shadow-2xl for modals — layered depth
+- Rounded corners: rounded-lg (cards), rounded-xl (containers), rounded-full (avatars, pills)
+- Skeleton loading: animate-pulse with bg-muted blocks matching content layout
+- Empty states: illustration + headline + description + CTA button — never just "No data"
+- Scroll animations: fade-in-up on viewport entry (framer-motion whileInView)
+- Hover cards: scale-[1.02] transition-transform on interactive cards
+- Badge/pill indicators: rounded-full px-2 py-0.5 text-xs for status, counts, tags
+- Dividers: use border-b border-border or Separator component between logical groups
+- Toast notifications: use sonner — bottom-right for actions, top-center for errors
+
+**ACCESSIBILITY (A11Y) — NON-NEGOTIABLE:**
+- All interactive elements need visible focus rings: focus-visible:ring-2 focus-visible:ring-ring
+- Images need alt text — decorative images get alt=""
+- Form inputs need associated Label components (htmlFor matching id)
+- Color alone must never convey meaning — add icons or text alongside colored indicators
+- Buttons with only icons need aria-label or sr-only text
+- Skip-to-content link for keyboard nav (can be visually hidden until focused)
+- Semantic HTML: nav for navigation, main for content, footer for footer, section for sections
+- Role attributes: role="dialog" for modals, role="alert" for error messages
+
+**CONVERSION & UX PSYCHOLOGY:**
+- Hick's Law: fewer choices = faster decisions — limit CTAs to 1 primary per viewport
+- Fitts's Law: important buttons should be large and easy to reach
+- Social proof placement: testimonials/logos near CTAs reduce friction
+- Progressive disclosure: don't show everything — use tabs, accordions, "Show more"
+- Anchoring: show the premium plan first or in the center (pricing pages)
+- Loss aversion: "Don't miss out" > "Sign up now" for urgency
+- Cognitive load: max 7±2 items in any visual group (nav items, feature cards, etc.)
+- Form UX: inline validation, auto-focus first field, submit button at the end
+- Error recovery: clear error messages + how to fix + preserve user input
+`;
+
+
+/**
  * Conversational awareness block — injected when multi-turn messages are present.
  * Teaches the AI to behave as a collaborative partner, not a one-shot generator.
  */
@@ -197,6 +296,7 @@ EXAMPLES OF BEHAVIORAL EDITS:
 
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + ELITE_DESIGN_KNOWLEDGE
     + conversationalBlock
     + editPreamble
     + behavioralBlock
@@ -248,6 +348,7 @@ CRITICAL RULES:
 
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + ELITE_DESIGN_KNOWLEDGE
     + conversationalBlock
     + debugPreamble
     + opts.memoryBlock
@@ -284,6 +385,7 @@ You are helping the user build and improve their web application.
 
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + ELITE_DESIGN_KNOWLEDGE
     + conversationalBlock
     + generalPreamble
     + opts.memoryBlock

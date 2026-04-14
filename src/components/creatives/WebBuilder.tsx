@@ -3009,18 +3009,28 @@ export default ${componentName}Page;`;
         vfsImportFiles({ [vfsPath]: pageCode });
         setGeneratedPages(prev => ({ ...prev, [pageName]: pageCode }));
         
-        // Re-scaffold the router to include the new page
+        // Regenerate canonical topology router so the new page is routable
         const allFiles = getSandpackFiles();
         allFiles[vfsPath] = pageCode;
-        const scaffolded = scaffoldMultiPageVFS(allFiles['/src/App.tsx'] || previewCode, allFiles);
         
-        // Import the updated App.tsx with router if new routes were added
-        if (scaffolded.scaffoldedPages.length > 0 || scaffolded.files['/src/App.tsx'] !== allFiles['/src/App.tsx']) {
-          vfsImportFiles(scaffolded.files);
-          // Update preview to reflect new router
-          const newAppCode = scaffolded.files['/src/App.tsx'] || previewCode;
-          lastSyncedCodeRef.current = newAppCode;
-          setPreviewCode(newAppCode);
+        // Use topology router (preserves .tsx extensions for Sandpack)
+        const activePlan = activeSitePlanRef.current;
+        if (activePlan) {
+          const routerPatched = patchVFS(allFiles, creatorPlayground.pageRegistry, activePlan.businessName);
+          if (routerPatched['/src/App.tsx'] && routerPatched['/src/App.tsx'] !== allFiles['/src/App.tsx']) {
+            vfsImportFiles({ '/src/App.tsx': routerPatched['/src/App.tsx'] });
+            lastSyncedCodeRef.current = routerPatched['/src/App.tsx'];
+            setPreviewCode(routerPatched['/src/App.tsx']);
+          }
+        } else {
+          // Fallback: use old scaffolder if no topology plan exists
+          const scaffolded = scaffoldMultiPageVFS(allFiles['/src/App.tsx'] || previewCode, allFiles);
+          if (scaffolded.scaffoldedPages.length > 0 || scaffolded.files['/src/App.tsx'] !== allFiles['/src/App.tsx']) {
+            vfsImportFiles(scaffolded.files);
+            const newAppCode = scaffolded.files['/src/App.tsx'] || previewCode;
+            lastSyncedCodeRef.current = newAppCode;
+            setPreviewCode(newAppCode);
+          }
         }
         
         // Set editor to the new page file

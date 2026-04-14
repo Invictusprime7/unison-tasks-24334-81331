@@ -158,12 +158,11 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     const path = el.getAttribute('data-ut-path') || el.getAttribute('href') || '';
 
     // ── Intent bridge: forward non-nav intents to parent as INTENT_TRIGGER ──
-    if (utIntent && utIntent !== 'nav.goto' && utIntent !== 'nav.anchor' && utIntent !== 'nav.external') {
+    if (utIntent && utIntent !== 'nav.goto' && utIntent !== 'nav.goto_page' && utIntent !== 'nav.anchor' && utIntent !== 'nav.external') {
       event.preventDefault();
       event.stopPropagation();
       const reqId = 'intent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       const intentPayload: Record<string, unknown> = {};
-      // Collect data-ut-* attributes as payload
       for (const attr of Array.from(el.attributes)) {
         if (attr.name.startsWith('data-ut-') && attr.name !== 'data-ut-intent') {
           intentPayload[attr.name.replace('data-ut-', '')] = attr.value;
@@ -180,15 +179,43 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
       return;
     }
 
+    // ── nav.goto / nav.goto_page: navigate directly via hash router ──
+    if (utIntent === 'nav.goto' || utIntent === 'nav.goto_page') {
+      event.preventDefault();
+      event.stopPropagation();
+      const navPath = el.getAttribute('data-ut-path') || path;
+      const targetPageId = el.getAttribute('data-ut-target-page-id');
+      if (navPath && navPath !== '#') {
+        const route = navPath.startsWith('/') ? navPath : '/' + navPath;
+        window.location.hash = route;
+      } else if (targetPageId) {
+        // Fallback: ask parent to resolve page ID to route
+        window.parent.postMessage({
+          type: 'INTENT_TRIGGER',
+          intent: 'nav.goto_page',
+          payload: { targetPageId, buttonLabel: el.textContent?.trim()?.substring(0, 40) || '', source: 'preview' },
+          requestId: 'nav-' + Date.now(),
+        }, '*');
+      }
+      return;
+    }
+
     // ── Anchor scroll ──
     if (!path || path === '#' || path.startsWith('http') || path.startsWith('mailto:') || path.startsWith('tel:') || path.startsWith('javascript:')) return;
 
-    if (path.startsWith('#')) {
+    if (path.startsWith('#') && !path.startsWith('#/')) {
       const section = document.querySelector(path);
       if (section) {
         section.scrollIntoView({ behavior: 'smooth' });
         event.preventDefault();
       }
+      return;
+    }
+
+    // ── Hash route links (e.g. href="#/services") — navigate directly ──
+    if (path.startsWith('#/')) {
+      event.preventDefault();
+      window.location.hash = path.substring(1);
       return;
     }
 
@@ -198,19 +225,20 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     event.preventDefault();
     event.stopPropagation();
 
-    // Registry-first: try to navigate via hash route first (for existing pages)
-    // If the page exists in the router, the hash change will render it directly
     const targetRoute = '/' + pageName;
-    
-    // Check if this is a nav.goto_page intent with a target page ID
+
+    // Check if this page exists in the hash router by trying hash navigation first
+    // The router will render a fallback/404 if it doesn't exist
     const targetPageId = el.getAttribute('data-ut-target-page-id');
-    if (targetPageId || el.getAttribute('data-ut-intent') === 'nav.goto_page') {
-      // Use NAV_ROUTE for intent-tagged links — the router handles them
+    if (targetPageId) {
       window.location.hash = targetRoute;
       return;
     }
 
-    // For untagged links, try hash navigation first then fall back to page generation
+    // Try direct hash navigation — if the route is in the router it renders immediately
+    window.location.hash = targetRoute;
+
+    // Also notify parent so it can generate the page if missing
     window.parent.postMessage({
       type: 'NAV_PAGE_GENERATE',
       pageName,

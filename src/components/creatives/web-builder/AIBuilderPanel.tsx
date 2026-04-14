@@ -496,10 +496,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     const _attachments = attachments;
     const _userContent = userContent;
 
+    let streamingId: string | null = null;
+
     try {
       // Initialize live thinking cascade
       const thinkingSteps: ThinkingStep[] = [];
-      const streamingId = generateId();
+      streamingId = generateId();
       
       // Add streaming message immediately (visible with empty thinking)
       setMessages(prev => [...prev, {
@@ -1479,12 +1481,37 @@ export default function App() {
         }
       }
       
-      setMessages(prev => [...prev, {
-        id: generateId(),
-        role: 'assistant',
-        content: `Sorry, I encountered an error: ${errorMessage}. Please try again or simplify your request.`,
-        timestamp: new Date(),
-      }]);
+      const finalErrorContent = `Sorry, I encountered an error: ${errorMessage}. Please try again or simplify your request.`;
+
+      setMessages(prev => {
+        if (streamingId && prev.some(m => m.id === streamingId)) {
+          const errorStep: ThinkingStep = {
+            id: generateId(),
+            type: 'error',
+            message: 'Request failed',
+            details: errorMessage,
+            timestamp: new Date(),
+          };
+
+          return prev.map(m =>
+            m.id === streamingId
+              ? {
+                  ...m,
+                  content: finalErrorContent,
+                  thinking: [...(m.thinking ?? []), errorStep],
+                  isStreaming: false,
+                }
+              : m
+          );
+        }
+
+        return [...prev, {
+          id: generateId(),
+          role: 'assistant',
+          content: finalErrorContent,
+          timestamp: new Date(),
+        }];
+      });
     } finally {
       setIsLoading(false);
     }

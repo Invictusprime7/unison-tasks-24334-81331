@@ -776,6 +776,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         // single-file output
       }
 
+      // ── Await backend provisioning (runs in parallel with AI generation) ──
+      const provisionedBusinessId = await installPromise;
+      if (provisionedBusinessId) {
+        console.log('[SystemLauncher] Using provisioned businessId:', provisionedBusinessId);
+      }
+
       const navState = {
         templateName: `${businessName.trim()} Site`,
         aesthetic: selectedTheme?.id,
@@ -785,6 +791,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         sitePlan,
+        businessId: provisionedBusinessId || undefined,
         // Canonical pipeline output — single source of truth
         materializedPlayground,
         compiledPlayground,

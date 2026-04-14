@@ -98,7 +98,7 @@ function pagesToRoutes(pages: BuilderPage[]): RouteEntry[] {
     return {
       route: p.path,
       componentName,
-      importPath: `./pages/${componentName}`,
+      importPath: `./pages/${componentName}.tsx`,
       isHome: p.isHome,
     };
   });

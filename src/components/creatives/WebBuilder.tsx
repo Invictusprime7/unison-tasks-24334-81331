@@ -104,6 +104,7 @@ import {
   applyStructuralChange,
   syncRouterAndValidate,
   regenerateRouter,
+  patchVFS,
   resolveNavigationTarget,
   deriveFilePath,
   scaffoldMissingTopologyPagesWithRouter,

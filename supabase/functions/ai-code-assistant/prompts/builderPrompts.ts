@@ -296,6 +296,7 @@ EXAMPLES OF BEHAVIORAL EDITS:
 
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + ELITE_DESIGN_KNOWLEDGE
     + conversationalBlock
     + editPreamble
     + behavioralBlock
@@ -347,6 +348,7 @@ CRITICAL RULES:
 
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + ELITE_DESIGN_KNOWLEDGE
     + conversationalBlock
     + debugPreamble
     + opts.memoryBlock
@@ -383,6 +385,7 @@ You are helping the user build and improve their web application.
 
   return opts.basePrompt
     + REACT_PRIMITIVES_KNOWLEDGE
+    + ELITE_DESIGN_KNOWLEDGE
     + conversationalBlock
     + generalPreamble
     + opts.memoryBlock

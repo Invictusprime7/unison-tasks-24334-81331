@@ -67,18 +67,19 @@ export interface AuditLogFilters {
 export interface AuditLogResult {
   id: string;
   user_id: string;
-  user_email: string;
-  organization_id: string;
-  action: AuditAction;
-  resource_type: ResourceType;
-  resource_id: string;
-  resource_name: string;
-  changes: Record<string, { old: unknown; new: unknown }>;
-  metadata: Record<string, unknown>;
-  ip_address: string;
-  user_agent: string;
-  status: 'success' | 'failure' | 'warning';
+  user_email: string | null;
+  organization_id?: string;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  resource_name: string | null;
+  changes: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  status: string;
   created_at: string;
+  business_id?: string | null;
 }
 
 // ============================================
@@ -109,32 +110,22 @@ class AuditLogger {
         return;
       }
 
-      // Get user's primary organization
-      const { data: membership } = await supabase
-        .from('organization_members')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .limit(1)
-        .single();
-
-      await supabase.from('audit_logs').insert({
+      await supabase.from('audit_logs').insert([{
         user_id: user.id,
-        user_email: user.email,
-        organization_id: membership?.organization_id,
+        user_email: user.email ?? null,
         action: entry.action,
         resource_type: entry.resourceType,
-        resource_id: entry.resourceId,
-        resource_name: entry.resourceName,
-        changes: entry.changes,
-        metadata: {
+        resource_id: entry.resourceId ?? null,
+        resource_name: entry.resourceName ?? null,
+        changes: (entry.changes ?? {}) as unknown as import('@/integrations/supabase/types').Json,
+        metadata: ({
           ...entry.metadata,
           request_id: this.requestId,
           session_id: this.sessionId,
-        },
+        }) as unknown as import('@/integrations/supabase/types').Json,
         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         status: 'success',
-      });
+      }]);
     } catch (error) {
       // Don't throw - audit logging should never break the app
       console.error('Failed to log audit event:', error);

@@ -3,7 +3,7 @@
  * with internal sidebar navigation + content area.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,13 +19,16 @@ import {
   FileText, ShoppingBag, Briefcase, GitBranch, Settings,
   Plus, Trash2, Copy, Home, Eye, EyeOff, GripVertical,
   ArrowRight, ChevronDown, ChevronUp, Star, FormInput,
-  Gauge, Zap, Rocket,
+  Gauge, Zap, Rocket, Link2, ShieldCheck, AlertTriangle,
+  CheckCircle, Info, XCircle, Calendar, MessageSquare,
 } from "lucide-react";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
 import { useSetupWizard } from "@/hooks/useSetupWizard";
 import { cn } from "@/lib/utils";
 import type { UseCreatorPlaygroundReturn } from "@/hooks/useCreatorPlayground";
 import type { BuilderPageType, FunnelRole } from "@/types/pageRegistry";
+import type { PlaygroundBinding, PlaygroundValidation, PlaygroundState, PlaygroundCalendar, PlaygroundPopup } from "@/types/playground";
+import { validatePlayground, getValidationSummary } from "@/services/playgroundValidationService";
 
 // ============================================================================
 // Constants
@@ -60,16 +63,20 @@ const FUNNEL_ROLE_OPTIONS: { value: FunnelRole; label: string }[] = [
   { value: "thankyou", label: "Thank You" },
 ];
 
-type Section = "pages" | "funnels" | "products" | "services" | "forms" | "business" | "overview" | "launch";
+type Section = "pages" | "funnels" | "products" | "services" | "forms" | "calendars" | "popups" | "business" | "overview" | "launch" | "bindings" | "validation";
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highlight?: boolean }[] = [
   { id: "launch", label: "Launch Wizard", icon: Rocket, highlight: true },
   { id: "overview", label: "Overview", icon: Gauge },
   { id: "pages", label: "Pages", icon: FileText },
   { id: "funnels", label: "Funnels", icon: GitBranch },
-  { id: "products", label: "Products", icon: ShoppingBag },
-  { id: "services", label: "Services", icon: Briefcase },
   { id: "forms", label: "Forms", icon: FormInput },
+  { id: "calendars", label: "Calendars", icon: Calendar },
+  { id: "products", label: "Products", icon: ShoppingBag },
+  { id: "popups", label: "Popups", icon: MessageSquare },
+  { id: "services", label: "Services", icon: Briefcase },
+  { id: "bindings", label: "Bindings", icon: Link2 },
+  { id: "validation", label: "Validation", icon: ShieldCheck },
   { id: "business", label: "Business Info", icon: Settings },
 ];
 
@@ -82,8 +89,22 @@ interface CreatorPlaygroundModalProps {
   onOpenChange: (open: boolean) => void;
   playground: UseCreatorPlaygroundReturn;
   onPageSelect?: (pageId: string) => void;
+  /** Called after a page is added via the playground — wire to VFS file creation */
+  onPageAdd?: (pageId: string, title: string, path: string, pageType: BuilderPageType) => void;
+  /** Called after a page is removed — wire to VFS file deletion */
+  onPageRemove?: (pageId: string, path: string) => void;
+  /** Called after a funnel is created with auto-generated steps — wire to VFS scaffolding */
+  onFunnelCreate?: (funnelId: string, stepPages: { pageId: string; title: string; path: string; role: FunnelRole }[]) => void;
   businessId?: string | null;
   initialSection?: Section;
+  /** Bindings from playground materializer */
+  bindings?: Record<string, PlaygroundBinding>;
+  /** Calendars from playground materializer */
+  calendars?: Record<string, PlaygroundCalendar>;
+  /** Popups from playground materializer */
+  popups?: Record<string, PlaygroundPopup>;
+  /** VFS files for validation context */
+  vfsFiles?: Record<string, string>;
 }
 
 // ============================================================================
@@ -95,11 +116,30 @@ export function CreatorPlaygroundModal({
   onOpenChange,
   playground,
   onPageSelect,
+  onPageAdd,
+  onPageRemove,
+  onFunnelCreate,
   businessId = null,
   initialSection,
+  bindings = {},
+  calendars = {},
+  popups = {},
+  vfsFiles = {},
 }: CreatorPlaygroundModalProps) {
   const [activeSection, setActiveSection] = useState<Section>(initialSection || "overview");
   const setupWizard = useSetupWizard(businessId);
+
+  // Build playground state for validation
+  const playgroundState: PlaygroundState = useMemo(() => ({
+    creatorData: playground.creatorData,
+    pageRegistry: playground.pageRegistry,
+    bindings,
+    calendars,
+    popups,
+  }), [playground.creatorData, playground.pageRegistry, bindings, calendars, popups]);
+
+  const validations = useMemo(() => validatePlayground(playgroundState, vfsFiles), [playgroundState, vfsFiles]);
+  const validationSummary = useMemo(() => getValidationSummary(validations), [validations]);
 
   // Allow external callers to set the initial section
   useEffect(() => {
@@ -176,6 +216,21 @@ export function CreatorPlaygroundModal({
                     {Object.keys(playground.creatorData.products).length}
                   </Badge>
                 )}
+                {id === "bindings" && Object.keys(bindings).length > 0 && (
+                  <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">
+                    {Object.keys(bindings).length}
+                  </Badge>
+                )}
+                {id === "validation" && validationSummary.errors > 0 && (
+                  <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-red-500/40 text-red-400 bg-red-500/10">
+                    {validationSummary.errors}
+                  </Badge>
+                )}
+                {id === "validation" && validationSummary.errors === 0 && validationSummary.warnings > 0 && (
+                  <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-amber-500/40 text-amber-400 bg-amber-500/10">
+                    {validationSummary.warnings}
+                  </Badge>
+                )}
               </button>
             ))}
           </nav>
@@ -186,11 +241,15 @@ export function CreatorPlaygroundModal({
               <div className="p-5">
                 {activeSection === "launch" && <SetupWizardPanel wizard={setupWizard} businessId={businessId} />}
                 {activeSection === "overview" && <OverviewSection playground={playground} onNavigate={setActiveSection} />}
-                {activeSection === "pages" && <PagesSection playground={playground} onPageSelect={onPageSelect} />}
-                {activeSection === "funnels" && <FunnelsSection playground={playground} />}
+                {activeSection === "pages" && <PagesSection playground={playground} onPageSelect={onPageSelect} onPageAdd={onPageAdd} onPageRemove={onPageRemove} />}
+                {activeSection === "funnels" && <FunnelsSection playground={playground} onFunnelCreate={onFunnelCreate} />}
                 {activeSection === "products" && <ProductsSection playground={playground} />}
                 {activeSection === "services" && <ServicesSection playground={playground} />}
                 {activeSection === "forms" && <FormsSection playground={playground} />}
+                {activeSection === "calendars" && <CalendarsSection calendars={calendars} pages={playground.pageRegistry} />}
+                {activeSection === "popups" && <PopupsSection popups={popups} pages={playground.pageRegistry} />}
+                {activeSection === "bindings" && <BindingsSection bindings={bindings} registry={playground.pageRegistry} />}
+                {activeSection === "validation" && <ValidationSection validations={validations} summary={validationSummary} />}
                 {activeSection === "business" && <BusinessSection playground={playground} />}
               </div>
             </ScrollArea>
@@ -270,7 +329,12 @@ function OverviewSection({ playground, onNavigate }: { playground: UseCreatorPla
 // Section: Pages
 // ============================================================================
 
-function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlaygroundReturn; onPageSelect?: (id: string) => void }) {
+function PagesSection({ playground, onPageSelect, onPageAdd, onPageRemove }: { 
+  playground: UseCreatorPlaygroundReturn; 
+  onPageSelect?: (id: string) => void;
+  onPageAdd?: (pageId: string, title: string, path: string, pageType: BuilderPageType) => void;
+  onPageRemove?: (pageId: string, path: string) => void;
+}) {
   const [newTitle, setNewTitle] = useState("");
   const [newPath, setNewPath] = useState("");
   const [newType, setNewType] = useState<BuilderPageType>("custom");
@@ -283,6 +347,7 @@ function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlay
     setNewTitle("");
     setNewPath("");
     setNewType("custom");
+    onPageAdd?.(page.pageId, page.title, page.path, page.pageType);
     onPageSelect?.(page.pageId);
   };
 
@@ -333,7 +398,7 @@ function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlay
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); playground.setHomePage(page.pageId); }}><Star className="h-3 w-3" /></Button>
               )}
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); playground.duplicatePage(page.pageId); }}><Copy className="h-3 w-3" /></Button>
-              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={e => { e.stopPropagation(); playground.removePage(page.pageId); }}><Trash2 className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={e => { e.stopPropagation(); playground.removePage(page.pageId); onPageRemove?.(page.pageId, page.path); }}><Trash2 className="h-3 w-3" /></Button>
             </div>
           </div>
         ))}
@@ -346,7 +411,10 @@ function PagesSection({ playground, onPageSelect }: { playground: UseCreatorPlay
 // Section: Funnels
 // ============================================================================
 
-function FunnelsSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
+function FunnelsSection({ playground, onFunnelCreate }: { 
+  playground: UseCreatorPlaygroundReturn;
+  onFunnelCreate?: (funnelId: string, stepPages: { pageId: string; title: string; path: string; role: FunnelRole }[]) => void;
+}) {
   const [newName, setNewName] = useState("");
   const [expandedFunnel, setExpandedFunnel] = useState<string | null>(null);
   const funnels = Object.values(playground.pageRegistry.funnels);
@@ -590,6 +658,317 @@ function AddFunnelStepInline({ pages, existingPageIds, onAdd }: {
       <Button size="sm" className="h-7 px-2" disabled={!selectedPage} onClick={() => { onAdd(selectedPage, selectedRole); setSelectedPage(""); }}>
         <Plus className="h-3 w-3" />
       </Button>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// Section: Calendars
+// ============================================================================
+
+const BOOKING_TYPE_LABELS: Record<string, string> = {
+  appointment: "Appointment",
+  consultation: "Consultation",
+  class: "Class",
+  reservation: "Reservation",
+  general: "General",
+};
+
+function CalendarsSection({ calendars, pages }: { calendars: Record<string, PlaygroundCalendar>; pages: import("@/types/pageRegistry").PageRegistry }) {
+  const calendarList = Object.values(calendars).sort((a, b) => a.sortOrder - b.sortOrder);
+  const getPageTitle = (pageId: string) => pages.pages[pageId]?.title || pageId;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-foreground">Calendars</h2>
+        <Badge variant="outline" className="text-[10px]">{calendarList.length} calendars</Badge>
+      </div>
+
+      {calendarList.length === 0 ? (
+        <div className="text-center py-10 space-y-2">
+          <Calendar className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+          <p className="text-sm text-muted-foreground">No calendars configured yet.</p>
+          <p className="text-xs text-muted-foreground/60">Calendars are auto-created from the Wizard when your business requires booking.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {calendarList.map(cal => (
+            <div key={cal.calendarId} className="rounded-xl border border-border/30 bg-muted/10 overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="p-2 rounded-lg bg-cyan-500/10">
+                  <Calendar className="h-4 w-4 text-cyan-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground">{cal.name}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                      {BOOKING_TYPE_LABELS[cal.bookingType] || cal.bookingType}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">{cal.defaultDuration} min</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Attached Pages */}
+              {cal.attachedPageIds.length > 0 && (
+                <div className="px-4 py-2 border-t border-border/20 bg-background/30">
+                  <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1.5">Attached Pages</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {cal.attachedPageIds.map(pid => (
+                      <Badge key={pid} variant="secondary" className="text-[9px] h-4 px-1.5">{getPageTitle(pid)}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Intake form & success page */}
+              <div className="px-4 py-2 border-t border-border/20 bg-background/30 flex gap-4 text-[10px] text-muted-foreground">
+                {cal.intakeFormId && (
+                  <span>Intake form: <span className="text-foreground/70">{cal.intakeFormId}</span></span>
+                )}
+                {cal.successPageId && (
+                  <span>Success page: <span className="text-foreground/70">{getPageTitle(cal.successPageId)}</span></span>
+                )}
+                {!cal.intakeFormId && !cal.successPageId && (
+                  <span className="text-muted-foreground/40">No intake form or success page configured</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Section: Popups
+// ============================================================================
+
+const TRIGGER_LABELS: Record<string, string> = {
+  cta_click: "CTA Click",
+  timer: "Timer",
+  scroll: "Scroll",
+  exit_intent: "Exit Intent",
+  manual: "Manual",
+};
+
+const CONTENT_TYPE_LABELS: Record<string, string> = {
+  form: "Form",
+  calendar: "Calendar",
+  offer: "Offer",
+  custom: "Custom",
+};
+
+function PopupsSection({ popups, pages }: { popups: Record<string, PlaygroundPopup>; pages: import("@/types/pageRegistry").PageRegistry }) {
+  const popupList = Object.values(popups).sort((a, b) => a.sortOrder - b.sortOrder);
+  const getPageTitle = (pageId: string) => pages.pages[pageId]?.title || pageId;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-foreground">Popups</h2>
+        <Badge variant="outline" className="text-[10px]">{popupList.length} popups</Badge>
+      </div>
+
+      {popupList.length === 0 ? (
+        <div className="text-center py-10 space-y-2">
+          <MessageSquare className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+          <p className="text-sm text-muted-foreground">No popups configured yet.</p>
+          <p className="text-xs text-muted-foreground/60">Popups are auto-created from the Wizard for lead magnets, offers, and promotions.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {popupList.map(popup => (
+            <div key={popup.popupId} className="rounded-xl border border-border/30 bg-muted/10 overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="p-2 rounded-lg bg-fuchsia-500/10">
+                  <MessageSquare className="h-4 w-4 text-fuchsia-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground">{popup.name}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-fuchsia-500/30 text-fuchsia-400">
+                      {TRIGGER_LABELS[popup.trigger] || popup.trigger}
+                    </Badge>
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1.5">
+                      {CONTENT_TYPE_LABELS[popup.contentType] || popup.contentType}
+                    </Badge>
+                    {popup.showOncePerSession && (
+                      <span className="text-[9px] text-muted-foreground/50">once/session</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Trigger config */}
+              {popup.triggerConfig && (popup.triggerConfig.delayMs || popup.triggerConfig.scrollPercent) && (
+                <div className="px-4 py-1.5 border-t border-border/20 bg-background/30 text-[10px] text-muted-foreground">
+                  {popup.triggerConfig.delayMs && <span>Delay: {popup.triggerConfig.delayMs / 1000}s</span>}
+                  {popup.triggerConfig.delayMs && popup.triggerConfig.scrollPercent && <span className="mx-2">•</span>}
+                  {popup.triggerConfig.scrollPercent && <span>Scroll: {popup.triggerConfig.scrollPercent}%</span>}
+                </div>
+              )}
+
+              {/* Active on pages */}
+              {popup.activeOnPageIds.length > 0 && (
+                <div className="px-4 py-2 border-t border-border/20 bg-background/30">
+                  <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1.5">Active On</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {popup.activeOnPageIds.map(pid => (
+                      <Badge key={pid} variant="secondary" className="text-[9px] h-4 px-1.5">{getPageTitle(pid)}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Content ref */}
+              {popup.contentRefId && (
+                <div className="px-4 py-1.5 border-t border-border/20 bg-background/30 text-[10px] text-muted-foreground">
+                  Content: <span className="text-foreground/70">{popup.contentRefId}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Section: Bindings
+// ============================================================================
+
+const INTENT_LABELS: Record<string, string> = {
+  'nav.goto_page': 'Navigate',
+  'funnel.goto_step': 'Funnel Step',
+  'form.open': 'Open Form',
+  'popup.open': 'Open Popup',
+  'calendar.open': 'Open Calendar',
+  'checkout.start': 'Start Checkout',
+  'product.view': 'View Product',
+  'external.open': 'External Link',
+};
+
+function BindingsSection({ bindings, registry }: { bindings: Record<string, PlaygroundBinding>; registry: import("@/types/pageRegistry").PageRegistry }) {
+  const bindingList = Object.values(bindings);
+  const getPageTitle = (pageId: string) => registry.pages[pageId]?.title || pageId;
+
+  if (bindingList.length === 0) {
+    return (
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-foreground">Bindings / Actions</h3>
+        <p className="text-xs text-muted-foreground">No bindings configured yet. Bindings are auto-created when pages are generated via the Wizard.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-foreground">Bindings / Actions</h3>
+      <p className="text-[10px] text-muted-foreground mb-2">
+        Shows how pages talk to each other — CTAs, navigation, form triggers, and funnel steps.
+      </p>
+      <div className="space-y-1.5">
+        {bindingList.map(b => (
+          <div key={b.bindingId} className="flex items-center gap-2 p-2 rounded-md border border-border/40 bg-muted/10 text-xs">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-foreground font-medium truncate">{getPageTitle(b.sourcePageId)}</span>
+                <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-emerald-500/30 text-emerald-400">
+                  {INTENT_LABELS[b.intent] || b.intent}
+                </Badge>
+                <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <span className="text-foreground truncate">
+                  {b.targetType === 'page' ? getPageTitle(b.targetId) : b.targetId}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-muted-foreground">"{b.sourceLabel}"</span>
+                <span className="text-muted-foreground/50">•</span>
+                <span className="text-muted-foreground capitalize">{b.targetType}</span>
+                <span className="text-muted-foreground/50">•</span>
+                <span className={cn("text-[9px]", b.confidence >= 0.8 ? "text-emerald-400" : b.confidence >= 0.5 ? "text-amber-400" : "text-red-400")}>
+                  {(b.confidence * 100).toFixed(0)}% confidence
+                </span>
+              </div>
+            </div>
+            {b.isValid ? (
+              <CheckCircle className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Section: Validation
+// ============================================================================
+
+function ValidationSection({ validations, summary }: { validations: PlaygroundValidation[]; summary: ReturnType<typeof getValidationSummary> }) {
+  const severityIcon = (sev: PlaygroundValidation['severity']) => {
+    switch (sev) {
+      case 'error': return <XCircle className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />;
+      case 'warning': return <AlertTriangle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />;
+      case 'info': return <Info className="h-3.5 w-3.5 text-blue-400 flex-shrink-0" />;
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-foreground">Site Validation</h3>
+
+      {/* Summary */}
+      <div className="flex gap-3 mb-3">
+        <div className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium", summary.isHealthy ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30" : "bg-red-500/10 text-red-400 border border-red-500/30")}>
+          {summary.isHealthy ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+          {summary.isHealthy ? 'Healthy' : `${summary.errors} Error${summary.errors !== 1 ? 's' : ''}`}
+        </div>
+        {summary.warnings > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {summary.warnings} Warning{summary.warnings !== 1 ? 's' : ''}
+          </div>
+        )}
+        {summary.info > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/30">
+            <Info className="h-3.5 w-3.5" />
+            {summary.info} Info
+          </div>
+        )}
+      </div>
+
+      {validations.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No validation issues detected. Your site structure is clean.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {validations.map(v => (
+            <div key={v.id} className={cn(
+              "flex items-start gap-2 p-2 rounded-md border text-xs",
+              v.severity === 'error' ? "border-red-500/30 bg-red-500/5" :
+              v.severity === 'warning' ? "border-amber-500/30 bg-amber-500/5" :
+              "border-blue-500/30 bg-blue-500/5"
+            )}>
+              {severityIcon(v.severity)}
+              <div className="flex-1 min-w-0">
+                <div className="text-foreground">{v.message}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <Badge variant="outline" className="text-[8px] h-3.5 px-1 capitalize">{v.scope}</Badge>
+                  {v.targetId && <span className="text-muted-foreground text-[9px] truncate">{v.targetId}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

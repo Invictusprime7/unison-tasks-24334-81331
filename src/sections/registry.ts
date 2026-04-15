@@ -3,9 +3,14 @@
  * 
  * Templates are declarative compositions that reference sections by type.
  * The registry maps type → React component.
+ * 
+ * Enhanced with Component Intelligence for prop-aware generation,
+ * composition validation, and industry-specific component selection.
  */
 
 import type { SectionType, SectionRegistryEntry, BaseSectionProps } from './types';
+import type { ComponentIntelligence } from '@/types/componentIntelligence';
+import { getComponentIntelligence } from '@/services/componentIntelligenceRegistry';
 
 // Import section components
 import { NavbarSection } from './components/NavbarSection';
@@ -149,4 +154,33 @@ export const getSectionsByCategory = (category: SectionRegistryEntry['category']
   return Object.entries(SECTION_REGISTRY)
     .filter(([_, entry]) => entry.category === category)
     .map(([type, entry]) => ({ type: type as SectionType, ...entry }));
+};
+
+/**
+ * Get section with its intelligence metadata (prop schemas, composition rules, etc.)
+ */
+export const getSectionWithIntelligence = (type: SectionType): (SectionRegistryEntry & { intelligence?: ComponentIntelligence }) | undefined => {
+  const entry = SECTION_REGISTRY[type];
+  if (!entry) return undefined;
+  const intelligence = getComponentIntelligence(type);
+  return { ...entry, intelligence };
+};
+
+/**
+ * Get all sections with intelligence metadata for a given industry.
+ */
+export const getSectionsForIndustry = (industry: string, minScore = 0.7) => {
+  return Object.entries(SECTION_REGISTRY)
+    .map(([type, entry]) => {
+      const intelligence = getComponentIntelligence(type as SectionType);
+      const suitability = intelligence?.industrySuitability.find(s => s.industry === industry);
+      return {
+        type: type as SectionType,
+        ...entry,
+        intelligence,
+        industryScore: suitability?.score ?? 0.5,
+      };
+    })
+    .filter(e => e.industryScore >= minScore)
+    .sort((a, b) => b.industryScore - a.industryScore);
 };

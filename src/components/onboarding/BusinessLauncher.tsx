@@ -27,15 +27,17 @@ import {
   Heart
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getTemplatesByCategory } from "@/data/templates";
 import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types";
 import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
+import { createRuntimeManifest } from "@/types/runtimeManifest";
+import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import {
   createBlueprintFromIndustry,
   compileContract,
   getIndustryProfile,
+  planSiteTopology,
   type BusinessBlueprint,
 } from "@/contracts";
 
@@ -78,9 +80,13 @@ function getSystemTypeForChip(chipId: string): BusinessSystemType {
   return profile?.systemType || 'agency';
 }
 
+function isRenderableEntryPath(path: string): boolean {
+  return /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path);
+}
+
 /**
  * Get template reference for systems-build from chip selection.
- * Prefers React composition code from the section registry; falls back to legacy HTML.
+ * Launcher generation is composition-only and must stay on the industry theme pipeline.
  */
 function getTemplateReference(chipId: string): { templateId: string; templateHtml: string; systemType: BusinessSystemType } | null {
   const systemType = getSystemTypeForChip(chipId);
@@ -96,19 +102,8 @@ function getTemplateReference(chipId: string): { templateId: string; templateHtm
       systemType,
     };
   }
-  
-  // Fallback to legacy HTML templates
-  const templates = getTemplatesByCategory(category);
-  if (!templates.length) return null;
-  
-  const bestTemplate = templates[0];
-  if (!bestTemplate.code || bestTemplate.code.length < 100) return null;
-  
-  return {
-    templateId: bestTemplate.id,
-    templateHtml: bestTemplate.code,
-    systemType,
-  };
+
+  return null;
 }
 
 /**
@@ -120,64 +115,48 @@ function buildBlueprintFromChip(chipId: string, prompt: string, businessName?: s
   const chip = industryChips.find(c => c.id === chipId);
   const canonicalIndustry = getCanonicalIndustry(chipId);
   const name = businessName || chip?.label || "My Business";
+  const compositionMeta = getCompositionMeta(getCategoryForChip(chipId));
 
-  try {
-    // Use canonical blueprint from contracts system
-    const blueprint = createBlueprintFromIndustry(canonicalIndustry, name, {
-      prompt,
-    });
+  // Use canonical blueprint from contracts system
+  const blueprint = createBlueprintFromIndustry(canonicalIndustry, name, {
+    prompt,
+  });
 
-    // Compile to validate — log warnings but don't block
-    const compiled = compileContract(blueprint);
-    if (compiled.validation.warnings > 0) {
-      console.warn(`[BusinessLauncher] Blueprint warnings:`, compiled.validation.issues.filter(i => i.severity === 'warning'));
-    }
-
-    // Convert to the edge function's expected format (SystemsBuildContext shape)
-    const fonts = randomFontPairing();
-    const design = generateDesignVariation();
-
-    return {
-      version: "1.0",
-      identity: {
-        industry: canonicalIndustry,
-        primary_goal: blueprint.capabilities.primaryGoal,
-      },
-      brand: {
-        business_name: name,
-        tagline: blueprint.identity.tagline || `Professional ${chip?.label || "business"} services you can trust`,
-        tone: "professional and friendly",
-        typography: fonts,
-      },
-      design,
-      intents: blueprint.intents.allowed.map(i => ({ intent: i })),
-      // Pass compiled contract data for richer context
-      _contract: {
-        capabilities: blueprint.capabilities.enabled,
-        primaryCta: blueprint.intents.primaryCta,
-        requiredTables: compiled.requiredTables,
-        intentBindings: compiled.intentBindings,
-        pages: compiled.pages,
-      },
-    };
-  } catch (e) {
-    // Fallback if industry not found in contracts
-    console.warn(`[BusinessLauncher] Contract creation failed for "${canonicalIndustry}", using fallback`, e);
-    const fonts = randomFontPairing();
-    const design = generateDesignVariation();
-    return {
-      version: "1.0",
-      identity: { industry: canonicalIndustry, primary_goal: "Generate leads and grow the business" },
-      brand: {
-        business_name: name,
-        tagline: `Professional ${chip?.label || "business"} services you can trust`,
-        tone: "professional and friendly",
-        typography: fonts,
-      },
-      design,
-      intents: [{ intent: "contact.submit" }, { intent: "newsletter.subscribe" }],
-    };
+  // Compile to validate — log warnings but don't block
+  const compiled = compileContract(blueprint);
+  if (compiled.validation.warnings > 0) {
+    console.warn(`[BusinessLauncher] Blueprint warnings:`, compiled.validation.issues.filter(i => i.severity === 'warning'));
   }
+
+  // Convert to the edge function's expected format (SystemsBuildContext shape)
+  const fonts = randomFontPairing();
+  const design = generateDesignVariation();
+
+  return {
+    version: "1.0",
+    identity: {
+      industry: canonicalIndustry,
+      primary_goal: blueprint.capabilities.primaryGoal,
+    },
+    brand: {
+      business_name: name,
+      tagline: blueprint.identity.tagline || `Professional ${chip?.label || "business"} services you can trust`,
+      tone: "professional and friendly",
+      typography: fonts,
+    },
+    design,
+    intents: blueprint.intents.allowed.map(i => ({ intent: i })),
+    template_sections: compositionMeta?.sections,
+    template_intents: compositionMeta?.intents,
+    // Pass compiled contract data for richer context
+    _contract: {
+      capabilities: blueprint.capabilities.enabled,
+      primaryCta: blueprint.intents.primaryCta,
+      requiredTables: compiled.requiredTables,
+      intentBindings: compiled.intentBindings,
+      pages: compiled.pages,
+    },
+  };
 }
 
 interface ClarifyingQuestion {
@@ -217,6 +196,9 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   const [buildProgress, setBuildProgress] = useState(0);
   const [buildStatus, setBuildStatus] = useState("");
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [generatedVfsFiles, setGeneratedVfsFiles] = useState<Record<string, string> | null>(null);
+  const [generatedEntryPoint, setGeneratedEntryPoint] = useState<string | null>(null);
+  const [generatedSystemsBuildContext, setGeneratedSystemsBuildContext] = useState<SystemsBuildContext | null>(null);
 
   const resetFlow = useCallback(() => {
     setStep("prompt");
@@ -225,6 +207,9 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     setBuildProgress(0);
     setBuildStatus("");
     setGeneratedCode(null);
+    setGeneratedVfsFiles(null);
+    setGeneratedEntryPoint(null);
+    setGeneratedSystemsBuildContext(null);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -259,6 +244,40 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       return;
     }
 
+    const chipId = selectedChip || detectChipFromPrompt(prompt);
+    if (!chipId) {
+      toast({
+        title: "Choose a Launcher industry",
+        description: "Launcher generation is locked to the industry theme pipeline.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const businessName = extractBusinessName(prompt);
+    const ref = getTemplateReference(chipId);
+    if (!ref) {
+      toast({
+        title: "Industry template unavailable",
+        description: "This Launcher selection must resolve to a themed industry composition.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let blueprint: SystemsBuildContext;
+    try {
+      blueprint = buildBlueprintFromChip(chipId, prompt, businessName);
+    } catch (error) {
+      console.error("[BusinessLauncher] Failed to build canonical blueprint", error);
+      toast({
+        title: "Launcher pipeline failed",
+        description: "The selected industry could not resolve its themed generation contract.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setStep("building");
     setBuildProgress(0);
     setBuildStatus("Initializing...");
@@ -270,22 +289,10 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       setBuildStatus("Analyzing your business...");
       await new Promise(r => setTimeout(r, 400));
 
-      // Determine chip to use
-      const chipId = selectedChip || detectChipFromPrompt(prompt);
-      const businessName = extractBusinessName(prompt);
-      
-      // Build blueprint for systems-build
-      const blueprint = chipId 
-        ? buildBlueprintFromChip(chipId, prompt, businessName)
-        : buildGenericBlueprint(prompt, businessName);
-      
-      // Get template reference for quality baseline
-      const ref = chipId ? getTemplateReference(chipId) : null;
-
       setBuildProgress(25);
       setBuildStatus("Generating your website...");
 
-      console.log(`[BusinessLauncher] Using systems-build with${ref ? ` template: ${ref.templateId}` : 'out template'}${hasProfile ? ` + design profile (${savedProjectCount} projects)` : ''}`);
+      console.log(`[BusinessLauncher] Using systems-build with template: ${ref.templateId}${hasProfile ? ` + design profile (${savedProjectCount} projects)` : ''}`);
 
       // Add user design profile context for style-matched generation
       const designProfileContext = hasProfile ? getDesignPromptContext() : null;
@@ -331,14 +338,39 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       setBuildStatus("Finalizing pages...");
       await new Promise(r => setTimeout(r, 300));
 
-      // Prefer React VFS files; fallback to single code string
-      const reactFiles = data?.files;
-      const code = reactFiles?.["src/App.tsx"] || reactFiles?.["App.tsx"] || data?.code || "";
-      if (!code || code.length < 50) {
-        throw new Error("Failed to generate website code");
+      // Require structured React VFS files from launcher output.
+      const reactFiles = data?.files && typeof data.files === "object"
+        ? Object.fromEntries(
+            Object.entries(data.files as Record<string, string>).map(([path, content]) => [
+              path.startsWith("/") ? path : `/${path}`,
+              content,
+            ])
+          )
+        : null;
+      const normalizedEntryPoint = typeof data?.entryPoint === "string"
+        ? (data.entryPoint.startsWith("/") ? data.entryPoint : `/${data.entryPoint}`)
+        : null;
+      const entryPath = normalizedEntryPoint && reactFiles?.[normalizedEntryPoint] && isRenderableEntryPath(normalizedEntryPoint)
+        ? normalizedEntryPoint
+        : reactFiles?.["/src/App.tsx"]
+          ? "/src/App.tsx"
+          : reactFiles?.["/App.tsx"]
+            ? "/App.tsx"
+            : reactFiles
+              ? Object.keys(reactFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
+                Object.keys(reactFiles).find((path) => isRenderableEntryPath(path)) ||
+                null
+              : null;
+      const code = entryPath ? reactFiles?.[entryPath] || "" : "";
+
+      if (!reactFiles || Object.keys(reactFiles).length === 0 || !code || code.length < 50) {
+        throw new Error("Launcher must return structured VFS files for Web Builder");
       }
 
       setGeneratedCode(code);
+      setGeneratedVfsFiles(reactFiles);
+      setGeneratedEntryPoint(entryPath);
+      setGeneratedSystemsBuildContext(blueprint);
       
       setBuildProgress(90);
       setBuildStatus("Preparing builder...");
@@ -373,54 +405,45 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     return null;
   };
 
-  /**
-   * Build generic blueprint for free-form prompts
-   */
-  const buildGenericBlueprint = (text: string, businessName?: string) => {
-    const fonts = randomFontPairing();
-    const design = generateDesignVariation();
-
-    return {
-      version: "1.0",
-      identity: {
-        industry: "other",
-        primary_goal: "Generate leads and grow the business",
-      },
-      brand: {
-        business_name: businessName || "My Business",
-        tagline: "Professional services you can trust",
-        tone: "professional and friendly",
-        palette: { primary: "#0EA5E9", secondary: "#22D3EE", accent: "#F59E0B", background: "#0F172A", foreground: "#F8FAFC" },
-        typography: fonts,
-      },
-      design,
-      intents: [{ intent: "contact.submit" }, { intent: "quote.request" }],
-    };
-  };
-
   const handleOpenBuilder = async () => {
-    if (generatedCode) {
-      // Parse multi-page output if present
-      const { hasMultiPageMarkers, parseMultiPageOutput, generateMultiPageVFS } = await import('@/utils/redirectPageGenerator');
-      let vfsFiles: Record<string, string> | undefined;
-      
-      if (hasMultiPageMarkers(generatedCode)) {
-        const parsed = parseMultiPageOutput(generatedCode);
-        vfsFiles = generateMultiPageVFS(parsed);
-      }
-      
-      sessionStorage.setItem('ai_assistant_generated_code', generatedCode);
-      navigate("/web-builder", {
-        state: {
-          generatedCode: vfsFiles ? undefined : generatedCode,
-          vfsFiles: vfsFiles,
-          templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
-          aesthetic: "modern",
-          startInPreview: true,
-        },
+    if (!generatedVfsFiles || Object.keys(generatedVfsFiles).length === 0) {
+      toast({
+        title: "Builder launch blocked",
+        description: "Launcher output must include structured VFS files before opening Web Builder.",
+        variant: "destructive",
       });
-      handleClose();
+      return;
     }
+
+    const runtimeManifest = createRuntimeManifest(generatedVfsFiles, {
+      entryPoint: generatedEntryPoint || '/src/App.tsx',
+      industry: selectedChip ? getCanonicalIndustry(selectedChip) : undefined,
+      backendRequired: false,
+    });
+
+    // Generate site topology for the builder
+    const industryKey = selectedChip ? getCanonicalIndustry(selectedChip) : 'general';
+    const businessName = extractBusinessName(prompt);
+    const industryProfile = getIndustryProfile(industryKey);
+    const sitePlan = planSiteTopology(industryKey, businessName, {
+      primaryIntent: industryProfile?.primaryIntent,
+    });
+    console.log(`[BusinessLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, ${sitePlan.funnels.length} funnels`);
+
+    navigate("/web-builder", {
+      state: {
+        vfsFiles: generatedVfsFiles,
+        entryPoint: runtimeManifest.entryPoint,
+        runtimeManifest,
+        templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
+        aesthetic: "modern",
+        startInPreview: true,
+        systemType: selectedChip ? getSystemTypeForChip(selectedChip) : undefined,
+        systemsBuildContext: generatedSystemsBuildContext ?? undefined,
+        sitePlan,
+      },
+    });
+    handleClose();
   };
 
   const renderPromptStep = () => (
@@ -496,19 +519,19 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       <Progress value={buildProgress} className="w-full" />
       
       <div className="text-sm text-muted-foreground space-y-1">
-        {buildProgress >= 15 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> Business created</p>}
-        {buildProgress >= 30 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> CRM configured</p>}
-        {buildProgress >= 50 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> Pages generated</p>}
-        {buildProgress >= 70 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> Buttons wired</p>}
-        {buildProgress >= 85 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-green-500" /> Automations active</p>}
+        {buildProgress >= 15 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> Business created</p>}
+        {buildProgress >= 30 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> CRM configured</p>}
+        {buildProgress >= 50 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> Pages generated</p>}
+        {buildProgress >= 70 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> Buttons wired</p>}
+        {buildProgress >= 85 && <p className="flex items-center justify-center gap-2"><Check className="h-4 w-4 text-primary" /> Automations active</p>}
       </div>
     </div>
   );
 
   const renderCompleteStep = () => (
     <div className="space-y-6 text-center py-8">
-      <div className="w-20 h-20 mx-auto rounded-full bg-green-100 flex items-center justify-center">
-        <Check className="h-10 w-10 text-green-600" />
+      <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+        <Check className="h-10 w-10 text-primary" />
       </div>
       
       <div>

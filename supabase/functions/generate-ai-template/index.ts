@@ -138,9 +138,8 @@ PREMIUM QUALITY REQUIREMENTS:
    - Background "${variation.colorScheme.background}" for page background
    - Card background "${variation.colorScheme.cardBg}" alternating with tinted sections
 
-4. **Section Requirements (MINIMUM 6 sections — EXACTLY ONE of each type, no duplicates):**
-    - ⚠️ CRITICAL: Generate EXACTLY ONE Hero section. Do NOT create multiple hero variants or hero-like sections.
-    - Hero: Large heading, subtitle, 1-2 CTA buttons, optional badge/tag, decorative elements
+4. **Section Requirements (MINIMUM 6 sections):**
+   - Hero: Large heading, subtitle, 1-2 CTA buttons, optional badge/tag, decorative elements
    - Social Proof: Stats bar or trusted-by logos (3-5 items)
    - Features: 3-4 feature cards with icons (use shape type), titles, descriptions
    - About/Story: Image + text split layout

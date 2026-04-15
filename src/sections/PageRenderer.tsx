@@ -14,6 +14,7 @@ import { getSectionComponent } from './registry';
 import { themeToCSS, hsl } from './themeUtils';
 import { resolveVariantComponent } from './variants';
 import type { ActiveVariantMap } from './variants';
+import { resolveThemeTokens } from './themes';
 
 interface PageRendererProps {
   template: TemplateComposition;
@@ -24,7 +25,7 @@ interface PageRendererProps {
 }
 
 export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverride, activeVariants = {} }) => {
-  const theme = themeOverride || template.theme;
+  const theme = resolveThemeTokens(themeOverride ?? template.theme);
 
   // Inject global styles (keyframes, scroll effects)
   useEffect(() => {
@@ -84,7 +85,7 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
  */
 export const compositionToReactCode = (template: TemplateComposition): string => {
   const sectionsJson = JSON.stringify(template.sections, null, 2);
-  const themeJson = JSON.stringify(template.theme, null, 2);
+  const themeJson = JSON.stringify(resolveThemeTokens(template.theme), null, 2);
   const globalStylesJson = JSON.stringify(template.globalStyles || '');
 
   return `import React, { useEffect } from 'react';

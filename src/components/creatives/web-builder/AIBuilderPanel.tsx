@@ -43,14 +43,27 @@ import {
   FileText,
   FileCode2,
   X,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AIConversationMessage } from './ai-chat/AIConversationMessage';
+import { AIConversationWelcome } from './ai-chat/AIConversationWelcome';
+import { AIConversationInput } from './ai-chat/AIConversationInput';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { BusinessSystemType } from '@/data/templates/types';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
+import { buildComponentBehaviorMap, formatBehaviorMapForPrompt } from '@/services/aiVFSOrchestrator';
+import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
+import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
+import { vfsEventBus } from '@/services/vfsEventBus';
+import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
+import { DebugAgentPanel } from './DebugAgentPanel';
+import { interpretPrompt, type TaskPlan } from '@/unison';
+import type { PlanStepStatus } from '@/unison/nlTypes';
+import { TaskPlanSteps } from './TaskPlanSteps';
 
 // ============================================================================
 /**
@@ -104,10 +117,91 @@ function stripInlineCodeRefs(content: string): string {
   return content.replace(/`[^`]*`/g, 'CODE_REF');
 }
 
+/**
+ * Extract HTML from AI response that mixes reasoning text with raw HTML.
+ * Handles cases like: "I will generate...<!DOCTYPE html><html>...</html>"
+ * Returns the extracted HTML or null if no HTML found.
+ * 
+ * IMPORTANT: Ignores HTML tags mentioned inside backtick code references
+ * in reasoning text (e.g. "`<html>`", "`<style>`").
+ */
+function extractRawHtmlFromMixed(content: string): string | null {
+  // Strip inline code refs so `<html>` in reasoning doesn't trigger false match
+  const cleaned = stripInlineCodeRefs(content);
+
+  // Case 1: Content contains <!DOCTYPE html> — extract everything from there
+  const doctypeIdx = cleaned.indexOf('<!DOCTYPE');
+  if (doctypeIdx >= 0) {
+    // Use the index from cleaned to slice from the ORIGINAL content
+    const originalDoctypeIdx = content.indexOf('<!DOCTYPE', Math.max(0, doctypeIdx - 50));
+    if (originalDoctypeIdx >= 0) {
+      return content.slice(originalDoctypeIdx).trim();
+    }
+  }
+  
+  // Case 2: Content contains <html — but only if it looks like an actual tag (not inside prose)
+  // Match <html followed by > or whitespace+attributes, NOT inside backticks
+  const htmlTagRegex = /<html[\s>]/gi;
+  let match: RegExpExecArray | null;
+  while ((match = htmlTagRegex.exec(cleaned)) !== null) {
+    // Find the corresponding position in original content
+    const originalIdx = content.indexOf('<html', Math.max(0, match.index - 50));
+    if (originalIdx >= 0) {
+      const extracted = content.slice(originalIdx).trim();
+      if (extracted.includes('</html>')) return extracted;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Convert raw HTML into a proper React component with native JSX.
+ */
+function wrapHtmlInReactComponent(html: string): string {
+  return htmlDocToReactComponentFn(html, 'App');
+}
+
 // Types
 // ============================================================================
 
-interface ThinkingStep {
+/**
+ * Client-side scope guard — blocks auto-apply if a scoped edit
+ * touches unauthorized files or creates too many new files.
+ */
+function getScopedEditAutoApplyBlockReason(opts: {
+  files: Record<string, string>;
+  resolvedTargetFile: string | null;
+  existingFileKeys: string[];
+}): string | null {
+  const normalizePath = (p: string) => (p.startsWith('/') ? p : `/${p}`);
+  const paths = Object.keys(opts.files).map(normalizePath);
+
+  // If we resolved a target, the patch must include it
+  if (opts.resolvedTargetFile) {
+    const normTarget = normalizePath(opts.resolvedTargetFile);
+    if (!paths.includes(normTarget)) {
+      return `Scoped edit did not update the resolved target file (${normTarget}).`;
+    }
+  }
+
+  // Scoped edits should not produce more than 3 files
+  if (paths.length > 3) {
+    return `Scoped edit produced ${paths.length} files — likely a full regeneration.`;
+  }
+
+  // Should not create more than 1 new file
+  const existingNorm = opts.existingFileKeys.map(normalizePath);
+  const newFiles = paths.filter((p) => !existingNorm.includes(p));
+  if (newFiles.length > 1) {
+    return `Scoped edit created ${newFiles.length} new files — expected at most 1.`;
+  }
+
+  return null;
+}
+
+
+export interface ThinkingStep {
   id: string;
   type: 'analyzing' | 'planning' | 'generating' | 'validating' | 'complete' | 'error' | 'reasoning';
   message: string;
@@ -116,7 +210,17 @@ interface ThinkingStep {
   isExpanded?: boolean;
 }
 
-interface Message {
+export interface MessageMeta {
+  actionType?: string;
+  modelUsed?: string;
+  filesDetected?: string[];
+  warnings?: Array<{ severity: string; message: string }>;
+  requiresApproval?: boolean;
+  removedFiles?: string[];
+  reviewSummary?: string;
+}
+
+export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -128,6 +232,10 @@ interface Message {
   edits?: VFSEdit[];
   error?: IframeError;
   isStreaming?: boolean;
+  /** Unison TaskPlan for this message */
+  taskPlan?: TaskPlan;
+  /** Rich metadata from the AI response */
+  meta?: MessageMeta;
 }
 
 export interface VFSEdit {
@@ -178,6 +286,8 @@ interface AIBuilderPanelProps {
   vfsFiles?: Record<string, string> | null;
   /** Direct VFS apply callback — bypasses legacy onCodeGenerated pipeline, uses AI→VFS orchestrator */
   onApplyToVFS?: (files: Record<string, string>) => void;
+  /** Preview handle ref for building component behavior maps (DOM inspection) */
+  previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
 }
 
 // ============================================================================
@@ -207,331 +317,8 @@ function formatTimestamp(date: Date): string {
   return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-// ============================================================================
-// Thinking Step Component
-// ============================================================================
+// Old ThinkingStepItem and MessageItem components removed — replaced by ai-chat/ sub-components
 
-const ThinkingStepItem: React.FC<{
-  step: ThinkingStep;
-  isLast: boolean;
-  onToggle: () => void;
-}> = ({ step, isLast, onToggle }) => {
-  const icons = {
-    analyzing: <Sparkles className="w-3 h-3 text-blue-400 animate-pulse" />,
-    planning: <FileCode className="w-3 h-3 text-sky-400" />,
-    generating: <Code2 className="w-3 h-3 text-blue-400 animate-pulse" />,
-    validating: <CheckCircle2 className="w-3 h-3 text-sky-400" />,
-    complete: <CheckCircle2 className="w-3 h-3 text-blue-400" />,
-    error: <XCircle className="w-3 h-3 text-red-400" />,
-    reasoning: <Brain className="w-3 h-3 text-violet-400" />,
-  };
-
-  return (
-    <div className="flex items-start gap-2 py-1">
-      <div className="flex flex-col items-center">
-        <div className="w-5 h-5 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-          {icons[step.type]}
-        </div>
-        {!isLast && <div className="w-px h-4 bg-blue-500/20" />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-1 text-xs text-blue-400/70 hover:text-blue-400 transition-colors w-full text-left"
-        >
-          {step.details && (
-            step.isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />
-          )}
-          <span className="truncate font-mono">{step.message}</span>
-          <span className="text-blue-400/30 text-[10px] ml-auto font-mono">{formatTimestamp(step.timestamp)}</span>
-        </button>
-        {step.isExpanded && step.details && (
-          <pre className="mt-1 p-2 bg-black/40 border border-blue-500/20 rounded text-[10px] text-blue-400/50 overflow-x-auto font-mono">
-            {step.details}
-          </pre>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// Message Component with Cascade Thinking
-// ============================================================================
-
-const MessageItem: React.FC<{
-  message: Message;
-  onViewEdits?: (edits: VFSEdit[]) => void;
-  onRetryError?: (error: IframeError) => void;
-}> = ({ message, onViewEdits, onRetryError }) => {
-  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>(message.thinking || []);
-  const [showThinking, setShowThinking] = useState(false);
-  const [showReasoning, setShowReasoning] = useState(false);
-
-  const toggleStep = (stepId: string) => {
-    setThinkingSteps(prev =>
-      prev.map(s => s.id === stepId ? { ...s, isExpanded: !s.isExpanded } : s)
-    );
-  };
-
-  if (message.role === 'user') {
-    return (
-      <div className="flex justify-end mb-3">
-      <div className="max-w-[85%] bg-sky-500/20 border border-sky-500/30 rounded-lg px-3 py-2">
-          <p className="text-sm text-sky-100">{message.content}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (message.role === 'system') {
-    return (
-      <div className="flex justify-center mb-3">
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">
-          <p className="text-xs text-blue-400/70 font-mono">{message.content}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Assistant message with cascade thinking
-  return (
-    <div className="mb-4">
-      {/* AI Extended Reasoning — shown for all models when thinking tags are present */}
-      {message.claudeReasoning && (
-        <div className="mb-2 rounded-lg border border-violet-500/30 bg-violet-950/30 overflow-hidden">
-          <button
-            onClick={() => setShowReasoning(!showReasoning)}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-violet-300/80 hover:text-violet-200 transition-colors font-mono"
-          >
-            {showReasoning ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            <Brain className="w-3 h-3 text-violet-400" />
-            <Zap className="w-3 h-3 text-amber-400" />
-            <span className="font-semibold">AI Reasoning</span>
-            <span className="ml-auto text-violet-400/40 text-[10px]">{message.claudeReasoning.length.toLocaleString()} chars</span>
-          </button>
-          {showReasoning && (
-            <div className="px-3 pb-3">
-              <div className="text-[10px] text-violet-300/40 font-mono mb-1 uppercase tracking-widest">Extended Reasoning · Internal Thought Process</div>
-              <pre className="text-[11px] text-violet-100/70 whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-y-auto rounded bg-black/30 p-2 border border-violet-500/10">
-                {message.claudeReasoning}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Thinking Process (collapsible cascade) */}
-      {thinkingSteps.length > 0 && (
-        <div className="mb-2">
-          <button
-            onClick={() => setShowThinking(!showThinking)}
-            className="flex items-center gap-1 text-xs text-blue-400/50 hover:text-blue-400/70 transition-colors mb-1 font-mono"
-          >
-            {showThinking ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            <Sparkles className="w-3 h-3 text-blue-400" />
-            <span>AI Thinking ({thinkingSteps.length} steps)</span>
-          </button>
-          {showThinking && (
-            <div className="ml-2 pl-2 border-l border-blue-500/20">
-              {thinkingSteps.map((step, i) => (
-                <ThinkingStepItem
-                  key={step.id}
-                  step={step}
-                  isLast={i === thinkingSteps.length - 1}
-                  onToggle={() => toggleStep(step.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Main message content */}
-      <div className="bg-black/40 border border-blue-500/20 rounded-lg px-3 py-2">
-        {message.isStreaming && (
-          <div className="flex items-center gap-2 mb-2">
-            <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
-            <span className="text-xs text-blue-400/50 font-mono">Generating...</span>
-          </div>
-        )}
-        <p className="text-sm text-blue-100/90 whitespace-pre-wrap">{message.content}</p>
-
-        {/* View Edits Button */}
-        {message.edits && message.edits.length > 0 && onViewEdits && (
-          <div className="mt-3 pt-2 border-t border-blue-500/20">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onViewEdits(message.edits!)}
-              className="gap-2 bg-sky-500/10 border-sky-500/30 text-sky-400 hover:bg-sky-500/20 hover:shadow-[0_0_10px_rgba(56,189,248,0.3)]"
-            >
-              <Eye className="w-3 h-3" />
-              View Edits ({message.edits.length} file{message.edits.length > 1 ? 's' : ''})
-              <ExternalLink className="w-3 h-3" />
-            </Button>
-            <div className="mt-2 space-y-1">
-              {message.edits.map((edit, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-blue-400/50 font-mono">
-                  <Badge variant="outline" className={cn(
-                    "text-[10px] px-1",
-                    edit.type === 'create' && "border-blue-500/50 text-blue-400",
-                    edit.type === 'modify' && "border-sky-500/50 text-sky-400",
-                    edit.type === 'delete' && "border-red-500/50 text-red-400"
-                  )}>
-                    {edit.type}
-                  </Badge>
-                  <span className="truncate">{edit.path}</span>
-                  {edit.linesChanged && (
-                    <span className="text-blue-400/30">+{edit.linesChanged} lines</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Code is auto-applied to VFS — no manual "Apply" button needed */}
-
-        {/* Error with retry */}
-        {message.error && onRetryError && (
-          <div className="mt-3 pt-2 border-t border-red-500/20">
-            <div className="flex items-start gap-2 p-2 bg-red-500/10 rounded">
-              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-red-300 font-medium">{message.error.type} error</p>
-                <p className="text-xs text-red-400/80 truncate">{message.error.message}</p>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onRetryError(message.error!)}
-                className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-              >
-                <RefreshCw className="w-3 h-3" />
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// Debug Panel Component
-// ============================================================================
-
-const DebugPanel: React.FC<{
-  errors: IframeError[];
-  onFixError: (error: IframeError) => void;
-  onClearErrors?: () => void;
-  isFixing: boolean;
-}> = ({ errors, onFixError, onClearErrors, isFixing }) => {
-  return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* Debug Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-fuchsia-500/20 bg-[#0a0f1e]">
-        <div className="flex items-center gap-2">
-          <Bug className="w-4 h-4 text-fuchsia-400 drop-shadow-[0_0_5px_rgba(255,0,255,0.5)]" />
-          <span className="text-sm font-bold text-fuchsia-400 font-mono">
-            {errors.length} Error{errors.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        {errors.length > 0 && onClearErrors && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onClearErrors}
-            className="h-7 text-xs text-fuchsia-400/50 hover:text-fuchsia-400 hover:bg-fuchsia-500/10"
-          >
-            <Trash2 className="w-3 h-3 mr-1" />
-            Clear
-          </Button>
-        )}
-      </div>
-
-      {/* Error List */}
-      <ScrollArea className="flex-1">
-        <div className="p-3 space-y-2">
-          {errors.length === 0 ? (
-            <div className="text-center py-8">
-              <CheckCircle2 className="w-8 h-8 text-blue-500/50 mx-auto mb-2 drop-shadow-[0_0_10px_rgba(59,130,246,0.3)]" />
-              <p className="text-sm text-blue-400/60 font-mono">No errors detected</p>
-              <p className="text-xs text-blue-400/30 mt-1 font-mono">Errors from the preview will appear here</p>
-            </div>
-          ) : (
-            errors.map((error, i) => (
-              <div
-                key={`${error.timestamp.getTime()}-${i}`}
-                className="p-3 bg-fuchsia-500/5 border border-fuchsia-500/20 rounded-lg"
-              >
-                <div className="flex items-start gap-2">
-                  <div className={cn(
-                    "w-6 h-6 rounded flex items-center justify-center shrink-0",
-                    error.type === 'runtime' && "bg-red-500/20",
-                    error.type === 'syntax' && "bg-orange-500/20",
-                    error.type === 'network' && "bg-yellow-500/20",
-                    error.type === 'supabase' && "bg-fuchsia-500/20"
-                  )}>
-                    {error.type === 'supabase' ? (
-                      <Database className="w-3 h-3 text-fuchsia-400" />
-                    ) : (
-                      <AlertTriangle className="w-3 h-3 text-red-400" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-[10px] border-fuchsia-500/30 text-fuchsia-400">
-                        {error.type}
-                      </Badge>
-                      {error.file && (
-                        <span className="text-[10px] text-fuchsia-400/40 font-mono truncate">
-                          {error.file}
-                          {error.line && `:${error.line}`}
-                          {error.column && `:${error.column}`}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-fuchsia-100/80 mt-1">{error.message}</p>
-                    {error.stack && (
-                      <pre className="mt-2 p-2 bg-black/40 border border-fuchsia-500/10 rounded text-[10px] text-fuchsia-400/40 overflow-x-auto max-h-20 font-mono">
-                        {error.stack}
-                      </pre>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-2 flex justify-end">
-                  <Button
-                    size="sm"
-                    onClick={() => onFixError(error)}
-                    disabled={isFixing}
-                    className="gap-2 bg-fuchsia-500 hover:bg-fuchsia-400 text-black font-bold shadow-[0_0_15px_rgba(255,0,255,0.4)] hover:shadow-[0_0_20px_rgba(255,0,255,0.6)] transition-all duration-200"
-                  >
-                    {isFixing ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3 h-3" />
-                    )}
-                    Auto-Fix with AI
-                  </Button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* Supabase CLI Access Info */}
-      <div className="px-3 py-2 border-t border-blue-500/20 bg-[#0a0f1e]">
-        <div className="flex items-center gap-2 text-xs text-blue-400/40 font-mono">
-          <Database className="w-3 h-3" />
-          <span>Backend CLI access enabled</span>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // ============================================================================
 // Main Component
@@ -556,6 +343,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   vfsContext,
   vfsFiles,
   onApplyToVFS,
+  previewRef,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -564,8 +352,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'code' | 'debug'>('code');
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingPromptRef = useRef<string | null>(null);
+
+  // Auto-send when a welcome prompt is selected
+  useEffect(() => {
+    if (pendingPromptRef.current && input === pendingPromptRef.current && !isLoading) {
+      pendingPromptRef.current = null;
+      handleSend();
+    }
+  }, [input]);
 
   // ── File processing helpers ───────────────────────────────────────────────
   const classifyFile = (file: File): DroppedFile['type'] => {
@@ -642,54 +440,19 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     }
   }, [messages]);
 
-  // Initial welcome message
-  useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([{
-        id: generateId(),
-        role: 'assistant',
-        content: `👋 Welcome to the AI Builder!\n\nI can help you:\n• Generate and modify code\n• Fix errors in your preview\n• Debug Supabase integrations\n\nJust describe what you want to build or switch to Debug tab to fix errors.`,
-        timestamp: new Date(),
-        thinking: [
-          { id: '1', type: 'complete', message: 'Ready to assist', timestamp: new Date() }
-        ],
-      }]);
-    }
-  }, [messages.length]);
+  // No initial welcome message — AIConversationWelcome handles the empty state
 
-  // Simulate thinking steps for AI response
-  const simulateThinking = useCallback(async (userPrompt: string): Promise<ThinkingStep[]> => {
-    const steps: ThinkingStep[] = [];
-    
-    steps.push({
-      id: generateId(),
-      type: 'analyzing',
-      message: 'Analyzing request...',
-      timestamp: new Date(),
-      details: `User prompt: "${userPrompt.substring(0, 100)}${userPrompt.length > 100 ? '...' : ''}"`,
-    });
-
-    await new Promise(r => setTimeout(r, 300));
-    
-    steps.push({
-      id: generateId(),
-      type: 'planning',
-      message: 'Planning changes...',
-      timestamp: new Date(),
-      details: currentCode ? `Current template: ${currentCode.length} chars` : 'No existing template',
-    });
-
-    await new Promise(r => setTimeout(r, 400));
-    
-    steps.push({
-      id: generateId(),
-      type: 'generating',
-      message: 'Generating code...',
-      timestamp: new Date(),
-    });
-
-    return steps;
-  }, [currentCode]);
+  // Live thinking step pusher — updates the streaming message in real-time
+  const pushThinkingStep = useCallback((
+    streamingId: string,
+    step: ThinkingStep,
+    existingSteps: ThinkingStep[],
+  ) => {
+    existingSteps.push(step);
+    setMessages(prev => prev.map(m =>
+      m.id === streamingId ? { ...m, thinking: [...existingSteps] } : m
+    ));
+  }, []);
 
   // Send message to AI
   const handleSend = async () => {
@@ -733,29 +496,110 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     const _attachments = attachments;
     const _userContent = userContent;
 
+    let streamingId: string | null = null;
+
     try {
-      // Simulate thinking process
-      const thinkingSteps = await simulateThinking(input);
+      // Initialize live thinking cascade
+      const thinkingSteps: ThinkingStep[] = [];
+      streamingId = generateId();
       
-      // Add streaming message
-      const streamingId = generateId();
+      // Add streaming message immediately (visible with empty thinking)
       setMessages(prev => [...prev, {
         id: streamingId,
         role: 'assistant',
         content: '',
         timestamp: new Date(),
-        thinking: thinkingSteps,
+        thinking: [],
         isStreaming: true,
       }]);
 
-      // Detect whether this is a targeted (surgical) edit or a full generation
-      const rawInput = _userContent; // input is already cleared; use the captured value
-      const lowerInput = rawInput.toLowerCase();
-      const isFullGeneration = !!lowerInput.match(/\b(full control|full reign|revamp|overhaul|transform|reimagine|build|create|generate|make)\b.*\b(landing page|page|website|store|site|template)\b/);
-      const hasSurgicalKeyword = !isFullGeneration && !!(
-        lowerInput.match(/\b(change|modify|update|edit|adjust|tweak|fix|add|insert|include|remove|delete|hide|replace|restyle|redesign|change color|change style|move|swap|reposition|resize|enlarge|shrink|center|align|increase|decrease|make the|make it|set the|set it|should be|needs to be|wire|connect|hook up|integrate|link|bind|attach|submit|send data|save data|api|backend|database|supabase|fetch|endpoint)\b/)
+      // Helper to push a live step
+      const liveStep = (type: ThinkingStep['type'], message: string, details?: string) => {
+        pushThinkingStep(streamingId, {
+          id: generateId(),
+          type,
+          message,
+          timestamp: new Date(),
+          details,
+        }, thinkingSteps);
+      };
+
+      // ── Phase 1: Prompt Intelligence ──
+      liveStep('analyzing', 'Parsing natural language request...');
+
+      const rawInput = _userContent;
+      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isBehavioral: detectedBehavioral, isFullGen: isFullGeneration, isDebug: detectedDebug } = enhancePromptForAI(rawInput);
+      const isSurgicalEdit = detectedSurgical && !!currentCode;
+      const isBehavioralEdit = detectedBehavioral && !!currentCode;
+      const isDebugMode = detectedDebug && !!currentCode;
+
+      liveStep('analyzing', `Intent: ${promptAnalysis.intent} · Complexity: ${promptAnalysis.complexity}`, [
+        promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
+        promptAnalysis.designKeywords.length ? `Design cues: ${promptAnalysis.designKeywords.join(', ')}` : null,
+        promptAnalysis.constraints.length ? `${promptAnalysis.constraints.length} constraints detected` : null,
+        isBehavioralEdit ? '🧠 Behavioral edit mode' : isDebugMode ? '🔧 Debug mode' : isSurgicalEdit ? '🎯 Surgical edit mode' : isFullGeneration ? '🏗️ Full generation mode' : null,
+      ].filter(Boolean).join(' | '));
+
+      // Log prompt analysis for debugging
+      console.log('[AIBuilderPanel] Prompt analysis:', {
+        intent: promptAnalysis.intent,
+        secondary: promptAnalysis.secondaryIntents,
+        complexity: promptAnalysis.complexity,
+        targets: promptAnalysis.targets.length,
+        constraints: promptAnalysis.constraints.length,
+        designKeywords: promptAnalysis.designKeywords,
+        isSurgical: isSurgicalEdit,
+        isBehavioral: isBehavioralEdit,
+        isDebug: isDebugMode,
+      });
+
+      // ── Phase 1b: Unison Task Interpretation ──
+      liveStep('analyzing', 'Running Unison task planner...');
+      
+      const projectContext: import('@/unison').ProjectContext = {
+        provisionedCapabilities: [],
+        existingFiles: vfsFiles ? Object.keys(vfsFiles) : [],
+        existingPages: [],
+        builderMode: currentCode ? 'edit' : 'generate',
+        hasBusinessId: !!systemsBuildContext?.brand?.business_name,
+        installedWorkflows: [],
+      };
+      
+      const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContent, projectContext);
+      
+      liveStep('analyzing', `Plan: ${taskPlan.steps.length} steps · route: ${taskPlan.route}`,
+        `Confidence: ${Math.round(taskPlan.intent.confidence * 100)}% · Complexity: ${taskPlan.estimatedComplexity}`
       );
-      const isSurgicalEdit = hasSurgicalKeyword && !!currentCode;
+      
+      // Helper: advance TaskPlan step statuses in-place and update the message
+      const advancePlanStep = (plan: TaskPlan, stepType: string, status: PlanStepStatus) => {
+        const step = plan.steps.find(s => s.type === stepType && s.status !== 'done');
+        if (step) {
+          step.status = status;
+          if (status === 'running') step.startedAt = new Date().toISOString();
+          if (status === 'done' || status === 'failed') step.completedAt = new Date().toISOString();
+        }
+        setMessages(prev => prev.map(m =>
+          m.id === streamingId ? { ...m, taskPlan: { ...plan } } : m
+        ));
+      };
+
+      // Attach task plan to the streaming message
+      setMessages(prev => prev.map(m =>
+        m.id === streamingId ? { ...m, taskPlan } : m
+      ));
+
+      // Mark initial steps as running
+      advancePlanStep(taskPlan, 'analyze', 'running');
+
+      console.log('[AIBuilderPanel] Unison plan:', {
+        route: taskPlan.route,
+        steps: taskPlan.steps.length,
+        complexity: taskPlan.estimatedComplexity,
+        confidence: taskPlan.intent.confidence,
+        outcome: unisonFeedback.outcome,
+      });
+
 
       // Analyze VFS site structure for component-level targeting
       let siteAnalysisContext = '';
@@ -777,6 +621,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             const target = resolveEditTarget(rawInput, analysis);
             if (target) {
               resolvedTargetFile = target.file;
+              liveStep('planning', `🎯 Edit target: ${target.component} in ${target.file}`, `Confidence: ${target.confidence}`);
               const targetFileContent = vfsFiles[target.file];
               const contentSnippet = targetFileContent
                 ? targetFileContent.slice(0, 8000)
@@ -804,6 +649,23 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           currentCode.includes('export default function') ||
           currentCode.includes('export default const')
         );
+      }
+
+      // ── Phase 1c: Build component behavior map for ALL edit types ──
+      // Previously only built for behavioral edits — now provides context-awareness for all edits
+      let behaviorContext = '';
+      const isAnyEditMode = isSurgicalEdit || isBehavioralEdit || !!currentCode;
+      if (isAnyEditMode && vfsFiles && Object.keys(vfsFiles).length > 0) {
+        try {
+          const behaviorMap = buildComponentBehaviorMap(
+            previewRef?.current ? { getIframe: previewRef.current.getIframe } as any : { getIframe: () => null } as any,
+            vfsFiles,
+          );
+          behaviorContext = formatBehaviorMapForPrompt(behaviorMap);
+          if (behaviorContext) {
+            liveStep('analyzing', `🧠 Behavior map: ${behaviorMap.elements.length} interactive elements, ${Object.keys(behaviorMap.stateByFile).length} stateful files`);
+          }
+        } catch { /* behavior map is best-effort */ }
       }
 
       // Build theme/styling context from Systems AI blueprint so in-builder edits stay consistent
@@ -855,9 +717,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // For surgical edits, inject a strict prompt guard so the AI makes ONLY the targeted change
       // AND mandate that it outputs actual code, not just reasoning
+      // Use intelligent prompt for general requests; for surgical edits, still inject strict guard
       const promptForAI = isSurgicalEdit
         ? [
             '🚨 SURGICAL EDIT MODE — CHANGE ONLY THE TARGETED ELEMENT/COMPONENT 🚨',
+            '',
+            // Include structured analysis so the AI understands multi-sentence requests
+            promptAnalysis.structuredDirective,
             '',
             `User Request: ${_userContent}${_fileContext}`,
             editTargetContext,
@@ -878,28 +744,66 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             '8. Think of this like a diff — your output should be identical to the input except for the one change',
             '9. For React projects: preserve all imports, hooks, state, and component structure — only change the targeted JSX/logic',
             '10. When adding new elements or modifying styles, match the existing theme — use the same colors, fonts, spacing, and design patterns',
+            // Inject constraints from prompt analysis
+            ...promptAnalysis.constraints.map(c => {
+              const prefix = c.type === 'preserve' ? '🔒 PRESERVE' : c.type === 'avoid' ? '🚫 AVOID' : c.type === 'require' ? '✅ REQUIRE' : '🎨 MATCH';
+              return `${prefix}: ${c.description}`;
+            }),
             themeContextBlock ? `\n${themeContextBlock}` : '',
           ].filter(Boolean).join('\n')
-        : `${_userContent}${_fileContext}${richContext}`;
+        : (() => {
+            // Budget the prompt to stay within the 50k message content limit
+            const MAX_PROMPT_CHARS = 40_000;
+            let prompt = `${intelligentPrompt}${_fileContext}`;
+            if (prompt.length + richContext.length <= MAX_PROMPT_CHARS) {
+              prompt += richContext;
+            } else {
+              // Progressively trim context to fit
+              const remaining = MAX_PROMPT_CHARS - prompt.length;
+              if (remaining > 200) {
+                prompt += richContext.slice(0, remaining);
+              }
+            }
+            return prompt;
+          })();
 
-      // Detect templateAction for the backend
-      const detectTemplateAction = (msg: string): string | undefined => {
-        const lm = msg.toLowerCase();
-        if (lm.match(/\b(full control|revamp|overhaul|transform|reimagine)\b/)) return 'full-control';
-        if (lm.match(/\b(add|insert|include|create new|put|place)\b.*\b(section|element|component|button|image|form|card|hero|footer|header|nav)/)) return 'add';
-        if (lm.match(/\b(remove|delete|hide|get rid of|take out)\b/)) return 'remove';
-        if (lm.match(/\b(change|modify|update|edit|adjust|tweak|fix)\b/)) return 'modify';
-        if (lm.match(/\b(restyle|redesign|new look|change color|change style|theme|recolor)\b/)) return 'restyle';
-        return currentCode ? 'modify' : undefined;
-      };
-      const templateAction = detectTemplateAction(rawInput);
+      // Derive templateAction from prompt analysis instead of regex
+      const templateAction = (() => {
+        switch (promptAnalysis.intent) {
+          case 'full_generation': return 'full-control';
+          case 'add_section': return 'add';
+          case 'remove_section': return 'remove';
+          case 'restyle': return 'restyle';
+          case 'content_update':
+          case 'surgical_edit':
+          case 'fix_error':
+          case 'wire_backend':
+          case 'refactor':
+            return 'modify';
+          default:
+            return currentCode ? 'modify' : undefined;
+        }
+      })();
 
-      // Call AI service with retry logic
-      const MAX_RETRIES = 2;
+      // ── Phase 3: AI Gateway Call ──
+      advancePlanStep(taskPlan, 'analyze', 'done');
+      advancePlanStep(taskPlan, 'locate', 'done');
+      advancePlanStep(taskPlan, 'generate', 'running');
+      liveStep('generating', 'Calling AI model...', gatewayConfig?.selectedModelId || 'auto-select');
+
+      // Call AI service with retry logic — keep retries minimal to avoid long thinking loops
+      const MAX_RETRIES = 1;
       let response = null;
       let lastError = null;
       
+      // Global timeout: abort the entire request after 90s to prevent infinite thinking state
+      const globalAbort = new AbortController();
+      const globalTimeout = setTimeout(() => globalAbort.abort(), 90_000);
+      
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (globalAbort.signal.aborted) {
+          throw new Error('Request timed out. Please try a simpler prompt.');
+        }
         try {
           if (attempt > 0) {
             // Update thinking to show retry
@@ -917,7 +821,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           
           // Truncate currentCode to stay within edge function limits
-          const MAX_CODE_LENGTH = 180_000;
+          const MAX_CODE_LENGTH = 120_000;
           const truncatedCode = currentCode && currentCode.length > MAX_CODE_LENGTH
             ? currentCode.substring(0, MAX_CODE_LENGTH) + '\n<!-- ... truncated for AI processing -->'
             : currentCode;
@@ -936,9 +840,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 maxElements: 10,
               });
 
-          // Build compact VFS files payload for surgical edits (only relevant files, capped)
+          // Build compact VFS files payload for ALL edit modes (not just surgical)
+          // The edge function's contextCompactor handles budget/prioritization
           let vfsPayload: Record<string, string> | undefined;
-          if (isSurgicalEdit && isReactProject && vfsFiles) {
+          if (isReactProject && vfsFiles) {
             const MAX_VFS_PAYLOAD = 120_000;
             let totalSize = 0;
             vfsPayload = {};
@@ -960,9 +865,52 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             }
           }
 
+          // Build lightweight preview DOM snapshot for AI context-awareness
+          let previewSnapshot: string | undefined;
+          try {
+            const iframe = previewRef?.current?.getIframe?.();
+            const doc = iframe?.contentDocument;
+            if (doc?.body) {
+              const route = iframe?.contentWindow?.location.hash || '/';
+              const sections = Array.from(doc.querySelectorAll('section, header, nav, main, footer, [data-component]'))
+                .map(el => {
+                  const tag = el.tagName.toLowerCase();
+                  const dc = el.getAttribute('data-component');
+                  const text = (el as HTMLElement).innerText?.slice(0, 60)?.replace(/\n/g, ' ') || '';
+                  return dc ? `<${tag} data-component="${dc}"> "${text}"` : `<${tag}> "${text}"`;
+                }).slice(0, 15);
+              previewSnapshot = `[Preview DOM] Route: ${route}\nVisible sections (${sections.length}):\n${sections.join('\n')}`;
+            }
+          } catch { /* best-effort */ }
+
+          // ── Build conversation history for multi-turn awareness ──
+          // Include up to 10 prior user/assistant exchanges (compact: only role + content, capped)
+          const MAX_HISTORY_TURNS = 6;
+          const MAX_HISTORY_CHAR_PER_MSG = 1500;
+          const conversationHistory: Array<{ role: string; content: string }> = [];
+          const priorMessages = messages.filter(m => 
+            (m.role === 'user' || m.role === 'assistant') && 
+            m.content && 
+            m.content.trim().length > 0 &&
+            !m.isStreaming
+          );
+          // Take last N messages (excluding the current user message which is already in promptForAI)
+          const historySlice = priorMessages.slice(-MAX_HISTORY_TURNS);
+          for (const m of historySlice) {
+            // For assistant messages, strip thinking/reasoning artifacts and keep only the explanation
+            const content = m.role === 'assistant'
+              ? (m.content || '').slice(0, MAX_HISTORY_CHAR_PER_MSG)
+              : (m.content || '').slice(0, MAX_HISTORY_CHAR_PER_MSG);
+            if (content.trim()) {
+              conversationHistory.push({ role: m.role, content });
+            }
+          }
+          // Append the current user prompt as the final message
+          conversationHistory.push({ role: 'user', content: promptForAI });
+
           response = await supabase.functions.invoke('ai-code-assistant', {
             body: {
-              messages: [{ role: 'user', content: promptForAI }],
+              messages: conversationHistory,
               // Always use template-react for React projects (even surgical edits)
               // to ensure the AI generates React/TSX output, not raw HTML.
               // The surgicalEdit flag tells the edge function to apply surgical constraints.
@@ -970,7 +918,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               mode: isSurgicalEdit && !isReactProject ? 'code' : 'template-react',
               currentCode: truncatedCode,
               editMode: !!currentCode,
+              debugMode: isDebugMode,
               surgicalEdit: isSurgicalEdit,
+              behavioralEdit: isBehavioralEdit,
+              targetFile: resolvedTargetFile || undefined,
+              componentBehaviorContext: behaviorContext || undefined,
               systemType,
               templateName,
               templateAction,
@@ -978,28 +930,64 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               systemsBuildContext: systemsBuildContext ?? undefined,
               siteElementsLibraryContext,
               attachments: _attachments.length > 0 ? _attachments : undefined,
-              // Send VFS files for surgical edit context
+              // Send VFS files for edit context (all edit types, not just surgical)
               vfsFiles: vfsPayload,
+              // Preview DOM snapshot for live context awareness
+              previewSnapshot,
+              // Preview diagnostics for Lane B session memory
+              previewDiagnostics: iframeErrors.length > 0
+                ? iframeErrors.slice(0, 3).map(e => `${e.type}: ${e.message}${e.file ? ` (${e.file}:${e.line})` : ''}`).join('\n')
+                : undefined,
+              // Gateway options from user config
+              gatewayOptions: gatewayConfig ? {
+                selectedModelId: gatewayConfig.selectedModelId,
+                reasoningEffort: gatewayConfig.reasoningEffort,
+                timeoutMs: gatewayConfig.timeoutMs,
+                autoModelSelection: gatewayConfig.autoModelSelection,
+                maxTokens: gatewayConfig.maxTokens,
+              } : undefined,
             },
           });
           
           // Check for retryable errors
           if (response.error) {
-            // Try to get the real error message from the edge function response body
-            const bodyError: string = (response.data as { error?: string } | null)?.error || '';
-            const errorMsg = bodyError || response.error.message || '';
+            // Extract the real error from the FunctionsHttpError context
+            let bodyError = '';
+            // First try response.data (sometimes populated even on error)
+            if (response.data && typeof response.data === 'object' && 'error' in response.data) {
+              bodyError = (response.data as { error?: string }).error || '';
+            }
+            // Then try reading the context (Response object) from FunctionsHttpError
+            if (!bodyError && response.error) {
+              try {
+                const ctx = (response.error as any)?.context;
+                if (ctx && typeof ctx?.json === 'function') {
+                  const body = await ctx.json().catch(() => null);
+                  if (body?.error) bodyError = body.error;
+                  else if (body?.details) bodyError = `Validation: ${JSON.stringify(body.details)}`;
+                } else if (ctx?.body && typeof ctx.body === 'string') {
+                  const parsed = JSON.parse(ctx.body);
+                  if (parsed?.error) bodyError = parsed.error;
+                }
+              } catch { /* swallow */ }
+            }
+            const errorMsg = bodyError || (response.error as Error).message || '';
+            const statusCode = (response.error as any)?.status;
+            console.warn(`[AIBuilderPanel] Edge function error (attempt ${attempt + 1}):`, errorMsg, 'status:', statusCode);
+            
             const isRetryable = errorMsg.includes('non-2xx') || 
                                errorMsg.includes('timeout') ||
                                errorMsg.includes('temporarily unavailable') ||
-                               errorMsg.includes('All AI providers failed');
+                               errorMsg.includes('All AI providers failed') ||
+                               statusCode === 503 ||
+                               statusCode === 504;
             
             if (isRetryable && attempt < MAX_RETRIES) {
-              console.log(`[AIBuilderPanel] Retryable error, attempt ${attempt + 1}:`, errorMsg);
-              lastError = response.error;
+              lastError = new Error(bodyError || errorMsg || 'Edge function error');
               continue;
             }
-            // Throw an error with the descriptive message from the edge function
-            throw new Error(bodyError || response.error.message || 'Edge function error');
+            // Throw with the descriptive message
+            throw new Error(bodyError || errorMsg || 'Edge function error');
           }
           
           // Success
@@ -1009,17 +997,35 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           if (attempt >= MAX_RETRIES) throw err;
         }
       }
+      clearTimeout(globalTimeout);
       
       if (!response || response.error) {
         throw lastError || new Error('AI service failed after retries');
       }
 
+      // ── Phase 4: Response Processing ──
+      advancePlanStep(taskPlan, 'generate', 'done');
+      advancePlanStep(taskPlan, 'patch', 'running');
+      const modelUsed = response.data?.modelUsed || gatewayConfig?.selectedModelId || 'unknown';
+      liveStep('validating', `Response received from ${modelUsed}`);
+
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
+      const responseMeta: Message['meta'] = {
+        actionType: response.data?.actionType,
+        modelUsed: response.data?.modelUsed,
+        filesDetected: response.data?.filesDetected,
+        warnings: response.data?.warnings,
+        requiresApproval: response.data?.requiresApproval,
+        removedFiles: response.data?.removedFiles,
+        reviewSummary: response.data?.reviewSummary,
+      };
 
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
       
+      // ── Phase 5: Code Extraction ──
+      liveStep('validating', 'Extracting code from response...');
       // ====== ROBUST CODE EXTRACTION (React/TSX Mode) ======
       // Extract React component code from AI response
       let generatedCode: string | null = null;
@@ -1142,13 +1148,40 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               generatedCode = `import React, { useEffect } from 'react';\n\nconst CSS_CONTENT = ${cssJsonStr};\n\nexport default function App() {\n  useEffect(() => {\n    const s = document.createElement('style');\n    s.textContent = CSS_CONTENT;\n    document.head.appendChild(s);\n    return () => { s.remove(); };\n  }, []);\n\n  return (\n    <div style={{ minHeight: '100vh' }}><p>Styles applied.</p></div>\n  );\n}`;
               console.log('[AIBuilderPanel] Extracted CSS from fence, wrapped in React component');
             } else if (hasHtmlStructure) {
-              // Reject raw HTML — AI should output React/TSX
-              console.warn('[AIBuilderPanel] Rejected HTML output from fence — expecting React/TSX');
+              generatedCode = wrapHtmlInReactComponent(bestBlock);
+              console.log('[AIBuilderPanel] Extracted HTML from fence, wrapped in React component');
             }
           }
         }
 
-        // Strategy 4 (surgical edit fallback): Extract JSON {"files": {...}} from prose
+        // Strategy 4: Raw HTML mixed with reasoning text (e.g. "I will generate...<!DOCTYPE html>...")
+        if (!multiFileOutput && !generatedCode) {
+          const rawHtml = extractRawHtmlFromMixed(trimmed);
+          if (rawHtml) {
+            console.log('[AIBuilderPanel] Extracted raw HTML from mixed content, wrapping in React component');
+            generatedCode = wrapHtmlInReactComponent(rawHtml);
+            // Extract explanation from the text before the HTML
+            const doctypeIdx = trimmed.indexOf('<!DOCTYPE');
+            const htmlIdx = doctypeIdx >= 0 ? doctypeIdx : trimmed.indexOf('<html');
+            if (htmlIdx > 0) {
+              explanationText = trimmed.slice(0, htmlIdx).trim();
+            }
+            if (!explanationText) {
+              explanationText = '✅ HTML site generated and wrapped for preview.';
+            }
+          }
+        }
+
+        // Strategy 5: Content is purely raw HTML (starts with <!DOCTYPE or <html)
+        if (!multiFileOutput && !generatedCode) {
+          if (/^\s*<!DOCTYPE/i.test(trimmed) || /^\s*<html[\s>]/i.test(trimmed)) {
+            console.log('[AIBuilderPanel] Content is raw HTML, wrapping in React component');
+            generatedCode = wrapHtmlInReactComponent(trimmed);
+            explanationText = '✅ HTML site generated and wrapped for preview.';
+          }
+        }
+
+        // Strategy 6 (surgical edit fallback): Extract JSON {"files": {...}} from prose
         // AI may return: "Here's the change:\n```json\n{\"files\": {...}}\n```\nI changed X"
         if (!multiFileOutput && !generatedCode && isSurgicalEdit) {
           // Try to find {"files": embedded anywhere in the content
@@ -1180,6 +1213,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // Handle multi-file output — prefer orchestrator, fall back to legacy callback
       if (multiFileOutput) {
+        liveStep('validating', `Multi-file output: ${Object.keys(multiFileOutput).length} files detected`, Object.keys(multiFileOutput).join(', '));
         console.log('[AIBuilderPanel] Multi-file output detected:', Object.keys(multiFileOutput));
         
         // Normalize paths, filter config files, and strip module.exports from component content
@@ -1198,24 +1232,48 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           normalizedFiles[normalizedPath] = fileContent;
         }
-        
-        if (onApplyToVFS) {
-          console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
-          onApplyToVFS(normalizedFiles);
-          toast.success('✅ Multi-file project applied with dependencies');
-        } else if (onFilesPatch) {
-          onFilesPatch(normalizedFiles);
-          toast.success('✅ Multi-file project applied to VFS');
+
+        // Check if approval is recommended before auto-applying
+        const shouldBlock = responseMeta?.requiresApproval &&
+          responseMeta.warnings?.some(w => w.severity === 'error');
+
+        // Client-side scope enforcement for scoped edits
+        const isScopedTask = isSurgicalEdit || isBehavioralEdit;
+        const scopeBlockReason = isScopedTask ? getScopedEditAutoApplyBlockReason({
+          files: normalizedFiles,
+          resolvedTargetFile,
+          existingFileKeys: vfsFiles ? Object.keys(vfsFiles) : [],
+        }) : null;
+
+        if (scopeBlockReason) {
+          console.warn('[AIBuilderPanel] SCOPE BLOCK:', scopeBlockReason);
+          toast.warning(`⚠️ Edit blocked: ${scopeBlockReason}`);
+        } else if (shouldBlock) {
+          console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
+          toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
+          // Store files for manual apply later (user can use View Edits)
         } else {
-          console.warn('[AIBuilderPanel] No VFS callback available for multi-file output!');
+          if (onApplyToVFS) {
+            console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
+            vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
+            onApplyToVFS(normalizedFiles);
+            liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
+            const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
+            toast.success(`✅ Multi-file project applied${approvalNote}`);
+          } else if (onFilesPatch) {
+            onFilesPatch(normalizedFiles);
+            toast.success('✅ Multi-file project applied to VFS');
+          } else {
+            console.warn('[AIBuilderPanel] No VFS callback available for multi-file output!');
+          }
         }
       }
 
-      // SAFETY NET 1: If generatedCode is raw HTML, reject it — AI must output React/TSX
+      // SAFETY NET 1: If generatedCode is still raw HTML (not wrapped in React), wrap it now
       if (generatedCode && (/^\s*<!DOCTYPE/i.test(generatedCode) || /^\s*<html[\s>]/i.test(generatedCode))) {
-        console.warn('[AIBuilderPanel] Rejected: AI returned raw HTML instead of React/TSX');
-        generatedCode = null;
-        explanationText = '⚠️ AI returned raw HTML instead of React/TypeScript. Please try again — all output must be React components.';
+        console.warn('[AIBuilderPanel] Safety net: wrapping raw HTML that escaped extraction strategies');
+        generatedCode = wrapHtmlInReactComponent(generatedCode);
       }
 
       // SAFETY NET 2: If generatedCode is raw CSS (:root, body {, @import, etc.), wrap in React component
@@ -1282,6 +1340,15 @@ export default function App() {
         });
       }
 
+      // Mark all remaining plan steps as done
+      advancePlanStep(taskPlan, 'patch', 'done');
+      advancePlanStep(taskPlan, 'bind_intent', 'done');
+      advancePlanStep(taskPlan, 'create_route', 'done');
+      advancePlanStep(taskPlan, 'install_workflow', 'done');
+      advancePlanStep(taskPlan, 'enable_capability', 'done');
+      advancePlanStep(taskPlan, 'update_registry', 'done');
+      advancePlanStep(taskPlan, 'refresh_preview', 'running');
+
       // Update message — show ONLY the explanation text, NOT raw code
       setMessages(prev => prev.map(m =>
         m.id === streamingId
@@ -1290,6 +1357,8 @@ export default function App() {
               content: explanationText || aiContent,
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
+              meta: responseMeta,
+              taskPlan: { ...taskPlan },
               // DO NOT set `code` — we auto-apply instead of showing "Apply" buttons
               edits: edits.length > 0 ? edits : undefined,
               isStreaming: false,
@@ -1308,7 +1377,8 @@ export default function App() {
           generatedCode.includes('function ') ||
           generatedCode.includes('dangerouslySetInnerHTML') ||
           generatedCode.includes('return (') ||
-          generatedCode.includes('className=');
+          /^\s*<!DOCTYPE/i.test(generatedCode) ||
+          /^\s*<html[\s>]/i.test(generatedCode);
         
         const looksLikeProse = /\b(I will|I need to|I'll|Let me|inspired|simplified|Here's my|I'm going to)\b/i.test(generatedCode.slice(0, 300));
         
@@ -1319,13 +1389,32 @@ export default function App() {
         }
 
         if (generatedCode) {
-          if (onApplyToVFS && !multiFileOutput) {
+          // Check approval gate for single-file too
+          const hasBlockingWarning = responseMeta?.requiresApproval &&
+            responseMeta.warnings?.some(w => w.severity === 'error');
+
+          if (hasBlockingWarning) {
+            console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
+            toast.warning('⚠️ Patch flagged for review — check warnings');
+          } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
+            vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
             onApplyToVFS({ [singleFilePath]: generatedCode });
-            toast.success(isSurgicalEdit ? '✅ Edit applied with deps' : '✅ Code applied with dependencies');
+            advancePlanStep(taskPlan, 'refresh_preview', 'done');
+            advancePlanStep(taskPlan, 'validate', 'done');
+            advancePlanStep(taskPlan, 'report', 'done');
+            liveStep('complete', `✅ Applied to ${singleFilePath}`);
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
+            const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
+            toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
           } else if (onCodeGenerated) {
             onCodeGenerated(generatedCode);
             toast.success(isSurgicalEdit ? '✅ Edit applied to preview' : '✅ Code applied to preview');
+          }
+
+          // Notify about removed/blocked files from review
+          if (responseMeta?.removedFiles && responseMeta.removedFiles.length > 0) {
+            toast.info(`🛡️ ${responseMeta.removedFiles.length} file(s) blocked by safety review`);
           }
         }
       }
@@ -1333,48 +1422,104 @@ export default function App() {
     } catch (error) {
       console.error('[AIBuilderPanel] Error:', error);
       
-      // Extract more descriptive error message
+      // ── Robust error extraction ──
+      // supabase.functions.invoke throws FunctionsHttpError whose `.context`
+      // is the raw Response object. We need to read it properly.
       let errorMessage = 'Unknown error';
+
+      // Helper: try to pull a message from a FunctionsHttpError context
+      const extractFromContext = async (ctx: unknown): Promise<string | null> => {
+        try {
+          // ctx may be a Response object (has .json()) or a plain object with .body
+          if (ctx && typeof ctx === 'object') {
+            if (typeof (ctx as Response).json === 'function') {
+              const body = await (ctx as Response).json();
+              if (body?.error) return body.error;
+              if (body?.details) return `Validation error: ${JSON.stringify(body.details)}`;
+            } else if ('body' in ctx) {
+              const raw = (ctx as { body?: string }).body;
+              if (raw) {
+                const parsed = JSON.parse(typeof raw === 'string' ? raw : JSON.stringify(raw));
+                if (parsed?.error) return parsed.error;
+                if (parsed?.details) return `Validation error: ${JSON.stringify(parsed.details)}`;
+              }
+            }
+          }
+        } catch { /* swallow parse errors */ }
+        return null;
+      };
+
       if (error instanceof Error) {
         errorMessage = error.message;
         
-        // Parse edge function errors for better messaging
+        // Try to extract the real error from FunctionsHttpError context
+        const ctx = (error as any)?.context;
+        if (ctx) {
+          const extracted = await extractFromContext(ctx);
+          if (extracted) {
+            errorMessage = extracted;
+          }
+        }
+
+        // Classify known error patterns for user-friendly messages
         if (errorMessage.includes('All AI providers failed') || errorMessage.includes('All AI models failed')) {
-          errorMessage = 'AI service unavailable — no API key is working. Please check your LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in Supabase secrets.';
-        } else if (errorMessage.includes('non-2xx status code')) {
-          errorMessage = 'AI service temporarily unavailable. Please try again in a moment.';
-        } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit')) {
+          errorMessage = 'AI service unavailable — all models are busy. Please try again in a moment.';
+        } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
           errorMessage = 'Too many requests. Please wait a moment and try again.';
         } else if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
-          errorMessage = 'Request timed out. Try a shorter prompt or try again.';
+          errorMessage = 'Request timed out. Try a shorter or simpler prompt.';
         } else if (errorMessage.includes('Payment required') || errorMessage.includes('402')) {
           errorMessage = 'AI credits needed. Please check your subscription or API billing.';
         } else if (errorMessage.includes('401') || errorMessage.includes('authentication')) {
-          errorMessage = 'AI API key is invalid or expired. Please update your API key in Supabase secrets.';
+          errorMessage = 'AI API key is invalid or expired. Please update your API key.';
         } else if (errorMessage.includes('not available') || errorMessage.includes('LOVABLE_API_KEY')) {
-          errorMessage = 'AI service not configured. Please set OPENAI_API_KEY or LOVABLE_API_KEY in your Supabase project secrets.';
+          errorMessage = 'AI service not configured. Please set your API key in project secrets.';
+        } else if (errorMessage.includes('Invalid request body')) {
+          errorMessage = 'Request was too large or malformed. Try a shorter prompt or fewer attached files.';
+        } else if (errorMessage.includes('non-2xx status code') && !ctx) {
+          // Fallback only if we couldn't extract a real message from context
+          errorMessage = 'AI service returned an error. Try simplifying your request or try again in a moment.';
         }
       } else if (typeof error === 'object' && error !== null) {
-        // Handle Supabase FunctionsHttpError
-        const err = error as { message?: string; context?: { body?: string } };
+        const err = error as { message?: string; context?: unknown };
         errorMessage = err.message || 'Edge function error';
-        if (err.context?.body) {
-          try {
-            const body = JSON.parse(err.context.body);
-            if (body.error) errorMessage = body.error;
-            if (body.details) errorMessage += ` (${JSON.stringify(body.details)})`;
-          } catch {
-            // Ignore parse errors
-          }
+        if (err.context) {
+          const extracted = await extractFromContext(err.context);
+          if (extracted) errorMessage = extracted;
         }
       }
       
-      setMessages(prev => [...prev, {
-        id: generateId(),
-        role: 'assistant',
-        content: `Sorry, I encountered an error: ${errorMessage}. Please try again or simplify your request.`,
-        timestamp: new Date(),
-      }]);
+      const finalErrorContent = `Sorry, I encountered an error: ${errorMessage}. Please try again or simplify your request.`;
+
+      setMessages(prev => {
+        if (streamingId && prev.some(m => m.id === streamingId)) {
+          const errorStep: ThinkingStep = {
+            id: generateId(),
+            type: 'error',
+            message: 'Request failed',
+            details: errorMessage,
+            timestamp: new Date(),
+          };
+
+          return prev.map(m =>
+            m.id === streamingId
+              ? {
+                  ...m,
+                  content: finalErrorContent,
+                  thinking: [...(m.thinking ?? []), errorStep],
+                  isStreaming: false,
+                }
+              : m
+          );
+        }
+
+        return [...prev, {
+          id: generateId(),
+          role: 'assistant',
+          content: finalErrorContent,
+          timestamp: new Date(),
+        }];
+      });
     } finally {
       setIsLoading(false);
     }
@@ -1397,29 +1542,165 @@ export default function App() {
     setMessages(prev => [...prev, userMessage]);
 
     try {
+      // Build a compact VFS snapshot for debug context (max 5 files, truncated)
+      const debugVfs: Record<string, string> = {};
+      if (vfsFiles) {
+        // Prioritize the error file if available
+        const errorFile = error.file;
+        const entries = Object.entries(vfsFiles);
+        const prioritized = errorFile
+          ? [
+              ...entries.filter(([p]) => p.includes(errorFile)),
+              ...entries.filter(([p]) => !p.includes(errorFile)),
+            ]
+          : entries;
+        for (const [path, content] of prioritized.slice(0, 5)) {
+          debugVfs[path] = content.slice(0, 20_000);
+        }
+      }
+
+      const diagnostics = `${error.type}: ${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}${error.file ? `\nFile: ${error.file}:${error.line}:${error.column}` : ''}`;
+
+      const hasVfsContext = Object.keys(debugVfs).length > 0;
+      // Build conversation history for debug context too
+      const debugHistory: Array<{ role: string; content: string }> = [];
+      const recentMsgs = messages.filter(m => 
+        (m.role === 'user' || m.role === 'assistant') && m.content?.trim() && !m.isStreaming
+      ).slice(-6);
+      for (const m of recentMsgs) {
+        debugHistory.push({ role: m.role, content: (m.content || '').slice(0, 1500) });
+      }
+      debugHistory.push({ role: 'user', content: errorPrompt });
+
       const response = await supabase.functions.invoke('ai-code-assistant', {
         body: {
-          messages: [{ role: 'user', content: errorPrompt }],
-          mode: 'debug',
-          currentCode,
+          messages: debugHistory,
+          mode: 'code',
+          currentCode: hasVfsContext ? undefined : currentCode,
           editMode: true,
+          debugMode: true,
           systemType,
           templateName,
           systemsBuildContext: systemsBuildContext ?? undefined,
+          previewDiagnostics: diagnostics,
+          vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
+          gatewayOptions: gatewayConfig ? {
+            selectedModelId: gatewayConfig.selectedModelId,
+            reasoningEffort: gatewayConfig.reasoningEffort,
+            timeoutMs: gatewayConfig.timeoutMs,
+            autoModelSelection: gatewayConfig.autoModelSelection,
+            maxTokens: gatewayConfig.maxTokens,
+          } : undefined,
         },
       });
 
-      if (response.error) throw response.error;
+      // Handle non-2xx: response.error is set by supabase-js
+      if (response.error) {
+        let errorMsg = 'AI service returned an error';
+        const errBody = response.error;
+        // Try reading FunctionsHttpError context (Response object)
+        try {
+          const ctx = (errBody as any)?.context;
+          if (ctx && typeof ctx?.json === 'function') {
+            const body = await ctx.json().catch(() => null);
+            if (body?.error) errorMsg = body.error;
+            else if (body?.message) errorMsg = body.message;
+          } else if (ctx?.body && typeof ctx.body === 'string') {
+            const parsed = JSON.parse(ctx.body);
+            errorMsg = parsed.error || parsed.message || errorMsg;
+          }
+        } catch { /* swallow */ }
+        // Fallback to .message
+        if (errorMsg === 'AI service returned an error' && (errBody as Error)?.message) {
+          const msg = (errBody as Error).message;
+          if (msg.includes('non-2xx')) {
+            errorMsg = 'AI service temporarily unavailable. Please try again.';
+          } else {
+            errorMsg = msg;
+          }
+        }
+        throw new Error(errorMsg);
+      }
 
-      const fix = response.data?.code || response.data?.response;
+      // Extract fix content — edge function returns in 'content' field (JSON or code)
+      const rawContent = response.data?.content || response.data?.code || response.data?.response || '';
       
+      // Extract metadata for debug fix too
+      const debugMeta: Message['meta'] = {
+        actionType: response.data?.actionType || 'debug',
+        modelUsed: response.data?.modelUsed,
+        filesDetected: response.data?.filesDetected,
+        warnings: response.data?.warnings,
+        requiresApproval: response.data?.requiresApproval,
+        removedFiles: response.data?.removedFiles,
+        reviewSummary: response.data?.reviewSummary,
+      };
+
+      // Try to extract code from the content (same strategies as main flow)
+      let fixFiles: Record<string, string> | null = null;
+      let fixCode: string | null = null;
+      let fixExplanation = '';
+
+      if (rawContent) {
+        // Strategy 1: JSON multi-file output
+        try {
+          const jsonStr = rawContent.trim().replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+          const parsed = JSON.parse(jsonStr);
+          if (parsed.files && typeof parsed.files === 'object') {
+            fixFiles = parsed.files;
+            fixExplanation = parsed.explanation || '✅ Debug fix applied.';
+          }
+        } catch { /* not JSON */ }
+
+        // Strategy 2: Code fence extraction
+        if (!fixFiles) {
+          const fenceMatch = rawContent.match(/```(?:tsx|jsx|ts|js)?\s*\n([\s\S]*?)```/);
+          if (fenceMatch) {
+            fixCode = fenceMatch[1].trim();
+            fixExplanation = rawContent.replace(/```[\s\S]*?```/g, '').trim() || '✅ Fix applied.';
+          }
+        }
+
+        // Strategy 3: Direct code (starts with import/export)
+        if (!fixFiles && !fixCode && /^(?:import |export )/.test(rawContent.trim())) {
+          fixCode = rawContent.trim();
+          fixExplanation = '✅ Fix applied.';
+        }
+
+        // Fallback: treat entire content as explanation
+        if (!fixFiles && !fixCode) {
+          fixExplanation = rawContent;
+        }
+      }
+
+      // Auto-apply fix to VFS
+      if (onApplyToVFS) {
+        if (fixFiles) {
+          const normalized: Record<string, string> = {};
+          for (const [p, c] of Object.entries(fixFiles)) {
+            normalized[p.startsWith('/') ? p : `/${p}`] = c;
+          }
+          vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
+          onApplyToVFS(normalized);
+          vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
+          toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
+        } else if (fixCode) {
+          const targetPath = error.file ? (error.file.startsWith('/') ? error.file : `/${error.file}`) : '/src/App.tsx';
+          vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
+          onApplyToVFS({ [targetPath]: fixCode });
+          vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
+          toast.success('✅ Debug fix applied');
+        }
+      }
+
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: response.data?.response || '✅ Fix generated! Review and apply the changes below.',
+        content: fixExplanation || '✅ Fix applied! Check the preview for changes.',
         timestamp: new Date(),
-        code: fix,
+        code: fixCode || undefined,
         error,
+        meta: debugMeta,
         thinking: [
           { id: '1', type: 'analyzing', message: 'Analyzing error...', timestamp: new Date() },
           { id: '2', type: 'planning', message: 'Determining fix strategy...', timestamp: new Date() },
@@ -1430,10 +1711,11 @@ export default function App() {
       }]);
 
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
       setMessages(prev => [...prev, {
         id: generateId(),
         role: 'assistant',
-        content: `Failed to auto-fix: ${err instanceof Error ? err.message : 'Unknown error'}. Try describing the issue manually.`,
+        content: `⚠️ Auto-fix failed: ${errMsg}\n\nTry describing the issue manually in the Code tab — include what you expected vs. what happened.`,
         timestamp: new Date(),
       }]);
     } finally {
@@ -1452,31 +1734,24 @@ export default function App() {
     }
   };
 
-  // Quick prompts for code tab
-  const quickPrompts = [
-    'Add a hero section',
-    'Make it mobile responsive',
-    'Add smooth animations',
-    'Wire up the contact form',
-  ];
+
+  // Whether to show conversational welcome (no real messages yet)
+  const hasConversation = messages.some(m => m.role === 'user');
 
   return (
     <div className={cn(
-      "flex flex-col h-full bg-[#060a14] border-r border-blue-500/20",
-      "shadow-[inset_0_0_30px_rgba(59,130,246,0.03)]",
+      "flex flex-col h-full bg-background border-r border-border",
       className
     )}>
-      {/* Retro Header with Blue Glow */}
-      <div className="flex items-center gap-2 px-3 py-3 border-b border-blue-500/30 bg-[#0a0f1e]">
-        <div className="p-1.5 rounded-lg bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-          <Sparkles className="w-4 h-4 text-white" />
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border bg-card/50">
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 border border-border flex items-center justify-center shadow-sm">
+          <Sparkles className="w-4 h-4 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-bold text-blue-400 drop-shadow-[0_0_5px_rgba(59,130,246,0.5)]">
-            🤖 AI Builder
-          </h2>
-          <p className="text-[10px] text-blue-300/50 truncate font-mono">
-            {templateName || 'New Project'} • {systemType || 'General'}
+          <h2 className="text-sm font-semibold text-foreground">AI Builder</h2>
+          <p className="text-[11px] text-muted-foreground truncate">
+            {templateName || 'New Project'}{systemType ? ` · ${systemType}` : ''}
           </p>
         </div>
         {onClose && (
@@ -1484,191 +1759,98 @@ export default function App() {
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="h-7 w-7 text-blue-400/50 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all duration-200"
-            title="Close AI Panel"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-lg"
+            title="Close"
           >
             <ChevronLeft className="w-4 h-4" />
           </Button>
         )}
       </div>
 
-      {/* Retro Tabs with Glow Effects */}
+      {/* Tab bar */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'code' | 'debug')} className="flex-1 flex flex-col min-h-0">
-        <TabsList className="w-full grid grid-cols-2 rounded-none h-10 bg-[#070b16] border-b border-blue-500/20">
+        <TabsList className="w-full grid grid-cols-2 rounded-none h-9 bg-card/30 border-b border-border px-1">
           <TabsTrigger
             value="code"
-            className="text-xs gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-blue-400 data-[state=active]:text-blue-400 data-[state=active]:bg-blue-500/10 data-[state=active]:shadow-[0_0_10px_rgba(59,130,246,0.3)] text-blue-400/50 hover:text-blue-400/70 transition-all duration-200"
+            className="text-xs gap-1.5 rounded-lg h-7 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground transition-all"
           >
-            <Code2 className="w-3.5 h-3.5" />
-            Code
+            <MessageSquare className="w-3.5 h-3.5" />
+            Chat
           </TabsTrigger>
           <TabsTrigger
             value="debug"
-            className="text-xs gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-amber-400 data-[state=active]:text-amber-400 data-[state=active]:bg-amber-500/10 data-[state=active]:shadow-[0_0_10px_rgba(245,158,11,0.3)] text-amber-400/50 hover:text-amber-400/70 transition-all duration-200"
+            className="text-xs gap-1.5 rounded-lg h-7 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground transition-all"
           >
             <Bug className="w-3.5 h-3.5" />
             Debug
             {iframeErrors.length > 0 && (
-              <Badge variant="destructive" className="ml-1 h-4 w-4 p-0 text-[10px] flex items-center justify-center animate-pulse">
+              <Badge variant="destructive" className="ml-1 h-4 min-w-[16px] px-1 text-[10px] flex items-center justify-center">
                 {iframeErrors.length}
               </Badge>
             )}
           </TabsTrigger>
         </TabsList>
 
-        {/* Code Tab */}
+        {/* Chat Tab */}
         <TabsContent value="code" className="flex-1 flex flex-col m-0 min-h-0 data-[state=inactive]:hidden">
-          {/* Messages */}
+          {/* Messages or Welcome */}
           <ScrollArea className="flex-1" ref={scrollRef}>
             <div className="py-3 px-3">
-              {messages.map((message) => (
-                <MessageItem
-                  key={message.id}
-                  message={message}
-                  onViewEdits={handleViewEdits}
-                  onRetryError={handleFixError}
+              {!hasConversation ? (
+                <AIConversationWelcome
+                  onSelectPrompt={(prompt) => {
+                    pendingPromptRef.current = prompt;
+                    setInput(prompt);
+                  }}
+                  templateName={templateName}
                 />
-              ))}
-              {isLoading && messages[messages.length - 1]?.role === 'user' && (
-                <div className="flex items-center gap-2 text-blue-400/50 text-sm py-2 font-mono">
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-                  <span>▸ Processing...</span>
+              ) : (
+                messages.map((msg) => (
+                  <AIConversationMessage
+                    key={msg.id}
+                    message={msg}
+                    onViewEdits={handleViewEdits}
+                    onRetryError={handleFixError}
+                  />
+                ))
+              )}
+              {isLoading && messages[messages.length - 1]?.role === 'user' && !messages.some(m => m.isStreaming) && (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span>Processing...</span>
                 </div>
               )}
             </div>
           </ScrollArea>
 
-          {/* Quick Prompts with Retro Style */}
-          {messages.length <= 1 && (
-            <div className="flex-shrink-0 px-3 pb-2">
-              <p className="text-[10px] text-blue-400/40 mb-1.5 font-mono">▸ Quick start:</p>
-              <div className="flex flex-wrap gap-1">
-                {quickPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => setInput(prompt)}
-                    className="text-[10px] px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 rounded border border-blue-500/20 hover:border-blue-500/40 text-blue-400/70 hover:text-blue-400 transition-all duration-200 hover:shadow-[0_0_8px_rgba(59,130,246,0.2)]"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* AI Gateway Options */}
+          <AIGatewayOptions
+            config={gatewayConfig}
+            onChange={setGatewayConfig}
+            className="flex-shrink-0 border-t border-border"
+          />
 
-          {/* Input with Retro Styling + File Drop */}
-          <div className="flex-shrink-0 mt-auto p-3 border-t border-blue-500/20 bg-[#0a0f1e]">
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*,.txt,.md,.ts,.tsx,.js,.jsx,.css,.html,.json,.sql,.py"
-              className="hidden"
-              onChange={async (e) => { if (e.target.files?.length) { await addFiles(e.target.files); e.target.value = ''; } }}
-            />
-
-            {/* Attached file chips */}
-            {droppedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {droppedFiles.map((f) => (
-                  <div
-                    key={f.id}
-                    className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/15 border border-blue-500/30 rounded-full text-[10px] text-blue-300 max-w-[140px]"
-                    title={f.name}
-                  >
-                    {f.type === 'image' ? (
-                      f.preview
-                        ? <img src={f.preview} alt={f.name} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
-                        : <ImageIcon className="w-3 h-3 flex-shrink-0" />
-                    ) : f.type === 'code' ? (
-                      <FileCode2 className="w-3 h-3 flex-shrink-0" />
-                    ) : (
-                      <FileText className="w-3 h-3 flex-shrink-0" />
-                    )}
-                    <span className="truncate">{f.name}</span>
-                    <button
-                      onClick={() => removeFile(f.id)}
-                      className="ml-0.5 text-blue-400/50 hover:text-red-400 transition-colors flex-shrink-0"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Drop zone + textarea */}
-            <div
-              className={cn(
-                'relative rounded-md transition-all duration-200',
-                isDragging && 'ring-2 ring-blue-400 ring-offset-1 ring-offset-[#0a0f1e]'
-              )}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              {isDragging && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-blue-500/20 border-2 border-dashed border-blue-400 pointer-events-none">
-                  <div className="flex flex-col items-center gap-1">
-                    <Paperclip className="w-5 h-5 text-blue-400" />
-                    <span className="text-[11px] text-blue-300 font-mono">Drop files here</span>
-                  </div>
-                </div>
-              )}
-              <Textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder={droppedFiles.length > 0 ? 'Add instructions for the attached files (optional)...' : 'Describe what you want to build, or drop files here...'}
-                className="min-h-[60px] max-h-[120px] bg-black/40 border-blue-500/30 text-sm resize-none text-blue-100 placeholder:text-blue-400/30 focus:border-blue-400 focus:ring-blue-400/20"
-                disabled={isLoading}
-              />
-            </div>
-
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2">
-                {/* Attach file button */}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading || droppedFiles.length >= 5}
-                  className="flex items-center gap-1 text-[10px] text-blue-400/50 hover:text-blue-400 disabled:opacity-30 transition-colors"
-                  title="Attach files (images, code, text)"
-                >
-                  <Paperclip className="w-3 h-3" />
-                  {droppedFiles.length > 0 ? `${droppedFiles.length}/5` : 'Attach'}
-                </button>
-                <span className="text-[10px] text-blue-400/20 font-mono">|</span>
-                <span className="text-[10px] text-blue-400/30 font-mono">Enter → send</span>
-              </div>
-              <Button
-                size="sm"
-                onClick={handleSend}
-                disabled={(!input.trim() && droppedFiles.length === 0) || isLoading}
-                className="gap-1.5 bg-blue-500 hover:bg-blue-400 text-white font-bold shadow-[0_0_15px_rgba(59,130,246,0.4)] hover:shadow-[0_0_20px_rgba(59,130,246,0.6)] transition-all duration-200"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Send className="w-3 h-3" />
-                )}
-                Send
-              </Button>
-            </div>
-          </div>
+          {/* Input */}
+          <AIConversationInput
+            input={input}
+            onInputChange={setInput}
+            onSend={handleSend}
+            isLoading={isLoading}
+            droppedFiles={droppedFiles}
+            onAddFiles={addFiles}
+            onRemoveFile={removeFile}
+            previewRef={previewRef}
+          />
         </TabsContent>
 
         {/* Debug Tab */}
         <TabsContent value="debug" className="flex-1 flex flex-col m-0 min-h-0 data-[state=inactive]:hidden">
-          <DebugPanel
-            errors={iframeErrors}
+          <DebugAgentPanel
+            iframeErrors={iframeErrors}
             onFixError={handleFixError}
             onClearErrors={onClearErrors}
+            onApplyPatch={onApplyToVFS}
+            vfsFiles={vfsFiles}
             isFixing={isFixing}
           />
         </TabsContent>

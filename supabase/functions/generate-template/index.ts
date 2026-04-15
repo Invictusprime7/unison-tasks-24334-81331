@@ -315,7 +315,7 @@ OUTPUT: Return ONLY the complete, self-contained HTML document. No markdown, no 
 
     const userPrompt = `Generate a PREMIUM, PRODUCTION-READY website template for "${templateName}" with a ${aesthetic} aesthetic, inspired by ${source}.
 
-This must be a COMPLETE, MULTI-SECTION website (minimum 8 sections) that looks like it was designed by a top agency. CRITICAL: Generate EXACTLY ONE hero section — never multiple hero variants or hero alternatives. Include:
+This must be a COMPLETE, MULTI-SECTION website (minimum 8 sections) that looks like it was designed by a top agency. Include:
 - Dark luxury hero (min-h-screen) with real Unsplash background, gradient overlay, decorative blur shapes, badge pill, gradient text accent, and dual CTAs
 - Professional sticky navigation with transparent-to-solid scroll effect and accent CTA button
 - Category filter pills (rounded-full) above service/feature cards

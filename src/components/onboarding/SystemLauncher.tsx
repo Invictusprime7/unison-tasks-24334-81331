@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -9,411 +9,720 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowRight,
   ArrowLeft,
   Check,
-  Zap,
-  Layout,
-  Eye,
-  Database,
-  Workflow,
-  Shield,
   Sparkles,
   Loader2,
-  Trash2,
+  Eye,
 } from "lucide-react";
 import {
   businessSystems,
   type BusinessSystemType,
-  type LayoutTemplate,
   type LayoutCategory,
 } from "@/data/templates/types";
-import { getTemplatesByCategory, getTemplateReactCode, getTemplateReactCodeWithCSS } from "@/data/templates";
-import { getCompositionReactCode, getCompositionMeta, getCompositionContentContext } from "@/utils/compositionReference";
-import {
-  getTemplateManifest,
-  getDefaultManifestForSystem,
-} from "@/data/templates/manifest";
+import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { AICodeAssistant } from "@/components/creatives/AICodeAssistant";
-import { buildPageStructureContext } from "@/utils/pageStructureContext";
+import {
+  getIndustryForCategory,
+  getAllowedIntents,
+} from "@/contracts";
+import {
+  planSiteTopology,
+  type GeneratedSitePlan,
+} from "@/contracts/siteTopologyPlanner";
 import {
   generateDesignVariation,
   randomFontPairing,
 } from "@/utils/designVariation";
-import { THEME_PRESETS, type ThemePreset } from "./themePresets";
-import {
-  createBlueprintFromIndustry,
-  compileContract,
-  getIndustryForCategory,
-  getAllowedIntents,
-} from "@/contracts";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
+import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
+import { createRuntimeManifest, type LauncherHandoff } from "@/types/runtimeManifest";
+import {
+  getCompositionContentContext,
+  getCompositionMeta,
+} from "@/utils/compositionReference";
+import {
+  getAllReferences,
+  getReferencesForIndustry,
+  INDUSTRY_CONTEXTS,
+  type IndustryTag,
+  type PremiumSectionReference,
+} from "@/sections/references";
+import { executeCanonicalPipeline, type CanonicalPipelineResult } from "@/services/canonicalPipeline";
+import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
-// Component
+// Types
 // ============================================================================
+
+type WizardStep = "industry" | "questions" | "templates" | "aesthetic";
 
 interface SystemLauncherProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-type WizardStep = "industry" | "templates" | "theme";
+const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [
+  { key: "industry", num: 1, label: "Industry", sublabel: "What you do" },
+  { key: "questions", num: 2, label: "Goals", sublabel: "Your needs" },
+  { key: "templates", num: 3, label: "Templates", sublabel: "Pick a base" },
+  { key: "aesthetic", num: 4, label: "Launch", sublabel: "Name & style" },
+];
 
-const STEP_META: Record<WizardStep, { num: number; label: string }> = {
-  industry: { num: 1, label: "Industry" },
-  templates: { num: 2, label: "Template" },
-  theme: { num: 3, label: "Theme" },
+// ============================================================================
+// Wizard Questions Configuration
+// ============================================================================
+
+type PrimaryGoal = "collect_leads" | "book_appointments" | "sell_offers" | "showcase_work" | "drive_calls" | "grow_email_list";
+type CustomerNeed = "request_quote" | "book_service" | "buy_offer" | "fill_form" | "browse_services";
+type PageChoice = "about" | "services" | "pricing" | "gallery" | "faq" | "contact" | "booking" | "checkout" | "blog";
+
+const PRIMARY_GOALS: { id: PrimaryGoal; label: string; icon: string; description: string }[] = [
+  { id: "collect_leads", label: "Collect Leads", icon: "📩", description: "Capture contact info and grow your pipeline" },
+  { id: "book_appointments", label: "Book Appointments", icon: "📅", description: "Let clients schedule sessions online" },
+  { id: "sell_offers", label: "Sell Offers", icon: "💰", description: "Sell products, packages, or services" },
+  { id: "showcase_work", label: "Showcase Work", icon: "🎨", description: "Display your portfolio and past projects" },
+  { id: "drive_calls", label: "Drive Calls", icon: "📞", description: "Get prospects to call or message you" },
+  { id: "grow_email_list", label: "Grow Email List", icon: "📧", description: "Build a subscriber list for marketing" },
+];
+
+const CUSTOMER_NEEDS: { id: CustomerNeed; label: string; icon: string }[] = [
+  { id: "request_quote", label: "Request a quote", icon: "📋" },
+  { id: "book_service", label: "Book a service", icon: "🗓️" },
+  { id: "buy_offer", label: "Buy an offer/package", icon: "🛒" },
+  { id: "fill_form", label: "Fill out a form", icon: "📝" },
+  { id: "browse_services", label: "Browse services/products", icon: "🔍" },
+];
+
+const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
+  { id: "about", label: "About", icon: "ℹ️" },
+  { id: "services", label: "Services", icon: "⚙️" },
+  { id: "pricing", label: "Pricing", icon: "💲" },
+  { id: "gallery", label: "Gallery", icon: "🖼️" },
+  { id: "faq", label: "FAQ", icon: "❓" },
+  { id: "contact", label: "Contact", icon: "✉️" },
+  { id: "booking", label: "Booking", icon: "📅" },
+  { id: "checkout", label: "Checkout", icon: "🛍️" },
+  { id: "blog", label: "Blog", icon: "📰" },
+];
+
+// ============================================================================
+// Playground Pipeline Mappings
+// ============================================================================
+
+const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
+  booking: 'appointment_service',
+  saas: 'saas_digital',
+  agency: 'quote_lead',
+  portfolio: 'portfolio_creator',
+  store: 'ecommerce',
+  content: 'general',
 };
 
-export const SystemLauncher = ({
-  open,
-  onOpenChange,
-}: SystemLauncherProps) => {
-  const navigate = useNavigate();
-  const [selectedSystem, setSelectedSystem] =
-    useState<BusinessSystemType | null>(null);
-  const [selectedTheme, setSelectedTheme] = useState<ThemePreset | null>(null);
-  const [selectedTemplate, setSelectedTemplate] =
-    useState<LayoutTemplate | null>(null);
-  const [step, setStep] = useState<WizardStep>("industry");
-  const [isLaunching, setIsLaunching] = useState(false);
-  const [isAIGenerating, setIsAIGenerating] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<LayoutCategory | "all">(
-    "all"
-  );
-  const [customPrompt, setCustomPrompt] = useState("");
+const SYSTEM_TO_INDUSTRY_OVERLAY: Record<BusinessSystemType, IndustryOverlay> = {
+  booking: 'salon',
+  saas: 'general',
+  agency: 'agency',
+  portfolio: 'photographer',
+  store: 'ecommerce',
+  content: 'general',
+};
 
-  // Pre-launch AI edits
-  const [aiEditOpen, setAiEditOpen] = useState(false);
-  const [editedTemplateCode, setEditedTemplateCode] = useState<string | null>(
-    null
-  );
-  const [editedTemplateFiles, setEditedTemplateFiles] = useState<Record<
-    string,
-    string
-  > | null>(null);
+const GOAL_TO_NEEDS: Record<PrimaryGoal, { needsBooking?: boolean; sellsProducts?: boolean; wantsLeadCapture?: boolean }> = {
+  collect_leads: { wantsLeadCapture: true },
+  book_appointments: { needsBooking: true },
+  sell_offers: { sellsProducts: true },
+  showcase_work: {},
+  drive_calls: { wantsLeadCapture: true },
+  grow_email_list: { wantsLeadCapture: true },
+};
 
-  // User saved templates
-  const [userSavedTemplates, setUserSavedTemplates] = useState<
-    LayoutTemplate[]
-  >([]);
-  useEffect(() => {
-    const loadUserTemplates = async () => {
-      const { data } = await supabase
-        .from("design_templates")
-        .select("id, name, description, canvas_data")
-        .order("updated_at", { ascending: false })
-        .limit(12);
-      if (data) {
-        const mapped: LayoutTemplate[] = data
-          .filter((t) => {
-            const cd = t.canvas_data as Record<string, unknown> | null;
-            return (
-              cd &&
-              typeof cd === "object" &&
-              ("code" in cd || "html" in cd || "previewHtml" in cd)
-            );
-          })
-          .map((t) => {
-            const cd = t.canvas_data as Record<string, string>;
-            return {
-              id: `saved-${t.id}`,
-              name: t.name,
-              description: t.description || "Your saved template",
-              category: "saved" as LayoutCategory,
-              code: cd.code || cd.html || cd.previewHtml || "",
-              tags: ["saved"],
-            };
-          });
-        setUserSavedTemplates(mapped);
+const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
+  booking: ["salon", "restaurant", "fitness"],
+  saas: ["universal"],
+  agency: ["coaching", "universal"],
+  portfolio: ["photography", "universal"],
+  store: ["ecommerce", "universal"],
+  content: ["universal"],
+};
+
+// Industry display metadata
+const INDUSTRY_DISPLAY: Record<IndustryTag, { label: string; icon: string }> = {
+  salon: { label: "Salon & Beauty", icon: "💇" },
+  "local-service": { label: "Local Service", icon: "🔧" },
+  coaching: { label: "Coaching & Consulting", icon: "🎯" },
+  restaurant: { label: "Restaurant & Food", icon: "🍽️" },
+  ecommerce: { label: "E-Commerce", icon: "🛍️" },
+  fitness: { label: "Fitness & Wellness", icon: "💪" },
+  legal: { label: "Legal", icon: "⚖️" },
+  realestate: { label: "Real Estate", icon: "🏠" },
+  photography: { label: "Photography", icon: "📷" },
+  universal: { label: "Universal", icon: "✦" },
+};
+
+const TEMPLATE_INDUSTRY_TO_CATEGORY: Partial<Record<IndustryTag, LayoutCategory>> = {
+  salon: "salon",
+  "local-service": "contractor",
+  coaching: "coaching",
+  restaurant: "restaurant",
+  ecommerce: "store",
+  realestate: "realestate",
+  photography: "portfolio",
+  legal: "agency",
+  fitness: "coaching",
+};
+
+// Extended industry cards with richer visuals
+const INDUSTRY_CARDS: {
+  systemId: BusinessSystemType;
+  icon: string;
+  label: string;
+  tagline: string;
+  gradient: string;
+  glowColor: string;
+}[] = [
+  {
+    systemId: "booking",
+    icon: "📅",
+    label: "Booking & Services",
+    tagline: "Salons, spas, restaurants, contractors",
+    gradient: "from-pink-500/20 via-transparent to-transparent",
+    glowColor: "rgba(236,72,153,0.15)",
+  },
+  {
+    systemId: "saas",
+    icon: "🚀",
+    label: "SaaS & Software",
+    tagline: "Products, platforms, developer tools",
+    gradient: "from-blue-500/20 via-transparent to-transparent",
+    glowColor: "rgba(59,130,246,0.15)",
+  },
+  {
+    systemId: "agency",
+    icon: "🏢",
+    label: "Agency & Consulting",
+    tagline: "Creative studios, legal, real estate",
+    gradient: "from-purple-500/20 via-transparent to-transparent",
+    glowColor: "rgba(168,85,247,0.15)",
+  },
+  {
+    systemId: "portfolio",
+    icon: "🎨",
+    label: "Portfolio & Creative",
+    tagline: "Designers, photographers, artists",
+    gradient: "from-amber-500/20 via-transparent to-transparent",
+    glowColor: "rgba(245,158,11,0.15)",
+  },
+  {
+    systemId: "store",
+    icon: "🛍️",
+    label: "Store & E-Commerce",
+    tagline: "Products, retail, marketplace",
+    gradient: "from-emerald-500/20 via-transparent to-transparent",
+    glowColor: "rgba(16,185,129,0.15)",
+  },
+  {
+    systemId: "content",
+    icon: "📝",
+    label: "Content & Media",
+    tagline: "Blogs, newsletters, nonprofits",
+    gradient: "from-orange-500/20 via-transparent to-transparent",
+    glowColor: "rgba(249,115,22,0.15)",
+  },
+];
+
+// ============================================================================
+// Template Preview Card — renders a mini-preview of a premium section
+// ============================================================================
+
+interface TemplateCardData {
+  id: string;
+  label: string;
+  description: string;
+  industry: IndustryTag;
+  sectionTypes: string[];
+  traits: string[];
+  heroRef?: PremiumSectionReference;
+}
+
+function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
+  const cards: TemplateCardData[] = [];
+
+  for (const tag of industryTags) {
+    const refs = getReferencesForIndustry(tag);
+    const ctx = INDUSTRY_CONTEXTS.find((c) => c.industry === tag);
+    const heroRef = refs.find((r) => r.sectionType === "hero");
+    const servicesRef = refs.find((r) => r.sectionType === "services");
+    const ctaRef = refs.find((r) => r.sectionType === "cta");
+
+    // Build 1–2 template variants per industry
+    if (heroRef) {
+      cards.push({
+        id: `${tag}-premium`,
+        label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Premium`,
+        description: ctx?.toneDirective.split(".")[0] || heroRef.description,
+        industry: tag,
+        sectionTypes: ctx?.sectionFlow.slice(0, 6).map((s) => s) || ["hero", "services", "cta"],
+        traits: heroRef.traits.slice(0, 3),
+        heroRef,
+      });
+    }
+
+    // Second variant if we have enough refs
+    if (servicesRef && ctaRef && heroRef) {
+      const altHero = refs.find((r) => r.sectionType === "hero" && r.id !== heroRef.id);
+      if (altHero) {
+        cards.push({
+          id: `${tag}-alt`,
+          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Minimal`,
+          description: "Clean, focused layout emphasizing clarity and conversions",
+          industry: tag,
+          sectionTypes: ["hero", "services", "testimonials", "cta", "contact", "footer"],
+          traits: altHero.traits.slice(0, 3),
+          heroRef: altHero,
+        });
       }
-    };
-    if (open) loadUserTemplates();
-  }, [open]);
+    }
+  }
 
-  // Derived data
-  const systemTemplates = useMemo(() => {
+  // Add universal fallback if empty
+  if (cards.length === 0) {
+    const allRefs = getAllReferences();
+    const universalHero = allRefs.find((r) => r.sectionType === "hero");
+    if (universalHero) {
+      cards.push({
+        id: "universal-default",
+        label: "Modern Professional",
+        description: "Versatile layout for any business type",
+        industry: "universal",
+        sectionTypes: ["hero", "features", "testimonials", "cta", "contact", "footer"],
+        traits: universalHero.traits.slice(0, 3),
+        heroRef: universalHero,
+      });
+    }
+  }
+
+  return cards;
+}
+
+const AI_MESSAGE_CHAR_LIMIT = 8_500;
+const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
+const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
+
+function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
+function buildTemplateGuidance(card: TemplateCardData | null): string {
+  if (!card) return "";
+
+  const industryContext = INDUSTRY_CONTEXTS.find((entry) => entry.industry === card.industry);
+  const displayLabel = INDUSTRY_DISPLAY[card.industry]?.label || card.industry;
+  const sectionFlow = card.sectionTypes.length > 0
+    ? card.sectionTypes
+    : industryContext?.sectionFlow || [];
+
+  return [
+    `Template: ${card.label}`,
+    `Industry: ${displayLabel}`,
+    `Description: ${card.description}`,
+    sectionFlow.length > 0 ? `Preferred sections: ${sectionFlow.join(" → ")}` : "",
+    card.traits.length > 0 ? `Visual traits: ${card.traits.join(", ")}` : "",
+    industryContext?.toneDirective ? `Tone direction: ${industryContext.toneDirective}` : "",
+    industryContext?.conversionGoals?.length ? `Conversion goals: ${industryContext.conversionGoals.join(", ")}` : "",
+    industryContext?.trustSignals?.length ? `Trust signals: ${industryContext.trustSignals.join(", ")}` : "",
+    "Use a premium image-first hero, semantic sections, one H1, and HSL design tokens only.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getGenerationCategory(
+  system: (typeof businessSystems)[number],
+  template: TemplateCardData | null
+): LayoutCategory {
+  const templateCategory = template
+    ? TEMPLATE_INDUSTRY_TO_CATEGORY[template.industry]
+    : undefined;
+
+  return (templateCategory || system.templateCategories[0]) as LayoutCategory;
+}
+
+function getFunctionErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const withContext = error as Error & { context?: { body?: string } };
+    const body = withContext.context?.body;
+
+    if (typeof body === "string" && body) {
+      try {
+        const parsed = JSON.parse(body) as { error?: string; details?: unknown };
+        if (parsed.error) return parsed.error;
+      } catch {
+        return body;
+      }
+    }
+
+    return error.message;
+  }
+
+  if (typeof error === "string") return error;
+
+  return "Generation failed";
+}
+
+// Mini preview component
+const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
+  const display = INDUSTRY_DISPLAY[card.industry];
+
+  return (
+    <motion.button
+      onClick={onClick}
+      whileHover={{ scale: 1.02, y: -2 }}
+      whileTap={{ scale: 0.98 }}
+      className={cn(
+        "group relative rounded-xl text-left transition-all duration-300 overflow-hidden",
+        "border focus:outline-none",
+        isSelected
+          ? "border-cyan-500/40 shadow-[0_0_30px_rgba(0,200,255,0.1)] ring-1 ring-cyan-500/20"
+          : "border-white/[0.06] hover:border-white/[0.15]"
+      )}
+    >
+      {/* Mini preview area */}
+      <div className={cn(
+        "relative h-36 overflow-hidden",
+        isSelected ? "bg-cyan-500/[0.04]" : "bg-white/[0.02]"
+      )}>
+        {/* Simulated section layout preview */}
+        <div className="absolute inset-0 p-3 flex flex-col gap-1.5 opacity-60 group-hover:opacity-80 transition-opacity">
+          {/* Navbar bar */}
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-1.5 rounded-full bg-white/20" />
+            <div className="flex-1" />
+            <div className="w-3 h-1 rounded-full bg-white/10" />
+            <div className="w-3 h-1 rounded-full bg-white/10" />
+            <div className="w-3 h-1 rounded-full bg-white/10" />
+          </div>
+          {/* Hero block */}
+          <div className="flex-1 rounded-lg p-2 flex flex-col justify-center" style={{
+            background: `linear-gradient(135deg, hsl(var(--primary) / 0.12), hsl(var(--accent) / 0.08))`,
+          }}>
+            <div className="w-8 h-1 rounded-full bg-primary/40 mb-1.5" />
+            <div className="w-16 h-2 rounded bg-white/25 mb-1" />
+            <div className="w-12 h-1 rounded bg-white/10 mb-2" />
+            <div className="flex gap-1">
+              <div className="w-6 h-2 rounded-full bg-primary/50" />
+              <div className="w-5 h-2 rounded-full border border-white/15" />
+            </div>
+          </div>
+          {/* Section blocks */}
+          <div className="flex gap-1">
+            {card.sectionTypes.slice(1, 4).map((_, i) => (
+              <div key={i} className="flex-1 h-5 rounded bg-white/[0.03] border border-white/[0.04]" />
+            ))}
+          </div>
+          {/* Footer bar */}
+          <div className="h-2 rounded bg-white/[0.03]" />
+        </div>
+
+        {/* Hover overlay */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm">
+          <div className="flex items-center gap-1.5 text-white/90 text-xs font-medium">
+            <Eye className="h-3.5 w-3.5" />
+            Use Template
+          </div>
+        </div>
+
+        {/* Selected check */}
+        {isSelected && (
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="absolute top-2 right-2 w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center shadow-lg z-10"
+          >
+            <Check className="h-3.5 w-3.5 text-[#07080F]" />
+          </motion.div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="p-3">
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-xs">{display?.icon}</span>
+          <h4 className="text-xs font-semibold text-white/80 truncate">{card.label}</h4>
+        </div>
+        <p className="text-[10px] text-white/25 leading-relaxed line-clamp-2">{card.description}</p>
+        {/* Trait badges */}
+        <div className="flex flex-wrap gap-1 mt-2">
+          {card.traits.slice(0, 2).map((trait) => (
+            <span key={trait} className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.04] text-white/20 border border-white/[0.04]">
+              {trait}
+            </span>
+          ))}
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.04] text-white/20 border border-white/[0.04]">
+            {card.sectionTypes.length} sections
+          </span>
+        </div>
+      </div>
+    </motion.button>
+  );
+};
+
+// ============================================================================
+// Component
+// ============================================================================
+
+export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
+  const navigate = useNavigate();
+
+  // Wizard state
+  const [step, setStep] = useState<WizardStep>("industry");
+  const [selectedSystem, setSelectedSystem] = useState<BusinessSystemType | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateCardData | null>(null);
+  const [selectedTheme, setSelectedTheme] = useState<ThemePreset | null>(null);
+  const [businessName, setBusinessName] = useState("");
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [isLaunching, setIsLaunching] = useState(false);
+
+  // Questions step state
+  const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal | null>(null);
+  const [customerNeeds, setCustomerNeeds] = useState<CustomerNeed[]>([]);
+  const [selectedPages, setSelectedPages] = useState<PageChoice[]>(["about", "services", "contact"]);
+
+  const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
+
+  // Build template cards based on selected system
+  const templateCards = useMemo(() => {
     if (!selectedSystem) return [];
-    const system = businessSystems.find((s) => s.id === selectedSystem);
-    if (!system) return [];
-    return system.templateCategories.flatMap((cat) =>
-      getTemplatesByCategory(cat)
-    );
+    const tags = SYSTEM_TO_INDUSTRY[selectedSystem] || ["universal"];
+    return buildTemplateCards(tags as IndustryTag[]);
   }, [selectedSystem]);
 
-  const allTemplates = useMemo(
-    () => [...systemTemplates, ...userSavedTemplates],
-    [systemTemplates, userSavedTemplates]
-  );
+  // Group templates by industry
+  const templatesByIndustry = useMemo(() => {
+    const grouped: Record<string, TemplateCardData[]> = {};
+    for (const card of templateCards) {
+      const key = card.industry;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(card);
+    }
+    return grouped;
+  }, [templateCards]);
 
-  const availableCategories = useMemo(() => {
-    const cats = new Set<LayoutCategory>();
-    allTemplates.forEach((t) => cats.add(t.category));
-    return Array.from(cats);
-  }, [allTemplates]);
+  // ─── Handlers ───────────────────────────────────────────────────────────
 
-  const visibleTemplates = useMemo(() => {
-    if (categoryFilter === "all") return allTemplates;
-    return allTemplates.filter((t) => t.category === categoryFilter);
-  }, [allTemplates, categoryFilter]);
-
-  const selectedManifest = useMemo(() => {
-    if (!selectedTemplate || !selectedSystem) return null;
-    return (
-      getTemplateManifest(selectedTemplate.id) ||
-      getDefaultManifestForSystem(selectedSystem)
-    );
-  }, [selectedTemplate, selectedSystem]);
-
-  const selectedSystemData = selectedSystem
-    ? businessSystems.find((s) => s.id === selectedSystem)
-    : null;
-  const effectiveTemplateCode = selectedTemplate
-    ? editedTemplateCode ?? getTemplateReactCode(selectedTemplate)
-    : null;
-
-  // ─── Handlers ───
+  const resetState = useCallback(() => {
+    setStep("industry");
+    setSelectedSystem(null);
+    setSelectedTemplate(null);
+    setSelectedTheme(null);
+    setBusinessName("");
+    setCustomPrompt("");
+    setIsLaunching(false);
+    setPrimaryGoal(null);
+    setCustomerNeeds([]);
+    setSelectedPages(["about", "services", "contact"]);
+  }, []);
 
   const handleSystemSelect = (systemId: BusinessSystemType) => {
     setSelectedSystem(systemId);
     setSelectedTemplate(null);
-    setCategoryFilter("all");
+    setStep("questions");
+  };
+
+  const handleQuestionsNext = () => {
     setStep("templates");
   };
 
-  const handleThemeSelect = (theme: ThemePreset) => {
-    setSelectedTheme(
-      selectedTheme?.id === theme.id ? null : theme
-    );
+  const handleTemplateSelect = (card: TemplateCardData) => {
+    setSelectedTemplate(selectedTemplate?.id === card.id ? null : card);
   };
 
-  const handleTemplateContinue = () => setStep("theme");
-
-  const handleTemplateSelect = (template: LayoutTemplate) => {
-    setSelectedTemplate(template);
-    setEditedTemplateCode(null);
-    setEditedTemplateFiles(null);
+  const handleTemplateNext = () => {
+    setStep("aesthetic");
   };
 
-  const handleDeleteSavedTemplate = async (templateId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const dbId = templateId.replace("saved-", "");
-    const { error } = await supabase.from("design_templates").delete().eq("id", dbId);
-    if (error) {
-      toast.error("Failed to delete template");
-      return;
-    }
-    setUserSavedTemplates((prev) => prev.filter((t) => t.id !== templateId));
-    if (selectedTemplate?.id === templateId) {
+  const toggleCustomerNeed = (need: CustomerNeed) => {
+    setCustomerNeeds(prev => prev.includes(need) ? prev.filter(n => n !== need) : [...prev, need]);
+  };
+
+  const togglePageChoice = (page: PageChoice) => {
+    setSelectedPages(prev => prev.includes(page) ? prev.filter(p => p !== page) : [...prev, page]);
+  };
+
+  const handleBack = () => {
+    if (step === "aesthetic") {
+      setStep("templates");
+      setSelectedTheme(null);
+    } else if (step === "templates") {
+      setStep("questions");
       setSelectedTemplate(null);
-      setEditedTemplateCode(null);
-      setEditedTemplateFiles(null);
+    } else if (step === "questions") {
+      setStep("industry");
+      setSelectedSystem(null);
     }
-    toast.success("Template deleted");
   };
 
   const handleLaunch = async () => {
-    if (!selectedSystem || !selectedTemplate) return;
+    if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
+    if (!businessName.trim()) {
+      toast.error("Please enter your business name");
+      return;
+    }
 
     setIsLaunching(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
-        toast.error("Please sign in to install this system");
+        toast.error("Please sign in to continue");
         navigate("/auth");
         return;
       }
 
-      const manifest =
-        getTemplateManifest(selectedTemplate.id) ||
-        getDefaultManifestForSystem(selectedSystem);
-      let effectiveResult = editedTemplateCode 
-        ? { code: editedTemplateCode, css: '' }
-        : getTemplateReactCodeWithCSS(selectedTemplate);
+      const generationCategory = getGenerationCategory(system, selectedTemplate);
+      const industryProfile = getIndustryForCategory(generationCategory);
+      const compositionMeta = getCompositionMeta(generationCategory);
+      const canonicalIntents = Array.from(new Set([
+        ...(industryProfile
+          ? getAllowedIntents(industryProfile.defaultCapabilities)
+          : system.intents),
+        ...(compositionMeta?.intents || []),
+      ]));
 
-      if (selectedTheme && !editedTemplateFiles) {
-        try {
-          toast("Applying theme…", { description: selectedTheme.label });
-          const { data: aiData, error: aiError } =
-            await supabase.functions.invoke("ai-code-assistant", {
-              body: {
-                messages: [
-                  {
-                    role: "user",
-                    content:
-                      `Apply the "${selectedTheme.label}" aesthetic to this template.\n\n` +
-                      `${selectedTheme.styleDirective}\n\n` +
-                      `STRICT RULES:\n` +
-                      `1. ONLY modify: font families, font sizes, font weights, colors, color schemes, text styling, backgrounds, border-radius, shadows\n` +
-                      `2. DO NOT change: text content, copy, headlines, descriptions, service names, industry-specific language\n` +
-                      `3. DO NOT change: layout structure, section order, images, icons, button positions, navigation structure\n` +
-                      `4. PRESERVE ALL: data-ut-intent, data-intent, data-ut-cta, data-no-intent attributes exactly as-is\n` +
-                      `5. PRESERVE ALL: form inputs, interactive elements, and their functionality\n\n` +
-                      `Output ONLY the complete updated code. No markdown, no explanations.`,
-                  },
-                ],
-                mode: "design",
-                currentCode:
-                  effectiveResult.code.length > 20_000
-                    ? effectiveResult.code.slice(0, 20_000)
-                    : effectiveResult.code,
-                editMode: true,
-                templateAction: "apply-design-preset",
-                aesthetic: selectedTheme.id,
-              },
-            });
-          if (!aiError && aiData?.content) {
-            const cleanedThemeCode = extractCleanCode(aiData.content);
-            if (cleanedThemeCode && looksLikeCode(cleanedThemeCode)) {
-              effectiveResult = getTemplateReactCodeWithCSS({ code: cleanedThemeCode, title: selectedTemplate.name });
-            } else {
-              console.warn("[SystemLauncher] Theme AI returned prose, ignoring");
-            }
-          }
-        } catch (e) {
-          console.warn("[SystemLauncher] theme application failed", e);
-        }
-      }
-
-      const { data, error } = await supabase.functions.invoke(
-        "install-system",
-        {
-          body: {
-            systemType: selectedSystem,
-            templateId: selectedTemplate.id,
-            templateName: selectedTemplate.name,
-            businessName: `${system.name} Business`,
-            templateCategory: selectedTemplate.category,
-            designPreset: selectedTheme?.id || null,
-          },
-        }
-      );
-
-      if (error || !data?.success) {
-        throw new Error(error?.message || data?.error || "Install failed");
-      }
-
-      const businessId = data.data.businessId as string;
-
-      // Always pass as VFS files for multi-file React project support
-      const baseCSS = `:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n}\n`;
-      const vfsFiles = editedTemplateFiles || {
-        '/src/App.tsx': effectiveResult.code,
-        '/src/main.tsx': `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-        '/src/index.css': baseCSS,
-        ...(effectiveResult.css ? { '/src/template.css': effectiveResult.css } : {}),
-      };
-
-      navigate("/web-builder", {
-        state: {
-          vfsFiles,
-          templateName: selectedTemplate.name,
-          aesthetic: selectedTheme?.id,
-          designPreset: selectedTheme?.id,
-          templateCategory: selectedTemplate.category,
-          systemType: selectedSystem,
-          systemName: system.name,
-          preloadedIntents: system.intents,
-          businessId,
-          manifestId: manifest.id,
-          isProvisioned: true,
-          startInPreview: true,
-        },
-      });
-
-      onOpenChange(false);
-      resetState();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Install failed";
-      console.error("[SystemLauncher] install error", e);
-      toast.error(msg);
-    } finally {
-      setIsLaunching(false);
-    }
-  };
-
-  const handleAIGenerate = async () => {
-    if (!selectedSystem || !selectedTemplate) return;
-    const system = businessSystems.find((s) => s.id === selectedSystem);
-    if (!system) return;
-
-    setIsAIGenerating(true);
-    try {
-      const industry = selectedTemplate.category;
       const fonts = randomFontPairing();
       const design = generateDesignVariation();
+      const resolvedIndustry = industryProfile?.industry || generationCategory;
 
-      // Use contracts system for canonical intent resolution
-      const industryProfile = getIndustryForCategory(industry as LayoutCategory);
-      const canonicalIntents = industryProfile
-        ? getAllowedIntents(industryProfile.defaultCapabilities)
-        : system.intents;
+      // ── Step 1b: Provision backend (business, membership, intent bindings, demo data) ──
+      // Maps selectedSystem (BusinessSystemType) to install-system's SystemType
+      const installSystemType = selectedSystem as string; // both use same keys: booking, store, agency, portfolio, content, saas
+      const installPromise = supabase.functions.invoke('install-system', {
+        body: {
+          systemType: installSystemType,
+          businessName: businessName.trim(),
+          templateName: selectedTemplate?.label || system.name,
+          templateCategory: generationCategory,
+          designPreset: selectedTheme?.id || undefined,
+        },
+      }).then(({ data, error }) => {
+        if (error) {
+          console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
+          return null;
+        }
+        console.log('[SystemLauncher] Backend provisioned:', data);
+        return data?.data?.businessId as string | null;
+      }).catch(err => {
+        console.warn('[SystemLauncher] install-system error (non-fatal):', err);
+        return null;
+      });
+
+      // ── Step 2: Generate site topology BEFORE file generation ──
+      const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
+        primaryIntent: industryProfile?.primaryIntent,
+      });
+      console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
+
+      // ── Step 3: Run Canonical Pipeline (single enforced pathway) ──
+      const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
+      const wizardSelections: WizardSelections = {
+        businessName: businessName.trim(),
+        businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
+        industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
+        primaryGoal: primaryGoal || 'collect_leads',
+        secondaryGoals: customerNeeds as string[],
+        needsBooking: goalNeeds.needsBooking || customerNeeds.includes('book_service'),
+        sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
+        wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
+        templateId: selectedTemplate?.id,
+        themeId: selectedTheme?.id,
+      };
+
+      // Execute the canonical pipeline — single source of truth
+      const pipelineResult = executeCanonicalPipeline(wizardSelections);
+      const { playground: materializedPlayground, compileResult: compiledPlayground, siteBundleSnapshot, runtimeManifest: pipelineManifest } = pipelineResult;
+
+      if (pipelineResult.warnings.length > 0) {
+        console.warn('[SystemLauncher] Pipeline warnings:', pipelineResult.warnings);
+      }
+      if (pipelineResult.errors.length > 0) {
+        console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
+      }
+      console.log(`[SystemLauncher] Canonical pipeline complete: ${Object.keys(materializedPlayground.bindings).length} bindings, ${Object.keys(materializedPlayground.calendars).length} calendars, ${Object.keys(materializedPlayground.popups).length} popups`);
 
       const blueprint = {
         version: "1.0",
         identity: {
-          industry,
+          industry: resolvedIndustry,
+          business_model: system.id,
           primary_goal: industryProfile
-            ? (industryProfile.defaultCapabilities.includes('booking') ? 'bookings' : 'leads')
+            ? industryProfile.defaultCapabilities.includes("booking")
+              ? "bookings"
+              : "leads"
             : "Generate leads and grow the business",
         },
         brand: {
-          business_name: `${system.name} Business`,
+          business_name: businessName.trim(),
           tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
           tone: "professional and friendly",
           typography: fonts,
         },
         design,
-        intents: canonicalIntents.map((i) => ({ intent: i })),
+        intents: canonicalIntents.map((i: string) => ({ intent: i })),
+        template_sections: selectedTemplate?.sectionTypes?.length
+          ? selectedTemplate.sectionTypes
+          : compositionMeta?.sections,
+        template_intents: compositionMeta?.intents,
       };
 
       const themeInstruction = selectedTheme
-        ? `\n\n🎨 VISUAL AESTHETIC (colors/typography/formatting ONLY — do NOT change industry content or text copy): ${selectedTheme.label}\n${selectedTheme.styleDirective}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ''}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
+        ? `\n\n🎨 VISUAL AESTHETIC: ${selectedTheme.label}\n${selectedTheme.styleDirective}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ""}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
         : "";
       const customInstruction = customPrompt.trim()
-        ? `\n\nADDITIONAL INSTRUCTIONS: ${customPrompt.trim()}\n`
+        ? `\n\nADDITIONAL INSTRUCTIONS: ${clampPromptText(customPrompt.trim(), CUSTOM_INSTRUCTION_CHAR_LIMIT)}\n`
         : "";
 
-      // Extract industry content context from the selected template composition
-      const contentContext = getCompositionContentContext(selectedTemplate.category);
-      const industryContextBlock = contentContext
-        ? `\n\n📋 INDUSTRY CONTENT CONTEXT (USE THIS AS YOUR CONTENT BASELINE — do NOT invent services/items from other industries):\n${contentContext}\n`
-        : '';
-
-      const userPrompt = `Create a unique, premium ${industry} website inspired by but NOT identical to the reference template. Use different color schemes, layout variations, and original copy while maintaining the same quality level.${industryContextBlock}${themeInstruction}${customInstruction}`;
-
-      // Prefer composition-based React code over legacy HTML
-      const compositionCode = getCompositionReactCode(selectedTemplate.category);
-      const compositionMetaData = getCompositionMeta(selectedTemplate.category);
-      const referenceCode = compositionCode || selectedTemplate.code;
-      const referenceId = compositionMetaData?.compositionId || selectedTemplate.id;
-
-      const { data, error } = await supabase.functions.invoke(
-        "systems-build",
-        {
-          body: {
-            blueprint,
-            userPrompt,
-            enhanceWithAI: true,
-            templateId: referenceId,
-            templateHtml: referenceCode,
-            variantMode: true,
-            variationSeed: `v${Date.now().toString(36)}_${Math.random()
-              .toString(36)
-              .slice(2, 8)}`,
-            outputFormat: "react",
-          },
-        }
+      const contentContext = clampPromptText(
+        getCompositionContentContext(generationCategory) || "",
+        INDUSTRY_CONTEXT_CHAR_LIMIT
       );
+      const industryContextBlock = contentContext
+        ? `\n\n📋 INDUSTRY CONTENT CONTEXT:\n${contentContext}\n`
+        : "";
+
+      const templateGuidance = buildTemplateGuidance(selectedTemplate);
+      const templateContext = templateGuidance
+        ? `\n\n--- TEMPLATE GUIDANCE ---\n${templateGuidance}\n`
+        : "";
+
+      const userPrompt = clampPromptText(
+        `Create a premium ${resolvedIndustry} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}`,
+        AI_MESSAGE_CHAR_LIMIT
+      );
+
+      toast("Generating your site…", { description: "This takes ~15 seconds" });
+
+      // NOTE: We intentionally do NOT send compositionCode as currentCode here.
+      // Sending it disables the fast-path in the edge function and causes timeouts.
+      // The blueprint + template guidance in the user prompt provide enough context.
+      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
+        body: {
+          messages: [{ role: "user", content: userPrompt }],
+          mode: "template-react",
+          variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          templateName: businessName.trim() || system.name,
+          aesthetic: selectedTheme?.id || "modern professional",
+          source: resolvedIndustry,
+          savePattern: false,
+          systemsBuildContext: blueprint,
+          systemType: selectedSystem,
+        },
+      });
 
       if (error) {
         if (error.message?.includes("429")) {
@@ -427,53 +736,113 @@ export const SystemLauncher = ({
         throw error;
       }
 
-      // React fullstack output — expect files from outputFormat:"react"
-      const generatedFiles = data?.files;
-      const generatedCode = generatedFiles?.["src/App.tsx"] || generatedFiles?.["App.tsx"] || data?.code;
+      let rawContent = (data?.content || data?.code || "")
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+        .trim()
+        .replace(/^```json?\s*\n?/i, "")
+        .replace(/\n?```\s*$/i, "")
+        .trim();
 
-      if (generatedFiles && typeof generatedFiles === "object" && Object.keys(generatedFiles).length > 0) {
-        // React VFS mode — pass VFS files as source of truth to WebBuilder
+      // Strip leading non-JSON prose before the opening brace (AI sometimes prepends text)
+      if (!rawContent.startsWith('{') && rawContent.includes('{"files"')) {
+        rawContent = rawContent.slice(rawContent.indexOf('{"files"'));
+      }
+
+      const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
+
+      let vfsFiles: Record<string, string> | null = null;
+      let parsedEntryPoint: string | undefined;
+      let parsedSiteBundle: LauncherHandoff["siteBundle"] | undefined;
+      try {
+        const parsed = JSON.parse(rawContent);
+        if (parsed.files && typeof parsed.files === "object") {
+          parsedEntryPoint = parsed.entryPoint || undefined;
+          if (parsed.siteBundle && typeof parsed.siteBundle === "object") {
+            parsedSiteBundle = parsed.siteBundle as LauncherHandoff["siteBundle"];
+          }
+          const normalizedParsedEntryPoint = parsedEntryPoint
+            ? (parsedEntryPoint.startsWith("/") ? parsedEntryPoint : `/${parsedEntryPoint}`)
+            : undefined;
+          const safeEntryPoint = normalizedParsedEntryPoint && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(normalizedParsedEntryPoint)
+            ? undefined
+            : normalizedParsedEntryPoint;
+          // Use normalizeLauncherFiles to ensure consistent structure
+          vfsFiles = normalizeLauncherFiles(parsed.files, {
+            entryPoint: safeEntryPoint,
+          });
+          parsedEntryPoint = safeEntryPoint;
+        }
+      } catch {
+        // single-file output
+      }
+
+      // ── Await backend provisioning (runs in parallel with AI generation) ──
+      const provisionedBusinessId = await installPromise;
+      if (provisionedBusinessId) {
+        console.log('[SystemLauncher] Using provisioned businessId:', provisionedBusinessId);
+      }
+
+      const navState = {
+        templateName: `${businessName.trim()} Site`,
+        aesthetic: selectedTheme?.id,
+        templateCategory: generationCategory,
+        systemType: selectedSystem,
+        systemName: system.name,
+        preloadedIntents: canonicalIntents,
+        startInPreview: true,
+        sitePlan,
+        businessId: provisionedBusinessId || undefined,
+        // Canonical pipeline output — single source of truth
+        materializedPlayground,
+        compiledPlayground,
+        siteBundleSnapshot,
+        pipelineManifest,
+        wizardSelections,
+      };
+
+      if (vfsFiles && Object.keys(vfsFiles).length > 0) {
+        // Build RuntimeManifest — the contract between launcher and preview
+        const runtimeManifest = createRuntimeManifest(vfsFiles, {
+          entryPoint: parsedEntryPoint || '/src/App.tsx',
+          industry: generationCategory,
+          brandName: businessName.trim(),
+          aesthetic: selectedTheme?.id,
+          backendRequired: false, // Launcher output is always frontend-only
+        });
+
         navigate("/web-builder", {
           state: {
-            vfsFiles: generatedFiles,
-            templateName: `AI ${selectedTemplate.name}`,
-            aesthetic: selectedTheme?.id,
-            templateCategory: selectedTemplate.category,
-            systemType: selectedSystem,
-            systemName: system.name,
-            preloadedIntents: system.intents,
-            startInPreview: true,
+            vfsFiles,
+            runtimeManifest,
+            entryPoint: runtimeManifest.entryPoint,
+            siteBundle: parsedSiteBundle,
+            ...navState,
           },
         });
-      } else if (generatedCode && typeof generatedCode === "string" && generatedCode.length >= 100) {
-        // Fallback: single-file output — clean and validate
-        const cleaned = extractCleanCode(generatedCode);
+      } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
+        const cleaned = extractCleanCode(rawContent);
         if (!cleaned || !looksLikeCode(cleaned)) {
           toast.error("AI generation produced invalid output. Try again.");
           return;
         }
-        // Ensure it's React-compatible (wrap HTML if needed)
-        const reactResult = (cleaned.includes('import ') || cleaned.includes('export default'))
-          ? { code: cleaned, css: '' }
-          : getTemplateReactCodeWithCSS({ code: cleaned, title: selectedTemplate.name });
-        const fallbackVfsFiles: Record<string, string> = {
-          '/src/App.tsx': reactResult.code,
-          '/src/main.tsx': `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-          '/src/index.css': `:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n}\n`,
+        const singleFileVfs = {
+          "/src/App.tsx": cleaned,
+          "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
+          "/src/index.css": baseCSS,
         };
-        if (reactResult.css) {
-          fallbackVfsFiles['/src/template.css'] = reactResult.css;
-        }
+        const runtimeManifest = createRuntimeManifest(singleFileVfs, {
+          industry: generationCategory,
+          brandName: businessName.trim(),
+          aesthetic: selectedTheme?.id,
+          backendRequired: false,
+        });
+
         navigate("/web-builder", {
           state: {
-            vfsFiles: fallbackVfsFiles,
-            templateName: `AI ${selectedTemplate.name}`,
-            aesthetic: selectedTheme?.id,
-            templateCategory: selectedTemplate.category,
-            systemType: selectedSystem,
-            systemName: system.name,
-            preloadedIntents: system.intents,
-            startInPreview: true,
+            vfsFiles: singleFileVfs,
+            runtimeManifest,
+            entryPoint: runtimeManifest.entryPoint,
+            ...navState,
           },
         });
       } else {
@@ -483,61 +852,17 @@ export const SystemLauncher = ({
 
       onOpenChange(false);
       resetState();
-      toast.success("AI website generated! Opening in builder…");
+      toast.success("Site generated! Opening builder…");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "AI generation failed";
-      console.error("[SystemLauncher] AI generation error", e);
+      const msg = getFunctionErrorMessage(e);
+      console.error("[SystemLauncher] error", e);
       toast.error(msg);
     } finally {
-      setIsAIGenerating(false);
+      setIsLaunching(false);
     }
   };
 
-  const resetState = () => {
-    setStep("industry");
-    setSelectedSystem(null);
-    setSelectedTheme(null);
-    setSelectedTemplate(null);
-    setAiEditOpen(false);
-    setEditedTemplateCode(null);
-    setEditedTemplateFiles(null);
-    setCategoryFilter("all");
-    setCustomPrompt("");
-    setIsAIGenerating(false);
-  };
-
-  const handleBack = () => {
-    if (step === "theme") {
-      setStep("templates");
-      setSelectedTheme(null);
-    } else if (step === "templates") {
-      setStep("industry");
-      setSelectedSystem(null);
-      setSelectedTemplate(null);
-      setEditedTemplateCode(null);
-      setEditedTemplateFiles(null);
-      setCategoryFilter("all");
-    }
-  };
-
-  const categoryLabels: Record<string, string> = {
-    salon: "Salon & Spa",
-    landing: "Landing Pages",
-    portfolio: "Portfolio",
-    restaurant: "Restaurant",
-    store: "E-Commerce",
-    contractor: "Local Service",
-    coaching: "Coaching",
-    realestate: "Real Estate",
-    nonprofit: "Nonprofit",
-    agency: "Agency",
-    content: "Content",
-    saas: "SaaS",
-    saved: "My Designs",
-  };
-
-  const stepKeys: WizardStep[] = ["industry", "templates", "theme"];
-  const currentStepIdx = stepKeys.indexOf(step);
+  // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
     <Dialog
@@ -547,77 +872,76 @@ export const SystemLauncher = ({
         if (!isOpen) resetState();
       }}
     >
-      <DialogContent className="max-w-[900px] p-0 overflow-hidden border-0 bg-[#07080F] max-h-[92vh] shadow-[0_0_80px_rgba(0,200,255,0.08)]">
+      <DialogContent className="max-w-[960px] p-0 overflow-hidden border-0 bg-[#07080F] max-h-[92vh] shadow-[0_0_100px_rgba(0,200,255,0.06),0_0_40px_rgba(0,0,0,0.5)]">
         <DialogHeader className="sr-only">
           <DialogTitle>Launch Your Website</DialogTitle>
           <DialogDescription>
-            Choose your industry, select a template, then pick a visual
-            theme.
+            Choose your industry, select a template, and customize.
           </DialogDescription>
         </DialogHeader>
 
-        {/* ─── Wizard header bar ─── */}
+        {/* ─── Header + Step Indicator ─── */}
         <div className="relative px-6 pt-5 pb-4 border-b border-white/[0.06]">
-          {/* Background glow */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[500px] h-[200px] bg-cyan-500/[0.06] rounded-full blur-[80px]" />
+            <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[250px] bg-cyan-500/[0.04] rounded-full blur-[100px]" />
           </div>
 
-          {/* Step indicator */}
-          <div className="relative flex items-center justify-center gap-0">
-            {stepKeys.map((s, i) => {
-              const meta = STEP_META[s];
-              const isActive = step === s;
+          <div className="relative flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 flex items-center justify-center text-sm">
+                ⚡
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-white/90 tracking-tight">Unison Launcher</h2>
+                <p className="text-[11px] text-white/30">AI-powered site generation</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Step pills */}
+          <div className="relative flex items-center gap-0">
+            {STEP_META.map((s, i) => {
+              const isActive = step === s.key;
               const isPast = currentStepIdx > i;
               return (
-                <div key={s} className="flex items-center">
+                <div key={s.key} className="flex items-center">
                   {i > 0 && (
-                    <div
-                      className={cn(
-                        "w-12 h-px mx-1 transition-colors duration-300",
-                        isPast ? "bg-cyan-500/60" : "bg-white/[0.08]"
-                      )}
-                    />
+                    <div className={cn(
+                      "w-14 h-px mx-1.5 transition-colors duration-500",
+                      isPast ? "bg-gradient-to-r from-cyan-500/60 to-cyan-500/30" : "bg-white/[0.06]"
+                    )} />
                   )}
                   <button
                     onClick={() => {
-                    if (isPast) {
-                      if (s === "industry") {
-                        setStep("industry");
-                        setSelectedSystem(null);
-                        setSelectedTheme(null);
-                        setSelectedTemplate(null);
-                      } else if (s === "templates") {
-                        setStep("templates");
-                        setSelectedTheme(null);
-                      }
+                      if (isPast) {
+                        setStep(s.key);
+                        if (s.key === "industry") { setSelectedSystem(null); setSelectedTemplate(null); setSelectedTheme(null); }
+                        if (s.key === "templates") setSelectedTheme(null);
                       }
                     }}
-                    disabled={!isPast}
+                    disabled={!isPast && !isActive}
                     className={cn(
-                      "flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium transition-all duration-300 outline-none",
-                      isActive &&
-                        "bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30 shadow-[0_0_12px_rgba(0,200,255,0.15)]",
-                      isPast &&
-                        "bg-cyan-500/10 text-cyan-500/70 hover:text-cyan-400 cursor-pointer",
-                      !isActive && !isPast && "text-white/25"
+                      "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-300 outline-none",
+                      isActive && "bg-cyan-500/12 text-cyan-400 ring-1 ring-cyan-500/25",
+                      isPast && "bg-cyan-500/8 text-cyan-500/60 hover:text-cyan-400 cursor-pointer",
+                      !isActive && !isPast && "text-white/20"
                     )}
                   >
-                    <span
-                      className={cn(
-                        "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all",
-                        isActive && "bg-cyan-500 text-[#07080F]",
-                        isPast && "bg-cyan-500/30 text-cyan-400",
-                        !isActive && !isPast && "bg-white/[0.06] text-white/30"
-                      )}
-                    >
-                      {isPast ? (
-                        <Check className="h-3 w-3" />
-                      ) : (
-                        meta.num
-                      )}
+                    <span className={cn(
+                      "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300",
+                      isActive && "bg-cyan-500 text-[#07080F]",
+                      isPast && "bg-cyan-500/25 text-cyan-400",
+                      !isActive && !isPast && "bg-white/[0.05] text-white/25"
+                    )}>
+                      {isPast ? <Check className="h-3 w-3" /> : s.num}
                     </span>
-                    <span className="hidden sm:inline">{meta.label}</span>
+                    <div className="hidden sm:block text-left">
+                      <div className="leading-none">{s.label}</div>
+                      <div className={cn(
+                        "text-[9px] mt-0.5 leading-none",
+                        isActive ? "text-cyan-400/50" : "text-white/15"
+                      )}>{s.sublabel}</div>
+                    </div>
                   </button>
                 </div>
               );
@@ -627,230 +951,312 @@ export const SystemLauncher = ({
 
         {/* ─── Content ─── */}
         <AnimatePresence mode="wait">
-          {/* ── Step 1: Industry ── */}
+          {/* ══ Step 1: Industry ══ */}
           {step === "industry" && (
             <motion.div
               key="industry"
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.2 }}
-              className="px-6 pt-6 pb-8"
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="px-6 pt-7 pb-8"
             >
               <div className="text-center mb-8">
-                <h2 className="text-2xl font-bold text-white mb-1.5 tracking-tight">
+                <h2 className="text-2xl md:text-3xl font-bold text-white mb-2 tracking-tight">
                   What are you building?
                 </h2>
-                <p className="text-sm text-white/40">
-                  Pick your industry — we'll match templates and install the
-                  right backend.
+                <p className="text-sm text-white/35 max-w-md mx-auto">
+                  Pick your industry — we'll show you premium templates built for it.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-2xl mx-auto">
-                {businessSystems.map((system) => (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-[640px] mx-auto">
+                {INDUSTRY_CARDS.map((card) => (
                   <motion.button
-                    key={system.id}
-                    onClick={() => handleSystemSelect(system.id)}
-                    whileHover={{ scale: 1.03 }}
+                    key={card.systemId}
+                    onClick={() => handleSystemSelect(card.systemId)}
+                    whileHover={{ scale: 1.03, y: -2 }}
                     whileTap={{ scale: 0.97 }}
                     className={cn(
-                      "group relative p-5 rounded-2xl text-left transition-all duration-200",
-                      "bg-white/[0.03] border border-white/[0.06]",
-                      "hover:bg-white/[0.06] hover:border-cyan-500/30",
-                      "hover:shadow-[0_0_20px_rgba(0,200,255,0.06)]",
-                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50"
+                      "group relative p-5 rounded-2xl text-left transition-all duration-300",
+                      "bg-white/[0.02] border border-white/[0.06]",
+                      "hover:border-cyan-500/25",
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/40",
+                      "overflow-hidden"
                     )}
                   >
-                    <div className="text-3xl mb-2.5 group-hover:scale-110 transition-transform duration-200">
-                      {system.icon}
+                    <div className={cn(
+                      "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+                      card.gradient
+                    )} />
+                    <div
+                      className="absolute -top-8 -right-8 w-24 h-24 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-2xl pointer-events-none"
+                      style={{ background: card.glowColor }}
+                    />
+                    <div className="relative">
+                      <div className="text-3xl mb-3 group-hover:scale-110 transition-transform duration-300 will-change-transform">
+                        {card.icon}
+                      </div>
+                      <h3 className="font-semibold text-sm text-white/90 mb-1 group-hover:text-white transition-colors">
+                        {card.label}
+                      </h3>
+                      <p className="text-[11px] text-white/25 leading-relaxed group-hover:text-white/40 transition-colors">
+                        {card.tagline}
+                      </p>
                     </div>
-                    <h3 className="font-semibold text-sm text-white/90 mb-0.5">
-                      {system.name}
-                    </h3>
-                    <p className="text-xs text-white/30 line-clamp-2 leading-relaxed">
-                      {system.tagline}
-                    </p>
                   </motion.button>
                 ))}
               </div>
 
-              <div className="text-center mt-8">
+              <div className="text-center mt-7">
                 <Button
                   variant="ghost"
                   onClick={() => {
                     navigate("/web-builder");
                     onOpenChange(false);
                   }}
-                  className="text-white/30 hover:text-white/60 hover:bg-white/[0.04]"
+                  className="text-white/25 hover:text-white/50 hover:bg-white/[0.03] text-xs"
                 >
                   Skip — start from scratch
+                  <ArrowRight className="ml-1.5 h-3 w-3" />
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ══ Step 2: Questions ══ */}
+          {step === "questions" && selectedSystem && (
+            <motion.div
+              key="questions"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="flex flex-col"
+            >
+              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleBack}
+                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                <div>
+                  <h2 className="text-lg font-bold text-white tracking-tight">Tell us about your goals</h2>
+                  <p className="text-xs text-white/30">
+                    This helps us auto-configure your site structure
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide space-y-6">
+                {/* Q1: Primary Goal */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    What is the main goal of your site?
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {PRIMARY_GOALS.map((goal) => {
+                      const isSelected = primaryGoal === goal.id;
+                      return (
+                        <button
+                          key={goal.id}
+                          onClick={() => setPrimaryGoal(isSelected ? null : goal.id)}
+                          className={cn(
+                            "relative p-3 rounded-xl text-left transition-all duration-200",
+                            "border focus:outline-none overflow-hidden",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 ring-1 ring-cyan-500/20"
+                              : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.12]"
+                          )}
+                        >
+                          <div className="text-xl mb-1.5">{goal.icon}</div>
+                          <div className="text-xs font-semibold text-white/85 mb-0.5">{goal.label}</div>
+                          <div className="text-[10px] text-white/25 leading-relaxed">{goal.description}</div>
+                          {isSelected && (
+                            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute top-2 right-2 w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center">
+                              <Check className="h-2.5 w-2.5 text-[#07080F]" />
+                            </motion.div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Q2: Customer Needs */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    What do your customers need to do? <span className="text-white/20">(select all)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {CUSTOMER_NEEDS.map((need) => {
+                      const isSelected = customerNeeds.includes(need.id);
+                      return (
+                        <button
+                          key={need.id}
+                          onClick={() => toggleCustomerNeed(need.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200",
+                            "border focus:outline-none",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 text-cyan-400"
+                              : "bg-white/[0.02] border-white/[0.06] text-white/50 hover:bg-white/[0.04] hover:text-white/70"
+                          )}
+                        >
+                          <span>{need.icon}</span>
+                          {need.label}
+                          {isSelected && <Check className="h-3 w-3 text-cyan-400 ml-1" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Q3: Page Checklist */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    Which pages should your site have? <span className="text-white/20">(select all)</span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {PAGE_CHOICES.map((page) => {
+                      const isSelected = selectedPages.includes(page.id);
+                      return (
+                        <button
+                          key={page.id}
+                          onClick={() => togglePageChoice(page.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-medium transition-all duration-200",
+                            "border focus:outline-none",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 text-cyan-400"
+                              : "bg-white/[0.02] border-white/[0.06] text-white/40 hover:bg-white/[0.04] hover:text-white/60"
+                          )}
+                        >
+                          <span>{page.icon}</span>
+                          {page.label}
+                          {isSelected && <Check className="h-3 w-3 text-cyan-400 ml-auto" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+                <div className="flex-1 text-xs text-white/30">
+                  {primaryGoal && (
+                    <span className="flex items-center gap-1.5">
+                      <Check className="h-3 w-3 text-cyan-400" />
+                      <span className="text-cyan-400/70">
+                        {PRIMARY_GOALS.find(g => g.id === primaryGoal)?.label}
+                      </span>
+                      {customerNeeds.length > 0 && (
+                        <span className="text-white/20">• {customerNeeds.length} needs • {selectedPages.length} pages</span>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  onClick={handleQuestionsNext}
+                  disabled={!primaryGoal}
+                  className={cn(
+                    "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
+                    "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
+                    "transition-all disabled:opacity-30"
+                  )}
+                >
+                  Continue
                   <ArrowRight className="ml-2 h-3.5 w-3.5" />
                 </Button>
               </div>
             </motion.div>
           )}
 
-          {/* ── Step 2: Templates ── */}
-          {step === "templates" && selectedSystemData && (
+          {/* ══ Step 3: Templates ══ */}
+          {step === "templates" && selectedSystem && (
             <motion.div
               key="templates"
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.2 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-4 pb-2 flex items-center gap-3">
+              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={handleBack}
-                  className="h-8 w-8 text-white/40 hover:text-white hover:bg-white/[0.06]"
+                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-2xl">{selectedSystemData.icon}</span>
-                    <div>
-                      <h2 className="text-lg font-bold text-white tracking-tight">
-                        {selectedSystemData.name} Templates
-                      </h2>
-                      <p className="text-xs text-white/35">
-                        {systemTemplates.length} starters
-                      </p>
-                    </div>
-                  </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white tracking-tight">Choose a template</h2>
+                  <p className="text-xs text-white/30">
+                    Premium layouts for{" "}
+                    <span className="text-cyan-400/70 font-medium">
+                      {INDUSTRY_CARDS.find((c) => c.systemId === selectedSystem)?.label}
+                    </span>
+                  </p>
                 </div>
               </div>
 
-              {availableCategories.length > 1 && (
-                <div className="px-6 pb-3 flex items-center gap-1.5 overflow-x-auto scrollbar-hide">
-                  <button
-                    onClick={() => setCategoryFilter("all")}
-                    className={cn(
-                      "px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200",
-                      categoryFilter === "all"
-                        ? "bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30"
-                        : "bg-white/[0.03] text-white/40 hover:bg-white/[0.06] hover:text-white/60"
-                    )}
-                  >
-                    All
-                  </button>
-                  {availableCategories.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => {
-                        setCategoryFilter(cat);
-                        if (selectedTemplate && selectedTemplate.category !== cat)
-                          setSelectedTemplate(null);
-                      }}
-                      className={cn(
-                        "px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200",
-                        categoryFilter === cat
-                          ? "bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30"
-                          : "bg-white/[0.03] text-white/40 hover:bg-white/[0.06] hover:text-white/60"
-                      )}
-                    >
-                      {categoryLabels[cat] || cat}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <ScrollArea className="flex-1 max-h-[46vh] px-6 pb-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {visibleTemplates.map((template) => {
-                    const isSelected = selectedTemplate?.id === template.id;
-                    return (
-                      <motion.div
-                        key={template.id}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => handleTemplateSelect(template)}
-                        className={cn(
-                          "relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200",
-                          "border",
-                          isSelected
-                            ? "border-cyan-500/40 shadow-[0_0_20px_rgba(0,200,255,0.08)] bg-cyan-500/[0.03]"
-                            : "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04]"
-                        )}
-                      >
-                        <div className="aspect-[16/10] bg-white/[0.02] relative overflow-hidden">
-                          <div className="absolute inset-0 p-1.5 overflow-hidden">
-                            <div
-                              className="w-full h-full rounded bg-white transform scale-[0.25] origin-top-left"
-                              style={{ width: "400%", height: "400%", pointerEvents: "none" }}
-                              dangerouslySetInnerHTML={{
-                                __html: template.code.replace(/<script[\s\S]*?<\/script>/gi, ""),
-                              }}
-                            />
-                          </div>
-                          <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                            <Eye className="h-5 w-5 text-white/80" />
-                          </div>
-                          {isSelected && (
-                            <motion.div
-                              initial={{ scale: 0 }}
-                              animate={{ scale: 1 }}
-                              className="absolute top-2 right-2 w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center shadow-lg"
-                            >
-                              <Check className="h-3.5 w-3.5 text-[#07080F]" />
-                            </motion.div>
-                          )}
-                        </div>
-                        <div className="p-3 flex items-start justify-between gap-1">
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-medium text-xs text-white/80 mb-1 line-clamp-1">
-                              {template.name}
-                            </h3>
-                            <div className="flex items-center gap-1.5">
-                              <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-white/[0.05] text-white/40 border-0">
-                                {categoryLabels[template.category] || template.category}
-                              </Badge>
-                              {template.tags?.slice(0, 1).map((tag) => (
-                                <Badge key={tag} variant="outline" className="text-[9px] px-1.5 py-0 text-white/25 border-white/[0.08]">
-                                  {tag}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                          {template.id.startsWith("saved-") && (
-                            <button
-                              onClick={(e) => handleDeleteSavedTemplate(template.id, e)}
-                              className="shrink-0 p-1 rounded-md text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                              title="Delete saved template"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-
-              <div className="px-6 py-4 border-t border-white/[0.06] flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  {selectedTemplate ? (
-                    <div className="flex items-center gap-2.5">
-                      <Layout className="h-4 w-4 text-cyan-400/60 shrink-0" />
-                      <p className="text-sm font-medium text-white/80 truncate">
-                        {selectedTemplate.name}
-                      </p>
+              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
+                {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
+                  const display = INDUSTRY_DISPLAY[industryKey as IndustryTag];
+                  return (
+                    <div key={industryKey} className="mb-5 last:mb-0">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-sm">{display?.icon}</span>
+                        <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                          {display?.label || industryKey}
+                        </h3>
+                        <div className="flex-1 h-px bg-white/[0.04]" />
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {cards.map((card) => (
+                          <TemplatePreview
+                            key={card.id}
+                            card={card}
+                            isSelected={selectedTemplate?.id === card.id}
+                            onClick={() => handleTemplateSelect(card)}
+                          />
+                        ))}
+                      </div>
                     </div>
+                  );
+                })}
+
+                {templateCards.length === 0 && (
+                  <div className="text-center py-12">
+                    <p className="text-white/30 text-sm">No premium templates available for this category yet.</p>
+                    <p className="text-white/15 text-xs mt-1">AI will generate a custom layout.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+                <div className="flex-1 text-sm">
+                  {selectedTemplate ? (
+                    <span className="flex items-center gap-2 text-white/50">
+                      <Check className="h-3.5 w-3.5 text-cyan-400" />
+                      <span className="text-cyan-400 font-medium text-xs">{selectedTemplate.label}</span>
+                    </span>
                   ) : (
-                    <p className="text-xs text-white/25">Select a template to continue</p>
+                    <span className="text-white/20 text-xs">Select a template or continue for AI layout</span>
                   )}
                 </div>
                 <Button
-                  onClick={handleTemplateContinue}
-                  disabled={!selectedTemplate}
+                  onClick={handleTemplateNext}
                   className={cn(
-                    "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30",
-                    "hover:bg-cyan-500/25 hover:shadow-[0_0_16px_rgba(0,200,255,0.15)]",
+                    "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
+                    "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
                     "transition-all"
                   )}
                 >
@@ -861,14 +1267,14 @@ export const SystemLauncher = ({
             </motion.div>
           )}
 
-          {/* ── Step 3: Theme (styling only — no layout/content changes) ── */}
-          {step === "theme" && selectedSystemData && selectedTemplate && (
+          {/* ══ Step 3: Aesthetic + Name ══ */}
+          {step === "aesthetic" && selectedSystem && (
             <motion.div
-              key="theme"
-              initial={{ opacity: 0, y: 12 }}
+              key="aesthetic"
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.2 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
               <div className="px-6 pt-4 pb-3 flex items-center gap-3">
@@ -876,220 +1282,161 @@ export const SystemLauncher = ({
                   variant="ghost"
                   size="icon"
                   onClick={handleBack}
-                  className="h-8 w-8 text-white/40 hover:text-white hover:bg-white/[0.06]"
+                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
                 <div>
                   <h2 className="text-lg font-bold text-white tracking-tight">
-                    Choose your aesthetic
+                    Name & style
                   </h2>
-                  <p className="text-xs text-white/35">
-                    Style your{" "}
-                    <span className="text-cyan-400/70">{selectedTemplate.name}</span>{" "}
-                    template
+                  <p className="text-xs text-white/30">
+                    Final details before we generate your site
                   </p>
                 </div>
               </div>
 
-              <ScrollArea className="flex-1 max-h-[52vh] px-6 pb-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {THEME_PRESETS.map((theme) => {
-                    const isSelected = selectedTheme?.id === theme.id;
-                    return (
-                      <motion.button
-                        key={theme.id}
-                        onClick={() => handleThemeSelect(theme)}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className={cn(
-                          "relative p-4 rounded-2xl text-left transition-all duration-200",
-                          "border focus:outline-none",
-                          isSelected
-                            ? "bg-cyan-500/[0.08] border-cyan-500/40 shadow-[0_0_24px_rgba(0,200,255,0.08)]"
-                            : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/[0.12]"
-                        )}
-                      >
-                        <div className="flex gap-1.5 mb-3">
-                          {[theme.palette.bg, theme.palette.accent, theme.palette.accent2 || theme.palette.fg].map(
-                            (color, ci) => (
-                              <div
-                                key={ci}
-                                className={cn("w-7 h-7 rounded-lg transition-transform duration-200", isSelected && "scale-110")}
-                                style={{ backgroundColor: color, boxShadow: isSelected ? `0 0 8px ${color}40` : "none" }}
-                              />
-                            )
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-base opacity-70">{theme.icon}</span>
-                          <h3 className="font-semibold text-sm text-white/90">{theme.label}</h3>
-                          {isSelected && (
-                            <motion.div
-                              initial={{ scale: 0 }}
-                              animate={{ scale: 1 }}
-                              className="ml-auto w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center"
-                            >
-                              <Check className="h-3 w-3 text-[#07080F]" />
-                            </motion.div>
-                          )}
-                        </div>
-                        <p className="text-xs text-white/30 leading-relaxed">{theme.description}</p>
-                      </motion.button>
-                    );
-                  })}
+              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
+                {/* Business Name */}
+                <div className="mb-5">
+                  <label className="block text-xs font-semibold text-white/50 mb-2 uppercase tracking-wider">
+                    Business Name <span className="text-cyan-400/60">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    placeholder="e.g., Stellar Studio, QuickFix Plumbing…"
+                    className={cn(
+                      "w-full px-4 py-3 text-sm rounded-xl transition-all duration-200",
+                      "bg-white/[0.04] border border-white/[0.08] text-white placeholder:text-white/20",
+                      "focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-500/25 focus:bg-white/[0.06]",
+                      "outline-none"
+                    )}
+                    autoFocus
+                  />
                 </div>
 
-                <div className="mt-5">
-                  <label className="text-xs font-medium text-white/50 mb-2 block">
-                    Custom instructions <span className="text-white/20">(optional)</span>
+                {/* Theme Grid */}
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    Visual Style <span className="text-white/20">(optional)</span>
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                    {THEME_PRESETS.map((theme) => {
+                      const isSelected = selectedTheme?.id === theme.id;
+                      return (
+                        <button
+                          key={theme.id}
+                          onClick={() => setSelectedTheme(isSelected ? null : theme)}
+                          className={cn(
+                            "relative p-3.5 rounded-xl text-left transition-all duration-300",
+                            "border focus:outline-none overflow-hidden",
+                            isSelected
+                              ? "bg-cyan-500/[0.06] border-cyan-500/35"
+                              : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.12]"
+                          )}
+                        >
+                          {/* Color swatches */}
+                          <div className="flex gap-1.5 mb-3">
+                            {[theme.palette.bg, theme.palette.accent, theme.palette.accent2 || theme.palette.fg].map(
+                              (color, ci) => (
+                                <div
+                                  key={ci}
+                                  className="w-6 h-6 rounded-md ring-1 ring-white/5"
+                                  style={{ backgroundColor: color }}
+                                />
+                              )
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-sm opacity-60">{theme.icon}</span>
+                            <h3 className="font-semibold text-xs text-white/90">{theme.label}</h3>
+                            {isSelected && (
+                              <motion.div
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                className="ml-auto w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center"
+                              >
+                                <Check className="h-2.5 w-2.5 text-[#07080F]" />
+                              </motion.div>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-white/25 leading-relaxed">{theme.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Custom prompt */}
+                <div>
+                  <label className="text-xs font-medium text-white/40 mb-2 block">
+                    Custom instructions <span className="text-white/15">(optional)</span>
                   </label>
                   <textarea
-                    placeholder="e.g., Dark navy background, warm earth tones…"
+                    placeholder="e.g., Include a pricing section, use warm tones…"
                     value={customPrompt}
                     onChange={(e) => setCustomPrompt(e.target.value)}
                     className={cn(
-                      "w-full min-h-[72px] p-3 text-sm rounded-xl resize-none transition-all",
-                      "bg-white/[0.03] border border-white/[0.08] text-white/80 placeholder:text-white/20",
-                      "focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-500/30 focus:bg-white/[0.05]",
+                      "w-full min-h-[56px] p-3 text-sm rounded-xl resize-none transition-all",
+                      "bg-white/[0.03] border border-white/[0.06] text-white/80 placeholder:text-white/15",
+                      "focus:ring-1 focus:ring-cyan-500/25 focus:border-cyan-500/25 focus:bg-white/[0.05]",
                       "outline-none"
                     )}
                   />
                 </div>
-              </ScrollArea>
+              </div>
 
-              <div className="px-6 py-4 border-t border-white/[0.06] flex items-center justify-between">
-                <div className="flex-1 text-sm">
-                  {selectedTheme ? (
-                    <span className="flex items-center gap-2 text-white/60">
-                      <span className="text-lg">{selectedTheme.icon}</span>
-                      <span>
-                        <span className="text-cyan-400 font-medium">{selectedTheme.label}</span> selected
+              {/* Footer */}
+              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 text-xs text-white/30">
+                    {selectedTemplate && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-white/50">Template:</span>
+                        <span className="text-cyan-400/70">{selectedTemplate.label}</span>
                       </span>
-                    </span>
-                  ) : (
-                    <span className="text-white/25">No theme — default minimal style</span>
+                    )}
+                    {selectedTheme && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-white/50">Style:</span>
+                        <span className="text-cyan-400/70">{selectedTheme.label}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleLaunch}
+                  disabled={isLaunching || !businessName.trim()}
+                  className={cn(
+                    "h-10 px-6 text-sm font-semibold",
+                    "bg-gradient-to-r from-cyan-500/20 to-fuchsia-500/15 text-cyan-400",
+                    "border border-cyan-500/30",
+                    "hover:from-cyan-500/30 hover:to-fuchsia-500/20",
+                    "hover:shadow-[0_0_24px_rgba(0,200,255,0.15)]",
+                    "transition-all duration-300",
+                    "disabled:opacity-30"
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setAiEditOpen(true)}
-                    disabled={isAIGenerating}
-                    className="text-white/40 hover:text-white/70 hover:bg-white/[0.04] h-9 text-xs"
-                  >
-                    <Zap className="mr-1.5 h-3.5 w-3.5" />
-                    AI edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleAIGenerate}
-                    disabled={isAIGenerating || isLaunching}
-                    className={cn(
-                      "h-9 text-xs px-4",
-                      "bg-fuchsia-500/15 text-fuchsia-400 border border-fuchsia-500/30",
-                      "hover:bg-fuchsia-500/25 hover:shadow-[0_0_16px_rgba(255,0,255,0.12)]"
-                    )}
-                  >
-                    {isAIGenerating ? (
-                      <>
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        Generating…
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                        AI Variation
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleLaunch}
-                    disabled={isLaunching || isAIGenerating}
-                    className={cn(
-                      "h-9 text-xs px-5",
-                      "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30",
-                      "hover:bg-cyan-500/30 hover:shadow-[0_0_20px_rgba(0,200,255,0.15)]",
-                      "transition-all"
-                    )}
-                  >
-                    {isLaunching ? (
-                      <>
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        Installing…
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="mr-1.5 h-3.5 w-3.5" />
-                        Start Building
-                        <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                      </>
-                    )}
-                  </Button>
-                </div>
+                >
+                  {isLaunching ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate Site
+                      <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                    </>
+                  )}
+                </Button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* AI edit dialog */}
-        <Dialog open={aiEditOpen} onOpenChange={setAiEditOpen}>
-          <DialogContent className="max-w-5xl">
-            <DialogHeader>
-              <DialogTitle>AI edit: {selectedTemplate?.name}</DialogTitle>
-              <DialogDescription>
-                Propose a multi-file patch plan and apply it before opening
-                the full builder.
-              </DialogDescription>
-            </DialogHeader>
-            {selectedTemplate && selectedSystem ? (
-              <AICodeAssistant
-                currentCode={
-                  effectiveTemplateCode ?? getTemplateReactCode(selectedTemplate)
-                }
-                systemType={selectedSystem}
-                templateName={selectedTemplate.name}
-                pageStructureContext={buildPageStructureContext(
-                  effectiveTemplateCode ?? getTemplateReactCode(selectedTemplate)
-                )}
-                backendStateContext={
-                  selectedManifest
-                    ? `- tables: ${selectedManifest.tables.length}\n- workflows: ${selectedManifest.workflows.length}\n- intents: ${selectedManifest.intents.length}`
-                    : null
-                }
-                businessDataContext={
-                  "- (not installed yet; business data will be available after install)"
-                }
-                onCodeGenerated={(code) => {
-                  const cleaned = extractCleanCode(code);
-                  if (cleaned && looksLikeCode(cleaned)) {
-                    setEditedTemplateCode(cleaned);
-                  } else {
-                    console.warn("[SystemLauncher] AI edit returned prose, ignoring");
-                    toast.error("AI returned text instead of code. Try again.");
-                    return;
-                  }
-                  setEditedTemplateFiles(null);
-                }}
-                onFilesPatch={(files) => {
-                  setEditedTemplateFiles(files);
-                  const entry =
-                    files["/src/App.tsx"] ||
-                    files["/App.tsx"] ||
-                    Object.values(files).find(v => v.includes('export default'));
-                  if (entry) setEditedTemplateCode(entry);
-                  return true;
-                }}
-              />
-            ) : (
-              <p className="text-sm text-white/40">
-                Select a template first.
-              </p>
-            )}
-          </DialogContent>
-        </Dialog>
       </DialogContent>
     </Dialog>
   );

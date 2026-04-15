@@ -37,7 +37,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 import { getFileIcon } from '@/hooks/useVirtualFileSystem';
-import { BuildOutputPanel } from './BuildOutputPanel';
+import { VFSTerminal } from './VFSTerminal';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { vfsSnapshotManager, type DiffSummary } from '@/services/vfsSnapshotManager';
 import { analyzeImportGraph, getAffectedFiles, type ImportGraph, type AffectedFiles } from '@/services/importGraphAnalyzer';
@@ -833,10 +833,13 @@ export function VFSCodeView({
         {/* ============================================================== */}
         {/* Build Output / Terminal                                         */}
         {/* ============================================================== */}
-        <BuildOutputPanel
+        <VFSTerminal
+          nodes={nodes}
+          customDeps={{}}
           isCollapsed={terminalCollapsed}
           onToggleCollapse={() => setTerminalCollapsed(v => !v)}
           maxHeight="160px"
+          onRefreshPreview={() => vfsEventBus.emit('preview:refresh', {})}
         />
 
         {/* ============================================================== */}
@@ -912,7 +915,7 @@ function NoFileSelected() {
 // ---------------------------------------------------------------------------
 
 function EmptyState({
-  loadDefaultTemplate,
+  loadDefaultTemplate: _loadDefaultTemplate,
   importFiles,
 }: {
   loadDefaultTemplate: () => void;
@@ -936,40 +939,17 @@ function EmptyState({
 
         <h3 className="text-xl font-semibold text-white mb-2">No Project Loaded</h3>
         <p className="text-sm text-white/40 mb-8 leading-relaxed">
-          Load a template to explore a full React project, or create a new file to start from scratch.
+          Use the Launcher to generate a themed industry website, or import files to start editing.
         </p>
 
         <div className="flex gap-3 justify-center flex-wrap">
           <Button
-            variant="outline"
-            onClick={loadDefaultTemplate}
-            className="gap-2 bg-white/[0.03] border-fuchsia-500/20 text-white/60 hover:text-white hover:bg-fuchsia-500/10 hover:border-fuchsia-500/40 transition-all duration-200"
-          >
-            <Layout className="w-4 h-4" />
-            Load React Template
-          </Button>
-          <Button
             variant="default"
-            onClick={() => {
-              importFiles({
-                '/src/App.tsx': `import React from 'react';
-
-export default function App() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-gray-800 mb-4">Hello World</h1>
-        <p className="text-gray-600">Start editing to build something amazing!</p>
-      </div>
-    </div>
-  );
-}`,
-              });
-            }}
+            onClick={() => window.location.href = '/onboarding'}
             className="gap-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/20 border-0"
           >
-            <Plus className="w-4 h-4" />
-            Create New File
+            <Sparkles className="w-4 h-4" />
+            Open Launcher
           </Button>
         </div>
       </motion.div>

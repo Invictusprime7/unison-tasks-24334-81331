@@ -40,6 +40,7 @@ import {
 } from '@/services/previewSession';
 import { createCodeSandbox, openInCodeSandbox, type CodeSandboxSession } from '@/services/codesandbox';
 import { getDependenciesForSandpack, type ExtractedDependencies } from '@/utils/dependencyExtractor';
+import { SANDPACK_DEPENDENCIES, SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 
 // ============================================================================
 // Types
@@ -89,106 +90,9 @@ const SANDPACK_TIMEOUT_MS = 120000; // 120 seconds — generous timeout, never f
 const SANDPACK_AUTO_RETRY_DELAY = 2000; // Auto-retry after 2s on transient errors
 const SANDPACK_MAX_RETRIES = 3; // Maximum auto-retries before showing error
 
-// Docker runtime's full dependency set — ensures Sandpack resolves everything
-const BUNDLED_DEPENDENCIES: Record<string, string> = {
-  "react": "^18.3.1",
-  "react-dom": "^18.3.1",
-  "react-router-dom": "^6.20.0",
-  "lucide-react": "latest",
-  "clsx": "latest",
-  "tailwind-merge": "latest",
-  "class-variance-authority": "latest",
-  "@radix-ui/react-slot": "latest",
-  "@radix-ui/react-dialog": "latest",
-  "@radix-ui/react-dropdown-menu": "latest",
-  "@radix-ui/react-tabs": "latest",
-  "@radix-ui/react-toast": "latest",
-  "@radix-ui/react-tooltip": "latest",
-  "@radix-ui/react-select": "latest",
-  "@radix-ui/react-checkbox": "latest",
-  "@radix-ui/react-switch": "latest",
-  "@radix-ui/react-label": "latest",
-  "@radix-ui/react-avatar": "latest",
-  "@radix-ui/react-popover": "latest",
-  "@radix-ui/react-separator": "latest",
-  "@radix-ui/react-scroll-area": "latest",
-  "@radix-ui/react-accordion": "latest",
-  "@radix-ui/react-collapsible": "latest",
-  "@radix-ui/react-progress": "latest",
-  "@radix-ui/react-radio-group": "latest",
-  "@radix-ui/react-slider": "latest",
-  "@radix-ui/react-toggle": "latest",
-  "@radix-ui/react-toggle-group": "latest",
-  "framer-motion": "latest",
-  "date-fns": "latest",
-  "recharts": "latest",
-  "inngest": "latest",
-  "sonner": "latest",
-  "cmdk": "latest",
-  "embla-carousel-react": "latest",
-  "react-day-picker": "latest",
-  "input-otp": "latest",
-  "react-resizable-panels": "latest",
-  "vaul": "latest",
-  "next-themes": "latest",
-  "zustand": "latest",
-  "zod": "latest",
-  "react-hook-form": "latest",
-  "@hookform/resolvers": "latest",
-  "@tanstack/react-query": "latest",
-  "@tanstack/react-table": "latest",
-};
-
-// Docker runtime's full allowed imports — never stripped
-const ALLOWED_IMPORTS = new Set([
-  'react',
-  'react-dom',
-  'react-dom/client',
-  'lucide-react',
-  'clsx',
-  'tailwind-merge',
-  'class-variance-authority',
-  '@radix-ui/react-slot',
-  '@radix-ui/react-dialog',
-  '@radix-ui/react-dropdown-menu',
-  '@radix-ui/react-tabs',
-  '@radix-ui/react-toast',
-  '@radix-ui/react-tooltip',
-  '@radix-ui/react-select',
-  '@radix-ui/react-checkbox',
-  '@radix-ui/react-switch',
-  '@radix-ui/react-label',
-  '@radix-ui/react-avatar',
-  '@radix-ui/react-popover',
-  '@radix-ui/react-separator',
-  '@radix-ui/react-scroll-area',
-  '@radix-ui/react-accordion',
-  '@radix-ui/react-collapsible',
-  '@radix-ui/react-progress',
-  '@radix-ui/react-radio-group',
-  '@radix-ui/react-slider',
-  '@radix-ui/react-toggle',
-  '@radix-ui/react-toggle-group',
-  'framer-motion',
-  'date-fns',
-  'recharts',
-  'inngest',
-  'sonner',
-  'cmdk',
-  'embla-carousel-react',
-  'react-day-picker',
-  'input-otp',
-  'react-resizable-panels',
-  'vaul',
-  'next-themes',
-  'zustand',
-  'zod',
-  'react-hook-form',
-  '@hookform/resolvers',
-  '@tanstack/react-query',
-  '@tanstack/react-table',
-  'react-router-dom',
-]);
+// Use shared dependency constants — single source of truth
+const BUNDLED_DEPENDENCIES = SANDPACK_DEPENDENCIES;
+const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
 
 // CSS Variables for shadcn/ui theming
 const BASE_CSS = `

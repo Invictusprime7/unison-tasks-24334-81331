@@ -489,54 +489,58 @@ export function generateVariation(prompt: string, providedSeed?: string): Templa
 
 export function variationToPromptContext(v: TemplateVariation): string {
   return `
-⚠️ **MANDATORY DESIGN REQUIREMENTS - YOU MUST FOLLOW THESE EXACTLY** ⚠️
+## Design Defaults for ${v.industry.name} — "${v.colorScheme.name}" scheme
 
-This template MUST use the ${v.industry.name} industry styling with the "${v.colorScheme.name}" color scheme.
-DO NOT use default blue colors (#3b82f6). DO NOT use generic fonts.
+These are the **default** design tokens for this template. Use them as-is for initial generation.
+However, if the user's request explicitly asks for different colors, fonts, layout, or styling,
+**the user's request ALWAYS takes priority over these defaults**. Adapt the palette, typography,
+or layout to match the user's stated intent while keeping the industry context intact.
 
-🎨 **REQUIRED COLOR PALETTE (COPY THESE HEX VALUES EXACTLY):**
-- primaryColor: "${v.colorScheme.primary}" ← Use this for all primary buttons and CTAs
-- secondaryColor: "${v.colorScheme.secondary}" ← Use this for secondary elements
-- accentColor: "${v.colorScheme.accent}" ← Use this for badges, highlights, icons
-- background: "${v.colorScheme.background}" ← Main page background
-- foreground: "${v.colorScheme.foreground}" ← Main text color
-- muted: "${v.colorScheme.muted}" ← Secondary text, borders
-- cardBackground: "${v.colorScheme.cardBg}" ← Card and section backgrounds
-- gradient: "linear-gradient(135deg, ${v.colorScheme.gradients[0]})" ← Hero/CTA gradients
+DO NOT use generic fallback blue (#3b82f6) or default Inter font unless the user asks for it.
 
-🔤 **REQUIRED TYPOGRAPHY (USE THESE GOOGLE FONTS):**
+🎨 **DEFAULT COLOR PALETTE:**
+- primaryColor: "${v.colorScheme.primary}" — primary buttons and CTAs
+- secondaryColor: "${v.colorScheme.secondary}" — secondary elements
+- accentColor: "${v.colorScheme.accent}" — badges, highlights, icons
+- background: "${v.colorScheme.background}" — main page background
+- foreground: "${v.colorScheme.foreground}" — main text color
+- muted: "${v.colorScheme.muted}" — secondary text, borders
+- cardBackground: "${v.colorScheme.cardBg}" — card and section backgrounds
+- gradient: "linear-gradient(135deg, ${v.colorScheme.gradients[0]})" — hero/CTA gradients
+
+🔤 **DEFAULT TYPOGRAPHY (Google Fonts):**
 - Heading fontFamily: "${v.fontPairing.heading}"
 - Body fontFamily: "${v.fontPairing.body}"
 ${v.fontPairing.accent ? `- Accent fontFamily: "${v.fontPairing.accent}"` : ''}
 - Design style: ${v.fontPairing.style}
 
-📐 **REQUIRED HERO LAYOUT: "${v.heroVariant.name}"**
+📐 **DEFAULT HERO LAYOUT: "${v.heroVariant.name}"**
 - Layout pattern: ${v.heroVariant.layout}
 - CTA button style: ${v.heroVariant.ctaStyle}
-${v.heroVariant.hasVideo ? '- MUST include video background placeholder' : ''}
-- Decorative elements to include: ${v.heroVariant.decorativeElements.join(', ')}
+${v.heroVariant.hasVideo ? '- Include video background placeholder' : ''}
+- Decorative elements: ${v.heroVariant.decorativeElements.join(', ')}
 
-📋 **REQUIRED SECTION ORDER (BUILD SECTIONS IN THIS EXACT SEQUENCE — ONE OF EACH, NO DUPLICATES):**
-⚠️ CRITICAL: Generate EXACTLY ONE hero section. Do NOT create multiple hero variants or hero alternatives. Users swap layouts later.
+📋 **DEFAULT SECTION ORDER:**
 ${v.sectionOrder.map((s, i) => `${i + 1}. ${s.toUpperCase()}`).join('\n')}
 
-✨ **REQUIRED VISUAL EFFECTS:**
+✨ **DEFAULT VISUAL EFFECTS:**
 - Card Tailwind classes: ${v.visualEffect.cardStyle}
 - Hover effect: ${v.visualEffect.hoverEffect}
 - Animation style: ${v.visualEffect.animationType}
-${v.visualEffect.glassmorphism ? '- MUST apply glassmorphism (backdrop-blur, semi-transparent backgrounds)' : ''}
-${v.visualEffect.gradientOverlay ? '- MUST use gradient overlays on hero and CTA sections' : ''}
+${v.visualEffect.glassmorphism ? '- Apply glassmorphism (backdrop-blur, semi-transparent backgrounds)' : ''}
+${v.visualEffect.gradientOverlay ? '- Use gradient overlays on hero and CTA sections' : ''}
 
-🖼️ **USE THESE SPECIFIC IMAGES:**
+🖼️ **SUGGESTED IMAGES:**
 ${v.industry.unsplashIds.map(id => `https://images.unsplash.com/${id}?w=800&q=80`).join('\n')}
 
-🎯 **ICONS TO USE:** ${v.industry.iconSets.slice(0, 8).join(', ')}
+🎯 **SUGGESTED ICONS:** ${v.industry.iconSets.slice(0, 8).join(', ')}
 
-⚠️ IMPORTANT: Your brandKit MUST contain:
+Your brandKit should default to:
 "primaryColor": "${v.colorScheme.primary}",
 "secondaryColor": "${v.colorScheme.secondary}",
 "accentColor": "${v.colorScheme.accent}",
 "fonts": { "heading": "${v.fontPairing.heading}", "body": "${v.fontPairing.body}"${v.fontPairing.accent ? `, "accent": "${v.fontPairing.accent}"` : ''} }
+(Override any of these if the user's prompt requests different styling.)
 
 Variation ID: ${v.seed}
 `;

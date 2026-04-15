@@ -1,48 +1,59 @@
 /**
- * Theme Presets — Minimal-first design tokens
+ * Theme Presets
+ *
+ * Minimal defaults are removed.
+ * If a template omits local theme tokens, it inherits the Launcher base theme.
  */
 
 import type { ThemeTokens } from './types';
 
-// ============================================================================
-// Default Minimal Theme (Light)
-// ============================================================================
-
-export const THEME_MINIMAL_LIGHT: ThemeTokens = {
+export const LAUNCHER_BASE_THEME: ThemeTokens = {
   colors: {
-    primary: '220 14% 20%',         // Near-black charcoal
-    primaryForeground: '0 0% 100%',
-    secondary: '220 10% 40%',       // Medium gray
-    secondaryForeground: '0 0% 100%',
-    accent: '220 14% 20%',          // Same as primary for minimal look
-    accentForeground: '0 0% 100%',
-    background: '0 0% 99%',         // Off-white
-    foreground: '220 14% 10%',      // Dark
-    muted: '220 5% 96%',            // Very light gray
-    mutedForeground: '220 5% 46%',  // Medium gray
-    card: '0 0% 100%',              // White
-    cardForeground: '220 14% 10%',
-    border: '220 5% 90%',           // Light border
+    primary: '221 83% 53%',
+    primaryForeground: '210 40% 98%',
+    secondary: '262 83% 58%',
+    secondaryForeground: '210 40% 98%',
+    accent: '190 95% 45%',
+    accentForeground: '222 47% 11%',
+    background: '222 47% 11%',
+    foreground: '210 40% 98%',
+    muted: '222 26% 18%',
+    mutedForeground: '215 20% 72%',
+    card: '224 39% 14%',
+    cardForeground: '210 40% 98%',
+    border: '217 19% 27%',
   },
   typography: {
-    headingFont: "'Inter', sans-serif",
-    bodyFont: "'Inter', sans-serif",
-    headingWeight: '600',
+    headingFont: "'Space Grotesk', sans-serif",
+    bodyFont: "'DM Sans', sans-serif",
+    headingWeight: '700',
     bodyWeight: '400',
   },
-  radius: '0.5rem',
-  sectionPadding: '5rem 1.5rem',
-  containerWidth: '1100px',
+  radius: '1rem',
+  sectionPadding: '6rem 1.5rem',
+  containerWidth: '1200px',
 };
-
-// ============================================================================
-// Theme Registry (will expand as users customize)
-// ============================================================================
 
 export const THEME_REGISTRY: Record<string, ThemeTokens> = {
-  'minimal-light': THEME_MINIMAL_LIGHT,
+  modern: LAUNCHER_BASE_THEME,
+  'launcher-base': LAUNCHER_BASE_THEME,
 };
 
-export const getTheme = (id: string): ThemeTokens => {
-  return THEME_REGISTRY[id] || THEME_MINIMAL_LIGHT;
+export const resolveThemeTokens = (theme?: Partial<ThemeTokens> | null): ThemeTokens => ({
+  colors: {
+    ...LAUNCHER_BASE_THEME.colors,
+    ...(theme?.colors ?? {}),
+  },
+  typography: {
+    ...LAUNCHER_BASE_THEME.typography,
+    ...(theme?.typography ?? {}),
+  },
+  radius: theme?.radius || LAUNCHER_BASE_THEME.radius,
+  sectionPadding: theme?.sectionPadding || LAUNCHER_BASE_THEME.sectionPadding,
+  containerWidth: theme?.containerWidth || LAUNCHER_BASE_THEME.containerWidth,
+});
+
+export const getTheme = (id?: string | null): ThemeTokens => {
+  if (!id) return LAUNCHER_BASE_THEME;
+  return resolveThemeTokens(THEME_REGISTRY[id] || LAUNCHER_BASE_THEME);
 };

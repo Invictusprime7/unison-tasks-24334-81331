@@ -9,6 +9,17 @@ import { toast } from 'sonner';
 
 export type BuilderMode = 'select' | 'edit' | 'preview' | 'pan' | 'code';
 export type ViewMode = 'canvas' | 'code' | 'split';
+
+/**
+ * Editor layer determines what powers the visual editing surface.
+ * - 'react-preview': React runtime in Sandpack iframe (PRIMARY — source of truth)
+ * - 'visual-overlay': Fabric.js for drag handles, selection boxes, annotations
+ * - 'wireframe': Fabric.js for spatial planning / wireframe mode
+ *
+ * Fabric is NEVER the rendering truth. It only provides editing affordances
+ * as an overlay on top of the React preview.
+ */
+export type EditorLayer = 'react-preview' | 'visual-overlay' | 'wireframe';
 export type DeviceType = 'desktop' | 'tablet' | 'mobile';
 
 interface CanvasState {
@@ -34,6 +45,13 @@ interface WebBuilderState {
   builderMode: BuilderMode;
   viewMode: ViewMode;
   isInteractive: boolean;
+  
+  /**
+   * Active editor layer. Controls whether Fabric is mounted.
+   * Default: 'react-preview' — Fabric is NOT loaded.
+   * Only 'visual-overlay' and 'wireframe' activate Fabric.
+   */
+  editorLayer: EditorLayer;
   
   // Device & Viewport
   device: DeviceType;
@@ -63,10 +81,16 @@ const DEVICE_WIDTHS: Record<DeviceType, number> = {
   mobile: 375,
 };
 
+/** Whether the given editor layer requires Fabric.js to be mounted */
+export function layerRequiresFabric(layer: EditorLayer): boolean {
+  return layer === 'visual-overlay' || layer === 'wireframe';
+}
+
 const DEFAULT_STATE: WebBuilderState = {
   builderMode: 'select',
   viewMode: 'canvas',
   isInteractive: false,
+  editorLayer: 'react-preview', // React preview is default — no Fabric
   device: 'desktop',
   zoom: 0.5,
   isFullscreen: false,
@@ -84,6 +108,12 @@ export const useWebBuilderState = (fabricCanvas: FabricCanvas | null) => {
   const [state, setState] = useState<WebBuilderState>(DEFAULT_STATE);
   const historyRef = useRef<HistoryState>({ past: [], future: [], current: null });
   const maxHistorySize = 50;
+
+  // Editor layer control
+  const setEditorLayer = useCallback((layer: EditorLayer) => {
+    setState(prev => ({ ...prev, editorLayer: layer }));
+    console.log(`[WebBuilder] Editor layer: ${layer} (fabric: ${layerRequiresFabric(layer)})`);
+  }, []);
 
   // Mode setters
   const setBuilderMode = useCallback((mode: BuilderMode) => {
@@ -367,6 +397,9 @@ export const useWebBuilderState = (fabricCanvas: FabricCanvas | null) => {
     zoomOut,
     resetZoom,
     toggleFullscreen,
+    
+    // Editor layer
+    setEditorLayer,
     
     // Panels
     toggleLeftPanel,

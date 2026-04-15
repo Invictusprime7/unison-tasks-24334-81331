@@ -29,9 +29,10 @@ import {
   Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SandpackProvider, SandpackPreview, SandpackLayout } from '@codesandbox/sandpack-react';
+import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
+import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
@@ -80,8 +81,6 @@ export interface VFSPreviewProps {
   device?: 'desktop' | 'tablet' | 'mobile';
   /** Enable element selection (edit mode) */
   enableSelection?: boolean;
-  /** Bump this to explicitly re-arm edit mode in the preview */
-  selectionActivationKey?: number;
   /** Callback when an element is selected */
   onElementSelect?: (elementData: any) => void;
 }
@@ -93,6 +92,8 @@ export interface VFSPreviewHandle {
   getBackend: () => PreviewBackend;
   openInNewTab: () => void;
   getIframe: () => HTMLIFrameElement | null;
+  /** Navigate the preview to a hash route (e.g. "/contact") */
+  navigateToRoute: (route: string) => void;
 }
 
 // ============================================================================
@@ -142,14 +143,41 @@ class SandpackErrorBoundary extends Component<
 }
 
 // ============================================================================
-// Helpers
+// Sandpack Error Listener — captures compile/runtime errors from Sandpack
 // ============================================================================
 
-function resolvePreviewIframe(root: HTMLDivElement | null): HTMLIFrameElement | null {
-  if (!root) return null;
-  // Target Sandpack's preview iframe specifically — avoid the hidden bundler/manager iframe
-  return root.querySelector('iframe.sp-preview-iframe') || root.querySelector('.sp-preview-container iframe') || root.querySelector('iframe');
-}
+const SandpackErrorListener: React.FC<{
+  onError?: (error: string) => void;
+}> = ({ onError }) => {
+  const { sandpack } = useSandpack();
+  const lastReportedRef = useRef<string>('');
+
+  useEffect(() => {
+    const status = sandpack.status;
+    const error = sandpack.error;
+
+    if (error) {
+      const msg = typeof error === 'string'
+        ? error
+        : (error as any).message
+          ? `${(error as any).title || 'Error'}: ${(error as any).message}${(error as any).path ? ` (${(error as any).path}:${(error as any).line || ''})` : ''}`
+          : String(error);
+
+      if (msg !== lastReportedRef.current) {
+        lastReportedRef.current = msg;
+        onError?.(msg);
+      }
+    } else if (status === 'idle' || status === 'running') {
+      lastReportedRef.current = '';
+    }
+  }, [sandpack.status, sandpack.error, onError]);
+
+  return null;
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
 
 function nodesToFileMap(nodes: VirtualNode[]): Record<string, string> {
   const files: Record<string, string> = {};
@@ -167,7 +195,7 @@ function nodesToFileMap(nodes: VirtualNode[]): Record<string, string> {
 // Main Component
 // ============================================================================
 
-export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({ 
+export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   nodes,
   files: propFiles,
   activeFile,
@@ -185,7 +213,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   siteId,
   device = 'desktop',
   enableSelection = false,
-  selectionActivationKey = 0,
   onElementSelect,
 }, ref) => {
   // State - default to 'sandpack' — no HTML fallback
@@ -194,10 +221,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const [logs, setLogs] = useState<string[]>([]);
   const [sandpackKey, setSandpackKey] = useState(0);
   const startAttemptedRef = useRef(false);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const previewRootRef = useRef<HTMLDivElement | null>(null);
-  const hoveredElementRef = useRef<HTMLElement | null>(null);
-  const selectedElementRef = useRef<HTMLElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   
   // Docker preview service
   const dockerService = usePreviewService();
@@ -208,18 +232,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   // Check if local Vite server is configured
   const localViteConfigured = !!LOCAL_PREVIEW_URL;
   
-  const clearPreviewHighlights = useCallback(() => {
-    if (hoveredElementRef.current) {
-      removeHighlight(hoveredElementRef.current);
-      hoveredElementRef.current = null;
-    }
-
-    if (selectedElementRef.current) {
-      removeHighlight(selectedElementRef.current);
-      selectedElementRef.current = null;
-    }
-  }, []);
-  
   // Convert nodes to files - ALWAYS recompute to ensure we have latest
   const files = useMemo(() => {
     const nodeFiles = nodesToFileMap(nodes);
@@ -228,16 +240,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   // Prepare Sandpack dependencies
   const sandpackDeps = useMemo(() => {
-    const baseDeps: Record<string, string> = {
-      react: '^18.3.1',
-      'react-dom': '^18.3.1',
-      'react-router-dom': '^6.20.0',
-      'lucide-react': 'latest',
-      'clsx': 'latest',
-      'tailwind-merge': 'latest',
-      'framer-motion': 'latest',
-    };
-    const { dependencies } = getDependenciesForSandpack(files, baseDeps);
+    const { dependencies } = getDependenciesForSandpack(files, SANDPACK_DEPENDENCIES);
     return dependencies;
   }, [files]);
   
@@ -245,16 +248,32 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const sandpackFiles = useMemo(() => {
     return prepareSandpackFiles(files);
   }, [files]);
+
+  const normalizedActiveFile = useMemo(() => {
+    if (!activeFile) return null;
+    if (activeFile.startsWith('/src/')) return activeFile.replace('/src/', '/');
+    if (activeFile.startsWith('/styles/')) return activeFile.replace('/styles/', '/');
+    return activeFile;
+  }, [activeFile]);
   
-  // Determine Sandpack entry file (from prepared/flattened files)
+  // Determine Sandpack entry file — Model B: always prefer App.tsx as the site router
   const sandpackEntryFile = useMemo(() => {
-    const candidates = ['/App.tsx', '/App.jsx'];
+    // Always use App.tsx as the canonical entry (site router model)
+    if (sandpackFiles['/App.tsx']) return '/App.tsx';
+    if (sandpackFiles['/App.jsx']) return '/App.jsx';
+
+    // Fallback to active file only if no App exists
+    if (normalizedActiveFile && sandpackFiles[normalizedActiveFile]) {
+      return normalizedActiveFile;
+    }
+
+    const candidates = ['/index.tsx', '/index.jsx'];
     for (const candidate of candidates) {
       if (sandpackFiles[candidate]) return candidate;
     }
-    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/main.tsx' && p !== '/index.tsx');
+    const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/index.tsx');
     return firstCode || '/App.tsx';
-  }, [sandpackFiles]);
+  }, [sandpackFiles, normalizedActiveFile]);
   
   // Handle messages from preview iframe (intent system)
   useEffect(() => {
@@ -283,68 +302,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         };
         onIntentTrigger?.(intent, enrichedPayload);
       }
+
+      // Capture runtime errors forwarded from Sandpack iframe
+      if (data.type === 'console' && data.log) {
+        const log = data.log;
+        if (log.method === 'error' && log.data?.length) {
+          const errorMsg = log.data.map((d: any) => typeof d === 'string' ? d : JSON.stringify(d)).join(' ');
+          if (errorMsg && !errorMsg.includes('ResizeObserver') && !errorMsg.includes('MutationRecord')) {
+            onError?.(errorMsg);
+          }
+        }
+      }
     };
     
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
-  }, [onNavigate, onIntentTrigger, businessId, siteId]);
-
-  // Attach edit-mode selection via postMessage bridge (works cross-origin with Sandpack)
-  useEffect(() => {
-    if (!enableSelection) {
-      const iframe = backend === 'sandpack'
-        ? resolvePreviewIframe(previewRootRef.current)
-        : iframeRef.current;
-      if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'EDIT_MODE_TOGGLE', enabled: false }, '*');
-      }
-      clearPreviewHighlights();
-      return;
-    }
-
-    const sendEnable = () => {
-      const iframe = backend === 'sandpack'
-        ? resolvePreviewIframe(previewRootRef.current)
-        : iframeRef.current;
-      if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'EDIT_MODE_TOGGLE', enabled: true }, '*');
-      }
-    };
-
-    sendEnable();
-    setTimeout(sendEnable, 60);
-
-    let observer: MutationObserver | null = null;
-    if (backend === 'sandpack' && previewRootRef.current) {
-      observer = new MutationObserver(() => {
-        setTimeout(sendEnable, 200);
-      });
-      observer.observe(previewRootRef.current, { childList: true, subtree: true });
-    }
-
-    const interval = setInterval(sendEnable, 800);
-    const stopInterval = setTimeout(() => clearInterval(interval), 8000);
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'ELEMENT_SELECTED' && event.data.elementData) {
-        onElementSelect?.(event.data.elementData);
-      }
-    };
-    window.addEventListener('message', handleMessage);
-
-    return () => {
-      observer?.disconnect();
-      clearInterval(interval);
-      clearTimeout(stopInterval);
-      window.removeEventListener('message', handleMessage);
-      const iframe = backend === 'sandpack'
-        ? resolvePreviewIframe(previewRootRef.current)
-        : iframeRef.current;
-      if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'EDIT_MODE_TOGGLE', enabled: false }, '*');
-      }
-    };
-  }, [enableSelection, selectionActivationKey, backend, sandpackKey, onElementSelect, clearPreviewHighlights]);
+  }, [onNavigate, onIntentTrigger, businessId, siteId, onError]);
   
   // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {
@@ -433,6 +406,27 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     // For Sandpack, we can't easily open in new tab — it's in-browser
   }, [backend, dockerService.session]);
 
+  // Navigate preview to a hash route via postMessage
+  const handleNavigateToRoute = useCallback((route: string) => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) {
+      // Try to find Sandpack iframe
+      const container = iframe?.closest?.('.sp-layout') || document.querySelector('.sp-preview-iframe');
+      const spIframe = container as HTMLIFrameElement;
+      if (spIframe?.contentWindow) {
+        spIframe.contentWindow.postMessage({ type: 'NAV_ROUTE', route }, '*');
+        return;
+      }
+      // Broadcast to all iframes as fallback
+      const allIframes = document.querySelectorAll('iframe');
+      allIframes.forEach(f => {
+        try { f.contentWindow?.postMessage({ type: 'NAV_ROUTE', route }, '*'); } catch {}
+      });
+      return;
+    }
+    iframe.contentWindow.postMessage({ type: 'NAV_ROUTE', route }, '*');
+  }, []);
+
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
     refresh: handleRestart,
@@ -441,7 +435,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     getBackend: () => backend,
     openInNewTab: handleOpenInNewTab,
     getIframe: () => iframeRef.current,
-  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab]);
+    navigateToRoute: handleNavigateToRoute,
+  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab, handleNavigateToRoute]);
   
   // Docker preview URL
   const dockerUrl = useMemo(() => {
@@ -530,7 +525,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       )}
       
       {/* Preview Content */}
-      <div ref={previewRootRef} className="flex-1 relative min-h-0">
+      <div className="flex-1 relative min-h-0">
         {/* Loading State */}
         {backend === 'loading' && (
           <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
@@ -566,53 +561,38 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         
         {/* Sandpack In-Browser React Preview — the primary rendering engine */}
         {backend === 'sandpack' && (
-          <div
-            className="w-full h-full flex justify-center overflow-hidden"
-            style={{
-              padding: device !== 'desktop' ? '16px' : 0,
-              background: device !== 'desktop' ? 'hsl(var(--muted))' : undefined,
-            }}
-          >
-            <div
-              className="h-full transition-all duration-300 overflow-hidden"
-              style={{
-                width: device === 'mobile' ? '375px' : device === 'tablet' ? '768px' : '100%',
-                maxWidth: '100%',
-                boxShadow: device !== 'desktop' ? '0 4px 20px rgba(0,0,0,0.15)' : 'none',
-                borderRadius: device !== 'desktop' ? '12px' : '0',
+          <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
+            <SandpackProvider
+              key={`sandpack-${sandpackKey}`}
+              template="react-ts"
+              files={sandpackFiles}
+              theme="light"
+              options={{
+                externalResources: [
+                  'https://cdn.tailwindcss.com',
+                ],
+                activeFile: sandpackEntryFile,
+                visibleFiles: [sandpackEntryFile],
+                autorun: true,
+                autoReload: true,
+                recompileMode: 'delayed',
+                recompileDelay: 300,
+              }}
+              customSetup={{
+                dependencies: sandpackDeps,
               }}
             >
-              <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
-                <SandpackProvider
-                  key={`sandpack-${sandpackKey}`}
-                  template="react-ts"
-                  files={sandpackFiles}
-                  theme="light"
-                  options={{
-                    externalResources: ['https://cdn.tailwindcss.com'],
-                    activeFile: sandpackEntryFile,
-                    visibleFiles: [sandpackEntryFile],
-                    autorun: true,
-                    autoReload: true,
-                    recompileMode: 'delayed',
-                    recompileDelay: 300,
-                  }}
-                  customSetup={{
-                    dependencies: sandpackDeps,
-                  }}
-                >
-                  <SandpackLayout className="!flex-1 !min-h-0 !border-0 !rounded-none !bg-transparent" style={{ height: '100%' }}>
-                    <SandpackPreview
-                      showNavigator={false}
-                      showRefreshButton={false}
-                      showOpenInCodeSandbox={false}
-                      style={{ height: '100%', minHeight: 0 }}
-                    />
-                  </SandpackLayout>
-                </SandpackProvider>
-              </SandpackErrorBoundary>
-            </div>
-          </div>
+              <SandpackLayout className="!flex-1 !min-h-0 !border-0 !rounded-none !bg-transparent" style={{ height: '100%' }}>
+                <SandpackPreview
+                  showNavigator={false}
+                  showRefreshButton={false}
+                  showOpenInCodeSandbox={false}
+                  style={{ height: '100%', minHeight: 0 }}
+                />
+              </SandpackLayout>
+              <SandpackErrorListener onError={onError} />
+            </SandpackProvider>
+          </SandpackErrorBoundary>
         )}
         
         {/* Logs Panel */}

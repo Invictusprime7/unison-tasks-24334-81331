@@ -373,8 +373,17 @@ export function getDragDropScript(): string {
         var observer = new MutationObserver(function(mutations) {
           var shouldReinit = false;
           mutations.forEach(function(mutation) {
-            if (mutation.addedNodes.length > 0) {
-              mutation.addedNodes.forEach(function(node) {
+            Array.from(mutation.addedNodes || []).forEach(function(node) {
+              if (shouldReinit) return;
+              if (node.nodeType === 1) {
+                var element = node;
+                if (!element.getAttribute('data-drag-initialized')) {
+                  shouldReinit = true;
+                }
+              }
+            });
+            if (!shouldReinit && mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+              Array.from(mutation.addedNodes).forEach(function(node) {
                 if (node.nodeType === 1 && !node.getAttribute('data-drag-initialized')) {
                   shouldReinit = true;
                 }

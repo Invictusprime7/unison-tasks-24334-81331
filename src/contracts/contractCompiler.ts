@@ -14,6 +14,9 @@
  * 5. Validates provisioning status
  * 6. Outputs a CompiledContract — the ONLY valid preview input
  * 
+ * V2: CompiledBinding upgraded to CompiledInteractionBinding with
+ * bindingKey, slotRole, target resolution, payload schema, and readiness.
+ * 
  * RULE: Preview launches ONLY if the contract passes.
  */
 
@@ -74,7 +77,7 @@ export interface CompiledContract {
   /** Required workflows from capabilities */
   requiredWorkflows: WorkflowSpec[];
   /** Intent bindings derived from blueprint + section roles */
-  intentBindings: CompiledBinding[];
+  intentBindings: CompiledInteractionBinding[];
   /** Pages validated and enriched */
   pages: CompiledPage[];
   /** CRM pipeline config */
@@ -89,12 +92,57 @@ export interface CompiledContract {
   provisioningReport: ProvisioningReport;
 }
 
+/**
+ * @deprecated Use CompiledInteractionBinding
+ */
 export interface CompiledBinding {
   elementRole: string;
   sectionType: string;
   intent: CoreIntent;
   params: Record<string, unknown>;
   source: 'blueprint' | 'capability-default' | 'section-role' | 'slot-policy';
+}
+
+/**
+ * V2 Compiled Interaction Binding — Full-fidelity binding artifact.
+ * 
+ * Every clickable element answers 5 questions:
+ * 1. What is this element's stable key? (bindingKey)
+ * 2. What canonical intent does it fire? (intent)
+ * 3. What target does it affect? (target)
+ * 4. What payload does it require? (payloadSchema)
+ * 5. Is it preview-ready only, or publish-ready? (readiness)
+ */
+export interface CompiledInteractionBinding {
+  /** Stable key: "pageRole.sectionType.slotRole" */
+  bindingKey: string;
+  /** Page role where this binding lives */
+  pageRole: string;
+  /** Section type */
+  sectionType: string;
+  /** Slot role within section */
+  slotRole: string;
+  /** Legacy element role (backward compat) */
+  elementRole: string;
+  /** Canonical CoreIntent */
+  intent: CoreIntent;
+  /** Display label (presentation only) */
+  label?: string;
+  /** Resolved target */
+  target?: {
+    kind: 'route' | 'overlay' | 'form' | 'calendar' | 'product' | 'state';
+    ref: string;
+  };
+  /** Static params */
+  params: Record<string, unknown>;
+  /** Payload schema for data-carrying intents */
+  payloadSchema?: Record<string, string>;
+  /** Origin of this binding */
+  source: 'blueprint' | 'capability-default' | 'section-role' | 'slot-policy' | 'wizard' | 'system';
+  /** Required capabilities for this binding to be operational */
+  requiredCapabilities?: string[];
+  /** Readiness state */
+  readiness: 'preview-ready' | 'publish-ready' | 'stubbed' | 'blocked';
 }
 
 export interface CompiledPage {
@@ -238,7 +286,6 @@ export function compileContract(
     blueprint.capabilities.enabled as CapabilityId[],
   );
 
-  // Validate route links — all page paths must be in route policy
   for (const page of blueprint.pages) {
     if (!routePolicy.routes.some(r => r.path === page.path)) {
       issues.push({
@@ -256,7 +303,6 @@ export function compileContract(
     blueprint.intents.primaryCta,
   );
 
-  // Add warnings for unresolved slots
   for (const u of slotBindingPolicy.unresolved) {
     issues.push({
       code: 'UNRESOLVED_SLOT_BINDING',
@@ -266,36 +312,74 @@ export function compileContract(
     });
   }
 
-  // ── 7. Generate intent bindings (from slot policy + legacy bindings) ──
-  const intentBindings: CompiledBinding[] = [];
+  // ── 7. Generate interaction bindings (V2) ────────────────────────────
+  const intentBindings: CompiledInteractionBinding[] = [];
 
   // Slot-policy-driven bindings (primary source)
   for (const binding of slotBindingPolicy.resolved) {
+    const bindingKey = `${binding.section}.${binding.slot}`;
+    const isOverlay = ['booking.create', 'quote.request', 'cart.checkout'].includes(binding.intent);
+
     intentBindings.push({
-      elementRole: `${binding.section}-${binding.slot}`,
+      bindingKey,
+      pageRole: '*', // Applies to any page containing this section
       sectionType: binding.section,
+      slotRole: binding.slot,
+      elementRole: `${binding.section}-${binding.slot}`,
       intent: binding.intent,
+      target: {
+        kind: isOverlay ? 'overlay' : 'route',
+        ref: routePolicy.ctaRouteMap[binding.intent] || '/',
+      },
       params: {},
       source: 'slot-policy',
+      readiness: backendInstalled ? 'publish-ready' : 'preview-ready',
     });
   }
 
   // Blueprint-level overrides
-  intentBindings.push({
-    elementRole: 'hero-primary-cta',
+  const heroBindingKey = 'hero.primary-cta';
+  // Remove any slot-policy hero.primary-cta to avoid duplication
+  const existingHeroIdx = intentBindings.findIndex(b => b.bindingKey === heroBindingKey);
+  
+  const heroBinding: CompiledInteractionBinding = {
+    bindingKey: heroBindingKey,
+    pageRole: 'home',
     sectionType: 'hero',
+    slotRole: 'primary-cta',
+    elementRole: 'hero-primary-cta',
     intent: blueprint.intents.primaryCta,
+    target: {
+      kind: routePolicy.overlayRoutes.includes(routePolicy.ctaRouteMap[blueprint.intents.primaryCta] || '')
+        ? 'overlay' : 'route',
+      ref: routePolicy.ctaRouteMap[blueprint.intents.primaryCta] || '/',
+    },
     params: {},
     source: 'blueprint',
-  });
+    readiness: backendInstalled ? 'publish-ready' : 'preview-ready',
+  };
+
+  if (existingHeroIdx >= 0) {
+    intentBindings[existingHeroIdx] = heroBinding;
+  } else {
+    intentBindings.push(heroBinding);
+  }
 
   if (blueprint.intents.secondaryCta) {
     intentBindings.push({
-      elementRole: 'hero-secondary-cta',
+      bindingKey: 'hero.secondary-cta',
+      pageRole: 'home',
       sectionType: 'hero',
+      slotRole: 'secondary-cta',
+      elementRole: 'hero-secondary-cta',
       intent: blueprint.intents.secondaryCta,
+      target: {
+        kind: 'route',
+        ref: routePolicy.ctaRouteMap[blueprint.intents.secondaryCta] || '/#services',
+      },
       params: {},
       source: 'blueprint',
+      readiness: 'preview-ready',
     });
   }
 
@@ -306,7 +390,6 @@ export function compileContract(
     backendInstalled,
   );
 
-  // Add provisioning warnings
   for (const cap of provisioningReport.capabilities) {
     for (const check of cap.checks) {
       if (check.status === 'missing') {
@@ -327,11 +410,29 @@ export function compileContract(
     }
   }
 
-  // ── 9. Gather provisioning requirements ───────────────────────────────
+  // ── 9. Update readiness based on provisioning ─────────────────────────
+  for (const binding of intentBindings) {
+    // If provisioning is not production-ready, downgrade to preview-ready
+    if (!provisioningReport.productionReady && binding.readiness === 'publish-ready') {
+      binding.readiness = 'preview-ready';
+    }
+    // Check if specific capability is blocked
+    if (binding.requiredCapabilities) {
+      const blocked = binding.requiredCapabilities.some(cap => {
+        const capReport = provisioningReport.capabilities.find(c => c.capabilityId === cap);
+        return capReport?.checks.some(ch => ch.status === 'missing');
+      });
+      if (blocked) {
+        binding.readiness = 'blocked';
+      }
+    }
+  }
+
+  // ── 10. Gather provisioning requirements ──────────────────────────────
   const requiredTables = getRequiredTables(blueprint.capabilities.enabled as CapabilityId[]);
   const requiredWorkflows = getRequiredWorkflows(blueprint.capabilities.enabled as CapabilityId[]);
 
-  // ── 10. Compile result ───────────────────────────────────────────────
+  // ── 11. Compile result ────────────────────────────────────────────────
   const errors = issues.filter(i => i.severity === 'error').length;
   const warnings = issues.filter(i => i.severity === 'warning').length;
   const infos = issues.filter(i => i.severity === 'info').length;
@@ -388,29 +489,19 @@ export function validateIntentsAgainstCapabilities(
 // Contract Gate — Rejects non-compiled preview input
 // ============================================================================
 
-/**
- * Validate that a CompiledContract is safe to pass to preview.
- * Returns true only if:
- * - No validation errors
- * - Provisioning is at least preview-ready
- * - Route policy has a home page
- * - All primary CTA slots are bound
- */
 export function isPreviewReady(contract: CompiledContract): boolean {
   if (!contract.validation.valid) return false;
   if (!contract.provisioningReport.previewReady) return false;
   if (!contract.routePolicy.routes.some(r => r.path === '/')) return false;
-  if (!contract.intentBindings.some(b => b.elementRole.includes('primary-cta'))) return false;
+  if (!contract.intentBindings.some(b => b.slotRole?.includes('primary-cta') || b.elementRole.includes('primary-cta'))) return false;
   return true;
 }
 
-/**
- * Validate that a CompiledContract is safe to publish.
- * Stricter than preview — requires full provisioning.
- */
 export function isPublishReady(contract: CompiledContract): boolean {
   if (!isPreviewReady(contract)) return false;
   if (!contract.provisioningReport.productionReady) return false;
   if (contract.slotBindingPolicy.unresolved.length > 0) return false;
+  // All bindings must be publish-ready
+  if (contract.intentBindings.some(b => b.readiness === 'blocked')) return false;
   return true;
 }

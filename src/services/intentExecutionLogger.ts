@@ -44,7 +44,7 @@ export interface LogQueryOptions {
 export async function logIntentExecution(entry: ExecutionLogEntry): Promise<string | null> {
   try {
     const { data, error } = await supabase
-      .from('intent_execution_log')
+      .from('intent_execution_log' as any)
       .insert({
         business_id: entry.businessId,
         project_id: entry.projectId ?? null,
@@ -121,7 +121,7 @@ export async function queryExecutionLogs(
 ): Promise<ExecutionLogEntry[]> {
   try {
     let query = supabase
-      .from('intent_execution_log')
+      .from('intent_execution_log' as any)
       .select('*')
       .eq('business_id', businessId)
       .order('created_at', { ascending: false });
@@ -192,7 +192,7 @@ export async function getExecutionStats(
     startDate.setDate(startDate.getDate() - days);
 
     const { data, error } = await supabase
-      .from('intent_execution_log')
+      .from('intent_execution_log' as any)
       .select('intent, result_status, execution_time_ms')
       .eq('business_id', businessId)
       .gte('created_at', startDate.toISOString());
@@ -236,7 +236,7 @@ export async function getBindingExecutions(
 ): Promise<ExecutionLogEntry[]> {
   try {
     const { data, error } = await supabase
-      .from('intent_execution_log')
+      .from('intent_execution_log' as any)
       .select('*')
       .eq('binding_id', bindingId)
       .order('created_at', { ascending: false })

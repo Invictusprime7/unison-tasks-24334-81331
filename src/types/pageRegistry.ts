@@ -109,6 +109,8 @@ export interface BuilderPage {
   pageId: PageId;
   title: string;
   path: string;
+  /** Stable VFS file path (e.g. /src/pages/Contact.tsx) */
+  filePath?: string;
   pageType: BuilderPageType;
 
   /** Funnel role (optional — only set if page is part of a funnel) */

@@ -110,3 +110,19 @@ export {
   inferUIAction,
   type UIAction,
 } from './intentNormalizer';
+
+// Icon Intent Registry
+export {
+  ICON_INTENT_REGISTRY,
+  getIconDefinition,
+  resolveIconBehavior,
+  resolveIconBinding,
+  getIconsForSection,
+  resolveIconKeyFromLucide,
+  generateIconDataAttributes,
+  type IconIntentDefinition,
+  type IconPlacement,
+  type IconUIBehavior,
+  type IconInteractiveComponent,
+  type ResolvedIconBinding,
+} from './iconIntentRegistry';

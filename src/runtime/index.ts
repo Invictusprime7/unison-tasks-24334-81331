@@ -61,7 +61,7 @@ export {
 // Auto-Binder — Build-time intent resolution for buttons/icons
 export {
   bindIntent,
-  bindAllNodes,
+  bindAllIntents,
   type BindableNode,
   type BindingResult,
   type TemplateContext,

@@ -23,6 +23,7 @@
 
 import type { CoreIntent } from '@/coreIntents';
 import { CORE_INTENTS, NAV_INTENTS, PAY_INTENTS, ACTION_INTENTS } from '@/coreIntents';
+import { ICON_INTENT_REGISTRY, resolveIconKeyFromLucide } from '@/contracts/iconIntentRegistry';
 
 // ============ CLICKABLE INTENTS ============
 // These intents can be auto-bound to buttons. Automation-only intents
@@ -277,65 +278,49 @@ const TEXT_PATTERNS: Array<{
 ];
 
 /**
- * Icon-based intent inference
+ * Icon-based intent inference — delegates to IconIntentRegistry.
+ * 
+ * The registry is the single source of truth for icon → intent mappings.
+ * This function bridges the autoBinder's BindableNode.icon field to it.
  */
-const ICON_PATTERNS: Array<{
-  icons: string[];
+function resolveIconIntent(iconName: string): {
   intent: CoreIntent;
   confidence: number;
   payloadDefaults?: Record<string, unknown>;
-}> = [
-  {
-    icons: ['cart', 'shopping-cart', 'bag', 'shopping-bag', 'basket'],
-    intent: 'cart.add',
-    confidence: 0.85,
-  },
-  {
-    icons: ['phone', 'telephone', 'call', 'mobile'],
-    intent: 'button.click',
-    confidence: 0.80,
-    payloadDefaults: { action: 'call' },
-  },
-  {
-    icons: ['mail', 'email', 'envelope', 'at'],
-    intent: 'button.click',
-    confidence: 0.80,
-    payloadDefaults: { action: 'email' },
-  },
-  {
-    icons: ['calendar', 'clock', 'schedule', 'event'],
-    intent: 'booking.create',
-    confidence: 0.75,
-  },
-  {
-    icons: ['user', 'person', 'account', 'profile'],
-    intent: 'auth.login',
-    confidence: 0.70,
-  },
-  {
-    icons: ['search', 'magnifying-glass'],
-    intent: 'nav.goto',
-    confidence: 0.60,
-    payloadDefaults: { action: 'search' },
-  },
-  {
-    icons: ['menu', 'hamburger', 'bars'],
-    intent: 'nav.goto',
-    confidence: 0.50,
-    payloadDefaults: { action: 'menu' },
-  },
-  {
-    icons: ['arrow-right', 'chevron-right', 'next'],
-    intent: 'nav.goto',
-    confidence: 0.50,
-  },
-  {
-    icons: ['share', 'export'],
-    intent: 'button.click',
-    confidence: 0.75,
-    payloadDefaults: { action: 'share' },
-  },
-];
+} | null {
+  // Try direct registry lookup first
+  const registryKey = resolveIconKeyFromLucide(iconName);
+  if (registryKey) {
+    const def = ICON_INTENT_REGISTRY[registryKey];
+    if (def) {
+      return {
+        intent: def.coreIntent as CoreIntent,
+        confidence: 0.85,
+        payloadDefaults: def.payloadKeys
+          ? Object.fromEntries(def.payloadKeys.map(k => [k, undefined]))
+          : undefined,
+      };
+    }
+  }
+
+  // Fallback: fuzzy match by icon name substring
+  const iconLower = iconName.toLowerCase();
+  for (const [, def] of Object.entries(ICON_INTENT_REGISTRY)) {
+    if (iconLower.includes(def.iconKey) || def.lucideIcon.toLowerCase().includes(iconLower)) {
+      return {
+        intent: def.coreIntent as CoreIntent,
+        confidence: 0.75,
+      };
+    }
+  }
+
+  // Navigation arrows — generic nav, not in icon registry
+  if (/arrow[-_]?right|chevron[-_]?right|next/i.test(iconName)) {
+    return { intent: 'nav.goto', confidence: 0.50 };
+  }
+
+  return null;
+}
 
 /**
  * Form type to intent mapping
@@ -463,25 +448,22 @@ export function bindIntent(node: BindableNode, templateCtx?: TemplateContext): B
     }
   }
 
-  // 4. Try icon matching (if no text match or low confidence)
+  // 4. Try icon matching via IconIntentRegistry (if no text match or low confidence)
   if ((!bestMatch || bestMatch.confidence < 0.8) && node.icon) {
-    const iconLower = node.icon.toLowerCase();
-    for (const rule of ICON_PATTERNS) {
-      if (rule.icons.some(icon => iconLower.includes(icon))) {
-        const iconMatch: BindingResult = {
-          id: node.id,
-          text: node.text,
-          intent: rule.intent,
-          intentPayload: rule.payloadDefaults || {},
-          confidence: rule.confidence,
-          bindSource: 'icon',
-        };
-        
-        // Use icon match if better than text match
-        if (!bestMatch || iconMatch.confidence > bestMatch.confidence) {
-          bestMatch = iconMatch;
-        }
-        break;
+    const iconResult = resolveIconIntent(node.icon);
+    if (iconResult) {
+      const iconMatch: BindingResult = {
+        id: node.id,
+        text: node.text,
+        intent: iconResult.intent,
+        intentPayload: iconResult.payloadDefaults || {},
+        confidence: iconResult.confidence,
+        bindSource: 'icon',
+      };
+      
+      // Use icon match if better than text match
+      if (!bestMatch || iconMatch.confidence > bestMatch.confidence) {
+        bestMatch = iconMatch;
       }
     }
   }

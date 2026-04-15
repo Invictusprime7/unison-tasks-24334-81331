@@ -49,6 +49,7 @@ export {
   type ValidationSeverity,
   type CompiledContract,
   type CompiledBinding,
+  type CompiledInteractionBinding,
   type CompiledPage,
   type CompileOptions,
 } from './contractCompiler';
@@ -101,3 +102,11 @@ export {
   type FunnelPlan,
   type PageRole,
 } from './siteTopologyPlanner';
+
+// Intent Normalizer
+export {
+  normalizePlaygroundIntent,
+  isPlaygroundNavIntent,
+  inferUIAction,
+  type UIAction,
+} from './intentNormalizer';

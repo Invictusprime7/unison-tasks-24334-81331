@@ -94,6 +94,9 @@ import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilde
 import { useAIVFS } from '@/hooks/useAIVFS';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
+import { isValidAesthetic, completeAestheticCSS } from '@/utils/aestheticToCSS';
+import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
+import { getTemplateReactCodeWithCSS } from '@/data/templates';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
@@ -3300,14 +3303,11 @@ export default ${componentName}Page;`;
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (launcherSourceFiles) {
       // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist
-      const vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
-        entryPoint: launcherEntryPoint,
-      });
       const normalizedEntryPoint = launcherEntryPoint
         ? (launcherEntryPoint.startsWith('/') ? launcherEntryPoint : `/${launcherEntryPoint}`)
         : null;
-      const vfsFiles = normalizeLauncherFiles({ ...navState.vfsFiles }, {
-        entryPoint: normalizedEntryPoint || undefined,
+      const vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
+        entryPoint: normalizedEntryPoint || launcherEntryPoint,
       });
 
       // Apply aesthetic CSS if provided and valid

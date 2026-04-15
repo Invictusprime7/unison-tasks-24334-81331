@@ -53,6 +53,8 @@ import {
   type PremiumSectionReference,
 } from "@/sections/references";
 import { executeCanonicalPipeline, type CanonicalPipelineResult } from "@/services/canonicalPipeline";
+import { useLaunch } from "@/contexts/useLaunchHooks";
+import { extractLauncherFilesPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
@@ -810,11 +812,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const parsedFiles = extractLauncherFilesPayload(rawContent);
 
       if (parsedFiles) {
-        const vfsFiles: Record<string, string> = {};
-        for (const [path, content] of Object.entries(parsedFiles)) {
-          vfsFiles[path] = content;
-        }
-        const normalizedVfsFiles = normalizeLauncherFiles(vfsFiles, {
+        const normalizedVfsFiles = normalizeLauncherFiles(parsedFiles, {
           entryPoint: '/src/App.tsx',
         });
 

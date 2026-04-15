@@ -448,25 +448,22 @@ export function bindIntent(node: BindableNode, templateCtx?: TemplateContext): B
     }
   }
 
-  // 4. Try icon matching (if no text match or low confidence)
+  // 4. Try icon matching via IconIntentRegistry (if no text match or low confidence)
   if ((!bestMatch || bestMatch.confidence < 0.8) && node.icon) {
-    const iconLower = node.icon.toLowerCase();
-    for (const rule of ICON_PATTERNS) {
-      if (rule.icons.some(icon => iconLower.includes(icon))) {
-        const iconMatch: BindingResult = {
-          id: node.id,
-          text: node.text,
-          intent: rule.intent,
-          intentPayload: rule.payloadDefaults || {},
-          confidence: rule.confidence,
-          bindSource: 'icon',
-        };
-        
-        // Use icon match if better than text match
-        if (!bestMatch || iconMatch.confidence > bestMatch.confidence) {
-          bestMatch = iconMatch;
-        }
-        break;
+    const iconResult = resolveIconIntent(node.icon);
+    if (iconResult) {
+      const iconMatch: BindingResult = {
+        id: node.id,
+        text: node.text,
+        intent: iconResult.intent,
+        intentPayload: iconResult.payloadDefaults || {},
+        confidence: iconResult.confidence,
+        bindSource: 'icon',
+      };
+      
+      // Use icon match if better than text match
+      if (!bestMatch || iconMatch.confidence > bestMatch.confidence) {
+        bestMatch = iconMatch;
       }
     }
   }

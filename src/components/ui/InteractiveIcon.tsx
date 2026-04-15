@@ -161,12 +161,12 @@ export function InteractiveIcon({
   if (!def || !binding) return null;
 
   // Resolve Lucide icon component
-  const IconComponent = (LucideIcons as Record<string, React.ComponentType<LucideIcons.LucideProps>>)[def.lucideIcon];
+  const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<LucideIcons.LucideProps>>)[def.lucideIcon];
   if (!IconComponent) return null;
 
   // For theme toggle, swap icon based on current theme
   const ThemeIcon = iconKey === 'theme' && currentTheme === 'dark'
-    ? (LucideIcons as Record<string, React.ComponentType<LucideIcons.LucideProps>>)['Moon']
+    ? (LucideIcons as unknown as Record<string, React.ComponentType<LucideIcons.LucideProps>>)['Moon']
     : IconComponent;
   const ActualIcon = iconKey === 'theme' ? (ThemeIcon || IconComponent) : IconComponent;
 

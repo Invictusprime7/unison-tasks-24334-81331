@@ -58,3 +58,12 @@ export {
   type TemplateRuntimeContextValue,
 } from './TemplateRuntimeProvider';
 
+// Auto-Binder — Build-time intent resolution for buttons/icons
+export {
+  bindIntent,
+  bindAllNodes,
+  type BindableNode,
+  type BindingResult,
+  type TemplateContext,
+} from './autoBinder';
+

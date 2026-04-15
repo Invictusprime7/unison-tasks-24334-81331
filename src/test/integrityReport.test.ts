@@ -17,7 +17,7 @@ function makeMinimalContract(overrides: Partial<CompiledContract> = {}): Compile
     requiredTables: ['leads'],
     requiredWorkflows: [{ name: 'lead-notify', trigger: 'lead.created', actions: [] }] as any,
     intentBindings: [
-      { elementRole: 'primary-cta', sectionType: 'hero', intent: 'contact.submit' as any, params: {}, source: 'blueprint' as const },
+      { bindingKey: 'hero.primary-cta', pageRole: 'home', sectionType: 'hero', slotRole: 'primary-cta', elementRole: 'primary-cta', intent: 'contact.submit' as any, params: {}, source: 'blueprint' as const, readiness: 'preview-ready' as const },
     ],
     pages: [
       { title: 'Home', path: '/', purpose: 'landing', isHome: true, sections: ['hero'], hasComposition: true },

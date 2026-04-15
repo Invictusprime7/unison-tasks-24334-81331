@@ -551,9 +551,8 @@ function ensureRequiredPages(
     if (!defaults) continue;
 
     const pageId = `page_${nanoid(8)}`;
-    const { createBuilderPage: createPage } = require('@/types/pageRegistry');
 
-    // Use inline page creation to avoid circular import issues
+    // Inline page creation (avoids needing createBuilderPage import overhead)
     registry.pages[pageId] = {
       pageId,
       title: defaults.title,

@@ -26,7 +26,12 @@ export type SectionType =
 export type SlotRole =
   | 'primary-cta' | 'secondary-cta' | 'card-cta'
   | 'form-submit' | 'newsletter' | 'nav-link' | 'social-link'
-  | 'checkout-cta' | 'cart-trigger';
+  | 'checkout-cta' | 'cart-trigger'
+  // Icon-driven interactive slots
+  | 'icon-search' | 'icon-cart' | 'icon-user' | 'icon-menu'
+  | 'icon-notifications' | 'icon-filter' | 'icon-sort'
+  | 'icon-share' | 'icon-favorite' | 'icon-theme'
+  | 'icon-language' | 'icon-chat' | 'icon-calendar';
 
 export interface SlotBindingRule {
   /** Section type where this rule applies */
@@ -192,6 +197,60 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     intentPriority: [
       { capability: 'contact', intent: 'contact.submit' },
       { capability: 'newsletter', intent: 'newsletter.subscribe' },
+    ],
+    fallbackIntent: 'nav.anchor',
+  },
+
+  // ── Navbar Icon Slots ─────────────────────────────────────────────────
+  {
+    section: 'navbar',
+    slot: 'icon-search',
+    intentPriority: [],
+    fallbackIntent: 'nav.anchor',
+  },
+  {
+    section: 'navbar',
+    slot: 'icon-user',
+    intentPriority: [],
+    fallbackIntent: 'auth.login',
+  },
+  {
+    section: 'navbar',
+    slot: 'icon-menu',
+    intentPriority: [],
+    fallbackIntent: 'nav.anchor',
+  },
+  {
+    section: 'navbar',
+    slot: 'icon-cart',
+    intentPriority: [
+      { capability: 'commerce', intent: 'cart.checkout' },
+    ],
+    fallbackIntent: 'nav.anchor',
+  },
+
+  // ── Shop Grid Icon Slots ──────────────────────────────────────────────
+  {
+    section: 'shop-grid',
+    slot: 'icon-filter',
+    intentPriority: [
+      { capability: 'commerce', intent: 'nav.anchor' },
+    ],
+    fallbackIntent: 'nav.anchor',
+  },
+  {
+    section: 'shop-grid',
+    slot: 'icon-sort',
+    intentPriority: [
+      { capability: 'commerce', intent: 'nav.anchor' },
+    ],
+    fallbackIntent: 'nav.anchor',
+  },
+  {
+    section: 'shop-grid',
+    slot: 'icon-favorite',
+    intentPriority: [
+      { capability: 'commerce', intent: 'cart.add' },
     ],
     fallbackIntent: 'nav.anchor',
   },

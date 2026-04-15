@@ -65,32 +65,79 @@ export const sessionManager = new SessionManager();
 app.use(helmet({
   contentSecurityPolicy: false, // Allow iframe embedding
   crossOriginEmbedderPolicy: false,
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  noSniff: true,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 
-// CORS
+// Request ID generation — must be early in the chain for correlation
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const requestId = req.headers['x-request-id'] as string ||
+    `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  req.headers['x-request-id'] = requestId;
+  res.setHeader('X-Request-ID', requestId);
+  next();
+});
+
+// CORS — use explicit origin list in production
 app.use(cors({
-  origin: CORS_ORIGIN,
+  origin: CORS_ORIGIN === '*' ? true : CORS_ORIGIN.split(',').map(o => o.trim()),
   credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-API-Key'],
+  maxAge: 86400,
 }));
 
 // Compression
 app.use(compression());
 
-// Rate limiting
-const limiter = rateLimit({
+// Rate limiting — tiered by route sensitivity
+const globalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // 100 requests per minute
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
+  keyGenerator: (req: express.Request) => {
+    return req.headers['x-forwarded-for'] as string || req.ip || 'unknown';
+  },
 });
-app.use('/api/', limiter);
+app.use('/api/', globalLimiter);
 
-// Body parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Stricter rate limit for session creation (expensive operation)
+const sessionCreateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 10, // 10 session starts per 5 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many session creation requests. Please wait.' },
+  keyGenerator: (req: express.Request) => {
+    return req.headers['x-forwarded-for'] as string || req.ip || 'unknown';
+  },
+});
+app.use('/api/preview/start', sessionCreateLimiter);
 
-// Request logging
-app.use((req, res, next) => {
-  logger.info({ method: req.method, path: req.path }, 'Request');
+// Body parsing with strict limits
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// Request logging with correlation ID
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const start = Date.now();
+  const requestId = req.headers['x-request-id'];
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.info({
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration,
+      requestId,
+      ip: req.headers['x-forwarded-for'] || req.ip,
+    }, 'Request completed');
+  });
+
   next();
 });
 
@@ -108,7 +155,7 @@ app.use('/api/preview', sessionRouter);
 app.use('/preview', proxyRouter);
 
 // Root route - API info
-app.get('/', (req, res) => {
+app.get('/', (_req: express.Request, res: express.Response) => {
   res.json({
     name: 'Unison Preview Gateway',
     version: '1.0.0',
@@ -142,7 +189,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 });
 
 // 404 handler
-app.use((req, res) => {
+app.use((_req: express.Request, res: express.Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 

@@ -1,11 +1,10 @@
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUrl } from "../_shared/validate.ts";
 
 // Price IDs for each plan (configure these in your Stripe dashboard)
 const PLAN_PRICE_IDS: Record<string, string> = {
@@ -15,16 +14,43 @@ const PLAN_PRICE_IDS: Record<string, string> = {
   business_yearly: Deno.env.get("STRIPE_BUSINESS_YEARLY_PRICE_ID") || "price_business_yearly",
 };
 
+interface CreateCheckoutRequest {
+  plan?: string;
+  priceId?: string;
+  successUrl?: string;
+  cancelUrl?: string;
+  billingCycle?: "monthly" | "yearly";
+}
+
+function getBaseAppUrl(req: Request): string {
+  const configured = Deno.env.get("APP_URL") || Deno.env.get("SITE_URL");
+  if (configured) {
+    return configured;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin && isValidUrl(origin)) {
+    return origin;
+  }
+
+  return "https://unisontasks.com";
+}
+
 serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
-      throw new Error("Stripe secret key not configured");
+      return errorResponse("Billing service not configured", 503, corsHeaders);
     }
 
     const stripe = new Stripe(stripeKey, {
@@ -32,36 +58,54 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    // Get the authorization header and create Supabase client
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      throw new Error("Missing authorization header");
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const user = auth.user;
 
-    // Verify the user's JWT token
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      throw new Error("Unauthorized");
+    const { data: payload, error: parseError } = await safeParseBody<CreateCheckoutRequest>(req);
+    if (parseError || !payload) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
     }
 
-    const { plan, priceId, successUrl, cancelUrl, billingCycle = "monthly" } = await req.json();
+    const {
+      plan,
+      priceId,
+      successUrl,
+      cancelUrl,
+      billingCycle = "monthly",
+    } = payload;
+
+    if (billingCycle !== "monthly" && billingCycle !== "yearly") {
+      return errorResponse("Invalid billing cycle", 400, corsHeaders);
+    }
+
+    const sanitizedPlan = typeof plan === "string" ? sanitizeString(plan, 50) : undefined;
+    const sanitizedPriceId = typeof priceId === "string" ? sanitizeString(priceId, 200) : undefined;
+    const baseUrl = getBaseAppUrl(req);
+    const resolvedSuccessUrl = typeof successUrl === "string" && isValidUrl(successUrl)
+      ? successUrl
+      : `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
+    const resolvedCancelUrl = typeof cancelUrl === "string" && isValidUrl(cancelUrl)
+      ? cancelUrl
+      : `${baseUrl}/checkout/cancel`;
 
     // Determine the price ID to use
-    let stripePriceId = priceId;
-    if (!stripePriceId && plan) {
-      const planKey = billingCycle === "yearly" ? `${plan}_yearly` : plan;
+    let stripePriceId = sanitizedPriceId;
+    if (!stripePriceId && sanitizedPlan) {
+      const planKey = billingCycle === "yearly" ? `${sanitizedPlan}_yearly` : sanitizedPlan;
       stripePriceId = PLAN_PRICE_IDS[planKey];
     }
 
     if (!stripePriceId) {
-      throw new Error("Invalid plan or price ID");
+      return errorResponse("Invalid plan or price ID", 400, corsHeaders);
     }
 
     // Get or create customer
@@ -105,41 +149,32 @@ serve(async (req) => {
           quantity: 1,
         },
       ],
-      success_url: successUrl || `${req.headers.get("origin")}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl || `${req.headers.get("origin")}/checkout/cancel`,
+      success_url: resolvedSuccessUrl,
+      cancel_url: resolvedCancelUrl,
       metadata: {
         supabase_user_id: user.id,
-        plan: plan || "unknown",
+        plan: sanitizedPlan || "unknown",
       },
       subscription_data: {
         metadata: {
           supabase_user_id: user.id,
-          plan: plan || "unknown",
+          plan: sanitizedPlan || "unknown",
         },
       },
       allow_promotion_codes: true,
       billing_address_collection: "auto",
     });
 
-    return new Response(
-      JSON.stringify({ 
+    return secureJsonResponse(
+      { 
         sessionId: session.id, 
         url: session.url 
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      }
+      },
+      200,
+      corsHeaders
     );
   } catch (error) {
     console.error("Checkout error:", error);
-    const message = error instanceof Error ? error.message : "Checkout failed";
-    return new Response(
-      JSON.stringify({ error: message }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      }
-    );
+    return errorResponse("Checkout failed", 400, getCorsHeaders(req));
   }
 });

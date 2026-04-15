@@ -14,18 +14,10 @@
 // deno-lint-ignore-file no-import-prefix
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isNonEmptyString, isValidUUID } from "../_shared/validate.ts";
 
 function generateSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").substring(0, 50);
@@ -49,16 +41,41 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
-    const body: ProvisionRequest = await req.json();
-    const { owner_id: ownerId, blueprint, options } = body;
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
 
-    if (!ownerId || !blueprint?.brand?.business_name) {
-      return json(400, { error: "Missing owner_id or blueprint" });
+    const { data: body, error: parseError } = await safeParseBody<ProvisionRequest>(req);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    if (body.owner_id && (!isValidUUID(body.owner_id) || body.owner_id !== auth.user.id)) {
+      return errorResponse("owner_id must match the authenticated user", 403, corsHeaders);
+    }
+
+    const ownerId = auth.user.id;
+    const blueprint = body.blueprint;
+    const options = body.options;
+    const businessName = typeof blueprint?.brand?.business_name === "string"
+      ? sanitizeString(blueprint.brand.business_name, 120)
+      : "";
+
+    if (!isNonEmptyString(businessName) || !blueprint?.identity?.industry) {
+      return errorResponse("Missing or invalid blueprint", 400, corsHeaders);
     }
 
     const supabase = createClient(
@@ -66,16 +83,16 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const businessSlug = generateSlug(blueprint.brand.business_name) + "-" + Date.now().toString(36);
+    const businessSlug = `${generateSlug(businessName)}-${Date.now().toString(36)}`;
 
     // Step 1: Create business
     const { data: business, error: bizError } = await supabase
       .from("businesses")
       .insert({
-        user_id: ownerId,
-        name: blueprint.brand.business_name,
+        owner_id: ownerId,
+        name: businessName,
         slug: businessSlug,
-        business_type: blueprint.identity.industry,
+        business_type: sanitizeString(blueprint.identity.industry, 80),
         settings: { brand: blueprint.brand, identity: blueprint.identity },
       })
       .select()
@@ -83,7 +100,14 @@ serve(async (req) => {
 
     if (bizError) {
       console.error("[provision-lite] Business creation failed:", bizError);
-      return json(500, { error: "Failed to create business", details: bizError.message });
+      return errorResponse("Failed to create business", 500, corsHeaders);
+    }
+
+    const { error: memberError } = await supabase
+      .from("business_members")
+      .insert({ business_id: business.id, user_id: ownerId, role: "owner" });
+    if (memberError) {
+      console.warn("[provision-lite] Business membership:", memberError.message);
     }
 
     // Step 2: Design preferences
@@ -145,7 +169,7 @@ serve(async (req) => {
       }
     }
 
-    return json(200, {
+    return secureJsonResponse({
       project_id: business.id,
       business_id: business.id,
       builder_url: `/web-builder?businessId=${business.id}`,
@@ -153,10 +177,10 @@ serve(async (req) => {
         status: "ready",
         steps: ["business", "design", "intents", "crm", "automations"],
       },
-    });
+    }, 200, corsHeaders);
 
   } catch (error) {
     console.error("[provision-lite] Error:", error);
-    return json(500, { error: "Internal error" });
+    return errorResponse("Internal error", 500, getCorsHeaders(req));
   }
 });

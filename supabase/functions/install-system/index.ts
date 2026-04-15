@@ -1,10 +1,9 @@
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, verifyBusinessAccess, authError } from "../_shared/auth.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
 
 type SystemType =
   | "booking"
@@ -22,13 +21,6 @@ interface InstallRequest {
   templateCategory?: string;
   designPreset?: string;
   businessId?: string; // Use existing business if provided
-}
-
-function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
 }
 
 function packsForSystem(systemType: SystemType): string[] {
@@ -75,34 +67,48 @@ function defaultIntentBindingsForSystem(systemType: SystemType): Array<{ intent:
   }
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+const VALID_SYSTEM_TYPES: SystemType[] = [
+  "booking",
+  "portfolio",
+  "store",
+  "agency",
+  "content",
+  "saas",
+];
 
-  const authHeader = req.headers.get("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ")) {
-    return json(401, { success: false, error: "Unauthorized" });
+serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    const authClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    // Validate caller + obtain user id
-    const { data: { user }, error: userError } = await authClient.auth.getUser();
-    if (userError || !user?.id) {
-      console.error("[install-system] getUser failed", userError);
-      return json(401, { success: false, error: "Unauthorized" });
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
     }
-    const userId = user.id;
 
-    const body: InstallRequest = await req.json();
-    const systemType = body.systemType;
-    if (!systemType) return json(400, { success: false, error: "systemType is required" });
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const userId = auth.user.id;
+
+    const { data: body, error: parseError } = await safeParseBody<InstallRequest>(req);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const systemType = typeof body.systemType === "string"
+      ? sanitizeString(body.systemType, 50) as SystemType
+      : undefined;
+    if (!systemType || !VALID_SYSTEM_TYPES.includes(systemType)) {
+      return errorResponse("Invalid systemType", 400, corsHeaders);
+    }
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
     
@@ -111,24 +117,21 @@ serve(async (req) => {
 
     // 1) Use existing business if provided, otherwise create new one
     if (body.businessId) {
-      // Verify the user is a member of this business
-      const { data: membership, error: membershipError } = await admin
-        .from("business_members")
-        .select("id")
-        .eq("business_id", body.businessId)
-        .eq("user_id", userId)
-        .maybeSingle();
-      
-      if (membershipError || !membership) {
-        console.error("[install-system] user not member of business", membershipError);
-        return json(403, { success: false, error: "You are not a member of this business" });
+      const normalizedBusinessId = sanitizeString(body.businessId, 100);
+      if (!isValidUUID(normalizedBusinessId)) {
+        return errorResponse("Invalid businessId format", 400, corsHeaders);
       }
-      
-      businessId = body.businessId;
+
+      const access = await verifyBusinessAccess(userId, normalizedBusinessId);
+      if (!access.allowed) {
+        return errorResponse(access.error || "Access denied to this business", 403, corsHeaders);
+      }
+
+      businessId = normalizedBusinessId;
       console.log("[install-system] Using existing business:", businessId);
     } else {
       // Create a new business
-      const businessName = body.businessName || body.templateName || "New Business";
+      const businessName = sanitizeString(body.businessName || body.templateName || "New Business", 120);
       const { data: business, error: businessError } = await admin
         .from("businesses")
         .insert({ owner_id: userId, name: businessName })
@@ -137,7 +140,7 @@ serve(async (req) => {
 
       if (businessError || !business?.id) {
         console.error("[install-system] create business failed", businessError);
-        return json(500, { success: false, error: "Failed to create business" });
+        return errorResponse("Failed to create business", 500, corsHeaders);
       }
       businessId = business.id as string;
       businessCreated = true;
@@ -166,7 +169,7 @@ serve(async (req) => {
       });
     if (installError) {
       console.error("[install-system] record install failed", installError);
-      return json(500, { success: false, error: "Failed to record install" });
+      return errorResponse("Failed to record install", 500, corsHeaders);
     }
 
     // 3b) Persist launcher design preferences (optional)
@@ -176,8 +179,8 @@ serve(async (req) => {
         .upsert(
           {
             business_id: businessId,
-            template_category: body.templateCategory ?? null,
-            design_preset: body.designPreset ?? null,
+            template_category: body.templateCategory ? sanitizeString(body.templateCategory, 80) : null,
+            design_preset: body.designPreset ? sanitizeString(body.designPreset, 80) : null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "business_id" },
@@ -218,19 +221,19 @@ serve(async (req) => {
       );
     }
 
-    return json(200, {
+    return secureJsonResponse({
       success: true,
       data: {
         businessId,
         businessCreated,
         packs,
         systemType,
-        templateId: body.templateId || null,
+        templateId: body.templateId ? sanitizeString(body.templateId, 100) : null,
         intentsRegistered: bindings.length,
       },
-    });
+    }, 200, corsHeaders);
   } catch (e) {
     console.error("[install-system] fatal", e);
-    return json(500, { success: false, error: e instanceof Error ? e.message : "Unknown error" });
+    return errorResponse("Failed to install system", 500, getCorsHeaders(req));
   }
 });

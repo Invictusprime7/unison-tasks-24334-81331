@@ -1,19 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, publicCorsHeaders);
   }
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const workflowProcessorSecret = Deno.env.get("WORKFLOW_PROCESSOR_SECRET");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const bodySchema = z.object({
@@ -25,10 +28,7 @@ Deno.serve(async (req) => {
 
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
-      return new Response(
-        JSON.stringify({ error: "Invalid request body" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Invalid request body", 400, publicCorsHeaders);
     }
 
     const { formId, formName, data: rawData, sourceUrl } = parsed.data;
@@ -211,6 +211,10 @@ Deno.serve(async (req) => {
 
       // Trigger job processor
       await supabase.functions.invoke("workflow-job-processor", {
+        headers: {
+          Authorization: `Bearer ${supabaseServiceKey}`,
+          ...(workflowProcessorSecret ? { "x-workflow-processor-secret": workflowProcessorSecret } : {}),
+        },
         body: { workflowRunId: workflowRun.id },
       });
 
@@ -247,22 +251,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({
+    return secureJsonResponse(
+      {
         success: true,
         submissionId: submission.id,
         contactId,
         triggeredWorkflows,
         message: "Form submitted successfully",
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      },
+      200,
+      publicCorsHeaders,
     );
   } catch (error: unknown) {
     console.error("Error in form-submit:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse("Form submission failed", 500, publicCorsHeaders);
   }
 });

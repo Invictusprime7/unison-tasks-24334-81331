@@ -1,21 +1,46 @@
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUrl } from "../_shared/validate.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+interface ManageSubscriptionRequest {
+  action: "cancel" | "reactivate" | "update-payment" | "get-invoices";
+  immediately?: boolean;
+  returnUrl?: string;
+}
+
+function getBaseAppUrl(req: Request): string {
+  const configured = Deno.env.get("APP_URL") || Deno.env.get("SITE_URL");
+  if (configured) {
+    return configured;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin && isValidUrl(origin)) {
+    return origin;
+  }
+
+  return "https://unisontasks.com";
+}
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
-      throw new Error("Stripe secret key not configured");
+      return errorResponse("Billing service not configured", 503, corsHeaders);
     }
 
     const stripe = new Stripe(stripeKey, {
@@ -23,23 +48,33 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      throw new Error("Missing authorization header");
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const user = auth.user;
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      throw new Error("Unauthorized");
+    const { data: payload, error: parseError } = await safeParseBody<ManageSubscriptionRequest>(req);
+    if (parseError || !payload) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
     }
 
-    const { action, immediately, returnUrl } = await req.json();
+    const action = typeof payload.action === "string"
+      ? sanitizeString(payload.action, 50) as ManageSubscriptionRequest["action"]
+      : undefined;
+    const immediately = payload.immediately === true;
+    const returnUrl = typeof payload.returnUrl === "string" && isValidUrl(payload.returnUrl)
+      ? payload.returnUrl
+      : `${getBaseAppUrl(req)}/settings`;
+
+    if (!action) {
+      return errorResponse("Action is required", 400, corsHeaders);
+    }
 
     // Get user's subscription
     const { data: subscription, error: subError } = await supabase
@@ -49,13 +84,13 @@ serve(async (req) => {
       .single();
 
     if (subError || !subscription) {
-      throw new Error("No subscription found");
+      return errorResponse("No subscription found", 404, corsHeaders);
     }
 
     switch (action) {
       case "cancel": {
         if (!subscription.stripe_subscription_id) {
-          throw new Error("No active subscription to cancel");
+          return errorResponse("No active subscription to cancel", 400, corsHeaders);
         }
 
         if (immediately) {
@@ -90,15 +125,12 @@ serve(async (req) => {
             .eq("user_id", user.id);
         }
 
-        return new Response(
-          JSON.stringify({ success: true }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return secureJsonResponse({ success: true }, 200, corsHeaders);
       }
 
       case "reactivate": {
         if (!subscription.stripe_subscription_id) {
-          throw new Error("No subscription to reactivate");
+          return errorResponse("No subscription to reactivate", 400, corsHeaders);
         }
 
         // Remove cancel_at_period_end
@@ -115,35 +147,26 @@ serve(async (req) => {
           })
           .eq("user_id", user.id);
 
-        return new Response(
-          JSON.stringify({ success: true }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return secureJsonResponse({ success: true }, 200, corsHeaders);
       }
 
       case "update-payment": {
         if (!subscription.stripe_customer_id) {
-          throw new Error("No customer found");
+          return errorResponse("No customer found", 400, corsHeaders);
         }
 
         // Create a billing portal session
         const session = await stripe.billingPortal.sessions.create({
           customer: subscription.stripe_customer_id,
-          return_url: returnUrl || `${req.headers.get("origin")}/settings`,
+          return_url: returnUrl,
         });
 
-        return new Response(
-          JSON.stringify({ url: session.url }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return secureJsonResponse({ url: session.url }, 200, corsHeaders);
       }
 
       case "get-invoices": {
         if (!subscription.stripe_customer_id) {
-          return new Response(
-            JSON.stringify({ invoices: [] }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
+          return secureJsonResponse({ invoices: [] }, 200, corsHeaders);
         }
 
         const invoices = await stripe.invoices.list({
@@ -161,24 +184,14 @@ serve(async (req) => {
           hosted_invoice_url: inv.hosted_invoice_url,
         }));
 
-        return new Response(
-          JSON.stringify({ invoices: formattedInvoices }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return secureJsonResponse({ invoices: formattedInvoices }, 200, corsHeaders);
       }
 
       default:
-        throw new Error(`Unknown action: ${action}`);
+        return errorResponse(`Unknown action: ${action}`, 400, corsHeaders);
     }
   } catch (error) {
     console.error("Manage subscription error:", error);
-    const message = error instanceof Error ? error.message : "Subscription management failed";
-    return new Response(
-      JSON.stringify({ error: message }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      }
-    );
+    return errorResponse("Subscription management failed", 400, getCorsHeaders(req));
   }
 });

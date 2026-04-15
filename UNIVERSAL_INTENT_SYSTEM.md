@@ -1,5 +1,7 @@
 # Universal Intent System
 
+> **Stack**: React 18 + TypeScript 5.9 | Runtime: `src/runtime/` (intentRouter, actionCatalog, intentResolver, intentClassifier) | Schema: `src/schemas/BusinessBlueprint.ts` (20+ intent types)
+
 A deterministic, two-step intent resolution and routing system for AI-generated UIs. Ensures consistent button behavior across all generated websites.
 
 ## Architecture Overview

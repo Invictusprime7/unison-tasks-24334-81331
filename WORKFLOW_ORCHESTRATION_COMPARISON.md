@@ -1,5 +1,7 @@
 # Workflow Orchestration Comparison
 
+> **Stack**: React 18 + TypeScript 5.9 | Inngest (primary: durable execution) | Trigger.dev (secondary: background jobs) | Supabase Edge Functions
+
 ## Overview
 
 Comparison of three serverless workflow orchestration platforms for Unison Tasks CRM automation:

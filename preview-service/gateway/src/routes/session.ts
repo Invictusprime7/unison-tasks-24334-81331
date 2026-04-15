@@ -57,7 +57,10 @@ sessionRouter.post('/start',
       });
     }
 
-    const session = await sessionManager.startSession(projectId, files);
+    const session = await sessionManager.startSession(projectId, files, {
+      userId: req.user!.id,
+      organizationId: req.user?.organizationId,
+    });
 
     const response: StartSessionResponse = {
       success: true,

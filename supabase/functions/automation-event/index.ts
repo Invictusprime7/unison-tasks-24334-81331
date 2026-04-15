@@ -15,11 +15,9 @@
 
 // deno-lint-ignore no-import-prefix
 import { createClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, isValidUUID, sanitizeString } from "../_shared/validate.ts";
 
 interface AutomationEventPayload {
   businessId: string;
@@ -38,8 +36,14 @@ interface WorkflowToTrigger {
 }
 
 export default async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  // Only accept POST
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, publicCorsHeaders);
   }
 
   try {
@@ -47,7 +51,13 @@ export default async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const body: AutomationEventPayload = await req.json();
+    // Parse and validate request body
+    const { data: body, error: parseError } = await safeParseBody<AutomationEventPayload>(req);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid JSON body", status, publicCorsHeaders);
+    }
+
     const { 
       businessId, 
       intent, 
@@ -61,58 +71,71 @@ export default async (req: Request) => {
     console.log("[automation-event] Received:", { businessId, intent, source });
 
     if (!businessId || !intent) {
-      return new Response(
-        JSON.stringify({ error: "businessId and intent are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("businessId and intent are required", 400, publicCorsHeaders);
+    }
+
+    // Validate businessId is a valid UUID format
+    const normalizedBusinessId = sanitizeString(businessId, 100);
+    if (!isValidUUID(normalizedBusinessId)) {
+      return errorResponse("Invalid businessId format", 400, publicCorsHeaders);
+    }
+
+    // Validate intent is a non-empty string with safe characters
+    const normalizedIntent = typeof intent === "string" ? sanitizeString(intent, 100) : "";
+    if (!normalizedIntent || !/^[a-zA-Z0-9._-]+$/.test(normalizedIntent)) {
+      return errorResponse("Invalid intent format", 400, publicCorsHeaders);
+    }
+
+    const normalizedContactId = typeof contactId === "string"
+      ? sanitizeString(contactId, 100)
+      : null;
+
+    // Verify business exists and get industry info
+    const { data: business, error: bizError } = await supabase
+      .from("businesses")
+      .select("id, industry, name")
+      .eq("id", normalizedBusinessId)
+      .single();
+
+    if (bizError || !business) {
+      return errorResponse("Business not found", 404, publicCorsHeaders);
     }
 
     // 1. Check if automations are enabled for this business
     const { data: settings } = await supabase
       .from("business_automation_settings")
       .select("*")
-      .eq("business_id", businessId)
+      .eq("business_id", normalizedBusinessId)
       .maybeSingle();
 
     if (settings && !settings.automations_enabled) {
-      console.log("[automation-event] Automations disabled for business:", businessId);
-      return new Response(
-        JSON.stringify({ success: true, message: "Automations disabled", triggered: 0 }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // 2. Get business industry
-    const { data: business } = await supabase
-      .from("businesses")
-      .select("id, industry, name")
-      .eq("id", businessId)
-      .maybeSingle();
-
-    if (!business) {
-      return new Response(
-        JSON.stringify({ error: "Business not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      console.log("[automation-event] Automations disabled for business:", normalizedBusinessId);
+      return secureJsonResponse(
+        { success: true, message: "Automations disabled", triggered: 0 },
+        200,
+        publicCorsHeaders
       );
     }
 
     const industry = business.industry || 'general';
 
     // 3. Create automation event with deduplication
-    const eventDedupeKey = dedupeKey || `${businessId}:${intent}:${JSON.stringify(payload)}:${Date.now()}`;
+    const normalizedDedupeKey = typeof dedupeKey === "string" ? sanitizeString(dedupeKey, 500) : undefined;
+    const eventDedupeKey = normalizedDedupeKey || `${normalizedBusinessId}:${normalizedIntent}:${JSON.stringify(payload)}:${Date.now()}`;
     
     const { data: existingEvent } = await supabase
       .from("automation_events")
       .select("id")
-      .eq("business_id", businessId)
+      .eq("business_id", normalizedBusinessId)
       .eq("dedupe_key", eventDedupeKey)
       .maybeSingle();
 
     if (existingEvent) {
       console.log("[automation-event] Duplicate event, skipping:", eventDedupeKey);
-      return new Response(
-        JSON.stringify({ success: true, message: "Duplicate event", eventId: existingEvent.id, triggered: 0 }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      return secureJsonResponse(
+        { success: true, message: "Duplicate event", eventId: existingEvent.id, triggered: 0 },
+        200,
+        publicCorsHeaders
       );
     }
 
@@ -122,17 +145,18 @@ export default async (req: Request) => {
       const { data: recentEvent } = await supabase
         .from("automation_events")
         .select("id")
-        .eq("business_id", businessId)
-        .eq("intent", intent)
+        .eq("business_id", normalizedBusinessId)
+        .eq("intent", normalizedIntent)
         .gte("occurred_at", windowStart.toISOString())
         .limit(1)
         .maybeSingle();
 
       if (recentEvent) {
         console.log("[automation-event] Within dedupe window, skipping");
-        return new Response(
-          JSON.stringify({ success: true, message: "Within dedupe window", triggered: 0 }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        return secureJsonResponse(
+          { success: true, message: "Within dedupe window", triggered: 0 },
+          200,
+          publicCorsHeaders
         );
       }
     }
@@ -141,13 +165,13 @@ export default async (req: Request) => {
     const { data: event, error: eventError } = await supabase
       .from("automation_events")
       .insert({
-        business_id: businessId,
-        intent,
+        business_id: normalizedBusinessId,
+        intent: normalizedIntent,
         payload,
         dedupe_key: eventDedupeKey,
-        contact_id: contactId || null,
+        contact_id: normalizedContactId,
         source,
-        source_url: sourceUrl,
+        source_url: typeof sourceUrl === "string" ? sanitizeString(sourceUrl, 2000) : null,
       })
       .select()
       .single();
@@ -163,7 +187,7 @@ export default async (req: Request) => {
     const { data: intentMappings } = await supabase
       .from("intent_recipe_mappings")
       .select("recipe_ids, priority")
-      .eq("intent", intent)
+      .eq("intent", normalizedIntent)
       .eq("industry", industry);
 
     // Check for business-specific workflows by business_id
@@ -172,8 +196,8 @@ export default async (req: Request) => {
       .from("crm_workflows")
       .select("id, name, priority, recipe_id, user_id")
       .eq("is_active", true)
-      .or(`business_id.eq.${businessId},user_id.eq.${business.id}`)
-      .or(`trigger_type.eq.${intent},trigger_config->>intent.eq.${intent}`);
+      .or(`business_id.eq.${normalizedBusinessId},user_id.eq.${business.id}`)
+      .or(`trigger_type.eq.${normalizedIntent},trigger_config->>intent.eq.${normalizedIntent}`);
 
     // Also check for user workflows without business_id set (legacy)
     // This catches workflows where user_id matches but business_id was never set
@@ -183,7 +207,7 @@ export default async (req: Request) => {
       .eq("is_active", true)
       .eq("user_id", business.id)
       .is("business_id", null)
-      .or(`trigger_type.eq.${intent},trigger_config->>intent.eq.${intent}`);
+      .or(`trigger_type.eq.${normalizedIntent},trigger_config->>intent.eq.${normalizedIntent}`);
 
     // Collect all workflows to trigger (dedupe by id)
     const workflowMap = new Map<string, WorkflowToTrigger>();
@@ -214,7 +238,7 @@ export default async (req: Request) => {
           const { data: toggle } = await supabase
             .from("business_recipe_toggles")
             .select("enabled")
-            .eq("business_id", businessId)
+            .eq("business_id", normalizedBusinessId)
             .eq("recipe_id", recipeId)
             .maybeSingle();
 
@@ -231,7 +255,7 @@ export default async (req: Request) => {
               const { data: installed } = await supabase
                 .from("installed_recipe_packs")
                 .select("enabled")
-                .eq("business_id", businessId)
+                .eq("business_id", normalizedBusinessId)
                 .eq("pack_id", pack.pack_id)
                 .maybeSingle();
 
@@ -274,9 +298,9 @@ export default async (req: Request) => {
     for (const workflow of workflowsToTrigger) {
       try {
         // Check enrollment eligibility if contact exists
-        if (contactId) {
+        if (normalizedContactId) {
           const { data: eligible } = await supabase.rpc("check_enrollment_eligibility", {
-            p_contact_id: contactId,
+            p_contact_id: normalizedContactId,
             p_workflow_id: workflow.id,
           });
 
@@ -296,12 +320,12 @@ export default async (req: Request) => {
           .insert({
             workflow_id: workflow.id,
             event_id: event.id,
-            contact_id: contactId || null,
+            contact_id: normalizedContactId,
             status: "pending",
             context: {
-              intent,
+              intent: normalizedIntent,
               payload,
-              business: { id: businessId, industry, name: business.name },
+              business: { id: normalizedBusinessId, industry, name: business.name },
               triggered_at: new Date().toISOString(),
             },
             idempotency_key: idempotencyKey,
@@ -317,9 +341,9 @@ export default async (req: Request) => {
         }
 
         // Update enrollment tracking
-        if (contactId) {
+        if (normalizedContactId) {
           await supabase.rpc("upsert_enrollment", {
-            p_contact_id: contactId,
+            p_contact_id: normalizedContactId,
             p_workflow_id: workflow.id,
           });
         }
@@ -333,11 +357,11 @@ export default async (req: Request) => {
             workflowId: workflow.id,
             workflowRunId: run.id,
             triggerData: {
-              event: intent,
+              event: normalizedIntent,
               eventId: event.id,
               payload,
-              businessId,
-              contactId,
+              businessId: normalizedBusinessId,
+              contactId: normalizedContactId,
               timestamp: new Date().toISOString(),
             },
           },
@@ -354,21 +378,18 @@ export default async (req: Request) => {
       .update({ processed: true })
       .eq("id", event.id);
 
-    return new Response(
-      JSON.stringify({
+    return secureJsonResponse(
+      {
         success: true,
         eventId: event.id,
         triggered: results.filter((r) => r.runId).length,
         results,
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      },
+      200,
+      publicCorsHeaders
     );
   } catch (error: unknown) {
     console.error("[automation-event] Error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse("Failed to process automation event", 500, publicCorsHeaders);
   }
 };

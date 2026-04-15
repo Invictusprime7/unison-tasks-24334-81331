@@ -23,13 +23,21 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  // Verify cron secret (Vercel sets this header for cron jobs)
+  // Only allow GET (Vercel cron) and POST
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Verify cron secret — REQUIRED in production
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error('[cron/crm-daily] CRON_SECRET not configured — rejecting request');
+    return res.status(503).json({ error: 'Cron endpoint not configured' });
+  }
+
   const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // Allow in development or if CRON_SECRET not set
-    if (process.env.CRON_SECRET) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+  if (authHeader !== `Bearer ${cronSecret}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const results = {

@@ -1,11 +1,10 @@
 // deno-lint-ignore-file no-import-prefix
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isNonEmptyString, isValidUUID } from "../_shared/validate.ts";
 
 /**
  * Builder - Provision Endpoint
@@ -128,13 +127,6 @@ interface ProvisionRequest {
     create_demo_content?: boolean;
     provision_mode?: string;
   };
-}
-
-function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
 }
 
 function generateSlug(name: string): string {
@@ -405,55 +397,59 @@ ${footer}
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
   }
 
   if (req.method !== "POST") {
-    return json(405, { error: "Method not allowed" });
-  }
-
-  const authHeader = req.headers.get("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ")) {
-    return json(401, { error: "Unauthorized" });
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-    const authClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    // Validate token
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await authClient.auth.getUser(token);
-    
-    if (authError || !user) {
-      return json(401, { error: "Unauthorized" });
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
     }
 
-    const body: ProvisionRequest = await req.json();
-    
-    if (!body.blueprint) {
-      return json(400, { error: "blueprint is required" });
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const { data: body, error: parseError } = await safeParseBody<ProvisionRequest>(req);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    if (body.owner_id && (!isValidUUID(body.owner_id) || body.owner_id !== auth.user.id)) {
+      return errorResponse("owner_id must match the authenticated user", 403, corsHeaders);
     }
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const blueprint = body.blueprint;
-    const ownerId = body.owner_id || user.id;
+    const ownerId = auth.user.id;
+    const businessName = typeof blueprint?.brand?.business_name === "string"
+      ? sanitizeString(blueprint.brand.business_name, 120)
+      : "";
+    const sitePages = Array.isArray(blueprint?.site?.pages) ? blueprint.site.pages : [];
+    const intents = Array.isArray(blueprint?.intents) ? blueprint.intents : [];
+    const pipelines = Array.isArray(blueprint?.crm?.pipelines) ? blueprint.crm.pipelines : [];
+    const automationRules = Array.isArray(blueprint?.automations?.rules) ? blueprint.automations.rules : [];
+
+    if (!isNonEmptyString(businessName) || !blueprint?.identity?.industry || sitePages.length === 0) {
+      return errorResponse("Missing or invalid blueprint", 400, corsHeaders);
+    }
 
     // Step 1: Create business entity
-    const businessSlug = generateSlug(blueprint.brand.business_name);
+    const businessSlug = generateSlug(businessName);
     const { data: business, error: businessError } = await adminClient
       .from("businesses")
       .insert({
-        user_id: ownerId,
-        name: blueprint.brand.business_name,
+        owner_id: ownerId,
+        name: businessName,
         slug: businessSlug,
-        business_type: blueprint.identity.industry,
+        business_type: sanitizeString(blueprint.identity.industry, 80),
         settings: {
           brand: blueprint.brand,
           identity: blueprint.identity,
@@ -464,7 +460,14 @@ serve(async (req) => {
 
     if (businessError) {
       console.error("[builder-provision] Business creation failed:", businessError);
-      return json(500, { error: "Failed to create business" });
+      return errorResponse("Failed to create business", 500, corsHeaders);
+    }
+
+    const { error: memberError } = await adminClient
+      .from("business_members")
+      .insert({ business_id: business.id, user_id: ownerId, role: "owner" });
+    if (memberError) {
+      console.warn("[builder-provision] Business membership failed:", memberError.message);
     }
 
     // Step 2: Create design preferences
@@ -479,7 +482,7 @@ serve(async (req) => {
 
     // Step 3: Create project/template with generated HTML
     const homePageHtml = generatePageHTML(
-      blueprint.site.pages.find(p => p.type === "home") || blueprint.site.pages[0],
+      sitePages.find(p => p.type === "home") || sitePages[0],
       blueprint.brand
     );
 
@@ -487,7 +490,7 @@ serve(async (req) => {
       .from("design_templates")
       .insert({
         user_id: ownerId,
-        name: blueprint.brand.business_name,
+        name: businessName,
         description: blueprint.brand.tagline || `${blueprint.identity.industry} website`,
         is_public: false,
         canvas_data: {
@@ -501,11 +504,11 @@ serve(async (req) => {
 
     if (templateError) {
       console.error("[builder-provision] Template creation failed:", templateError);
-      return json(500, { error: "Failed to create template" });
+      return errorResponse("Failed to create template", 500, corsHeaders);
     }
 
     // Step 4: Create intent bindings
-    for (const intent of blueprint.intents) {
+    for (const intent of intents) {
       await adminClient.from("intent_bindings").insert({
         business_id: business.id,
         intent: intent.intent,
@@ -516,7 +519,7 @@ serve(async (req) => {
     }
 
     // Step 5: Create CRM pipeline stages
-    for (const pipeline of blueprint.crm.pipelines) {
+    for (const pipeline of pipelines) {
       for (const stage of pipeline.stages) {
         await adminClient.from("crm_pipeline_stages").insert({
           business_id: business.id,
@@ -529,9 +532,9 @@ serve(async (req) => {
     }
 
     // Step 6: Create automation workflows
-    const isShadowMode = (body.options?.provision_mode || blueprint.automations.provision_mode) === "shadow_automations";
+    const isShadowMode = (body.options?.provision_mode || blueprint.automations?.provision_mode) === "shadow_automations";
     
-    for (const rule of blueprint.automations.rules) {
+    for (const rule of automationRules) {
       await adminClient.from("automation_recipes").insert({
         business_id: business.id,
         name: rule.name,
@@ -547,13 +550,13 @@ serve(async (req) => {
     await adminClient.from("projects").upsert({
       id: template.id,
       owner_id: ownerId,
-      name: blueprint.brand.business_name,
+      name: businessName,
       description: blueprint.brand.tagline,
       blueprint_id: business.id,
       status: "ready",
     });
 
-    return json(200, {
+    return secureJsonResponse({
       project_id: template.id,
       business_id: business.id,
       builder_url: `/web-builder?id=${template.id}`,
@@ -561,9 +564,9 @@ serve(async (req) => {
         status: "ready",
         steps: ["create_business", "create_template", "create_intents", "create_pipeline", "create_workflows"],
       },
-    });
+    }, 200, corsHeaders);
   } catch (error) {
     console.error("[builder-provision] Error:", error);
-    return json(500, { error: "Internal server error" });
+    return errorResponse("Internal server error", 500, getCorsHeaders(req));
   }
 });

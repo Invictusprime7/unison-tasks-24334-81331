@@ -12,13 +12,9 @@
 
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
-
-// CORS headers for browser requests
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, isValidUUID, sanitizeString } from "../_shared/validate.ts";
 
 // Navigation intents - client-side only, no backend persistence
 const NAV_INTENTS = [
@@ -978,38 +974,56 @@ async function triggerAutomationEvent(
 
 // HTTP server
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  if (preflight) {
+    return preflight;
   }
   
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return errorResponse("Method not allowed", 405, publicCorsHeaders);
   }
   
   try {
-    const payload: IntentPayload = await req.json();
+    const { data: rawPayload, error: parseError } = await safeParseBody<IntentPayload>(req, 65_536);
+    if (parseError || !rawPayload) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid JSON body", status, publicCorsHeaders);
+    }
+
+    const payload: IntentPayload = {
+      ...rawPayload,
+      intent: typeof rawPayload.intent === "string" ? sanitizeString(rawPayload.intent, 100) : "",
+      businessId: typeof rawPayload.businessId === "string"
+        ? sanitizeString(rawPayload.businessId, 100)
+        : "",
+      projectId: typeof rawPayload.projectId === "string"
+        ? sanitizeString(rawPayload.projectId, 100)
+        : undefined,
+      sourceUrl: typeof rawPayload.sourceUrl === "string"
+        ? sanitizeString(rawPayload.sourceUrl, 2000)
+        : undefined,
+      visitorId: typeof rawPayload.visitorId === "string"
+        ? sanitizeString(rawPayload.visitorId, 200)
+        : undefined,
+    };
+
+    // Validate required fields
+    if (!payload.intent || !payload.businessId) {
+      return errorResponse("intent and businessId are required", 400, publicCorsHeaders);
+    }
+
+    // Validate businessId format (UUID)
+    if (!isValidUUID(payload.businessId)) {
+      return errorResponse("Invalid businessId format", 400, publicCorsHeaders);
+    }
+
     const result = await routeIntent(payload);
     
-    return new Response(JSON.stringify(result), {
-      status: result.success ? 200 : 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return secureJsonResponse(result as unknown as Record<string, unknown>, result.success ? 200 : 400, publicCorsHeaders);
   } catch (error: any) {
     console.error("[intent-router] Request error:", error);
     
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message || "Internal server error",
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    // Don't expose internal error details to clients
+    return errorResponse("An unexpected error occurred. Please try again.", 500, publicCorsHeaders);
   }
 });

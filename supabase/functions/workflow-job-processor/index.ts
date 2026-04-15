@@ -1,13 +1,40 @@
 import { createClient } from "@supabase/supabase-js";
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+interface WorkflowJobProcessorRequest {
+  workflowRunId?: string;
+}
+
+function isAuthorizedInternalRequest(req: Request): boolean {
+  const authHeader = req.headers.get("authorization");
+  const sharedSecret = req.headers.get("x-workflow-processor-secret");
+  const configuredSecret = Deno.env.get("WORKFLOW_PROCESSOR_SECRET");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const cronSecret = Deno.env.get("CRON_SECRET");
+
+  return Boolean(
+    (configuredSecret && sharedSecret === configuredSecret) ||
+    (serviceKey && authHeader === `Bearer ${serviceKey}`) ||
+    (cronSecret && authHeader === `Bearer ${cronSecret}`)
+  );
+}
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
+  }
+
+  if (!isAuthorizedInternalRequest(req)) {
+    console.warn("[workflow-job-processor] Unauthorized invocation attempt");
+    return errorResponse("Unauthorized", 401, corsHeaders);
   }
 
   try {
@@ -15,9 +42,36 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { workflowRunId } = await req.json();
+    const { data: payload, error: parseError } = await safeParseBody<WorkflowJobProcessorRequest>(req);
+    if (parseError || !payload) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const workflowRunId = typeof payload.workflowRunId === "string"
+      ? sanitizeString(payload.workflowRunId, 100)
+      : "";
+
+    if (!workflowRunId || !isValidUUID(workflowRunId)) {
+      return errorResponse("Invalid workflowRunId format", 400, corsHeaders);
+    }
 
     console.log("Processing jobs for workflow run:", workflowRunId);
+
+    const { data: workflowRun, error: workflowRunError } = await supabase
+      .from("crm_workflow_runs")
+      .select("id, status")
+      .eq("id", workflowRunId)
+      .maybeSingle();
+
+    if (workflowRunError) {
+      console.error("Error loading workflow run:", workflowRunError);
+      return errorResponse("Failed to load workflow run", 500, corsHeaders);
+    }
+
+    if (!workflowRun) {
+      return errorResponse("Workflow run not found", 404, corsHeaders);
+    }
 
     // Fetch pending jobs for this run
     const { data: jobs, error: jobsError } = await supabase
@@ -119,17 +173,14 @@ Deno.serve(async (req) => {
         .eq("id", workflowRunId);
     }
 
-    return new Response(
-      JSON.stringify({ success: true, processed: results.length, results }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    return secureJsonResponse(
+      { success: true, processed: results.length, results },
+      200,
+      corsHeaders,
     );
   } catch (error: unknown) {
     console.error("Error in workflow-job-processor:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse("Workflow job processing failed", 500, getCorsHeaders(req));
   }
 });
 

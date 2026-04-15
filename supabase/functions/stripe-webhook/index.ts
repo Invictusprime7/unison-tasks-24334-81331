@@ -2,9 +2,12 @@ import { serve } from "serve";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, stripe-signature",
+const responseHeaders = {
+  "Content-Type": "application/json",
+  "Cache-Control": "no-store",
+  "Pragma": "no-cache",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
 };
 
 // Map Stripe price IDs to plan types
@@ -16,9 +19,11 @@ const PRICE_TO_PLAN: Record<string, string> = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      headers: responseHeaders,
+      status: 405,
+    });
   }
 
   try {
@@ -26,7 +31,11 @@ serve(async (req) => {
     const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
     
     if (!stripeKey || !webhookSecret) {
-      throw new Error("Stripe configuration missing");
+      console.error("Stripe configuration missing");
+      return new Response(JSON.stringify({ error: "Webhook not configured" }), {
+        headers: responseHeaders,
+        status: 503,
+      });
     }
 
     const stripe = new Stripe(stripeKey, {
@@ -41,7 +50,10 @@ serve(async (req) => {
     // Verify webhook signature
     const signature = req.headers.get("stripe-signature");
     if (!signature) {
-      throw new Error("Missing stripe-signature header");
+      return new Response(JSON.stringify({ error: "Missing stripe signature" }), {
+        headers: responseHeaders,
+        status: 400,
+      });
     }
 
     const body = await req.text();
@@ -86,17 +98,20 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ received: true }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: responseHeaders,
       status: 200,
     });
   } catch (error) {
     console.error("Webhook error:", error);
-    const message = error instanceof Error ? error.message : "Webhook processing failed";
+    const status = error instanceof Stripe.errors.StripeSignatureVerificationError ? 400 : 500;
+    const message = status === 400
+      ? "Invalid webhook signature"
+      : "Webhook processing failed";
     return new Response(
       JSON.stringify({ error: message }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
+        headers: responseHeaders,
+        status,
       }
     );
   }

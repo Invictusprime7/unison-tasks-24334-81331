@@ -5,29 +5,51 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import {
+  applyApiSecurityHeaders,
+  getForwardedAuthHeaders,
+  getPreviewGatewayUrl,
+  handlePreflight,
+  isValidSessionId,
+  sendError,
+} from '../../_lib/security';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  const requestId = applyApiSecurityHeaders(req, res, {
+    methods: ['POST', 'OPTIONS'],
+    allowCredentials: true,
+  });
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (handlePreflight(req, res)) {
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    return sendError(res, 405, 'Method not allowed', requestId);
   }
 
   const { sessionId } = req.query;
-  const gatewayUrl = process.env.VITE_PREVIEW_GATEWAY_URL;
+  if (!isValidSessionId(sessionId)) {
+    return sendError(res, 400, 'Invalid session id', requestId);
+  }
+
+  const gatewayUrl = getPreviewGatewayUrl();
 
   if (gatewayUrl) {
     try {
-      await fetch(`${gatewayUrl}/api/preview/${sessionId}/stop`, {
+      const upstream = await fetch(`${gatewayUrl}/api/preview/${sessionId}/stop`, {
         method: 'POST',
+        headers: getForwardedAuthHeaders(req, requestId),
         signal: AbortSignal.timeout(3000),
       });
+
+      if (!upstream.ok) {
+        return sendError(res, upstream.status, 'Failed to stop preview session', requestId);
+      }
     } catch {
-      // Gateway unreachable — acknowledge locally
+      return sendError(res, 502, 'Preview gateway unavailable', requestId);
     }
   }
 
-  res.status(200).json({ success: true });
+  res.status(200).json({ success: true, requestId });
 }

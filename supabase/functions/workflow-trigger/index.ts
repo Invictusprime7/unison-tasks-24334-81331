@@ -1,57 +1,57 @@
 import { createClient } from "@supabase/supabase-js";
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, verifyBusinessAccess, authError } from "../_shared/auth.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+interface WorkflowTriggerRequest {
+  workflowId?: string;
+  triggerData?: Record<string, unknown>;
+  webhookSecret?: string;
+}
 
 export default async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const workflowProcessorSecret = Deno.env.get("WORKFLOW_PROCESSOR_SECRET");
 
-    // --- Authentication: require valid JWT ---
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      console.warn("Workflow trigger rejected: missing Authorization header");
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      console.warn("Workflow trigger rejected: invalid JWT", auth.error);
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
     }
 
-    // Verify the caller's identity using the anon client scoped to the caller
-    const callerSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    const { data: { user }, error: userError } = await callerSupabase.auth.getUser();
-    if (userError || !user?.id) {
-      console.warn("Workflow trigger rejected: invalid JWT", userError?.message);
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const userId = user.id;
+    const userId = auth.user.id;
     console.log("Workflow trigger authenticated for user:", userId);
 
     // Use service role for internal operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { workflowId, triggerData, webhookSecret } = await req.json();
+    const { data: payload, error: parseError } = await safeParseBody<WorkflowTriggerRequest>(req);
+    if (parseError || !payload) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
 
-    if (!workflowId || typeof workflowId !== "string") {
-      return new Response(
-        JSON.stringify({ error: "workflowId is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const workflowId = typeof payload.workflowId === "string" ? sanitizeString(payload.workflowId, 100) : "";
+    const triggerData = payload.triggerData && typeof payload.triggerData === "object" ? payload.triggerData : {};
+    const webhookSecret = typeof payload.webhookSecret === "string"
+      ? sanitizeString(payload.webhookSecret, 500)
+      : undefined;
+
+    if (!workflowId || !isValidUUID(workflowId)) {
+      return errorResponse("Invalid workflowId format", 400, corsHeaders);
     }
 
     console.log("Workflow trigger received:", { workflowId, userId });
@@ -59,44 +59,36 @@ export default async (req: Request) => {
     // Fetch the workflow
     const { data: workflow, error: workflowError } = await supabase
       .from("crm_workflows")
-      .select("*")
+      .select("id, name, trigger_type, trigger_config, steps, user_id, business_id")
       .eq("id", workflowId)
       .eq("is_active", true)
       .maybeSingle();
 
     if (workflowError) {
       console.error("Error fetching workflow:", workflowError);
-      return new Response(
-        JSON.stringify({ error: "Unable to process request" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Unable to process request", 500, corsHeaders);
     }
 
     if (!workflow) {
-      return new Response(
-        JSON.stringify({ error: "Workflow not found or inactive" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Workflow not found or inactive", 404, corsHeaders);
     }
 
     // Verify webhook secret if configured on the workflow
     if (workflow.trigger_config?.webhookSecret &&
         workflow.trigger_config.webhookSecret !== webhookSecret) {
       console.warn("Workflow trigger rejected: invalid webhook secret", { workflowId, userId });
-      return new Response(
-        JSON.stringify({ error: "Invalid webhook secret" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Invalid webhook secret", 403, corsHeaders);
     }
 
-    // Verify the caller owns or is a member of the workflow's business
-    // (workflow.user_id check ensures caller has permission)
-    if (workflow.user_id && workflow.user_id !== userId) {
+    if (workflow.business_id) {
+      const access = await verifyBusinessAccess(userId, workflow.business_id);
+      if (!access.allowed) {
+        console.warn("Workflow trigger rejected: business access denied", { workflowId, userId, businessId: workflow.business_id });
+        return errorResponse(access.error || "Forbidden", 403, corsHeaders);
+      }
+    } else if (workflow.user_id && workflow.user_id !== userId) {
       console.warn("Workflow trigger rejected: user does not own workflow", { workflowId, userId, workflowOwner: workflow.user_id });
-      return new Response(
-        JSON.stringify({ error: "Forbidden" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Forbidden", 403, corsHeaders);
     }
 
     // Log the trigger event type for debugging
@@ -122,10 +114,7 @@ export default async (req: Request) => {
 
     if (runError) {
       console.error("Error creating workflow run:", runError);
-      return new Response(
-        JSON.stringify({ error: "Unable to process request" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Unable to process request", 500, corsHeaders);
     }
 
     console.log("Workflow run created:", workflowRun.id);
@@ -159,25 +148,27 @@ export default async (req: Request) => {
 
     // Trigger job processor
     const processorResponse = await supabase.functions.invoke("workflow-job-processor", {
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        ...(workflowProcessorSecret ? { "x-workflow-processor-secret": workflowProcessorSecret } : {}),
+      },
       body: { workflowRunId: workflowRun.id },
     });
 
     console.log("Job processor triggered:", processorResponse);
 
-    return new Response(
-      JSON.stringify({
+    return secureJsonResponse(
+      {
         success: true,
         workflowRunId: workflowRun.id,
         eventType,
         message: "Workflow triggered successfully",
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      },
+      200,
+      corsHeaders,
     );
   } catch (error: unknown) {
     console.error("Error in workflow-trigger:", error);
-    return new Response(
-      JSON.stringify({ error: "Unable to process request. Please try again." }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse("Unable to process request. Please try again.", 500, getCorsHeaders(req));
   }
 };

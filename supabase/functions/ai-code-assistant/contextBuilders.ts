@@ -117,18 +117,33 @@ export function analyzeTemplateStructure(code: string): string {
   const imageCount = (code.match(/<img[^>]*>/gi) || []).length;
   const buttonCount = (code.match(/<button[^>]*>|class="[^"]*btn[^"]*"/gi) || []).length;
   const linkCount = (code.match(/<a[^>]*href/gi) || []).length;
+
+  // Structural fingerprint — React-specific
+  const importCount = (code.match(/^import\s+/gm) || []).length;
+  const hookCount = (code.match(/\buse[A-Z][a-zA-Z]*\s*\(/g) || []).length;
+  const componentDefs = (code.match(/(?:export\s+(?:default\s+)?)?(?:function|const)\s+[A-Z][a-zA-Z0-9]+/g) || []);
+  const componentNames = componentDefs.map(m => m.replace(/^.*(?:function|const)\s+/, ''));
+  const dataIntentCount = (code.match(/data-ut-intent/g) || []).length;
+  const formCount = (code.match(/<form[\s>]/gi) || []).length;
+
   return `
-📊 **TEMPLATE STRUCTURE ANALYSIS:**
-- Detected Sections: ${sections.length > 0 ? sections.join(', ') : 'Basic layout'}
+📊 **TEMPLATE STRUCTURE FINGERPRINT (DO NOT REDUCE ANY COUNT):**
+- Sections (${sections.length}): ${sections.length > 0 ? sections.join(', ') : 'Basic layout'}
+- Components (${componentNames.length}): ${componentNames.join(', ') || 'inline'}
+- Imports: ${importCount} | Hooks: ${hookCount} | Intents: ${dataIntentCount} | Forms: ${formCount}
 - Images: ${imageCount} | Buttons: ${buttonCount} | Links: ${linkCount}
-- Approximate Size: ${code.length} characters
+- Size: ${code.length} chars
+
+⚠️ STRUCTURAL CONTRACT: Your output MUST have >= ${sections.length} sections, >= ${importCount} imports, >= ${hookCount} hooks, and >= ${dataIntentCount} data-ut-intent attributes. Violation = site destruction.
 `;
 }
 
 // ── Elements library block ───────────────────────────────────────────────────
 
 export function buildElementsLibraryBlock(siteElementsLibraryContext: unknown, surgicalEdit: boolean): string {
-  if (!siteElementsLibraryContext || surgicalEdit) return '';
+  if (!siteElementsLibraryContext) return '';
+  // Skip elements library for surgical edits to avoid noise
+  if (surgicalEdit) return '';
   return `\n${siteElementsLibraryContext}\n⚠️ LIBRARY USAGE RULE: The element library above provides STRUCTURE and INTENT WIRING patterns only. For colors, fonts, gradients, card styles, and visual effects, follow the industry variation system, design profile, and brand palette provided elsewhere in this prompt. Do NOT copy visual styles from the library skeletons — create a UNIQUE design each time.\n`;
 }
 
@@ -207,27 +222,46 @@ BRAND COLORS — HSL values for CSS custom properties (no hsl() wrapper, just th
 RULES:
 1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
 2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
-3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports.
+3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
 4. In App.tsx use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
 5. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
-6. Wire CTAs with data-ut-intent attributes: data-ut-intent="booking.create", data-ut-intent="contact.submit"
+6. Wire ALL interactive buttons with data-ut-intent attributes. EVERY button/CTA must have one:
+   - Contact/form buttons: data-ut-intent="contact.submit"
+   - Booking/appointment buttons: data-ut-intent="booking.create"
+   - Newsletter subscribe: data-ut-intent="newsletter.subscribe"
+   - Get started/sign up: data-ut-intent="lead.capture"
+   - Call to action buttons: data-ut-intent="cta.primary" or data-ut-intent="cta.secondary"
+   - Quote/estimate request: data-ut-intent="quote.request"
+   - View pricing/plans: data-ut-intent="nav.anchor" href="#pricing"
+   - Learn more: data-ut-intent="nav.anchor" href="#about"
+   - Phone/call: <a href="tel:..." data-ut-intent="contact.call">
+   - Email: <a href="mailto:..." data-ut-intent="contact.email">
+   Example: <button data-ut-intent="booking.create" className="...">Book Now</button>
+   Forms should use: <form data-ut-intent="contact.submit">
 7. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
-8. Images: use REAL Unsplash URLs that match the industry context. Examples by industry:
-   - Restaurant: https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80 (dining room), https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80 (food plating)
-   - Salon/Beauty: https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80 (salon interior), https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=80 (styling)
-   - Fitness: https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80 (gym), https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80 (workout)
-   - Medical: https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&q=80 (hospital), https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=800&q=80 (healthcare)
-   - SaaS/Tech: https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80 (dashboard), https://images.unsplash.com/photo-1551434678-e076c223a692?w=800&q=80 (team)
-   - Ecommerce: https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80 (store), https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80 (avatar)
-   - Portfolio: https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80 (workspace), https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80 (collaboration)
-   - Contractor: https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80 (construction), https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80 (tools)
-   - Agency: https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80 (office), https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80 (meeting)
-   For people/testimonials: https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80, https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80, https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80
-   NEVER use fake/placeholder URLs like "photo-1234567890" — every image MUST load.
+8. Images: use ONLY these VERIFIED Unsplash URLs (they are guaranteed to load):
+   HERO/BACKGROUND by industry:
+   - Restaurant: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80"
+   - Salon/Beauty: "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80"
+   - Fitness: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80"
+   - Medical: "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&q=80"
+   - SaaS/Tech: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80"
+   - Ecommerce: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80"
+   - Portfolio: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80"
+   - Contractor: "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80"
+   - Agency: "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80"
+   - Coaching: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80"
+   PEOPLE (for testimonials, team): "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80", "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80"
+   NEVER construct URLs with template literals or arithmetic. Always use plain static strings.
 9. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above
 10. MINIMUM 7 distinct sections, each with rich content
 11. Dark theme, premium glassmorphism + gradient effects, responsive (sm:/md:/lg:)
 12. export default function App() — must be the default export
 13. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object
-14. CONTRAST RULE: --foreground MUST be visually distinct from --background. If background is dark (lightness < 30%), foreground MUST be light (lightness > 80%). If background is light (lightness > 70%), foreground MUST be dark (lightness < 25%). Same rule applies to --card vs --card-foreground, --primary vs --primary-foreground. NEVER make text invisible.`;
+14. CONTRAST RULE: --foreground MUST be visually distinct from --background. If background is dark (lightness < 30%), foreground MUST be light (lightness > 80%). If background is light (lightness > 70%), foreground MUST be dark (lightness < 25%). Same rule applies to --card vs --card-foreground, --primary vs --primary-foreground. NEVER make text invisible.
+15. LUCIDE ICONS — only use these VERIFIED icon names: Menu, X, ChevronDown, ChevronRight, ChevronLeft, ArrowRight, ArrowLeft, Star, Heart, Phone, Mail, MapPin, Clock, Calendar, Check, CheckCircle, CheckCircle2, Circle, Plus, Minus, Search, Settings, User, Users, Home, Building, Briefcase, Award, Shield, Zap, Sparkles, Sun, Moon, Eye, Camera, Image, Play, Pause, Volume2, MessageCircle, MessageSquare, Send, Share2, ExternalLink, Download, Upload, RefreshCw, RotateCw, Trash2, Edit, Copy, Bookmark, Flag, Bell, Lock, Unlock, Key, Globe, Wifi, Database, Server, Code, Terminal, GitBranch, Package, Layers, Layout, Grid, List, Filter, BarChart3, TrendingUp, DollarSign, CreditCard, ShoppingCart, ShoppingBag, Truck, Gift, Coffee, Utensils, Scissors, Palette, PenTool, Ruler, Wrench, Hammer, Stethoscope, GraduationCap, BookOpen, Lightbulb, Target, Rocket, Crown, Gem, Flame, Leaf, Droplets, Mountain, Waves, Music, Video, Pin, Radio, AtSign, CloudRain, Rss, Slack, Twitch, Dribbble, Figma, Chrome, Instagram, Facebook, Twitter, Linkedin, Youtube, Github
+   EXACT BRAND EXPORT CASING: use Github (NOT GitHub), Linkedin (NOT LinkedIn), Youtube (NOT YouTube), and Twitter for X/Twitter. Lowercase icon names like facebook or github are invalid imports.
+   SOCIAL MEDIA SUBSTITUTIONS (these do NOT exist in lucide-react — use the substitute): GitHub→Github, LinkedIn→Linkedin, YouTube→Youtube, TikTok→Music, Pinterest→Pin, Snapchat→Camera, WhatsApp→MessageCircle, Telegram→Send, Discord→MessageSquare, Reddit→MessageCircle, Spotify→Music, Threads→AtSign, Signal→Radio, Vimeo→Video, Behance→Palette, Medium→BookOpen.
+   If you need an icon not in this list, use a CLOSE MATCH from the list above. NEVER guess icon names.
+16. FRAMER MOTION — only use { motion, AnimatePresence } from 'framer-motion'. Do NOT import useAnimation, useInView, useScroll, or other hooks from framer-motion. For scroll animations, use Intersection Observer via React useEffect + useRef instead.`;
 }

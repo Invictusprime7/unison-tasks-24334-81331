@@ -199,7 +199,7 @@ export function InteractiveIcon({
           <FavIcon
             size={size}
             fill={isFavorited ? 'currentColor' : 'none'}
-            className={cn(isFavorited && 'text-red-500')}
+            className={cn(isFavorited && 'text-destructive')}
           />
         ) : (
           <ActualIcon size={size} />

@@ -86,16 +86,29 @@ import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
 import { extractPageTabs, type PageTab } from "./web-builder/PageNavigationBar";
+import { PageRouteBar, detectRouteConflicts } from "./web-builder/PageRouteBar";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { BusinessSetupSuggestions } from "@/components/onboarding/BusinessSetupSuggestions";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilder";
 import { useAIVFS } from '@/hooks/useAIVFS';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
+import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
+import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
-import { completeAestheticCSS, isValidAesthetic } from '@/utils/aestheticToCSS';
-import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
-import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
+import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
+import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
+import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
+import {
+  applyStructuralChange,
+  syncRouterAndValidate,
+  regenerateRouter,
+  patchVFS,
+  resolveNavigationTarget,
+  deriveFilePath,
+  scaffoldMissingTopologyPagesWithRouter,
+  getTopologyPagesForAIGeneration,
+} from '@/services/unifiedPreviewPipeline';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -543,6 +556,14 @@ ${specificPrompt}
 8. **RESPONSIVE** — Mobile-first with md: and lg: breakpoints.
 9. **FOOTER** — Match the main page footer style.
 10. **NO HTML DOCUMENTS** — Do NOT output <!DOCTYPE html> or <html> tags. This is a React component.
+11. **INTENT WIRING** — Wire ALL interactive buttons with data-ut-intent attributes:
+    - Contact/form buttons: data-ut-intent="contact.submit"
+    - Booking buttons: data-ut-intent="booking.create"
+    - Newsletter: data-ut-intent="newsletter.subscribe"
+    - CTA buttons: data-ut-intent="cta.primary"
+    - Quote requests: data-ut-intent="quote.request"
+    - Forms: <form data-ut-intent="contact.submit">
+    - Anchor links: <a href="#section" data-ut-intent="nav.anchor">
 
 ${options?.businessContext ? `📊 BUSINESS CONTEXT:\n${options.businessContext}` : ''}
 
@@ -907,7 +928,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(true);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
   const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
-  const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | undefined>(undefined);
+  const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | undefined>(undefined);
+  const [playgroundBindings, setPlaygroundBindings] = useState<Record<string, import('@/types/playground').PlaygroundBinding>>({});
+  const [playgroundCalendars, setPlaygroundCalendars] = useState<Record<string, import('@/types/playground').PlaygroundCalendar>>({});
+  const [playgroundPopups, setPlaygroundPopups] = useState<Record<string, import('@/types/playground').PlaygroundPopup>>({});
   const [aiPanelOpen, setAiPanelOpen] = useState(true); // AI panel open by default for easy access
   const [iframeErrors, setIframeErrors] = useState<IframeError[]>([]);
   const dragDropServiceRef = useRef<CanvasDragDropService>(CanvasDragDropService.getInstance());
@@ -959,6 +983,12 @@ export default function App() {
     (location.state as any)?.generatedTemplate
   );
   const [showLauncher, setShowLauncher] = useState(!hasIncomingContent);
+  const routeStateHasStructuredProject = !!(
+    (location.state as any)?.vfsFiles ||
+    (location.state as any)?.generatedCode ||
+    (location.state as any)?.generatedTemplate ||
+    (location.state as any)?.siteBundle
+  );
 
   // Parse template when previewCode changes (but NOT when customizer is applying overrides)
   useEffect(() => {
@@ -1373,9 +1403,10 @@ export default function App() {
   // Store latest rewire function in ref to avoid stale closures in setTimeout
   const autoRewireHtmlIntentsRef = useRef<((fileId: string, content: string) => void) | null>(null);
   
-  // Multi-page navigation state
+  // Multi-page navigation state — split into three concerns
   const [activePagePath, setActivePagePath] = useState<string>('/src/App.tsx');
-  
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [activePreviewRoute, setActivePreviewRoute] = useState<string>('/');
   // Derive page tabs from VFS
   const pageTabs = useMemo(() => {
     const vfsFiles = virtualFS.getSandpackFiles();
@@ -1389,7 +1420,174 @@ export default function App() {
       p.isMain ? "home" : p.path.replace(/^\//, '').replace(/\.html$/, '')
     );
   }, [pageTabs]);
-  
+
+  // Active site plan ref for intent resolution
+  const activeSitePlanRef = useRef<GeneratedSitePlan | null>(null);
+
+  // Hydrate PageRegistry from site topology plan (if launcher provided one),
+  // otherwise seed a default "Home" page.
+  useEffect(() => {
+    if (Object.keys(creatorPlayground.pageRegistry.pages).length > 0) return;
+
+    const navState = location.state as { sitePlan?: GeneratedSitePlan } | null;
+    let sitePlan = navState?.sitePlan || null;
+
+    // Try recovering from session storage if not in nav state
+    if (!sitePlan) {
+      sitePlan = recoverTopology();
+    }
+
+    // If still no plan, try DB recovery (async, will re-run effect logic)
+    if (!sitePlan) {
+      recoverTopologyFromDb().then(dbPlan => {
+        if (dbPlan && dbPlan.pages.length > 0 && Object.keys(creatorPlayground.pageRegistry.pages).length <= 1) {
+          persistTopology(dbPlan);
+          activeSitePlanRef.current = dbPlan;
+          const registry = populateRegistryFromTopology(dbPlan);
+          for (const page of Object.values(registry.pages)) {
+            creatorPlayground.addPage(page.title, page.path, page.pageType, {
+              filePath: page.filePath,
+              showInNav: page.showInNav, isHome: page.isHome, navOrder: page.navOrder,
+              seo: page.seo, redirectRules: page.redirectRules, createdBy: page.createdBy,
+            });
+          }
+          const existingFiles = virtualFS.getSandpackFiles();
+          const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, creatorPlayground.pageRegistry);
+          if (Object.keys(missingFiles).length > 0) {
+            virtualFS.importFiles(missingFiles);
+          }
+          // Trigger AI generation for placeholder pages
+          const pagesToGenerate = getTopologyPagesForAIGeneration(dbPlan, existingFiles);
+          for (const page of pagesToGenerate) {
+            const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
+            triggerPageGenRef.current(pageName, page.title, null);
+          }
+          console.log('[WebBuilder] Recovered topology from DB, AI generating', pagesToGenerate.length, 'pages');
+        }
+      });
+      return; // will be handled by async callback
+    }
+
+    if (sitePlan && sitePlan.pages.length > 0) {
+      // Persist for refresh survival (session + DB)
+      persistTopology(sitePlan);
+      persistTopologyToDb(sitePlan).then(id => {
+        if (id) console.log('[WebBuilder] Topology persisted to DB, draft:', id);
+      });
+      activeSitePlanRef.current = sitePlan;
+
+      // Populate from structured topology — the canonical path
+      const registry = populateRegistryFromTopology(sitePlan);
+      for (const page of Object.values(registry.pages)) {
+        creatorPlayground.addPage(page.title, page.path, page.pageType, {
+          filePath: page.filePath,
+          showInNav: page.showInNav,
+          isHome: page.isHome,
+          navOrder: page.navOrder,
+          seo: page.seo,
+          redirectRules: page.redirectRules,
+          createdBy: page.createdBy,
+        });
+      }
+      console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
+
+      // Hydrate playground state — prefer siteBundleSnapshot (canonical pipeline) over raw materializedPlayground
+      const snapshot = (navState as any)?.siteBundleSnapshot;
+      const materializedState = snapshot || (navState as any)?.materializedPlayground;
+      if (materializedState) {
+        const bindingsSource = snapshot?.bindings || materializedState.bindings;
+        const calendarsSource = snapshot?.calendars || materializedState.calendars;
+        const popupsSource = snapshot?.popups || materializedState.popups;
+        if (bindingsSource) setPlaygroundBindings(bindingsSource);
+        if (calendarsSource) setPlaygroundCalendars(calendarsSource);
+        if (popupsSource) setPlaygroundPopups(popupsSource);
+        // Hydrate forms into creator playground
+        const formsSource = materializedState.creatorData?.forms;
+        if (formsSource) {
+          for (const form of Object.values(formsSource)) {
+            creatorPlayground.addForm(form as any);
+          }
+        }
+        console.log(`[WebBuilder] Hydrated from ${snapshot ? 'SiteBundleSnapshot (canonical)' : 'materializedPlayground'}: ${Object.keys(bindingsSource || {}).length} bindings, ${Object.keys(calendarsSource || {}).length} calendars, ${Object.keys(popupsSource || {}).length} popups`);
+      }
+      if (sitePlan.validationErrors?.length) {
+        console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
+      }
+
+      // Auto-scaffold placeholders + router for missing pages
+      const existingFiles = virtualFS.getSandpackFiles();
+      const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, creatorPlayground.pageRegistry);
+      if (Object.keys(missingFiles).length > 0) {
+        virtualFS.importFiles(missingFiles);
+        console.log(`[WebBuilder] Scaffolded ${Object.keys(missingFiles).length} placeholder pages:`, Object.keys(missingFiles));
+      }
+
+      // Trigger AI generation to replace placeholders with real content
+      const pagesToGenerate = getTopologyPagesForAIGeneration(sitePlan, existingFiles);
+      if (pagesToGenerate.length > 0) {
+        console.log(`[WebBuilder] AI generating ${pagesToGenerate.length} pages from topology`);
+        // Stagger AI calls to avoid rate limits
+        pagesToGenerate.forEach((page, idx) => {
+          const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
+          setTimeout(() => {
+            triggerPageGenRef.current(pageName, page.title, null);
+          }, idx * 1500); // 1.5s stagger between pages
+        });
+      }
+    } else {
+      // Fallback: seed single Home page
+      creatorPlayground.addPage("Home", "/", "home", { showInNav: true, isHome: true });
+    }
+  }, []); // run once on mount
+
+  // Route conflict detection from playground registry
+  const routeConflicts = useMemo(
+    () => detectRouteConflicts(creatorPlayground.pageRegistry),
+    [creatorPlayground.pageRegistry]
+  );
+
+  // Feed route conflicts + topology validation into diagnostics aggregator
+  useEffect(() => {
+    const items: Array<{ domain: 'page-registry'; message: string; severity?: 'error' | 'warning'; code?: string }> = [];
+
+    // Route conflicts
+    for (const conflict of routeConflicts) {
+      items.push({
+        domain: 'page-registry',
+        message: `Duplicate route detected: "${conflict}" — multiple pages share the same path`,
+        severity: 'error',
+        code: 'ROUTE_CONFLICT',
+      });
+    }
+
+    // Topology validation errors (from site plan)
+    const plan = activeSitePlanRef.current;
+    if (plan?.validationErrors?.length) {
+      for (const err of plan.validationErrors) {
+        items.push({
+          domain: 'page-registry',
+          message: err,
+          severity: 'warning',
+          code: 'TOPOLOGY_VALIDATION',
+        });
+      }
+    }
+
+    // Check for missing VFS files (pages in registry but not in VFS)
+    const vfsFiles = virtualFS.getSandpackFiles();
+    for (const page of Object.values(creatorPlayground.pageRegistry.pages)) {
+      if (page.filePath && !vfsFiles[page.filePath]) {
+        items.push({
+          domain: 'page-registry',
+          message: `Page "${page.title}" (${page.filePath}) is registered but missing from VFS`,
+          severity: 'warning',
+          code: 'MISSING_VFS_FILE',
+        });
+      }
+    }
+
+    diagnosticsAggregator.ingestUnisonDiagnostics(items);
+  }, [routeConflicts, creatorPlayground.pageRegistry, virtualFS.nodes]);
   // Page manifest for async multi-page navigation (all HTML pages from VFS)
   const pageManifest = useMemo(() => {
     const vfsFiles = virtualFS.getSandpackFiles();
@@ -1404,17 +1602,7 @@ export default function App() {
   
   // Sync page manifest to preview iframe when VFS changes
   // This enables instant in-place navigation (no new tabs)
-  useEffect(() => {
-    const pageCount = Object.keys(pageManifest).length;
-    if (pageCount >= 1) {
-      // Sync all HTML pages to iframe cache (with small delay to ensure iframe is ready)
-      const timeoutId = setTimeout(() => {
-        console.log('[WebBuilder] Syncing page manifest:', pageCount, 'pages');
-        livePreviewRef.current?.syncPageManifest?.(pageManifest);
-      }, 200);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [pageManifest]);
+  // Page manifest sync is handled via VFS router generation — no separate sync needed
 
   // Apply variant section swaps — replace section JSX blocks in VFS source code
   useEffect(() => {
@@ -1466,16 +1654,7 @@ export default function App() {
     }
   }, [templateCustomizer.activeVariants, templateCustomizer.sections, vfsNodes, vfsUpdateFileContent, activePagePath]);
   
-  // Re-sync manifest when preview code changes (iframe reloads)
-  useEffect(() => {
-    if (Object.keys(pageManifest).length >= 1 && previewCode) {
-      // Delay to let iframe finish loading the new content
-      const timeoutId = setTimeout(() => {
-        livePreviewRef.current?.syncPageManifest?.(pageManifest);
-      }, 500);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [previewCode, pageManifest]);
+  // Router regeneration handles manifest sync — no separate sync effect needed
   
   // Handle page switching in multi-page preview
   const handleSelectPage = useCallback((path: string) => {
@@ -1488,8 +1667,54 @@ export default function App() {
       setEditorCode(pageContent);
     }
   }, [getSandpackFiles]);
+
+  /**
+   * Canonical navigation function — the ONLY path for page switching.
+   * Resolves pageId → route → filePath, updates all three state slices,
+   * opens editor file, and navigates preview.
+   */
+  const navigateToBuilderPage = useCallback((
+    pageId: string,
+    options?: { openFile?: boolean; updatePreview?: boolean }
+  ) => {
+    const { openFile = true, updatePreview = true } = options || {};
+    const page = creatorPlayground.pageRegistry.pages[pageId];
+    if (!page) {
+      console.warn('[WebBuilder] navigateToBuilderPage: page not found:', pageId);
+      return;
+    }
+
+    const vfsFiles = virtualFS.getSandpackFiles();
+    const resolved = resolveNavigationTarget(
+      { pageId },
+      creatorPlayground.pageRegistry,
+      vfsFiles,
+    );
+
+    // Update all three state slices
+    setActivePageId(pageId);
+    setActivePreviewRoute(resolved.route || '/');
+
+    if (resolved.existsInVFS && resolved.filePath && openFile) {
+      handleSelectPage(resolved.filePath);
+    } else if (page.isHome && openFile) {
+      handleSelectPage('/src/App.tsx');
+    }
+
+    if (updatePreview) {
+      livePreviewRef.current?.navigateToRoute(resolved.route || '/');
+    }
+
+    // If file doesn't exist in VFS, trigger AI generation as fallback
+    if (!resolved.existsInVFS && !page.isHome) {
+      const fp = resolved.filePath || deriveFilePath(page);
+      const pageName = fp.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
+      creatorPlayground.updatePage(pageId, { filePath: fp });
+      triggerPageGenRef.current(pageName, page.title, null);
+    }
+  }, [creatorPlayground.pageRegistry, virtualFS, handleSelectPage]);
+
   
-  // Handle adding a new page
   const handleAddPage = useCallback(() => {
     const name = prompt('Enter page name (e.g. "about", "contact"):');
     if (!name) return;
@@ -1712,17 +1937,37 @@ export default function ${componentName}Page() {
   
   // Effect A: previewCode → VFS  (one-way sync, runs when AI/templates/page-nav set previewCode)
   useEffect(() => {
+    if (routeStateHasStructuredProject && !importedRouteStateRef.current) {
+      console.log('[WebBuilder] Effect A deferred until route-state project import completes');
+      return;
+    }
+
     // Sync if previewCode has content and actually changed since last sync
     if (previewCode && previewCode !== lastSyncedCodeRef.current) {
       console.log('[WebBuilder] Effect A: Syncing previewCode to VFS, length:', previewCode.length);
       // All code is TSX — import directly to VFS as the active page file
       const targetPath = activePagePath.endsWith('.tsx') ? activePagePath : '/src/App.tsx';
-      virtualFSRef.current.importFiles({
-        [targetPath]: previewCode,
-      });
+      const currentFiles = virtualFSRef.current.getSandpackFiles();
+      const needsProjectScaffold =
+        targetPath === '/src/App.tsx' &&
+        (!currentFiles['/src/main.tsx'] || !currentFiles['/src/index.css']);
+
+      const importPayload = needsProjectScaffold
+        ? normalizeLauncherFiles(
+            {
+              ...currentFiles,
+              [targetPath]: previewCode,
+            },
+            { entryPoint: targetPath }
+          )
+        : {
+            [targetPath]: previewCode,
+          };
+
+      virtualFSRef.current.importFiles(importPayload);
       lastSyncedCodeRef.current = previewCode;
     }
-  }, [previewCode, activePagePath]);
+  }, [previewCode, activePagePath, routeStateHasStructuredProject]);
   
   // NOTE: Effect B (VFS→previewCode) has been REMOVED.
   // Previously, it watched virtualFS.nodes and called setPreviewCode() whenever the
@@ -2279,10 +2524,7 @@ export default function ${componentName}Page() {
         if (pageContent) {
           syncBuilderFromFiles(vfsFiles, targetPath);
         }
-        // Re-sync manifest to iframe so all pages are available for back-navigation
-        setTimeout(() => {
-          livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 300);
+        // Navigation is handled via HashRouter — no manifest sync needed
         return;
       }
       
@@ -2332,19 +2574,13 @@ export default function ${componentName}Page() {
           entryPoint: targetPath,
         });
         
-        // Re-sync manifest after iframe reloads
-        setTimeout(() => {
-           livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 600);
+        // Navigation is handled via HashRouter — no manifest sync needed
         return;
       }
       
-      // Handle manifest request from iframe after in-place page navigation
+      // Handle manifest request from iframe — navigation is via HashRouter now
       if (event.data?.type === 'REQUEST_PAGE_MANIFEST') {
-        console.log('[WebBuilder] Iframe requested page manifest re-sync');
-        setTimeout(() => {
-          livePreviewRef.current?.syncPageManifest?.(pageManifest);
-        }, 50);
+        console.log('[WebBuilder] Iframe page manifest request — handled via router');
         return;
       }
       
@@ -2438,34 +2674,82 @@ export default function ${componentName}Page() {
       const classification = classifyLabel(buttonLabel, elementCtx);
       console.log('[WebBuilder] Label classification:', buttonLabel, classification);
 
-      // ── Navigation intents: handle directly without hitting handleIntent ──
+      // ── nav.goto_page: resolve via RouteNavigationService ──
+      if (intent === 'nav.goto_page') {
+        const targetPageId = (payload as any)?.targetPageId;
+        const vfsFiles = virtualFS.getSandpackFiles();
+        const resolved = resolveNavigationTarget(
+          { targetPageId, label: buttonLabel },
+          creatorPlayground.pageRegistry,
+          vfsFiles,
+        );
+
+        // Fallback: try topology resolver for redirect mapping
+        if (!resolved.existsInRegistry) {
+          const sitePlan = activeSitePlanRef.current;
+          if (sitePlan) {
+            const fallbackRoute = resolveIntentTarget(
+              creatorPlayground.pageRegistry,
+              sitePlan.redirects,
+              null,
+              buttonLabel || ''
+            );
+            if (fallbackRoute) {
+              const resolved2 = resolveNavigationTarget(
+                { route: fallbackRoute },
+                creatorPlayground.pageRegistry,
+                vfsFiles,
+              );
+              if (resolved2.pageId) {
+                navigateToBuilderPage(resolved2.pageId);
+                sendResultToIframe({ success: true });
+                return;
+              }
+            }
+          }
+          // Not in registry at all — generate
+          const targetName = classification.suggestedPageType || buttonLabel || 'page';
+          triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
+          return;
+        }
+
+        // Page exists in registry — use canonical navigation
+        if (resolved.pageId) {
+          navigateToBuilderPage(resolved.pageId);
+          if (source && requestId) {
+            source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolved.route || '/' }, '*');
+          }
+          sendResultToIframe({ success: true });
+        }
+        return;
+      }
+
+      // ── nav.goto: resolve via RouteNavigationService ──
       if (intent === 'nav.goto') {
         const path = (payload as any)?.path;
         if (path && path.startsWith('#')) {
-          // Anchor scroll - already handled in iframe
           sendResultToIframe({ success: true });
           return;
         }
         
         if (path) {
-          // Page navigation within multi-page React VFS
-          const pageName = path.replace(/^\//, '').replace(/\.html$/, '').replace(/[^a-zA-Z0-9-]/g, '-') || 'page';
-          const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase()).replace(/^\w/, c => c.toUpperCase());
-          const vfsPath = `/src/pages/${componentName}.tsx`;
           const vfsFiles = virtualFS.getSandpackFiles();
-          const existingPage = vfsFiles[vfsPath];
-          
-          if (existingPage) {
-            // Page exists in VFS — navigate via React Router
-            setActivePagePath(vfsPath);
+          const resolved = resolveNavigationTarget(
+            { route: path, label: buttonLabel },
+            creatorPlayground.pageRegistry,
+            vfsFiles,
+          );
+
+          if (resolved.pageId) {
+            navigateToBuilderPage(resolved.pageId);
             if (source && requestId) {
-              source.postMessage({ type: 'NAV_ROUTE', requestId, route: `/${pageName}` }, '*');
+              source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolved.route || path }, '*');
             }
             toast(`Navigated to ${buttonLabel || path}`);
             sendResultToIframe({ success: true });
           } else {
-            // Page doesn't exist in VFS → generate it with AI
-            console.log('[WebBuilder] React page not in VFS, generating:', pageName, buttonLabel);
+            // Page doesn't exist in registry → generate
+            const pageName = path.replace(/^\//, '').replace(/\.html$/, '').replace(/[^a-zA-Z0-9-]/g, '-') || 'page';
             const targetName = classification.suggestedPageType || pageName || 'details';
             triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
           }
@@ -2693,6 +2977,18 @@ export default function ${componentName}Page() {
   const [isGeneratingPage, setIsGeneratingPage] = useState(false);
   const [currentNavPage, setCurrentNavPage] = useState<string | null>(null);
 
+  const replaceProjectFiles = useCallback((
+    files: Record<string, string>,
+    options?: { activePath?: string; entryContent?: string }
+  ) => {
+    const activePath = options?.activePath || '/src/App.tsx';
+    vfsResetToEmpty();
+    setGeneratedPages({});
+    setActivePagePath(activePath);
+    lastSyncedCodeRef.current = options?.entryContent ?? files[activePath] ?? '';
+    vfsImportFiles(files);
+  }, [vfsImportFiles, vfsResetToEmpty]);
+
   /**
    * Trigger AI page generation with full context injection (React/TSX only).
    * Called by the label classifier when a redirect-worthy button is clicked
@@ -2830,18 +3126,28 @@ export default ${componentName}Page;`;
         vfsImportFiles({ [vfsPath]: pageCode });
         setGeneratedPages(prev => ({ ...prev, [pageName]: pageCode }));
         
-        // Re-scaffold the router to include the new page
+        // Regenerate canonical topology router so the new page is routable
         const allFiles = getSandpackFiles();
         allFiles[vfsPath] = pageCode;
-        const scaffolded = scaffoldMultiPageVFS(allFiles['/src/App.tsx'] || previewCode, allFiles);
         
-        // Import the updated App.tsx with router if new routes were added
-        if (scaffolded.scaffoldedPages.length > 0 || scaffolded.files['/src/App.tsx'] !== allFiles['/src/App.tsx']) {
-          vfsImportFiles(scaffolded.files);
-          // Update preview to reflect new router
-          const newAppCode = scaffolded.files['/src/App.tsx'] || previewCode;
-          lastSyncedCodeRef.current = newAppCode;
-          setPreviewCode(newAppCode);
+        // Use topology router (preserves .tsx extensions for Sandpack)
+        const activePlan = activeSitePlanRef.current;
+        if (activePlan) {
+          const routerPatched = patchVFS(allFiles, creatorPlayground.pageRegistry, activePlan.businessName);
+          if (routerPatched['/src/App.tsx'] && routerPatched['/src/App.tsx'] !== allFiles['/src/App.tsx']) {
+            vfsImportFiles({ '/src/App.tsx': routerPatched['/src/App.tsx'] });
+            lastSyncedCodeRef.current = routerPatched['/src/App.tsx'];
+            setPreviewCode(routerPatched['/src/App.tsx']);
+          }
+        } else {
+          // Fallback: use old scaffolder if no topology plan exists
+          const scaffolded = scaffoldMultiPageVFS(allFiles['/src/App.tsx'] || previewCode, allFiles);
+          if (scaffolded.scaffoldedPages.length > 0 || scaffolded.files['/src/App.tsx'] !== allFiles['/src/App.tsx']) {
+            vfsImportFiles(scaffolded.files);
+            const newAppCode = scaffolded.files['/src/App.tsx'] || previewCode;
+            lastSyncedCodeRef.current = newAppCode;
+            setPreviewCode(newAppCode);
+          }
         }
         
         // Set editor to the new page file
@@ -2876,7 +3182,7 @@ export default ${componentName}Page;`;
       setIsGeneratingPage(false);
       setCurrentNavPage(null);
     }
-  }, [getSandpackFiles, vfsImportFiles, previewCode, generatedPages, businessDataContext, userDesignProfile, activeSystemType]);
+  }, [getSandpackFiles, vfsImportFiles, previewCode, generatedPages, businessDataContext, userDesignProfile, activeSystemType, creatorPlayground.pageRegistry]);
 
   // Ref to always hold the latest triggerPageGeneration (avoids stale closure in INTENT_TRIGGER handler)
   const triggerPageGenRef = useRef(triggerPageGeneration);
@@ -2936,16 +3242,21 @@ export default ${componentName}Page;`;
       startInPreview?: boolean;
       systemType?: string;
       entryPoint?: string;
+      runtimeManifest?: RuntimeManifest;
+      siteBundle?: LauncherHandoff['siteBundle'];
     } | null;
 
     const navStateSignature = navState
       ? JSON.stringify({
           hasVfsFiles: !!navState.vfsFiles,
+          hasSiteBundle: !!navState.siteBundle,
           vfsKeys: navState.vfsFiles ? Object.keys(navState.vfsFiles).sort() : [],
           generatedCodeLength: navState.generatedCode?.length ?? 0,
           templateName: navState.templateName ?? null,
           systemType: navState.systemType ?? null,
           entryPoint: navState.entryPoint ?? null,
+          runtimeEntryPoint: navState.runtimeManifest?.entryPoint ?? null,
+          routeCount: navState.runtimeManifest?.routes?.length ?? 0,
         })
       : null;
 
@@ -2953,7 +3264,33 @@ export default ${componentName}Page;`;
       return;
     }
 
-    if (navState?.startInPreview && !navState?.vfsFiles) {
+    const launcherEntryPoint = navState?.runtimeManifest?.entryPoint ?? navState?.entryPoint;
+    const launcherSourceFiles = (() => {
+      if (!navState) return null;
+
+      const siteBundleFiles = navState.siteBundle
+        ? compileSiteBundleToVFS({
+            siteBundle: navState.siteBundle,
+            entryPath: navState.runtimeManifest?.routes?.[0] || '/',
+          })
+        : null;
+
+      if (navState.vfsFiles) {
+        const mergedFiles = { ...navState.vfsFiles };
+        if (siteBundleFiles) {
+          for (const [path, content] of Object.entries(siteBundleFiles)) {
+            if (!mergedFiles[path]) {
+              mergedFiles[path] = content;
+            }
+          }
+        }
+        return mergedFiles;
+      }
+
+      return siteBundleFiles;
+    })();
+
+    if (navState?.startInPreview && !launcherSourceFiles) {
       toast.error('Launcher preview requires structured VFS files from the industry pipeline.');
       importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
@@ -2961,9 +3298,13 @@ export default ${componentName}Page;`;
     }
 
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
-    if (navState?.vfsFiles) {
-      const normalizedEntryPoint = navState.entryPoint
-        ? (navState.entryPoint.startsWith('/') ? navState.entryPoint : `/${navState.entryPoint}`)
+    if (launcherSourceFiles) {
+      // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist
+      const vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
+        entryPoint: launcherEntryPoint,
+      });
+      const normalizedEntryPoint = launcherEntryPoint
+        ? (launcherEntryPoint.startsWith('/') ? launcherEntryPoint : `/${launcherEntryPoint}`)
         : null;
       const vfsFiles = normalizeLauncherFiles({ ...navState.vfsFiles }, {
         entryPoint: normalizedEntryPoint || undefined,
@@ -2997,10 +3338,30 @@ export default ${componentName}Page;`;
       }
 
       if (Object.keys(vfsFiles).length > 0) {
-        importBuilderFiles(vfsFiles, {
-          preferredPath: normalizedEntryPoint || activePagePath,
-          entryPoint: normalizedEntryPoint,
+        const editableEntryPath = vfsFiles["/src/App.tsx"]
+          ? "/src/App.tsx"
+          : vfsFiles["/App.tsx"]
+            ? "/App.tsx"
+            : Object.keys(vfsFiles).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) ||
+              (normalizedEntryPoint && vfsFiles[normalizedEntryPoint] ? normalizedEntryPoint : null) ||
+              Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path)) ||
+              Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
+              activePagePath;
+        const entry = editableEntryPath ? vfsFiles[editableEntryPath] : undefined;
+        const safeEntry = entry ? ensureReactImports(entry) : undefined;
+        const importedFiles = editableEntryPath && safeEntry && entry !== safeEntry
+          ? { ...vfsFiles, [editableEntryPath]: safeEntry }
+          : vfsFiles;
+
+        replaceProjectFiles(importedFiles, {
+          activePath: editableEntryPath || '/src/App.tsx',
+          entryContent: safeEntry,
         });
+
+        if (safeEntry) {
+          setEditorCode(safeEntry);
+          setPreviewCode(safeEntry);
+        }
 
         // Keep builder metadata in sync for VFS-first launches
         if (navState.templateName) setCurrentTemplateName(navState.templateName);
@@ -3046,14 +3407,17 @@ export default ${componentName}Page;`;
       const { templateName, aesthetic, startInPreview, systemType: navSystemType } = navState;
       // Sanitize AI output — strip prose/reasoning, keep only code
       const rawCode = navState.generatedCode;
-      const generatedCode = extractCleanCode(rawCode);
-      if (!generatedCode || !looksLikeCode(generatedCode)) {
+        const generatedCode = extractCleanCode(rawCode);
+        if (!generatedCode || !looksLikeCode(generatedCode)) {
         console.warn('[WebBuilder] Rejected generatedCode — looks like prose, not code');
         toast.error('Generated content was not valid code. Please try again.');
         return;
       }
       console.log('[WebBuilder] Loading template code:', templateName, 'startInPreview:', startInPreview, 'systemType:', navSystemType);
       if (templateName) setCurrentTemplateName(templateName);
+
+        let nextCode = generatedCode;
+        const nextFiles: Record<string, string> = {};
       
       // Auto-hydrate Creator's Playground from AI-generated content
       setTimeout(() => {
@@ -3069,10 +3433,34 @@ export default ${componentName}Page;`;
         }
       }, 300);
       
-      importBuilderFiles(
-        templateToVFSFiles(generatedCode, templateName || 'Template'),
-        { preferredPath: '/src/App.tsx', entryPoint: '/src/App.tsx' },
-      );
+      // Ensure code is pure React/TSX — wrap any remaining HTML as safety net
+      const isRawHTML = !generatedCode.includes('import ') && !generatedCode.includes('export default') &&
+        (generatedCode.trim().startsWith('<!DOCTYPE') || generatedCode.trim().startsWith('<html') ||
+        generatedCode.includes('<!-- ') || (generatedCode.includes('class=') && !generatedCode.includes('className=')));
+        if (isRawHTML) {
+          const result = getTemplateReactCodeWithCSS({ code: generatedCode, title: templateName || 'Template' });
+          nextCode = result.code;
+          if (result.css) {
+            nextFiles['/src/template.css'] = result.css;
+          }
+        } else {
+        // Extract any legacy TEMPLATE_STYLES/TEMPLATE_CSS from React code
+        const { cleanCode, css } = extractEmbeddedCSS(generatedCode);
+          nextCode = cleanCode;
+        if (css) {
+            nextFiles['/src/template.css'] = css;
+        }
+      }
+
+        nextFiles['/src/App.tsx'] = nextCode;
+        // Normalize to ensure main.tsx and index.css exist
+        const normalizedFiles = normalizeLauncherFiles(nextFiles);
+        replaceProjectFiles(normalizedFiles, {
+          activePath: '/src/App.tsx',
+          entryContent: nextCode,
+        });
+        setEditorCode(nextCode);
+        setPreviewCode(nextCode);
       
       // Set system type for intent routing if AI generated with system context
       if (navSystemType && !activeSystemType) {
@@ -3132,11 +3520,16 @@ ${sectionsJsx}
   );
 }
 `;
-      
-      importBuilderFiles(templateToVFSFiles(reactCode, componentTitle), {
-        preferredPath: '/src/App.tsx',
-        entryPoint: '/src/App.tsx',
+      // Wire through VFS so preview stays in sync
+      const templateFiles = normalizeLauncherFiles({
+        '/src/App.tsx': reactCode,
       });
+      replaceProjectFiles(templateFiles, {
+        activePath: '/src/App.tsx',
+        entryContent: reactCode,
+      });
+      setEditorCode(reactCode);
+      setPreviewCode(reactCode);
       setViewMode('code');
       toast(`${templateName || generatedTemplate.name} loaded!`, {
         description: `${aesthetic || generatedTemplate.description} - View and edit in Code Editor`,
@@ -3144,7 +3537,7 @@ ${sectionsJsx}
       importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
     }
-  }, [location.state, activePagePath, activeSystemType, creatorPlayground, virtualFS, importBuilderFiles]);
+  }, [location.state, activePagePath, activeSystemType, creatorPlayground, replaceProjectFiles, virtualFS]);
 
   // Handle AI code generation
   const handleAICodeGenerated = (code: string) => {
@@ -4396,11 +4789,88 @@ ${html}
         playground={creatorPlayground}
         businessId={businessId || null}
         initialSection={playgroundInitialSection}
+        bindings={playgroundBindings}
+        calendars={playgroundCalendars}
+        popups={playgroundPopups}
+        vfsFiles={virtualFS.getSandpackFiles()}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
-          if (page?.path) {
-            toast.info(`Selected page: ${page.title}`, { description: page.path });
+          if (!page?.path) return;
+          const sanitized = page.path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+          const componentName = sanitized
+            .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
+            .replace(/^(.)/, (_, c: string) => c.toUpperCase());
+          const vfsPath = `/src/pages/${componentName}.tsx`;
+          const vfsFiles = virtualFS.getSandpackFiles();
+          if (vfsFiles[vfsPath]) {
+            handleSelectPage(vfsPath);
+            livePreviewRef.current?.navigateToRoute(page.path);
+          } else {
+            // Trigger AI generation for missing page
+            const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
+            triggerPageGenRef.current(pageName, page.title, null);
           }
+          setPlaygroundModalOpen(false);
+        }}
+        onPageAdd={(pageId, title, path, pageType) => {
+          // Auto-scaffold a VFS file when a page is added via playground
+          const sanitized = path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+          const componentName = sanitized
+            .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
+            .replace(/^(.)/, (_, c: string) => c.toUpperCase());
+          const vfsPath = `/src/pages/${componentName}.tsx`;
+          const vfsFiles = virtualFS.getSandpackFiles();
+          if (vfsFiles[vfsPath]) return; // Already exists
+          // Trigger AI generation for the new page
+          const pageName = vfsPath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || sanitized;
+          const label = title || sanitized.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          creatorPlayground.updatePage(pageId, { filePath: vfsPath });
+          
+          // Regenerate canonical router first so the route is registered
+          const routerCode = regenerateRouter(creatorPlayground.pageRegistry);
+          if (routerCode) virtualFS.importFiles({ '/src/App.tsx': routerCode });
+          
+          // Then trigger AI generation
+          triggerPageGenRef.current(pageName, label, null);
+          toast.success(`Generating "${label}" page with AI...`);
+        }}
+        onPageRemove={(_pageId, path) => {
+          const sanitized = path.replace(/^\//, '').replace(/[^a-z0-9-]/gi, '-') || 'custom';
+          const componentName = sanitized
+            .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
+            .replace(/^(.)/, (_, c: string) => c.toUpperCase());
+          const vfsPath = `/src/pages/${componentName}.tsx`;
+          handleRemovePage(vfsPath);
+        }}
+        onFunnelCreate={(funnelId, stepPages) => {
+          // Auto-scaffold all funnel step pages in VFS
+          const newFiles: Record<string, string> = {};
+          const funnelSlug = funnelId.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+          stepPages.forEach((step, idx) => {
+            const componentName = step.title.replace(/\s+/g, '').replace(/^(.)/, (_, c: string) => c.toUpperCase());
+            const vfsPath = `/src/pages/funnels/${funnelSlug}/${componentName}.tsx`;
+            const nextStep = stepPages[idx + 1];
+            const nextLink = nextStep
+              ? `<Link to="${nextStep.path}" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">Continue →</Link>`
+              : `<p className="text-lg text-muted-foreground">You're all set!</p>`;
+            newFiles[vfsPath] = `import { Link } from 'react-router-dom';
+
+export default function ${componentName}() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <main className="max-w-2xl mx-auto px-6 py-16 text-center">
+        <div className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary mb-4">Step ${idx + 1} · ${step.role}</div>
+        <h1 className="text-4xl font-bold mb-6">${step.title}</h1>
+        <p className="text-muted-foreground text-lg mb-8">This is the ${step.role} step of your funnel.</p>
+        ${nextLink}
+      </main>
+    </div>
+  );
+}
+`;
+          });
+          virtualFS.importFiles(newFiles);
+          toast.success(`Funnel scaffolded: ${stepPages.length} pages created in VFS`);
         }}
       />
 
@@ -4423,6 +4893,7 @@ ${html}
                 systemsBuildContext={systemsBuildContextFromState}
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
+                previewRef={livePreviewRef}
                 onApplyToVFS={(files) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
                   const result = aiVFS.applyCode(files);
@@ -4700,6 +5171,34 @@ ${html}
 
         {/* Center Canvas Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-transparent relative">
+          {/* Page Route Bar — registry-driven page info & switching */}
+          <PageRouteBar
+            activePagePath={activePagePath}
+            activePageId={activePageId}
+            activePreviewRoute={activePreviewRoute}
+            pageRegistry={creatorPlayground.pageRegistry}
+            routeConflicts={routeConflicts}
+            onNavigateToPage={(pageId) => navigateToBuilderPage(pageId)}
+            onToggleNavVisibility={(pageId, visible) => {
+              creatorPlayground.updatePage(pageId, { showInNav: visible });
+            }}
+            onSetHomePage={(pageId) => {
+              creatorPlayground.setHomePage(pageId);
+              // Regenerate router after homepage change
+              const result = syncRouterAndValidate(
+                creatorPlayground.pageRegistry,
+                virtualFS.getSandpackFiles(),
+              );
+              if (result.routerCode) {
+                virtualFS.importFiles({ '/src/App.tsx': result.routerCode });
+              }
+              toast.success('Homepage updated');
+            }}
+            onOpenPlayground={(section) => {
+              setPlaygroundInitialSection(section);
+              setPlaygroundModalOpen(true);
+            }}
+          />
           {/* Main Content Area - Canvas/Code/Split View */}
           <div 
             ref={canvasContainerRef}
@@ -4846,13 +5345,54 @@ ${html}
                       onNavigate={(path) => {
                         const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
                         if (pageName !== 'index') {
-                          triggerPageGenRef.current(pageName, pageName, null);
+                          // Registry-first: check if page already exists before generating
+                          const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
+                          const existingPage = registryPages.find(p => 
+                            p.path.replace(/^\//, '').toLowerCase() === pageName.toLowerCase()
+                          );
+                          const vfsFiles = virtualFS.getSandpackFiles();
+                          const sanitized = pageName.replace(/[^a-z0-9-]/gi, '-');
+                          const componentName = sanitized
+                            .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
+                            .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
+                          const vfsPath = `/src/pages/${componentName}.tsx`;
+                          
+                          if (existingPage && vfsFiles[vfsPath]) {
+                            // Page exists — navigate preview to route and open in editor
+                            handleSelectPage(vfsPath);
+                            livePreviewRef.current?.navigateToRoute(existingPage.path);
+                          } else {
+                            // Page doesn't exist — fall back to generation
+                            triggerPageGenRef.current(pageName, pageName, null);
+                          }
                         }
                       }}
                       onIntentTrigger={(intent, payload) => {
-                        if (intent === 'nav.goto' && payload.path) {
-                          const pageName = String(payload.path).replace(/^\//, '').replace(/\.html$/, '');
-                          if (pageName) triggerPageGenRef.current(pageName, String(payload.text || pageName), null);
+                        if ((intent === 'nav.goto' || intent === 'nav.goto_page') && (payload.path || payload['target-page-id'])) {
+                          const targetPageId = payload['target-page-id'] as string;
+                          const targetPath = payload.path as string;
+                          
+                          // Resolve by page ID first (deterministic), then by path
+                          if (targetPageId) {
+                            const page = creatorPlayground.pageRegistry.pages[targetPageId];
+                            if (page) {
+                              livePreviewRef.current?.navigateToRoute(page.path);
+                              return;
+                            }
+                          }
+                          
+                          const pageName = String(targetPath || '').replace(/^\//, '').replace(/\.html$/, '');
+                          if (pageName) {
+                            const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
+                            const existingPage = registryPages.find(p => 
+                              p.path.replace(/^\//, '').toLowerCase() === pageName.toLowerCase()
+                            );
+                            if (existingPage) {
+                              livePreviewRef.current?.navigateToRoute(existingPage.path);
+                            } else {
+                              triggerPageGenRef.current(pageName, String(payload.text || pageName), null);
+                            }
+                          }
                         }
                       }}
                       businessId={businessId || undefined}
@@ -5026,13 +5566,50 @@ ${html}
                         onNavigate={(path) => {
                           const pageName = path.replace(/^\//, '').replace(/\.html$/, '') || 'index';
                           if (pageName !== 'index') {
-                            triggerPageGenRef.current(pageName, pageName, null);
+                            const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
+                            const existingPage = registryPages.find(p => 
+                              p.path.replace(/^\//, '').toLowerCase() === pageName.toLowerCase()
+                            );
+                            const vfsFiles = virtualFS.getSandpackFiles();
+                            const sanitized = pageName.replace(/[^a-z0-9-]/gi, '-');
+                            const componentName = sanitized
+                              .replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase())
+                              .replace(/^(.)/, (_: string, c: string) => c.toUpperCase());
+                            const vfsPath = `/src/pages/${componentName}.tsx`;
+                            
+                            if (existingPage && vfsFiles[vfsPath]) {
+                              handleSelectPage(vfsPath);
+                              livePreviewRef.current?.navigateToRoute(existingPage.path);
+                            } else {
+                              triggerPageGenRef.current(pageName, pageName, null);
+                            }
                           }
                         }}
                         onIntentTrigger={(intent, payload) => {
-                          if (intent === 'nav.goto' && payload.path) {
-                            const pageName = String(payload.path).replace(/^\//, '').replace(/\.html$/, '');
-                            if (pageName) triggerPageGenRef.current(pageName, String(payload.text || pageName), null);
+                          if ((intent === 'nav.goto' || intent === 'nav.goto_page') && (payload.path || payload['target-page-id'])) {
+                            const targetPageId = payload['target-page-id'] as string;
+                            const targetPath = payload.path as string;
+                            
+                            if (targetPageId) {
+                              const page = creatorPlayground.pageRegistry.pages[targetPageId];
+                              if (page) {
+                                livePreviewRef.current?.navigateToRoute(page.path);
+                                return;
+                              }
+                            }
+                            
+                            const pageName = String(targetPath || '').replace(/^\//, '').replace(/\.html$/, '');
+                            if (pageName) {
+                              const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
+                              const existingPage = registryPages.find(p => 
+                                p.path.replace(/^\//, '').toLowerCase() === pageName.toLowerCase()
+                              );
+                              if (existingPage) {
+                                livePreviewRef.current?.navigateToRoute(existingPage.path);
+                              } else {
+                                triggerPageGenRef.current(pageName, String(payload.text || pageName), null);
+                              }
+                            }
                           }
                         }}
                         businessId={businessId || undefined}

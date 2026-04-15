@@ -31,12 +31,13 @@ import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types"
 import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
-import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
+import { createRuntimeManifest } from "@/types/runtimeManifest";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import {
   createBlueprintFromIndustry,
   compileContract,
   getIndustryProfile,
+  planSiteTopology,
   type BusinessBlueprint,
 } from "@/contracts";
 
@@ -77,6 +78,10 @@ function getSystemTypeForChip(chipId: string): BusinessSystemType {
   const industry = getCanonicalIndustry(chipId);
   const profile = getIndustryProfile(industry);
   return profile?.systemType || 'agency';
+}
+
+function isRenderableEntryPath(path: string): boolean {
+  return /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path);
 }
 
 /**
@@ -345,18 +350,15 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       const normalizedEntryPoint = typeof data?.entryPoint === "string"
         ? (data.entryPoint.startsWith("/") ? data.entryPoint : `/${data.entryPoint}`)
         : null;
-      const normalizedFiles = reactFiles
-        ? normalizeLauncherFiles(reactFiles, { entryPoint: normalizedEntryPoint || undefined })
-        : null;
-      const entryPath = normalizedEntryPoint && normalizedFiles?.[normalizedEntryPoint]
+      const entryPath = normalizedEntryPoint && reactFiles?.[normalizedEntryPoint] && isRenderableEntryPath(normalizedEntryPoint)
         ? normalizedEntryPoint
         : normalizedFiles?.["/src/App.tsx"]
           ? "/src/App.tsx"
           : normalizedFiles?.["/App.tsx"]
             ? "/App.tsx"
-            : normalizedFiles
-              ? Object.keys(normalizedFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
-                Object.keys(normalizedFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
+            : reactFiles
+              ? Object.keys(reactFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
+                Object.keys(reactFiles).find((path) => isRenderableEntryPath(path)) ||
                 null
               : null;
       const code = entryPath ? normalizedFiles?.[entryPath] || "" : "";
@@ -413,15 +415,32 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       return;
     }
 
+    const runtimeManifest = createRuntimeManifest(generatedVfsFiles, {
+      entryPoint: generatedEntryPoint || '/src/App.tsx',
+      industry: selectedChip ? getCanonicalIndustry(selectedChip) : undefined,
+      backendRequired: false,
+    });
+
+    // Generate site topology for the builder
+    const industryKey = selectedChip ? getCanonicalIndustry(selectedChip) : 'general';
+    const businessName = extractBusinessName(prompt);
+    const industryProfile = getIndustryProfile(industryKey);
+    const sitePlan = planSiteTopology(industryKey, businessName, {
+      primaryIntent: industryProfile?.primaryIntent,
+    });
+    console.log(`[BusinessLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, ${sitePlan.funnels.length} funnels`);
+
     navigate("/web-builder", {
       state: {
         vfsFiles: generatedVfsFiles,
-        entryPoint: generatedEntryPoint,
+        entryPoint: runtimeManifest.entryPoint,
+        runtimeManifest,
         templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
         aesthetic: "modern",
         startInPreview: true,
         systemType: selectedChip ? getSystemTypeForChip(selectedChip) : undefined,
         systemsBuildContext: generatedSystemsBuildContext ?? undefined,
+        sitePlan,
       },
     });
     handleClose();

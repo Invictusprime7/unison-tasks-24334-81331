@@ -40,7 +40,9 @@ import { runProviderLoop } from "./aiProviderLoop.ts";
 import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext, detectIssueHint } from "./contextCompactor.ts";
 import { buildSessionMemory, formatSessionMemoryBlock } from "./sessionMemory.ts";
 import { reviewPatch } from "./reviewPass.ts";
+import { checkEditScope } from "./reviewScope.ts";
 import { buildApplyState, formatApplyStateBlock, type ApplyState } from "./applyState.ts";
+import { preprocessPrompt, type PreprocessedPrompt } from "./promptPreprocessor.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -139,7 +141,7 @@ async function runBuilderLane(
 ): Promise<Response> {
   console.log(`[orchestrator] LANE B: ${task.type} (sub-behavior: ${
     task.type === 'debug_fix' ? 'builder_debug' :
-    ['surgical_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type) ? 'builder_edit' :
+    ['surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type) ? 'builder_edit' :
     'builder_generate'
   })`);
 
@@ -149,12 +151,20 @@ async function runBuilderLane(
     currentCode, editMode = false, debugMode: _debugMode = false,
     templateAction, systemType, variationSeed, templateName, aesthetic, source,
     userDesignProfile, systemsBuildContext, navPageGen = false, navPageName, navLabel,
-    siteElementsLibraryContext, surgicalEdit = false, vfsFiles, gatewayOptions,
-    previewDiagnostics, recentChangedFiles,
+    siteElementsLibraryContext, surgicalEdit = false, behavioralEdit = false,
+    componentBehaviorContext, vfsFiles, gatewayOptions,
+    previewDiagnostics, previewSnapshot, recentChangedFiles,
   } = parsed;
 
+  // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
+  const rawUserPromptText = extractTextContent(messages[messages.length - 1]?.content);
+  const preprocessed = preprocessPrompt(rawUserPromptText);
+  const userPromptText = preprocessed.normalized;
+  if (preprocessed.wasNormalized) {
+    console.log(`[orchestrator] Prompt normalized: ${preprocessed.intents.length} intents, ${preprocessed.searchKeywords.length} keywords`);
+  }
+
   // ── 1. Session memory (Lane B only) ────────────────────────────────────
-  const userPromptText = extractTextContent(messages[messages.length - 1]?.content);
   const memory = task.shouldUseMemory
     ? buildSessionMemory({
         userPromptText,
@@ -167,6 +177,7 @@ async function runBuilderLane(
         debugMode: _debugMode,
         previewDiagnostics: previewDiagnostics ?? undefined,
         recentChangedFiles: recentChangedFiles ?? undefined,
+        messageCount: messages.length,
       })
     : undefined;
   const memoryBlock = formatSessionMemoryBlock(memory);
@@ -210,8 +221,8 @@ async function runBuilderLane(
 
   // ── 5. Parallel work: research + nav research + image ──────────────────
   const researchPromise = task.skipResearch
-    ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [] } as ResearchResult)
-    : performPromptResearch(userPromptText);
+    ? Promise.resolve({ snippets: [], trends: [], keyPhrases: [], queriesUsed: [] } as ResearchResult)
+    : performPromptResearch(userPromptText, preprocessed.searchKeywords);
 
   const navResearchPromise: Promise<string> = (navPageGen && systemType)
     ? runNavResearch(systemType, navPageName ?? undefined, navLabel ?? undefined)
@@ -252,8 +263,10 @@ async function runBuilderLane(
   const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, surgicalEdit);
 
   // For surgical edits, use old-style VFS context (byte-for-byte preservation)
-  const vfsFilesContext = buildVfsFilesContext(surgicalEdit, vfsFiles);
-  const surgicalEditReinforcement = buildSurgicalEditReinforcement(surgicalEdit, vfsFilesContext);
+  // For ALL edit tasks, provide VFS context for structure preservation (not just surgical)
+  const isEditTask = ['surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type);
+  const vfsFilesContext = buildVfsFilesContext(surgicalEdit || isEditTask, vfsFiles);
+  const surgicalEditReinforcement = buildSurgicalEditReinforcement(surgicalEdit || isEditTask, vfsFilesContext);
 
   const imageContext = imageResult.generatedImageUrl
     ? `\n\n**IMPORTANT: An AI-generated image has been created for this request. Include this image HTML in your response at the appropriate location:**\n${imageResult.imageHtml}\n\nThe image is already styled for the "${imagePlacement || 'top-left'}" position. Make sure to include it in a relative-positioned container.`
@@ -271,6 +284,21 @@ async function runBuilderLane(
         memoryBlock,
         compactedFilesBlock,
         thinkingInstruction,
+      });
+      break;
+
+    case "behavioral_edit":
+      finalSystemPrompt = buildEditAssistantPrompt({
+        basePrompt,
+        memoryBlock,
+        compactedFilesBlock,
+        surgicalReinforcement: surgicalEditReinforcement,
+        researchContext,
+        designContext: systemTypeContext + designProfileContext,
+        blueprintContext: systemsBuildContextText,
+        elementsLibrary: elementsLibraryBlock,
+        thinkingInstruction,
+        behavioralContext: componentBehaviorContext,
       });
       break;
 
@@ -308,13 +336,29 @@ async function runBuilderLane(
       break;
   }
 
+  // Inject parsed intent summary into system prompt for better understanding
+  if (preprocessed.intentSummary) {
+    finalSystemPrompt += preprocessed.intentSummary;
+  }
+
+  // Inject live preview DOM snapshot for context awareness
+  if (previewSnapshot) {
+    finalSystemPrompt += `\n\n${previewSnapshot}\nUse this to understand what the user currently sees and which elements/sections exist in the live preview.`;
+  }
+
+  // Inject component behavior context for all edit types
+  if (componentBehaviorContext) {
+    finalSystemPrompt += `\n\n[🧠 Component Behavior Map]\n${componentBehaviorContext}\nUse this to identify interactive elements, their current handlers, state, and wiring when making edits.`;
+  }
+
   const aiMessages = [
     { role: 'system', content: finalSystemPrompt },
     ...processedMessages,
   ];
 
-  // ── 8. Call AI providers ───────────────────────────────────────────────
-  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY), gatewayOptions);
+  // ── 8. Call AI providers (complexity-aware model selection) ─────────────
+  console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
+  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY), gatewayOptions, preprocessed.complexity.tier);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
@@ -343,6 +387,22 @@ async function runBuilderLane(
         goalCategory: memory?.goalCategory,
       });
       console.log(`[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`);
+
+      // ── Scope enforcement for scoped edits ──────────────────────────
+      const scopeResult = checkEditScope({
+        patchFiles: reviewResult.cleanedFiles,
+        targetFile: parsed.targetFile ?? null,
+        taskType: task.type,
+        existingFiles,
+      });
+      if (!scopeResult.inScope) {
+        console.warn(`[orchestrator] SCOPE VIOLATION: ${scopeResult.reason}`);
+        reviewResult.warnings.push({ severity: "error", message: `Scope violation: ${scopeResult.reason}` });
+        reviewResult.requiresApproval = true;
+      }
+      if (scopeResult.blockAutoApply) {
+        reviewResult.requiresApproval = true;
+      }
 
       applyState = buildApplyState({
         actionType: reviewResult.removedFiles.length > 0 ? 'multi_patch' : 'patch',

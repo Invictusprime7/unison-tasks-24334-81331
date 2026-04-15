@@ -8,6 +8,7 @@ export type AssistantTaskType =
   | "template_html_generation"
   | "template_react_edit"
   | "surgical_edit"
+  | "behavioral_edit"
   | "multi_file_edit"
   | "single_file_edit"
   | "debug_fix"
@@ -41,6 +42,7 @@ export function classifyTask(opts: {
   templateAction?: string;
   navPageGen: boolean;
   surgicalEdit: boolean;
+  behavioralEdit: boolean;
   debugMode: boolean;
   vfsFiles?: Record<string, string>;
 }): ClassifiedTask {
@@ -52,6 +54,7 @@ export function classifyTask(opts: {
     templateAction,
     navPageGen,
     surgicalEdit,
+    behavioralEdit,
     debugMode,
     vfsFiles,
   } = opts;
@@ -130,6 +133,19 @@ export function classifyTask(opts: {
   if (surgicalEdit) {
     return {
       type: "surgical_edit",
+      fastPath: false,
+      shouldUseMemory: true,
+      shouldUseCompactContext: true,
+      prefersJsonOutput: true,
+      skipResearch: true,
+      skipThinking: false,
+    };
+  }
+
+  // ── Behavioral edit (functional changes: hooks, state, handlers) ──────
+  if (behavioralEdit) {
+    return {
+      type: "behavioral_edit",
       fastPath: false,
       shouldUseMemory: true,
       shouldUseCompactContext: true,

@@ -22,6 +22,7 @@ import type { User, Session } from '@supabase/supabase-js';
 import type { IntentManagers, IntentResult, IntentContext } from './intentExecutor';
 import { executeIntent, configureIntentExecutor } from './intentExecutor';
 import { setupEventBridge, createInngestEventsManager } from '@/lib/inngest-event-bridge';
+import type { InteractiveIconProps } from '@/components/ui/InteractiveIcon';
 
 // ============ TYPES ============
 
@@ -71,6 +72,9 @@ export interface TemplateRuntimeContextValue {
   cartItemCount: number;
   cartTotal: number;
   refreshCart: () => Promise<void>;
+  
+  // Icon runtime props — pre-wired for InteractiveIcon components
+  getIconProps: (iconKey: string) => Partial<InteractiveIconProps>;
 }
 
 const TemplateRuntimeContext = createContext<TemplateRuntimeContextValue | null>(null);
@@ -539,6 +543,27 @@ export function TemplateRuntimeProvider({ config, children }: TemplateRuntimePro
     return result;
   }, [config, user?.id, sessionId, managers, refreshCart]);
 
+  // Pre-wired icon props factory
+  const getIconProps = useCallback((iconKey: string): Partial<InteractiveIconProps> => {
+    const baseProps: Partial<InteractiveIconProps> = {
+      user: user ? { name: user.user_metadata?.name || user.email?.split('@')[0], email: user.email || '' } : null,
+      onAuthAction: (action) => {
+        if (action === 'login') showAuthModal('login');
+        else if (action === 'signup') showAuthModal('register');
+        else if (action === 'logout') signOut();
+      },
+      onSearch: (query) => {
+        window.dispatchEvent(new CustomEvent('intent:search', { detail: { query } }));
+      },
+    };
+
+    if (iconKey === 'cart') {
+      baseProps.badgeCount = cartItemCount;
+    }
+
+    return baseProps;
+  }, [user, cartItemCount, signOut]);
+
   const contextValue: TemplateRuntimeContextValue = {
     config,
     user,
@@ -554,6 +579,7 @@ export function TemplateRuntimeProvider({ config, children }: TemplateRuntimePro
     cartItemCount,
     cartTotal,
     refreshCart,
+    getIconProps,
   };
 
   return (

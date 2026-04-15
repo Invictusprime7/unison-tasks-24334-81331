@@ -6,6 +6,8 @@
  * 
  * This replaces button-label inference with role-aware, capability-driven binding.
  * Button text is only ONE signal, never the primary source.
+ * 
+ * V2: Added shop-grid, cart, and checkout section types for ecommerce flows.
  */
 
 import type { CoreIntent } from '@/coreIntents';
@@ -18,7 +20,8 @@ import type { CapabilityId } from './capabilityRegistry';
 export type SectionType =
   | 'navbar' | 'hero' | 'services' | 'pricing' | 'testimonials'
   | 'gallery' | 'about' | 'contact' | 'cta' | 'footer' | 'faq'
-  | 'stats' | 'team' | 'blog' | 'features';
+  | 'stats' | 'team' | 'blog' | 'features'
+  | 'shop-grid' | 'cart' | 'checkout' | 'product-detail';
 
 export type SlotRole =
   | 'primary-cta' | 'secondary-cta' | 'card-cta'
@@ -99,6 +102,14 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     ],
     fallbackIntent: 'nav.anchor',
   },
+  {
+    section: 'navbar',
+    slot: 'cart-trigger',
+    intentPriority: [
+      { capability: 'commerce', intent: 'cart.checkout' },
+    ],
+    fallbackIntent: 'nav.anchor',
+  },
 
   // ── Services / Cards ─────────────────────────────────────────────────
   {
@@ -124,6 +135,26 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
       { capability: 'contact', intent: 'contact.submit' },
     ],
     fallbackIntent: 'contact.submit',
+  },
+
+  // ── Shop Grid (ecommerce) ────────────────────────────────────────────
+  {
+    section: 'shop-grid',
+    slot: 'card-cta',
+    intentPriority: [
+      { capability: 'commerce', intent: 'cart.add' },
+    ],
+    fallbackIntent: 'nav.goto',
+  },
+
+  // ── Cart (ecommerce) ─────────────────────────────────────────────────
+  {
+    section: 'cart',
+    slot: 'checkout-cta',
+    intentPriority: [
+      { capability: 'commerce', intent: 'pay.checkout' },
+    ],
+    fallbackIntent: 'nav.goto',
   },
 
   // ── CTA Banner ────────────────────────────────────────────────────────

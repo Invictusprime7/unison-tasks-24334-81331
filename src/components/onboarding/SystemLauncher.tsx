@@ -31,13 +31,16 @@ import {
   getAllowedIntents,
 } from "@/contracts";
 import {
+  planSiteTopology,
+  type GeneratedSitePlan,
+} from "@/contracts/siteTopologyPlanner";
+import {
   generateDesignVariation,
   randomFontPairing,
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
 import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
-import { extractLauncherFilesPayload, sanitizeLauncherResponseText } from "@/utils/launcherPayload";
-import { createRuntimeManifest } from "@/types/runtimeManifest";
+import { createRuntimeManifest, type LauncherHandoff } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,
   getCompositionMeta,
@@ -49,13 +52,14 @@ import {
   type IndustryTag,
   type PremiumSectionReference,
 } from "@/sections/references";
-import { useLaunch } from "@/contexts/useLaunchHooks";
+import { executeCanonicalPipeline, type CanonicalPipelineResult } from "@/services/canonicalPipeline";
+import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type WizardStep = "industry" | "templates" | "aesthetic";
+type WizardStep = "industry" | "questions" | "templates" | "aesthetic";
 
 interface SystemLauncherProps {
   open: boolean;
@@ -64,11 +68,79 @@ interface SystemLauncherProps {
 
 const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [
   { key: "industry", num: 1, label: "Industry", sublabel: "What you do" },
-  { key: "templates", num: 2, label: "Templates", sublabel: "Pick a base" },
-  { key: "aesthetic", num: 3, label: "Launch", sublabel: "Name & style" },
+  { key: "questions", num: 2, label: "Goals", sublabel: "Your needs" },
+  { key: "templates", num: 3, label: "Templates", sublabel: "Pick a base" },
+  { key: "aesthetic", num: 4, label: "Launch", sublabel: "Name & style" },
 ];
 
-// Map businessSystem ids → industry tags for premium templates
+// ============================================================================
+// Wizard Questions Configuration
+// ============================================================================
+
+type PrimaryGoal = "collect_leads" | "book_appointments" | "sell_offers" | "showcase_work" | "drive_calls" | "grow_email_list";
+type CustomerNeed = "request_quote" | "book_service" | "buy_offer" | "fill_form" | "browse_services";
+type PageChoice = "about" | "services" | "pricing" | "gallery" | "faq" | "contact" | "booking" | "checkout" | "blog";
+
+const PRIMARY_GOALS: { id: PrimaryGoal; label: string; icon: string; description: string }[] = [
+  { id: "collect_leads", label: "Collect Leads", icon: "📩", description: "Capture contact info and grow your pipeline" },
+  { id: "book_appointments", label: "Book Appointments", icon: "📅", description: "Let clients schedule sessions online" },
+  { id: "sell_offers", label: "Sell Offers", icon: "💰", description: "Sell products, packages, or services" },
+  { id: "showcase_work", label: "Showcase Work", icon: "🎨", description: "Display your portfolio and past projects" },
+  { id: "drive_calls", label: "Drive Calls", icon: "📞", description: "Get prospects to call or message you" },
+  { id: "grow_email_list", label: "Grow Email List", icon: "📧", description: "Build a subscriber list for marketing" },
+];
+
+const CUSTOMER_NEEDS: { id: CustomerNeed; label: string; icon: string }[] = [
+  { id: "request_quote", label: "Request a quote", icon: "📋" },
+  { id: "book_service", label: "Book a service", icon: "🗓️" },
+  { id: "buy_offer", label: "Buy an offer/package", icon: "🛒" },
+  { id: "fill_form", label: "Fill out a form", icon: "📝" },
+  { id: "browse_services", label: "Browse services/products", icon: "🔍" },
+];
+
+const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
+  { id: "about", label: "About", icon: "ℹ️" },
+  { id: "services", label: "Services", icon: "⚙️" },
+  { id: "pricing", label: "Pricing", icon: "💲" },
+  { id: "gallery", label: "Gallery", icon: "🖼️" },
+  { id: "faq", label: "FAQ", icon: "❓" },
+  { id: "contact", label: "Contact", icon: "✉️" },
+  { id: "booking", label: "Booking", icon: "📅" },
+  { id: "checkout", label: "Checkout", icon: "🛍️" },
+  { id: "blog", label: "Blog", icon: "📰" },
+];
+
+// ============================================================================
+// Playground Pipeline Mappings
+// ============================================================================
+
+const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
+  booking: 'appointment_service',
+  saas: 'saas_digital',
+  agency: 'quote_lead',
+  portfolio: 'portfolio_creator',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const SYSTEM_TO_INDUSTRY_OVERLAY: Record<BusinessSystemType, IndustryOverlay> = {
+  booking: 'salon',
+  saas: 'general',
+  agency: 'agency',
+  portfolio: 'photographer',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const GOAL_TO_NEEDS: Record<PrimaryGoal, { needsBooking?: boolean; sellsProducts?: boolean; wantsLeadCapture?: boolean }> = {
+  collect_leads: { wantsLeadCapture: true },
+  book_appointments: { needsBooking: true },
+  sell_offers: { sellsProducts: true },
+  showcase_work: {},
+  drive_calls: { wantsLeadCapture: true },
+  grow_email_list: { wantsLeadCapture: true },
+};
+
 const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
   booking: ["salon", "restaurant", "fitness"],
   saas: ["universal"],
@@ -417,6 +489,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
 
+  // Questions step state
+  const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal | null>(null);
+  const [customerNeeds, setCustomerNeeds] = useState<CustomerNeed[]>([]);
+  const [selectedPages, setSelectedPages] = useState<PageChoice[]>(["about", "services", "contact"]);
+
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
 
   // Build template cards based on selected system
@@ -447,11 +524,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setBusinessName("");
     setCustomPrompt("");
     setIsLaunching(false);
+    setPrimaryGoal(null);
+    setCustomerNeeds([]);
+    setSelectedPages(["about", "services", "contact"]);
   }, []);
 
   const handleSystemSelect = (systemId: BusinessSystemType) => {
     setSelectedSystem(systemId);
     setSelectedTemplate(null);
+    setStep("questions");
+  };
+
+  const handleQuestionsNext = () => {
     setStep("templates");
   };
 
@@ -463,14 +547,24 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setStep("aesthetic");
   };
 
+  const toggleCustomerNeed = (need: CustomerNeed) => {
+    setCustomerNeeds(prev => prev.includes(need) ? prev.filter(n => n !== need) : [...prev, need]);
+  };
+
+  const togglePageChoice = (page: PageChoice) => {
+    setSelectedPages(prev => prev.includes(page) ? prev.filter(p => p !== page) : [...prev, page]);
+  };
+
   const handleBack = () => {
     if (step === "aesthetic") {
       setStep("templates");
       setSelectedTheme(null);
     } else if (step === "templates") {
+      setStep("questions");
+      setSelectedTemplate(null);
+    } else if (step === "questions") {
       setStep("industry");
       setSelectedSystem(null);
-      setSelectedTemplate(null);
     }
   };
 
@@ -505,6 +599,62 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const fonts = randomFontPairing();
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
+
+      // ── Step 1b: Provision backend (business, membership, intent bindings, demo data) ──
+      // Maps selectedSystem (BusinessSystemType) to install-system's SystemType
+      const installSystemType = selectedSystem as string; // both use same keys: booking, store, agency, portfolio, content, saas
+      const installPromise = supabase.functions.invoke('install-system', {
+        body: {
+          systemType: installSystemType,
+          businessName: businessName.trim(),
+          templateName: selectedTemplate?.label || system.name,
+          templateCategory: generationCategory,
+          designPreset: selectedTheme?.id || undefined,
+        },
+      }).then(({ data, error }) => {
+        if (error) {
+          console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
+          return null;
+        }
+        console.log('[SystemLauncher] Backend provisioned:', data);
+        return data?.data?.businessId as string | null;
+      }).catch(err => {
+        console.warn('[SystemLauncher] install-system error (non-fatal):', err);
+        return null;
+      });
+
+      // ── Step 2: Generate site topology BEFORE file generation ──
+      const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
+        primaryIntent: industryProfile?.primaryIntent,
+      });
+      console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
+
+      // ── Step 3: Run Canonical Pipeline (single enforced pathway) ──
+      const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
+      const wizardSelections: WizardSelections = {
+        businessName: businessName.trim(),
+        businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
+        industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
+        primaryGoal: primaryGoal || 'collect_leads',
+        secondaryGoals: customerNeeds as string[],
+        needsBooking: goalNeeds.needsBooking || customerNeeds.includes('book_service'),
+        sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
+        wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
+        templateId: selectedTemplate?.id,
+        themeId: selectedTheme?.id,
+      };
+
+      // Execute the canonical pipeline — single source of truth
+      const pipelineResult = executeCanonicalPipeline(wizardSelections);
+      const { playground: materializedPlayground, compileResult: compiledPlayground, siteBundleSnapshot, runtimeManifest: pipelineManifest } = pipelineResult;
+
+      if (pipelineResult.warnings.length > 0) {
+        console.warn('[SystemLauncher] Pipeline warnings:', pipelineResult.warnings);
+      }
+      if (pipelineResult.errors.length > 0) {
+        console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
+      }
+      console.log(`[SystemLauncher] Canonical pipeline complete: ${Object.keys(materializedPlayground.bindings).length} bindings, ${Object.keys(materializedPlayground.calendars).length} calendars, ${Object.keys(materializedPlayground.popups).length} popups`);
 
       const blueprint = {
         version: "1.0",
@@ -587,8 +737,52 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         throw error;
       }
 
-      const rawContent = sanitizeLauncherResponseText(data?.content || data?.code || "");
-      
+      let rawContent = (data?.content || data?.code || "")
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+        .trim()
+        .replace(/^```json?\s*\n?/i, "")
+        .replace(/\n?```\s*$/i, "")
+        .trim();
+
+      // Strip leading non-JSON prose before the opening brace (AI sometimes prepends text)
+      if (!rawContent.startsWith('{') && rawContent.includes('{"files"')) {
+        rawContent = rawContent.slice(rawContent.indexOf('{"files"'));
+      }
+
+      const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
+
+      let vfsFiles: Record<string, string> | null = null;
+      let parsedEntryPoint: string | undefined;
+      let parsedSiteBundle: LauncherHandoff["siteBundle"] | undefined;
+      try {
+        const parsed = JSON.parse(rawContent);
+        if (parsed.files && typeof parsed.files === "object") {
+          parsedEntryPoint = parsed.entryPoint || undefined;
+          if (parsed.siteBundle && typeof parsed.siteBundle === "object") {
+            parsedSiteBundle = parsed.siteBundle as LauncherHandoff["siteBundle"];
+          }
+          const normalizedParsedEntryPoint = parsedEntryPoint
+            ? (parsedEntryPoint.startsWith("/") ? parsedEntryPoint : `/${parsedEntryPoint}`)
+            : undefined;
+          const safeEntryPoint = normalizedParsedEntryPoint && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(normalizedParsedEntryPoint)
+            ? undefined
+            : normalizedParsedEntryPoint;
+          // Use normalizeLauncherFiles to ensure consistent structure
+          vfsFiles = normalizeLauncherFiles(parsed.files, {
+            entryPoint: safeEntryPoint,
+          });
+          parsedEntryPoint = safeEntryPoint;
+        }
+      } catch {
+        // single-file output
+      }
+
+      // ── Await backend provisioning (runs in parallel with AI generation) ──
+      const provisionedBusinessId = await installPromise;
+      if (provisionedBusinessId) {
+        console.log('[SystemLauncher] Using provisioned businessId:', provisionedBusinessId);
+      }
+
       const navState = {
         templateName: `${businessName.trim()} Site`,
         aesthetic: selectedTheme?.id,
@@ -597,6 +791,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemName: system.name,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
+        sitePlan,
+        businessId: provisionedBusinessId || undefined,
+        // Canonical pipeline output — single source of truth
+        materializedPlayground,
+        compiledPlayground,
+        siteBundleSnapshot,
+        pipelineManifest,
+        wizardSelections,
       };
       
       // Multiple generation attempted - now prepare launch state
@@ -641,16 +843,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         setLaunch(launchState);
 
         navigate("/web-builder", {
-          state: { 
-            vfsFiles: normalizedVfsFiles, 
-            runtimeManifest, 
-            templateName: navState.templateName,
-            aesthetic: navState.aesthetic,
-            templateCategory: navState.templateCategory,
-            systemType: navState.systemType,
-            systemName: navState.systemName,
-            preloadedIntents: navState.preloadedIntents,
-            startInPreview: navState.startInPreview,
+          state: {
+            vfsFiles,
+            runtimeManifest,
+            entryPoint: runtimeManifest.entryPoint,
+            siteBundle: parsedSiteBundle,
+            ...navState,
           },
         });
       } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
@@ -699,13 +897,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           state: {
             vfsFiles: normalizedSingleFileVfs,
             runtimeManifest,
-            templateName: navState.templateName,
-            aesthetic: navState.aesthetic,
-            templateCategory: navState.templateCategory,
-            systemType: navState.systemType,
-            systemName: navState.systemName,
-            preloadedIntents: navState.preloadedIntents,
-            startInPreview: navState.startInPreview,
+            entryPoint: runtimeManifest.entryPoint,
+            ...navState,
           },
         });
       } else {
@@ -887,7 +1080,159 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             </motion.div>
           )}
 
-          {/* ══ Step 2: Templates ══ */}
+          {/* ══ Step 2: Questions ══ */}
+          {step === "questions" && selectedSystem && (
+            <motion.div
+              key="questions"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="flex flex-col"
+            >
+              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleBack}
+                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                <div>
+                  <h2 className="text-lg font-bold text-white tracking-tight">Tell us about your goals</h2>
+                  <p className="text-xs text-white/30">
+                    This helps us auto-configure your site structure
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide space-y-6">
+                {/* Q1: Primary Goal */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    What is the main goal of your site?
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {PRIMARY_GOALS.map((goal) => {
+                      const isSelected = primaryGoal === goal.id;
+                      return (
+                        <button
+                          key={goal.id}
+                          onClick={() => setPrimaryGoal(isSelected ? null : goal.id)}
+                          className={cn(
+                            "relative p-3 rounded-xl text-left transition-all duration-200",
+                            "border focus:outline-none overflow-hidden",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 ring-1 ring-cyan-500/20"
+                              : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.12]"
+                          )}
+                        >
+                          <div className="text-xl mb-1.5">{goal.icon}</div>
+                          <div className="text-xs font-semibold text-white/85 mb-0.5">{goal.label}</div>
+                          <div className="text-[10px] text-white/25 leading-relaxed">{goal.description}</div>
+                          {isSelected && (
+                            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute top-2 right-2 w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center">
+                              <Check className="h-2.5 w-2.5 text-[#07080F]" />
+                            </motion.div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Q2: Customer Needs */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    What do your customers need to do? <span className="text-white/20">(select all)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {CUSTOMER_NEEDS.map((need) => {
+                      const isSelected = customerNeeds.includes(need.id);
+                      return (
+                        <button
+                          key={need.id}
+                          onClick={() => toggleCustomerNeed(need.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200",
+                            "border focus:outline-none",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 text-cyan-400"
+                              : "bg-white/[0.02] border-white/[0.06] text-white/50 hover:bg-white/[0.04] hover:text-white/70"
+                          )}
+                        >
+                          <span>{need.icon}</span>
+                          {need.label}
+                          {isSelected && <Check className="h-3 w-3 text-cyan-400 ml-1" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Q3: Page Checklist */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    Which pages should your site have? <span className="text-white/20">(select all)</span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {PAGE_CHOICES.map((page) => {
+                      const isSelected = selectedPages.includes(page.id);
+                      return (
+                        <button
+                          key={page.id}
+                          onClick={() => togglePageChoice(page.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-medium transition-all duration-200",
+                            "border focus:outline-none",
+                            isSelected
+                              ? "bg-cyan-500/[0.08] border-cyan-500/35 text-cyan-400"
+                              : "bg-white/[0.02] border-white/[0.06] text-white/40 hover:bg-white/[0.04] hover:text-white/60"
+                          )}
+                        >
+                          <span>{page.icon}</span>
+                          {page.label}
+                          {isSelected && <Check className="h-3 w-3 text-cyan-400 ml-auto" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+                <div className="flex-1 text-xs text-white/30">
+                  {primaryGoal && (
+                    <span className="flex items-center gap-1.5">
+                      <Check className="h-3 w-3 text-cyan-400" />
+                      <span className="text-cyan-400/70">
+                        {PRIMARY_GOALS.find(g => g.id === primaryGoal)?.label}
+                      </span>
+                      {customerNeeds.length > 0 && (
+                        <span className="text-white/20">• {customerNeeds.length} needs • {selectedPages.length} pages</span>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  onClick={handleQuestionsNext}
+                  disabled={!primaryGoal}
+                  className={cn(
+                    "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
+                    "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
+                    "transition-all disabled:opacity-30"
+                  )}
+                >
+                  Continue
+                  <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ══ Step 3: Templates ══ */}
           {step === "templates" && selectedSystem && (
             <motion.div
               key="templates"

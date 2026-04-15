@@ -4,7 +4,7 @@
 import { z } from "zod";
 
 const messageContentSchema = z.union([
-  z.string().min(1).max(50_000),
+  z.string().min(1).max(200_000),
   z.array(z.unknown()).min(1).max(50),
 ]);
 
@@ -111,9 +111,14 @@ export const AIRequestSchema = z.object({
   }).optional(),
   siteElementsLibraryContext: z.string().max(50_000).optional(),
   surgicalEdit: z.boolean().optional(),
+  behavioralEdit: z.boolean().optional(),
+  targetFile: z.string().max(300).optional(),
+  componentBehaviorContext: z.string().max(15_000).optional(),
   previewDiagnostics: z.string().max(5_000).optional(),
+  previewSnapshot: z.string().max(3_000).optional(),
   recentChangedFiles: z.array(z.string().max(200)).max(20).optional(),
   vfsFiles: z.record(z.string(), z.string().max(100_000)).optional(),
+  attachments: z.array(z.unknown()).max(10).optional(),
   gatewayOptions: z.object({
     selectedModelId: z.string().max(80).optional(),
     reasoningEffort: z.enum(["none", "low", "medium", "high"]).optional(),

@@ -157,18 +157,71 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
 
   document.addEventListener('click', function (event) {
     const target = event.target as HTMLElement | null;
-    const el = target?.closest?.('a[href], [data-ut-intent="nav.goto"], [data-ut-path]') as HTMLElement | null;
+    const el = target?.closest?.('a[href], [data-ut-intent], [data-ut-path], button[data-ut-intent]') as HTMLElement | null;
     if (!el) return;
 
+    const utIntent = el.getAttribute('data-ut-intent') || '';
     const path = el.getAttribute('data-ut-path') || el.getAttribute('href') || '';
+
+    // ── Intent bridge: forward non-nav intents to parent as INTENT_TRIGGER ──
+    if (utIntent && utIntent !== 'nav.goto' && utIntent !== 'nav.goto_page' && utIntent !== 'nav.anchor' && utIntent !== 'nav.external') {
+      event.preventDefault();
+      event.stopPropagation();
+      const reqId = 'intent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      const intentPayload: Record<string, unknown> = {};
+      for (const attr of Array.from(el.attributes)) {
+        if (attr.name.startsWith('data-ut-') && attr.name !== 'data-ut-intent') {
+          intentPayload[attr.name.replace('data-ut-', '')] = attr.value;
+        }
+      }
+      intentPayload.buttonLabel = el.textContent ? el.textContent.trim().substring(0, 60) : '';
+      intentPayload.source = 'preview';
+      window.parent.postMessage({
+        type: 'INTENT_TRIGGER',
+        intent: utIntent,
+        payload: intentPayload,
+        requestId: reqId,
+      }, '*');
+      return;
+    }
+
+    // ── nav.goto / nav.goto_page: navigate directly via hash router ──
+    if (utIntent === 'nav.goto' || utIntent === 'nav.goto_page') {
+      event.preventDefault();
+      event.stopPropagation();
+      const navPath = el.getAttribute('data-ut-path') || path;
+      const targetPageId = el.getAttribute('data-ut-target-page-id');
+      if (navPath && navPath !== '#') {
+        const route = navPath.startsWith('/') ? navPath : '/' + navPath;
+        window.location.hash = route;
+      } else if (targetPageId) {
+        // Fallback: ask parent to resolve page ID to route
+        window.parent.postMessage({
+          type: 'INTENT_TRIGGER',
+          intent: 'nav.goto_page',
+          payload: { targetPageId, buttonLabel: el.textContent?.trim()?.substring(0, 40) || '', source: 'preview' },
+          requestId: 'nav-' + Date.now(),
+        }, '*');
+      }
+      return;
+    }
+
+    // ── Anchor scroll ──
     if (!path || path === '#' || path.startsWith('http') || path.startsWith('mailto:') || path.startsWith('tel:') || path.startsWith('javascript:')) return;
 
-    if (path.startsWith('#')) {
+    if (path.startsWith('#') && !path.startsWith('#/')) {
       const section = document.querySelector(path);
       if (section) {
         section.scrollIntoView({ behavior: 'smooth' });
         event.preventDefault();
       }
+      return;
+    }
+
+    // ── Hash route links (e.g. href="#/services") — navigate directly ──
+    if (path.startsWith('#/')) {
+      event.preventDefault();
+      window.location.hash = path.substring(1);
       return;
     }
 
@@ -178,6 +231,20 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     event.preventDefault();
     event.stopPropagation();
 
+    const targetRoute = '/' + pageName;
+
+    // Check if this page exists in the hash router by trying hash navigation first
+    // The router will render a fallback/404 if it doesn't exist
+    const targetPageId = el.getAttribute('data-ut-target-page-id');
+    if (targetPageId) {
+      window.location.hash = targetRoute;
+      return;
+    }
+
+    // Try direct hash navigation — if the route is in the router it renders immediately
+    window.location.hash = targetRoute;
+
+    // Also notify parent so it can generate the page if missing
     window.parent.postMessage({
       type: 'NAV_PAGE_GENERATE',
       pageName,
@@ -186,9 +253,42 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     }, '*');
   }, true);
 
+  // ── Form submission bridge: intercept forms with data-ut-intent ──
+  document.addEventListener('submit', function (event) {
+    const form = event.target as HTMLFormElement;
+    if (!form || form.tagName !== 'FORM') return;
+    const formIntent = form.getAttribute('data-ut-intent');
+    if (!formIntent) return;
+    event.preventDefault();
+    const formData = new FormData(form);
+    const payload: Record<string, unknown> = {};
+    formData.forEach((value, key) => { payload[key] = value.toString(); });
+    payload.source = 'preview-form';
+    window.parent.postMessage({
+      type: 'INTENT_TRIGGER',
+      intent: formIntent,
+      payload,
+      requestId: 'form-' + Date.now(),
+    }, '*');
+  }, true);
+
+  // ── Message handlers for navigation and intent commands ──
   window.addEventListener('message', function (event) {
     if (event.data?.type === 'NAV_ROUTE' && event.data.route) {
       window.location.hash = event.data.route;
+    }
+    // Handle intent commands from parent (e.g. booking.scroll)
+    if (event.data?.type === 'INTENT_COMMAND') {
+      const { command, requestId: cmdReqId } = event.data;
+      let handled = false;
+      if (command === 'booking.scroll') {
+        const bookingEl = document.querySelector('[data-ut-intent="booking.create"], form[data-ut-intent*="booking"], #booking, .booking, [id*="book"]');
+        if (bookingEl) {
+          bookingEl.scrollIntoView({ behavior: 'smooth' });
+          handled = true;
+        }
+      }
+      window.parent.postMessage({ type: 'INTENT_COMMAND_RESULT', command, requestId: cmdReqId, handled }, '*');
     }
   });
 }
@@ -198,10 +298,46 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
  * DEFAULT_INDEX — the canonical Sandpack entry point.
  * Sandpack react-ts uses /index.tsx, NOT /main.tsx.
  */
-const DEFAULT_INDEX = `import React from 'react';
+const DEFAULT_INDEX = `import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import * as AppModule from './App';
 import './index.css';
+
+// ── Runtime guard: intercept undefined components BEFORE they crash React ──
+// This prevents "Element type is invalid" errors by replacing undefined/null
+// component references with a visible placeholder instead of a hard crash.
+const _origCreateElement = React.createElement;
+const _undefinedComponents = new Set<string>();
+(React as any).createElement = function SafeCreateElement(type: any, ...args: any[]) {
+  if (type === undefined || type === null) {
+    // Collect info for debugging
+    const caller = new Error().stack?.split('\\n')[2]?.trim() || 'unknown';
+    const id = caller.slice(0, 80);
+    if (!_undefinedComponents.has(id)) {
+      _undefinedComponents.add(id);
+      console.error('[Preview] Undefined component intercepted. Caller:', caller);
+    }
+    return _origCreateElement('div', {
+      style: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', margin: 2, borderRadius: 6, border: '1px dashed hsl(0 60% 50%)', background: 'hsl(0 60% 97%)', color: 'hsl(0 60% 40%)', fontSize: 11, fontFamily: 'monospace' },
+      title: 'This component resolved to undefined — check imports',
+    }, '⚠ missing component');
+  }
+  return _origCreateElement(type, ...args);
+};
+
+// ── Robust App resolution: handle default + named exports gracefully ──
+const App = (() => {
+  if (AppModule.default && (typeof AppModule.default === 'function' || (typeof AppModule.default === 'object' && (AppModule.default as any).$$typeof))) {
+    return AppModule.default;
+  }
+  for (const [key, value] of Object.entries(AppModule)) {
+    if (key === '__esModule' || key === 'default') continue;
+    if (/^[A-Z]/.test(key) && (typeof value === 'function' || (typeof value === 'object' && value !== null && (value as any).$$typeof))) {
+      return value;
+    }
+  }
+  return null;
+})();
 
 // Configure Tailwind CDN with semantic design tokens
 if (typeof window !== 'undefined' && (window as any).tailwind) {
@@ -239,11 +375,62 @@ if (typeof window !== 'undefined' && (window as any).tailwind) {
 ${PREVIEW_NAV_BRIDGE}
 __initLovablePreviewNavBridge();
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// Error boundary as secondary safety net
+class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: any) {
+    console.error('[Preview] Render crash:', error.message, info?.componentStack?.slice(0, 500));
+  }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement('div', {
+        style: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: 32, background: '#0a0a0a', color: '#e5e5e5' }
+      },
+        React.createElement('div', { style: { maxWidth: 480, textAlign: 'center' } },
+          React.createElement('div', { style: { fontSize: 48, marginBottom: 16 } }, '⚠️'),
+          React.createElement('h2', { style: { fontSize: 20, fontWeight: 600, marginBottom: 8 } }, 'Preview render error'),
+          React.createElement('p', { style: { color: '#a3a3a3', fontSize: 14, marginBottom: 16, lineHeight: 1.6 } }, this.state.error?.message || 'A component failed to render. This usually means an import resolved to undefined.'),
+          React.createElement('details', { style: { textAlign: 'left', fontSize: 12, color: '#737373', marginBottom: 16 } },
+            React.createElement('summary', { style: { cursor: 'pointer', marginBottom: 8 } }, 'Technical details'),
+            React.createElement('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, String(this.state.error?.stack || '').slice(0, 600))
+          ),
+          React.createElement('button', {
+            onClick: () => { this.setState({ hasError: false, error: null }); },
+            style: { padding: '8px 20px', borderRadius: 6, border: '1px solid #333', background: '#1a1a1a', color: '#e5e5e5', cursor: 'pointer', fontSize: 14 }
+          }, 'Retry')
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
+if (App) {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <PreviewErrorBoundary>
+        <App />
+      </PreviewErrorBoundary>
+    </React.StrictMode>
+  );
+} else {
+  // App module has no valid export — render diagnostic
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: 32 }}>
+      <div style={{ textAlign: 'center', maxWidth: 420 }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
+        <h2 style={{ fontSize: 18, marginBottom: 8 }}>No renderable component found</h2>
+        <p style={{ color: '#888', fontSize: 14 }}>App.tsx does not export a valid React component. Check that it uses "export default" or a named PascalCase export.</p>
+      </div>
+    </div>
+  );
+}
 `;
 
 const HOOKS_SHIM = `
@@ -1122,7 +1309,9 @@ export function Navbar() {
       </div>
     </nav>
   );
-}`;
+}
+
+export default Navbar;`;
 }
 
 function genHeader(ctx: GeneratorContext): string {
@@ -1142,7 +1331,9 @@ export function Header() {
       </div>
     </header>
   );
-}`;
+}
+
+export default Header;`;
 }
 
 function genFeatures(ctx: GeneratorContext): string {
@@ -1173,7 +1364,9 @@ export function Features() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Features;`;
 }
 
 function genServices(ctx: GeneratorContext): string {
@@ -1214,7 +1407,9 @@ export function Services() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Services;`;
 }
 
 function genAbout(ctx: GeneratorContext): string {
@@ -1243,7 +1438,9 @@ export function About() {
       </div>
     </section>
   );
-}`;
+}
+
+export default About;`;
 }
 
 function genTestimonials(ctx: GeneratorContext): string {
@@ -1275,7 +1472,9 @@ export function Testimonials() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Testimonials;`;
 }
 
 function genContact(ctx: GeneratorContext): string {
@@ -1309,7 +1508,9 @@ export function Contact() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Contact;`;
 }
 
 function genFooter(ctx: GeneratorContext): string {
@@ -1354,7 +1555,9 @@ export function Footer() {
       </div>
     </footer>
   );
-}`;
+}
+
+export default Footer;`;
 }
 
 function genPricing(_ctx: GeneratorContext): string {
@@ -1386,7 +1589,9 @@ export function Pricing() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Pricing;`;
 }
 
 function genGallery(_ctx: GeneratorContext): string {
@@ -1416,7 +1621,9 @@ export function Gallery() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Gallery;`;
 }
 
 function genCTA(ctx: GeneratorContext): string {
@@ -1435,7 +1642,9 @@ export function CTA() {
       </div>
     </section>
   );
-}`;
+}
+
+export default CTA;`;
 }
 
 function genFAQ(_ctx: GeneratorContext): string {
@@ -1467,7 +1676,9 @@ export function FAQ() {
       </div>
     </section>
   );
-}`;
+}
+
+export default FAQ;`;
 }
 
 function genTeam(_ctx: GeneratorContext): string {
@@ -1499,7 +1710,9 @@ export function Team() {
       </div>
     </section>
   );
-}`;
+}
+
+export default Team;`;
 }
 
 // ── Industry-specific generators ──────────────────────────────────────────────
@@ -2621,6 +2834,278 @@ function matchSectionGenerator(componentName: string): string | null {
   return null;
 }
 
+// ── Built-in HTML/React elements that should NOT be treated as custom components ──
+const BUILTIN_JSX_ELEMENTS = new Set([
+  'React', 'Fragment', 'Suspense', 'StrictMode',
+  // Common variable names that look PascalCase but aren't components
+  'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'Map', 'Set', 'Promise',
+  'Error', 'JSON', 'Math', 'RegExp', 'Symbol', 'Proxy', 'Reflect',
+  // Component from error boundary / React internals
+  'Component', 'PureComponent',
+]);
+
+/**
+ * Remove unused imports from a source file.
+ * Detects named imports that are never referenced in the rest of the file body.
+ */
+function removeUnusedImports(source: string): string {
+  if (!source) return source;
+
+  // Split into lines for import detection
+  return source.replace(
+    /^import\s+\{([^}]+)\}\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm,
+    (fullMatch, namedGroup: string) => {
+      const names = namedGroup.split(',').map((n: string) => n.trim()).filter(Boolean);
+      // Resolve alias: "Foo as Bar" → check usage of "Bar"
+      const usedNames = names.filter((n: string) => {
+        const alias = n.includes(' as ') ? n.split(' as ')[1].trim() : n.trim();
+        // Check if alias appears in the rest of the source (outside import statements)
+        const bodyWithoutImports = source.replace(/^import\s+.*$/gm, '');
+        // Must appear as identifier (word boundary), not just substring
+        const regex = new RegExp(`\\b${escapeRegExp(alias)}\\b`);
+        return regex.test(bodyWithoutImports);
+      });
+
+      if (usedNames.length === 0) return ''; // Remove entire import
+      if (usedNames.length === names.length) return fullMatch; // All used
+
+      // Reconstruct with only used names
+      return fullMatch.replace(`{${namedGroup}}`, `{ ${usedNames.join(', ')} }`);
+    }
+  );
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Scan JSX in all files for PascalCase component usage (e.g. `<Gallery />`)
+ * that has NO corresponding import statement. For each missing component,
+ * inject a relative import pointing to `./components/ComponentName`.
+ * This ensures `generateMissingComponents` (which only scans import statements)
+ * will then synthesize the actual component file.
+ */
+function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+
+  for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
+    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+
+    // Extract all PascalCase component names used in JSX: <ComponentName or <ComponentName>
+    const jsxUsages = new Set<string>();
+    const jsxPattern = /<([A-Z][A-Za-z0-9]+)[\s/>]/g;
+    let m;
+    while ((m = jsxPattern.exec(content)) !== null) {
+      const name = m[1];
+      if (!BUILTIN_JSX_ELEMENTS.has(name)) {
+        jsxUsages.add(name);
+      }
+    }
+
+    if (jsxUsages.size === 0) continue;
+
+    // Find all currently imported names in this file
+    const importedNames = new Set<string>();
+    const importNamePattern = /import\s+(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from/g;
+    let im;
+    while ((im = importNamePattern.exec(content)) !== null) {
+      if (im[1]) importedNames.add(im[1]);
+      if (im[2]) {
+        im[2].split(',').forEach(n => {
+          const cleaned = n.trim().split(/\s+as\s+/).pop()?.trim();
+          if (cleaned) importedNames.add(cleaned);
+        });
+      }
+    }
+
+    // Also check for local function/const/class declarations
+    const localDeclPattern = /(?:function|const|class|let|var)\s+([A-Z]\w*)/g;
+    let ld;
+    while ((ld = localDeclPattern.exec(content)) !== null) {
+      importedNames.add(ld[1]);
+    }
+
+    // Find missing components
+    const missing: string[] = [];
+    for (const name of jsxUsages) {
+      if (importedNames.has(name)) continue;
+      missing.push(name);
+    }
+
+    if (missing.length === 0) continue;
+
+    // Inject import statements for missing components
+    const imports = missing.map(name => {
+      // Check if the component file already exists somewhere in the VFS
+      const possiblePaths = [
+        `/components/${name}.tsx`, `/${name}.tsx`,
+        `/components/${name}.jsx`, `/${name}.jsx`,
+        `/pages/${name}.tsx`, `/pages/${name}.jsx`,
+      ];
+      const existing = possiblePaths.find(p => existingPaths.has(p));
+      const importPath = existing
+        ? toRelativeSandpackImport(filePath, existing.replace(/\.(tsx|jsx)$/, ''))
+        : `./components/${name}`;
+      return `import ${name} from '${importPath}';`;
+    }).join('\n');
+
+    // Insert imports after the last existing import line
+    const lines = content.split('\n');
+    let lastImportIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*import\s/.test(lines[i])) lastImportIdx = i;
+    }
+
+    if (lastImportIdx >= 0) {
+      lines.splice(lastImportIdx + 1, 0, imports);
+    } else {
+      // No imports at all — prepend
+      lines.unshift(imports);
+    }
+
+    sandpackFiles[filePath] = lines.join('\n');
+    console.log(`[sandpackFilePrep] Auto-injected imports for ${missing.join(', ')} in ${filePath}`);
+  }
+}
+
+function resolveRelativeModuleTarget(
+  filePath: string,
+  rawImportPath: string,
+  existingPaths: Set<string>,
+): string | null {
+  const extensions = ['.tsx', '.jsx', '.ts', '.js'];
+  const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
+  let resolved = rawImportPath.startsWith('/')
+    ? rawImportPath
+    : `${dir}/${rawImportPath}`.replace(/\/\.\//g, '/');
+
+  const parts = resolved.split('/');
+  const stack: string[] = [];
+  for (const part of parts) {
+    if (part === '..') stack.pop();
+    else if (part !== '.' && part !== '') stack.push(part);
+  }
+
+  resolved = '/' + stack.join('/');
+  const candidates = /\.\w+$/.test(resolved)
+    ? [resolved]
+    : [resolved, ...extensions.map((ext) => `${resolved}${ext}`)];
+
+  return candidates.find((candidate) => existingPaths.has(candidate)) || null;
+}
+
+function inspectModuleExports(content: string): {
+  hasDefault: boolean;
+  named: Set<string>;
+  primaryName: string | null;
+} {
+  const named = new Set<string>();
+  const exportPatterns = [
+    /export\s+function\s+([A-Z]\w*)/g,
+    /export\s+const\s+([A-Z]\w*)/g,
+    /export\s+class\s+([A-Z]\w*)/g,
+  ];
+
+  for (const pattern of exportPatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(content)) !== null) {
+      named.add(match[1]);
+    }
+  }
+
+  const reExportPattern = /export\s*\{([^}]+)\}/g;
+  let reExportMatch: RegExpExecArray | null;
+  while ((reExportMatch = reExportPattern.exec(content)) !== null) {
+    reExportMatch[1]
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach((part) => {
+        const [sourceName, aliasName] = part.split(/\s+as\s+/).map((item) => item.trim());
+        const exportName = aliasName || sourceName;
+        if (/^[A-Z]/.test(exportName)) {
+          named.add(exportName);
+        }
+      });
+  }
+
+  const hasDefault = /export\s+default\b/.test(content);
+  const primaryName =
+    content.match(/export\s+default\s+function\s+([A-Z]\w*)/)?.[1] ||
+    content.match(/export\s+default\s+class\s+([A-Z]\w*)/)?.[1] ||
+    content.match(/export\s+default\s+([A-Z]\w*)\s*;?/)?.[1] ||
+    [...named][0] ||
+    null;
+
+  return { hasDefault, named, primaryName };
+}
+
+function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+
+  for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+
+    const namedImportRegex = /^import\s+\{([^}]+)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?\s*$/gm;
+    let content = originalContent;
+
+    content = content.replace(namedImportRegex, (statement, specifierBlock: string, rawImportPath: string) => {
+      const targetPath = resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths);
+      if (!targetPath) return statement;
+
+      const targetContent = sandpackFiles[targetPath];
+      if (!targetContent) return statement;
+
+      const moduleExports = inspectModuleExports(targetContent);
+      const specifiers = specifierBlock
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => {
+          const [imported, local] = part.split(/\s+as\s+/).map((value) => value.trim());
+          return { imported, local: local || imported };
+        });
+
+      const missingPascalExports = specifiers.filter(
+        ({ imported }) => /^[A-Z]/.test(imported) && !moduleExports.named.has(imported),
+      );
+
+      if (missingPascalExports.length === 0) return statement;
+
+      if (moduleExports.primaryName) {
+        let patchedTarget = targetContent;
+        let changed = false;
+
+        for (const { imported } of missingPascalExports) {
+          if (patchedTarget.includes(`export const ${imported} = ${moduleExports.primaryName};`)) continue;
+          patchedTarget += `\nexport const ${imported} = ${moduleExports.primaryName};\n`;
+          changed = true;
+        }
+
+        if (changed) {
+          sandpackFiles[targetPath] = patchedTarget;
+          console.warn(`[sandpackFilePrep] Repaired named exports for ${targetPath}: ${missingPascalExports.map((item) => item.imported).join(', ')}`);
+        }
+
+        return statement;
+      }
+
+      if (moduleExports.hasDefault && specifiers.length === 1) {
+        const localName = specifiers[0].local;
+        console.warn(`[sandpackFilePrep] Rewriting named import to default import in ${filePath}: ${specifiers[0].imported} -> ${localName}`);
+        return `import ${localName} from '${rawImportPath}';`;
+      }
+
+      return statement;
+    });
+
+    if (content !== originalContent) {
+      sandpackFiles[filePath] = content;
+    }
+  }
+}
+
 /**
  * Scan all files for relative imports. For missing modules, generate REAL
  * contextual section components using the wizard launcher context
@@ -2840,6 +3325,79 @@ function pickPrimaryComponentPath(paths: string[]): string | null {
     || null;
 }
 
+function repairMalformedDefaultExportClosures(content: string): string {
+  return content.replace(
+    /export\s+default\s+([A-Z]\w*)\s*;\s*\}/g,
+    '}\n\nexport default $1;'
+  );
+}
+
+function hasReactValueImport(content: string): boolean {
+  return (
+    /^\s*import\s+(?:React\b(?:\s*,[\s\S]*?)?|\*\s+as\s+React\b)\s+from\s+['"]react['"]/m.test(content) ||
+    /^\s*import\s+\{[\s\S]*\bdefault\s+as\s+React\b[\s\S]*\}\s+from\s+['"]react['"]/m.test(content)
+  );
+}
+
+function forceClassicReactJsxRuntime(content: string): string {
+  if (!content) return content;
+
+  let patched = content;
+  const hasJsxSyntax = /<([A-Za-z][\w.:~-]*)[\s/>]|<>|<\/>|<\/([A-Za-z][\w.:~-]*)>/.test(patched);
+  const hasCompiledJsxRuntimeImport = /from\s+['"]react\/jsx(?:-dev)?-runtime['"]/.test(patched);
+  const alreadyHasReactValueImport = hasReactValueImport(patched);
+
+  if (hasCompiledJsxRuntimeImport) {
+    patched = patched.replace(
+      /^\s*import\s+\{?\s*jsx(?:DEV| as \w+)?\s*,?\s*jsxs?(?: as \w+)?\s*,?\s*Fragment(?: as \w+)?\s*\}?\s+from\s+['"]react\/jsx-runtime['"];?\s*$/gm,
+      ''
+    );
+    patched = patched.replace(
+      /^\s*import\s+\{?\s*jsxDEV(?: as \w+)?\s*,?\s*Fragment(?: as \w+)?\s*\}?\s+from\s+['"]react\/jsx-dev-runtime['"];?\s*$/gm,
+      ''
+    );
+    patched = patched.replace(/\b_jsxDEV\(/g, 'React.createElement(');
+    patched = patched.replace(/\bjsxDEV\(/g, 'React.createElement(');
+    patched = patched.replace(/\b_jsxs\(/g, 'React.createElement(');
+    patched = patched.replace(/\bjsxs\(/g, 'React.createElement(');
+    patched = patched.replace(/\b_jsx\(/g, 'React.createElement(');
+    patched = patched.replace(/\bjsx\(/g, 'React.createElement(');
+    patched = patched.replace(/\bFragment\b/g, 'React.Fragment');
+
+    if (!alreadyHasReactValueImport) {
+      patched = `import * as React from 'react';\n${patched.replace(/^\n+/, '')}`;
+    }
+
+    return patched.replace(/\n{3,}/g, '\n\n');
+  }
+
+  if (!hasJsxSyntax) {
+    return patched.replace(/\n{3,}/g, '\n\n');
+  }
+
+  patched = patched.replace(/^\s*\/\*\*?\s*@jsxRuntime\s+[^\n*]+\*\/\s*\n?/gm, '');
+  patched = patched.replace(/^\s*\/\*\*?\s*@jsxImportSource\s+[^\n*]+\*\/\s*\n?/gm, '');
+  patched = patched.replace(/^\s*\/\*\*?\s*@jsx\s+[^\n*]+\*\/\s*\n?/gm, '');
+  patched = patched.replace(/^\s*\/\*\*?\s*@jsxFrag\s+[^\n*]+\*\/\s*\n?/gm, '');
+
+  const pragmaBlock = [
+    '/** @jsxRuntime classic */',
+    '/** @jsx React.createElement */',
+    '/** @jsxFrag React.Fragment */',
+  ].join('\n');
+
+  patched = `${pragmaBlock}\n${patched.replace(/^\n+/, '')}`;
+
+  if (!alreadyHasReactValueImport) {
+    patched = patched.replace(
+      pragmaBlock,
+      `${pragmaBlock}\nimport * as React from 'react';`
+    );
+  }
+
+  return patched.replace(/\n{3,}/g, '\n\n');
+}
+
 /**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
@@ -2849,8 +3407,229 @@ export function processCode(code: string, filePath: string): string {
     return code;
   }
 
+  // ── Safe lucide-react imports ──────────────────────────────────────────
+  // Transform all `import { Icon } from 'lucide-react'` into safe namespace
+  // lookups with fallback aliases for commonly-missing social-media icons.
+  // Handles multiple import statements without duplicate declarations.
+  const __LUCIDE_ALIAS_MAP: Record<string, string> = {
+    // Canonical brand icon spellings → exact lucide-react export names
+    facebook: 'Facebook',
+    facebookicon: 'FacebookIcon',
+    FacebookLogo: 'Facebook',
+    twitter: 'Twitter',
+    twittericon: 'TwitterIcon',
+    TwitterLogo: 'Twitter',
+    XTwitter: 'Twitter',
+    TwitterX: 'Twitter',
+    instagram: 'Instagram',
+    instagramicon: 'InstagramIcon',
+    InstagramLogo: 'Instagram',
+    github: 'Github',
+    githubicon: 'GithubIcon',
+    GitHub: 'Github',
+    GitHubIcon: 'GithubIcon',
+    GithubLogo: 'Github',
+    linkedin: 'Linkedin',
+    linkedinicon: 'LinkedinIcon',
+    LinkedIn: 'Linkedin',
+    LinkedInIcon: 'LinkedinIcon',
+    LinkedinLogo: 'Linkedin',
+    youtube: 'Youtube',
+    youtubeicon: 'YoutubeIcon',
+    YouTube: 'Youtube',
+    YouTubeIcon: 'YoutubeIcon',
+    YoutubeLogo: 'Youtube',
+    // Social media icons missing from lucide-react → best visual alternative
+    TikTok: 'Music', Tiktok: 'Music',
+    Pinterest: 'Pin', Pintrest: 'Pin',
+    Snapchat: 'Camera', SnapChat: 'Camera',
+    WhatsApp: 'MessageCircle', Whatsapp: 'MessageCircle',
+    Telegram: 'Send',
+    Discord: 'MessageSquare',
+    Reddit: 'MessageCircle',
+    Threads: 'AtSign',
+    Signal: 'Radio',
+    WeChat: 'MessageCircle', Wechat: 'MessageCircle',
+    Spotify: 'Music',
+    SoundCloud: 'CloudRain', Soundcloud: 'CloudRain',
+    Vimeo: 'Video',
+    Behance: 'Palette',
+    Medium: 'BookOpen',
+    Mastodon: 'Globe',
+    // Common AI hallucinations
+    ShieldCheck: 'Shield',
+    BadgeCheck: 'Award',
+    UserCheck: 'UserCheck',
+  };
+
+  let __lucideImportDone = false;
+  const __allLucideIcons: Array<{ original: string; alias: string }> = [];
+  const __seenLucideAliases = new Set<string>();
+
+  const getLucideLookupCandidates = (original: string): string[] => {
+    const trimmed = original.trim();
+    const normalized = trimmed.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const pascalized = normalized
+      ? normalized.charAt(0).toUpperCase() + normalized.slice(1)
+      : trimmed;
+
+    return Array.from(new Set([
+      trimmed,
+      __LUCIDE_ALIAS_MAP[trimmed],
+      __LUCIDE_ALIAS_MAP[normalized],
+      pascalized,
+    ].filter((value): value is string => Boolean(value))));
+  };
+
+  // Collect all lucide-react imports
+  const lucideImportRe = /import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?/g;
+  let lucideMatch: RegExpExecArray | null;
+  while ((lucideMatch = lucideImportRe.exec(code)) !== null) {
+    // Collapse all whitespace (including newlines) before splitting
+    const rawNames = lucideMatch[1].replace(/\s+/g, ' ');
+    const names = rawNames.split(',')
+      .map(n => n.trim())
+      .filter(Boolean)
+      .map(n => {
+        const parts = n.split(/\s+as\s+/);
+        const orig = parts[0].replace(/\s+/g, '');
+        const al = (parts[1] || parts[0]).replace(/\s+/g, '');
+        return { original: orig, alias: al };
+      });
+    for (const name of names) {
+      if (__seenLucideAliases.has(name.alias)) continue;
+      __seenLucideAliases.add(name.alias);
+      __allLucideIcons.push(name);
+    }
+  }
+
+  if (__allLucideIcons.length > 0) {
+    code = code.replace(lucideImportRe, (_match) => {
+      if (__lucideImportDone) return '/* lucide import merged above */';
+      __lucideImportDone = true;
+
+      const lines: string[] = [
+        `import * as __LucideIcons from 'lucide-react';`,
+        `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`,
+      ];
+      for (const { original, alias } of __allLucideIcons) {
+        const candidates = getLucideLookupCandidates(original);
+        const lookup = `${candidates.map((name) => `__LucideIcons['${name}']`).join(' || ')} || __LucideFallback`;
+        lines.push(`const ${alias} = ${lookup};`);
+      }
+      return lines.join('\n');
+    });
+  }
+
+  // ── Auto-inject missing lucide icon references ────────────────────────
+  // AI sometimes uses lucide icon names (e.g. `icon: Database`) without
+  // importing them. Detect PascalCase identifiers that look like lucide
+  // icons but have no declaration, and inject safe proxy declarations.
+  const COMMON_LUCIDE_ICONS = new Set([
+    'Activity','AlertCircle','AlertTriangle','Archive','ArrowDown','ArrowLeft',
+    'ArrowRight','ArrowUp','Award','BarChart','Bell','Bookmark','Box','Briefcase',
+    'Calendar','Camera','Check','CheckCircle','ChevronDown','ChevronLeft',
+    'ChevronRight','ChevronUp','Circle','Clock','Cloud','Code','Coffee',
+    'Cpu','CreditCard','Database','Download','Edit','ExternalLink','Eye',
+    'EyeOff','Facebook','File','FileText','Film','Filter','Flag','Folder',
+    'Gift','Github','Globe','Grid','Hash','Heart','HelpCircle','Home',
+    'Image','Inbox','Info','Instagram','Key','Layers','Layout','Link',
+    'List','Loader','Lock','LogIn','LogOut','Mail','Map','MapPin','Menu',
+    'MessageCircle','MessageSquare','Mic','Monitor','Moon','MoreHorizontal',
+    'MoreVertical','Move','Music','Navigation','Package','Paperclip','Pause',
+    'PenTool','Phone','PieChart','Play','Plus','Pocket','Power','Printer',
+    'Radio','RefreshCw','Repeat','RotateCw','Rss','Save','Search','Send',
+    'Server','Settings','Share','Shield','ShoppingBag','ShoppingCart','Sidebar',
+    'Slash','Sliders','Smartphone','Speaker','Square','Star','Sun','Sunrise',
+    'Sunset','Tablet','Tag','Target','Terminal','ThumbsDown','ThumbsUp',
+    'ToggleLeft','ToggleRight','Tool','Trash','TrendingDown','TrendingUp',
+    'Triangle','Truck','Tv','Twitter','Type','Umbrella','Underline','Unlock',
+    'Upload','User','UserCheck','UserPlus','UserX','Users','Video','Voicemail',
+    'Volume','Watch','Wifi','Wind','X','XCircle','Youtube','Zap','ZapOff',
+    'Rocket','Sparkles','Wand','Bot','Brain','Lightbulb','Flame','Crown',
+    'Gem','HandHeart','Headphones','Languages','Laugh','PaintBucket','Palette',
+    'Puzzle','Receipt','Scale','ScrollText','Shrub','Wrench',
+  ]);
+
+  // Find all PascalCase identifiers used in the body (outside imports/declarations)
+  const bodyWithoutDecls = code.replace(/^(?:import\s+.*|const\s+\w+\s*=).*$/gm, '');
+  const usedIdentifiers = new Set<string>();
+  const identRe = /\b([A-Z][a-zA-Z0-9]+)\b/g;
+  let idMatch: RegExpExecArray | null;
+  while ((idMatch = identRe.exec(bodyWithoutDecls)) !== null) {
+    usedIdentifiers.add(idMatch[1]);
+  }
+
+  // Check which are missing declarations
+  const missingIcons: string[] = [];
+  for (const name of usedIdentifiers) {
+    if (!COMMON_LUCIDE_ICONS.has(name)) continue;
+    // Check if already declared (import, const, function, class)
+    const declRe = new RegExp(`(?:import\\s+.*\\b${name}\\b|const\\s+${name}\\s*=|function\\s+${name}\\b|class\\s+${name}\\b)`, 'm');
+    if (!declRe.test(code)) {
+      missingIcons.push(name);
+    }
+  }
+
+  if (missingIcons.length > 0) {
+    // Inject lucide proxy declarations for missing icons
+    const hasLucideNamespace = code.includes("import * as __LucideIcons from 'lucide-react'");
+    const injections: string[] = [];
+    if (!hasLucideNamespace) {
+      injections.push(`import * as __LucideIcons from 'lucide-react';`);
+      injections.push(`const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`);
+    }
+    for (const name of missingIcons) {
+      injections.push(`const ${name} = __LucideIcons['${name}'] || __LucideFallback;`);
+    }
+    // Insert after last import statement
+    const lastImportIdx = code.lastIndexOf('\nimport ');
+    if (lastImportIdx !== -1) {
+      const lineEnd = code.indexOf('\n', lastImportIdx + 1);
+      code = code.slice(0, lineEnd + 1) + injections.join('\n') + '\n' + code.slice(lineEnd + 1);
+    } else {
+      code = injections.join('\n') + '\n' + code;
+    }
+  }
+
+  // ── Safe framer-motion imports ─────────────────────────────────────────
+  // The AI frequently imports { motion, AnimatePresence } from 'framer-motion'.
+  // If framer-motion fails to load or specific exports are missing, provide safe fallbacks.
+  code = code.replace(
+    /import\s+\{([^}]+)\}\s+from\s+['"]framer-motion['"];?/g,
+    (_match, names: string) => {
+      const fmNames = names.split(',')
+        .map(n => n.trim())
+        .filter(Boolean)
+        .map(n => {
+          const parts = n.split(/\s+as\s+/);
+          return { original: parts[0].trim(), alias: (parts[1] || parts[0]).trim() };
+        });
+      if (fmNames.length === 0) return _match;
+
+      const lines: string[] = [
+        `import * as __FramerMotion from 'framer-motion';`,
+        // motion fallback: a Proxy that returns the HTML tag as a plain element
+        `const __motionFallback = typeof Proxy !== 'undefined' ? new Proxy({}, { get: (_, tag) => (props) => React.createElement(String(tag), Object.fromEntries(Object.entries(props || {}).filter(([k]) => !k.startsWith('while') && !k.startsWith('animate') && !k.startsWith('initial') && !k.startsWith('exit') && !k.startsWith('transition') && !k.startsWith('variants') && k !== 'layout' && k !== 'layoutId'))) }) : {};`,
+        `const __AnimatePresenceFallback = ({ children }) => React.createElement(React.Fragment, null, children);`,
+      ];
+      for (const { original, alias } of fmNames) {
+        if (original === 'motion') {
+          lines.push(`const ${alias} = __FramerMotion['motion'] || __motionFallback;`);
+        } else if (original === 'AnimatePresence') {
+          lines.push(`const ${alias} = __FramerMotion['AnimatePresence'] || __AnimatePresenceFallback;`);
+        } else {
+          lines.push(`const ${alias} = __FramerMotion['${original}'] || (() => null);`);
+        }
+      }
+      return lines.join('\n');
+    }
+  );
+
   let processed = code;
   const hooksShimImport = toRelativeSandpackImport(filePath, '/hooks-shim');
+
+  processed = repairMalformedDefaultExportClosures(processed);
 
   // Strip leaked markdown code-fence artifacts (```, </code></pre>)
   processed = processed.replace(/\s*```\s*$/g, '');
@@ -2863,10 +3642,13 @@ export function processCode(code: string, filePath: string): string {
   processed = processed.replace(
     /\{`(https?:\/\/[^`]*?\$\{[^}]*\}[^`]*?)`\}/g,
     (_match, inner: string) => {
-      // If it contains ${...} with non-identifier content (numbers, commas, question marks), it's broken
-      const hasInvalidExpr = /\$\{[^}]*[,?|&]/.test(inner);
+      // Detect broken template expressions: arithmetic on Unsplash IDs, commas, queries, etc.
+      const hasInvalidExpr = /\$\{[^}]*[,?|&]/.test(inner) ||
+        /\$\{\s*\d+[a-zA-Z-]/.test(inner) ||         // e.g. ${1472099645785-5658abf4ff4e}
+        /\$\{[^}]*\+[^}]*\}/.test(inner) ||           // e.g. ${someId + i}
+        /\$\{[^}]*photo-/.test(inner);                 // e.g. ${...photo-xxx...}
       if (hasInvalidExpr) {
-        // Try to extract a clean URL from the mess
+        // Try to extract a clean Unsplash photo URL
         const urlMatch = inner.match(/(https?:\/\/images\.unsplash\.com\/photo-[a-zA-Z0-9-]+)\??/);
         if (urlMatch) {
           return `"${urlMatch[1]}?w=800&q=80"`;
@@ -3027,15 +3809,104 @@ export function processCode(code: string, filePath: string): string {
  * Normalize raw launcher/wizard VFS files before handing off to the Web Builder.
  * Ensures consistent paths, entry files, and CSS tokens.
  */
+function normalizeLauncherPath(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+
+  if (/^\/(App|main|index)\.(tsx|jsx|ts|js)$/.test(normalized) || normalized === '/index.css') {
+    return `/src${normalized}`;
+  }
+
+  if (/^\/(pages|components|styles)\//.test(normalized)) {
+    return `/src${normalized}`;
+  }
+
+  return normalized;
+}
+
+function isBootstrapSourceEntry(path?: string | null): boolean {
+  return !!path && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(path);
+}
+
+function pickRenderableLauncherEntry(
+  files: Record<string, string>,
+  preferredEntryPoint?: string,
+): string | null {
+  const normalizedPreferred = preferredEntryPoint ? normalizeLauncherPath(preferredEntryPoint) : null;
+
+  if (normalizedPreferred && files[normalizedPreferred] && !isBootstrapSourceEntry(normalizedPreferred)) {
+    return normalizedPreferred;
+  }
+
+  return (
+    Object.keys(files).find((path) => /\/src\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(path)) ||
+    Object.keys(files).find((path) => /\/src\/pages\/.+\.(tsx|jsx)$/.test(path)) ||
+    Object.keys(files).find(
+      (path) =>
+        /\/src\/.+\.(tsx|jsx)$/.test(path) &&
+        !/\/(App|main|index)\.(tsx|jsx)$/.test(path),
+    ) ||
+    null
+  );
+}
+
 export function normalizeLauncherFiles(
   files: Record<string, string>,
   options?: { entryPoint?: string }
 ): Record<string, string> {
+  // ── Unwrap JSON envelope leaked into file content ──────────────────────
+  // The AI sometimes wraps output in {"files":{...}} — if ANY file's content
+  // is such a wrapper, extract the inner files and replace the input map.
+  let resolvedFiles = files;
+  for (const [fPath, fContent] of Object.entries(files)) {
+    if (typeof fContent === 'string' && fContent.trimStart().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(fContent);
+        if (parsed && typeof parsed === 'object' && parsed.files && typeof parsed.files === 'object') {
+          console.warn(`[normalizeLauncherFiles] Unwrapping JSON envelope in ${fPath}`);
+          resolvedFiles = {};
+          for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
+            if (typeof innerContent === 'string') {
+              resolvedFiles[innerPath] = innerContent;
+            }
+          }
+          // Also check for entryPoint in the JSON envelope
+          if (parsed.entryPoint && !options?.entryPoint) {
+            options = { ...options, entryPoint: parsed.entryPoint };
+          }
+          break;
+        }
+      } catch {
+        // Not valid JSON — check if JSON is embedded mid-file
+        const jsonIdx = fContent.indexOf('{"files"');
+        if (jsonIdx > 0) {
+          try {
+            const embedded = JSON.parse(fContent.slice(jsonIdx));
+            if (embedded?.files && typeof embedded.files === 'object') {
+              console.warn(`[normalizeLauncherFiles] Extracting embedded JSON from ${fPath}`);
+              resolvedFiles = {};
+              for (const [innerPath, innerContent] of Object.entries(embedded.files)) {
+                if (typeof innerContent === 'string') {
+                  resolvedFiles[innerPath] = innerContent;
+                }
+              }
+              if (embedded.entryPoint && !options?.entryPoint) {
+                options = { ...options, entryPoint: embedded.entryPoint };
+              }
+              break;
+            }
+          } catch {
+            // Not JSON either
+          }
+        }
+      }
+    }
+  }
+
   const out: Record<string, string> = {};
 
   // Normalize all paths to have leading slash
-  for (const [path, content] of Object.entries(files)) {
-    const normalized = path.startsWith('/') ? path : `/${path}`;
+  for (const [path, content] of Object.entries(resolvedFiles)) {
+    const normalized = normalizeLauncherPath(path);
     // Sanitize image URLs and enforce contrast in all files
     let sanitized = content;
     if (/\.(tsx?|jsx?|css)$/.test(normalized)) {
@@ -3069,20 +3940,122 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     out['/src/index.css'] = BASE_CSS;
   }
 
-  // Ensure /src/App.tsx exists — derive from entryPoint or first page component
-  if (!out['/src/App.tsx']) {
-    const entryPoint = options?.entryPoint;
-    let targetImport: string | null = null;
-
-    if (entryPoint && out[entryPoint]) {
-      targetImport = entryPoint;
-    } else {
-      // Find a page or component to use as entry
-      targetImport =
-        Object.keys(out).find(p => /\/src\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(p)) ||
-        Object.keys(out).find(p => /\/src\/pages\/.+\.(tsx|jsx)$/.test(p)) ||
-        Object.keys(out).find(p => /\/src\/.*\.(tsx|jsx)$/.test(p) && !/\/(main|index)\.(tsx|jsx)$/.test(p));
+  // ── Inject conventional IDE JSON / config files ──────────────────────────
+  // Ensures the VFS looks like a real project with package.json, tsconfig, etc.
+  if (!out['/package.json']) {
+    const detectedDeps: Record<string, string> = { react: '^18.2.0', 'react-dom': '^18.2.0' };
+    // Scan source for common imports to auto-populate dependencies
+    const allCode = Object.values(out).join('\n');
+    const importMatches = allCode.matchAll(/from\s+['"]([a-z@][a-z0-9\-_@/.]*)['"]/g);
+    for (const m of importMatches) {
+      const pkg = m[1].startsWith('@') ? m[1].split('/').slice(0, 2).join('/') : m[1].split('/')[0];
+      if (pkg && !pkg.startsWith('.') && !pkg.startsWith('/') && !detectedDeps[pkg]) {
+        detectedDeps[pkg] = 'latest';
+      }
     }
+    out['/package.json'] = JSON.stringify({
+      name: 'vfs-project',
+      private: true,
+      version: '0.0.1',
+      type: 'module',
+      scripts: {
+        dev: 'vite',
+        build: 'tsc && vite build',
+        preview: 'vite preview',
+      },
+      dependencies: detectedDeps,
+      devDependencies: {
+        '@vitejs/plugin-react-swc': '^3.5.0',
+        typescript: '^5.3.0',
+        vite: '^5.4.0',
+        tailwindcss: '^3.4.0',
+        autoprefixer: '^10.4.0',
+        postcss: '^8.4.0',
+      },
+    }, null, 2);
+  }
+
+  if (!out['/tsconfig.json']) {
+    out['/tsconfig.json'] = JSON.stringify({
+      compilerOptions: {
+        target: 'ES2020',
+        useDefineForClassFields: true,
+        lib: ['ES2020', 'DOM', 'DOM.Iterable'],
+        module: 'ESNext',
+        skipLibCheck: true,
+        moduleResolution: 'bundler',
+        allowImportingTsExtensions: true,
+        resolveJsonModule: true,
+        isolatedModules: true,
+        noEmit: true,
+        jsx: 'react-jsx',
+        strict: true,
+        noUnusedLocals: false,
+        noUnusedParameters: false,
+        noFallthroughCasesInSwitch: true,
+        baseUrl: '.',
+        paths: { '@/*': ['./src/*'] },
+      },
+      include: ['src'],
+    }, null, 2);
+  }
+
+  if (!out['/vite.config.ts']) {
+    out['/vite.config.ts'] = `import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react-swc';
+import path from 'path';
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+});
+`;
+  }
+
+  if (!out['/tailwind.config.ts']) {
+    out['/tailwind.config.ts'] = `import type { Config } from 'tailwindcss';
+
+export default {
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  theme: { extend: {} },
+  plugins: [],
+} satisfies Config;
+`;
+  }
+
+  if (!out['/postcss.config.js']) {
+    out['/postcss.config.js'] = `export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+`;
+  }
+
+  if (!out['/index.html']) {
+    out['/index.html'] = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VFS Project</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+`;
+  }
+
+  // Ensure /src/App.tsx exists — derive from entryPoint or first page component
+  if (!out['/src/App.tsx'] && !out['/src/App.jsx']) {
+    const targetImport = pickRenderableLauncherEntry(out, options?.entryPoint);
 
     if (targetImport) {
       const importPath = targetImport.replace('/src/', './').replace(/\.(tsx|jsx)$/, '');
@@ -3248,6 +4221,7 @@ export function prepareSandpackFiles(
       processedContent = ensureReactImports(processedContent);
       // Fix broken SVG elements (dc.path, svg.circle, etc.)
       processedContent = sanitizeSvgElements(processedContent);
+      processedContent = forceClassicReactJsxRuntime(processedContent);
     }
 
     processedContent = processedContent
@@ -3330,7 +4304,10 @@ export function prepareSandpackFiles(
     }
   }
 
-  if (!hasIndex) sandpackFiles['/index.tsx'] = DEFAULT_INDEX;
+  // ALWAYS use our controlled entry point — it includes the createElement safety
+  // guard, error boundary, Tailwind CDN config, and nav bridge. VFS-provided
+  // index.tsx/main.tsx are just boilerplate mounts that lack these protections.
+  sandpackFiles['/index.tsx'] = DEFAULT_INDEX;
 
   // Remove any stale /main.tsx that might have leaked through
   delete sandpackFiles['/main.tsx'];
@@ -3340,15 +4317,76 @@ export function prepareSandpackFiles(
   sandpackFiles['/lib-utils-shim.ts'] = LIB_UTILS_SHIM;
   sandpackFiles['/ui-shim.tsx'] = UI_COMPONENTS_SHIM;
 
+  // ── SAFETY: Strip Router wrappers from non-App files ──
+  // If App.tsx already has a Router, any page component that also wraps itself
+  // in <BrowserRouter>/<HashRouter>/<Router> will cause a "cannot render Router
+  // inside another Router" crash. Strip them from all non-App files.
+  // Also handles aliased usage like `BrowserRouter as Router` → `<Router>`.
+  const appFile = sandpackFiles['/App.tsx'] || sandpackFiles['/App.jsx'] || '';
+  const appHasRouter = /(?:BrowserRouter|HashRouter|MemoryRouter|Router)\s*>/.test(appFile);
+  if (appHasRouter) {
+    for (const [filePath, content] of Object.entries(sandpackFiles)) {
+      if (filePath === '/App.tsx' || filePath === '/App.jsx') continue;
+      if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+
+      // Detect aliased router imports like `BrowserRouter as Router`
+      const aliasMatch = content.match(/(?:BrowserRouter|HashRouter|MemoryRouter)\s+as\s+(\w+)/);
+      const routerAlias = aliasMatch ? aliasMatch[1] : null;
+
+      // Build list of all Router-like tag names to strip
+      const routerTags = ['BrowserRouter', 'HashRouter', 'MemoryRouter'];
+      if (routerAlias && !routerTags.includes(routerAlias)) {
+        routerTags.push(routerAlias);
+      }
+      const routerTagPattern = routerTags.join('|');
+      const tagRegex = new RegExp(`(?:${routerTagPattern})\\s*>`, '');
+
+      if (tagRegex.test(content)) {
+        let fixed = content
+          .replace(/import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g, (match) => {
+            // Keep non-Router imports from the same line
+            const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
+            const otherImports = match.match(new RegExp(`\\b(?:${keepTokens.join('|')})\\b`, 'g'));
+            if (otherImports && otherImports.length > 0) {
+              return `import { ${otherImports.join(', ')} } from 'react-router-dom';\n`;
+            }
+            return '';
+          })
+          .replace(new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, 'g'), '')
+          .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
+        if (fixed !== content) {
+          sandpackFiles[filePath] = fixed;
+          console.warn(`[sandpackFilePrep] Stripped nested Router from ${filePath}`);
+        }
+      }
+    }
+  }
+
+  // ── AUTO-INJECT imports for JSX-used but un-imported components ──
+  // AI often generates <Gallery /> in App.tsx without a corresponding import.
+  // Detect PascalCase JSX usage and inject missing import statements before
+  // the generateMissingComponents pass (which only scans import statements).
+  autoInjectMissingJsxImports(sandpackFiles);
+
   // ── Generate real components for missing relative imports ──
   // Run BEFORE App.tsx export validation so generated sub-components exist first.
   // Run up to 3 passes to resolve transitive imports (generated components may import others).
+  // Re-run autoInjectMissingJsxImports each pass so generated files also get imports injected.
   for (let pass = 0; pass < 3; pass++) {
     const beforeCount = Object.keys(sandpackFiles).length;
     generateMissingComponents(sandpackFiles);
     if (Object.keys(sandpackFiles).length === beforeCount) break;
     console.log(`[sandpackFilePrep] Component generation pass ${pass + 1}: ${Object.keys(sandpackFiles).length - beforeCount} new files`);
+    autoInjectMissingJsxImports(sandpackFiles);
   }
+
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (/\.(tsx?|jsx?)$/.test(filePath)) {
+      sandpackFiles[filePath] = repairMalformedDefaultExportClosures(content);
+    }
+  }
+
+  repairLocalImportContracts(sandpackFiles);
 
   // ── SAFETY: Validate App.tsx has a default export ──
   // If AI-generated App.tsx only uses named exports (e.g., `export function App`),
@@ -3377,6 +4415,22 @@ export function prepareSandpackFiles(
     if (content.includes('export default')) continue;
 
     sandpackFiles[filePath] = ensureDefaultExportForReactModule(content, filePath);
+  }
+
+  // ── CLEANUP: Remove unused imports from VFS files ──
+  // AI often imports components/icons it doesn't actually use in the template,
+  // producing "'X' is declared but its value is never read" warnings.
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx|jsx|ts|js)$/.test(filePath)) continue;
+    sandpackFiles[filePath] = removeUnusedImports(content);
+  }
+
+  // ── CLEANUP: Strip non-null assertions from .jsx files ──
+  // TypeScript non-null assertions (foo!) are invalid in plain .jsx files.
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!filePath.endsWith('.jsx')) continue;
+    // Replace non-null assertions: identifier! followed by . or [ or ) or , or ;
+    sandpackFiles[filePath] = content.replace(/(\w)\!(?=[\.\[\),;\s}])/g, '$1');
   }
 
   // Ensure template.css exists if any file imports it
@@ -3641,7 +4695,12 @@ function sanitizeSiteBundleFilename(path: string): string {
 
 function sanitizeSiteBundleComponentName(path: string): string {
   const filename = sanitizeSiteBundleFilename(path);
-  return filename.charAt(0).toUpperCase() + filename.slice(1) + 'Page';
+  const pascalName = filename
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join('');
+  return (pascalName || 'Page') + 'Page';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

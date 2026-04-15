@@ -194,11 +194,10 @@ export function normalizeIntent(intent: string): CoreIntent | string {
     return aliasedLower;
   }
 
-  // Try extracting domain.action pattern
-  const parts = intent.split('.');
-  if (parts.length >= 2) {
-    const domain = parts[0];
-    const action = parts[parts.length - 1];
+  // Try extracting domain.action pattern (lowercase for matching)
+  const lowerParts = lowerIntent.split('.');
+  if (lowerParts.length >= 2) {
+    const domain = lowerParts[0];
     
     // Try domain-based fallbacks
     const domainFallbacks: Record<string, CoreIntent> = {

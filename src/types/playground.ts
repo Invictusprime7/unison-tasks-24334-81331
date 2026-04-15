@@ -63,6 +63,42 @@ export interface WizardSelections {
 }
 
 // ============================================================================
+// Slot-Bound Section & Slot Types
+// ============================================================================
+
+/** Section types for slot-bound binding specs */
+export type BindingSectionType =
+  | 'navbar'
+  | 'hero'
+  | 'services'
+  | 'pricing'
+  | 'gallery'
+  | 'shop-grid'
+  | 'cart'
+  | 'footer'
+  | 'cta'
+  | 'contact'
+  | 'faq'
+  | 'testimonials'
+  | 'about'
+  | 'blog'
+  | 'features'
+  | 'stats'
+  | 'team';
+
+/** Slot roles within a section */
+export type BindingSlotRole =
+  | 'primary-cta'
+  | 'secondary-cta'
+  | 'card-cta'
+  | 'checkout-cta'
+  | 'cart-trigger'
+  | 'form-submit'
+  | 'newsletter'
+  | 'nav-link'
+  | 'social-link';
+
+// ============================================================================
 // Capability Pack
 // ============================================================================
 
@@ -96,14 +132,51 @@ export interface CapabilityPack {
   requiredCalendars: string[];
   requiredProducts: string[];
   recommendedPopups: string[];
+  /** @deprecated Use recommendedBindingsV2 for slot-bound specs */
   recommendedBindings: PlaygroundBindingSpec[];
+  /** Slot-bound binding specs (V2) — authoritative source */
+  recommendedBindingsV2: PlaygroundBindingSpecV2[];
 }
 
+/**
+ * @deprecated Legacy label-bound binding spec.
+ * Kept for backward compatibility during migration.
+ * Use PlaygroundBindingSpecV2 instead.
+ */
 export interface PlaygroundBindingSpec {
   sourcePageRole: PlaygroundPageRole;
   sourceLabel: string;
   intent: PlaygroundBindingIntent;
-  targetRef: string; // pageRole, formId, calendarId, etc.
+  targetRef: string;
+}
+
+/**
+ * Slot-bound binding spec (V2).
+ * 
+ * Identity is determined by section + slot, NOT by button label.
+ * Labels are presentation-only and can be freely changed without
+ * breaking binding resolution.
+ */
+export interface PlaygroundBindingSpecV2 {
+  sourcePageRole: PlaygroundPageRole;
+  /** Section where this binding lives */
+  sourceSection: BindingSectionType;
+  /** Slot role within the section */
+  sourceSlot: BindingSlotRole;
+  /** Optional stable element key override */
+  sourceElementKey?: string;
+  /** Display label (presentation only, not used for resolution) */
+  label?: string;
+  /** Canonical intent from CoreIntent surface */
+  coreIntent: string; // CoreIntent — string to avoid circular dependency
+  /** Playground-layer intent (for authoring UX) */
+  intent: PlaygroundBindingIntent;
+  /** Target reference (pageRole, formId, calendarId, route, etc.) */
+  targetRef: string;
+  /** How the UI should respond */
+  uiAction?: 'navigate' | 'overlay' | 'state' | 'toast';
+  /** Payload template for data-carrying intents */
+  payloadTemplate?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -123,6 +196,7 @@ export type PlaygroundBindingIntent =
 export interface PlaygroundBinding {
   bindingId: string;
   sourcePageId: string;
+  /** @deprecated Use elementKey for resolution */
   sourceLabel: string;
   intent: PlaygroundBindingIntent;
   /** Target object ID (pageId, formId, calendarId, popupId, productId, or URL) */
@@ -137,6 +211,22 @@ export interface PlaygroundBinding {
   isValid: boolean;
   /** Validation message if invalid */
   validationMessage?: string;
+
+  // ── V2 Slot-Bound Fields ──────────────────────────────────────────────
+  /** Stable element key: pageRole.sectionType.slotRole */
+  elementKey?: string;
+  /** Section where this binding lives */
+  sourceSection?: BindingSectionType;
+  /** Slot role within the section */
+  sourceSlot?: BindingSlotRole;
+  /** Canonical CoreIntent (normalized from playground intent) */
+  coreIntent?: string;
+  /** UI action type */
+  uiAction?: 'navigate' | 'overlay' | 'state' | 'toast';
+  /** Payload template */
+  payloadTemplate?: Record<string, unknown>;
+  /** Readiness state */
+  readiness?: 'preview-ready' | 'publish-ready' | 'stubbed' | 'blocked';
 }
 
 // ============================================================================

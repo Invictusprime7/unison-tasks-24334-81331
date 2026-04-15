@@ -96,7 +96,21 @@ export type BindingSlotRole =
   | 'form-submit'
   | 'newsletter'
   | 'nav-link'
-  | 'social-link';
+  | 'social-link'
+  // Icon-driven interactive slots
+  | 'icon-search'
+  | 'icon-cart'
+  | 'icon-user'
+  | 'icon-menu'
+  | 'icon-notifications'
+  | 'icon-filter'
+  | 'icon-sort'
+  | 'icon-share'
+  | 'icon-favorite'
+  | 'icon-theme'
+  | 'icon-language'
+  | 'icon-chat'
+  | 'icon-calendar';
 
 // ============================================================================
 // Capability Pack

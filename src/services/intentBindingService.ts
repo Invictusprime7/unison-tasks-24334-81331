@@ -89,13 +89,13 @@ export async function lookupIntentBinding(
 
   try {
     // Query site_intent_bindings
-    const { data: binding, error } = await supabase
-      .from('site_intent_bindings')
+    const { data: binding, error } = await (supabase
+      .from('site_intent_bindings' as any)
       .select('*')
       .eq('project_id', projectId)
       .eq('page_path', pagePath)
       .eq('element_key', elementKey)
-      .single();
+      .single() as any);
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
       console.error('[IntentBindingService] Lookup error:', error);
@@ -137,12 +137,12 @@ export async function lookupBindingsByIntent(
   intent: string
 ): Promise<IntentBinding[]> {
   try {
-    const { data, error } = await supabase
-      .from('site_intent_bindings')
+    const { data, error } = await (supabase
+      .from('site_intent_bindings' as any)
       .select('*')
       .eq('project_id', projectId)
       .eq('intent', intent)
-      .eq('enabled', true);
+      .eq('enabled', true) as any);
 
     if (error) {
       console.error('[IntentBindingService] Intent lookup error:', error);
@@ -184,8 +184,8 @@ export async function upsertIntentBinding(
   }
 ): Promise<IntentBinding | null> {
   try {
-    const { data, error } = await supabase
-      .from('site_intent_bindings')
+    const { data, error } = await (supabase
+      .from('site_intent_bindings' as any)
       .upsert({
         business_id: binding.businessId,
         project_id: binding.projectId,
@@ -203,7 +203,7 @@ export async function upsertIntentBinding(
         onConflict: 'project_id,page_path,element_key'
       })
       .select()
-      .single();
+      .single() as any);
 
     if (error) {
       console.error('[IntentBindingService] Upsert error:', error);
@@ -242,21 +242,21 @@ export async function upsertIntentBinding(
 export async function recordBindingTriggered(bindingId: string): Promise<void> {
   try {
     // Get current count and increment
-    const { data } = await supabase
-      .from('site_intent_bindings')
+    const { data } = await (supabase
+      .from('site_intent_bindings' as any)
       .select('trigger_count')
       .eq('id', bindingId)
-      .single();
+      .single() as any);
     
     const newCount = ((data?.trigger_count as number) || 0) + 1;
     
-    await supabase
-      .from('site_intent_bindings')
+    await (supabase
+      .from('site_intent_bindings' as any)
       .update({
         last_triggered_at: new Date().toISOString(),
         trigger_count: newCount,
       })
-      .eq('id', bindingId);
+      .eq('id', bindingId) as any);
   } catch (error) {
     console.warn('[IntentBindingService] Failed to record trigger:', error);
   }
@@ -267,11 +267,11 @@ export async function recordBindingTriggered(bindingId: string): Promise<void> {
  */
 export async function getProjectBindings(projectId: string): Promise<IntentBinding[]> {
   try {
-    const { data, error } = await supabase
-      .from('site_intent_bindings')
+    const { data, error } = await (supabase
+      .from('site_intent_bindings' as any)
       .select('*')
       .eq('project_id', projectId)
-      .order('page_path', { ascending: true });
+      .order('page_path', { ascending: true }) as any);
 
     if (error) {
       console.error('[IntentBindingService] Project bindings error:', error);
@@ -305,10 +305,10 @@ export async function getProjectBindings(projectId: string): Promise<IntentBindi
  */
 export async function toggleBindingEnabled(bindingId: string, enabled: boolean): Promise<boolean> {
   try {
-    const { error } = await supabase
-      .from('site_intent_bindings')
+    const { error } = await (supabase
+      .from('site_intent_bindings' as any)
       .update({ enabled, updated_at: new Date().toISOString() })
-      .eq('id', bindingId);
+      .eq('id', bindingId) as any);
 
     if (error) {
       console.error('[IntentBindingService] Toggle error:', error);
@@ -327,10 +327,10 @@ export async function toggleBindingEnabled(bindingId: string, enabled: boolean):
  */
 export async function deleteBinding(bindingId: string): Promise<boolean> {
   try {
-    const { error } = await supabase
-      .from('site_intent_bindings')
+    const { error } = await (supabase
+      .from('site_intent_bindings' as any)
       .delete()
-      .eq('id', bindingId);
+      .eq('id', bindingId) as any);
 
     if (error) {
       console.error('[IntentBindingService] Delete error:', error);

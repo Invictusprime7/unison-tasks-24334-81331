@@ -91,18 +91,54 @@ export function compilePlayground(
 
 /**
  * Resolve a button click to its binding target.
- * Used by the preview intent bridge at runtime.
+ * V2: Prefers elementKey/slot-based resolution, falls back to label matching.
  */
 export function resolveBindingForButton(
   manifest: Record<string, PlaygroundBinding>,
   sourcePageId: string,
   buttonLabel: string,
+  elementKey?: string,
 ): PlaygroundBinding | null {
+  // 1. Prefer slot-bound resolution by elementKey (stable)
+  if (elementKey) {
+    for (const binding of Object.values(manifest)) {
+      if (
+        binding.sourcePageId === sourcePageId &&
+        binding.elementKey === elementKey
+      ) {
+        return binding;
+      }
+    }
+  }
+
+  // 2. Fallback: label-based matching (legacy compat)
   const normalized = buttonLabel.toLowerCase().trim();
   for (const binding of Object.values(manifest)) {
     if (
       binding.sourcePageId === sourcePageId &&
       binding.sourceLabel.toLowerCase().trim() === normalized
+    ) {
+      return binding;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve a binding by slot identity (section + slot).
+ * This is the preferred V2 resolution path.
+ */
+export function resolveBindingBySlot(
+  manifest: Record<string, PlaygroundBinding>,
+  sourcePageId: string,
+  section: string,
+  slot: string,
+): PlaygroundBinding | null {
+  for (const binding of Object.values(manifest)) {
+    if (
+      binding.sourcePageId === sourcePageId &&
+      binding.sourceSection === section &&
+      binding.sourceSlot === slot
     ) {
       return binding;
     }
@@ -118,4 +154,16 @@ export function getPageBindings(
   pageId: string,
 ): PlaygroundBinding[] {
   return Object.values(manifest).filter(b => b.sourcePageId === pageId);
+}
+
+/**
+ * Get all V2 bindings (with elementKey) for a page.
+ */
+export function getPageSlotBindings(
+  manifest: Record<string, PlaygroundBinding>,
+  pageId: string,
+): PlaygroundBinding[] {
+  return Object.values(manifest).filter(
+    b => b.sourcePageId === pageId && !!b.elementKey
+  );
 }

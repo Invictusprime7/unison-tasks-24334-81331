@@ -81,3 +81,47 @@ export {
   type ProvisioningCheckItem,
   type ProvisioningStatus,
 } from './provisioningValidator';
+
+// Integrity Report
+export {
+  runIntegrityReport,
+  type IntegrityReport,
+  type IntegrityCheckResult,
+  type IntegrityCategory,
+  type IntegrityReportOptions,
+} from './integrityReport';
+
+// Site Topology Planner
+export {
+  planSiteTopology,
+  populateRegistryFromTopology,
+  type GeneratedSitePlan,
+  type PageRouteNode,
+  type RedirectBinding,
+  type FunnelPlan,
+  type PageRole,
+} from './siteTopologyPlanner';
+
+// Intent Normalizer
+export {
+  normalizePlaygroundIntent,
+  isPlaygroundNavIntent,
+  inferUIAction,
+  type UIAction,
+} from './intentNormalizer';
+
+// Icon Intent Registry
+export {
+  ICON_INTENT_REGISTRY,
+  getIconDefinition,
+  resolveIconBehavior,
+  resolveIconBinding,
+  getIconsForSection,
+  resolveIconKeyFromLucide,
+  generateIconDataAttributes,
+  type IconIntentDefinition,
+  type IconPlacement,
+  type IconUIBehavior,
+  type IconInteractiveComponent,
+  type ResolvedIconBinding,
+} from './iconIntentRegistry';

@@ -2,8 +2,9 @@
  * Wizard Playground Materializer — Creates full PlaygroundState from
  * wizard selections + capability pack + topology plan.
  * 
- * This is the main auto-population engine that assigns IDs, default labels,
- * confidence scores, forms, calendars, products, popups, and bindings.
+ * V2: Now emits stable elementKey, sourceSection, sourceSlot, and
+ * canonical coreIntent on each binding. Resolution uses slot identity
+ * instead of label matching.
  */
 
 import { nanoid } from 'nanoid';
@@ -17,11 +18,13 @@ import type {
   PlaygroundPopup,
   PlaygroundPageRole,
   PlaygroundBindingIntent,
+  PlaygroundBindingSpecV2,
 } from '@/types/playground';
 import type { PageRegistry } from '@/types/pageRegistry';
 import type { CreatorData, CreatorForm, CreatorFormField } from '@/types/creatorData';
 import { createEmptyCreatorData } from '@/types/creatorData';
 import { planSiteTopology, populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
+import { normalizePlaygroundIntent, inferUIAction } from '@/contracts/intentNormalizer';
 
 // ============================================================================
 // Industry → Industry Key mapping
@@ -200,6 +203,28 @@ const POPUP_TEMPLATES: Record<string, Omit<PlaygroundPopup, 'popupId' | 'sortOrd
 };
 
 // ============================================================================
+// Element Key Generator
+// ============================================================================
+
+/**
+ * Generate a stable element key from page role, section, and slot.
+ * Format: pageRole.sectionType.slotRole
+ * 
+ * Examples:
+ *   home.hero.primary-cta
+ *   shop.shop-grid.card-cta
+ *   pricing.pricing.card-cta
+ *   navbar.primary-cta (section-less for navbar)
+ */
+function generateElementKey(
+  pageRole: PlaygroundPageRole,
+  section: string,
+  slot: string,
+): string {
+  return `${pageRole}.${section}.${slot}`;
+}
+
+// ============================================================================
 // Core Materializer
 // ============================================================================
 
@@ -252,14 +277,12 @@ export function materializePlayground(
     const calendarId = `cal_${nanoid(8)}`;
     calendarIdMap[calKey] = calendarId;
 
-    // Attach intake form if matching
     const intakeFormKey = calKey === 'main_booking' ? 'booking_intake'
       : calKey === 'consultation_booking' ? 'consultation_intake'
       : calKey === 'appointment_booking' ? 'patient_intake'
       : calKey === 'reservation' ? 'reservation'
       : undefined;
 
-    // Attach to booking pages
     const bookingPageId = roleToPageId['booking'] || '';
     const confirmPageId = roleToPageId['booking_confirmation'] || roleToPageId['thankyou'] || '';
 
@@ -284,10 +307,8 @@ export function materializePlayground(
     const popupId = `popup_${nanoid(8)}`;
     const homePageId = roleToPageId['home'] || '';
 
-    // Link form-type popups to their form
     let contentRefId: string | undefined;
     if (template.contentType === 'form') {
-      // Use contact form as default popup form
       contentRefId = formIdMap['contact'] || Object.values(formIdMap)[0];
     }
 
@@ -300,41 +321,100 @@ export function materializePlayground(
     };
   }
 
-  // 7. Materialize bindings
+  // 7. Materialize bindings — prefer V2 slot-bound specs, fallback to legacy
   const bindings: Record<string, PlaygroundBinding> = {};
-  for (const spec of capabilities.recommendedBindings) {
-    const sourcePageId = roleToPageId[spec.sourcePageRole];
-    if (!sourcePageId) {
-      warnings.push(`Binding source page role "${spec.sourcePageRole}" not found in registry`);
-      continue;
+  const useV2 = capabilities.recommendedBindingsV2 && capabilities.recommendedBindingsV2.length > 0;
+
+  if (useV2) {
+    // V2 path: slot-bound resolution
+    for (const spec of capabilities.recommendedBindingsV2) {
+      const sourcePageId = roleToPageId[spec.sourcePageRole];
+      if (!sourcePageId) {
+        warnings.push(`Binding source page role "${spec.sourcePageRole}" not found in registry`);
+        continue;
+      }
+
+      const { targetId, targetType } = resolveBindingTarget(
+        spec.intent,
+        spec.targetRef,
+        roleToPageId,
+        formIdMap,
+        calendarIdMap,
+      );
+
+      if (!targetId) {
+        warnings.push(`Binding target "${spec.targetRef}" could not be resolved`);
+        continue;
+      }
+
+      const elementKey = spec.sourceElementKey || generateElementKey(
+        spec.sourcePageRole,
+        spec.sourceSection,
+        spec.sourceSlot,
+      );
+
+      const coreIntent = spec.coreIntent || normalizePlaygroundIntent(spec.intent, spec.targetRef);
+      const uiAction = spec.uiAction || inferUIAction(spec.intent);
+
+      const bindingId = `bind_${nanoid(8)}`;
+      bindings[bindingId] = {
+        bindingId,
+        sourcePageId,
+        sourceLabel: spec.label || '',
+        intent: spec.intent,
+        targetId,
+        targetType,
+        confidence: 0.95, // Higher confidence for slot-bound
+        source: 'wizard',
+        isValid: true,
+        // V2 fields
+        elementKey,
+        sourceSection: spec.sourceSection,
+        sourceSlot: spec.sourceSlot,
+        coreIntent,
+        uiAction,
+        payloadTemplate: spec.payloadTemplate,
+        readiness: 'preview-ready',
+      };
     }
+  } else {
+    // Legacy path: label-bound resolution (backward compat)
+    for (const spec of capabilities.recommendedBindings) {
+      const sourcePageId = roleToPageId[spec.sourcePageRole];
+      if (!sourcePageId) {
+        warnings.push(`Binding source page role "${spec.sourcePageRole}" not found in registry`);
+        continue;
+      }
 
-    // Resolve target
-    const { targetId, targetType } = resolveBindingTarget(
-      spec.intent,
-      spec.targetRef,
-      roleToPageId,
-      formIdMap,
-      calendarIdMap,
-    );
+      const { targetId, targetType } = resolveBindingTarget(
+        spec.intent,
+        spec.targetRef,
+        roleToPageId,
+        formIdMap,
+        calendarIdMap,
+      );
 
-    if (!targetId) {
-      warnings.push(`Binding target "${spec.targetRef}" could not be resolved`);
-      continue;
+      if (!targetId) {
+        warnings.push(`Binding target "${spec.targetRef}" could not be resolved`);
+        continue;
+      }
+
+      const bindingId = `bind_${nanoid(8)}`;
+      bindings[bindingId] = {
+        bindingId,
+        sourcePageId,
+        sourceLabel: spec.sourceLabel,
+        intent: spec.intent,
+        targetId,
+        targetType,
+        confidence: 0.9,
+        source: 'wizard',
+        isValid: true,
+        // Generate V2 fields even from legacy specs
+        coreIntent: normalizePlaygroundIntent(spec.intent, spec.targetRef),
+        readiness: 'preview-ready',
+      };
     }
-
-    const bindingId = `bind_${nanoid(8)}`;
-    bindings[bindingId] = {
-      bindingId,
-      sourcePageId,
-      sourceLabel: spec.sourceLabel,
-      intent: spec.intent,
-      targetId,
-      targetType,
-      confidence: 0.9,
-      source: 'wizard',
-      isValid: true,
-    };
   }
 
   // 8. Assemble state
@@ -361,7 +441,6 @@ function buildRoleToPageIdMap(
   for (const node of sitePlan.pages) {
     map[node.role] = node.id;
   }
-  // Also map from isHome
   for (const page of Object.values(registry.pages)) {
     if (page.isHome) map['home'] = page.pageId;
   }
@@ -379,7 +458,7 @@ function resolveBindingTarget(
     case 'nav.goto_page':
     case 'funnel.goto_step': {
       const pageId = roleToPageId[targetRef];
-      return { targetId: pageId || '', targetType: pageId ? 'page' : 'page' };
+      return { targetId: pageId || '', targetType: 'page' };
     }
     case 'form.open': {
       const formId = formIdMap[targetRef];

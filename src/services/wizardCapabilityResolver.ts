@@ -255,6 +255,38 @@ const INDUSTRY_AUGMENTS: Partial<Record<IndustryOverlay, IndustryAugment>> = {
 };
 
 // ============================================================================
+// Universal Icon Bindings — Added to ALL business models
+// ============================================================================
+
+/** Icons that appear on every wizard-generated site regardless of model */
+const UNIVERSAL_ICON_BINDINGS: PlaygroundBindingSpecV2[] = [
+  // Search icon in navbar — inline-expand search field
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-search', label: 'Search', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'search', uiAction: 'overlay', payloadTemplate: { iconKey: 'search', interactive: 'search-field', uiBehavior: 'inline-expand' } },
+  // User/account icon in navbar — dropdown auth menu
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-user', label: 'Account', coreIntent: 'auth.login', intent: 'nav.goto_page', targetRef: 'auth', uiAction: 'overlay', payloadTemplate: { iconKey: 'user', interactive: 'user-menu', uiBehavior: 'dropdown' } },
+  // Mobile menu hamburger
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-menu', label: 'Menu', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'mobile-nav', uiAction: 'overlay', payloadTemplate: { iconKey: 'menu', interactive: 'mobile-menu', uiBehavior: 'overlay' } },
+];
+
+/** Ecommerce-specific icon bindings */
+const ECOMMERCE_ICON_BINDINGS: PlaygroundBindingSpecV2[] = [
+  // Cart icon in navbar — opens cart drawer with badge
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-cart', label: 'Cart', coreIntent: 'cart.checkout', intent: 'checkout.start', targetRef: 'cart-overlay', uiAction: 'overlay', payloadTemplate: { iconKey: 'cart', interactive: 'cart-drawer', uiBehavior: 'overlay', hasBadge: true } },
+  // Filter icon on shop grid
+  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-filter', label: 'Filter', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'filter', uiAction: 'overlay', payloadTemplate: { iconKey: 'filter', interactive: 'filter-panel', uiBehavior: 'inline-expand' } },
+  // Sort icon on shop grid
+  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-sort', label: 'Sort', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'sort', uiAction: 'overlay', payloadTemplate: { iconKey: 'sort', interactive: 'sort-dropdown', uiBehavior: 'dropdown' } },
+  // Favorite icon on product cards
+  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-favorite', label: 'Favorite', coreIntent: 'cart.add', intent: 'checkout.start', targetRef: 'favorites', uiAction: 'state', payloadTemplate: { iconKey: 'favorite', interactive: 'favorites-drawer', uiBehavior: 'state-toggle' } },
+];
+
+/** Booking-specific icon bindings */
+const BOOKING_ICON_BINDINGS: PlaygroundBindingSpecV2[] = [
+  // Calendar icon in navbar for booking models
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-calendar', label: 'Book', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'main_booking', uiAction: 'overlay', payloadTemplate: { iconKey: 'calendar', interactive: 'none', uiBehavior: 'overlay' } },
+];
+
+// ============================================================================
 // Default CTA Bindings per Business Model (V2 — slot-bound)
 // ============================================================================
 

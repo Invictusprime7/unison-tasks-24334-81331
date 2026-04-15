@@ -434,10 +434,22 @@ export function resolveCapabilities(selections: WizardSelections): CapabilityPac
     }
   }
 
-  // 8. V2 slot-bound bindings (authoritative)
+  // 8. V2 slot-bound bindings (authoritative) — CTA + Icon bindings
   const bindingSpecsV2: PlaygroundBindingSpecV2[] = [
     ...(MODEL_BINDINGS_V2[model] || MODEL_BINDINGS_V2.general),
+    // Universal icon bindings (search, user, menu — all models)
+    ...UNIVERSAL_ICON_BINDINGS,
   ];
+
+  // Add model-specific icon bindings
+  if (model === 'ecommerce' || selections.sellsProducts) {
+    bindingSpecsV2.push(...ECOMMERCE_ICON_BINDINGS);
+  }
+  if (model === 'appointment_service' || model === 'restaurant_hospitality' || selections.needsBooking) {
+    bindingSpecsV2.push(...BOOKING_ICON_BINDINGS);
+  }
+
+  // Merge industry augments (dedup by page + section + slot)
   if (augment.extraBindingsV2) {
     for (const ib of augment.extraBindingsV2) {
       // Slot-bound dedup: same page + section + slot = override

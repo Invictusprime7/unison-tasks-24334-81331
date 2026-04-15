@@ -560,6 +560,8 @@ function ensureRequiredPages(
       path: defaults.route,
       pageType: defaults.pageType as any,
       filePath: defaults.filePath,
+      source: { kind: 'react_tsx', content: '', contentHash: '' },
+      output: {},
       showInNav: defaults.showInNav,
       navOrder: navOrder + (addedCount * 10),
       isHome: false,

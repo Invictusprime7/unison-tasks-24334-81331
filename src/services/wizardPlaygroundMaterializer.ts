@@ -239,13 +239,18 @@ export function materializePlayground(
   const sitePlan = planSiteTopology(industryKey, selections.businessName);
   const pageRegistry = populateRegistryFromTopology(sitePlan);
 
-  // 2. Create empty creator data
+  // 2. Ensure ALL capability-required pages exist in the registry
+  //    The topology planner uses industry matrix which may not include all pages
+  //    required by the capability pack (e.g., checkout, thankyou for ecommerce).
+  ensureRequiredPages(pageRegistry, sitePlan, capabilities.requiredPages, selections.businessName);
+
+  // 3. Create empty creator data
   const creatorData = createEmptyCreatorData(selections.businessName);
 
-  // 3. Build a pageRole → pageId lookup from the registry
+  // 4. Build a pageRole → pageId lookup from the registry (with alias support)
   const roleToPageId = buildRoleToPageIdMap(pageRegistry, sitePlan);
 
-  // 4. Materialize forms
+  // 5. Materialize forms
   const formIdMap: Record<string, string> = {};
   for (const formKey of capabilities.requiredForms) {
     const template = FORM_TEMPLATES[formKey];
@@ -265,7 +270,7 @@ export function materializePlayground(
     };
   }
 
-  // 5. Materialize calendars
+  // 6. Materialize calendars
   const calendarIdMap: Record<string, string> = {};
   const calendars: Record<string, PlaygroundCalendar> = {};
   for (const calKey of capabilities.requiredCalendars) {
@@ -296,7 +301,7 @@ export function materializePlayground(
     };
   }
 
-  // 6. Materialize popups
+  // 7. Materialize popups
   const popups: Record<string, PlaygroundPopup> = {};
   for (const popupKey of capabilities.recommendedPopups) {
     const template = POPUP_TEMPLATES[popupKey];
@@ -321,7 +326,7 @@ export function materializePlayground(
     };
   }
 
-  // 7. Materialize bindings — prefer V2 slot-bound specs, fallback to legacy
+  // 8. Materialize bindings — prefer V2 slot-bound specs, fallback to legacy
   const bindings: Record<string, PlaygroundBinding> = {};
   const useV2 = capabilities.recommendedBindingsV2 && capabilities.recommendedBindingsV2.length > 0;
 
@@ -334,6 +339,12 @@ export function materializePlayground(
         continue;
       }
 
+      // Validate source page actually exists in registry
+      if (!pageRegistry.pages[sourcePageId]) {
+        warnings.push(`Binding source page ID "${sourcePageId}" for role "${spec.sourcePageRole}" not in registry`);
+        continue;
+      }
+
       const { targetId, targetType } = resolveBindingTarget(
         spec.intent,
         spec.targetRef,
@@ -342,8 +353,9 @@ export function materializePlayground(
         calendarIdMap,
       );
 
+      // Skip bindings with unresolvable targets (prevents invalid entries)
       if (!targetId) {
-        warnings.push(`Binding target "${spec.targetRef}" could not be resolved`);
+        warnings.push(`Binding target "${spec.targetRef}" could not be resolved for ${spec.sourcePageRole}.${spec.sourceSection}.${spec.sourceSlot}`);
         continue;
       }
 
@@ -386,6 +398,11 @@ export function materializePlayground(
         continue;
       }
 
+      if (!pageRegistry.pages[sourcePageId]) {
+        warnings.push(`Binding source page ID "${sourcePageId}" for role "${spec.sourcePageRole}" not in registry`);
+        continue;
+      }
+
       const { targetId, targetType } = resolveBindingTarget(
         spec.intent,
         spec.targetRef,
@@ -417,7 +434,7 @@ export function materializePlayground(
     }
   }
 
-  // 8. Assemble state
+  // 9. Assemble state
   const playground: PlaygroundState = {
     creatorData,
     pageRegistry,
@@ -433,18 +450,150 @@ export function materializePlayground(
 // Helpers
 // ============================================================================
 
+/**
+ * Role alias map: PlaygroundPageRole → topology PageRole
+ * The capability resolver uses PlaygroundPageRole (e.g., 'thankyou', 'booking_confirmation')
+ * while the topology planner uses PageRole (e.g., 'thank_you').
+ * This map normalizes both directions for reliable lookups.
+ */
+const ROLE_ALIASES: Record<string, string[]> = {
+  thankyou: ['thank_you'],
+  thank_you: ['thankyou'],
+  booking_confirmation: ['thank_you', 'thankyou'],
+};
+
 function buildRoleToPageIdMap(
   registry: PageRegistry,
   sitePlan: GeneratedSitePlan,
 ): Record<string, string> {
   const map: Record<string, string> = {};
+
+  // Map from topology plan roles
   for (const node of sitePlan.pages) {
     map[node.role] = node.id;
   }
+
+  // Map from registry pages (covers dynamically added pages)
   for (const page of Object.values(registry.pages)) {
     if (page.isHome) map['home'] = page.pageId;
+
+    // Also map by pageType (which corresponds to PlaygroundPageRole in many cases)
+    if (page.pageType && !map[page.pageType]) {
+      map[page.pageType] = page.pageId;
+    }
   }
+
+  // Apply aliases: ensure both naming conventions resolve
+  for (const [alias, targets] of Object.entries(ROLE_ALIASES)) {
+    if (!map[alias]) {
+      for (const target of targets) {
+        if (map[target]) {
+          map[alias] = map[target];
+          break;
+        }
+      }
+    }
+  }
+
   return map;
+}
+
+/**
+ * Ensure all capability-required pages exist in the registry.
+ * The topology planner uses industry matrix defaults which may omit
+ * pages the capability pack requires (e.g., checkout, thankyou for ecommerce).
+ */
+function ensureRequiredPages(
+  registry: PageRegistry,
+  sitePlan: GeneratedSitePlan,
+  requiredPages: PlaygroundPageRole[],
+  businessName: string,
+): void {
+  // Build set of existing roles from both topology plan and registry
+  const existingRoles = new Set<string>();
+  for (const node of sitePlan.pages) {
+    existingRoles.add(node.role);
+  }
+  for (const page of Object.values(registry.pages)) {
+    if (page.pageType) existingRoles.add(page.pageType);
+  }
+
+  // Also consider aliases
+  for (const role of existingRoles) {
+    const aliases = ROLE_ALIASES[role];
+    if (aliases) aliases.forEach(a => existingRoles.add(a));
+  }
+
+  // Page role → route/title/filePath defaults
+  const PAGE_DEFAULTS: Record<string, { title: string; route: string; filePath: string; pageType: string; showInNav: boolean }> = {
+    shop:                  { title: 'Shop',         route: '/shop',         filePath: '/src/pages/Shop.tsx',        pageType: 'shop',      showInNav: true },
+    checkout:              { title: 'Checkout',     route: '/checkout',     filePath: '/src/pages/Checkout.tsx',    pageType: 'checkout',  showInNav: false },
+    thankyou:              { title: 'Thank You',    route: '/thank-you',    filePath: '/src/pages/ThankYou.tsx',    pageType: 'thankyou',  showInNav: false },
+    booking:               { title: 'Booking',      route: '/booking',      filePath: '/src/pages/Booking.tsx',     pageType: 'booking',   showInNav: true },
+    booking_confirmation:  { title: 'Confirmation', route: '/confirmation', filePath: '/src/pages/Confirmation.tsx',pageType: 'thankyou',  showInNav: false },
+    about:                 { title: 'About',        route: '/about',        filePath: '/src/pages/About.tsx',       pageType: 'about',     showInNav: true },
+    contact:               { title: 'Contact',      route: '/contact',      filePath: '/src/pages/Contact.tsx',     pageType: 'contact',   showInNav: true },
+    services:              { title: 'Services',     route: '/services',     filePath: '/src/pages/Services.tsx',    pageType: 'landing',   showInNav: true },
+    pricing:               { title: 'Pricing',      route: '/pricing',      filePath: '/src/pages/Pricing.tsx',     pageType: 'pricing',   showInNav: true },
+    gallery:               { title: 'Gallery',      route: '/gallery',      filePath: '/src/pages/Gallery.tsx',     pageType: 'gallery',   showInNav: true },
+    faq:                   { title: 'FAQ',           route: '/faq',          filePath: '/src/pages/Faq.tsx',         pageType: 'faq',       showInNav: true },
+    blog:                  { title: 'Blog',          route: '/blog',         filePath: '/src/pages/Blog.tsx',        pageType: 'blog',      showInNav: true },
+  };
+
+  const navOrder = Object.keys(registry.pages).length * 10;
+  let addedCount = 0;
+
+  for (const role of requiredPages) {
+    if (role === 'home' || role === 'custom') continue; // home always exists
+    if (existingRoles.has(role)) continue;
+
+    const defaults = PAGE_DEFAULTS[role];
+    if (!defaults) continue;
+
+    const pageId = `page_${nanoid(8)}`;
+
+    // Inline page creation (avoids needing createBuilderPage import overhead)
+    registry.pages[pageId] = {
+      pageId,
+      title: defaults.title,
+      path: defaults.route,
+      pageType: defaults.pageType as any,
+      filePath: defaults.filePath,
+      source: { kind: 'react_tsx', content: '', contentHash: '' },
+      output: {},
+      showInNav: defaults.showInNav,
+      navOrder: navOrder + (addedCount * 10),
+      isHome: false,
+      createdBy: 'template' as const,
+      seo: {
+        title: `${defaults.title} | ${businessName}`,
+        description: `${defaults.title} page for ${businessName}`,
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Track for alias resolution
+    existingRoles.add(role);
+    const aliases = ROLE_ALIASES[role];
+    if (aliases) aliases.forEach(a => existingRoles.add(a));
+
+    // Also add to sitePlan.pages so buildRoleToPageIdMap can find it
+    sitePlan.pages.push({
+      id: pageId,
+      name: defaults.title,
+      title: defaults.title,
+      route: defaults.route,
+      role: (role === 'thankyou' ? 'thank_you' : role === 'booking_confirmation' ? 'thank_you' : role) as any,
+      filePath: defaults.filePath,
+      visibleInNav: defaults.showInNav,
+      isHome: false,
+      generatedBy: 'wizard',
+      seo: { title: `${defaults.title} | ${businessName}` },
+    });
+
+    addedCount++;
+  }
 }
 
 function resolveBindingTarget(
@@ -457,7 +606,8 @@ function resolveBindingTarget(
   switch (intent) {
     case 'nav.goto_page':
     case 'funnel.goto_step': {
-      const pageId = roleToPageId[targetRef];
+      // targetRef can be a page role or a route like '/checkout'
+      const pageId = roleToPageId[targetRef] || resolveByRoute(targetRef, roleToPageId);
       return { targetId: pageId || '', targetType: 'page' };
     }
     case 'form.open': {
@@ -470,7 +620,21 @@ function resolveBindingTarget(
     }
     case 'popup.open':
       return { targetId: targetRef, targetType: 'popup' };
-    case 'checkout.start':
+    case 'checkout.start': {
+      // Checkout intent can target:
+      //  - a page role/route (e.g., 'checkout', '/checkout') → resolve as page
+      //  - a UI state target (e.g., 'cart', 'cart-overlay') → resolve as funnel_step
+      //  - a product reference → resolve as product
+      if (targetRef === 'cart' || targetRef === 'cart-overlay') {
+        return { targetId: targetRef, targetType: 'funnel_step' };
+      }
+      // Try page role first
+      const checkoutPageId = roleToPageId[targetRef] || resolveByRoute(targetRef, roleToPageId);
+      if (checkoutPageId) {
+        return { targetId: checkoutPageId, targetType: 'page' };
+      }
+      return { targetId: targetRef, targetType: 'product' };
+    }
     case 'product.view':
       return { targetId: targetRef, targetType: 'product' };
     case 'external.open':
@@ -478,4 +642,18 @@ function resolveBindingTarget(
     default:
       return { targetId: targetRef, targetType: 'page' };
   }
+}
+
+/**
+ * Resolve a route string (e.g., '/checkout') to a page ID by matching
+ * against known page roles derived from routes.
+ */
+function resolveByRoute(
+  targetRef: string,
+  roleToPageId: Record<string, string>,
+): string {
+  if (!targetRef.startsWith('/')) return '';
+  // Strip leading slash and try as role
+  const slug = targetRef.replace(/^\//, '').replace(/-/g, '_');
+  return roleToPageId[slug] || '';
 }

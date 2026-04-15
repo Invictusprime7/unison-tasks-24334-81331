@@ -2029,6 +2029,60 @@ export type Database = {
         }
         Relationships: []
       }
+      intent_execution_log: {
+        Row: {
+          binding_id: string | null
+          business_id: string
+          created_at: string
+          error_message: string | null
+          execution_time_ms: number | null
+          id: string
+          intent: string
+          payload: Json
+          project_id: string | null
+          recipes_triggered: string[]
+          result_data: Json
+          result_status: string
+          source: string
+          source_url: string | null
+          workflows_triggered: string[]
+        }
+        Insert: {
+          binding_id?: string | null
+          business_id: string
+          created_at?: string
+          error_message?: string | null
+          execution_time_ms?: number | null
+          id?: string
+          intent: string
+          payload?: Json
+          project_id?: string | null
+          recipes_triggered?: string[]
+          result_data?: Json
+          result_status?: string
+          source?: string
+          source_url?: string | null
+          workflows_triggered?: string[]
+        }
+        Update: {
+          binding_id?: string | null
+          business_id?: string
+          created_at?: string
+          error_message?: string | null
+          execution_time_ms?: number | null
+          id?: string
+          intent?: string
+          payload?: Json
+          project_id?: string | null
+          recipes_triggered?: string[]
+          result_data?: Json
+          result_status?: string
+          source?: string
+          source_url?: string | null
+          workflows_triggered?: string[]
+        }
+        Relationships: []
+      }
       layers: {
         Row: {
           adjustments: Json | null
@@ -2715,6 +2769,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      site_intent_bindings: {
+        Row: {
+          business_id: string
+          created_at: string
+          element_key: string
+          element_label: string | null
+          enabled: boolean
+          id: string
+          intent: string
+          intent_confidence: number
+          last_triggered_at: string | null
+          page_path: string
+          payload_schema: Json
+          project_id: string
+          recipe_ids: string[]
+          trigger_count: number
+          updated_at: string
+          workflow_id: string | null
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          element_key: string
+          element_label?: string | null
+          enabled?: boolean
+          id?: string
+          intent: string
+          intent_confidence?: number
+          last_triggered_at?: string | null
+          page_path?: string
+          payload_schema?: Json
+          project_id: string
+          recipe_ids?: string[]
+          trigger_count?: number
+          updated_at?: string
+          workflow_id?: string | null
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          element_key?: string
+          element_label?: string | null
+          enabled?: boolean
+          id?: string
+          intent?: string
+          intent_confidence?: number
+          last_triggered_at?: string | null
+          page_path?: string
+          payload_schema?: Json
+          project_id?: string
+          recipe_ids?: string[]
+          trigger_count?: number
+          updated_at?: string
+          workflow_id?: string | null
+        }
+        Relationships: []
       }
       system_packs: {
         Row: {

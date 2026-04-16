@@ -1,5 +1,7 @@
 # VFS → ECS Vite Runtime → iframe Live Preview
 
+> **Stack**: React 18 + TypeScript 5.9 | VFSContext (React Context) | Sandpack 2.20 (in-browser bundler) | Docker + Vite (containerized HMR) | Monaco Editor + Fabric.js canvas
+
 ## Architecture Overview
 
 This document describes the live preview system that connects the Virtual File System (VFS) to an ECS-based Vite runtime for production-grade React previews with true Hot Module Replacement (HMR).

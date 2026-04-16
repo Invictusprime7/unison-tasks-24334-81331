@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { templateToVFSFiles } from "@/utils/templateToVFS";
 import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
 import { extractLauncherFilesPayload, sanitizeLauncherResponseText } from "@/utils/launcherPayload";
+import { fixJsxVoidElements, fixJsxStyleStrings } from "@/utils/aiCodeCleaner";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
@@ -494,22 +495,21 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
 
         const chipHtmlStart = chipContent.includes('<!DOCTYPE') ? chipContent.indexOf('<!DOCTYPE') : chipContent.indexOf('<html');
         const chipHtmlEnd = chipContent.lastIndexOf('</html>');
-        const chipHtml = chipHtmlStart !== -1 && chipHtmlEnd !== -1
+        const chipCode = chipHtmlStart !== -1 && chipHtmlEnd !== -1
           ? chipContent.slice(chipHtmlStart, chipHtmlEnd + 7)
           : chipContent.replace(/```(?:html)?\n?/g, '').replace(/```\s*$/g, '').trim();
 
-        if (chipHtml && chipHtml.length > 100) {
-          console.log('[SystemsAIPanel] ai-code-assistant chip generation:', chipHtml.length, 'chars');
-          // Create VFS with original HTML for preview + React wrapper for editing
-          const chipVfsFiles = templateToVFSFiles(chipHtml, chipLabel.replace(/[^a-zA-Z0-9]/g, ''));
-          chipVfsFiles['/index.html'] = chipHtml;
+        if (chipCode && chipCode.length > 100) {
+          console.log('[SystemsAIPanel] ai-code-assistant chip generation:', chipCode.length, 'chars');
+          // Create VFS from React/TSX code
+          const chipVfsFiles = templateToVFSFiles(chipCode, chipLabel.replace(/[^a-zA-Z0-9]/g, ''));
           
-          sessionStorage.setItem('ai_assistant_generated_code', chipHtml);
+          sessionStorage.setItem('ai_assistant_generated_code', chipCode);
           setDroppedFiles([]);
           navigate("/web-builder", {
             state: {
               vfsFiles: chipVfsFiles,
-              generatedCode: chipHtml,
+              generatedCode: chipCode,
               templateName: `AI ${chipLabel}`,
               aesthetic: "modern",
               startInPreview: true,
@@ -605,9 +605,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         : freeformContent.replace(/```(?:html)?\n?/g, '').replace(/```\s*$/g, '').trim();
 
       if (generatedCode) {
-        // Create VFS with original HTML for preview + React wrapper for editing
+        // Create VFS from React/TSX code
         const freeVfsFiles = templateToVFSFiles(generatedCode, 'CustomWebsite');
-        freeVfsFiles['/index.html'] = generatedCode;
         
         sessionStorage.setItem('ai_assistant_generated_code', generatedCode);
         setDroppedFiles([]);

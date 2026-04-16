@@ -7,7 +7,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { logger } from '../server.js';
+import { logger, sessionManager } from '../server.js';
 
 // ============================================
 // CONFIGURATION
@@ -15,7 +15,8 @@ import { logger } from '../server.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
-const BYPASS_AUTH = process.env.BYPASS_AUTH === 'true' || process.env.NODE_ENV === 'development'; // Auto-bypass in dev
+// Auth bypass must be explicitly opt-in via BYPASS_AUTH=true — never auto-bypass based on NODE_ENV
+const BYPASS_AUTH = process.env.BYPASS_AUTH === 'true';
 
 // ============================================
 // SUPABASE CLIENT (lazy-loaded)
@@ -67,7 +68,8 @@ export async function authMiddleware(
   next: NextFunction
 ): Promise<void> {
   // Generate request ID for tracing
-  req.requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  req.requestId = (req.headers['x-request-id'] as string) ||
+    `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
   // Bypass auth for local development
   if (BYPASS_AUTH) {
@@ -215,7 +217,13 @@ export function checkQuota(resourceType: string, increment: number = 1) {
 
       if (error) {
         logger.error({ error, requestId: req.requestId }, 'Quota check failed');
-        return next(); // Fail open for now, log error
+        // Fail closed — deny request when quota service is unavailable
+        res.status(503).json({
+          error: 'Service temporarily unavailable',
+          message: 'Unable to verify resource quota. Please try again.',
+          requestId: req.requestId,
+        });
+        return;
       }
 
       if (!data.allowed) {
@@ -238,7 +246,12 @@ export function checkQuota(resourceType: string, increment: number = 1) {
       next();
     } catch (err) {
       logger.error({ err, requestId: req.requestId }, 'Quota middleware error');
-      next(); // Fail open
+      // Fail closed — deny request when quota middleware errors
+      res.status(503).json({
+        error: 'Service temporarily unavailable',
+        message: 'Quota verification failed. Please try again.',
+        requestId: req.requestId,
+      });
     }
   };
 }
@@ -269,11 +282,43 @@ export async function verifySessionOwnership(
 
   const supabase = getSupabase();
   if (!supabase) {
-    // No supabase = allow (local dev mode)
-    return next();
+    // No auth service available — fail closed
+    logger.warn({ requestId: req.requestId }, 'Session ownership check failed: auth service not configured');
+    res.status(503).json({ error: 'Auth service not configured', requestId: req.requestId });
+    return;
   }
 
   try {
+    const liveSession = sessionManager.getSession(sessionId);
+    if (liveSession) {
+      if (liveSession.ownerUserId === req.user.id) {
+        next();
+        return;
+      }
+
+      if (
+        liveSession.organizationId &&
+        req.user.organizationId === liveSession.organizationId &&
+        (req.user.organizationRole === 'owner' || req.user.organizationRole === 'admin')
+      ) {
+        next();
+        return;
+      }
+
+      await logSecurityEvent('suspicious_activity', req.user.id, req, {
+        reason: 'Attempted to access another user\'s live session',
+        session_id: sessionId,
+        session_owner: liveSession.ownerUserId,
+      });
+
+      res.status(403).json({
+        error: 'Forbidden',
+        message: 'You do not have access to this session',
+        requestId: req.requestId
+      });
+      return;
+    }
+
     const { data: session, error } = await supabase
       .from('preview_sessions')
       .select('user_id, organization_id')

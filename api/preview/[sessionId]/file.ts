@@ -7,50 +7,75 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import {
+  applyApiSecurityHeaders,
+  getForwardedAuthHeaders,
+  getPreviewGatewayUrl,
+  handlePreflight,
+  isValidSessionId,
+  parseJsonSafely,
+  sendError,
+} from '../../_lib/security';
 
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  const requestId = applyApiSecurityHeaders(req, res, {
+    methods: ['PATCH', 'OPTIONS'],
+    allowCredentials: true,
+  });
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (handlePreflight(req, res)) {
+    return;
   }
 
   if (req.method !== 'PATCH') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return sendError(res, 405, 'Method not allowed', requestId);
   }
 
   const { sessionId } = req.query;
+  if (!isValidSessionId(sessionId)) {
+    return sendError(res, 400, 'Invalid session id', requestId);
+  }
+
   const body = req.body as { path?: string; content?: string } | undefined;
 
   if (!body?.path || typeof body.content !== 'string') {
-    return res.status(400).json({ success: false, error: 'Missing path or content' });
+    return sendError(res, 400, 'Missing path or content', requestId);
   }
 
   // Proxy to Docker gateway if available
-  const gatewayUrl = process.env.VITE_PREVIEW_GATEWAY_URL;
+  const gatewayUrl = getPreviewGatewayUrl();
   if (gatewayUrl) {
     try {
       const upstream = await fetch(
         `${gatewayUrl}/api/preview/${sessionId}/file`,
         {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...getForwardedAuthHeaders(req, requestId),
+          },
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(5000),
         }
       );
-      const data = await upstream.json();
+      const data = await parseJsonSafely(upstream);
+      if (data && typeof data === 'object') {
+        return res.status(upstream.status).json(data);
+      }
+
+      if (!upstream.ok) {
+        return sendError(res, upstream.status, 'Preview gateway unavailable', requestId);
+      }
+
       return res.status(upstream.status).json(data);
     } catch {
-      // Gateway unreachable — acknowledge locally
+      return sendError(res, 502, 'Preview gateway unavailable', requestId);
     }
   }
 
   // Vercel-native: acknowledge patch (Sandpack handles update client-side)
-  return res.status(200).json({ success: true });
+  return res.status(200).json({ success: true, requestId });
 }

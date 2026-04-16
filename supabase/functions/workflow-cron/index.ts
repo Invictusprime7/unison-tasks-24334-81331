@@ -1,18 +1,37 @@
 import { createClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "GET" && req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
+  }
+
+  // Verify this is an authorized cron invocation
+  // Supabase cron jobs pass the service role key in the Authorization header
+  const authHeader = req.headers.get("authorization");
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  const isAuthorized =
+    (cronSecret && authHeader === `Bearer ${cronSecret}`) ||
+    (serviceKey && authHeader === `Bearer ${serviceKey}`);
+
+  if (!isAuthorized) {
+    console.warn("[workflow-cron] Unauthorized invocation attempt");
+    return errorResponse("Unauthorized", 401, corsHeaders);
   }
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const workflowProcessorSecret = Deno.env.get("WORKFLOW_PROCESSOR_SECRET");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log("Workflow cron job started at:", new Date().toISOString());
@@ -86,6 +105,10 @@ Deno.serve(async (req) => {
 
         // Trigger job processor
         await supabase.functions.invoke("workflow-job-processor", {
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+            ...(workflowProcessorSecret ? { "x-workflow-processor-secret": workflowProcessorSecret } : {}),
+          },
           body: { workflowRunId: workflowRun.id },
         });
 
@@ -107,6 +130,10 @@ Deno.serve(async (req) => {
       
       for (const runId of uniqueRunIds) {
         await supabase.functions.invoke("workflow-job-processor", {
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+            ...(workflowProcessorSecret ? { "x-workflow-processor-secret": workflowProcessorSecret } : {}),
+          },
           body: { workflowRunId: runId },
         });
       }
@@ -174,21 +201,18 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({
+    return secureJsonResponse(
+      {
         success: true,
         triggeredWorkflows,
         timestamp: now.toISOString(),
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      },
+      200,
+      corsHeaders
     );
   } catch (error: unknown) {
     console.error("Error in workflow-cron:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse("Workflow cron failed", 500, corsHeaders);
   }
 });
 

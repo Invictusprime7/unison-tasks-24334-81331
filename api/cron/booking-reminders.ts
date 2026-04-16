@@ -21,9 +21,20 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  // Verify cron authorization
+  // Only allow GET (Vercel cron) and POST
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Verify cron secret — REQUIRED in production
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error('[cron/booking-reminders] CRON_SECRET not configured — rejecting request');
+    return res.status(503).json({ error: 'Cron endpoint not configured' });
+  }
+
   const authHeader = req.headers.authorization;
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

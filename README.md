@@ -6,12 +6,15 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb)](https://reactjs.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E)](https://supabase.com)
+[![Inngest](https://img.shields.io/badge/Inngest-Workflows-6366F1)](https://www.inngest.com/)
+[![Vite](https://img.shields.io/badge/Vite-Build-646CFF)](https://vitejs.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Preview-2496ED)](https://www.docker.com/)
 
 ---
 
 ## Executive Summary
 
-Unison Tasks is an enterprise-grade business automation platform that combines AI-powered website generation, workflow automation, CRM, and task management into a unified solution. Built for modern businesses that demand more than wiring disconnected tools, Unison Tasks delivers the power of multiple SaaS platforms through a single, intelligent interface.
+Unison Tasks is an enterprise-grade business automation platform that combines AI-powered website generation, workflow automation, CRM, and task management into a unified solution. Built with **React 18 + TypeScript 5.9** on **Vite**, backed by **Supabase** and orchestrated with **Inngest**, it delivers the power of multiple SaaS platforms through a single, intelligent interface.
 
 ### Problem Statement
 
@@ -26,12 +29,15 @@ Small to medium-sized businesses face a critical integration challenge:
 ### Our Solution
 
 Unison Tasks eliminates fragmentation by providing:
-- **AI-Generated Websites** from natural language prompts
-- **Universal Intent System** for routing deterministic user journey
-- **Industry-Specific Automation** with pre-built workflow recipes
-- **Integrated CRM** with pipeline management and lead scoring
-- **Visual Workflow Builder** with conditional logic and branching
-- **Multi-Tenant Architecture** with enterprise RBAC and audit logging
+- **AI-Generated Websites** from natural language prompts (Google Gemini 2.5 Flash)
+- **Universal Intent System** for deterministic user journey routing (25+ intent types)
+- **Industry-Specific Automation** with pre-built workflow recipes via Inngest durable execution
+- **Integrated CRM** with pipeline management, lead scoring, and deal automation
+- **Visual Workflow Builder** with DAG-based conditional logic and branching
+- **Multi-Tenant Architecture** with enterprise RBAC, audit logging, and quota enforcement
+- **Live Preview Runtime** with three-tier architecture (ECS Vite HMR → Sandpack → Static)
+- **Full-Stack App Generation** with backend provisioning and template automation
+- **AI Agent Runner** for autonomous task execution and research capabilities
 
 ---
 
@@ -101,33 +107,191 @@ Event-driven workflow automation with 17+ automation intent types:
 - Subscription/billing integration with usage quotas
 - Audit logging for compliance and governance
 
+### 7. Inngest Workflow Orchestration
+
+Serverless durable execution engine for reliable workflow automation:
+
+- **Event-Driven Architecture**: 17+ event types trigger workflows automatically
+- **Durable Execution**: Built-in retries, scheduling, debouncing, and streaming
+- **Cron Jobs**: Booking reminders (hourly), CRM daily tasks, weekly summaries
+- **Step Functions**: Composable workflow steps with sleep, retry, and branching
+- **Zero Infrastructure**: No workers to manage — runs on Supabase Edge Functions + Vercel
+
+**Integration Pattern**:
+```typescript
+const inngest = new Inngest({ id: "unison-tasks" });
+export const dealStageWorkflow = inngest.createFunction(
+  { id: "deal-stage-changed" },
+  { event: "crm/deal.stage.changed" },
+  async ({ event, step }) => {
+    await step.run("send-notification", async () => { /* ... */ });
+    await step.sleep("wait-for-follow-up", "1h");
+    await step.run("send-follow-up", async () => { /* ... */ });
+  }
+);
+```
+
+### 8. Live Preview Runtime
+
+Three-tier preview architecture with true Hot Module Replacement:
+
+```
+Tier 1 (Primary):   ECS Vite Runtime  — true HMR, React dev server in Docker
+Tier 2 (Fallback):  Sandpack Browser  — in-browser bundler if runtime unavailable
+Tier 3 (Static):    Pre-generated HTML — always works, zero dependencies
+```
+
+- **Virtual File System (VFS)**: In-memory file representation with FileMap snapshots
+- **Session Management**: Lifecycle with 30s keepalive, 5min timeout
+- **WebSocket HMR**: Real-time file patches from editor to preview
+- **Intent Bridge**: IIFE injection in index.tsx for click interception
+- **Auto-Injection**: Missing Vite root files auto-generated at preview time
+
+### 9. Full-Stack Generation & AI Agents
+
+- **Full-Stack App Generation**: `generate-fullstack-app` edge function provisions complete applications
+- **Template Automation**: Auto-generate backend APIs, database schemas, and auth flows
+- **Agent Runner**: Autonomous AI agent for research, code assistance, and task execution
+- **Copy Rewrite**: AI-powered content rewriting for marketing and SEO
+- **AI Design Assistant**: Intelligent design suggestions and layout optimization
+- **AI Code Assistant**: Context-aware code suggestions and refactoring
+
+### 10. Plugin & Integration System
+
+- **GoHighLevel CRM Sync**: Bi-directional contact and deal synchronization
+- **Stripe Payments**: Subscription management, checkout, and webhook handling
+- **Plugin Event Ingest**: Custom plugin events for third-party integrations
+- **Site Publishing**: One-click publish with authentication and CDN delivery
+- **Email Provider Management**: Configurable email service integration
+
+### 11. System Launcher Wizard
+
+Multi-step guided wizard for launching new business websites with AI assistance:
+
+**4-Step Flow**:
+1. **Industry Selection** — Choose from 6 business system types (`booking`, `saas`, `agency`, `portfolio`, `store`, `content`) with gradient-coded cards
+2. **Goals & Needs** — Select primary goals (6 options), customer needs (5 multi-select), and desired pages (9 choices incl. booking, checkout, blog)
+3. **Template Selection** — Browse and preview template compositions filtered by industry category
+4. **Launch & Aesthetic** — Name business, select design theme from presets, review settings, and generate
+
+**Key Capabilities**:
+- Goal-to-needs mapping (e.g., `collect_leads` → `wantsLeadCapture`)
+- System-to-industry overlay mapping for template filtering
+- Executes `canonicalPipeline` to compile site topology into a `RuntimeManifest`
+- Returns `LauncherHandoff` object with generated VFS files ready for the Web Builder
+- Theme presets for immediate aesthetic customization
+
+**Simplified Launcher**: `BusinessLauncher` provides a quick-start path with 8 industry chips (Local Service, Salon, Restaurant, E-commerce, Creator, Coaching, Real Estate, Nonprofit) that map directly to canonical templates.
+
+### 12. Business Setup & Project Configuration
+
+**Business Settings** (`/business-settings`):
+- Manage business profiles, notification email/phone, and contact settings
+- Multi-business support with active business selector
+- Persisted to Supabase `businesses` table
+
+**Project Setup** (`/project/:id/setup`):
+- Contextual 8-section setup guide filtered by business type:
+  - Payments (Stripe), Database (Supabase), Email Notifications, Calendar & Scheduling, Content Management, Custom Domain, Analytics & Tracking, Automations & Workflows
+- Per-section progress tracking with visual progress bar
+- Time estimates per section (5–15 min)
+- System-type-aware filtering (e.g., booking systems show Calendar section)
+- Deep linking via URL parameters (`?section=payments`)
+
+**Setup Wizard Hook** (`useSetupWizard`):
+- 7 guided steps: booking_calendar → notifications → payments → database → domain → seo → analytics
+- Step categories: `core`, `growth`, `advanced`
+- Status tracking: `pending | in_progress | completed | skipped`
+- Config persistence per step with save/reset actions
+
+### 13. Web Builder Playground & VFS
+
+Full-featured development environment with dual-mode editing:
+
+**Layout Zones**:
+```
+┌──────────┬──────────────────────────┬──────────┐
+│  Left    │     Center Canvas        │  Right   │
+│  Sidebar │  ┌──────────────────┐    │  Sidebar │
+│          │  │ Monaco Code      │    │          │
+│  File    │  │ Editor           │    │ Elements │
+│  Explorer│  ├──────────────────┤    │ Design   │
+│  Pages   │  │ Fabric.js Canvas │    │ AI Panel │
+│  Layers  │  │ (Visual Edit)    │    │ Intents  │
+│          │  └──────────────────┘    │ SEO      │
+│          │  ┌──────────────────┐    │ Workflow │
+│          │  │ Live Preview     │    │          │
+│          │  │ (Sandpack/Docker)│    │          │
+│          │  └──────────────────┘    │          │
+├──────────┴──────────────────────────┴──────────┤
+│  Console Logs / Diagnostics                     │
+└─────────────────────────────────────────────────┘
+```
+
+**Dual Edit Modes**:
+- **Code Mode**: Monaco editor with TypeScript/JSX IntelliSense, file tabs, syntax highlighting
+- **Canvas Mode**: Fabric.js visual editor with element selection, drag-drop, arrangement tools
+
+**Virtual File System (VFS)**:
+- In-memory file tree with `VirtualNode` (file/folder) hierarchy
+- Language detection: tsx, ts, jsx, js, css, scss, html, json, md, yaml, svg
+- Import from saved projects, webpages, or raw code
+- Snapshot/undo-redo with `vfsSnapshotManager`
+- Event bus for component lifecycle tracking
+- Sandpack file sync with debounced `patchFile()` for live preview
+
+**40+ Sidebar Panels** including:
+- FileExplorer, ElementsSidebar, DesignSidebar, AIBuilderPanel
+- IntentDirectoryPanel, SEOSettingsPanel, PerformancePanel
+- WorkflowListPanel, TemplateCustomizerPanel, ProjectsPanel
+
+**Interactive Features**:
+- Element floating toolbar (arrange, delete, duplicate, direct edit)
+- Intent pipeline visualization overlaid on canvas
+- Demo intent simulation for testing automation flows
+- Device responsive preview (desktop, tablet, mobile)
+- Research overlay for external resource lookup
+- Section variant swapping between design options
+- Export to HTML, React, or JSON formats
+
 ---
 
 ## Technical Architecture
 
-### Frontend Stack
+### Frontend
+
+- **React 18 + TypeScript 5.9** — Hooks-first functional components, 200+ components, 50+ custom hooks
+- **Vite + SWC** — Fast builds with ESNext target and lazy-loaded routes
+- **Radix UI + Shadcn/ui + Tailwind CSS** — Accessible component primitives with utility-first styling
+- **TanStack React Query** — Server state management and caching
+- **Fabric.js** — Canvas-based visual design editor
+- **Monaco Editor + CodeMirror** — Code editing with IntelliSense
+- **Sandpack + Docker** — In-browser and containerized live preview
+- **Framer Motion** — Animations and layout transitions
+- **React Hook Form + Zod** — Schema-validated forms
+
+### Backend
+
+- **Supabase** — PostgreSQL with Row-Level Security, 45+ Deno Edge Functions, JWT auth, Realtime WebSockets
+- **Inngest** — Serverless durable workflow execution with event-driven triggers
+- **Trigger.dev** — Background job processing for reports, imports, and exports
+- **Stripe** — Subscription billing, checkout, and webhook handling
+- **Docker + Terraform** — Containerized preview workers on AWS ECS
+
+### Automation & Orchestration
 
 ```
-React 19 + TypeScript 5.9
-├── UI Framework: Radix UI + Shadcn components
-├── Styling: Tailwind CSS 3.4 + Design tokens
-├── State: React Query 5 (TanStack) + Custom hooks
-├── Canvas: Fabric.js 6.7 (design editing)
-├── Code Editor: Monaco Editor + CodeMirror
-├── Forms: React Hook Form + Zod validation
-├── Motion: Framer Motion for animations
-└── Routing: React Router v7
-```
+Inngest (Serverless Durable Execution)
+├── Event Processing: 17+ event types with fan-out
+├── Step Functions: Composable async workflow steps
+├── Scheduling: Cron jobs for reminders, daily/weekly reports
+├── Retries: Built-in exponential backoff
+└── Observability: Real-time streaming and logging
 
-### Backend Infrastructure
-
-```
-Supabase (PostgreSQL + Edge Functions)
-├── Auth: JWT-based authentication with refresh tokens
-├── Database: PostgreSQL with Row-Level Security (RLS)
-├── Edge Functions: Deno runtime for AI integration
-├── Realtime: WebSockets for live updates
-└── Storage: Asset management and CDN
+Trigger.dev (Background Job Processing)
+├── CRM Reports, Batch Imports, Data Exports
+├── AI Content Generation (email templates, page copy)
+└── Stale Data Cleanup and Archival
 ```
 
 ### Preview & Execution
@@ -232,6 +396,7 @@ Organization-level quotas with real-time enforcement:
 - `automation_jobs` - Scheduled and queued jobs
 - `automation_events` - Event log for triggers
 - `automation_recipe_packs` - Industry-specific workflow templates
+- `automation_logs` - Observability and execution traces
 - `business_automation_settings` - Guardrails (hours, rate limits)
 
 **CRM**:
@@ -244,10 +409,33 @@ Organization-level quotas with real-time enforcement:
 
 **Organization**:
 - `organizations` - Multi-tenant workspaces
+- `organization_members` - Team management and membership
+- `organization_quotas` - Plan-based resource limits
 - `projects` - Website and campaign projects
 - `team_members` - User roles and permissions
 - `organization_entitlements` - Subscription quotas
+- `rbac_permissions` - Granular permission definitions
+- `rbac_user_roles` - Role assignments per user
 - `audit_logs` - Compliance and security tracking
+
+---
+
+## Supabase Edge Functions Reference
+
+45+ serverless functions organized by domain:
+
+| Domain | Functions | Purpose |
+|--------|-----------|---------|
+| **AI Generation** | `generate-ai-template`, `generate-page`, `generate-template`, `generate-template-image`, `generate-fullstack-app`, `generate-image` | Template, page, and full-stack app generation via Gemini 2.5 Flash |
+| **Web Builder** | `web-builder-ai`, `builder-actions`, `builder-provision`, `builder-provision-lite` | AI-assisted web building, canvas actions, project provisioning |
+| **Intent System** | `intent-router`, `intent-router-lite`, `intent-exec`, `intent-action`, `intent-booking` | Deterministic intent resolution and execution |
+| **Automation** | `automation-event`, `automation-runtime`, `workflow-trigger`, `workflow-job-processor`, `workflow-cron`, `template-automation` | Event ingestion, DAG execution, cron scheduling |
+| **Systems** | `systems-build`, `systems-classify`, `systems-compile`, `install-system` | System provisioning, industry classification, compilation |
+| **CRM & Commerce** | `create-lead`, `create-lead-lite`, `create-booking`, `create-checkout`, `create-order-checkout`, `form-submit` | Lead capture, bookings, checkout flows |
+| **AI Agents** | `agent-runner`, `ai-code-assistant`, `ai-design-assistant`, `research`, `copy-rewrite` | Autonomous agents, code/design assistance, content rewriting |
+| **Integrations** | `gohighlevel-crm`, `stripe-webhook`, `plugin-event-ingest`, `save-email-provider` | Third-party CRM sync, payments, plugins |
+| **Publishing** | `publish-site`, `site-auth`, `template-backend` | Site deployment, authentication, backend generation |
+| **Billing** | `manage-subscription` | Subscription lifecycle management |
 
 ---
 
@@ -255,21 +443,20 @@ Organization-level quotas with real-time enforcement:
 
 ### Prerequisites
 
-- Node.js 18+ or Bun 1.0.17+
+- Node.js 20.x
 - Supabase account (local or cloud)
 - Docker (for preview service)
+- Inngest account (for workflow automation, optional for dev)
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/unison-tasks.git
-cd unison-tasks
+git clone https://github.com/Invictusprime7/unison-tasks-official.git
+cd unison-tasks-official
 
 # Install dependencies
 npm install
-# or
-bun install
 
 # Set up environment variables
 cp .env.example .env.local
@@ -287,22 +474,38 @@ npx supabase db push
 
 # Start development server
 npm run dev
-# or
-bun run dev
+
+# (Optional) Start with Inngest automation dev server
+npm run automation:dev
 ```
 
 ### Preview Service
 
 ```bash
-# Navigate to preview service
-cd preview-service
+# Start Docker preview service
+npm run preview:docker:start
 
-# Install dependencies
-npm install
+# Check service status
+npm run preview:docker:status
 
-# Start Docker service
-npm run start
+# Stop service
+npm run preview:docker:stop
 ```
+
+### Environment Variables
+
+Required environment variables (see `.env.example`):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_SUPABASE_URL` | Yes | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
+| `LOVABLE_API_KEY` | Yes | Google Gemini 2.5 Flash API key |
+| `STRIPE_SECRET_KEY` | For payments | Stripe secret key |
+| `STRIPE_WEBHOOK_SECRET` | For payments | Stripe webhook signing secret |
+| `INNGEST_EVENT_KEY` | For automation | Inngest event key |
+| `INNGEST_SIGNING_KEY` | For automation | Inngest signing key |
+| `GOHIGHLEVEL_API_KEY` | For CRM sync | GoHighLevel API key |
 
 ---
 
@@ -313,35 +516,50 @@ npm run start
 ```
 unison-tasks/
 ├── src/
-│   ├── components/       # React components
-│   ├── services/         # Business logic and API clients
-│   │   ├── aiIntegrationService.ts
-│   │   ├── designIntentCompiler.ts
-│   │   ├── sceneExporter.ts
-│   │   ├── templateRenderer.ts
-│   │   └── automationEngine.ts
-│   ├── runtime/          # Universal intent system
-│   │   ├── intentResolver.ts
-│   │   ├── actionCatalog.ts
-│   │   └── universalIntentRouter.ts
-│   ├── types/            # TypeScript definitions
-│   │   ├── automation.ts
-│   │   ├── template.ts
-│   │   └── intents.ts
-│   ├── hooks/            # Custom React hooks
-│   └── utils/            # Utility functions
-├── preview-service/      # Docker-based preview runtime
-│   ├── src/
-│   │   ├── gateway/      # Express API
-│   │   ├── workers/      # Docker orchestration
-│   │   └── vfs/          # Virtual file system
+│   ├── components/        # 200+ React components
+│   │   ├── crm/          # CRM UI (pipeline, leads, contacts, automations)
+│   │   ├── creatives/    # Design studio, web builder, code editor
+│   │   ├── ai-agent/     # AI assistant interface
+│   │   ├── onboarding/   # Onboarding flows and SystemsAIPanel
+│   │   └── ui/           # 50+ Radix + Shadcn primitives
+│   ├── services/          # 45+ business logic modules
+│   │   ├── automationOrchestrator.ts
+│   │   ├── aiVFSOrchestrator.ts
+│   │   ├── intentBindingService.ts
+│   │   ├── previewSession.ts
+│   │   ├── designTokens.ts
+│   │   └── recipeManagerService.ts
+│   ├── runtime/           # Universal intent system
+│   │   ├── intentRouter.ts       # Main orchestrator
+│   │   ├── actionCatalog.ts      # Fixed handlers for all intents
+│   │   ├── intentResolver.ts     # Build-time resolution
+│   │   └── intentClassifier.ts   # Intent type detection
+│   ├── contexts/          # React contexts (VFSContext, CloudContext)
+│   ├── hooks/             # 50+ custom React hooks
+│   ├── schemas/           # Data schemas (templateSchema, SiteBundle, BusinessBlueprint)
+│   ├── sections/          # Page sections and variant templates
+│   ├── integrations/      # Supabase client and external services
+│   ├── pages/             # 20+ route components
+│   ├── types/             # TypeScript definitions
+│   └── utils/             # 100+ utility functions
+├── api/                   # Vercel API routes
+│   ├── inngest.ts         # Inngest webhook handler
+│   ├── inngest-send.ts    # Event dispatch
+│   └── cron/              # Scheduled jobs (booking, CRM daily/weekly)
+├── preview-service/       # Docker-based preview runtime
+│   ├── gateway/           # Express.js API server + auth
+│   │   └── src/services/SessionManager.ts
+│   ├── worker/            # Vite dev server container
+│   └── infrastructure/    # Terraform IaC (ECS, security, VPC)
 ├── supabase/
-│   ├── functions/        # Edge Functions (Deno)
-│   │   ├── generate-template/
-│   │   ├── process-automation/
-│   │   └── resolve-intent/
-│   └── migrations/       # Database schema
-└── docs/                 # Architecture documentation
+│   ├── functions/         # 45+ Edge Functions (Deno runtime)
+│   └── migrations/        # Database schema migrations
+├── scripts/               # Deployment and setup automation
+│   ├── deploy.sh
+│   ├── setup-local.sh
+│   ├── setup-supabase.sh
+│   └── setup-ai-keys.sh
+└── public/                # Static assets and variants
 ```
 
 ### Key Commands
@@ -350,14 +568,30 @@ unison-tasks/
 # Development
 npm run dev              # Start Vite dev server
 npm run build            # Production build
+npm run build:dev        # Development build
+npm run build:analyze    # Build with bundle analysis
 npm run preview          # Preview production build
 npm run lint             # ESLint checks
 npm run type-check       # TypeScript validation
 
+# Automation (Inngest)
+npm run inngest:dev      # Start Inngest dev server
+npm run inngest:deploy   # Deploy Inngest functions
+npm run automation:dev   # Run app + Inngest concurrently
+
 # Supabase
 npx supabase start       # Start local Supabase
 npx supabase db reset    # Reset database with migrations
-npx supabase gen types typescript # Generate TypeScript types
+npx supabase gen types typescript  # Generate TypeScript types
+
+# Preview Service (Docker)
+npm run preview:docker:start   # Start Docker preview service
+npm run preview:docker:stop    # Stop Docker preview service
+npm run preview:docker:status  # Check service status
+
+# Deployment
+npm run deploy           # Deploy to Vercel (production)
+npm run deploy:preview   # Deploy preview build
 ```
 
 ---
@@ -366,39 +600,61 @@ npx supabase gen types typescript # Generate TypeScript types
 
 For detailed technical documentation, see:
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Template rendering pipeline
-- [AUTOMATION_RECIPES_ENGINE.md](docs/AUTOMATION_RECIPES_ENGINE.md) - Workflow automation
-- [UNIVERSAL_INTENT_SYSTEM.md](docs/UNIVERSAL_INTENT_SYSTEM.md) - Intent routing
-- [ENTERPRISE_HARDENING.md](docs/ENTERPRISE_HARDENING.md) - Security & compliance
-- [BUILD_TO_CANVAS_WORKFLOW.md](docs/BUILD_TO_CANVAS_WORKFLOW.md) - Designer workflows
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Template rendering pipeline, dual-mode canvas/HTML architecture |
+| [AUTOMATION_RECIPES_ENGINE.md](AUTOMATION_RECIPES_ENGINE.md) | DAG-based workflow automation, industry recipe packs, database schema |
+| [UNIVERSAL_INTENT_SYSTEM.md](UNIVERSAL_INTENT_SYSTEM.md) | 25+ intent types, two-step resolution, action catalog |
+| [ENTERPRISE_HARDENING.md](ENTERPRISE_HARDENING.md) | RBAC, multi-tenancy, audit logging, quota enforcement, SOC 2 readiness |
+| [BUILD_TO_CANVAS_WORKFLOW.md](BUILD_TO_CANVAS_WORKFLOW.md) | AI template → preview → canvas → edit pipeline |
+| [PREVIEW_RUNTIME_ARCHITECTURE.md](PREVIEW_RUNTIME_ARCHITECTURE.md) | Three-tier preview system, session lifecycle, HMR |
+| [VFS_PREVIEW_ARCHITECTURE.md](VFS_PREVIEW_ARCHITECTURE.md) | Virtual file system, Sandpack integration, auto-inject |
+| [CRM_PIPELINE_AUTOMATION.md](CRM_PIPELINE_AUTOMATION.md) | Pipeline stages, deal tracking, CRM automations |
+| [WORKFLOW_ORCHESTRATION_COMPARISON.md](WORKFLOW_ORCHESTRATION_COMPARISON.md) | Inngest vs Trigger.dev vs Temporal comparison |
+| [INNGEST_CRM_SETUP.md](INNGEST_CRM_SETUP.md) | Inngest + CRM integration setup guide |
+| [STRIPE_SETUP.md](STRIPE_SETUP.md) | Stripe payment integration and webhook configuration |
+| [CRM_SCHEMA_DEPLOYMENT.sql](CRM_SCHEMA_DEPLOYMENT.sql) | CRM database schema and migration reference |
 
 ---
 
 ## Roadmap
 
-### Q1 2026
-- Real-time collaboration (multi-user canvas editing)
-- Advanced A/B testing with analytics
-- Shopify/WooCommerce integration
-- SSO/SAML enterprise authentication
+### Completed (Q1 2026)
+- ✅ Inngest durable workflow orchestration
+- ✅ Trigger.dev background job processing (reports, imports, exports)
+- ✅ Enterprise RBAC with 12+ permission types
+- ✅ Multi-tenant organization model with quota enforcement
+- ✅ Three-tier preview runtime (ECS + Sandpack + Static)
+- ✅ Universal Intent System with build-time resolution
+- ✅ Full-stack app generation pipeline
+- ✅ AI Agent Runner and research capabilities
+- ✅ GoHighLevel CRM synchronization
+- ✅ Stripe subscription and checkout integration
+- ✅ Industry-specific automation recipe packs
+- ✅ System Launcher Wizard (4-step guided onboarding)
+- ✅ Business Setup & Project Configuration (8-section contextual guide)
+- ✅ Web Builder Playground with VFS + dual-mode editing (Monaco + Fabric.js)
+- ✅ HuggingFace Transformers local inference integration
 
 ### Q2 2026
-- Mobile app builder (React Native templates)
+- Real-time collaboration (multi-user canvas editing)
+- Advanced A/B testing with analytics dashboard
+- Shopify/WooCommerce integration
+- SSO/SAML enterprise authentication
 - AI-powered content generation (blog posts, product descriptions)
-- Advanced workflow analytics dashboard
-- White-label reseller program
 
 ### Q3 2026
+- Mobile app builder (React Native templates)
 - Custom component marketplace
 - API platform for third-party integrations
 - Multi-language support (i18n)
 - Advanced reporting and business intelligence
 
 ### Q4 2026
-- AI agent automation (autonomous task execution)
 - Voice and video integration
 - Advanced permissions with approval workflows
 - Enterprise service agreements (SLA)
+- White-label reseller program
 
 ---
 
@@ -468,14 +724,22 @@ For enterprise licensing, custom deployments, or partnership inquiries:
 
 ## Built With
 
-- [React](https://reactjs.org/) - UI framework
-- [TypeScript](https://www.typescriptlang.org/) - Type safety
-- [Supabase](https://supabase.com) - Backend infrastructure
-- [Fabric.js](http://fabricjs.com/) - Canvas editing
-- [Google Gemini](https://deepmind.google/technologies/gemini/) - AI generation
-- [Tailwind CSS](https://tailwindcss.com/) - Styling system
-- [Docker](https://www.docker.com/) - Container runtime
-- [Radix UI](https://www.radix-ui.com/) - Component primitives
+- [React 18](https://reactjs.org/) + [TypeScript 5.9](https://www.typescriptlang.org/) — UI framework + type safety
+- [Vite](https://vitejs.dev/) — Build tool with SWC
+- [Supabase](https://supabase.com) — PostgreSQL, Edge Functions, Auth, Realtime
+- [Inngest](https://www.inngest.com/) + [Trigger.dev](https://trigger.dev/) — Workflow orchestration + background jobs
+- [Radix UI](https://www.radix-ui.com/) + [Shadcn/ui](https://ui.shadcn.com/) — Component primitives
+- [Tailwind CSS](https://tailwindcss.com/) — Styling
+- [Fabric.js](http://fabricjs.com/) — Canvas editing
+- [Monaco Editor](https://microsoft.github.io/monaco-editor/) + [CodeMirror](https://codemirror.net/) — Code editors
+- [Sandpack](https://sandpack.codesandbox.io/) — In-browser live preview
+- [Google Gemini 2.5 Flash](https://deepmind.google/technologies/gemini/) — AI generation
+- [Stripe](https://stripe.com/) — Payments
+- [Docker](https://www.docker.com/) + [Terraform](https://www.terraform.io/) — Preview containers + IaC
+- [Framer Motion](https://www.framer.com/motion/) — Animations
+- [TanStack React Query](https://tanstack.com/query/) — Server state
+- [Zod](https://zod.dev/) — Schema validation
+- [Vitest](https://vitest.dev/) — Testing
 
 ---
 

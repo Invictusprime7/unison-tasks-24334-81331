@@ -9,6 +9,8 @@ export interface FileMap {
 export interface PreviewSession {
   id: string;
   projectId: string;
+  ownerUserId?: string;
+  organizationId?: string;
   status: SessionStatus;
   containerId?: string;
   containerPort?: number;

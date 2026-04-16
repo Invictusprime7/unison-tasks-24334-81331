@@ -1,10 +1,9 @@
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, verifyBusinessAccess, authError } from "../_shared/auth.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID, isNonEmptyString } from "../_shared/validate.ts";
 
 // Pack SQL definitions
 const PACK_SQL = {
@@ -51,20 +50,92 @@ interface BuilderRequest {
   actions: BuilderAction[];
 }
 
+const VALID_ACTION_TYPES = new Set(["install_pack", "wire_button", "list_intents", "get_pack_status"]);
+
+async function verifyProjectAccess(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  projectId: string,
+): Promise<boolean> {
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id, owner_id")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  if (project?.owner_id === userId) {
+    return true;
+  }
+
+  const { data: member } = await supabase
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return Boolean(member);
+}
+
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
     const supabase = createClient(supabaseUrl, serviceRoleKey);
-    
-    const body: BuilderRequest = await req.json();
-    const { projectId, businessId, actions } = body;
+    const { data: body, error: parseError } = await safeParseBody<BuilderRequest>(req);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const projectId = typeof body.projectId === "string" ? sanitizeString(body.projectId, 100) : undefined;
+    const businessId = typeof body.businessId === "string" ? sanitizeString(body.businessId, 100) : undefined;
+    const actions = Array.isArray(body.actions) ? body.actions : [];
+
+    if (!actions.length) {
+      return errorResponse("actions[] is required", 400, corsHeaders);
+    }
+    if (actions.length > 20) {
+      return errorResponse("Too many actions in one request", 400, corsHeaders);
+    }
+
+    if (businessId && !isValidUUID(businessId)) {
+      return errorResponse("Invalid businessId format", 400, corsHeaders);
+    }
+
+    if (businessId && isValidUUID(businessId)) {
+      const access = await verifyBusinessAccess(auth.user.id, businessId);
+      if (!access.allowed) {
+        return errorResponse(access.error || "Access denied to this business", 403, corsHeaders);
+      }
+    }
+
+    if (projectId && projectId !== "current" && !isValidUUID(projectId)) {
+      return errorResponse("Invalid projectId format", 400, corsHeaders);
+    }
+
+    if (projectId && projectId !== "current" && isValidUUID(projectId)) {
+      const hasProjectAccess = await verifyProjectAccess(supabase, auth.user.id, projectId);
+      if (!hasProjectAccess) {
+        return errorResponse("Access denied to this project", 403, corsHeaders);
+      }
+    }
 
     const results: {
       ok: boolean;
@@ -80,20 +151,20 @@ serve(async (req) => {
     };
 
     for (const action of actions) {
+      if (!VALID_ACTION_TYPES.has(action.type)) {
+        results.notes.push(`Unknown action type: ${String(action.type)}`);
+        continue;
+      }
+
       switch (action.type) {
         case 'install_pack': {
-          const packName = action.pack;
+          const packName = typeof action.pack === "string" ? sanitizeString(action.pack, 50) : "";
           if (!packName || !PACK_SQL[packName as keyof typeof PACK_SQL]) {
             results.notes.push(`Unknown pack: ${packName}`);
             continue;
           }
 
-          // Execute pack SQL (mostly verification since tables exist)
-          const { error } = await supabase.rpc('exec_sql', {
-            sql: PACK_SQL[packName as keyof typeof PACK_SQL]
-          }).maybeSingle();
-
-          // Even if RPC doesn't exist, pack is installed via migration
+          // Packs are already installed via migration; just confirm availability.
           results.applied.push(packName);
           results.notes.push(`Pack "${packName}" is ready`);
 
@@ -121,9 +192,15 @@ serve(async (req) => {
         }
 
         case 'wire_button': {
-          const { selector, intent, payload } = action;
-          if (!selector || !intent) {
+          const selector = typeof action.selector === "string" ? sanitizeString(action.selector, 300) : "";
+          const intent = typeof action.intent === "string" ? sanitizeString(action.intent, 100) : "";
+          const payload = action.payload && typeof action.payload === "object" ? action.payload : {};
+          if (!isNonEmptyString(selector) || !isNonEmptyString(intent)) {
             results.notes.push('wire_button requires selector and intent');
+            continue;
+          }
+          if (!INTENT_FUNCTION_MAP[intent]) {
+            results.notes.push(`Unknown intent: ${intent}`);
             continue;
           }
 
@@ -164,21 +241,10 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify(results), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return secureJsonResponse(results as unknown as Record<string, unknown>, 200, corsHeaders);
   } catch (error) {
     console.error("Builder actions error:", error);
-    return new Response(
-      JSON.stringify({ 
-        ok: false, 
-        error: error instanceof Error ? error.message : "Unknown error" 
-      }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
-      }
-    );
+    return errorResponse("Builder actions failed", 500, getCorsHeaders(req));
   }
 });
 

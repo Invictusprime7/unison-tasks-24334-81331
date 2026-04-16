@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import type { VirtualFile, VirtualNode } from './useVirtualFileSystem';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 
@@ -17,6 +18,19 @@ const getPreviewApiUrl = () => {
 };
 
 const PREVIEW_GATEWAY_URL = getPreviewApiUrl();
+
+async function getPreviewAccessToken(): Promise<string | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
+}
+
+async function getPreviewHeaders(): Promise<Record<string, string>> {
+  const token = await getPreviewAccessToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
 
 export interface PreviewSession {
   id: string;
@@ -199,10 +213,11 @@ export default {
 
     try {
       const files = vfsToFileMap(nodes);
+      const headers = await getPreviewHeaders();
       
       const response = await fetch(`${PREVIEW_GATEWAY_URL}/api/preview/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           projectId: projectId || `project-${Date.now()}`,
           files,
@@ -239,7 +254,7 @@ export default {
 
       // Connect WebSocket for real-time updates (Docker gateway only, not Vercel API)
       if (PREVIEW_GATEWAY_URL && !import.meta.env.PROD) {
-        connectWebSocket(session.id);
+        void connectWebSocket(session.id);
       }
 
       return session;
@@ -258,8 +273,10 @@ export default {
     if (!state.session) return;
 
     try {
+      const token = await getPreviewAccessToken();
       await fetch(`${PREVIEW_GATEWAY_URL}/api/preview/${state.session.id}/stop`, {
         method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       // Disconnect WebSocket
@@ -298,13 +315,14 @@ export default {
         pendingPatchesRef.current.clear();
 
         try {
+          const headers = await getPreviewHeaders();
           // Send all pending patches
           for (const [path, fileContent] of patches) {
             const response = await fetch(
               `${PREVIEW_GATEWAY_URL}/api/preview/${state.session!.id}/file`,
               {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ path, content: fileContent }),
               }
             );
@@ -327,13 +345,21 @@ export default {
   }, [state.session]);
 
   // Connect to WebSocket for real-time updates
-  const connectWebSocket = useCallback((sessionId: string) => {
+  const connectWebSocket = useCallback(async (sessionId: string) => {
     if (wsRef.current) {
       wsRef.current.close();
     }
 
+    const accessToken = await getPreviewAccessToken();
+    if (!accessToken) {
+      console.warn('Skipping preview WebSocket connection: no active auth session');
+      return;
+    }
+
     const wsUrl = PREVIEW_GATEWAY_URL.replace('http', 'ws');
-    const ws = new WebSocket(`${wsUrl}/ws?sessionId=${sessionId}`);
+    const ws = new WebSocket(
+      `${wsUrl}/ws?sessionId=${encodeURIComponent(sessionId)}&accessToken=${encodeURIComponent(accessToken)}`
+    );
 
     ws.onopen = () => {
       console.log('Preview WebSocket connected');
@@ -397,8 +423,12 @@ export default {
     if (!state.session) return [];
 
     try {
+      const token = await getPreviewAccessToken();
       const response = await fetch(
-        `${PREVIEW_GATEWAY_URL}/api/preview/${state.session.id}/logs`
+        `${PREVIEW_GATEWAY_URL}/api/preview/${state.session.id}/logs`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }
       );
       const data = await response.json();
       return data.logs || [];
@@ -413,8 +443,10 @@ export default {
     if (!state.session) return;
 
     try {
+      const token = await getPreviewAccessToken();
       await fetch(`${PREVIEW_GATEWAY_URL}/api/preview/${state.session.id}/ping`, {
         method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
     } catch (err) {
       console.error('Ping failed:', err);

@@ -1,5 +1,7 @@
 # Preview Runtime Architecture
 
+> **Stack**: React 18 + TypeScript 5.9 | VFSContext + useVFSPreview hooks | Sandpack (CodeSandbox) + Docker Vite | @babel/standalone for runtime JSX
+
 ## Overview
 
 Unison Tasks uses a **single canonical preview pipeline** with `prepareSandpackFiles()` as the sole compiler from source VFS to Sandpack overlay.

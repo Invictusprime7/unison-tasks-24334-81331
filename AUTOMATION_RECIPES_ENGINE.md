@@ -1,5 +1,7 @@
 # Automation Recipes Engine
 
+> **Stack**: React 18 + TypeScript 5.9 | Inngest (durable execution) + Trigger.dev (background jobs) | Supabase Edge Functions (Deno)
+
 This document describes the automation/workflow recipe system for Unison Tasks, which provides GoHighLevel-style automation capabilities with industry-specific recipe packs.
 
 ## Overview

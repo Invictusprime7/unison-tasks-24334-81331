@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140" fill="none">
+  <rect width="240" height="140" rx="8" fill="#0f0f1a"/>
+  <!-- Muted background -->
+  <rect x="4" y="4" width="232" height="132" rx="6" fill="#a78bfa" opacity="0.03"/>
+  <!-- Section heading -->
+  <rect x="70" y="14" width="100" height="8" rx="3" fill="#ffffff" opacity="0.8"/>
+  <rect x="85" y="28" width="70" height="5" rx="2" fill="#ffffff" opacity="0.25"/>
+  <!-- Form fields centered -->
+  <rect x="60" y="44" width="120" height="12" rx="4" fill="#ffffff" opacity="0.05" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1"/>
+  <rect x="60" y="62" width="120" height="12" rx="4" fill="#ffffff" opacity="0.05" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1"/>
+  <rect x="60" y="80" width="120" height="20" rx="4" fill="#ffffff" opacity="0.05" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1"/>
+  <!-- Submit button -->
+  <rect x="60" y="108" width="120" height="14" rx="6" fill="#a78bfa"/>
+  <!-- Contact info below -->
+  <rect x="85" y="128" width="70" height="4" rx="2" fill="#ffffff" opacity="0.15"/>
+</svg>

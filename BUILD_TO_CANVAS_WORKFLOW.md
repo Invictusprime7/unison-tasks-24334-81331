@@ -1,5 +1,7 @@
 # Build to Canvas Workflow
 
+> **Stack**: React 18 + TypeScript 5.9 | Fabric.js 7.2 (canvas) | `useTemplateState` hook | `canonicalPipeline` service | SystemLauncher wizard → WebBuilder playground
+
 ## 🎯 New AI Template Flow
 
 ### Step 1: AI Generates Template

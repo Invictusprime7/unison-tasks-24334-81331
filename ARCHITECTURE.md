@@ -1,6 +1,65 @@
-# Web Builder AI - Architecture Documentation
+# Unison Tasks — Architecture Documentation
 
-## Phase 2 & 3 Implementation: Complete ✅
+## Framework Foundation
+
+**React 18.3 + TypeScript 5.9** application built on **Vite + SWC** with a hooks-first, context-driven architecture.
+
+| Layer | Technology | Config |
+|-------|-----------|--------|
+| **Runtime** | React 18.3 + ReactDOM | Function components, hooks-first, no class components |
+| **Type System** | TypeScript 5.9 (relaxed strict) | `react-jsx` transform, bundler moduleResolution, `@/*` path alias |
+| **Build** | Vite + @vitejs/plugin-react-swc | ESNext target, manual chunk splitting, 1000kb warning limit |
+| **State** | TanStack React Query 5 + React Context | 3 contexts: VFSProvider, CloudProvider, DirectionProvider |
+| **UI** | Radix UI (30+) + Shadcn/ui (50+) + Tailwind 3.4 | CVA for variants, Lucide icons, Framer Motion animations |
+| **Canvas** | Fabric.js 7.2 | Scene model, layers, drag-drop, arrangement tools |
+| **Editors** | Monaco Editor 4.7 + CodeMirror 6 | Full IntelliSense + lightweight syntax editing |
+| **Preview** | Sandpack 2.20 + Docker Vite | In-browser bundler + containerized HMR dev server |
+| **Backend** | Supabase (PostgreSQL + Deno Edge) | 45+ functions, RLS, JWT auth, Realtime WebSockets |
+| **Orchestration** | Inngest + Trigger.dev | Durable workflows + background jobs (reports, imports) |
+| **AI** | Google Gemini 2.5 Flash + HuggingFace Transformers | Server-side generation + browser-local inference |
+
+## Phase 2 & 3 Implementation: Complete ✅ | Phase 4+ Systems: Active
+
+### System Integration Map
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     Unison Tasks Platform                         │
+│                  React 18 + TypeScript 5.9 + Vite                │
+├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┤
+│ System   │ AI Web   │ Automa-  │ CRM &    │ VFS      │ Enter-   │
+│ Launcher │ Builder  │ tion     │ Commerce │ Preview  │ prise    │
+│ Wizard   │ Play-    │ Engine   │ Pipeline │ Runtime  │ RBAC &   │
+│ (4-step  │ ground   │ (Inngest │ (Leads,  │ (3-Tier) │ Multi-   │
+│ guided)  │ (Monaco  │ + DAG +  │ Deals,   │ Sandpack │ Tenant   │
+│ + Biz    │ +Fabric  │ Trigger  │ Booking) │ +Docker  │ + Audit  │
+│ Setup    │ +VFS)    │ .dev)    │          │ +Static) │          │
+└──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+     ▲           ▲          ▲          ▲          ▲          ▲
+     └───────────┴──────────┴──────────┴──────────┴──────────┘
+              Supabase (PostgreSQL + 45+ Deno Edge Functions)
+              + Inngest (Durable Execution) + Trigger.dev (Jobs)
+```
+
+### User Journey Flow
+
+```
+System Launcher Wizard                    Web Builder Playground
+┌─────────────────────┐                  ┌──────────────────────┐
+│ 1. Industry Select  │                  │ Monaco Code Editor   │
+│ 2. Goals & Needs    │──LauncherHandoff─│ Fabric.js Canvas     │
+│ 3. Template Browse  │  (VFS files +    │ VFS File Explorer    │
+│ 4. Theme & Launch   │  RuntimeManifest)│ Live Sandpack Preview│
+└─────────────────────┘                  └──────────┬───────────┘
+         │                                          │
+         ▼                                          ▼
+┌─────────────────────┐                  ┌──────────────────────┐
+│ Project Setup       │                  │ Publish / Deploy     │
+│ (8-section guide)   │                  │ (Vercel / CDN)       │
+│ Payments, DB, Email │                  │ Preview → Production │
+│ Calendar, Domain... │                  │                      │
+└─────────────────────┘                  └──────────────────────┘
+```
 
 ### Architecture Overview
 
@@ -251,26 +310,83 @@ const safeCss = sanitizeCSS(rawCss);
 
 ```
 src/
-├── hooks/
-│   ├── useTemplateState.ts       # State management (NEW)
-│   ├── useWebBuilderAI.ts        # AI integration
-│   └── useCanvasHistory.ts       # Undo/redo
+├── hooks/                              # 50+ custom React hooks
+│   ├── useTemplateState.ts             # Canvas template state (source of truth)
+│   ├── useWebBuilder.ts                # Web builder state management
+│   ├── useWebBuilderAI.ts              # AI code generation in builder
+│   ├── useVirtualFileSystem.ts         # Core VFS logic
+│   ├── useVFSContext.ts                # VFS context consumers (useVFS, useVFSSafe, etc.)
+│   ├── usePreviewService.ts            # Preview backend control
+│   ├── usePreviewSession.ts            # Preview session lifecycle
+│   ├── useSetupWizard.ts               # 7-step business setup wizard
+│   ├── useCanvasHistory.ts             # Canvas undo/redo
+│   ├── useCreatorPlayground.ts         # Creator mode state
+│   ├── useSiteBuilder.ts               # Multi-page site building
+│   ├── usePageGenerator.ts             # AI page generation
+│   └── useAuth.ts                      # Authentication state
+├── contexts/
+│   ├── VFSContext.tsx                   # Virtual file system + preview + snapshots
+│   ├── CloudContext.tsx                 # Multi-tenant orgs, teams, usage stats
+│   └── CloudContextDef.ts              # Cloud context type definitions
+├── schemas/
+│   ├── BusinessBlueprint.ts            # Industry, page types, intents, brand tokens
+│   ├── SiteBundle.ts                   # Site identity, build provenance, UTP protocol
+│   └── templateSchema.ts              # Layer types (Text/Image/Shape/Group), frames
+├── services/                           # 45+ business logic modules
+│   ├── canonicalPipeline.ts            # Unified build pipeline
+│   ├── playgroundCompiler.ts           # Playground code compilation
+│   ├── playgroundHydrator.ts           # Playground state hydration
+│   ├── wizardCapabilityResolver.ts     # Wizard step resolution
+│   ├── wizardPlaygroundMaterializer.ts # Wizard → code materialization
+│   ├── automationOrchestrator.ts       # Workflow DAG orchestration
+│   ├── inngestService.ts               # Inngest event/task integration
+│   ├── previewSession.ts               # Preview session lifecycle
+│   └── ...                             # 35+ more services
+├── runtime/                            # Universal intent system
+│   ├── intentRouter.ts                 # Main orchestrator
+│   ├── actionCatalog.ts                # Fixed handlers for 25+ intents
+│   ├── intentResolver.ts               # Build-time resolution
+│   └── intentClassifier.ts             # Intent type detection
+├── sections/                           # Template sections & variants
+│   ├── index.ts                        # Public API (registry, themes, compositions)
+│   ├── registry.ts                     # Section registry with intelligent matching
+│   ├── themes.ts                       # Design token registry
+│   ├── PageRenderer.tsx                # Template composition → React renderer
+│   ├── components/                     # Reusable section components
+│   ├── templates/                      # Industry-specific compositions
+│   ├── variants/                       # hero/, features/, cta/, footer/, navbar/...
+│   └── references/                     # Industry-specific reference components
 ├── utils/
-│   ├── templateRenderer.ts       # Fabric rendering
-│   ├── templateToHTMLExporter.ts # HTML export (NEW)
-│   ├── assetPreloader.ts         # Asset loading
-│   ├── layoutEngine.ts           # Layout calculations
-│   ├── htmlSanitizer.ts          # Security
-│   ├── rpc.ts                    # RPC messaging
-│   └── vfs.ts                    # Virtual filesystem
+│   ├── templateRenderer.ts             # Fabric canvas rendering
+│   ├── templateToHTMLExporter.ts       # HTML/CSS export pipeline
+│   ├── sandpackFilePrep.ts             # VFS → Sandpack file compiler
+│   ├── assetPreloader.ts               # Font/image preloading
+│   ├── htmlSanitizer.ts                # DOMPurify security
+│   └── ...                             # 95+ more utilities
 ├── components/
-│   ├── SecureIframePreview.tsx   # Sandboxed preview
-│   └── creatives/
-│       ├── WebBuilder.tsx        # Main component
-│       └── web-builder/
-│           └── AIAssistantPanel.tsx
-└── types/
-    └── template.ts               # Type definitions
+│   ├── onboarding/
+│   │   ├── SystemLauncher.tsx          # 4-step wizard launcher
+│   │   ├── BusinessLauncher.tsx        # Quick-start industry launcher
+│   │   └── SystemsAIPanel.tsx          # AI-powered system setup
+│   ├── creatives/
+│   │   ├── WebBuilder.tsx              # Main playground (1000+ lines)
+│   │   └── web-builder/
+│   │       └── AIBuilderPanel.tsx      # AI assistant panel
+│   ├── VFSPreview.tsx                  # Sandpack + Docker preview
+│   ├── SimplePreview.tsx               # Lightweight srcdoc fallback
+│   ├── crm/                            # CRM UI components
+│   ├── ai-agent/                       # AI assistant interface
+│   └── ui/                             # 50+ Radix + Shadcn primitives
+├── pages/
+│   ├── BusinessSettings.tsx            # Business profile management
+│   ├── ProjectSetup.tsx                # 8-section contextual setup
+│   ├── WebBuilderPage.tsx              # Web builder route wrapper
+│   └── ...                             # 20+ route components
+├── trigger/
+│   └── jobs.ts                         # Trigger.dev background tasks
+├── integrations/
+│   └── supabase/                       # Supabase client + types
+└── types/                              # TypeScript definitions
 ```
 
 ## Testing the Feature
@@ -321,6 +437,22 @@ src/
 
 ## Next Steps (Phase 4+)
 
+### Recently Implemented
+- [x] Virtual File System (VFS) with Sandpack preview — see [VFS_PREVIEW_ARCHITECTURE.md](VFS_PREVIEW_ARCHITECTURE.md)
+- [x] Three-tier preview runtime (ECS → Sandpack → Static) — see [PREVIEW_RUNTIME_ARCHITECTURE.md](PREVIEW_RUNTIME_ARCHITECTURE.md)
+- [x] Universal Intent System with build-time annotation — see [UNIVERSAL_INTENT_SYSTEM.md](UNIVERSAL_INTENT_SYSTEM.md)
+- [x] Inngest durable workflow orchestration — see [WORKFLOW_ORCHESTRATION_COMPARISON.md](WORKFLOW_ORCHESTRATION_COMPARISON.md)
+- [x] Trigger.dev background jobs (CRM reports, batch import, data export, AI content)
+- [x] Full-stack app generation (`generate-fullstack-app` edge function)
+- [x] AI Agent Runner for autonomous research and code tasks
+- [x] Enterprise RBAC, multi-tenancy, and audit logging — see [ENTERPRISE_HARDENING.md](ENTERPRISE_HARDENING.md)
+- [x] System Launcher Wizard (4-step guided onboarding with industry/goals/template/aesthetic)
+- [x] Business Setup & Project Configuration (8-section contextual guide)
+- [x] Web Builder Playground with dual-mode editing (Monaco + Fabric.js + VFS)
+- [x] HuggingFace Transformers local inference integration
+- [x] GoHighLevel CRM synchronization
+- [x] Stripe subscription management and checkout flows
+
 ### Bidirectional Sync
 - [ ] Canvas edits → update template schema
 - [ ] Schema changes → re-render both views
@@ -364,5 +496,7 @@ See inline JSDoc comments in:
 
 ---
 
-**Status**: ✅ Phase 2 & 3 Complete
-**Next**: Phase 4 - Bidirectional Sync & Advanced Features
+**Framework**: React 18.3 + TypeScript 5.9 + Vite + SWC
+**Status**: ✅ Phase 2 & 3 Complete | Phase 4+ Systems Active
+**Active**: System Launcher Wizard, Web Builder Playground, VFS Preview, Intent System, Inngest + Trigger.dev Orchestration, Enterprise RBAC, AI Agents
+**Next**: Phase 5 — Bidirectional Sync, Real-time Collaboration, Advanced Export

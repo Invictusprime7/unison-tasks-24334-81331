@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140" fill="none">
+  <rect width="240" height="140" rx="8" fill="#1a1a2e"/>
+  <!-- Dark band footer -->
+  <rect x="4" y="4" width="232" height="132" rx="6" fill="#0a0a14"/>
+  <!-- Brand + newsletter -->
+  <rect x="16" y="16" width="44" height="7" rx="3" fill="#ffffff" opacity="0.8"/>
+  <rect x="16" y="32" width="70" height="8" rx="3" fill="#ffffff" opacity="0.05" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1"/>
+  <rect x="90" y="32" width="30" height="8" rx="3" fill="#a78bfa"/>
+  <!-- Socials -->
+  <circle cx="24" cy="54" r="4" fill="#ffffff" opacity="0.3"/>
+  <circle cx="36" cy="54" r="4" fill="#ffffff" opacity="0.3"/>
+  <circle cx="48" cy="54" r="4" fill="#ffffff" opacity="0.3"/>
+  <!-- Link columns -->
+  <rect x="140" y="16" width="24" height="4" rx="2" fill="#ffffff" opacity="0.35"/>
+  <rect x="140" y="24" width="30" height="3" rx="1" fill="#ffffff" opacity="0.15"/>
+  <rect x="140" y="30" width="26" height="3" rx="1" fill="#ffffff" opacity="0.15"/>
+  <rect x="140" y="36" width="28" height="3" rx="1" fill="#ffffff" opacity="0.15"/>
+  <rect x="190" y="16" width="24" height="4" rx="2" fill="#ffffff" opacity="0.35"/>
+  <rect x="190" y="24" width="30" height="3" rx="1" fill="#ffffff" opacity="0.15"/>
+  <rect x="190" y="30" width="26" height="3" rx="1" fill="#ffffff" opacity="0.15"/>
+  <rect x="190" y="36" width="28" height="3" rx="1" fill="#ffffff" opacity="0.15"/>
+  <!-- Divider -->
+  <line x1="16" y1="110" x2="224" y2="110" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+  <!-- Copyright -->
+  <rect x="16" y="120" width="80" height="4" rx="2" fill="#ffffff" opacity="0.12"/>
+</svg>

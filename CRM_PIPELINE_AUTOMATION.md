@@ -1,5 +1,7 @@
 # CRM Pipeline Automation
 
+> **Stack**: React 18 + TypeScript 5.9 | Supabase PostgreSQL (RLS) | Inngest (durable workflows) | Trigger.dev (CRM reports, batch import)
+
 ## Overview
 
 The CRM Pipeline Automation feature provides a visual kanban-style board for managing deals and automating workflows when deals move through pipeline stages.

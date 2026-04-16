@@ -1,11 +1,16 @@
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import {
+  safeParseBody,
+  sanitizeString,
+  isValidEmail,
+  isValidUrl,
+  isValidUUID,
+  isNonEmptyString,
+} from "../_shared/validate.ts";
 
 /**
  * create-order-checkout — Guest-friendly ecommerce checkout.
@@ -27,15 +32,52 @@ const corsHeaders = {
  *   3. Create pending order snapshot
  *   4. Return checkout URL
  */
+interface CheckoutItem {
+  productId?: string;
+  name: string;
+  price: number;
+  quantity: number;
+  description?: string;
+}
+
+interface CreateOrderCheckoutRequest {
+  businessId?: string;
+  sessionId?: string;
+  userId?: string;
+  items?: CheckoutItem[];
+  customerEmail?: string;
+  successUrl?: string;
+  cancelUrl?: string;
+}
+
+function getBaseStoreUrl(req: Request): string {
+  const configured = Deno.env.get("APP_URL") || Deno.env.get("SITE_URL");
+  if (configured && isValidUrl(configured)) {
+    return configured;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin && isValidUrl(origin)) {
+    return origin;
+  }
+
+  return "https://unisontasks.com";
+}
+
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, publicCorsHeaders);
   }
 
   try {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
-      throw new Error("Stripe secret key not configured");
+      return errorResponse("Billing service not configured", 503, publicCorsHeaders);
     }
 
     const stripe = new Stripe(stripeKey, {
@@ -47,6 +89,12 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    const { data: payload, error: parseError } = await safeParseBody<CreateOrderCheckoutRequest>(req);
+    if (parseError || !payload) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, publicCorsHeaders);
+    }
+
     const {
       businessId,
       sessionId,
@@ -55,26 +103,62 @@ serve(async (req) => {
       customerEmail,
       successUrl,
       cancelUrl,
-    } = await req.json();
+    } = payload;
+
+    const normalizedBusinessId = typeof businessId === "string" ? sanitizeString(businessId, 100) : "";
+    const normalizedSessionId = typeof sessionId === "string" ? sanitizeString(sessionId, 200) : "";
+    const normalizedUserId = typeof userId === "string" ? sanitizeString(userId, 100) : undefined;
+    const normalizedCustomerEmail = typeof customerEmail === "string"
+      ? sanitizeString(customerEmail, 255).toLowerCase()
+      : undefined;
+    const baseUrl = getBaseStoreUrl(req);
+    const resolvedSuccessUrl = typeof successUrl === "string" && isValidUrl(successUrl)
+      ? successUrl
+      : `${baseUrl}/thank-you?order_id={ORDER_ID}&session_id={CHECKOUT_SESSION_ID}`;
+    const resolvedCancelUrl = typeof cancelUrl === "string" && isValidUrl(cancelUrl)
+      ? cancelUrl
+      : `${baseUrl}/shop`;
 
     // ── Validate required fields ────────────────────────────────────────
-    if (!businessId) throw new Error("businessId is required");
-    if (!sessionId) throw new Error("sessionId is required");
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      throw new Error("items[] is required and must not be empty");
+    if (!normalizedBusinessId || !isValidUUID(normalizedBusinessId)) {
+      return errorResponse("Invalid businessId format", 400, publicCorsHeaders);
+    }
+    if (!normalizedSessionId) {
+      return errorResponse("sessionId is required", 400, publicCorsHeaders);
+    }
+    if (normalizedUserId && !isValidUUID(normalizedUserId)) {
+      return errorResponse("Invalid userId format", 400, publicCorsHeaders);
+    }
+    if (normalizedCustomerEmail && !isValidEmail(normalizedCustomerEmail)) {
+      return errorResponse("Invalid customerEmail format", 400, publicCorsHeaders);
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return errorResponse("items[] is required and must not be empty", 400, publicCorsHeaders);
     }
 
     // ── Validate item structure ─────────────────────────────────────────
-    for (const item of items) {
-      if (!item.name || typeof item.price !== "number" || !item.quantity) {
-        throw new Error(`Invalid item: ${JSON.stringify(item)}`);
+    const sanitizedItems = items.map((item) => ({
+      productId: typeof item?.productId === "string" ? sanitizeString(item.productId, 100) : undefined,
+      name: typeof item?.name === "string" ? sanitizeString(item.name, 200) : "",
+      description: typeof item?.description === "string" ? sanitizeString(item.description, 500) : undefined,
+      price: typeof item?.price === "number" ? item.price : NaN,
+      quantity: typeof item?.quantity === "number" ? item.quantity : NaN,
+    }));
+
+    for (const item of sanitizedItems) {
+      if (!isNonEmptyString(item.name) || !Number.isFinite(item.price) || !Number.isInteger(item.quantity)) {
+        return errorResponse("Invalid item payload", 400, publicCorsHeaders);
       }
-      if (item.price <= 0) throw new Error("Item price must be positive");
-      if (item.quantity <= 0) throw new Error("Item quantity must be positive");
+      if (item.price <= 0) {
+        return errorResponse("Item price must be positive", 400, publicCorsHeaders);
+      }
+      if (item.quantity <= 0 || item.quantity > 100) {
+        return errorResponse("Item quantity must be between 1 and 100", 400, publicCorsHeaders);
+      }
     }
 
     // ── Build Stripe line items ─────────────────────────────────────────
-    const lineItems = items.map((item: { name: string; price: number; quantity: number; description?: string }) => ({
+    const lineItems = sanitizedItems.map((item) => ({
       price_data: {
         currency: "usd",
         product_data: {
@@ -87,8 +171,8 @@ serve(async (req) => {
     }));
 
     // ── Calculate order total ───────────────────────────────────────────
-    const subtotal = items.reduce(
-      (sum: number, item: { price: number; quantity: number }) => sum + item.price * item.quantity,
+    const subtotal = sanitizedItems.reduce(
+      (sum: number, item) => sum + item.price * item.quantity,
       0,
     );
 
@@ -96,11 +180,11 @@ serve(async (req) => {
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert({
-        business_id: businessId,
-        session_id: sessionId,
-        user_id: userId || null,
-        customer_email: customerEmail || "pending@checkout.com",
-        items: JSON.stringify(items),
+        business_id: normalizedBusinessId,
+        session_id: normalizedSessionId,
+        user_id: normalizedUserId || null,
+        customer_email: normalizedCustomerEmail || "pending@checkout.com",
+        items: JSON.stringify(sanitizedItems),
         subtotal,
         total: subtotal,
         status: "pending",
@@ -119,17 +203,16 @@ serve(async (req) => {
       mode: "payment",
       payment_method_types: ["card"],
       line_items: lineItems,
-      ...(customerEmail ? { customer_email: customerEmail } : {}),
+      ...(normalizedCustomerEmail ? { customer_email: normalizedCustomerEmail } : {}),
       success_url:
-        successUrl ||
-        `${req.headers.get("origin")}/thank-you?order_id=${order.id}&session_id={CHECKOUT_SESSION_ID}`,
+        resolvedSuccessUrl.replace("{ORDER_ID}", order.id),
       cancel_url:
-        cancelUrl || `${req.headers.get("origin")}/shop`,
+        resolvedCancelUrl,
       metadata: {
         order_id: order.id,
-        business_id: businessId,
-        session_id: sessionId,
-        ...(userId ? { user_id: userId } : {}),
+        business_id: normalizedBusinessId,
+        session_id: normalizedSessionId,
+        ...(normalizedUserId ? { user_id: normalizedUserId } : {}),
       },
       billing_address_collection: "auto",
       shipping_address_collection: {
@@ -145,26 +228,17 @@ serve(async (req) => {
       })
       .eq("id", order.id);
 
-    return new Response(
-      JSON.stringify({
+    return secureJsonResponse(
+      {
         sessionId: session.id,
         url: session.url,
         orderId: order.id,
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
       },
+      200,
+      publicCorsHeaders,
     );
   } catch (error) {
     console.error("Order checkout error:", error);
-    const message = error instanceof Error ? error.message : "Order checkout failed";
-    return new Response(
-      JSON.stringify({ error: message }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      },
-    );
+    return errorResponse("Order checkout failed", 400, publicCorsHeaders);
   }
 });

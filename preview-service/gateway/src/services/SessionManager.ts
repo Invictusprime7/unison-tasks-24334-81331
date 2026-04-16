@@ -11,6 +11,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import type { PreviewSession, FileMap, SessionStatus } from '../types.js';
 import { logger } from '../server.js';
+import { createPreviewAccessToken } from '../lib/previewAccess.js';
 
 // ============================================
 // CONFIGURATION
@@ -44,7 +45,11 @@ export class SessionManager {
   /**
    * Start a new preview session
    */
-  async startSession(projectId: string, files: FileMap): Promise<PreviewSession> {
+  async startSession(
+    projectId: string,
+    files: FileMap,
+    owner?: { userId: string; organizationId?: string }
+  ): Promise<PreviewSession> {
     // Check session limit
     if (this.sessions.size >= MAX_SESSIONS) {
       throw new Error('Maximum session limit reached');
@@ -52,14 +57,17 @@ export class SessionManager {
 
     const sessionId = uuidv4();
     const port = this.allocatePort();
+    const previewToken = createPreviewAccessToken(sessionId);
     
     // Create session record
     const session: PreviewSession = {
       id: sessionId,
       projectId,
+      ownerUserId: owner?.userId,
+      organizationId: owner?.organizationId,
       status: 'pending',
       containerPort: port,
-      iframeUrl: `${GATEWAY_URL}/preview/${sessionId}`,
+      iframeUrl: `${GATEWAY_URL}/preview/${sessionId}?token=${encodeURIComponent(previewToken)}`,
       files,
       createdAt: new Date(),
       lastActivityAt: new Date(),

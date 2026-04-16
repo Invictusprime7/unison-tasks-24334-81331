@@ -18,6 +18,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { serve } from "inngest/vercel";
 import { inngest } from "../src/lib/inngest";
 import { inngestFunctions } from "../src/lib/inngest-workflows";
+import { applyApiSecurityHeaders, handlePreflight, sendError } from './_lib/security';
 
 // Create the Inngest serve handler with all workflow functions
 // Using Vercel adapter - exports GET, POST, PUT directly
@@ -31,21 +32,32 @@ export default async function inngestHandler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  // CORS headers for cross-origin requests
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Inngest-Signature, X-Inngest-Env, X-Inngest-Framework, X-Inngest-Req-Version, X-Inngest-SDK, X-Inngest-Server-Kind');
+  const requestId = applyApiSecurityHeaders(req, res, {
+    methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+    allowHeaders: [
+      'Content-Type',
+      'X-Request-ID',
+      'X-Inngest-Signature',
+      'X-Inngest-Env',
+      'X-Inngest-Framework',
+      'X-Inngest-Req-Version',
+      'X-Inngest-SDK',
+      'X-Inngest-Server-Kind',
+    ],
+  });
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (handlePreflight(req, res)) {
+    return;
   }
 
   // Convert VercelRequest to standard Request and use the appropriate method handler
   try {
     const url = new URL(req.url || '/', `https://${req.headers.host || 'localhost'}`);
+    const headers = new Headers(req.headers as HeadersInit);
+    headers.set('x-request-id', requestId);
     const request = new Request(url.toString(), {
       method: req.method,
-      headers: req.headers as HeadersInit,
+      headers,
       body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
     });
 
@@ -57,7 +69,7 @@ export default async function inngestHandler(
     } else if (req.method === 'PUT') {
       response = await PUT(request);
     } else {
-      return res.status(405).json({ error: 'Method not allowed' });
+      return sendError(res, 405, 'Method not allowed', requestId);
     }
 
     // Convert Response back to Vercel format
@@ -69,7 +81,6 @@ export default async function inngestHandler(
     return res.send(body);
   } catch (error) {
     console.error('Inngest handler error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return sendError(res, 500, 'Internal server error', requestId);
   }
 }
-

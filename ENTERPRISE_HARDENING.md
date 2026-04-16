@@ -1,18 +1,20 @@
 # Enterprise Hardening Implementation
 
+> **Stack**: React 18 + TypeScript 5.9 | Supabase PostgreSQL (RLS) | Docker container isolation | CloudContext provider for multi-tenancy
+
 This document summarizes the enterprise-grade security and governance controls implemented for Unison Tasks.
 
 ## Overview
 
 Based on enterprise readiness audit recommendations, the following categories have been addressed:
 
-| Category | Before | After | Key Changes |
-|----------|--------|-------|-------------|
-| Runtime Preview Foundation | 7.5/10 | 9/10 | Auth, quotas, resource limits |
-| Platform Surface Area | 6/10 | 7/10 | Audit logs, RBAC foundation |
-| Enterprise Governance | 2/10 | 6/10 | Org model, permissions, audit |
-| Security Posture | 3/10 | 7/10 | Headers, WAF, sandboxing |
-| Operational Readiness | 4/10 | 7/10 | CloudWatch alarms, error boundaries |
+| Category | Before | After (Phase 1) | After (Phase 2) | Key Changes |
+|----------|--------|------------------|------------------|-------------|
+| Runtime Preview Foundation | 7.5/10 | 9/10 | 9.5/10 | Auth, quotas, fail-closed middleware |
+| Platform Surface Area | 6/10 | 7/10 | 8.5/10 | Shared middleware, input validation, rate limiting |
+| Enterprise Governance | 2/10 | 6/10 | 7/10 | Audit logs, RBAC, session monitoring |
+| Security Posture | 3/10 | 7/10 | 8.5/10 | Headers, WAF, sanitizer overhaul, CORS hardening |
+| Operational Readiness | 4/10 | 7/10 | 8/10 | Error handling, request tracing, lockout protection |
 
 ---
 
@@ -284,9 +286,130 @@ AWS Secrets Manager for:
 
 ---
 
+## E) Phase 2 — Middleware Hardening (April 2026)
+
+### 1. Shared Edge Function Security Layer
+
+**Files:** `supabase/functions/_shared/`
+
+New shared middleware modules available to all 44+ edge functions:
+
+| Module | File | Purpose |
+|--------|------|---------|
+| **CORS** | `_shared/cors.ts` | Environment-aware CORS — restricts origins in production, allows localhost in dev |
+| **Auth** | `_shared/auth.ts` | JWT verification, user extraction, business ownership validation |
+| **Rate Limit** | `_shared/rateLimit.ts` | In-memory IP-based rate limiting with configurable windows |
+| **Validation** | `_shared/validate.ts` | Email/UUID/URL/phone validation, body size limits, field rules |
+| **Response** | `_shared/response.ts` | Secure JSON responses with `X-Content-Type-Options`, `X-Frame-Options`, cache control |
+
+### 2. Cron Endpoint Authentication (CRITICAL FIX)
+
+**Files:** `api/cron/booking-reminders.ts`, `api/cron/crm-daily.ts`, `api/cron/crm-weekly-summary.ts`
+
+**Before**: If `CRON_SECRET` was not configured, endpoints were accessible without authentication (fail-open).
+
+**After**: 
+- `CRON_SECRET` is **required** — returns `503` if not configured
+- Method validation added (only `GET`/`POST` allowed)
+- Consistent auth pattern across all 3 cron endpoints
+
+### 3. Gateway Middleware Overhaul
+
+**File:** `preview-service/gateway/src/server.ts`
+
+| Change | Before | After |
+|--------|--------|-------|
+| **Auth bypass** | `NODE_ENV === 'development'` auto-bypassed auth | Requires explicit `BYPASS_AUTH=true` env var |
+| **Quota failures** | Fail-open (request proceeds) | Fail-closed — returns `503` |
+| **Rate limiting** | Global 100 req/min only | Tiered: global 100/min + session creation 10/5min |
+| **Request IDs** | Generated in auth middleware only | Generated early in pipeline, attached to all logs |
+| **Request logging** | Basic method/path | Includes status, duration, IP, request ID |
+| **Body limits** | 10MB JSON | 5MB JSON, 1MB URL-encoded |
+| **CORS** | Flat string origin | Supports comma-separated origin list |
+| **Helmet** | Default config | HSTS, noSniff, referrer-policy explicitly configured |
+
+**File:** `preview-service/gateway/src/middleware/auth.ts`
+
+| Change | Before | After |
+|--------|--------|-------|
+| **Auth bypass** | Auto-bypass in NODE_ENV=development | Explicit BYPASS_AUTH flag only |
+| **Quota check failure** | `next()` — fail open | `res.status(503)` — fail closed |
+| **Quota middleware error** | `next()` — fail open | `res.status(503)` — fail closed |
+| **Session ownership (no Supabase)** | `next()` — allow | `res.status(503)` — deny |
+
+### 4. Site Authentication Hardening
+
+**File:** `supabase/functions/site-auth/index.ts`
+
+| Change | Before | After |
+|--------|--------|-------|
+| **JWT secret** | Hardcoded fallback: `"site-auth-default-secret-change-in-production"` | **Required** — returns `503` if missing |
+| **Session duration** | 7 days | 24 hours |
+| **Password policy** | Min 6 characters | Min 8 characters + at least 1 letter + 1 number |
+
+### 5. Event Ingestion Security
+
+**File:** `api/inngest-send.ts`
+
+| Change | Before | After |
+|--------|--------|-------|
+| **Authentication** | None — open endpoint | Requires `INNGEST_SEND_API_KEY` Bearer token |
+| **CORS** | Wildcard `*` | Configurable via `ALLOWED_ORIGIN` env var |
+| **Error details** | Exposed to clients | Hidden in production |
+| **Event list** | Exposed on invalid event | Hidden in production |
+| **Production guard** | None | Returns `503` if API key not configured in production |
+
+### 6. HTML Sanitizer Overhaul
+
+**File:** `src/utils/htmlSanitizer.ts`
+
+| Change | Before | After |
+|--------|--------|-------|
+| **Blocked attrs** | 3 event handlers (`onerror`, `onload`, `onclick`) | 40+ event handlers + `formaction`, `xlink:href` |
+| **Blocked tags** | 4 tags | 10 tags (added `applet`, `base`, `link`, `meta`, `noscript`, `template`) |
+| **Link safety** | None | Blocks `javascript:`, `data:`, `vbscript:` URIs; forces `rel="noopener noreferrer"` |
+| **Image safety** | None | Blocks `javascript:` and `data:text/html` src |
+| **CSS sanitizer** | 6 patterns | 9 patterns + CSS exfiltration blocking |
+| **Size limits** | None | 512KB HTML, 256KB CSS |
+| **Allowed tags** | 22 tags | 48 tags (added tables, media, SVG, semantic elements) |
+| **Accessibility** | Not considered | `aria-*` and `role` attributes allowed |
+
+### 7. Edge Function Input Validation
+
+**Files:** `supabase/functions/intent-router/index.ts`, `supabase/functions/automation-event/index.ts`
+
+- **intent-router**: Added body size guard (64KB), safe JSON parsing, UUID validation for `businessId`, error messages sanitized (no internal details leaked)
+- **automation-event**: Added method check (POST only), safe JSON parsing, UUID validation, intent format validation (`/^[a-zA-Z0-9._-]+$/`), business existence verification
+- **workflow-cron**: Added authorization check (requires `CRON_SECRET` or `SUPABASE_SERVICE_ROLE_KEY`)
+
+### 8. Client-Side Security Middleware
+
+**File:** `src/lib/securityMiddleware.ts`
+
+New client-side security layer:
+- **Session monitor**: Proactive token refresh before expiry, idle detection
+- **Login lockout**: 5 failed attempts → 15-minute lockout (client-side rate limiting)
+- **Tab monitoring**: Concurrent session detection across browser tabs
+- **URL safety**: `isSafeUrl()` blocks dangerous URI schemes
+- **HTML escaping**: `escapeHtml()` for dynamic string contexts
+
+**File:** `src/lib/apiSecurity.ts`
+
+- **Request ID injection**: Every API call gets a unique `X-Request-ID`
+- **Retry with backoff**: Automatic retry for 429/502/503/504 (honors `Retry-After`)
+- **Error sanitization**: `sanitizeErrorMessage()` strips SQL errors, stack traces, and internal details
+
+### 9. Security Headers
+
+**File:** `vercel.json`
+
+Added missing `X-Frame-Options: SAMEORIGIN` header to global response headers.
+
+---
+
 ## Next Steps
 
-### Recommended Phase 2 Priorities
+### Recommended Phase 3 Priorities
 
 1. **SSO Integration**
    - SAML 2.0 / OIDC support

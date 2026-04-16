@@ -2,10 +2,11 @@
  * Template to VFS Converter (React-only)
  * 
  * Converts template code into React/TSX VFS file structures.
- * All output is native JSX React components — no dangerouslySetInnerHTML.
+ * All output is native JSX React components — TypeScript/React from start to finish.
  */
 
-import { isHtmlDocument, htmlDocToReactComponentWithCSS } from './htmlToJsx';
+import { fixJsxVoidElements, fixJsxStyleStrings } from './aiCodeCleaner';
+import { htmlDocToReactComponentWithCSS } from './htmlToJsx';
 
 // ============================================================================
 // Embedded CSS Extraction
@@ -67,6 +68,9 @@ export function templateToVFSFiles(
     .replace(/[^a-zA-Z0-9]/g, '')
     .replace(/^([a-z])/, (m) => m.toUpperCase()) || 'Template';
 
+  // Fix void HTML elements and style strings for JSX compatibility
+  const code = fixJsxStyleStrings(fixJsxVoidElements(templateCode));
+
   const mainTSX = `import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -110,27 +114,28 @@ body {
 }
 `;
 
-  // Check if it's an HTML document first
-  if (isHtmlDocument(templateCode)) {
-    const result = htmlDocToReactComponentWithCSS(templateCode, componentName);
+  // Legacy HTML documents — auto-migrate to React/TSX component
+  if (code.includes('<!DOCTYPE') || code.includes('<html')) {
+    console.warn('[templateToVFSFiles] Migrating legacy HTML document to React/TSX');
+    const result = htmlDocToReactComponentWithCSS(code, componentName);
     files['/src/App.tsx'] = result.code;
     if (result.css) {
       files['/src/template.css'] = result.css;
     }
   }
   // Detect if it's already a full React component
-  else if (templateCode.includes('export default function') ||
-    templateCode.includes('export default const') ||
-    templateCode.includes('function App()')) {
+  else if (code.includes('export default function') ||
+    code.includes('export default const') ||
+    code.includes('function App()')) {
     // Extract any embedded TEMPLATE_STYLES/TEMPLATE_CSS and route to CSS file
-    const { cleanCode, css } = extractEmbeddedCSS(templateCode);
+    const { cleanCode, css } = extractEmbeddedCSS(code);
     files['/src/App.tsx'] = cleanCode;
     if (css) {
       files['/src/template.css'] = css;
     }
-  } else if (templateCode.includes('import ') || templateCode.includes('export ')) {
+  } else if (code.includes('import ') || code.includes('export ')) {
     // It's a React component but not the App — wrap it
-    const cleanCode = templateCode
+    const cleanCode = code
       .replace(/export\s+default\s+/g, '')
       .replace(/^import.*$/gm, '');
     const funcMatch = cleanCode.match(/(?:function|const)\s+(\w+)/);
@@ -151,7 +156,7 @@ export default function App() {
 export default function App() {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      ${templateCode}
+      ${code}
     </div>
   );
 }

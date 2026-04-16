@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDemoResponse, type BusinessSystemType } from "@/data/templates";
 import { normalizeIntent } from './intentAliases';
 import { classifyIntent } from './intentClassifier';
+import { createCheckoutSession, resolveCheckoutSessionBody } from './checkoutClient';
 import { 
   CORE_INTENTS, 
   type CoreIntent, 
@@ -33,6 +34,15 @@ import {
 
 export interface IntentPayload {
   businessId?: string;
+  siteId?: string;
+  projectId?: string;
+  pageId?: string;
+  pagePath?: string;
+  bindingId?: string;
+  elementKey?: string;
+  _elementKey?: string;
+  sessionId?: string;
+  userId?: string;
   path?: string;      // nav.goto
   anchor?: string;    // nav.anchor
   url?: string;       // nav.external
@@ -56,17 +66,6 @@ export type IntentResult = {
   };
 };
 
-type BackendHandler = 'create-lead' | 'create-booking' | 'create-checkout';
-
-// Locked: ActionIntent -> authoritative backend handler
-const ACTION_HANDLERS: Record<ActionIntent, BackendHandler> = {
-  'contact.submit': 'create-lead',
-  'newsletter.subscribe': 'create-lead',
-  'quote.request': 'create-lead',
-  'lead.capture': 'create-lead',
-  'booking.create': 'create-booking',
-};
-
 const LEAD_SOURCE_MAP: Record<ActionIntent, string> = {
   'contact.submit': 'contact_form',
   'newsletter.subscribe': 'newsletter',
@@ -75,45 +74,184 @@ const LEAD_SOURCE_MAP: Record<ActionIntent, string> = {
   'booking.create': 'booking',
 };
 
+const CANONICAL_ACTION_INTENTS = new Set<ActionIntent>([
+  'contact.submit',
+  'lead.capture',
+  'newsletter.subscribe',
+  'quote.request',
+  'booking.create',
+]);
+
+interface CanonicalIntentExecResponse {
+  ok: boolean;
+  result?: unknown;
+  clientActions?: Array<Record<string, unknown>>;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function assertBusinessId(payload: IntentPayload): { ok: true; businessId: string } | { ok: false; error: string } {
-  const businessId = typeof payload.businessId === 'string' ? payload.businessId : '';
-  if (!businessId) return { ok: false as const, error: 'Missing businessId (this site is not configured for a business yet).' };
-  if (!isUuid(businessId)) return { ok: false as const, error: 'Invalid businessId.' };
-  return { ok: true as const, businessId };
+function getStringValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 }
 
-function normalizeLeadPayload(intent: CoreIntent, payload: IntentPayload) {
-  // Basic contact fields may come from various form names
-  const email = String(payload.email ?? payload.customerEmail ?? '').trim();
-  const name = String(payload.name ?? payload.fullName ?? payload.customerName ?? '').trim() || undefined;
-  const phone = String(payload.phone ?? payload.customerPhone ?? '').trim() || undefined;
-  const message = String(payload.message ?? payload.notes ?? '').trim() || undefined;
+function getPageId(payload: IntentPayload): string {
+  const pageId =
+    getStringValue(payload.pageId) ||
+    getStringValue(payload.pagePath) ||
+    (typeof payload.path === 'string' && payload.path.startsWith('/') ? getStringValue(payload.path) : undefined) ||
+    (typeof window !== 'undefined' ? getStringValue(window.location.pathname) : undefined);
 
-  const now = new Date().toISOString();
-  const page = typeof window !== 'undefined' ? window.location.href : undefined;
+  return pageId || '/';
+}
 
-  const metadata = {
-    intent,
-    timestamp: now,
-    page,
-    templateId: typeof payload.templateId === 'string' ? payload.templateId : undefined,
-    source: payload._source ?? undefined,
-  };
+function getBindingId(payload: IntentPayload): string | undefined {
+  return getStringValue(payload.bindingId) || getStringValue(payload._bindingId);
+}
+
+function getElementKey(payload: IntentPayload): string | undefined {
+  return getStringValue(payload.elementKey) || getStringValue(payload._elementKey);
+}
+
+function getSiteId(payload: IntentPayload): string | undefined {
+  return getStringValue(payload.siteId) || getStringValue(payload.projectId);
+}
+
+function getCanonicalSiteId(payload: IntentPayload): string | undefined {
+  const siteId = getSiteId(payload);
+  return siteId && isUuid(siteId) ? siteId : undefined;
+}
+
+function toDateTimeParts(value: unknown): { date?: string; time?: string } {
+  const raw = getStringValue(value);
+  if (!raw) return {};
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return {};
 
   return {
-    // create-lead expects these keys
-    businessId: payload.businessId,
-    intent,
+    date: parsed.toISOString().slice(0, 10),
+    time: parsed.toISOString().slice(11, 16),
+  };
+}
+
+function buildCanonicalIntentParams(intent: ActionIntent, payload: IntentPayload): Record<string, unknown> {
+  const elementKey = getElementKey(payload);
+  const pagePath = getStringValue(payload.pagePath) || getPageId(payload);
+
+  if (intent === 'booking.create') {
+    const bookingStart = toDateTimeParts(payload.startsAt);
+
+    return {
+      ...payload,
+      email: getStringValue(payload.customerEmail) || getStringValue(payload.email),
+      name: getStringValue(payload.customerName) || getStringValue(payload.name) || getStringValue(payload.fullName),
+      phone: getStringValue(payload.customerPhone) || getStringValue(payload.phone),
+      message: getStringValue(payload.notes) || getStringValue(payload.message),
+      service: getStringValue(payload.service) || getStringValue(payload.serviceName),
+      date: getStringValue(payload.date) || bookingStart.date,
+      time: getStringValue(payload.time) || bookingStart.time,
+      pagePath,
+      ...(elementKey ? { elementKey } : {}),
+    };
+  }
+
+  return {
+    ...payload,
+    email: getStringValue(payload.email) || getStringValue(payload.customerEmail),
+    name: getStringValue(payload.name) || getStringValue(payload.fullName) || getStringValue(payload.customerName),
+    phone: getStringValue(payload.phone) || getStringValue(payload.customerPhone),
+    message: getStringValue(payload.message) || getStringValue(payload.notes),
     source: payload.source || LEAD_SOURCE_MAP[intent],
-    email,
-    name,
-    phone,
-    message,
-    metadata,
+    pagePath,
+    ...(elementKey ? { elementKey } : {}),
+  };
+}
+
+function adaptIntentExecResult(result: CanonicalIntentExecResponse): IntentResult {
+  const clientActions = Array.isArray(result.clientActions) ? result.clientActions : [];
+  const toastAction = clientActions.find(
+    (action) => action?.type === 'TOAST' && typeof action.message === 'string'
+  );
+  const navigateAction = clientActions.find(
+    (action) => action?.type === 'NAVIGATE' && typeof action.to === 'string'
+  );
+  const externalAction = clientActions.find(
+    (action) => action?.type === 'EXTERNAL' && typeof action.url === 'string'
+  );
+
+  let toastType: 'success' | 'error' | 'info' | undefined;
+  if (toastAction && typeof toastAction.level === 'string') {
+    toastType =
+      toastAction.level === 'warning'
+        ? 'info'
+        : (toastAction.level as 'success' | 'error' | 'info');
+  }
+
+  return {
+    success: result.ok,
+    data: result.result,
+    error: result.error?.message,
+    message: typeof toastAction?.message === 'string' ? toastAction.message : undefined,
+    redirectUrl: typeof externalAction?.url === 'string' ? externalAction.url : undefined,
+    ui: toastAction || navigateAction
+      ? {
+          navigate: typeof navigateAction?.to === 'string' ? navigateAction.to : undefined,
+          toast: toastType && typeof toastAction?.message === 'string'
+            ? { type: toastType, message: toastAction.message as string }
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
+async function invokeCanonicalIntent(intent: ActionIntent, payload: IntentPayload): Promise<IntentResult | null> {
+  if (!CANONICAL_ACTION_INTENTS.has(intent)) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke('intent-exec', {
+      body: {
+        siteId: getCanonicalSiteId(payload),
+        businessId: payload.businessId,
+        intentId: intent,
+        bindingId: getBindingId(payload),
+        pageId: getPageId(payload),
+        params: buildCanonicalIntentParams(intent, payload),
+        context: {
+          sessionId: getStringValue(payload.sessionId),
+          userId: getStringValue(payload.userId),
+        },
+      },
+    });
+
+    if (error) {
+      console.error('[IntentRouter] intent-exec error:', error);
+      return { success: false, error: error.message || 'Intent execution failed' };
+    }
+
+    if (data && typeof data === 'object' && 'ok' in data) {
+      return adaptIntentExecResult(data as CanonicalIntentExecResponse);
+    }
+  } catch (err) {
+    console.error('[IntentRouter] intent-exec exception:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Intent execution failed',
+    };
+  }
+
+  return {
+    success: false,
+    error: `No canonical handler configured for ${intent}`,
   };
 }
 
@@ -300,7 +438,6 @@ let defaultBusinessId: string | null = null;
 let defaultProjectId: string | null = null;
 let currentSystemType: BusinessSystemType | null = null;
 let isDemoMode: boolean = false;
-let useUnifiedRouter: boolean = true; // Use the new intent-router Edge Function
 
 /**
  * Set the default business ID for intent routing
@@ -511,32 +648,22 @@ function handleNavExternal(payload: IntentPayload): IntentResult {
  * Handle pay.checkout - Begin checkout flow
  * Creates a Stripe checkout session via backend and returns redirect URL
  */
-async function handlePayCheckout(payload: IntentPayload, businessId: string): Promise<IntentResult> {
-  const priceId = payload.priceId as string;
-  const plan = payload.plan as string;
-  
-  if (!priceId && !plan) {
+async function handlePayCheckout(payload: IntentPayload): Promise<IntentResult> {
+  const checkoutBody = resolveCheckoutSessionBody({
+    priceId: payload.priceId,
+    plan: payload.plan,
+    billingCycle: payload.billingCycle,
+    successPath: '/payment/success?session_id={CHECKOUT_SESSION_ID}',
+    cancelPath: '/payment/cancel',
+  });
+
+  if (!checkoutBody) {
     return { success: false, error: "pay.checkout requires 'priceId' or 'plan' payload" };
   }
   
   try {
-    // Call backend to create checkout session
-    const { data, error } = await supabase.functions.invoke('create-checkout', {
-      body: {
-        businessId,
-        priceId,
-        plan,
-        successUrl: `${window.location.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: `${window.location.origin}/payment/cancel`,
-        metadata: {
-          source: window.location.href,
-          timestamp: new Date().toISOString(),
-        },
-      },
-    });
-    
-    if (error) throw error;
-    
+    const data = await createCheckoutSession(checkoutBody);
+
     if (data?.url) {
       // Redirect to checkout
       window.location.href = data.url;
@@ -602,7 +729,7 @@ function handlePayCancel(payload: IntentPayload): IntentResult {
  * 
  * - NAV intents: Client-side routing (no backend)
  * - PAY intents: Backend checkout session creation + redirect
- * - ACTION intents: CRM persistence + notifications via unified router
+ * - ACTION intents: canonical execution via intent-exec
  */
 export async function handleIntent(intent: string, payload: IntentPayload): Promise<IntentResult> {
   // Step 1: Normalize via alias system (handles messy template intents)
@@ -677,7 +804,7 @@ export async function handleIntent(intent: string, payload: IntentPayload): Prom
       }
       switch (normalized) {
         case 'pay.checkout':
-          return handlePayCheckout(payload, payload.businessId as string);
+          return handlePayCheckout(payload);
         case 'pay.success':
           return handlePaySuccess(payload);
         case 'pay.cancel':
@@ -715,54 +842,15 @@ export async function handleIntent(intent: string, payload: IntentPayload): Prom
 
   // Action intents (contact.submit, booking.create, etc.) → unified backend router
   if (isActionIntent(normalized)) {
-    if (useUnifiedRouter) {
-      try {
-        const routerPayload = {
-          intent: normalized,
-          businessId: payload.businessId,
-          projectId: (payload.projectId as string) || defaultProjectId || undefined,
-          data: payload,
-          source: isDemoMode ? 'preview' : 'published',
-          sourceUrl: typeof window !== 'undefined' ? window.location.href : undefined,
-        };
-        
-        const { data, error } = await supabase.functions.invoke('intent-router', {
-          body: routerPayload,
-        });
-        
-        if (!error && data && typeof data === 'object') {
-          console.log("[IntentRouter] Unified router success:", data);
-          return data as IntentResult;
-        }
-        if (error) console.error("[IntentRouter] Unified router error, falling back:", error);
-      } catch (err) {
-        console.error("[IntentRouter] Unified router exception:", err);
-      }
+    const canonicalResult = await invokeCanonicalIntent(normalized, payload);
+    if (canonicalResult) {
+      return canonicalResult;
     }
 
-    // Legacy fallback for action intents
-    const handler = ACTION_HANDLERS[normalized];
-    let body: Record<string, unknown> = { ...payload };
-    if (normalized === 'contact.submit' || normalized === 'newsletter.subscribe' || normalized === 'quote.request') {
-      body = normalizeLeadPayload(normalized, payload);
-    }
-    if (normalized === 'booking.create') {
-      body = {
-        ...payload,
-        businessId: payload.businessId,
-        action: 'create',
-        customerName: (payload.customerName || payload.name) ?? undefined,
-        customerEmail: (payload.customerEmail || payload.email) ?? undefined,
-        customerPhone: (payload.customerPhone || payload.phone) ?? undefined,
-        startsAt: payload.startsAt || (payload.date && payload.time ? new Date(`${payload.date}T${payload.time}:00`).toISOString() : undefined),
-        serviceName: (payload.serviceName || payload.service) ?? undefined,
-        metadata: { intent: normalized, timestamp: new Date().toISOString(), page: typeof window !== 'undefined' ? window.location.href : undefined },
-      };
-    }
-    const { data, error } = await supabase.functions.invoke(handler, { body });
-    if (error) return { success: false, error: error.message };
-    if (data && typeof data === 'object' && 'success' in data) return data as IntentResult;
-    return { success: true, data };
+    return {
+      success: false,
+      error: `No canonical handler configured for ${normalized}`,
+    };
   }
 
   // Fallback for any remaining automatable intents → executeIntent
@@ -777,9 +865,18 @@ export async function handleIntent(intent: string, payload: IntentPayload): Prom
  * Centralizes manager wiring so every lane uses the same context shape.
  */
 function buildIntentContext(payload: IntentPayload): import('./intentExecutor').IntentContext {
+  const pagePath = getStringValue(payload.pagePath) || getPageId(payload);
+  const elementKey = getElementKey(payload);
+
   return {
-    payload: { ...payload },
+    payload: {
+      ...payload,
+      pagePath,
+      ...(elementKey ? { elementKey } : {}),
+    },
     businessId: payload.businessId as string,
+    siteId: getSiteId(payload),
+    userId: typeof payload.userId === 'string' ? payload.userId : undefined,
     sessionId: typeof payload.sessionId === 'string' ? payload.sessionId : undefined,
     managers: {
       navigation: {
@@ -841,7 +938,7 @@ export function isValidIntent(intent: string): boolean {
  * Used for publish gating.
  */
 export function hasBackendHandler(intent: string): boolean {
-  return isActionIntent(intent) && !!ACTION_HANDLERS[intent];
+  return isActionIntent(intent) && CANONICAL_ACTION_INTENTS.has(intent);
 }
 
 /**
@@ -859,7 +956,7 @@ export function getIntentPack(intent: string): string | null {
  */
 export function getIntentFunction(intent: string): string | null {
   if (!isActionIntent(intent)) return null;
-  return ACTION_HANDLERS[intent] || null;
+  return CANONICAL_ACTION_INTENTS.has(intent) ? 'intent-exec' : null;
 }
 
 // Export for use in templates and AI assistant

@@ -10,6 +10,10 @@
  */
 
 import type { SiteBundleVersion } from './siteBundle';
+import type { LauncherHandoff, RuntimeManifest } from './runtimeManifest';
+import type { SystemsBuildContext } from './systemsBuildContext';
+import type { GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
+import type { LayoutCategory } from '@/data/templates/types';
 
 // ============================================================================
 // Core Launch State
@@ -20,9 +24,6 @@ export type IndustryTag =
   | 'salon' | 'local-service' | 'coaching' | 'restaurant' 
   | 'ecommerce' | 'fitness' | 'legal' | 'realestate' 
   | 'photography' | 'universal';
-export type LayoutCategory = 
-  | 'salon' | 'contractor' | 'coaching' | 'restaurant' 
-  | 'store' | 'realestate' | 'portfolio' | 'agency';
 
 export interface LaunchBlueprint {
   version: '1.0';
@@ -73,6 +74,16 @@ export interface LaunchState {
   // Runtime settings
   startInPreview: boolean;
   intentRuntime: boolean;
+
+  // Shared preview/builder handoff metadata
+  businessId?: string;
+  projectId?: string;
+  manifestId?: string;
+  entryPoint?: string;
+  runtimeManifest?: RuntimeManifest;
+  siteBundle?: LauncherHandoff['siteBundle'];
+  sitePlan?: GeneratedSitePlan;
+  systemsBuildContext?: SystemsBuildContext;
   
   // Timestamps
   createdAt?: string;
@@ -127,6 +138,14 @@ export function createLaunchState(
     preloadedIntents: input.preloadedIntents || [],
     startInPreview: input.startInPreview ?? true,
     intentRuntime: input.intentRuntime ?? true,
+    businessId: input.businessId,
+    projectId: input.projectId,
+    manifestId: input.manifestId,
+    entryPoint: input.entryPoint,
+    runtimeManifest: input.runtimeManifest,
+    siteBundle: input.siteBundle,
+    sitePlan: input.sitePlan,
+    systemsBuildContext: input.systemsBuildContext,
     blueprint: input.blueprint || {
       version: '1.0',
       identity: {

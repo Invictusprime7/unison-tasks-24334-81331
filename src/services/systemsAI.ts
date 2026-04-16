@@ -327,15 +327,7 @@ export function generateDefaultIntents(industry: Industry): IntentBinding[] {
   return intents.map((intent) => {
     // Map intent to target
     const targetKind: "edge_function" | "route" | "modal" | "external_url" = "edge_function";
-    let targetRef = "intent-router";
-    
-    if (intent === "booking.create") {
-      targetRef = "create-booking";
-    } else if (intent.startsWith("contact.") || intent === "lead.capture") {
-      targetRef = "create-lead";
-    } else if (intent === "newsletter.subscribe") {
-      targetRef = "create-lead";
-    }
+    const targetRef = "intent-exec";
     
     // Generate payload schema based on intent
     const payloadSchema = getPayloadSchemaForIntent(intent);

@@ -21,6 +21,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 import type { IntentManagers, IntentResult, IntentContext } from './intentExecutor';
 import { executeIntent, configureIntentExecutor } from './intentExecutor';
+import { createCheckoutSession, resolveCheckoutSessionBody } from './checkoutClient';
 import { setupEventBridge, createInngestEventsManager } from '@/lib/inngest-event-bridge';
 import type { InteractiveIconProps } from '@/components/ui/InteractiveIcon';
 
@@ -216,21 +217,16 @@ function createWiredCartManager(
         return { checkoutUrl: '/checkout' };
       }
 
-      // Call create-checkout edge function
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: {
-          businessId,
-          sessionId,
-          userId,
-          mode: 'payment',
-        },
+      const cart = await getCart(sessionId, userId);
+      const checkoutBody = resolveCheckoutSessionBody({
+        items: cart.items,
       });
 
-      if (error) {
-        console.error('[Cart] Checkout failed:', error);
-        throw error;
+      if (!checkoutBody) {
+        throw new Error('Cart checkout requires a Stripe price mapping');
       }
 
+      const data = await createCheckoutSession(checkoutBody);
       return { checkoutUrl: data.url };
     },
   };
@@ -249,22 +245,20 @@ function createWiredPaymentManager(
         return { url: '/checkout/demo' };
       }
 
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: {
-          businessId,
-          items,
-          priceId: options?.priceId,
-          mode: options?.mode || 'payment',
-          successUrl: options?.successUrl || config.checkoutSuccessUrl || `${window.location.origin}/checkout/success`,
-          cancelUrl: options?.cancelUrl || config.checkoutCancelUrl || `${window.location.origin}/checkout/cancel`,
-        },
+      const checkoutBody = resolveCheckoutSessionBody({
+        items,
+        priceId: options?.priceId,
+        plan: options?.plan,
+        billingCycle: options?.billingCycle,
+        successUrl: options?.successUrl || config.checkoutSuccessUrl,
+        cancelUrl: options?.cancelUrl || config.checkoutCancelUrl,
       });
 
-      if (error) {
-        console.error('[Payments] Checkout failed:', error);
-        throw error;
+      if (!checkoutBody) {
+        throw new Error('Checkout requires a plan or Stripe price ID');
       }
 
+      const data = await createCheckoutSession(checkoutBody);
       return { url: data.url };
     },
 
@@ -479,11 +473,26 @@ export function TemplateRuntimeProvider({ config, children }: TemplateRuntimePro
 
   // Create managers
   const managers = useMemo<IntentManagers>(() => ({
-    crm: createCRMManagerWired(config.businessId),
-    booking: createBookingManagerWired(config.businessId),
+    crm: createCRMManagerWired({
+      businessId: config.businessId,
+      siteId: config.siteId,
+      userId: user?.id,
+      sessionId,
+    }),
+    booking: createBookingManagerWired({
+      businessId: config.businessId,
+      siteId: config.siteId,
+      userId: user?.id,
+      sessionId,
+    }),
     cart: createWiredCartManager(config.businessId, sessionId, user?.id),
     payments: createWiredPaymentManager(config.businessId, config),
-    newsletter: createNewsletterManagerWired(config.businessId),
+    newsletter: createNewsletterManagerWired({
+      businessId: config.businessId,
+      siteId: config.siteId,
+      userId: user?.id,
+      sessionId,
+    }),
     navigation: createNavigationManager(),
     overlay: createOverlayManager(),
     toast: createToastManager(),
@@ -602,37 +611,110 @@ export function useTemplateRuntime(): TemplateRuntimeContextValue {
 
 // ============ HELPER MANAGERS (imported from crm-managers pattern) ============
 
-function createCRMManagerWired(businessId: string): IntentManagers['crm'] {
+interface RuntimeIntentManagerConfig {
+  businessId: string;
+  siteId?: string;
+  userId?: string;
+  sessionId?: string;
+}
+
+interface RuntimeIntentExecResponse {
+  ok: boolean;
+  result?: unknown;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
+function isRuntimeUuid(value?: string): value is string {
+  return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function getRuntimePageId(): string {
+  if (typeof window === 'undefined') return '/';
+  const pageId = window.location.pathname?.trim();
+  return pageId || '/';
+}
+
+async function invokeRuntimeCanonicalIntent(
+  config: RuntimeIntentManagerConfig,
+  intentId: string,
+  params: Record<string, unknown>,
+): Promise<RuntimeIntentExecResponse | null> {
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase.functions.invoke('intent-exec', {
+      body: {
+        siteId: isRuntimeUuid(config.siteId) ? config.siteId : undefined,
+        businessId: config.businessId,
+        intentId,
+        pageId: getRuntimePageId(),
+        params,
+        context: {
+          userId: config.userId,
+          sessionId: config.sessionId,
+        },
+      },
+    });
+
+    if (error) {
+      console.error(`[Runtime] intent-exec ${intentId} failed:`, error);
+      return null;
+    }
+
+    if (data && typeof data === 'object' && 'ok' in data) {
+      return data as RuntimeIntentExecResponse;
+    }
+  } catch (error) {
+    console.error(`[Runtime] intent-exec ${intentId} exception:`, error);
+  }
+
+  return null;
+}
+
+function createCRMManagerWired(config: RuntimeIntentManagerConfig): IntentManagers['crm'] {
   return {
     submitLead: async (data) => {
       if (!supabase) {
         return { leadId: `lead_${Date.now()}`, pipelineId: 'default' };
       }
 
-      // Call edge function for full workflow
-      const { data: result, error } = await supabase.functions.invoke('create-lead', {
-        body: { businessId, ...data },
+      const canonical = await invokeRuntimeCanonicalIntent(config, 'contact.submit', {
+        ...data,
+        email: data.email,
+        name: data.name,
+        phone: data.phone,
+        message: data.message,
       });
 
-      if (error) {
-        console.error('[CRM] Lead creation failed:', error);
-        // Fallback to direct insert
-        const { data: lead } = await supabase
-          .from('crm_leads')
-          .insert({
-            workspace_id: businessId,
-            email: data.email,
-            phone: data.phone,
-            name: data.name,
-            source: data.source || 'website',
-          } as any)
-          .select()
-          .single();
-
-        return { leadId: lead?.id || 'unknown', pipelineId: 'default' };
+      if (canonical?.ok) {
+        const result = (canonical.result ?? {}) as { leadId?: string; contactId?: string; pipelineId?: string };
+        return {
+          leadId: result.leadId || result.contactId || `lead_${Date.now()}`,
+          pipelineId: result.pipelineId || 'default',
+        };
       }
 
-      return { leadId: result.leadId, pipelineId: result.pipelineId };
+      if (canonical && !canonical.ok) {
+        console.error('[CRM] Canonical lead submission failed:', canonical.error);
+      }
+
+      // Fallback to direct insert
+      const { data: lead } = await supabase
+        .from('crm_leads')
+        .insert({
+          workspace_id: config.businessId,
+          email: data.email,
+          phone: data.phone,
+          name: data.name,
+          source: data.source || 'website',
+        } as any)
+        .select()
+        .single();
+
+      return { leadId: lead?.id || 'unknown', pipelineId: 'default' };
     },
 
     getPipeline: async (id) => {
@@ -641,7 +723,7 @@ function createCRMManagerWired(businessId: string): IntentManagers['crm'] {
       const query = supabase
         .from('crm_pipelines')
         .select('*, stages:crm_stages(*)')
-        .eq('business_id', businessId);
+        .eq('business_id', config.businessId);
 
       if (id) query.eq('id', id);
 
@@ -673,7 +755,7 @@ function createCRMManagerWired(businessId: string): IntentManagers['crm'] {
 
       const { data: pipeline } = await supabase
         .from('crm_pipelines')
-        .insert({ workspace_id: businessId, name: defaultPipeline.name, stages: JSON.stringify(defaultPipeline.stages) } as any)
+        .insert({ workspace_id: config.businessId, name: defaultPipeline.name, stages: JSON.stringify(defaultPipeline.stages) } as any)
         .select()
         .single();
 
@@ -682,40 +764,52 @@ function createCRMManagerWired(businessId: string): IntentManagers['crm'] {
   };
 }
 
-function createBookingManagerWired(businessId: string): IntentManagers['booking'] {
+function createBookingManagerWired(config: RuntimeIntentManagerConfig): IntentManagers['booking'] {
   return {
     createBooking: async (data) => {
       if (!supabase) {
         return { bookingId: `booking_${Date.now()}` };
       }
 
-      // Call edge function for full workflow (sends confirmations, etc.)
-      const { data: result, error } = await supabase.functions.invoke('create-booking', {
-        body: { businessId, ...data },
+      const datetime = data.datetime ? new Date(data.datetime) : null;
+      const canonical = await invokeRuntimeCanonicalIntent(config, 'booking.create', {
+        ...data,
+        name: data.customerName,
+        email: data.customerEmail,
+        phone: data.customerPhone,
+        message: data.notes,
+        service: (data as unknown as { serviceName?: string }).serviceName,
+        date: datetime && !Number.isNaN(datetime.getTime()) ? datetime.toISOString().slice(0, 10) : undefined,
+        time: datetime && !Number.isNaN(datetime.getTime()) ? datetime.toISOString().slice(11, 16) : undefined,
+        startsAt: datetime && !Number.isNaN(datetime.getTime()) ? datetime.toISOString() : undefined,
       });
 
-      if (error) {
-        console.error('[Booking] Failed:', error);
-        // Fallback to direct insert
-        const { data: booking } = await supabase
-          .from('bookings')
-          .insert({
-            booking_date: new Date(data.datetime).toISOString().split('T')[0],
-            booking_time: new Date(data.datetime).toISOString().split('T')[1]?.slice(0, 5) || '09:00',
-            service_name: (data as any).serviceName || 'General Appointment',
-            customer_name: data.customerName,
-            customer_email: data.customerEmail,
-            business_id: businessId,
-            service_id: data.serviceId,
-            status: 'pending',
-          })
-          .select()
-          .single();
-
-        return { bookingId: booking?.id || 'unknown' };
+      if (canonical?.ok) {
+        const result = (canonical.result ?? {}) as { bookingId?: string };
+        return { bookingId: result.bookingId || `booking_${Date.now()}` };
       }
 
-      return { bookingId: result.bookingId };
+      if (canonical && !canonical.ok) {
+        console.error('[Booking] Canonical booking submission failed:', canonical.error);
+      }
+
+      // Fallback to direct insert
+      const { data: booking } = await supabase
+        .from('bookings')
+        .insert({
+          booking_date: new Date(data.datetime).toISOString().split('T')[0],
+          booking_time: new Date(data.datetime).toISOString().split('T')[1]?.slice(0, 5) || '09:00',
+          service_name: (data as any).serviceName || 'General Appointment',
+          customer_name: data.customerName,
+          customer_email: data.customerEmail,
+          business_id: config.businessId,
+          service_id: data.serviceId,
+          status: 'pending',
+        })
+        .select()
+        .single();
+
+      return { bookingId: booking?.id || 'unknown' };
     },
 
     getServices: async () => {
@@ -724,7 +818,7 @@ function createBookingManagerWired(businessId: string): IntentManagers['booking'
       const { data: services } = await supabase
         .from('services')
         .select('*')
-        .eq('business_id', businessId)
+        .eq('business_id', config.businessId)
         .eq('active', true);
 
       return (services || []).map(s => ({
@@ -748,7 +842,7 @@ function createBookingManagerWired(businessId: string): IntentManagers['booking'
       const { data: service } = await supabase
         .from('services')
         .insert({
-          business_id: businessId,
+          business_id: config.businessId,
           name: defaultService.name,
           duration_minutes: 60,
           price: 0,
@@ -762,17 +856,34 @@ function createBookingManagerWired(businessId: string): IntentManagers['booking'
   };
 }
 
-function createNewsletterManagerWired(businessId: string): IntentManagers['newsletter'] {
+function createNewsletterManagerWired(config: RuntimeIntentManagerConfig): IntentManagers['newsletter'] {
   return {
     subscribe: async (email, lists) => {
       if (!supabase) {
         return { subscriptionId: `sub_${Date.now()}` };
       }
 
+      const canonical = await invokeRuntimeCanonicalIntent(config, 'newsletter.subscribe', {
+        email,
+        lists,
+        source: 'newsletter',
+      });
+
+      if (canonical?.ok) {
+        const result = (canonical.result ?? {}) as { subscriberId?: string; subscriptionId?: string };
+        return {
+          subscriptionId: result.subscriptionId || result.subscriberId || `sub_${Date.now()}`,
+        };
+      }
+
+      if (canonical && !canonical.ok) {
+        console.error('[Newsletter] Canonical subscribe failed:', canonical.error);
+      }
+
       const { data, error } = await supabase
         .from('newsletter_subscribers')
         .upsert({
-          business_id: businessId,
+          business_id: config.businessId,
           email,
           lists: lists || ['default'],
           subscribed_at: new Date().toISOString(),

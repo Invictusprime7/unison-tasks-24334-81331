@@ -32,7 +32,9 @@ import { getCompositionReactCode, getCompositionMeta } from "@/utils/composition
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
 import { createRuntimeManifest } from "@/types/runtimeManifest";
+import { createLaunchState } from "@/types/launchState";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
+import { useLaunch } from "@/contexts/useLaunchHooks";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -176,6 +178,7 @@ interface BusinessLauncherProps {
 
 export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) {
   const navigate = useNavigate();
+  const { setLaunch } = useLaunch();
   const { toast } = useToast();
   
   // User Design Profile - analyzes saved projects for style-matching
@@ -429,6 +432,23 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       primaryIntent: industryProfile?.primaryIntent,
     });
     console.log(`[BusinessLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, ${sitePlan.funnels.length} funnels`);
+
+    setLaunch(createLaunchState({
+      systemType: selectedChip ? getSystemTypeForChip(selectedChip) : "content",
+      systemName: businessName || "AI Generated",
+      businessName: businessName || "AI Generated",
+      templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
+      templateCategory: selectedChip ? getCategoryForChip(selectedChip) : "landing",
+      aesthetic: "modern",
+      vfsFiles: generatedVfsFiles,
+      preloadedIntents: generatedSystemsBuildContext?.intents?.map((item) => item.intent) || [],
+      startInPreview: true,
+      intentRuntime: true,
+      entryPoint: runtimeManifest.entryPoint,
+      runtimeManifest,
+      sitePlan,
+      systemsBuildContext: generatedSystemsBuildContext ?? undefined,
+    }));
 
     navigate("/web-builder", {
       state: {

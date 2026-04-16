@@ -1,5 +1,5 @@
 /* cache-bust: 20260309 */
-import { useEffect, useRef, useState, useCallback, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense, Component, type ReactNode, type ErrorInfo } from "react";
 import TemplateFeedback from "./TemplateFeedback";
 import { Canvas as FabricCanvas } from "fabric";
 import { Button } from "@/components/ui/button";
@@ -30,9 +30,7 @@ import { ExportDialog } from "./design-studio/ExportDialog";
 import { PerformancePanel } from "./web-builder/PerformancePanel";
 import { DirectEditToolbar } from "./web-builder/DirectEditToolbar";
 import { ArrangementTools } from "./web-builder/ArrangementTools";
-import { SecureIframePreview } from "@/components/SecureIframePreview";
 import { useTemplateState } from "@/hooks/useTemplateState";
-import { sanitizeHTML } from "@/utils/htmlSanitizer";
 import { webBlocks } from "./web-builder/webBlocks";
 import { SimpleModeToggle, SimpleBuilderMode } from "./web-builder/SimpleModeToggle";
 import { InteractiveElementHighlight } from "./web-builder/InteractiveElementHighlight";
@@ -51,7 +49,7 @@ import { LayoutTemplatesPanel } from "./web-builder/LayoutTemplatesPanel";
 import { FloatingDock } from "./web-builder/FloatingDock";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useVirtualFileSystem, VirtualFile } from "@/hooks/useVirtualFileSystem";
+import { useVFS } from "@/hooks/useVFSContext";
 import { FileExplorer } from "./code-editor/FileExplorer";
 import { ModernFileExplorer } from "./code-editor/ModernFileExplorer";
 import { EditorTabs } from "./code-editor/EditorTabs";
@@ -86,7 +84,6 @@ import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
-import { extractPageTabs, type PageTab } from "./web-builder/PageNavigationBar";
 import { PageRouteBar, detectRouteConflicts } from "./web-builder/PageRouteBar";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { BusinessSetupSuggestions } from "@/components/onboarding/BusinessSetupSuggestions";
@@ -818,6 +815,8 @@ type FabricImageObject = FabricCanvas['_objects'][0] & {
 import { useKeyboardShortcuts, defaultWebBuilderShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useCanvasHistory } from "@/hooks/useCanvasHistory";
 import { useCodeHistory } from "@/hooks/useCodeHistory";
+import { useWebBuilderState } from "@/hooks/useWebBuilderState";
+import { useLaunch } from "@/contexts/useLaunchHooks";
 import { ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, ArrowLeft } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
@@ -888,15 +887,73 @@ interface WebBuilderProps {
   onSave?: (html: string, css: string) => void;
 }
 
+const TemplateHtmlPreviewDialog = lazy(() =>
+  import("./web-builder/TemplateHtmlPreviewDialog").then((m) => ({ default: m.TemplateHtmlPreviewDialog }))
+);
+
+interface WebBuilderRouteState {
+  vfsFiles?: Record<string, string>;
+  generatedCode?: string;
+  generatedTemplate?: any;
+  templateName?: string;
+  templateCategory?: string;
+  designPreset?: string;
+  aesthetic?: string;
+  startInPreview?: boolean;
+  systemType?: string;
+  systemName?: string;
+  businessId?: string;
+  projectId?: string;
+  manifestId?: string;
+  projectSlug?: string;
+  projectName?: string;
+  publishStatus?: string;
+  customDomain?: string;
+  from?: string;
+  entryPoint?: string;
+  runtimeManifest?: RuntimeManifest;
+  siteBundle?: LauncherHandoff['siteBundle'];
+  sitePlan?: GeneratedSitePlan;
+  systemsBuildContext?: SystemsBuildContext;
+}
+
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { launch } = useLaunch();
+  const routeState = (location.state as WebBuilderRouteState | null) ?? null;
+  const launchRouteState = useMemo<WebBuilderRouteState | null>(() => {
+    if (!launch) return null;
+
+    return {
+      vfsFiles: launch.vfsFiles,
+      templateName: launch.templateName,
+      templateCategory: launch.templateCategory,
+      aesthetic: launch.aesthetic,
+      startInPreview: launch.startInPreview,
+      systemType: launch.systemType,
+      systemName: launch.systemName,
+      businessId: launch.businessId,
+      projectId: launch.projectId,
+      manifestId: launch.manifestId,
+      entryPoint: launch.entryPoint,
+      runtimeManifest: launch.runtimeManifest,
+      siteBundle: launch.siteBundle,
+      sitePlan: launch.sitePlan,
+      systemsBuildContext: launch.systemsBuildContext,
+    };
+  }, [launch]);
+  const effectiveRouteState = useMemo<WebBuilderRouteState | null>(() => {
+    if (!launchRouteState && !routeState) return null;
+    return {
+      ...(launchRouteState ?? {}),
+      ...(routeState ?? {}),
+    };
+  }, [launchRouteState, routeState]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
-  const [selectedObject, setSelectedObject] = useState<FabricCanvas['_objects'][0] | null>(null);
   const [activeMode, setActiveMode] = useState<"insert" | "layout" | "text" | "vector">("insert");
-  const [builderMode, setBuilderMode] = useState<SimpleBuilderMode>('select');
   // useReactPreview removed — VFSPreview (Sandpack) is now the only preview engine
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [zoom, setZoom] = useState(0.5);
@@ -917,16 +974,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [saveProjectDescription, setSaveProjectDescription] = useState("");
   const [currentTemplateName, setCurrentTemplateName] = useState<string | null>(null);
   const [currentDesignPreset, setCurrentDesignPreset] = useState<string | null>(
-    ((location.state as { designPreset?: string })?.designPreset as string) ||
-      ((location.state as { aesthetic?: string })?.aesthetic as string) ||
+    effectiveRouteState?.designPreset ||
+      effectiveRouteState?.aesthetic ||
       null
   );
   const [currentTemplateCategory, setCurrentTemplateCategory] = useState<string | null>(
-    ((location.state as { templateCategory?: string })?.templateCategory as string) || null
+    effectiveRouteState?.templateCategory || null
   );
   const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null);
   const [currentManifestId, setCurrentManifestId] = useState<string | null>(
-    ((location.state as { manifestId?: string })?.manifestId as string) || null
+    effectiveRouteState?.manifestId || null
   );
   const [isSavingProject, setIsSavingProject] = useState(false);
   const creatorPlayground = useCreatorPlayground();
@@ -948,7 +1005,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [showPreview, setShowPreview] = useState(false);
-  const [viewMode, setViewMode] = useState<'canvas' | 'code' | 'split'>('canvas');
   const [isInteractiveMode, setIsInteractiveMode] = useState(false);
   const [isInteractiveModeHelpOpen, setIsInteractiveModeHelpOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -967,8 +1023,17 @@ export default function App() {
 }`);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const splitViewDropZoneRef = useRef<HTMLDivElement>(null);
-  const [selectedHTMLElement, setSelectedHTMLElement] = useState<SelectedElement | null>(null);
   const livePreviewRef = useRef<VFSPreviewHandle | null>(null);
+  const {
+    selectedObject,
+    selectedHTMLElement,
+    builderMode,
+    viewMode,
+    setSelectedHTMLElement,
+    setBuilderMode,
+    setViewMode,
+    clearSelection,
+  } = useWebBuilderState(fabricCanvas);
 
   // Template Customizer - full DOM control
   const templateCustomizer = useTemplateCustomizer();
@@ -983,16 +1048,16 @@ export default function App() {
 
   // Auto-open SystemLauncher when no pre-generated content is provided
   const hasIncomingContent = !!(
-    (location.state as any)?.vfsFiles ||
-    (location.state as any)?.generatedCode ||
-    (location.state as any)?.generatedTemplate
+    effectiveRouteState?.vfsFiles ||
+    effectiveRouteState?.generatedCode ||
+    effectiveRouteState?.generatedTemplate
   );
   const [showLauncher, setShowLauncher] = useState(!hasIncomingContent);
   const routeStateHasStructuredProject = !!(
-    (location.state as any)?.vfsFiles ||
-    (location.state as any)?.generatedCode ||
-    (location.state as any)?.generatedTemplate ||
-    (location.state as any)?.siteBundle
+    effectiveRouteState?.vfsFiles ||
+    effectiveRouteState?.generatedCode ||
+    effectiveRouteState?.generatedTemplate ||
+    effectiveRouteState?.siteBundle
   );
 
   // Collapse all panels when on mobile to ensure full-width canvas
@@ -1344,29 +1409,29 @@ export default function App() {
   }, [location.search]);
 
   // Get full cloud context from location state (from CloudProjects or System Launcher)
-  const projectId = (location.state as { projectId?: string })?.projectId;
-  const systemType = (location.state as { systemType?: string })?.systemType;
-  const systemName = (location.state as { systemName?: string })?.systemName;
-  const businessId = (location.state as { businessId?: string })?.businessId;
-  const manifestIdFromState = (location.state as { manifestId?: string })?.manifestId;
-  const projectSlug = (location.state as { projectSlug?: string })?.projectSlug;
-  const projectNameFromState = (location.state as { projectName?: string })?.projectName;
-  const publishStatusFromState = (location.state as { publishStatus?: string })?.publishStatus;
-  const customDomainFromState = (location.state as { customDomain?: string })?.customDomain;
+  const projectId = effectiveRouteState?.projectId;
+  const systemType = effectiveRouteState?.systemType;
+  const systemName = effectiveRouteState?.systemName;
+  const businessId = effectiveRouteState?.businessId;
+  const manifestIdFromState = effectiveRouteState?.manifestId;
+  const projectSlug = effectiveRouteState?.projectSlug;
+  const projectNameFromState = effectiveRouteState?.projectName;
+  const publishStatusFromState = effectiveRouteState?.publishStatus;
+  const customDomainFromState = effectiveRouteState?.customDomain;
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
-  const systemsBuildContextFromState = (location.state as { systemsBuildContext?: SystemsBuildContext })?.systemsBuildContext ?? null;
+  const systemsBuildContextFromState = effectiveRouteState?.systemsBuildContext ?? null;
   
   // Derive compiled contract from navigation state for SystemHealthPanel & preview gating
   const compiledContract = useCompiledContract(
-    location.state ? {
+    effectiveRouteState ? {
       systemsBuildContext: systemsBuildContextFromState ?? undefined,
       systemType: systemType ?? undefined,
-      templateName: (location.state as { templateName?: string })?.templateName,
+      templateName: effectiveRouteState.templateName,
     } : null,
   );
   
   // Virtual file system for code editor
-  const virtualFS = useVirtualFileSystem();
+  const virtualFS = useVFS();
   // Destructure stable callbacks for use in dependency arrays (avoids re-render loops)
   const {
     nodes: vfsNodes,
@@ -1421,19 +1486,26 @@ export default function App() {
   const [activePagePath, setActivePagePath] = useState<string>('/src/App.tsx');
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [activePreviewRoute, setActivePreviewRoute] = useState<string>('/');
-  // Derive page tabs from VFS
-  const pageTabs = useMemo(() => {
-    const vfsFiles = virtualFS.getSandpackFiles();
-    return extractPageTabs(vfsFiles);
-  }, [virtualFS.nodes]);
   
   // Dynamic page keys for SEO panel (derived from VFS)
   const vfsPageKeys = useMemo(() => {
-    if (pageTabs.length <= 1) return ["home"];
-    return pageTabs.map(p => 
-      p.isMain ? "home" : p.path.replace(/^\//, '').replace(/\.html$/, '')
-    );
-  }, [pageTabs]);
+    const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
+    if (registryPages.length > 0) {
+      return registryPages
+        .slice()
+        .sort((a, b) => a.navOrder - b.navOrder)
+        .map((page) => {
+          if (page.isHome) return 'home';
+          return page.path.replace(/^\//, '') || page.title.toLowerCase().replace(/\s+/g, '-');
+        });
+    }
+
+    const vfsFiles = virtualFS.getSandpackFiles();
+    const fallbackPaths = Object.keys(vfsFiles).filter((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path));
+    if (fallbackPaths.length === 0) return ['home'];
+
+    return fallbackPaths.map((path) => path.split('/').pop()?.replace(/\.(tsx|jsx)$/, '')?.toLowerCase() || 'page');
+  }, [creatorPlayground.pageRegistry, virtualFS]);
 
   // Active site plan ref for intent resolution
   const activeSitePlanRef = useRef<GeneratedSitePlan | null>(null);
@@ -1443,7 +1515,7 @@ export default function App() {
   useEffect(() => {
     if (Object.keys(creatorPlayground.pageRegistry.pages).length > 0) return;
 
-    const navState = location.state as { sitePlan?: GeneratedSitePlan } | null;
+    const navState = effectiveRouteState;
     let sitePlan = navState?.sitePlan || null;
 
     // Try recovering from session storage if not in nav state
@@ -1560,6 +1632,22 @@ export default function App() {
     [creatorPlayground.pageRegistry]
   );
 
+  useEffect(() => {
+    const pages = Object.values(creatorPlayground.pageRegistry.pages);
+    if (pages.length === 0) return;
+
+    const resolvedPage =
+      pages.find((page) => page.filePath === activePagePath) ||
+      pages.find((page) => page.isHome && (activePagePath === '/src/App.tsx' || activePagePath === '/App.tsx')) ||
+      null;
+
+    const nextPageId = resolvedPage?.pageId || null;
+    const nextRoute = resolvedPage?.isHome ? '/' : (resolvedPage?.path || '/');
+
+    setActivePageId((prev) => (prev === nextPageId ? prev : nextPageId));
+    setActivePreviewRoute((prev) => (prev === nextRoute ? prev : nextRoute));
+  }, [activePagePath, creatorPlayground.pageRegistry]);
+
   // Feed route conflicts + topology validation into diagnostics aggregator
   useEffect(() => {
     const items: Array<{ domain: 'page-registry'; message: string; severity?: 'error' | 'warning'; code?: string }> = [];
@@ -1670,17 +1758,20 @@ export default function App() {
   
   // Router regeneration handles manifest sync — no separate sync effect needed
   
-  // Handle page switching in multi-page preview
-  const handleSelectPage = useCallback((path: string) => {
+  const openBuilderFile = useCallback((path: string, contentOverride?: string) => {
     setActivePagePath(path);
-    const vfsFiles = getSandpackFiles();
-    const pageContent = vfsFiles[path];
+    const pageContent = contentOverride ?? getSandpackFiles()[path];
     if (pageContent) {
       lastSyncedCodeRef.current = pageContent;
       setPreviewCode(pageContent);
       setEditorCode(pageContent);
     }
   }, [getSandpackFiles]);
+
+  // Handle page switching in multi-page preview
+  const handleSelectPage = useCallback((path: string) => {
+    openBuilderFile(path);
+  }, [openBuilderFile]);
 
   /**
    * Canonical navigation function — the ONLY path for page switching.
@@ -1763,12 +1854,9 @@ export default function ${componentName}Page() {
 }
 `;
     vfsImportFiles({ [path]: newPageCode });
-    setActivePagePath(path);
-    lastSyncedCodeRef.current = newPageCode;
-    setPreviewCode(newPageCode);
-    setEditorCode(newPageCode);
+    openBuilderFile(path, newPageCode);
     toast.success(`Page "${label}" created`);
-  }, [getSandpackFiles, vfsImportFiles, previewCode]);
+  }, [getSandpackFiles, openBuilderFile, vfsImportFiles]);
   
   // Handle removing a page
   const handleRemovePage = useCallback((path: string) => {
@@ -1898,16 +1986,13 @@ export default function ${componentName}Page() {
       ? ensureReactImports(entrySource)
       : entrySource;
 
-    setActivePagePath(entryPath);
-    lastSyncedCodeRef.current = safeEntrySource;
-    setEditorCode(safeEntrySource);
-    setPreviewCode(safeEntrySource);
+    openBuilderFile(entryPath, safeEntrySource);
 
     return {
       entryPath,
       entrySource: safeEntrySource,
     };
-  }, [selectEditableEntryPath]);
+  }, [openBuilderFile, selectEditableEntryPath]);
 
   const importBuilderFiles = useCallback((
     incomingFiles: Record<string, string>,
@@ -2142,7 +2227,7 @@ export default function ${componentName}Page() {
   }, [businessId, projectId]);
   
   const referrerPageName = systemName || 
-    (location.state as { from?: string })?.from || 
+    effectiveRouteState?.from || 
     'System Launcher';
 
   // System/Template readiness state (used by Health tab)
@@ -2810,7 +2895,7 @@ export default function ${componentName}Page() {
         if (source && requestId) {
           source.postMessage({ type: 'NAV_ROUTE', requestId, route: `/${pageName}` }, '*');
         }
-        setActivePagePath(vfsPath);
+        openBuilderFile(vfsPath);
         toast(`Navigated to ${buttonLabel || pageName}`);
         sendResultToIframe({ success: true });
         return;
@@ -2987,7 +3072,6 @@ export default function ${componentName}Page() {
   }, []);
 
   // Dynamic page generation state
-  const [generatedPages, setGeneratedPages] = useState<Record<string, string>>({});
   const [isGeneratingPage, setIsGeneratingPage] = useState(false);
   const [currentNavPage, setCurrentNavPage] = useState<string | null>(null);
 
@@ -2997,11 +3081,10 @@ export default function ${componentName}Page() {
   ) => {
     const activePath = options?.activePath || '/src/App.tsx';
     vfsResetToEmpty();
-    setGeneratedPages({});
-    setActivePagePath(activePath);
-    lastSyncedCodeRef.current = options?.entryContent ?? files[activePath] ?? '';
+    const entryContent = options?.entryContent ?? files[activePath] ?? '';
+    openBuilderFile(activePath, entryContent);
     vfsImportFiles(files);
-  }, [vfsImportFiles, vfsResetToEmpty]);
+  }, [openBuilderFile, vfsImportFiles, vfsResetToEmpty]);
 
   /**
    * Trigger AI page generation with full context injection (React/TSX only).
@@ -3021,13 +3104,10 @@ export default function ${componentName}Page() {
     const vfsFiles = getSandpackFiles();
 
     // Check VFS cache first
-    const existingContent = vfsFiles[vfsPath] || generatedPages[pageName];
+    const existingContent = vfsFiles[vfsPath];
     if (existingContent) {
       // Page exists — navigate via React Router
-      setActivePagePath(vfsPath);
-      const content = typeof existingContent === 'string' ? existingContent : (existingContent as any).content;
-      lastSyncedCodeRef.current = content;
-      setEditorCode(content);
+      openBuilderFile(vfsPath, existingContent);
       // Tell preview to navigate via hash router
       if (source && requestId) {
         source.postMessage({ type: 'NAV_ROUTE', requestId, route: `/${pageName}` }, '*');
@@ -3138,7 +3218,6 @@ export default ${componentName}Page;`;
       if (pageCode) {
         // Save to VFS as .tsx page component
         vfsImportFiles({ [vfsPath]: pageCode });
-        setGeneratedPages(prev => ({ ...prev, [pageName]: pageCode }));
         
         // Regenerate canonical topology router so the new page is routable
         const allFiles = getSandpackFiles();
@@ -3165,9 +3244,7 @@ export default ${componentName}Page;`;
         }
         
         // Set editor to the new page file
-        setActivePagePath(vfsPath);
-        lastSyncedCodeRef.current = pageCode;
-        setEditorCode(pageCode);
+        openBuilderFile(vfsPath, pageCode);
 
         // Tell preview to navigate to the new route
         if (source && requestId) {
@@ -3196,7 +3273,7 @@ export default ${componentName}Page;`;
       setIsGeneratingPage(false);
       setCurrentNavPage(null);
     }
-  }, [getSandpackFiles, vfsImportFiles, previewCode, generatedPages, businessDataContext, userDesignProfile, activeSystemType, creatorPlayground.pageRegistry]);
+  }, [getSandpackFiles, openBuilderFile, vfsImportFiles, previewCode, businessDataContext, userDesignProfile, activeSystemType, creatorPlayground.pageRegistry]);
 
   // Ref to always hold the latest triggerPageGeneration (avoids stale closure in INTENT_TRIGGER handler)
   const triggerPageGenRef = useRef(triggerPageGeneration);
@@ -3247,18 +3324,7 @@ export default ${componentName}Page;`;
 
   // Load template from navigation state (from Web Design Kit)
   useEffect(() => {
-    const navState = location.state as {
-      vfsFiles?: Record<string, string>;
-      generatedCode?: string;
-      generatedTemplate?: any;
-      templateName?: string;
-      aesthetic?: string;
-      startInPreview?: boolean;
-      systemType?: string;
-      entryPoint?: string;
-      runtimeManifest?: RuntimeManifest;
-      siteBundle?: LauncherHandoff['siteBundle'];
-    } | null;
+    const navState = effectiveRouteState;
 
     const navStateSignature = navState
       ? JSON.stringify({
@@ -3548,7 +3614,7 @@ ${sectionsJsx}
       importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
     }
-  }, [location.state, activePagePath, activeSystemType, creatorPlayground, replaceProjectFiles, virtualFS]);
+  }, [effectiveRouteState, activePagePath, activeSystemType, creatorPlayground, replaceProjectFiles, virtualFS]);
 
   // Handle AI code generation
   const handleAICodeGenerated = (code: string) => {
@@ -3889,32 +3955,13 @@ ${html}
 
     setFabricCanvas(canvas);
 
-    const handleSelectionCreated = (e: { selected?: FabricCanvas['_objects'] }) => {
-      setSelectedObject(e.selected?.[0] || null);
-    };
-
-    const handleSelectionUpdated = (e: { selected?: FabricCanvas['_objects'] }) => {
-      setSelectedObject(e.selected?.[0] || null);
-    };
-
-    const handleSelectionCleared = () => {
-      setSelectedObject(null);
-    };
-
-    canvas.on("selection:created", handleSelectionCreated);
-    canvas.on("selection:updated", handleSelectionUpdated);
-    canvas.on("selection:cleared", handleSelectionCleared);
-
     return () => {
-      canvas.off("selection:created", handleSelectionCreated);
-      canvas.off("selection:updated", handleSelectionUpdated);
-      canvas.off("selection:cleared", handleSelectionCleared);
+      clearSelection();
       canvas.clear();
       canvas.dispose();
       setFabricCanvas(null);
-      setSelectedObject(null);
     };
-  }, [canvasHeight]);
+  }, [canvasHeight, clearSelection]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -4039,13 +4086,13 @@ ${html}
 
   // Handle generated templates from navigation state (Web Design Kit)
   useEffect(() => {
-    if (!location.state?.generatedTemplate) return;
+    if (!effectiveRouteState?.generatedTemplate) return;
     if (!fabricCanvas) {
       console.log('[WebBuilder] Canvas not ready, will process template when canvas is available');
       return;
     }
 
-    const { generatedTemplate } = location.state;
+    const { generatedTemplate } = effectiveRouteState;
     console.log('[WebBuilder] Template received from route state:', generatedTemplate);
 
     updateTemplate(generatedTemplate).then(() => {
@@ -4057,7 +4104,7 @@ ${html}
       console.error('[WebBuilder] ❌ Failed to render template from route state:', error);
       toast.error('Failed to render template: ' + (error instanceof Error ? error.message : 'Unknown error'));
     });
-  }, [location.state, fabricCanvas, updateTemplate]);
+  }, [effectiveRouteState, fabricCanvas, updateTemplate]);
 
   // Auto-adjust canvas height based on content
   const updateCanvasHeight = useCallback(() => {
@@ -4629,13 +4676,13 @@ ${html}
           
           {/* Mode Toggle */}
           <SimpleModeToggle
-            currentMode={builderMode}
+            currentMode={builderMode === 'preview' ? 'preview' : 'select'}
             onModeChange={(mode) => {
               setBuilderMode(mode);
               setIsInteractiveMode(mode === 'preview');
               if (mode === 'preview') {
                 setSelectedHTMLElement(null);
-                setSelectedObject(null);
+                clearSelection();
               }
             }}
             hasSelection={!!selectedHTMLElement || !!selectedObject}
@@ -6025,36 +6072,23 @@ export default function ${componentName}() {
         </div>
       )}
 
-      {/* Secure HTML Preview Dialog */}
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-6xl h-[90vh] backdrop-blur-2xl bg-gradient-to-b from-[#0d0d14]/98 to-[#0a0a0f]/98 border-white/[0.08]">
-          <DialogHeader>
-            <DialogTitle className="text-white flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2">
-                <Eye className="h-5 w-5 text-white/70" />
-                Live HTML Preview
-              </span>
-              {templateState.isRendering && (
-                <span className="text-xs text-white/40">Rendering...</span>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden">
-            <SecureIframePreview
-              html={sanitizeHTML(templateState.html)}
-              css={templateState.css}
-              className="w-full h-full border border-white/[0.08] rounded-xl bg-white"
-              onConsole={(type, args) => {
-                console.log(`[Preview ${type}]:`, ...args);
-              }}
-              onError={(error) => {
-                console.error('[Preview Error]:', error);
-                toast.error('Preview error: ' + error.message);
-              }}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Legacy template HTML preview - intentionally isolated from the main Sandpack path */}
+      <Suspense fallback={null}>
+        <TemplateHtmlPreviewDialog
+          open={showPreview}
+          onOpenChange={setShowPreview}
+          html={templateState.html}
+          css={templateState.css}
+          isRendering={templateState.isRendering}
+          onConsole={(type, args) => {
+            console.log(`[Preview ${type}]:`, ...args);
+          }}
+          onError={(error) => {
+            console.error('[Preview Error]:', error);
+            toast.error('Preview error: ' + error.message);
+          }}
+        />
+      </Suspense>
 
       {/* Keyboard Shortcuts Dialog */}
       <Dialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen}>

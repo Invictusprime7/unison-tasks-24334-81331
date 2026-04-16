@@ -71,9 +71,9 @@ export interface VFSContextValue {
   dockerAvailable: boolean;
   
   // Preview Actions
-  startPreview: () => Promise<void>;
+  startPreview: () => Promise<PreviewSession | null>;
   stopPreview: () => Promise<void>;
-  restartPreview: () => Promise<void>;
+  restartPreview: () => Promise<PreviewSession | null>;
   patchFile: (path: string, content: string) => Promise<boolean>;
   
   // Enhanced Import Actions
@@ -192,14 +192,15 @@ export function VFSProvider({
   }, []);
   
   // Combined actions
-  const startPreview = useCallback(async () => {
+  const startPreview = useCallback(async (): Promise<PreviewSession | null> => {
     if (!dockerAvailable) {
       console.warn('[VFSContext] Preview service not available');
-      return;
+      return null;
     }
-    await preview.startSession(vfs.nodes);
+    const session = await preview.startSession(vfs.nodes);
     // Reset sync cache on new session
     lastSyncedContentRef.current.clear();
+    return session;
   }, [dockerAvailable, preview, vfs.nodes]);
   
   const stopPreview = useCallback(async () => {
@@ -207,9 +208,9 @@ export function VFSProvider({
     lastSyncedContentRef.current.clear();
   }, [preview]);
   
-  const restartPreview = useCallback(async () => {
+  const restartPreview = useCallback(async (): Promise<PreviewSession | null> => {
     await stopPreview();
-    await startPreview();
+    return startPreview();
   }, [stopPreview, startPreview]);
   
   // Helpers

@@ -137,7 +137,11 @@ function generateSlug(name: string): string {
     .substring(0, 50);
 }
 
-function generatePageHTML(page: ProvisionRequest["blueprint"]["site"]["pages"][0], brand: ProvisionRequest["blueprint"]["brand"]): string {
+function generatePageHTML(
+  page: ProvisionRequest["blueprint"]["site"]["pages"][0],
+  brand: ProvisionRequest["blueprint"]["brand"],
+  businessId: string,
+): string {
   const sections = page.sections.map(section => {
     switch (section.type) {
       case "hero":
@@ -373,15 +377,25 @@ ${footer}
         const data = form ? Object.fromEntries(new FormData(form)) : {};
         
         try {
-          const response = await fetch('/api/intent-router', {
+          const response = await fetch('/api/intent-exec', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ intent, payload: data }),
+            body: JSON.stringify({
+              businessId: '${businessId}',
+              intentId: intent,
+              pageId: '${page.id}',
+              params: data,
+            }),
           });
           
           if (response.ok) {
+            const result = await response.json();
             if (form) form.reset();
-            alert('Success! We will be in touch soon.');
+            if (result && result.ok !== false) {
+              alert('Success! We will be in touch soon.');
+            } else {
+              alert(result?.error?.message || 'Something went wrong. Please try again.');
+            }
           } else {
             alert('Something went wrong. Please try again.');
           }
@@ -483,7 +497,8 @@ serve(async (req) => {
     // Step 3: Create project/template with generated HTML
     const homePageHtml = generatePageHTML(
       sitePages.find(p => p.type === "home") || sitePages[0],
-      blueprint.brand
+      blueprint.brand,
+      business.id,
     );
 
     const { data: template, error: templateError } = await adminClient

@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@supabase/supabase-js';
+import {
+  createCheckoutSession as startCheckoutSession,
+  resolveCheckoutSessionBody,
+} from '@/runtime/checkoutClient';
 
 export type PlanType = 'free' | 'pro' | 'business';
 export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing';
@@ -211,17 +215,17 @@ export function useSubscription() {
     if (!user) return { error: 'Not authenticated' };
 
     try {
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: {
-          plan,
-          billingCycle,
-          successUrl: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-          cancelUrl: `${window.location.origin}/checkout/cancel`,
-        },
+      const checkoutBody = resolveCheckoutSessionBody({
+        plan,
+        billingCycle,
       });
 
-      if (error) throw error;
-      return { url: data?.url };
+      if (!checkoutBody) {
+        return { error: 'Invalid checkout configuration' };
+      }
+
+      const session = await startCheckoutSession(checkoutBody);
+      return { url: session.url };
     } catch (err) {
       return { error: err instanceof Error ? err.message : 'Failed to create checkout session' };
     }

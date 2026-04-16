@@ -43,26 +43,26 @@ function packsForSystem(systemType: SystemType): string[] {
 }
 
 function defaultIntentBindingsForSystem(systemType: SystemType): Array<{ intent: string; handler: string }> {
-  // NOTE: these map to your existing runtime intentRouter edge functions.
+  // NOTE: new installs should bind action intents to the canonical executor.
   switch (systemType) {
     case "booking":
       return [
-        { intent: "booking.create", handler: "create-booking" },
-        { intent: "reservation.submit", handler: "create-booking" },
-        { intent: "contact.submit", handler: "create-lead" },
-        { intent: "newsletter.subscribe", handler: "create-lead" },
+        { intent: "booking.create", handler: "intent-exec" },
+        { intent: "reservation.submit", handler: "intent-exec" },
+        { intent: "contact.submit", handler: "intent-exec" },
+        { intent: "newsletter.subscribe", handler: "intent-exec" },
       ];
     case "store":
       return [
         { intent: "cart.add", handler: "workflow-trigger" },
         { intent: "checkout.start", handler: "workflow-trigger" },
-        { intent: "contact.submit", handler: "create-lead" },
-        { intent: "newsletter.subscribe", handler: "create-lead" },
+        { intent: "contact.submit", handler: "intent-exec" },
+        { intent: "newsletter.subscribe", handler: "intent-exec" },
       ];
     default:
       return [
-        { intent: "contact.submit", handler: "create-lead" },
-        { intent: "newsletter.subscribe", handler: "create-lead" },
+        { intent: "contact.submit", handler: "intent-exec" },
+        { intent: "newsletter.subscribe", handler: "intent-exec" },
       ];
   }
 }

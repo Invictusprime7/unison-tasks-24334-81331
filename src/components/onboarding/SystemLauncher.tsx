@@ -54,6 +54,7 @@ import {
 } from "@/sections/references";
 import { executeCanonicalPipeline, type CanonicalPipelineResult } from "@/services/canonicalPipeline";
 import { useLaunch } from "@/contexts/useLaunchHooks";
+import { createLaunchState } from "@/types/launchState";
 import { extractLauncherFilesPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
@@ -824,7 +825,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         });
 
         // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
-        const launchState = {
+        const launchState = createLaunchState({
           systemType: selectedSystem as any,
           systemName: system.name,
           businessName: businessName.trim(),
@@ -836,8 +837,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           preloadedIntents: canonicalIntents,
           startInPreview: true,
           intentRuntime: true,
-          createdAt: new Date().toISOString(),
-        };
+          businessId: provisionedBusinessId || undefined,
+          runtimeManifest,
+          entryPoint: runtimeManifest.entryPoint,
+          siteBundle: parsedSiteBundle,
+          sitePlan,
+        });
         setLaunch(launchState);
 
         navigate("/web-builder", {
@@ -875,7 +880,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         });
 
         // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
-        const launchState = {
+        const launchState = createLaunchState({
           systemType: selectedSystem as any,
           systemName: system.name,
           businessName: businessName.trim(),
@@ -887,8 +892,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           preloadedIntents: canonicalIntents,
           startInPreview: true,
           intentRuntime: true,
-          createdAt: new Date().toISOString(),
-        };
+          businessId: provisionedBusinessId || undefined,
+          runtimeManifest,
+          entryPoint: runtimeManifest.entryPoint,
+          sitePlan,
+        });
         setLaunch(launchState);
 
         navigate("/web-builder", {

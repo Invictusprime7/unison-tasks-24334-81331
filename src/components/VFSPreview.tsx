@@ -32,17 +32,30 @@ import { Button } from '@/components/ui/button';
 import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
-import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
-import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
-import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
+import { useLaunch } from '@/contexts/useLaunchHooks';
+import { useVFSSafe } from '@/hooks/useVFSContext';
 
 // ============================================================================
 // Types
 // ============================================================================
 
 type PreviewBackend = 'docker' | 'local' | 'sandpack' | 'loading' | 'none';
+
+interface PreviewServiceFacade {
+  session: {
+    iframeUrl: string;
+    status: 'starting' | 'running' | 'stopped' | 'error';
+  } | null;
+  loading: boolean;
+  error: string | null;
+  connected: boolean;
+  startSession: (nodes: VirtualNode[]) => Promise<unknown>;
+  stopSession: () => Promise<void>;
+  patchFile: (path: string, content: string) => Promise<boolean>;
+}
 
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
@@ -216,6 +229,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   enableSelection = false,
   onElementSelect,
 }, ref) => {
+  const { launch } = useLaunch();
+  const vfsContext = useVFSSafe();
   // State - default to 'sandpack' — no HTML fallback
   const [backend, setBackend] = useState<PreviewBackend>('sandpack');
   const [showLogs, setShowLogs] = useState(false);
@@ -224,8 +239,27 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const startAttemptedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
-  // Docker preview service
-  const dockerService = usePreviewService();
+  const localPreviewService = usePreviewService();
+  const canUseContextPreview =
+    !!vfsContext &&
+    !propFiles &&
+    vfsContext.nodes === nodes;
+
+  const contextPreviewService = useMemo<PreviewServiceFacade | null>(() => {
+    if (!canUseContextPreview || !vfsContext) return null;
+
+    return {
+      session: vfsContext.previewSession,
+      loading: vfsContext.previewLoading,
+      error: vfsContext.previewError,
+      connected: vfsContext.previewConnected,
+      startSession: async () => vfsContext.startPreview(),
+      stopSession: vfsContext.stopPreview,
+      patchFile: vfsContext.patchFile,
+    };
+  }, [canUseContextPreview, vfsContext]);
+
+  const dockerService = contextPreviewService ?? localPreviewService;
   
   // AI execution and terminal bridge
   const previewAI = usePreviewAI();
@@ -242,16 +276,12 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
   
-  // Prepare Sandpack dependencies
-  const sandpackDeps = useMemo(() => {
-    const { dependencies } = getDependenciesForSandpack(files, SANDPACK_DEPENDENCIES);
-    return dependencies;
-  }, [files]);
-  
-  // Prepare Sandpack files: flatten /src/ paths, process imports, add shims
-  const sandpackFiles = useMemo(() => {
-    return prepareSandpackFiles(files);
-  }, [files]);
+  const { sandpackFiles, dependencies: sandpackDeps } = useMemo(() => {
+    return buildPreviewArtifacts({
+      sourceFiles: files,
+      launchState: launch,
+    });
+  }, [files, launch]);
 
   const normalizedActiveFile = useMemo(() => {
     if (!activeFile) return null;
@@ -359,15 +389,16 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     // Default: always Sandpack
     setBackend('sandpack');
     onReady?.();
-  }, []);
+  }, [autoStart, dockerGatewayConfigured, dockerService, forceBackend, localViteConfigured, nodes, onReady]);
   
   // Sync file changes to Docker when running
   useEffect(() => {
     if (backend !== 'docker' || !dockerService.session || dockerService.session.status !== 'running') return;
+    if (canUseContextPreview) return;
     for (const [path, content] of Object.entries(files)) {
       dockerService.patchFile(path, content);
     }
-  }, [files, backend, dockerService.session]);
+  }, [files, backend, canUseContextPreview, dockerService]);
   
   // Handlers
   const handleStartDocker = useCallback(async () => {

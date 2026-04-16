@@ -542,6 +542,10 @@ async function executeCoreFallback(
   if (intentId === "contact.submit" || intentId === "lead.capture") {
     return await handleLeadCapture(supabase, params, context);
   }
+
+  if (intentId === "newsletter.subscribe") {
+    return await handleNewsletterSubscribe(supabase, params, context);
+  }
   
   // Booking intents
   if (intentId === "booking.create") {
@@ -745,6 +749,117 @@ async function handleQuoteRequest(
     clientActions: [{
       type: "TOAST",
       message: "Quote request received! We'll prepare your estimate shortly.",
+      level: "success",
+    }],
+  };
+}
+
+async function handleNewsletterSubscribe(
+  supabase: SupabaseClient,
+  params: Record<string, unknown>,
+  context: { siteId?: string; businessId: string }
+): Promise<{ ok: boolean; result: unknown; clientActions: ClientAction[] }> {
+  const email = typeof params.email === "string" ? params.email.trim() : "";
+  const name = typeof params.name === "string"
+    ? params.name.trim()
+    : typeof params.fullName === "string"
+      ? params.fullName.trim()
+      : "";
+  const phone = typeof params.phone === "string" ? params.phone.trim() : "";
+  const source = typeof params.source === "string" && params.source.trim()
+    ? params.source.trim()
+    : "website";
+
+  if (!email) {
+    return {
+      ok: false,
+      result: { error: "Email is required" },
+      clientActions: [{
+        type: "TOAST",
+        message: "Email is required to subscribe.",
+        level: "error",
+      }],
+    };
+  }
+
+  const { data: existingSubscriber } = await supabase
+    .from("newsletter_subscribers")
+    .select("id")
+    .eq("business_id", context.businessId)
+    .eq("email", email)
+    .maybeSingle();
+
+  if (existingSubscriber?.id) {
+    return {
+      ok: true,
+      result: { subscriberId: existingSubscriber.id, duplicate: true },
+      clientActions: [{
+        type: "TOAST",
+        message: "You're already subscribed!",
+        level: "info",
+      }],
+    };
+  }
+
+  const { data: subscriber, error: subscriberError } = await supabase
+    .from("newsletter_subscribers")
+    .insert({
+      business_id: context.businessId,
+      project_id: context.siteId || null,
+      email,
+      name: name || null,
+      status: "active",
+      source,
+      created_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (subscriberError) {
+    console.error("[intent-exec] Newsletter subscribe error:", subscriberError);
+
+    const { error: contactError } = await supabase
+      .from("crm_contacts")
+      .upsert({
+        business_id: context.businessId,
+        email,
+        name: name || null,
+        phone: phone || null,
+        source: source || "newsletter_signup",
+        tags: ["newsletter"],
+        custom_fields: params,
+      }, { onConflict: "business_id,email" });
+
+    if (contactError) {
+      console.error("[intent-exec] Newsletter fallback contact error:", contactError);
+      return {
+        ok: false,
+        result: { error: contactError.message },
+        clientActions: [{
+          type: "TOAST",
+          message: "Failed to subscribe. Please try again.",
+          level: "error",
+        }],
+      };
+    }
+
+    return {
+      ok: true,
+      result: { fallback: "crm_contact" },
+      clientActions: [{
+        type: "TOAST",
+        message: "Thanks for subscribing!",
+        level: "success",
+      }],
+    };
+  }
+
+  return {
+    ok: true,
+    result: { subscriberId: subscriber?.id },
+    clientActions: [{
+      type: "TOAST",
+      message: "Thanks for subscribing!",
       level: "success",
     }],
   };

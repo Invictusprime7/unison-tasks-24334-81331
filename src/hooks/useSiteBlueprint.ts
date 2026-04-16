@@ -160,7 +160,7 @@ function createDefaultBlueprint(
         seenIntents.add(intentId);
         defaultIntents.push({
           intent: intentId,
-          target: { kind: "edge_function", ref: "intent-router" },
+          target: { kind: "edge_function", ref: "intent-exec" },
           payload_schema: [],
         });
       }

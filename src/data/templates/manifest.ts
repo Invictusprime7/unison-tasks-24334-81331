@@ -234,7 +234,7 @@ const BOOKING_INTENTS: IntentRequirement[] = [
   {
     intent: 'booking.create',
     label: 'Book Appointment',
-    handler: 'create-booking',
+    handler: 'intent-exec',
     outcome: 'New booking in system + confirmation',
   },
 ];
@@ -243,7 +243,7 @@ const CONTACT_INTENTS: IntentRequirement[] = [
   {
     intent: 'contact.submit',
     label: 'Contact Us',
-    handler: 'create-lead',
+    handler: 'intent-exec',
     outcome: 'Lead captured in CRM',
   },
 ];
@@ -252,7 +252,7 @@ const NEWSLETTER_INTENTS: IntentRequirement[] = [
   {
     intent: 'newsletter.subscribe',
     label: 'Subscribe',
-    handler: 'create-lead',
+    handler: 'intent-exec',
     outcome: 'Subscriber added to list',
   },
 ];
@@ -261,7 +261,7 @@ const QUOTE_INTENTS: IntentRequirement[] = [
   {
     intent: 'quote.request',
     label: 'Request Quote',
-    handler: 'create-lead',
+    handler: 'intent-exec',
     outcome: 'Quote request submitted',
   },
 ];

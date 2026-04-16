@@ -7,6 +7,7 @@ import { CheckSquare, Check, Star, ArrowLeft, Zap, Loader2 } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { createCheckoutSession, resolveCheckoutSessionBody } from "@/runtime/checkoutClient";
 
 // Initialize Stripe - use the publishable key from environment
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
@@ -156,17 +157,16 @@ const Pricing = () => {
         return;
       }
 
-      // Call create-checkout function
-      const { data, error } = await supabase.functions.invoke("create-checkout", {
-        body: {
-          plan: tier.name.toLowerCase(),
-          priceId: tier.stripePriceId,
-          successUrl: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-          cancelUrl: `${window.location.origin}/checkout/cancel`,
-        },
+      const checkoutBody = resolveCheckoutSessionBody({
+        plan: tier.name.toLowerCase(),
+        priceId: tier.stripePriceId,
       });
 
-      if (error) throw error;
+      if (!checkoutBody) {
+        throw new Error("Invalid checkout configuration");
+      }
+
+      const data = await createCheckoutSession(checkoutBody);
 
       // Redirect to Stripe Checkout (URL is returned from edge function)
       if (data?.url) {

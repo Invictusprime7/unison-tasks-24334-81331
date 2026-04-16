@@ -80,6 +80,7 @@ const AVAILABLE_OVERLAYS: Set<string> = new Set([
 
 /** Edge functions that exist */
 const AVAILABLE_EDGE_FUNCTIONS: Set<string> = new Set([
+  'intent-exec',
   'create-lead',
   'create-booking',
   'create-checkout',

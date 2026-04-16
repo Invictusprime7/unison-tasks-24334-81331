@@ -42,8 +42,8 @@ import { vfsEventBus } from '@/services/vfsEventBus';
 import { vfsSnapshotManager, type DiffSummary } from '@/services/vfsSnapshotManager';
 import { analyzeImportGraph, getAffectedFiles, type ImportGraph, type AffectedFiles } from '@/services/importGraphAnalyzer';
 import { SandpackProvider, SandpackPreview, SandpackLayout } from '@codesandbox/sandpack-react';
-import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
-import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
+import { useLaunch } from '@/contexts/useLaunchHooks';
 
 // ---------------------------------------------------------------------------
 // Error Boundary
@@ -236,14 +236,15 @@ interface InlinePreviewProps {
 const DEVICE_WIDTHS = { desktop: '100%', tablet: '768px', mobile: '375px' };
 
 function InlinePreview({ files, className, device }: InlinePreviewProps) {
+  const { launch } = useLaunch();
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Prepare files for Sandpack
   const { sandpackFiles, dependencies } = useMemo(() => {
-    const prepared = prepareSandpackFiles(files);
-    const { dependencies: deps } = getDependenciesForSandpack(files);
-    return { sandpackFiles: prepared, dependencies: deps };
-  }, [files, refreshKey]);
+    return buildPreviewArtifacts({
+      sourceFiles: files,
+      launchState: launch,
+    });
+  }, [files, launch, refreshKey]);
 
   const hasContent = Object.keys(sandpackFiles).length > 0;
 

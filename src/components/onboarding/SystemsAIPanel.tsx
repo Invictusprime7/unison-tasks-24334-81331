@@ -44,7 +44,9 @@ import { extractLauncherFilesPayload, sanitizeLauncherResponseText } from "@/uti
 import { fixJsxVoidElements, fixJsxStyleStrings } from "@/utils/aiCodeCleaner";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
+import { useLaunch } from "@/contexts/useLaunchHooks";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
+import { createLaunchState } from "@/types/launchState";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -225,6 +227,7 @@ function buildContractAndContext(chipId: string, prompt: string, businessName?: 
 
 export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
   const navigate = useNavigate();
+  const { setLaunch } = useLaunch();
   const { toast } = useToast();
   
   // Code Assistant state
@@ -244,6 +247,32 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
     projectCount: savedProjectCount,
     loading: profileLoading 
   } = useUserDesignProfile();
+
+  const persistLaunchState = useCallback((input: {
+    vfsFiles: Record<string, string>;
+    templateName: string;
+    aesthetic?: string;
+    systemType?: BusinessSystemType;
+    systemName?: string;
+    templateCategory?: LayoutCategory;
+    systemsBuildContext?: SystemsBuildContext;
+  }) => {
+    setLaunch(
+      createLaunchState({
+        systemType: input.systemType || "content",
+        systemName: input.systemName || input.templateName,
+        businessName: input.systemName || input.templateName,
+        templateName: input.templateName,
+        templateCategory: input.templateCategory || "landing",
+        aesthetic: input.aesthetic,
+        vfsFiles: input.vfsFiles,
+        preloadedIntents: input.systemsBuildContext?.intents?.map((item) => item.intent) || [],
+        startInPreview: true,
+        intentRuntime: true,
+        systemsBuildContext: input.systemsBuildContext,
+      }),
+    );
+  }, [setLaunch]);
 
   // File processing helpers
   const getFileType = (file: File): DroppedFile['type'] => {
@@ -389,6 +418,18 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           
           sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify({ "src/App.tsx": reactCode }));
           setDroppedFiles([]); // Clear files on success
+          const contractContext = buildContractAndContext(selectedCodeChip, codePrompt).context;
+          const templateCategory = getCategoryForChip(selectedCodeChip);
+          const launchVfsFiles = templateToVFSFiles(reactCode, ref.templateName.replace(/[^a-zA-Z0-9]/g, ''));
+          persistLaunchState({
+            vfsFiles: launchVfsFiles,
+            templateName: ref.templateName,
+            aesthetic: "premium",
+            systemType: ref.systemType,
+            systemName: ref.templateName,
+            templateCategory,
+            systemsBuildContext: contractContext,
+          });
           navigate("/web-builder", {
             state: {
               generatedCode: reactCode,
@@ -401,7 +442,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
                 projectCount: savedProjectCount,
                 dominantStyle: designProfile?.dominantStyle,
               } : undefined,
-              systemsBuildContext: buildContractAndContext(selectedCodeChip, codePrompt).context,
+              systemsBuildContext: contractContext,
             },
           });
           toast({ 
@@ -477,6 +518,15 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
 
           sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(chipVfsFiles));
           setDroppedFiles([]);
+          persistLaunchState({
+            vfsFiles: chipVfsFiles,
+            templateName: `AI ${chipLabel}`,
+            aesthetic: "modern",
+            systemType: ref?.systemType,
+            systemName: chipLabel,
+            templateCategory: getCategoryForChip(selectedCodeChip),
+            systemsBuildContext: chipBuildContext,
+          });
           navigate("/web-builder", {
             state: {
               vfsFiles: chipVfsFiles,
@@ -506,6 +556,15 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           
           sessionStorage.setItem('ai_assistant_generated_code', chipCode);
           setDroppedFiles([]);
+          persistLaunchState({
+            vfsFiles: chipVfsFiles,
+            templateName: `AI ${chipLabel}`,
+            aesthetic: "modern",
+            systemType: ref?.systemType,
+            systemName: chipLabel,
+            templateCategory: getCategoryForChip(selectedCodeChip),
+            systemsBuildContext: chipBuildContext,
+          });
           navigate("/web-builder", {
             state: {
               vfsFiles: chipVfsFiles,
@@ -582,6 +641,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
 
         sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(freeVfsFiles));
         setDroppedFiles([]);
+        persistLaunchState({
+          vfsFiles: freeVfsFiles,
+          templateName: "AI Generated",
+          aesthetic: "modern",
+          systemType: "content",
+          systemName: "AI Generated",
+          templateCategory: "landing",
+        });
         navigate("/web-builder", {
           state: {
             vfsFiles: freeVfsFiles,
@@ -610,6 +677,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         
         sessionStorage.setItem('ai_assistant_generated_code', generatedCode);
         setDroppedFiles([]);
+        persistLaunchState({
+          vfsFiles: freeVfsFiles,
+          templateName: "AI Generated",
+          aesthetic: "modern",
+          systemType: "content",
+          systemName: "AI Generated",
+          templateCategory: "landing",
+        });
         navigate("/web-builder", {
           state: {
             vfsFiles: freeVfsFiles,

@@ -217,6 +217,8 @@ export interface CheckoutOptions {
   cancelUrl?: string;
   mode?: 'payment' | 'subscription';
   priceId?: string;
+  plan?: string;
+  billingCycle?: 'monthly' | 'yearly';
 }
 
 // ============ HANDLER REGISTRY ============
@@ -276,7 +278,11 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
       items = cart?.items;
     }
 
-    if (!items || items.length === 0) {
+    const explicitCheckoutTarget =
+      typeof ctx.payload?.priceId === 'string' ||
+      typeof ctx.payload?.plan === 'string';
+
+    if ((!items || items.length === 0) && !explicitCheckoutTarget) {
       return {
         ok: false,
         error: { code: 'EMPTY_CART', message: 'Cart is empty' },
@@ -284,9 +290,12 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
       };
     }
 
-    const result = await managers.payments.createCheckout(items, {
+    const result = await managers.payments.createCheckout(items || [], {
       successUrl: ctx.payload?.successUrl as string,
       cancelUrl: ctx.payload?.cancelUrl as string,
+      priceId: ctx.payload?.priceId as string | undefined,
+      plan: ctx.payload?.plan as string | undefined,
+      billingCycle: ctx.payload?.billingCycle as 'monthly' | 'yearly' | undefined,
     });
 
     return {

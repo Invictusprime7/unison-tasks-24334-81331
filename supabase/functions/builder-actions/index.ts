@@ -25,12 +25,12 @@ const PACK_SQL = {
 
 // Intent to Edge Function mapping
 const INTENT_FUNCTION_MAP: Record<string, string> = {
-  'contact.submit': 'create-lead',
-  'newsletter.subscribe': 'create-lead',
-  'join.waitlist': 'create-lead',
-  'booking.create': 'create-booking',
-  'booking.cancel': 'create-booking',
-  'booking.reschedule': 'create-booking',
+  'contact.submit': 'intent-exec',
+  'newsletter.subscribe': 'intent-exec',
+  'join.waitlist': 'intent-exec',
+  'booking.create': 'intent-exec',
+  'booking.cancel': 'intent-exec',
+  'booking.reschedule': 'intent-exec',
   'auth.signup': 'supabase-auth',
   'auth.signin': 'supabase-auth',
   'auth.signout': 'supabase-auth',

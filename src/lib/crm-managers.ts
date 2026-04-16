@@ -17,6 +17,7 @@ import type {
   Cart,
   CheckoutOptions
 } from '@/runtime/intentExecutor';
+import { createCheckoutSession, resolveCheckoutSessionBody } from '@/runtime/checkoutClient';
 import { setupEventBridge, type EventBridgeContext } from './inngest-event-bridge';
 
 // ============ SUPABASE CLIENT ============
@@ -288,8 +289,16 @@ function createCartManager(sessionId: string): IntentManagers['cart'] {
 
     checkout: async () => {
       const cart = getOrCreateCart(sessionId);
-      // In production, this would create a Stripe checkout session
-      return { checkoutUrl: `/checkout?cart=${cart.id}` };
+      const checkoutBody = resolveCheckoutSessionBody({
+        items: cart.items,
+      });
+
+      if (!checkoutBody) {
+        throw new Error('Cart checkout requires a Stripe price mapping');
+      }
+
+      const session = await createCheckoutSession(checkoutBody);
+      return { checkoutUrl: session.url };
     },
   };
 }
@@ -303,25 +312,22 @@ function createPaymentsManager(businessId: string): IntentManagers['payments'] {
     createCheckout: async (items: CartItem[], options?: CheckoutOptions) => {
       console.log('[Payments] Creating checkout:', items);
       
-      // In production, call your Supabase Edge Function
-      // which creates a Stripe Checkout Session
       if (supabase) {
-        const { data, error } = await supabase.functions.invoke('create-checkout', {
-          body: {
-            businessId,
-            items,
-            successUrl: options?.successUrl || `${window.location.origin}/checkout/success`,
-            cancelUrl: options?.cancelUrl || `${window.location.origin}/cart`,
-            mode: options?.mode || 'payment',
-          },
+        const checkoutBody = resolveCheckoutSessionBody({
+          items,
+          priceId: options?.priceId,
+          plan: options?.plan,
+          billingCycle: options?.billingCycle,
+          successUrl: options?.successUrl,
+          cancelUrl: options?.cancelUrl || `${window.location.origin}/cart`,
         });
 
-        if (error) {
-          console.error('[Payments] Checkout creation failed:', error);
-          throw error;
+        if (!checkoutBody) {
+          throw new Error('Checkout requires a plan or Stripe price ID');
         }
 
-        return { url: data.url };
+        const session = await createCheckoutSession(checkoutBody);
+        return { url: session.url };
       }
 
       // Fallback for development

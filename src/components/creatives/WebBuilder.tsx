@@ -57,6 +57,7 @@ import { ModernFileExplorer } from "./code-editor/ModernFileExplorer";
 import { EditorTabs } from "./code-editor/EditorTabs";
 import { ModernEditorTabs } from "./code-editor/ModernEditorTabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { templateToVFSFiles, elementToVFSPatch } from "@/utils/templateToVFS";
 import { htmlToJsx } from "@/utils/htmlToJsx";
 import { setDefaultBusinessId, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
@@ -890,6 +891,7 @@ interface WebBuilderProps {
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [selectedObject, setSelectedObject] = useState<FabricCanvas['_objects'][0] | null>(null);
@@ -935,7 +937,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [playgroundBindings, setPlaygroundBindings] = useState<Record<string, import('@/types/playground').PlaygroundBinding>>({});
   const [playgroundCalendars, setPlaygroundCalendars] = useState<Record<string, import('@/types/playground').PlaygroundCalendar>>({});
   const [playgroundPopups, setPlaygroundPopups] = useState<Record<string, import('@/types/playground').PlaygroundPopup>>({});
-  const [aiPanelOpen, setAiPanelOpen] = useState(true); // AI panel open by default for easy access
+  const [aiPanelOpen, setAiPanelOpen] = useState(true); // AI panel open by default for easy access; force-closed on mount if mobile (see useEffect below)
   const [iframeErrors, setIframeErrors] = useState<IframeError[]>([]);
   const dragDropServiceRef = useRef<CanvasDragDropService>(CanvasDragDropService.getInstance());
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -992,6 +994,15 @@ export default function App() {
     (location.state as any)?.generatedTemplate ||
     (location.state as any)?.siteBundle
   );
+
+  // Collapse all panels when on mobile to ensure full-width canvas
+  useEffect(() => {
+    if (isMobile) {
+      setAiPanelOpen(false);
+      setLeftPanelCollapsed(true);
+      setRightPanelCollapsed(true);
+    }
+  }, [isMobile]);
 
   // Parse template when previewCode changes (but NOT when customizer is applying overrides)
   useEffect(() => {
@@ -4540,7 +4551,7 @@ ${html}
   console.log('[WebBuilder] About to return JSX...');
 
   return (
-    <div ref={mainContainerRef} className="flex flex-col h-screen bg-[#1a0a14]">
+    <div ref={mainContainerRef} className={cn("flex flex-col h-screen bg-[#1a0a14]", isMobile && "pb-14")}>
       {/* SystemLauncher — auto-opens when no pre-generated content */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
 
@@ -4579,8 +4590,10 @@ ${html}
             <ArrowLeft className="h-4 w-4" />
           </Button>
           
-          <div className="h-5 w-px bg-fuchsia-500/50" />
+          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
+          {/* Device + Mode + Tools — hidden on small screens (use bottom nav on mobile) */}
+          <div className="hidden sm:flex items-center gap-2">
           {/* Device Breakpoints */}
           <div className="flex items-center gap-0.5 bg-[#0d0d18] rounded-lg p-1">
             <Button
@@ -4658,10 +4671,11 @@ ${html}
           >
             <Layers className="h-4 w-4" />
           </Button>
+          </div>{/* end hidden sm:flex device+mode+tools */}
         </div>
 
-        {/* Center Section: Floating Dock */}
-        <div className="flex-1 flex justify-center">
+        {/* Center Section: Floating Dock - hidden on small screens */}
+        <div className="flex-1 hidden sm:flex justify-center overflow-hidden min-w-0">
           <FloatingDock
             onSelectTemplate={handleSelectTemplate}
             onDemoTemplate={(code, name, systemType, templateId) => {
@@ -4700,7 +4714,7 @@ ${html}
                   title={`${label} View`}
                 >
                   <Icon className="h-3.5 w-3.5" />
-                  <span className={cn('tracking-wide', isActive ? 'font-bold' : '')}>{label}</span>
+                  <span className={cn('tracking-wide hidden sm:inline', isActive ? 'font-bold' : '')}>{label}</span>
                   {isActive && (
                     <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-fuchsia-300/60" />
                   )}
@@ -4709,10 +4723,10 @@ ${html}
             })}
           </div>
           
-          <div className="h-5 w-px bg-cyan-500/50" />
+          <div className="h-5 w-px bg-cyan-500/50 hidden sm:block" />
           
-          {/* Save with status */}
-          <div className="flex items-center gap-1.5">
+          {/* Save/Deploy/Settings — hidden on small screens */}
+          <div className="hidden sm:flex items-center gap-1.5">
             {autoSaveStatus === 'saving' && (
               <div className="animate-spin h-3 w-3 border-2 border-yellow-500/30 border-t-yellow-400 rounded-full" />
             )}
@@ -4746,6 +4760,8 @@ ${html}
             />
           </div>
           
+          {/* Right Panel Toggle + Playground — hidden on small screens */}
+          <div className="hidden sm:flex items-center gap-2">
           <div className="h-5 w-px bg-fuchsia-500/50" />
           
           {/* Right Panel Toggle */}
@@ -4776,6 +4792,7 @@ ${html}
           >
             <span className="text-sm">🕹️</span>
           </Button>
+          </div>{/* end hidden sm:flex right panel+playground */}
         </div>
       </div>
 
@@ -4875,8 +4892,8 @@ export default function ${componentName}() {
       />
 
       <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-        {/* AI Panel - static left side panel (always visible when builder opens) */}
-        {aiPanelOpen && (
+        {/* AI Panel - static left side panel (desktop only; mobile uses bottom-nav overlay) */}
+        {!isMobile && aiPanelOpen && (
           <>
             <ResizablePanel defaultSize={22} minSize={18} maxSize={35}>
               <AIBuilderPanel
@@ -5009,12 +5026,17 @@ export default function ${componentName}() {
           </>
         )}
 
-        <ResizablePanel defaultSize={aiPanelOpen ? 78 : 100} minSize={50}>
+        <ResizablePanel defaultSize={isMobile ? 100 : (aiPanelOpen ? 78 : 100)} minSize={50}>
           {/* Main Content */}
-          <div className="h-full flex overflow-x-auto overflow-y-hidden">
+          <div className="h-full flex overflow-hidden relative">
         {/* Left Panel - Elements Sidebar */}
         {!leftPanelCollapsed && (
-          <div className="w-64 flex-shrink-0 bg-[#0d0d18] border-r-2 border-cyan-500/40 flex flex-col overflow-hidden shadow-[0_0_20px_rgba(0,255,255,0.15)]">
+          <div className={cn(
+            "bg-[#0d0d18] border-r-2 border-cyan-500/40 flex flex-col overflow-hidden shadow-[0_0_20px_rgba(0,255,255,0.15)] transition-all duration-300",
+            isMobile
+              ? "absolute left-0 top-0 bottom-0 w-[85vw] max-w-xs z-30"
+              : "w-64 flex-shrink-0"
+          )}>
             {/* Left Panel Header with Close Button */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-cyan-500/30 bg-[#0a0a14]">
               <div className="flex items-center gap-2">
@@ -5156,8 +5178,8 @@ export default function ${componentName}() {
           </div>
         )}
         
-        {/* Left Panel Toggle */}
-        <div className="relative">
+        {/* Left Panel Toggle — hidden on mobile (panels accessed via bottom nav) */}
+        <div className="relative hidden sm:block">
           <Button
             variant="ghost"
             size="icon"
@@ -5168,6 +5190,46 @@ export default function ${componentName}() {
             {leftPanelCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </Button>
         </div>
+
+        {/* Mobile AI Panel overlay — full-width canvas-height overlay on small screens */}
+        {isMobile && aiPanelOpen && (
+          <div className="absolute inset-0 z-40 bg-[#0d0d18] flex flex-col">
+            <AIBuilderPanel
+              currentCode={previewCode}
+              systemType={activeSystemType}
+              templateName={currentTemplateName}
+              iframeErrors={iframeErrors}
+              onClearErrors={() => setIframeErrors([])}
+              onClose={() => setAiPanelOpen(false)}
+              userDesignProfile={userDesignProfile ?? undefined}
+              pageStructureContext={pageStructureContext}
+              backendStateContext={backendStateContext}
+              businessDataContext={businessDataContext}
+              systemsBuildContext={systemsBuildContextFromState}
+              vfsContext={aiVFS.getContext().summary}
+              vfsFiles={virtualFS.getSandpackFiles()}
+              previewRef={livePreviewRef}
+              onApplyToVFS={(files) => {
+                const result = aiVFS.applyCode(files);
+                if (result.success) {
+                  const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
+                  syncBuilderFromFiles(mergedFiles, activePagePath);
+                  setViewMode('canvas');
+                  setAiPanelOpen(false);
+                }
+              }}
+              onViewEdits={() => { setViewMode('split'); setAiPanelOpen(false); }}
+              onCodeGenerated={(code) => {
+                importBuilderFiles(templateToVFSFiles(code, currentTemplateName || 'AI Template'), {
+                  preferredPath: '/src/App.tsx',
+                  entryPoint: '/src/App.tsx',
+                });
+                setViewMode('canvas');
+                setAiPanelOpen(false);
+              }}
+            />
+          </div>
+        )}
 
         {/* Center Canvas Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-transparent relative">
@@ -5719,8 +5781,8 @@ export default function ${componentName}() {
           </div>
         </div>
 
-        {/* Right Panel Toggle */}
-        <div className="relative">
+        {/* Right Panel Toggle — hidden on mobile (panels accessed via bottom nav) */}
+        <div className="relative hidden sm:block">
           <Button
             variant="ghost"
             size="icon"
@@ -5734,7 +5796,12 @@ export default function ${componentName}() {
 
         {/* Right Panel: Customizer OR Properties */}
         {!rightPanelCollapsed && (
-          <div className="w-64 flex-shrink-0 bg-[#0d0d18] border-l-2 border-fuchsia-500/40 flex flex-col overflow-hidden shadow-[0_0_20px_rgba(255,0,255,0.15)]">
+          <div className={cn(
+            "bg-[#0d0d18] border-l-2 border-fuchsia-500/40 flex flex-col overflow-hidden shadow-[0_0_20px_rgba(255,0,255,0.15)] transition-all duration-300",
+            isMobile
+              ? "absolute right-0 top-0 bottom-0 w-[85vw] max-w-xs z-30"
+              : "w-64 flex-shrink-0"
+          )}>
             {/* Right Panel Header with Close Button */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-fuchsia-500/30 bg-[#0a0a14]">
               <div className="flex items-center gap-2">
@@ -5828,6 +5895,73 @@ export default function ${componentName}() {
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {/* Mobile Bottom Navigation Bar — fixed at bottom, only visible on small screens */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 h-14 bg-[#0a0a14] border-t-2 border-fuchsia-500/50 flex items-center justify-around px-2 shadow-[0_-4px_20px_rgba(255,0,255,0.15)]">
+        {/* AI */}
+        <button
+          onClick={() => {
+            const next = !aiPanelOpen;
+            setAiPanelOpen(next);
+            if (next) { setLeftPanelCollapsed(true); setRightPanelCollapsed(true); }
+          }}
+          className={cn(
+            "flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg transition-all duration-200 flex-1",
+            aiPanelOpen ? "text-lime-400 bg-lime-500/20" : "text-white/40 hover:text-white/70"
+          )}
+        >
+          <span className="text-base leading-none">⚡</span>
+          <span className="text-[10px] font-medium">AI</span>
+        </button>
+        {/* Tools */}
+        <button
+          onClick={() => {
+            const next = leftPanelCollapsed;
+            setLeftPanelCollapsed(!next);
+            if (!next === false) { /* closing — no-op */ } else { setAiPanelOpen(false); setRightPanelCollapsed(true); }
+          }}
+          className={cn(
+            "flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg transition-all duration-200 flex-1",
+            !leftPanelCollapsed ? "text-cyan-400 bg-cyan-500/20" : "text-white/40 hover:text-white/70"
+          )}
+        >
+          <Layers className="h-4 w-4" />
+          <span className="text-[10px] font-medium">Tools</span>
+        </button>
+        {/* Canvas */}
+        <button
+          onClick={() => {
+            setViewMode('canvas');
+            setAiPanelOpen(false);
+            setLeftPanelCollapsed(true);
+            setRightPanelCollapsed(true);
+          }}
+          className={cn(
+            "flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg transition-all duration-200 flex-1",
+            viewMode === 'canvas' && leftPanelCollapsed && !aiPanelOpen && rightPanelCollapsed
+              ? "text-fuchsia-400 bg-fuchsia-500/20"
+              : "text-white/40 hover:text-white/70"
+          )}
+        >
+          <Square className="h-4 w-4" />
+          <span className="text-[10px] font-medium">Canvas</span>
+        </button>
+        {/* Properties */}
+        <button
+          onClick={() => {
+            const next = rightPanelCollapsed;
+            setRightPanelCollapsed(!next);
+            if (!next === false) { /* closing */ } else { setAiPanelOpen(false); setLeftPanelCollapsed(true); }
+          }}
+          className={cn(
+            "flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg transition-all duration-200 flex-1",
+            !rightPanelCollapsed ? "text-fuchsia-400 bg-fuchsia-500/20" : "text-white/40 hover:text-white/70"
+          )}
+        >
+          <Settings className="h-4 w-4" />
+          <span className="text-[10px] font-medium">Props</span>
+        </button>
+      </div>
 
       {/* Code Preview Dialog */}
       <CodePreviewDialog

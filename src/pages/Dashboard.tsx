@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { ProjectsList } from "@/components/ProjectsList";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { SubscriptionBadge } from "@/components/SubscriptionBadge";
-import { LogOut, Plus, CheckSquare, Inbox, Zap } from "lucide-react";
+import { LogOut, Plus, CheckSquare, Inbox, Zap, Menu } from "lucide-react";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { canCreateProject, incrementProjectCount } = useSubscription();
 
   const handleCreateProject = () => {
@@ -84,60 +86,127 @@ const Dashboard = () => {
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            <SubscriptionBadge />
-            <Button 
-              variant="ghost"
-              onClick={() => navigate("/dashboard/leads")}
-              className={cn(
-                "border border-fuchsia-500/30 text-fuchsia-400 font-bold",
-                "hover:bg-fuchsia-500/20 hover:border-fuchsia-500/60",
-                "hover:shadow-[0_0_15px_rgba(255,0,255,0.3)]",
-                "transition-all duration-200"
-              )}
-            >
-              <Inbox className="h-4 w-4 mr-2" />
-              Leads
-            </Button>
-            <Button 
-              onClick={handleCreateProject}
-              className={cn(
-                "bg-lime-400 text-black font-bold",
-                "shadow-[0_0_15px_rgba(0,255,0,0.4)]",
-                "hover:bg-lime-300 hover:shadow-[0_0_25px_rgba(0,255,0,0.6)]",
-                "active:scale-95 transition-all duration-200"
-              )}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Project
-            </Button>
-            {user ? (
-              <Button 
+            {/* Desktop buttons */}
+            <div className="hidden sm:flex items-center gap-3">
+              <SubscriptionBadge />
+              <Button
                 variant="ghost"
-                onClick={handleSignOut}
+                onClick={() => navigate("/dashboard/leads")}
                 className={cn(
-                  "border border-red-500/30 text-red-400 font-bold",
-                  "hover:bg-red-500/20 hover:border-red-500/60",
-                  "hover:shadow-[0_0_15px_rgba(255,0,0,0.3)]",
+                  "border border-fuchsia-500/30 text-fuchsia-400 font-bold",
+                  "hover:bg-fuchsia-500/20 hover:border-fuchsia-500/60",
+                  "hover:shadow-[0_0_15px_rgba(255,0,255,0.3)]",
                   "transition-all duration-200"
                 )}
               >
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
+                <Inbox className="h-4 w-4 mr-2" />
+                Leads
               </Button>
-            ) : (
-              <Button 
-                variant="ghost"
-                onClick={() => navigate("/auth")}
+              <Button
+                onClick={handleCreateProject}
                 className={cn(
-                  "border border-cyan-500/30 text-cyan-400 font-bold",
-                  "hover:bg-cyan-500/20 hover:border-cyan-500/60",
-                  "hover:shadow-[0_0_15px_rgba(0,255,255,0.3)]",
-                  "transition-all duration-200"
+                  "bg-lime-400 text-black font-bold",
+                  "shadow-[0_0_15px_rgba(0,255,0,0.4)]",
+                  "hover:bg-lime-300 hover:shadow-[0_0_25px_rgba(0,255,0,0.6)]",
+                  "active:scale-95 transition-all duration-200"
                 )}
               >
-                Sign In
+                <Plus className="h-4 w-4 mr-2" />
+                New Project
               </Button>
-            )}
+              {user ? (
+                <Button
+                  variant="ghost"
+                  onClick={handleSignOut}
+                  className={cn(
+                    "border border-red-500/30 text-red-400 font-bold",
+                    "hover:bg-red-500/20 hover:border-red-500/60",
+                    "hover:shadow-[0_0_15px_rgba(255,0,0,0.3)]",
+                    "transition-all duration-200"
+                  )}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  onClick={() => navigate("/auth")}
+                  className={cn(
+                    "border border-cyan-500/30 text-cyan-400 font-bold",
+                    "hover:bg-cyan-500/20 hover:border-cyan-500/60",
+                    "hover:shadow-[0_0_15px_rgba(0,255,255,0.3)]",
+                    "transition-all duration-200"
+                  )}
+                >
+                  Sign In
+                </Button>
+              )}
+            </div>
+
+            {/* Mobile: subscription badge + hamburger */}
+            <div className="flex sm:hidden items-center gap-2">
+              <SubscriptionBadge />
+              <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="border border-fuchsia-500/30 text-fuchsia-400 hover:bg-fuchsia-500/20 hover:border-fuchsia-500/60 transition-all duration-200"
+                    aria-label="Open menu"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-64 bg-[#0d0d18] border-l border-fuchsia-500/30 flex flex-col gap-3 pt-10">
+                  <Button
+                    variant="ghost"
+                    onClick={() => { navigate("/dashboard/leads"); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full justify-start border border-fuchsia-500/30 text-fuchsia-400 font-bold",
+                      "hover:bg-fuchsia-500/20"
+                    )}
+                  >
+                    <Inbox className="h-4 w-4 mr-2" />
+                    Leads
+                  </Button>
+                  <Button
+                    onClick={() => { handleCreateProject(); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full justify-start bg-lime-400 text-black font-bold",
+                      "hover:bg-lime-300 active:scale-95 transition-all duration-200"
+                    )}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Project
+                  </Button>
+                  {user ? (
+                    <Button
+                      variant="ghost"
+                      onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}
+                      className={cn(
+                        "w-full justify-start border border-red-500/30 text-red-400 font-bold",
+                        "hover:bg-red-500/20"
+                      )}
+                    >
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Sign Out
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      onClick={() => { navigate("/auth"); setMobileMenuOpen(false); }}
+                      className={cn(
+                        "w-full justify-start border border-cyan-500/30 text-cyan-400 font-bold",
+                        "hover:bg-cyan-500/20"
+                      )}
+                    >
+                      Sign In
+                    </Button>
+                  )}
+                </SheetContent>
+              </Sheet>
+            </div>
           </div>
         </div>
       </header>

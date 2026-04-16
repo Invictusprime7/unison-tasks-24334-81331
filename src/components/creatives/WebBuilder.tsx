@@ -5264,7 +5264,7 @@ export default function ${componentName}() {
           {/* Main Content Area - Canvas/Code/Split View */}
           <div 
             ref={canvasContainerRef}
-            className="flex-1 overflow-hidden p-2 flex items-stretch justify-center bg-gradient-to-br from-[#0a0a0f] via-[#0c0c12] to-[#0a0a0f] relative"
+            className="flex-1 overflow-hidden p-0 sm:p-2 flex items-stretch justify-center bg-gradient-to-br from-[#0a0a0f] via-[#0c0c12] to-[#0a0a0f] relative"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -5273,7 +5273,7 @@ export default function ${componentName}() {
           >
             {/* Scroll Navigation Controls - Only for Canvas/Split Mode */}
             {(viewMode === 'canvas' || viewMode === 'split') && (
-              <div className="absolute right-6 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1.5">
+              <div className="absolute right-6 top-1/2 -translate-y-1/2 z-20 hidden sm:flex flex-col gap-1.5">
                 <Button
                   variant="secondary"
                   size="icon"
@@ -5316,16 +5316,16 @@ export default function ${componentName}() {
             {/* Canvas Mode - AI Live Preview Only */}
             {viewMode === 'canvas' && (
               <div className="w-full h-full flex flex-col overflow-hidden relative">
-                <div className="h-10 backdrop-blur-md bg-[hsl(0,0%,5%)]/95 border-b border-white/10 flex items-center justify-between px-4">
+                <div className="h-10 backdrop-blur-md bg-[hsl(0,0%,5%)]/95 border-b border-white/10 flex items-center justify-between px-2 sm:px-4">
                   <div className="flex items-center gap-2">
                     <div className={cn(
-                      "w-2 h-2 rounded-full shadow-sm",
+                      "w-2 h-2 rounded-full shadow-sm flex-shrink-0",
                       builderMode === 'select' ? "bg-emerald-400" : "bg-slate-500"
                     )} />
-                    <span className="text-xs font-medium text-slate-300">
+                    <span className="hidden sm:inline text-xs font-medium text-slate-300">
                       {builderMode === 'select' ? 'Select Mode' : 'Preview Mode'}
                     </span>
-                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
+                    <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
                       <FileCode className="h-3 w-3" /> React Preview
                     </div>
                   </div>
@@ -5367,15 +5367,15 @@ export default function ${componentName}() {
                       onClick={() => {
                         livePreviewRef.current?.openInNewTab();
                       }}
-                      className="h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
+                      className="hidden sm:inline-flex h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                       title="Open preview in new tab"
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>
                     {builderMode === 'select' && (
                       <>
-                        <span className="w-px h-4 bg-border mx-1" />
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="w-px h-4 bg-border mx-1 hidden sm:block" />
+                        <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
                           <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Del</kbd>
                           <span>Delete</span>
                           <span className="mx-1">·</span>

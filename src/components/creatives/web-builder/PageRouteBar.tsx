@@ -169,7 +169,7 @@ export function PageRouteBar({
 
       {/* Route slug */}
       {activePage && (
-        <span className="text-[10px] font-mono text-muted-foreground/60 max-w-[100px] truncate">
+        <span className="hidden sm:inline text-[10px] font-mono text-muted-foreground/60 max-w-[100px] truncate">
           {activePage.path}
         </span>
       )}
@@ -178,7 +178,7 @@ export function PageRouteBar({
       {funnelInfo && (
         <Badge
           variant="outline"
-          className="h-4 px-1.5 text-[9px] border-fuchsia-500/40 text-fuchsia-400 bg-fuchsia-500/10 cursor-pointer hover:bg-fuchsia-500/20"
+          className="hidden sm:flex h-4 px-1.5 text-[9px] border-fuchsia-500/40 text-fuchsia-400 bg-fuchsia-500/10 cursor-pointer hover:bg-fuchsia-500/20"
           onClick={() => onOpenPlayground("funnels")}
         >
           <GitBranch className="h-2.5 w-2.5 mr-1" />
@@ -188,7 +188,7 @@ export function PageRouteBar({
 
       {/* Page type badge */}
       {activePage && activePage.pageType !== "custom" && (
-        <Badge variant="secondary" className="h-4 px-1.5 text-[9px]">
+        <Badge variant="secondary" className="hidden sm:flex h-4 px-1.5 text-[9px]">
           {activePage.pageType}
         </Badge>
       )}

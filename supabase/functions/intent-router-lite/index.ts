@@ -9,11 +9,13 @@
 
 // deno-lint-ignore-file no-import-prefix
 import { serve } from "serve";
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const INTENT_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const RATE_LIMIT_CONFIG = { maxRequests: 40, windowSeconds: 300 };
 
 // Intent categories
 const ACTION_INTENTS = ["contact.submit", "lead.capture", "newsletter.subscribe", "quote.request", "cta.primary", "cta.secondary"];
@@ -48,41 +50,77 @@ async function forwardToFunction(functionName: string, payload: IntentPayload): 
     const data = await res.json();
     return new Response(JSON.stringify(data), {
       status: res.status,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...publicCorsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error(`[intent-router-lite] Failed to forward to ${functionName}:`, err);
-    return new Response(JSON.stringify({ error: "Failed to process intent" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return errorResponse("Failed to process intent", 500, publicCorsHeaders);
   }
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, publicCorsHeaders);
+  }
+
+  const limiter = checkRateLimit("intent-router-lite", getClientIp(req), RATE_LIMIT_CONFIG);
+  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
+  if (!limiter.allowed) {
+    return secureJsonResponse(
+      { success: false, error: "Too many intent requests. Please try again later." },
+      429,
+      publicCorsHeaders,
+      rateHeaders,
+    );
   }
 
   try {
-    const payload: IntentPayload = await req.json();
+    const { data: body, error: parseError } = await safeParseBody<IntentPayload>(req, 65_536);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, publicCorsHeaders);
+    }
+
+    const payload: IntentPayload = {
+      ...body,
+      intent: sanitizeString(body.intent || "", 120),
+      businessId: sanitizeString(body.businessId || "", 100),
+      projectId: sanitizeString(body.projectId || "", 100) || undefined,
+      source: sanitizeString(body.source || "", 120) || undefined,
+      sourceUrl: sanitizeString(body.sourceUrl || "", 500) || undefined,
+      data: body.data && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : {},
+    };
     const { intent, businessId } = payload;
     
     if (!intent || !businessId) {
-      return new Response(JSON.stringify({ error: "Missing intent or businessId" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return errorResponse("Missing intent or businessId", 400, publicCorsHeaders);
+    }
+
+    if (!INTENT_PATTERN.test(intent)) {
+      return errorResponse("Invalid intent format", 400, publicCorsHeaders);
+    }
+
+    if (!isValidUUID(businessId)) {
+      return errorResponse("Invalid businessId format", 400, publicCorsHeaders);
+    }
+
+    if (body.data && (typeof body.data !== "object" || Array.isArray(body.data))) {
+      return errorResponse("data must be an object", 400, publicCorsHeaders);
     }
 
     console.log(`[intent-router-lite] Routing ${intent} for business ${businessId}`);
 
     // Navigation intents - no backend needed
     if (NAV_INTENTS.some(n => intent.startsWith(n.split('.')[0] + '.'))) {
-      return new Response(JSON.stringify({
+      return secureJsonResponse({
         success: true,
         message: "Navigation handled client-side",
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }, 200, publicCorsHeaders);
     }
 
     // Action intents -> intent-action
@@ -106,9 +144,6 @@ serve(async (req) => {
 
   } catch (err) {
     console.error("[intent-router-lite] Error:", err);
-    return new Response(JSON.stringify({ error: "Internal error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return errorResponse("Internal error", 500, publicCorsHeaders);
   }
 });

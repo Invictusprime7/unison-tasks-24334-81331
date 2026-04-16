@@ -38,10 +38,10 @@ export function extractTextContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     const textParts = content
-      .map((p: Record<string, unknown>) => {
-        if (!p || typeof p !== "object") return "";
-        if (typeof p.text === "string") return p.text;
-        if (p.type === "text" && typeof p.text === "string") return p.text;
+      .map((part: Record<string, unknown>) => {
+        if (!part || typeof part !== "object") return "";
+        if (typeof part.text === "string") return part.text;
+        if (part.type === "text" && typeof part.text === "string") return part.text;
         return "";
       })
       .filter(Boolean);
@@ -49,9 +49,3 @@ export function extractTextContent(content: unknown): string {
   }
   return "";
 }
-
-export const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};

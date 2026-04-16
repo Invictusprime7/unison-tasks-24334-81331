@@ -1,9 +1,8 @@
 import { serve } from "serve";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUrl } from "../_shared/validate.ts";
 
 type ResearchPayload = {
   query: string;
@@ -225,17 +224,35 @@ async function callLovableAI(opts: {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
+  }
 
   try {
-    const payload = (await req.json()) as ResearchPayload;
-    const query = normalizeText(payload?.query || "");
-    if (!query) {
-      return new Response(JSON.stringify({ error: "Missing query" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
     }
+
+    const { data: payload, error: parseError } = await safeParseBody<ResearchPayload>(req, 65_536);
+    if (parseError || !payload) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const query = normalizeText(sanitizeString(payload.query || "", 2_000));
+    if (!query) {
+      return errorResponse("Missing query", 400, corsHeaders);
+    }
+
+    const href = isValidUrl(payload.href) ? payload.href : undefined;
+    const pageTitle = typeof payload.pageTitle === "string" ? sanitizeString(payload.pageTitle, 300) : undefined;
 
     // 1) Search the web (no API key) using DuckDuckGo HTML endpoint
     const ddgUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
@@ -271,8 +288,8 @@ serve(async (req) => {
     try {
       ai = await callLovableAI({
         query,
-        href: payload.href,
-        pageTitle: payload.pageTitle,
+        href,
+        pageTitle,
         articles: enriched,
         videos,
       });
@@ -304,15 +321,10 @@ serve(async (req) => {
       generatedAt: new Date().toISOString(),
     };
 
-    return new Response(JSON.stringify(responseBody), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return secureJsonResponse(responseBody as unknown as Record<string, unknown>, 200, corsHeaders);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("[research] error", e);
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return errorResponse(msg, 500, corsHeaders);
   }
 });

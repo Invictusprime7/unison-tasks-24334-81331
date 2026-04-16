@@ -2,6 +2,11 @@ import { createClient } from "@supabase/supabase-js";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
+import {
+  normalizeWebhookMethod,
+  sanitizeWebhookHeaders,
+  validateOutboundWebhookUrl,
+} from "../_shared/outbound.ts";
 
 interface WorkflowJobProcessorRequest {
   workflowRunId?: string;
@@ -321,18 +326,33 @@ async function sendEmail(config: any) {
 }
 
 async function callWebhook(config: any) {
-  const response = await fetch(config.url, {
-    method: config.method || "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(config.headers || {}),
-    },
-    body: JSON.stringify(config.payload || {}),
-  });
+  const rawUrl = typeof config?.url === "string" ? config.url : "";
+  const validatedUrl = validateOutboundWebhookUrl(rawUrl);
+  if (!validatedUrl.ok) {
+    throw new Error(validatedUrl.error);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const response = await (async () => {
+    try {
+      return await fetch(validatedUrl.url.toString(), {
+        method: normalizeWebhookMethod(config?.method),
+        headers: {
+          "Content-Type": "application/json",
+          ...sanitizeWebhookHeaders(config?.headers),
+        },
+        body: JSON.stringify(config.payload || {}),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
 
   return {
     action: "webhook_called",
-    url: config.url,
+    url: validatedUrl.url.toString(),
     status: response.status,
     success: response.ok,
   };

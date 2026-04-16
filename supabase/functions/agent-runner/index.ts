@@ -1,9 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-}
+import { getCorsHeaders, handleCorsPreflightRequest } from '../_shared/cors.ts'
+import { secureJsonResponse, errorResponse } from '../_shared/response.ts'
+import { verifyAuth, verifyBusinessAccess, authError } from '../_shared/auth.ts'
+import { safeParseBody, isValidUUID, sanitizeString } from '../_shared/validate.ts'
 
 // =============================================================================
 // Types
@@ -24,6 +23,11 @@ interface ToolResult {
   success: boolean
   result?: Record<string, unknown>
   error?: string
+}
+
+interface AgentRunnerRequest {
+  eventId?: string
+  businessId?: string
 }
 
 // =============================================================================
@@ -456,24 +460,48 @@ async function callLLM(
 // =============================================================================
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  const corsHeaders = getCorsHeaders(req)
+  const preflight = handleCorsPreflightRequest(req, corsHeaders)
+  if (preflight) {
+    return preflight
+  }
+
+  if (req.method !== 'POST') {
+    return errorResponse('Method not allowed', 405, corsHeaders)
   }
 
   const startTime = Date.now()
   
   try {
+    const auth = await verifyAuth(req)
+    if (!auth.user) {
+      return authError(auth.error || 'Unauthorized', auth.status, corsHeaders)
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Parse optional request body for specific event processing
-    let targetEventId: string | null = null
-    try {
-      const body = await req.json()
-      targetEventId = body?.eventId || null
-    } catch {
-      // No body or invalid JSON - process next pending event
+    const { data: body, error: parseError } = await safeParseBody<AgentRunnerRequest>(req, 8_192)
+    if (parseError || !body) {
+      const status = parseError?.includes('exceeds') ? 413 : 400
+      return errorResponse(parseError || 'Invalid request body', status, corsHeaders)
+    }
+
+    const targetEventId = typeof body.eventId === 'string' ? sanitizeString(body.eventId, 100) : ''
+    const businessId = typeof body.businessId === 'string' ? sanitizeString(body.businessId, 100) : ''
+
+    if (targetEventId && !isValidUUID(targetEventId)) {
+      return errorResponse('eventId must be a valid UUID', 400, corsHeaders)
+    }
+
+    if (!businessId || !isValidUUID(businessId)) {
+      return errorResponse('businessId must be a valid UUID', 400, corsHeaders)
+    }
+
+    const access = await verifyBusinessAccess(auth.user.id, businessId)
+    if (!access.allowed) {
+      return authError(access.error || 'Access denied', 403, corsHeaders)
     }
 
     // Claim a pending event (with lease timeout recovery)
@@ -484,6 +512,7 @@ Deno.serve(async (req) => {
       .from('ai_events')
       .select('*')
       .or(`status.eq.pending,and(status.eq.processing,locked_at.lt.${leaseThreshold})`)
+      .eq('business_id', businessId)
       .order('created_at', { ascending: true })
       .limit(1)
 
@@ -492,6 +521,7 @@ Deno.serve(async (req) => {
         .from('ai_events')
         .select('*')
         .eq('id', targetEventId)
+        .eq('business_id', businessId)
         .limit(1)
     }
 
@@ -499,18 +529,12 @@ Deno.serve(async (req) => {
 
     if (fetchError) {
       console.error('[agent-runner] Failed to fetch events:', fetchError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch events' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return errorResponse('Failed to fetch events', 500, corsHeaders)
     }
 
     if (!events || events.length === 0) {
       console.log('[agent-runner] No pending events')
-      return new Response(
-        JSON.stringify({ status: 'idle', message: 'No pending events' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return secureJsonResponse({ status: 'idle', message: 'No pending events' }, 200, corsHeaders)
     }
 
     const event = events[0]
@@ -535,10 +559,7 @@ Deno.serve(async (req) => {
 
     if (lockError) {
       console.error('[agent-runner] Failed to lock event:', lockError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to lock event' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return errorResponse('Failed to lock event', 500, corsHeaders)
     }
 
     // Create run record
@@ -643,10 +664,7 @@ Deno.serve(async (req) => {
           .eq('id', run.id)
       }
 
-      return new Response(
-        JSON.stringify({ status: 'failed', error: error.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return errorResponse(error.message, 500, corsHeaders, { status: 'failed' })
     }
 
     // Execute proposed tool calls
@@ -731,8 +749,8 @@ Deno.serve(async (req) => {
       toolCallsExecuted: toolCallResults.length,
     })
 
-    return new Response(
-      JSON.stringify({
+    return secureJsonResponse(
+      {
         status: 'completed',
         eventId: event.id,
         runId: run?.id,
@@ -746,15 +764,13 @@ Deno.serve(async (req) => {
         },
         toolCalls: toolCallResults,
         latencyMs,
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      },
+      200,
+      corsHeaders,
     )
 
   } catch (error) {
     console.error('[agent-runner] Unexpected error:', error)
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return errorResponse('Internal server error', 500, corsHeaders)
   }
 })

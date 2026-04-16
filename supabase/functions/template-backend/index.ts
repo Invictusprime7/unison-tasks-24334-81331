@@ -3,11 +3,10 @@
 
 import { serve } from 'serve';
 import { createClient } from '@supabase/supabase-js';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
 
 interface TemplateRedirect {
   id: string;
@@ -41,9 +40,13 @@ interface TemplatePayment {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (!["GET", "POST", "PUT"].includes(req.method)) {
+    return errorResponse("Method not allowed", 405, publicCorsHeaders);
   }
 
   try {
@@ -52,24 +55,27 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const url = new URL(req.url);
-    const action = url.searchParams.get('action');
-    const templateId = url.searchParams.get('templateId');
+    const action = sanitizeString(url.searchParams.get('action') || '', 80);
+    const templateIdParam = url.searchParams.get('templateId');
+    const templateId = isValidUUID(templateIdParam) ? templateIdParam : null;
 
     // Parse request body if present
-    let _body: unknown = null;
+    let body: Record<string, unknown> | null = null;
     if (req.method === 'POST' || req.method === 'PUT') {
-      _body = await req.json();
+      const parsedBody = await safeParseBody<Record<string, unknown>>(req, 65_536);
+      if (parsedBody.error) {
+        const status = parsedBody.error.includes("exceeds") ? 413 : 400;
+        return errorResponse(parsedBody.error, status, publicCorsHeaders);
+      }
+      body = parsedBody.data;
     }
 
     switch (action) {
       case 'check-redirect': {
         // Check if a path matches any template redirect
-        const path = url.searchParams.get('path');
+        const path = sanitizeString(url.searchParams.get('path') || '', 500);
         if (!path) {
-          return new Response(JSON.stringify({ error: 'Path is required' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return errorResponse('Path is required', 400, publicCorsHeaders);
         }
 
         const { data: templates, error } = await supabase
@@ -83,29 +89,22 @@ serve(async (req) => {
           const redirects = template.redirects as TemplateRedirect[] || [];
           const match = redirects.find(r => r.enabled && r.path === path);
           if (match) {
-            return new Response(JSON.stringify({
+            return secureJsonResponse({
               redirect: true,
               destination: match.destination,
               statusCode: match.statusCode,
               templateId: template.id,
-            }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            }, 200, publicCorsHeaders);
           }
         }
 
-        return new Response(JSON.stringify({ redirect: false }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ redirect: false }, 200, publicCorsHeaders);
       }
 
       case 'check-access': {
         // Check if user has access to a template (authentication check)
         if (!templateId) {
-          return new Response(JSON.stringify({ error: 'Template ID is required' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return errorResponse('Template ID is required', 400, publicCorsHeaders);
         }
 
         const authHeader = req.headers.get('Authorization');
@@ -126,48 +125,38 @@ serve(async (req) => {
         if (error) throw error;
 
         if (!template) {
-          return new Response(JSON.stringify({ access: false, reason: 'Template not found' }), {
-            status: 404,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return secureJsonResponse({ access: false, reason: 'Template not found' }, 404, publicCorsHeaders);
         }
 
         // Public templates - always accessible
         if (template.visibility === 'public' && !template.requires_auth) {
-          return new Response(JSON.stringify({ access: true }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return secureJsonResponse({ access: true }, 200, publicCorsHeaders);
         }
 
         // Requires authentication
         if (template.requires_auth && !userId) {
-          return new Response(JSON.stringify({ access: false, reason: 'Authentication required' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return secureJsonResponse({ access: false, reason: 'Authentication required' }, 401, publicCorsHeaders);
         }
 
         // Owner always has access
         if (userId === template.owner_id) {
-          return new Response(JSON.stringify({ access: true }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return secureJsonResponse({ access: true }, 200, publicCorsHeaders);
         }
 
         // Private templates - only owner
         if (template.visibility === 'private') {
-          return new Response(JSON.stringify({ access: false, reason: 'Private template' }), {
-            status: 403,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return secureJsonResponse({ access: false, reason: 'Private template' }, 403, publicCorsHeaders);
         }
 
-        return new Response(JSON.stringify({ access: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ access: true }, 200, publicCorsHeaders);
       }
 
       case 'process-scheduling': {
+        const auth = await verifyAuth(req);
+        if (!auth.user) {
+          return authError(auth.error || "Unauthorized", auth.status, publicCorsHeaders);
+        }
+
         // Process scheduled publish/unpublish actions
         const now = new Date().toISOString();
 
@@ -213,22 +202,17 @@ serve(async (req) => {
           }
         }
 
-        return new Response(JSON.stringify({
+        return secureJsonResponse({
           processed: true,
           published: publishResults,
           unpublished: unpublishResults,
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        }, 200, publicCorsHeaders);
       }
 
       case 'create-payment-session': {
         // Create a payment session for a template
         if (!templateId) {
-          return new Response(JSON.stringify({ error: 'Template ID is required' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return errorResponse('Template ID is required', 400, publicCorsHeaders);
         }
 
         const { data: template, error } = await supabase
@@ -241,20 +225,14 @@ serve(async (req) => {
 
         const payment = template.payment as TemplatePayment;
         if (!payment?.enabled) {
-          return new Response(JSON.stringify({ error: 'Payment not enabled for this template' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return errorResponse('Payment not enabled for this template', 400, publicCorsHeaders);
         }
 
         // Stripe integration
         if (payment.provider === 'stripe') {
           const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
           if (!stripeSecretKey) {
-            return new Response(JSON.stringify({ error: 'Stripe not configured' }), {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            return errorResponse('Stripe not configured', 500, publicCorsHeaders);
           }
 
           const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
@@ -274,36 +252,25 @@ serve(async (req) => {
           });
 
           const session = await stripeResponse.json();
-          return new Response(JSON.stringify({
+          return secureJsonResponse({
             sessionId: session.id,
             url: session.url,
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          }, 200, publicCorsHeaders);
         }
 
-        return new Response(JSON.stringify({ error: 'Unsupported payment provider' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return errorResponse('Unsupported payment provider', 400, publicCorsHeaders);
       }
 
       case 'verify-payment': {
         // Verify a payment session
-        const sessionId = url.searchParams.get('sessionId');
+        const sessionId = sanitizeString(url.searchParams.get('sessionId') || '', 200);
         if (!sessionId) {
-          return new Response(JSON.stringify({ error: 'Session ID is required' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return errorResponse('Session ID is required', 400, publicCorsHeaders);
         }
 
         const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
         if (!stripeSecretKey) {
-          return new Response(JSON.stringify({ error: 'Stripe not configured' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return errorResponse('Stripe not configured', 500, publicCorsHeaders);
         }
 
         const stripeResponse = await fetch(
@@ -316,27 +283,19 @@ serve(async (req) => {
         );
 
         const session = await stripeResponse.json();
-        return new Response(JSON.stringify({
+        return secureJsonResponse({
           verified: session.payment_status === 'paid',
           templateId: session.metadata?.template_id,
           customerEmail: session.customer_details?.email,
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        }, 200, publicCorsHeaders);
       }
 
       default:
-        return new Response(JSON.stringify({ error: 'Invalid action' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return errorResponse('Invalid action', 400, publicCorsHeaders);
     }
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error('Template backend error:', error);
-    return new Response(JSON.stringify({ error: errMsg }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return errorResponse(errMsg, 500, publicCorsHeaders);
   }
 });

@@ -33,6 +33,9 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const workflowProcessorSecret = Deno.env.get("WORKFLOW_PROCESSOR_SECRET");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const automationRuntimeHeaders = {
+      Authorization: `Bearer ${supabaseServiceKey}`,
+    };
 
     console.log("Workflow cron job started at:", new Date().toISOString());
 
@@ -168,6 +171,7 @@ Deno.serve(async (req) => {
           
           // Resume the automation run
           await supabase.functions.invoke("automation-runtime", {
+            headers: automationRuntimeHeaders,
             body: { runId, resumeFromNodeId: job.node_id },
           });
           
@@ -196,6 +200,7 @@ Deno.serve(async (req) => {
       for (const run of pausedRuns) {
         console.log(`Resuming paused run: ${run.id}`);
         await supabase.functions.invoke("automation-runtime", {
+          headers: automationRuntimeHeaders,
           body: { runId: run.id, resumeFromNodeId: run.current_node_id },
         });
       }

@@ -108,7 +108,15 @@ async function runWizardLane(
     lovableApiKey: LOVABLE_API_KEY ?? undefined,
   });
 
-  if (providerResult.earlyResponse) return providerResult.earlyResponse;
+  if (providerResult.earlyError) {
+    return new Response(
+      JSON.stringify({ error: providerResult.earlyError.error }),
+      {
+        status: providerResult.earlyError.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
 
   const content = postProcessContent(providerResult.content);
 
@@ -367,7 +375,15 @@ async function runBuilderLane(
     reasoningEffort: gatewayOptions?.reasoningEffort,
   });
 
-  if (providerResult.earlyResponse) return providerResult.earlyResponse;
+  if (providerResult.earlyError) {
+    return new Response(
+      JSON.stringify({ error: providerResult.earlyError.error }),
+      {
+        status: providerResult.earlyError.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
 
   // ── 9. Post-process + review pass + response ────────────────────────────
   const content = postProcessContent(providerResult.content);

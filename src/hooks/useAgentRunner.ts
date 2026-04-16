@@ -23,8 +23,13 @@ interface AgentRunResult {
   message?: string;
 }
 
+interface TriggerRunOptions {
+  businessId: string;
+  eventId?: string;
+}
+
 interface UseAgentRunnerReturn {
-  triggerRun: (eventId?: string) => Promise<AgentRunResult>;
+  triggerRun: (options: TriggerRunOptions) => Promise<AgentRunResult>;
   isRunning: boolean;
   lastResult: AgentRunResult | null;
   error: Error | null;
@@ -39,7 +44,7 @@ export function useAgentRunner(): UseAgentRunnerReturn {
   const [lastResult, setLastResult] = useState<AgentRunResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
-  const triggerRun = useCallback(async (eventId?: string): Promise<AgentRunResult> => {
+  const triggerRun = useCallback(async (options: TriggerRunOptions): Promise<AgentRunResult> => {
     setIsRunning(true);
     setError(null);
 
@@ -47,7 +52,10 @@ export function useAgentRunner(): UseAgentRunnerReturn {
       const { data, error: invokeError } = await supabase.functions.invoke<AgentRunResult>(
         'agent-runner',
         {
-          body: eventId ? { eventId } : {},
+          body: {
+            businessId: options.businessId,
+            ...(options.eventId ? { eventId: options.eventId } : {}),
+          },
         }
       );
 

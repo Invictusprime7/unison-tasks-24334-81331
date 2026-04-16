@@ -1,12 +1,13 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { Resend } from "https://esm.sh/resend@2.0.0?target=deno";
+import { serve } from "serve";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { safeParseBody } from "../_shared/validate.ts";
+import { errorResponse } from "../_shared/response.ts";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+const corsHeaders = publicCorsHeaders;
+const RATE_LIMIT_CONFIG = { maxRequests: 15, windowSeconds: 300 };
 
 interface BookingPayload {
   action: 'create' | 'cancel' | 'reschedule';
@@ -41,7 +42,10 @@ function safeEmail(email: unknown): string | null {
   return emailRegex.test(trimmed) ? trimmed : null;
 }
 
-async function loadBusinessSettings(supabase: any, businessId: string): Promise<BusinessSettings | null> {
+async function loadBusinessSettings(
+  supabase: SupabaseClient,
+  businessId: string,
+): Promise<BusinessSettings | null> {
   const { data, error } = await supabase
     .from("businesses")
     .select("id,name,notification_email")
@@ -67,20 +71,45 @@ async function sendEmailSafe(params: {
     console.warn("[create-booking] RESEND_API_KEY missing; skipping email");
     return;
   }
-  const resend = new Resend(apiKey);
-  await resend.emails.send({
-    from: "Unison Tasks <onboarding@resend.dev>",
-    to: [params.to],
-    subject: params.subject,
-    html: params.html,
-    reply_to: params.replyTo || undefined,
-  } as any);
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Unison Tasks <onboarding@resend.dev>",
+      to: [params.to],
+      subject: params.subject,
+      html: params.html,
+      reply_to: params.replyTo || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    console.warn("[create-booking] resend email failed", response.status, errorText);
+  }
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
+  }
+
+  const limiter = checkRateLimit("create-booking", getClientIp(req), RATE_LIMIT_CONFIG);
+  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
+  if (!limiter.allowed) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Too many booking requests. Please try again later." }),
+      { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", ...rateHeaders } }
+    );
   }
 
   try {
@@ -112,11 +141,11 @@ serve(async (req) => {
       time: z.string().optional().nullable(),
     }).passthrough();
 
-    const rawBody = await req.json().catch(() => null);
-    if (!rawBody || typeof rawBody !== 'object') {
+    const { data: rawBody, error: parseError } = await safeParseBody<Record<string, unknown>>(req, 65_536);
+    if (parseError || !rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
       console.error("[create-booking] Empty or non-JSON body received");
       return new Response(
-        JSON.stringify({ success: false, error: 'Invalid request body: expected JSON object' }),
+        JSON.stringify({ success: false, error: parseError || 'Invalid request body: expected JSON object' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -160,7 +189,7 @@ serve(async (req) => {
   }
 });
 
-async function handleCreateBooking(supabase: any, body: any) {
+async function handleCreateBooking(supabase: SupabaseClient, body: BookingPayload) {
   const { 
     businessId, 
     serviceId, 
@@ -341,7 +370,7 @@ async function handleCreateBooking(supabase: any, body: any) {
   );
 }
 
-async function handleCancelBooking(supabase: any, body: BookingPayload) {
+async function handleCancelBooking(supabase: SupabaseClient, body: BookingPayload) {
   const { bookingId, businessId } = body;
 
   if (!bookingId) {
@@ -396,7 +425,7 @@ async function handleCancelBooking(supabase: any, body: BookingPayload) {
   );
 }
 
-async function handleRescheduleBooking(supabase: any, body: BookingPayload) {
+async function handleRescheduleBooking(supabase: SupabaseClient, body: BookingPayload) {
   const { bookingId, newStartsAt, newEndsAt } = body;
 
   if (!bookingId || !newStartsAt) {

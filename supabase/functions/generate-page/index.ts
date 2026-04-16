@@ -1,29 +1,42 @@
 import { serve } from "serve";
 import { z } from "zod";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody } from "../_shared/validate.ts";
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
+
     const bodySchema = z.object({
       prompt: z.string().trim().min(1).max(10_000),
       theme: z.string().trim().max(2000).optional(),
       sectionType: z.string().trim().max(40).optional(),
     });
 
-    const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+    const { data: rawBody, error: parseError } = await safeParseBody(req, 65_536);
+    if (parseError || !rawBody) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const parsed = bodySchema.safeParse(rawBody);
     if (!parsed.success) {
-      return new Response(
-        JSON.stringify({ error: "Invalid request body" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Invalid request body", 400, corsHeaders);
     }
 
     const { prompt, theme, sectionType } = parsed.data;
@@ -31,12 +44,13 @@ serve(async (req) => {
 
     if (!LOVABLE_API_KEY) {
       console.warn("LOVABLE_API_KEY not configured - AI features unavailable in local development");
-      return new Response(
-        JSON.stringify({ 
+      return secureJsonResponse(
+        { 
           error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
           isLocalDevelopment: true
-        }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        },
+        503,
+        corsHeaders
       );
     }
 
@@ -110,30 +124,18 @@ ${theme ? `8. Use this theme: ${theme}` : ''}`;
 
     if (!response.ok) {
       if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
       }
       if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Payment required. Please add credits to your workspace." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse("Payment required. Please add credits to your workspace.", 402, corsHeaders);
       }
       if (response.status === 401) {
         console.error("AI gateway authentication failed");
-        return new Response(
-          JSON.stringify({ error: "AI service authentication failed. Please check API configuration." }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse("AI service authentication failed. Please check API configuration.", 401, corsHeaders);
       }
       const errorText = await response.text();
       console.error("AI gateway error:", response.status, errorText);
-      return new Response(
-        JSON.stringify({ error: `AI gateway error: ${response.status}` }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(`AI gateway error: ${response.status}`, 503, corsHeaders);
     }
 
     const data = await response.json();
@@ -147,21 +149,13 @@ ${theme ? `8. Use this theme: ${theme}` : ''}`;
       throw new Error("Invalid JSON response from AI");
     }
 
-    return new Response(
-      JSON.stringify({ schema: pageSchema }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-  } catch (error: any) {
+    return secureJsonResponse({ schema: pageSchema }, 200, corsHeaders);
+  } catch (error: unknown) {
     console.error("Error in generate-page function:", error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+    return errorResponse(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      corsHeaders
     );
   }
 });

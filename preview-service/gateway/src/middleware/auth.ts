@@ -6,6 +6,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger, sessionManager } from '../server.js';
 
@@ -69,7 +70,7 @@ export async function authMiddleware(
 ): Promise<void> {
   // Generate request ID for tracing
   req.requestId = (req.headers['x-request-id'] as string) ||
-    `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    `req_${crypto.randomUUID()}`;
   
   // Bypass auth for local development
   if (BYPASS_AUTH) {

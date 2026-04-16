@@ -11,11 +11,14 @@
 
 // deno-lint-ignore no-import-prefix
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
+import {
+  normalizeWebhookMethod,
+  sanitizeWebhookHeaders,
+  validateOutboundWebhookUrl,
+} from "../_shared/outbound.ts";
 
 interface BusinessSettings {
   business_hours_enabled?: boolean;
@@ -72,9 +75,36 @@ interface AutomationRun {
 const MAX_STEPS_DEFAULT = 100;
 const MAX_RUNTIME_MINUTES = 30; // Max 30 minutes per run
 
-export default async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+interface AutomationRuntimeRequest {
+  runId?: string;
+  resumeFromNodeId?: string | null;
+}
+
+function isAuthorizedInternalRequest(req: Request): boolean {
+  const authHeader = req.headers.get("authorization");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const cronSecret = Deno.env.get("CRON_SECRET");
+
+  return Boolean(
+    (serviceKey && authHeader === `Bearer ${serviceKey}`) ||
+    (cronSecret && authHeader === `Bearer ${cronSecret}`)
+  );
+}
+
+Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
+  }
+
+  if (!isAuthorizedInternalRequest(req)) {
+    console.warn("[automation-runtime] Unauthorized invocation attempt");
+    return errorResponse("Unauthorized", 401, corsHeaders);
   }
 
   try {
@@ -82,13 +112,23 @@ export default async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { runId, resumeFromNodeId } = await req.json();
+    const { data: body, error: parseError } = await safeParseBody<AutomationRuntimeRequest>(req, 16_384);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
 
-    if (!runId) {
-      return new Response(
-        JSON.stringify({ error: "runId is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const runId = typeof body.runId === "string" ? sanitizeString(body.runId, 100) : "";
+    const resumeFromNodeId = typeof body.resumeFromNodeId === "string"
+      ? sanitizeString(body.resumeFromNodeId, 100)
+      : null;
+
+    if (!runId || !isValidUUID(runId)) {
+      return errorResponse("runId must be a valid UUID", 400, corsHeaders);
+    }
+
+    if (resumeFromNodeId && !isValidUUID(resumeFromNodeId)) {
+      return errorResponse("resumeFromNodeId must be a valid UUID", 400, corsHeaders);
     }
 
     console.log("[automation-runtime] Starting run:", runId);
@@ -102,18 +142,16 @@ export default async (req: Request) => {
 
     if (runError || !run) {
       console.error("[automation-runtime] Run not found:", runId);
-      return new Response(
-        JSON.stringify({ error: "Run not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Run not found", 404, corsHeaders);
     }
 
     // Check if run is already completed or cancelled
     if (run.status === "completed" || run.status === "cancelled" || run.status === "failed") {
       console.log("[automation-runtime] Run already finished:", run.status);
-      return new Response(
-        JSON.stringify({ success: true, status: run.status, message: "Run already finished" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      return secureJsonResponse(
+        { success: true, status: run.status, message: "Run already finished" },
+        200,
+        corsHeaders,
       );
     }
 
@@ -121,10 +159,7 @@ export default async (req: Request) => {
     if (run.steps_completed >= (run.max_steps || MAX_STEPS_DEFAULT)) {
       console.error("[automation-runtime] Max steps exceeded for run:", runId);
       await updateRunStatus(supabase, runId, "failed", "Max steps exceeded - possible infinite loop");
-      return new Response(
-        JSON.stringify({ error: "Max steps exceeded", runId }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Max steps exceeded", 400, corsHeaders, { runId });
     }
 
     // Check runtime limit
@@ -133,10 +168,7 @@ export default async (req: Request) => {
     if (runtimeMinutes > MAX_RUNTIME_MINUTES) {
       console.error("[automation-runtime] Max runtime exceeded for run:", runId);
       await updateRunStatus(supabase, runId, "failed", "Max runtime exceeded");
-      return new Response(
-        JSON.stringify({ error: "Max runtime exceeded", runId }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Max runtime exceeded", 400, corsHeaders, { runId });
     }
 
     // Update run status to running
@@ -155,9 +187,10 @@ export default async (req: Request) => {
     if (!nodes || nodes.length === 0) {
       console.log("[automation-runtime] No nodes found, completing run");
       await updateRunStatus(supabase, runId, "completed");
-      return new Response(
-        JSON.stringify({ success: true, status: "completed", message: "No nodes to execute" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      return secureJsonResponse(
+        { success: true, status: "completed", message: "No nodes to execute" },
+        200,
+        corsHeaders,
       );
     }
 
@@ -343,29 +376,30 @@ export default async (req: Request) => {
       // Trigger next batch
       if (currentNodeId) {
         await supabase.functions.invoke("automation-runtime", {
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+          },
           body: { runId, resumeFromNodeId: currentNodeId },
         });
       }
     }
 
-    return new Response(
-      JSON.stringify({
+    return secureJsonResponse(
+      {
         success: true,
         runId,
         status,
         stepsProcessed,
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      },
+      200,
+      corsHeaders,
     );
   } catch (error: unknown) {
     console.error("[automation-runtime] Error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse(message, 500, corsHeaders);
   }
-};
+});
 
 // Helper functions
 
@@ -737,9 +771,14 @@ async function removeTag(supabase: SupabaseClient, config: Record<string, unknow
 }
 
 async function callWebhook(config: Record<string, unknown>, context: RunContext): Promise<Record<string, unknown>> {
-  const url = config.url as string;
-  if (!url) {
+  const rawUrl = typeof config.url === "string" ? config.url : "";
+  if (!rawUrl) {
     return { called: false, reason: "No URL configured" };
+  }
+
+  const validatedUrl = validateOutboundWebhookUrl(rawUrl);
+  if (!validatedUrl.ok) {
+    return { called: false, reason: validatedUrl.error };
   }
   
   const payload = {
@@ -749,21 +788,28 @@ async function callWebhook(config: Record<string, unknown>, context: RunContext)
   };
   
   try {
-    const response = await fetch(url, {
-      method: (config.method as string || "POST").toUpperCase(),
-      headers: {
-        "Content-Type": "application/json",
-        ...(config.headers as Record<string, string> || {}),
-      },
-      body: JSON.stringify(payload),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetch(validatedUrl.url.toString(), {
+        method: normalizeWebhookMethod(config.method),
+        headers: {
+          "Content-Type": "application/json",
+          ...sanitizeWebhookHeaders(config.headers),
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
     
-    return {
-      called: true,
-      url,
-      status: response.status,
-      success: response.ok,
-    };
+      return {
+        called: true,
+        url: validatedUrl.url.toString(),
+        status: response.status,
+        success: response.ok,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (error) {
     return { called: false, reason: String(error) };
   }

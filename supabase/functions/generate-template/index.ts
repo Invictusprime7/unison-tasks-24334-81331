@@ -2,18 +2,28 @@ import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { generateVariation, variationToPromptContext, hexToHsl, type TemplateVariation } from "../_shared/industryVariations.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody } from "../_shared/validate.ts";
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
+
     const bodySchema = z.object({
       templateName: z.string().trim().min(1).max(100),
       aesthetic: z.string().trim().min(1).max(80),
@@ -21,12 +31,15 @@ serve(async (req) => {
       variationSeed: z.string().trim().max(20).optional(),
     });
 
-    const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+    const { data: rawBody, error: parseError } = await safeParseBody(req, 65_536);
+    if (parseError || !rawBody) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const parsed = bodySchema.safeParse(rawBody);
     if (!parsed.success) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid request body' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return errorResponse("Invalid request body", 400, corsHeaders);
     }
 
     const { templateName, aesthetic, source, variationSeed } = parsed.data;
@@ -34,12 +47,13 @@ serve(async (req) => {
     
     if (!LOVABLE_API_KEY) {
       console.warn("LOVABLE_API_KEY not configured - AI features unavailable in local development");
-      return new Response(
-        JSON.stringify({ 
+      return secureJsonResponse(
+        { 
           error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
           isLocalDevelopment: true
-        }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        },
+        503,
+        corsHeaders
       );
     }
 
@@ -358,16 +372,10 @@ Return ONLY the complete HTML code. Make it look like a $5000 custom-built websi
 
     if (!response.ok) {
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }), {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
       }
       if (response.status === 402) {
-        return new Response(JSON.stringify({ error: 'Payment required. Please add credits to your workspace.' }), {
-          status: 402,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return errorResponse("Payment required. Please add credits to your workspace.", 402, corsHeaders);
       }
       const errorText = await response.text();
       console.error('AI API error:', response.status, errorText);
@@ -386,8 +394,8 @@ Return ONLY the complete HTML code. Make it look like a $5000 custom-built websi
     // Post-generation hardening: fix invisible sections & animation mismatches
     cleanedCode = hardenGeneratedHTML(cleanedCode);
 
-    return new Response(
-      JSON.stringify({ 
+    return secureJsonResponse(
+      { 
         code: cleanedCode,
         templateName,
         aesthetic,
@@ -399,19 +407,14 @@ Return ONLY the complete HTML code. Make it look like a $5000 custom-built websi
           heroLayout: variation.heroVariant.name,
           sectionOrder: variation.sectionOrder,
         }
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      },
+      200,
+      corsHeaders
     );
   } catch (error) {
     console.error('Error in generate-template function:', error);
     const message = error instanceof Error ? error.message : 'An error occurred';
-    return new Response(
-      JSON.stringify({ error: message }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+    return errorResponse(message, 500, corsHeaders);
   }
 });
 

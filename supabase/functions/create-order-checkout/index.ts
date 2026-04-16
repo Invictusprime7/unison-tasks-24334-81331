@@ -11,6 +11,7 @@ import {
   isValidUUID,
   isNonEmptyString,
 } from "../_shared/validate.ts";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 
 /**
  * create-order-checkout — Guest-friendly ecommerce checkout.
@@ -50,6 +51,8 @@ interface CreateOrderCheckoutRequest {
   cancelUrl?: string;
 }
 
+const RATE_LIMIT_CONFIG = { maxRequests: 15, windowSeconds: 300 };
+
 function getBaseStoreUrl(req: Request): string {
   const configured = Deno.env.get("APP_URL") || Deno.env.get("SITE_URL");
   if (configured && isValidUrl(configured)) {
@@ -72,6 +75,17 @@ serve(async (req) => {
 
   if (req.method !== "POST") {
     return errorResponse("Method not allowed", 405, publicCorsHeaders);
+  }
+
+  const limiter = checkRateLimit("create-order-checkout", getClientIp(req), RATE_LIMIT_CONFIG);
+  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
+  if (!limiter.allowed) {
+    return secureJsonResponse(
+      { success: false, error: "Too many checkout attempts. Please try again later." },
+      429,
+      publicCorsHeaders,
+      rateHeaders,
+    );
   }
 
   try {

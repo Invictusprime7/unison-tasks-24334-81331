@@ -2,6 +2,10 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody } from "../_shared/validate.ts";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
+
+const RATE_LIMIT_CONFIG = { maxRequests: 20, windowSeconds: 300 };
 
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
@@ -11,6 +15,17 @@ Deno.serve(async (req) => {
 
   if (req.method !== "POST") {
     return errorResponse("Method not allowed", 405, publicCorsHeaders);
+  }
+
+  const limiter = checkRateLimit("form-submit", getClientIp(req), RATE_LIMIT_CONFIG);
+  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
+  if (!limiter.allowed) {
+    return secureJsonResponse(
+      { success: false, error: "Too many form submissions. Please try again later." },
+      429,
+      publicCorsHeaders,
+      rateHeaders,
+    );
   }
 
   try {
@@ -26,7 +41,8 @@ Deno.serve(async (req) => {
       data: z.record(z.unknown()).default({}),
     });
 
-    const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+    const { data: rawBody } = await safeParseBody<Record<string, unknown>>(req, 65_536);
+    const parsed = bodySchema.safeParse(rawBody ?? null);
     if (!parsed.success) {
       return errorResponse("Invalid request body", 400, publicCorsHeaders);
     }

@@ -1,14 +1,17 @@
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidEmail } from "../_shared/validate.ts";
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, publicCorsHeaders);
   }
 
   try {
@@ -16,13 +19,25 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { action, data } = await req.json();
+    const { data: body, error: parseError } = await safeParseBody<{ action?: string; data?: Record<string, unknown> }>(req, 65_536);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, publicCorsHeaders);
+    }
+
+    const action = sanitizeString(body.action || '', 80);
+    const data = body.data && typeof body.data === "object" ? body.data : {};
     console.log(`Template automation action: ${action}`, data);
 
     switch (action) {
       // CART OPERATIONS
       case 'addToCart': {
-        const { sessionId, productId, quantity = 1 } = data;
+        const sessionId = typeof data.sessionId === "string" ? sanitizeString(data.sessionId, 120) : "";
+        const productId = typeof data.productId === "string" ? sanitizeString(data.productId, 120) : "";
+        const quantity = typeof data.quantity === "number" ? Math.max(1, Math.min(100, Math.trunc(data.quantity))) : 1;
+        if (!sessionId || !productId) {
+          return errorResponse("sessionId and productId are required", 400, publicCorsHeaders);
+        }
         
         // Check if item already in cart
         const { data: existing } = await supabase
@@ -40,9 +55,7 @@ serve(async (req) => {
             .select()
             .single();
           if (error) throw error;
-          return new Response(JSON.stringify({ success: true, item: updated }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          return secureJsonResponse({ success: true, item: updated }, 200, publicCorsHeaders);
         }
 
         const { data: newItem, error } = await supabase
@@ -51,13 +64,14 @@ serve(async (req) => {
           .select()
           .single();
         if (error) throw error;
-        return new Response(JSON.stringify({ success: true, item: newItem }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true, item: newItem }, 200, publicCorsHeaders);
       }
 
       case 'getCart': {
-        const { sessionId } = data;
+        const sessionId = typeof data.sessionId === "string" ? sanitizeString(data.sessionId, 120) : "";
+        if (!sessionId) {
+          return errorResponse("sessionId is required", 400, publicCorsHeaders);
+        }
         const { data: items, error } = await supabase
           .from('cart_items')
           .select(`
@@ -70,18 +84,20 @@ serve(async (req) => {
         const subtotal = items?.reduce((sum, item) => 
           sum + (item.product?.price || 0) * item.quantity, 0) || 0;
         
-        return new Response(JSON.stringify({ 
+        return secureJsonResponse({ 
           success: true, 
           items: items || [], 
           subtotal,
           itemCount: items?.reduce((sum, item) => sum + item.quantity, 0) || 0
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        }, 200, publicCorsHeaders);
       }
 
       case 'updateCartItem': {
-        const { itemId, quantity } = data;
+        const itemId = typeof data.itemId === "string" ? sanitizeString(data.itemId, 120) : "";
+        const quantity = typeof data.quantity === "number" ? Math.max(0, Math.min(100, Math.trunc(data.quantity))) : 0;
+        if (!itemId) {
+          return errorResponse("itemId is required", 400, publicCorsHeaders);
+        }
         if (quantity <= 0) {
           const { error } = await supabase.from('cart_items').delete().eq('id', itemId);
           if (error) throw error;
@@ -92,44 +108,46 @@ serve(async (req) => {
             .eq('id', itemId);
           if (error) throw error;
         }
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true }, 200, publicCorsHeaders);
       }
 
       case 'removeFromCart': {
-        const { itemId } = data;
+        const itemId = typeof data.itemId === "string" ? sanitizeString(data.itemId, 120) : "";
+        if (!itemId) {
+          return errorResponse("itemId is required", 400, publicCorsHeaders);
+        }
         const { error } = await supabase.from('cart_items').delete().eq('id', itemId);
         if (error) throw error;
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true }, 200, publicCorsHeaders);
       }
 
       case 'clearCart': {
-        const { sessionId } = data;
+        const sessionId = typeof data.sessionId === "string" ? sanitizeString(data.sessionId, 120) : "";
+        if (!sessionId) {
+          return errorResponse("sessionId is required", 400, publicCorsHeaders);
+        }
         const { error } = await supabase.from('cart_items').delete().eq('session_id', sessionId);
         if (error) throw error;
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true }, 200, publicCorsHeaders);
       }
 
       // BOOKING OPERATIONS
       case 'createBooking': {
-        const { 
-          sessionId, 
-          serviceName, 
-          customerName, 
-          customerEmail, 
-          customerPhone,
-          bookingDate, 
-          bookingTime, 
-          durationMinutes = 60,
-          notes,
-          ghlCalendarId,
-          locationId
-        } = data;
+        const sessionId = typeof data.sessionId === "string" ? sanitizeString(data.sessionId, 120) : "";
+        const serviceName = typeof data.serviceName === "string" ? sanitizeString(data.serviceName, 160) : "";
+        const customerName = typeof data.customerName === "string" ? sanitizeString(data.customerName, 160) : "";
+        const customerEmail = typeof data.customerEmail === "string" ? sanitizeString(data.customerEmail, 254) : "";
+        const customerPhone = typeof data.customerPhone === "string" ? sanitizeString(data.customerPhone, 40) : "";
+        const bookingDate = typeof data.bookingDate === "string" ? sanitizeString(data.bookingDate, 32) : "";
+        const bookingTime = typeof data.bookingTime === "string" ? sanitizeString(data.bookingTime, 16) : "";
+        const durationMinutes = typeof data.durationMinutes === "number" ? Math.max(15, Math.min(480, Math.trunc(data.durationMinutes))) : 60;
+        const notes = typeof data.notes === "string" ? sanitizeString(data.notes, 1_000) : undefined;
+        const ghlCalendarId = typeof data.ghlCalendarId === "string" ? sanitizeString(data.ghlCalendarId, 120) : undefined;
+        const locationId = typeof data.locationId === "string" ? sanitizeString(data.locationId, 120) : undefined;
+
+        if (!sessionId || !serviceName || !customerName || !isValidEmail(customerEmail) || !bookingDate || !bookingTime) {
+          return errorResponse("Missing or invalid booking fields", 400, publicCorsHeaders);
+        }
 
         // If GHL integration is enabled, create booking there too
         let ghlContactId = null;
@@ -181,13 +199,14 @@ serve(async (req) => {
           .single();
 
         if (error) throw error;
-        return new Response(JSON.stringify({ success: true, booking }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true, booking }, 200, publicCorsHeaders);
       }
 
       case 'getAvailableSlots': {
-        const { date, serviceDuration = 60 } = data;
+        const date = typeof data.date === "string" ? sanitizeString(data.date, 32) : "";
+        if (!date) {
+          return errorResponse("date is required", 400, publicCorsHeaders);
+        }
         // Generate available time slots (9 AM - 5 PM, hourly)
         const slots = [];
         for (let hour = 9; hour < 17; hour++) {
@@ -210,21 +229,21 @@ serve(async (req) => {
             });
           }
         }
-        return new Response(JSON.stringify({ success: true, slots }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true, slots }, 200, publicCorsHeaders);
       }
 
       // ORDER/CHECKOUT OPERATIONS
       case 'createOrder': {
-        const { 
-          sessionId, 
-          customerEmail, 
-          customerName,
-          items,
-          shippingAddress,
-          paymentMethod = 'card'
-        } = data;
+        const sessionId = typeof data.sessionId === "string" ? sanitizeString(data.sessionId, 120) : "";
+        const customerEmail = typeof data.customerEmail === "string" ? sanitizeString(data.customerEmail, 254) : "";
+        const customerName = typeof data.customerName === "string" ? sanitizeString(data.customerName, 160) : "";
+        const shippingAddress = data.shippingAddress ?? null;
+        const paymentMethod = typeof data.paymentMethod === "string" ? sanitizeString(data.paymentMethod, 40) : 'card';
+        const items = Array.isArray(data.items) ? data.items.slice(0, 100) : [];
+
+        if (!sessionId || !isValidEmail(customerEmail) || !customerName || items.length === 0) {
+          return errorResponse("Missing or invalid order fields", 400, publicCorsHeaders);
+        }
 
         const subtotal = items.reduce((sum: number, item: any) => 
           sum + (item.price * item.quantity), 0);
@@ -253,48 +272,41 @@ serve(async (req) => {
         // Clear cart after order
         await supabase.from('cart_items').delete().eq('session_id', sessionId);
 
-        return new Response(JSON.stringify({ success: true, order }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true, order }, 200, publicCorsHeaders);
       }
 
       case 'getOrder': {
-        const { orderId } = data;
+        const orderId = typeof data.orderId === "string" ? sanitizeString(data.orderId, 120) : "";
+        if (!orderId) {
+          return errorResponse("orderId is required", 400, publicCorsHeaders);
+        }
         const { data: order, error } = await supabase
           .from('orders')
           .select('*')
           .eq('id', orderId)
           .single();
         if (error) throw error;
-        return new Response(JSON.stringify({ success: true, order }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true, order }, 200, publicCorsHeaders);
       }
 
       // PRODUCT OPERATIONS
       case 'getProducts': {
-        const { category, limit = 50 } = data || {};
+        const category = typeof data.category === "string" ? sanitizeString(data.category, 80) : undefined;
+        const requestedLimit = typeof data.limit === "number" ? Math.trunc(data.limit) : 50;
+        const limit = Math.max(1, Math.min(100, requestedLimit));
         let query = supabase.from('products').select('*').eq('is_active', true);
         if (category) query = query.eq('category', category);
         const { data: products, error } = await query.limit(limit);
         if (error) throw error;
-        return new Response(JSON.stringify({ success: true, products: products || [] }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ success: true, products: products || [] }, 200, publicCorsHeaders);
       }
 
       default:
-        return new Response(JSON.stringify({ error: 'Unknown action' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return errorResponse('Unknown action', 400, publicCorsHeaders);
     }
   } catch (error) {
     console.error('Template automation error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return errorResponse(message, 500, publicCorsHeaders);
   }
 });

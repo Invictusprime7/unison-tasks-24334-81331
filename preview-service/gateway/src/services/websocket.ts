@@ -10,6 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SessionManager } from './SessionManager.js';
 import { logger } from '../server.js';
+import { verifyPreviewAccessToken } from '../lib/previewAccess.js';
 
 interface WSMessage {
   type: 'subscribe' | 'unsubscribe' | 'ping';
@@ -38,29 +39,32 @@ function getSupabase(): SupabaseClient | null {
 
 export function setupWebSocket(wss: WebSocketServer, sessionManager: SessionManager): void {
   const sessionSubscriptions = new Map<string, Set<WebSocket>>();
+  const socketAuthorization = new WeakMap<WebSocket, Set<string>>();
 
   wss.on('connection', async (ws, req) => {
     const url = new URL(req.url || '', 'http://localhost');
     const sessionId = url.searchParams.get('sessionId');
     const accessToken = url.searchParams.get('accessToken');
+    const previewToken = url.searchParams.get('previewToken');
 
-    if (!sessionId || !(await canAccessSession(sessionId, accessToken, sessionManager))) {
+    if (!sessionId || !(await canAccessSession(sessionId, accessToken, previewToken, sessionManager))) {
       logger.warn({ sessionId }, 'Rejected unauthorized WebSocket connection');
       ws.close(1008, 'Unauthorized');
       return;
     }
 
     logger.debug({ sessionId }, 'WebSocket connected');
+    socketAuthorization.set(ws, new Set([sessionId]));
 
     // Subscribe to session if provided
     if (sessionId) {
       subscribeToSession(sessionId, ws);
     }
 
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
       try {
         const message: WSMessage = JSON.parse(data.toString());
-        handleMessage(ws, message);
+        await handleMessage(ws, message, accessToken, previewToken);
       } catch (error) {
         logger.error({ error }, 'Invalid WebSocket message');
       }
@@ -74,6 +78,7 @@ export function setupWebSocket(wss: WebSocketServer, sessionManager: SessionMana
           sessionSubscriptions.delete(sid);
         }
       }
+      socketAuthorization.delete(ws);
     });
 
     ws.on('error', (error) => {
@@ -81,10 +86,35 @@ export function setupWebSocket(wss: WebSocketServer, sessionManager: SessionMana
     });
   });
 
-  function handleMessage(ws: WebSocket, message: WSMessage): void {
+  async function handleMessage(
+    ws: WebSocket,
+    message: WSMessage,
+    accessToken: string | null,
+    previewToken: string | null,
+  ): Promise<void> {
     switch (message.type) {
       case 'subscribe':
         if (message.sessionId) {
+          const authorized = await canAccessSession(
+            message.sessionId,
+            accessToken,
+            previewToken,
+            sessionManager,
+          );
+          if (!authorized) {
+            logger.warn({ sessionId: message.sessionId }, 'Rejected unauthorized session subscription');
+            ws.send(JSON.stringify({
+              type: 'error',
+              error: 'Unauthorized session subscription',
+              sessionId: message.sessionId,
+            }));
+            return;
+          }
+
+          if (!socketAuthorization.has(ws)) {
+            socketAuthorization.set(ws, new Set());
+          }
+          socketAuthorization.get(ws)!.add(message.sessionId);
           subscribeToSession(message.sessionId, ws);
         }
         break;
@@ -143,8 +173,18 @@ export function setupWebSocket(wss: WebSocketServer, sessionManager: SessionMana
 async function canAccessSession(
   sessionId: string,
   accessToken: string | null,
+  previewToken: string | null,
   sessionManager: SessionManager
 ): Promise<boolean> {
+  const liveSession = sessionManager.getSession(sessionId);
+  if (!liveSession) {
+    return false;
+  }
+
+  if (previewToken && verifyPreviewAccessToken(previewToken, sessionId)) {
+    return true;
+  }
+
   if (!accessToken) {
     return false;
   }
@@ -156,11 +196,6 @@ async function canAccessSession(
 
   const { data: { user }, error } = await supabase.auth.getUser(accessToken);
   if (error || !user) {
-    return false;
-  }
-
-  const liveSession = sessionManager.getSession(sessionId);
-  if (!liveSession) {
     return false;
   }
 

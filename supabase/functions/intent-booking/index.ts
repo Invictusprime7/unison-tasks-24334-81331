@@ -8,14 +8,17 @@
 // deno-lint-ignore-file no-import-prefix
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 
 // deno-lint-ignore no-explicit-any
 type AnySupabase = any;
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const corsHeaders = publicCorsHeaders;
+const INTENT_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const RATE_LIMIT_CONFIG = { maxRequests: 20, windowSeconds: 300 };
 
 interface IntentPayload {
   intent: string;
@@ -61,17 +64,55 @@ async function sendEmail(to: string, subject: string, html: string, replyTo?: st
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
+  }
+
+  const limiter = checkRateLimit("intent-booking", getClientIp(req), RATE_LIMIT_CONFIG);
+  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
+  if (!limiter.allowed) {
+    return new Response(JSON.stringify({ error: "Too many booking intent requests. Please try again later." }), {
+      status: 429,
+      headers: { ...corsHeaders, "Content-Type": "application/json", ...rateHeaders },
+    });
   }
 
   try {
-    const { intent, businessId, data }: IntentPayload = await req.json();
+    const { data: rawBody, error: parseError } = await safeParseBody<IntentPayload>(req, 65_536);
+    if (parseError || !rawBody) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const payload: IntentPayload = {
+      ...rawBody,
+      intent: sanitizeString(rawBody.intent || "", 120),
+      businessId: sanitizeString(rawBody.businessId || "", 100),
+      projectId: sanitizeString(rawBody.projectId || "", 100) || undefined,
+      source: sanitizeString(rawBody.source || "", 120) || undefined,
+      data: rawBody.data && typeof rawBody.data === "object" && !Array.isArray(rawBody.data) ? rawBody.data : {},
+    };
+    const { intent, businessId, data } = payload;
     
     if (!businessId) {
-      return new Response(JSON.stringify({ error: "Missing businessId" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return errorResponse("Missing businessId", 400, corsHeaders);
+    }
+
+    if (!intent || !INTENT_PATTERN.test(intent)) {
+      return errorResponse("Invalid intent format", 400, corsHeaders);
+    }
+
+    if (!isValidUUID(businessId)) {
+      return errorResponse("Invalid businessId format", 400, corsHeaders);
+    }
+
+    if (rawBody.data && (typeof rawBody.data !== "object" || Array.isArray(rawBody.data))) {
+      return errorResponse("data must be an object", 400, corsHeaders);
     }
 
     const supabase = getSupabaseAdmin();

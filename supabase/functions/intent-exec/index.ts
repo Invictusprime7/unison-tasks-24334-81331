@@ -24,6 +24,10 @@
 
 import { serve } from "serve";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 
 // ============================================================================
 // Types
@@ -104,11 +108,34 @@ interface SiteBundle {
 // CORS + Headers
 // ============================================================================
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const INTENT_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const RATE_LIMIT_CONFIG = { maxRequests: 60, windowSeconds: 300 };
+const EDGE_FUNCTION_NAME_PATTERN = /^[a-z0-9-]{1,80}$/;
+const DEFAULT_ALLOWED_INTENT_EDGE_FUNCTIONS = new Set([
+  "create-lead",
+  "create-lead-lite",
+  "create-booking",
+  "create-order-checkout",
+  "form-submit",
+  "intent-action",
+  "intent-booking",
+  "template-backend",
+  "template-automation",
+]);
+
+function getAllowedIntentEdgeFunctions(): Set<string> {
+  const configured = Deno.env.get("INTENT_EXEC_ALLOWED_FUNCTIONS");
+  if (!configured) {
+    return DEFAULT_ALLOWED_INTENT_EDGE_FUNCTIONS;
+  }
+
+  return new Set(
+    configured
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
+}
 
 // ============================================================================
 // Supabase Client
@@ -456,9 +483,22 @@ async function callEdgeFunction(
   if (!supabaseUrl || !serviceKey) {
     throw new Error("Missing Supabase config");
   }
+
+  const normalizedFunctionName = sanitizeString(functionName || "", 80);
+  const normalizedRoute = sanitizeString(route || "", 300);
+  const allowedFunctions = getAllowedIntentEdgeFunctions();
+
+  if (!EDGE_FUNCTION_NAME_PATTERN.test(normalizedFunctionName)) {
+    throw new Error("Invalid edge function target");
+  }
+
+  if (!allowedFunctions.has(normalizedFunctionName)) {
+    throw new Error(`Edge function '${normalizedFunctionName}' is not allowed for intent execution`);
+  }
   
-  const url = `${supabaseUrl}/functions/v1/${functionName}`;
-  
+  const url = `${supabaseUrl}/functions/v1/${normalizedFunctionName}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -468,9 +508,11 @@ async function callEdgeFunction(
     body: JSON.stringify({
       ...params,
       ...context,
-      route,
+      route: normalizedRoute,
     }),
+    signal: controller.signal,
   });
+  clearTimeout(timeout);
   
   if (!response.ok) {
     const errorText = await response.text();
@@ -713,16 +755,25 @@ async function handleQuoteRequest(
 // ============================================================================
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  if (preflight) {
+    return preflight;
   }
   
   if (req.method !== "POST") {
-    return new Response(
-      JSON.stringify({ ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "POST required" } }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse("POST required", 405, publicCorsHeaders, {
+      ok: false,
+      error: { code: "METHOD_NOT_ALLOWED", message: "POST required" },
+    });
+  }
+
+  const limiter = checkRateLimit("intent-exec", getClientIp(req), RATE_LIMIT_CONFIG);
+  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
+  if (!limiter.allowed) {
+    return secureJsonResponse({
+      ok: false,
+      error: { code: "RATE_LIMITED", message: "Too many intent executions. Please try again later." },
+    }, 429, publicCorsHeaders, rateHeaders);
   }
   
   const startTime = Date.now();
@@ -733,45 +784,85 @@ serve(async (req: Request) => {
     supabase = getSupabaseAdmin();
   } catch (envError) {
     console.error("[intent-exec] Environment error:", envError);
-    return new Response(
-      JSON.stringify({
+    return secureJsonResponse({
         ok: false,
         error: { code: "CONFIG_ERROR", message: "Service not properly configured" },
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+      }, 500, publicCorsHeaders);
   }
   
   // Extract client info
-  const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0] || 
+  const ipAddress = sanitizeString(req.headers.get("x-forwarded-for")?.split(",")[0] || 
                     req.headers.get("x-real-ip") ||
-                    "unknown";
-  const userAgent = req.headers.get("user-agent") || "unknown";
+                    "unknown", 100);
+  const userAgent = sanitizeString(req.headers.get("user-agent") || "unknown", 300);
   
   try {
-    const body = await req.json() as IntentExecuteRequest;
+    const { data: rawBody, error: parseError } = await safeParseBody<IntentExecuteRequest>(req, 65_536);
+    if (parseError || !rawBody) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, publicCorsHeaders, {
+        ok: false,
+        error: { code: "INVALID_REQUEST", message: parseError || "Invalid request body" },
+      });
+    }
+
+    const body: IntentExecuteRequest = {
+      ...rawBody,
+      siteId: sanitizeString(rawBody.siteId || "", 100) || undefined,
+      businessId: sanitizeString(rawBody.businessId || "", 100) || undefined,
+      intentId: sanitizeString(rawBody.intentId || "", 120),
+      bindingId: sanitizeString(rawBody.bindingId || "", 120) || undefined,
+      pageId: sanitizeString(rawBody.pageId || "", 120),
+      params: rawBody.params && typeof rawBody.params === "object" && !Array.isArray(rawBody.params) ? rawBody.params : {},
+      context: rawBody.context ? {
+        sessionId: sanitizeString(rawBody.context.sessionId || "", 120) || undefined,
+        userId: sanitizeString(rawBody.context.userId || "", 100) || undefined,
+      } : undefined,
+    };
     const { siteId, intentId, bindingId, pageId, params, context } = body;
     
     // Validate required fields
     if (!intentId || !pageId) {
-      return new Response(
-        JSON.stringify({
+      return secureJsonResponse({
           ok: false,
           error: { code: "INVALID_REQUEST", message: "Missing required fields: intentId, pageId" },
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+        }, 400, publicCorsHeaders);
     }
     
     // Need either siteId or businessId
     if (!siteId && !body.businessId) {
-      return new Response(
-        JSON.stringify({
+      return secureJsonResponse({
           ok: false,
           error: { code: "INVALID_REQUEST", message: "Missing required field: siteId or businessId" },
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+        }, 400, publicCorsHeaders);
+    }
+
+    if (!INTENT_PATTERN.test(intentId)) {
+      return secureJsonResponse({
+        ok: false,
+        error: { code: "INVALID_REQUEST", message: "Invalid intentId format" },
+      }, 400, publicCorsHeaders);
+    }
+
+    if (siteId && !isValidUUID(siteId)) {
+      return secureJsonResponse({
+        ok: false,
+        error: { code: "INVALID_REQUEST", message: "Invalid siteId format" },
+      }, 400, publicCorsHeaders);
+    }
+
+    if (body.businessId && !isValidUUID(body.businessId)) {
+      return secureJsonResponse({
+        ok: false,
+        error: { code: "INVALID_REQUEST", message: "Invalid businessId format" },
+      }, 400, publicCorsHeaders);
+    }
+
+    if (rawBody.params && (typeof rawBody.params !== "object" || Array.isArray(rawBody.params))) {
+      return secureJsonResponse({
+        ok: false,
+        error: { code: "INVALID_REQUEST", message: "params must be an object" },
+      }, 400, publicCorsHeaders);
     }
     
     console.log(`[intent-exec] Executing intent: ${intentId} for site: ${siteId || 'N/A'}`);
@@ -794,13 +885,10 @@ serve(async (req: Request) => {
     }
     
     if (!businessId) {
-      return new Response(
-        JSON.stringify({
+      return secureJsonResponse({
           ok: false,
           error: { code: "SITE_NOT_FOUND", message: "Site not found" },
-        }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+        }, 404, publicCorsHeaders);
     }
     
     // Check usage limits
@@ -829,7 +917,7 @@ serve(async (req: Request) => {
           ok: false,
           error: { code: "USAGE_LIMIT_EXCEEDED", message: usageCheck.reason },
         }),
-        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 429, headers: { ...publicCorsHeaders, "Content-Type": "application/json" } }
       );
     }
     
@@ -867,7 +955,7 @@ serve(async (req: Request) => {
           ok: false,
           error: { code: "ENTITLEMENT_DENIED", message: entitlementCheck.reason },
         }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 403, headers: { ...publicCorsHeaders, "Content-Type": "application/json" } }
       );
     }
     
@@ -936,7 +1024,7 @@ serve(async (req: Request) => {
     
     return new Response(
       JSON.stringify(response),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...publicCorsHeaders, "Content-Type": "application/json" } }
     );
     
   } catch (error) {
@@ -952,7 +1040,7 @@ serve(async (req: Request) => {
     
     return new Response(
       JSON.stringify(response),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...publicCorsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

@@ -30,8 +30,13 @@ import type {
   SessionLogsResponse,
   SessionStatusResponse,
 } from '../types.js';
+import {
+  assertPreviewFileContent,
+  normalizePreviewFilePath,
+} from '../lib/fileSecurity.js';
 
 export const sessionRouter: RouterType = Router();
+const MAX_START_SESSION_FILES = 250;
 
 // Apply auth middleware to all routes
 sessionRouter.use(apiKeyAuth);
@@ -50,14 +55,44 @@ sessionRouter.post('/start',
   try {
     const { projectId, files } = req.body as StartSessionRequest;
 
-    if (!projectId || !files) {
+    if (typeof projectId !== 'string' || !projectId.trim() || !files || typeof files !== 'object' || Array.isArray(files)) {
       return res.status(400).json({ 
         success: false, 
         error: 'Missing projectId or files' 
       });
     }
 
-    const session = await sessionManager.startSession(projectId, files, {
+    const fileEntries = Object.entries(files);
+    if (fileEntries.length === 0 || fileEntries.length > MAX_START_SESSION_FILES) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid files payload',
+      });
+    }
+
+    const normalizedFiles: Record<string, string> = {};
+    for (const [filePath, content] of fileEntries) {
+      const normalizedPath = normalizePreviewFilePath(filePath);
+      if (!normalizedPath) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid file path: ${filePath}`,
+        });
+      }
+
+      try {
+        assertPreviewFileContent(content);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Invalid file content',
+        });
+      }
+
+      normalizedFiles[normalizedPath] = content;
+    }
+
+    const session = await sessionManager.startSession(projectId.trim(), normalizedFiles, {
       userId: req.user!.id,
       organizationId: req.user?.organizationId,
     });
@@ -97,15 +132,25 @@ sessionRouter.patch('/:sessionId/file',
   try {
     const sessionId = req.params.sessionId as string;
     const { path, content } = req.body as PatchFileRequest;
+    const normalizedPath = normalizePreviewFilePath(path);
 
-    if (!path || content === undefined) {
+    if (!normalizedPath || content === undefined) {
       return res.status(400).json({ 
         success: false, 
         error: 'Missing path or content' 
       });
     }
 
-    await sessionManager.patchFile(sessionId, path, content);
+    try {
+      assertPreviewFileContent(content);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Invalid file content',
+      });
+    }
+
+    await sessionManager.patchFile(sessionId, normalizedPath, content);
 
     const response: PatchFileResponse = { success: true };
     res.json(response);

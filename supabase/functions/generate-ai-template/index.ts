@@ -1,28 +1,50 @@
 import { serve } from "serve";
 import { generateVariation, variationToPromptContext, type TemplateVariation } from "../_shared/industryVariations.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
-    const { prompt, variationSeed } = await req.json();
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
+
+    const { data: body, error: parseError } = await safeParseBody<{ prompt?: string; variationSeed?: string }>(req, 65_536);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const prompt = typeof body.prompt === "string" ? sanitizeString(body.prompt, 10_000) : "";
+    const variationSeed = typeof body.variationSeed === "string" ? sanitizeString(body.variationSeed, 40) : undefined;
+    if (!prompt) {
+      return errorResponse("prompt is required", 400, corsHeaders);
+    }
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
       console.warn("LOVABLE_API_KEY not configured - AI features unavailable in local development");
-      return new Response(
-        JSON.stringify({ 
+      return secureJsonResponse(
+        { 
           error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
           isLocalDevelopment: true
-        }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        },
+        503,
+        corsHeaders
       );
     }
 
@@ -201,30 +223,18 @@ OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explan
 
     if (!response.ok) {
       if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
       }
       if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Payment required. Please add credits to your Lovable workspace." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse("Payment required. Please add credits to your Lovable workspace.", 402, corsHeaders);
       }
       if (response.status === 401) {
         console.error("AI gateway authentication failed");
-        return new Response(
-          JSON.stringify({ error: "AI service authentication failed. Please check API configuration." }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse("AI service authentication failed. Please check API configuration.", 401, corsHeaders);
       }
       const errorText = await response.text();
       console.error("AI Gateway error:", response.status, errorText);
-      return new Response(
-        JSON.stringify({ error: `AI Gateway error: ${response.status}` }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(`AI Gateway error: ${response.status}`, 503, corsHeaders);
     }
 
     const data = await response.json();
@@ -289,8 +299,8 @@ OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explan
       completeTemplate.sections.length, "sections,",
       completeTemplate.sections.reduce((acc: number, s: any) => acc + (s.components?.length || 0), 0), "total components");
 
-    return new Response(
-      JSON.stringify({ 
+    return secureJsonResponse(
+      { 
         template: completeTemplate,
         variation: {
           seed: variation.seed,
@@ -301,15 +311,13 @@ OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explan
           sectionOrder: variation.sectionOrder
         },
         explanation: `AI template generated for ${variation.industry.name} industry with ${completeTemplate.sections.length} sections using "${variation.colorScheme.name}" color scheme and "${variation.heroVariant.name}" hero layout.`
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      },
+      200,
+      corsHeaders
     );
   } catch (error) {
     console.error("Error generating AI template:", error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse(message, 500, corsHeaders);
   }
 });

@@ -1,10 +1,9 @@
 import { serve } from "serve";
 import { z } from "zod";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody } from "../_shared/validate.ts";
 
 const BlueprintSchema = z.object({
   identity: z.object({
@@ -130,17 +129,33 @@ function sanitizeReactFiles(files: Record<string, string>): Record<string, strin
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
-    const parsed = BodySchema.safeParse(await req.json().catch(() => null));
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
+
+    const { data: rawBody, error: parseError } = await safeParseBody(req, 300_000);
+    if (parseError || !rawBody) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const parsed = BodySchema.safeParse(rawBody);
     if (!parsed.success) {
-      return new Response(
-        JSON.stringify({ error: "Invalid request body", details: parsed.error.issues.slice(0, 5) }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Invalid request body", 400, corsHeaders, {
+        details: parsed.error.issues.slice(0, 5),
+      });
     }
 
     const { blueprint, userPrompt, templateHtml, variationSeed, templateId } = parsed.data;
@@ -194,10 +209,9 @@ ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
     if (!aiResponse.ok) {
       const errText = await aiResponse.text();
       console.error("[systems-build] ai-code-assistant failed:", aiResponse.status, errText);
-      return new Response(
-        JSON.stringify({ error: "React generation failed", status: aiResponse.status }),
-        { status: aiResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("React generation failed", aiResponse.status, corsHeaders, {
+        status: aiResponse.status,
+      });
     }
 
     const aiData = await aiResponse.json();
@@ -212,15 +226,16 @@ ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
       const vfs = JSON.parse(filesJson);
       const sanitized = sanitizeReactFiles(vfs.files || {});
 
-      return new Response(
-        JSON.stringify({
+      return secureJsonResponse(
+        {
           files: sanitized,
           entryPoint: vfs.entryPoint || "src/App.tsx",
           framework: "react",
           buildTool: "vite",
           _meta: { ai_generated: true, outputFormat: "react", template: templateId, variation_seed: variationSeed },
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        },
+        200,
+        corsHeaders
       );
     } catch (parseError) {
       // Try extracting JSON from mixed content
@@ -228,29 +243,30 @@ ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
       if (jsonMatch) {
         try {
           const extracted = JSON.parse(jsonMatch[0]);
-          return new Response(
-            JSON.stringify({
+          return secureJsonResponse(
+            {
               files: sanitizeReactFiles(extracted.files || {}),
               entryPoint: extracted.entryPoint || "src/App.tsx",
               framework: "react",
               buildTool: "vite",
               _meta: { ai_generated: true, outputFormat: "react", recovered: true },
-            }),
-            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            },
+            200,
+            corsHeaders
           );
         } catch { /* fall through */ }
       }
 
-      return new Response(
-        JSON.stringify({ error: "Failed to parse AI response as VFS JSON", details: String(parseError) }),
-        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Failed to parse AI response as VFS JSON", 422, corsHeaders, {
+        details: String(parseError),
+      });
     }
   } catch (error: unknown) {
     console.error("[systems-build] Error:", error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "An error occurred" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    return errorResponse(
+      error instanceof Error ? error.message : "An error occurred",
+      500,
+      corsHeaders
     );
   }
 });

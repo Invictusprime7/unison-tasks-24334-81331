@@ -11,6 +11,7 @@ import { sessionManager, logger } from '../server.js';
 import { verifyPreviewAccessToken } from '../lib/previewAccess.js';
 
 export const proxyRouter: RouterType = Router();
+const SESSION_ID_PATTERN = /^[a-zA-Z0-9_-]{8,128}$/;
 
 // Create proxy server
 const proxy = httpProxy.createProxyServer({
@@ -28,6 +29,12 @@ proxy.on('error', (err, req, res) => {
     res.writeHead(502, { 'Content-Type': 'text/plain' });
     res.end('Preview temporarily unavailable');
   }
+});
+
+proxy.on('proxyReq', (proxyReq) => {
+  // Never leak caller auth or preview token cookies into the worker runtime.
+  proxyReq.removeHeader('authorization');
+  proxyReq.removeHeader('cookie');
 });
 
 function getPreviewToken(req: any): string | null {
@@ -57,6 +64,11 @@ function getPreviewToken(req: any): string | null {
 }
 
 function ensureAuthorized(req: any, res: any, sessionId: string): boolean {
+  if (!SESSION_ID_PATTERN.test(sessionId)) {
+    res.status(400).json({ error: 'Invalid session id' });
+    return false;
+  }
+
   const queryToken = typeof req.query.token === 'string' ? req.query.token : null;
   const token = getPreviewToken(req);
 
@@ -82,6 +94,8 @@ function rewritePreviewPath(req: any, sessionId: string): void {
   requestUrl.pathname = targetPathname;
   requestUrl.searchParams.delete('token');
   req.url = `${requestUrl.pathname}${requestUrl.search}`;
+  delete req.headers.authorization;
+  delete req.headers.cookie;
 }
 
 /**

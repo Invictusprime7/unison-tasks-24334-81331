@@ -10,7 +10,15 @@
 
 /** Generate a unique request ID for tracing */
 export function generateRequestId(): string {
-  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `req_${crypto.randomUUID()}`;
+  }
+
+  const fallback = Array.from({ length: 4 }, () =>
+    Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0")
+  ).join("");
+
+  return `req_${fallback}`;
 }
 
 /** Default headers added to all API requests */

@@ -1,11 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { Resend } from "https://esm.sh/resend@2.0.0?target=deno";
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const corsHeaders = publicCorsHeaders;
+const RATE_LIMIT_CONFIG = { maxRequests: 20, windowSeconds: 300 };
 
 interface LeadPayload {
   businessId: string;
@@ -78,14 +80,25 @@ async function sendEmailSafe(params: {
   } as any);
 }
 
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
+  }
+
+  const limiter = checkRateLimit("create-lead", getClientIp(req), RATE_LIMIT_CONFIG);
+  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
+  if (!limiter.allowed) {
+    return secureJsonResponse(
+      { success: false, error: "Too many lead submissions. Please try again later." },
+      429,
+      corsHeaders,
+      rateHeaders,
+    );
   }
 
   try {
@@ -94,39 +107,42 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     
-    const body: LeadPayload = await req.json();
+    const { data: rawBody, error: parseError } = await safeParseBody<LeadPayload>(req, 32_768);
+    if (parseError || !rawBody) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const body: LeadPayload = {
+      ...rawBody,
+      businessId: sanitizeString(rawBody.businessId || "", 100),
+      name: sanitizeString(rawBody.name || "", 120) || undefined,
+      email: sanitizeString(rawBody.email || "", 255),
+      phone: sanitizeString(rawBody.phone || "", 40) || undefined,
+      source: sanitizeString(rawBody.source || "", 120) || undefined,
+      message: sanitizeString(rawBody.message || "", 2_000) || undefined,
+      metadata: rawBody.metadata && typeof rawBody.metadata === "object" && !Array.isArray(rawBody.metadata) ? rawBody.metadata : {},
+    };
     const { businessId, name, email, phone, source, message, metadata } = body;
 
     // Validate required fields
     if (!email) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Email is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Email is required", 400, corsHeaders);
     }
 
     if (!businessId) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Business ID is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Business ID is required", 400, corsHeaders);
     }
 
     // Validate businessId format early to avoid DB 22P02 errors
-    if (!isUuid(businessId)) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Invalid business ID" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!isValidUUID(businessId)) {
+      return errorResponse("Invalid business ID", 400, corsHeaders);
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Invalid email format" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Invalid email format", 400, corsHeaders);
     }
 
     // Insert lead into database
@@ -146,10 +162,7 @@ serve(async (req) => {
 
     if (insertError) {
       console.error("Failed to create lead:", insertError);
-      return new Response(
-        JSON.stringify({ success: false, error: "Failed to submit form" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Failed to submit form", 500, corsHeaders);
     }
 
     // Also create/update CRM entities (best-effort)
@@ -292,24 +305,15 @@ serve(async (req) => {
       console.warn("Workflow trigger warning:", workflowError);
     }
 
-    return new Response(
-      JSON.stringify({ 
+    return secureJsonResponse({ 
         success: true, 
         data: { 
           id: lead.id,
           message: "Thank you! We'll be in touch soon." 
         }
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+      }, 200, corsHeaders);
   } catch (error) {
     console.error("Create lead error:", error);
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Unknown error" 
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse(error instanceof Error ? error.message : "Unknown error", 500, corsHeaders);
   }
 });

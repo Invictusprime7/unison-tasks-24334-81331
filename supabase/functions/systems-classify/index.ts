@@ -1,10 +1,9 @@
 // deno-lint-ignore-file no-import-prefix
 import { serve } from "serve";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
 
 /**
  * Systems AI - Classify Endpoint
@@ -419,27 +418,36 @@ Respond ONLY with valid JSON in this exact format:
   }
 }
 
-function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
   }
 
   if (req.method !== "POST") {
-    return json(405, { error: "Method not allowed" });
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
-    const body: ClassifyRequest = await req.json();
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
+
+    const { data: body, error: parseError } = await safeParseBody<ClassifyRequest>(req, 65_536);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
     
     if (!body.prompt || typeof body.prompt !== "string") {
-      return json(400, { error: "prompt is required" });
+      return errorResponse("prompt is required", 400, corsHeaders);
+    }
+
+    const prompt = sanitizeString(body.prompt, 10_000);
+    if (!prompt) {
+      return errorResponse("prompt is required", 400, corsHeaders);
     }
     
     // Try AI classification first if API key is available
@@ -448,7 +456,7 @@ serve(async (req) => {
     let usedAI = false;
     
     if (apiKey) {
-      result = await classifyWithAI(body.prompt, apiKey);
+      result = await classifyWithAI(prompt, apiKey);
       if (result) {
         usedAI = true;
         console.log("[systems-classify] Used AI classification, industry:", result.industry);
@@ -457,20 +465,20 @@ serve(async (req) => {
     
     // Fall back to regex-based classification
     if (!result) {
-      result = classifyPrompt(body.prompt);
+      result = classifyPrompt(prompt);
       console.log("[systems-classify] Used regex classification, industry:", result.industry);
     }
     
     // Add metadata about classification method
-    return json(200, {
+    return secureJsonResponse({
       ...result,
       _meta: {
         classification_method: usedAI ? "ai" : "heuristic",
         model: usedAI ? AI_MODEL : undefined,
       },
-    });
+    }, 200, corsHeaders);
   } catch (error) {
     console.error("[systems-classify] Error:", error);
-    return json(500, { error: "Internal server error" });
+    return errorResponse("Internal server error", 500, corsHeaders);
   }
 });

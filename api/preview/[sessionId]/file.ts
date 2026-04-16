@@ -12,7 +12,9 @@ import {
   getForwardedAuthHeaders,
   getPreviewGatewayUrl,
   handlePreflight,
+  isAllowedPreviewFileContent,
   isValidSessionId,
+  normalizePreviewFilePath,
   parseJsonSafely,
   sendError,
 } from '../../_lib/security';
@@ -40,10 +42,16 @@ export default async function handler(
   }
 
   const body = req.body as { path?: string; content?: string } | undefined;
+  const normalizedPath = normalizePreviewFilePath(body?.path);
 
-  if (!body?.path || typeof body.content !== 'string') {
+  if (!normalizedPath || !isAllowedPreviewFileContent(body?.content)) {
     return sendError(res, 400, 'Missing path or content', requestId);
   }
+
+  const payload = {
+    path: normalizedPath,
+    content: body.content,
+  };
 
   // Proxy to Docker gateway if available
   const gatewayUrl = getPreviewGatewayUrl();
@@ -57,7 +65,7 @@ export default async function handler(
             'Content-Type': 'application/json',
             ...getForwardedAuthHeaders(req, requestId),
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(payload),
           signal: AbortSignal.timeout(5000),
         }
       );

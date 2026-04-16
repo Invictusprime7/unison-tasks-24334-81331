@@ -35,8 +35,7 @@ export class FabricTemplateRenderer {
     }
 
     // Set canvas size
-    this.canvas.setWidth(frame.width);
-    this.canvas.setHeight(frame.height);
+    this.canvas.setDimensions({ width: frame.width, height: frame.height });
     this.canvas.backgroundColor = frame.background;
     this.canvas.clear();
 

@@ -8,14 +8,17 @@
 
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
+import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { errorResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 
 // deno-lint-ignore no-explicit-any
 type AnySupabase = any;
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const corsHeaders = publicCorsHeaders;
+const INTENT_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const RATE_LIMIT_CONFIG = { maxRequests: 30, windowSeconds: 300 };
 
 interface IntentPayload {
   intent: string;
@@ -97,17 +100,56 @@ async function createLead(supabase: AnySupabase, businessId: string, data: Recor
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
+  }
+
+  const limiter = checkRateLimit("intent-action", getClientIp(req), RATE_LIMIT_CONFIG);
+  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
+  if (!limiter.allowed) {
+    return new Response(JSON.stringify({ error: "Too many action requests. Please try again later." }), {
+      status: 429,
+      headers: { ...corsHeaders, "Content-Type": "application/json", ...rateHeaders },
+    });
   }
 
   try {
-    const { intent, businessId, projectId, data }: IntentPayload = await req.json();
+    const { data: rawBody, error: parseError } = await safeParseBody<IntentPayload>(req, 65_536);
+    if (parseError || !rawBody) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
+    const payload: IntentPayload = {
+      ...rawBody,
+      intent: sanitizeString(rawBody.intent || "", 120),
+      businessId: sanitizeString(rawBody.businessId || "", 100),
+      projectId: sanitizeString(rawBody.projectId || "", 100) || undefined,
+      source: sanitizeString(rawBody.source || "", 120) || undefined,
+      sourceUrl: sanitizeString(rawBody.sourceUrl || "", 500) || undefined,
+      data: rawBody.data && typeof rawBody.data === "object" && !Array.isArray(rawBody.data) ? rawBody.data : {},
+    };
+    const { intent, businessId, projectId, data } = payload;
     
     if (!businessId || !intent) {
-      return new Response(JSON.stringify({ error: "Missing businessId or intent" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return errorResponse("Missing businessId or intent", 400, corsHeaders);
+    }
+
+    if (!INTENT_PATTERN.test(intent)) {
+      return errorResponse("Invalid intent format", 400, corsHeaders);
+    }
+
+    if (!isValidUUID(businessId)) {
+      return errorResponse("Invalid businessId format", 400, corsHeaders);
+    }
+
+    if (rawBody.data && (typeof rawBody.data !== "object" || Array.isArray(rawBody.data))) {
+      return errorResponse("data must be an object", 400, corsHeaders);
     }
 
     const supabase = getSupabaseAdmin();

@@ -15,6 +15,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import pino from 'pino';
@@ -73,7 +74,7 @@ app.use(helmet({
 // Request ID generation — must be early in the chain for correlation
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   const requestId = req.headers['x-request-id'] as string ||
-    `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    `req_${crypto.randomUUID()}`;
   req.headers['x-request-id'] = requestId;
   res.setHeader('X-Request-ID', requestId);
   next();

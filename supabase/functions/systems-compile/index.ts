@@ -1,10 +1,9 @@
 // deno-lint-ignore-file no-import-prefix
 import { serve } from "serve";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
 
 const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const AI_MODEL = "google/gemini-2.5-pro";
@@ -988,41 +987,50 @@ function applyAIEnhancements(
   return blueprint;
 }
 
-function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
   }
 
   if (req.method !== "POST") {
-    return json(405, { error: "Method not allowed" });
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
-    const body: CompileRequest = await req.json();
-    
-    if (!body.prompt || typeof body.prompt !== "string") {
-      return json(400, { error: "prompt is required" });
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
+
+    const { data: body, error: parseError } = await safeParseBody<CompileRequest>(req, 131_072);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
     }
     
-    const industry = detectIndustry(body.prompt);
+    if (!body.prompt || typeof body.prompt !== "string") {
+      return errorResponse("prompt is required", 400, corsHeaders);
+    }
+
+    const prompt = sanitizeString(body.prompt, 10_000);
+    if (!prompt) {
+      return errorResponse("prompt is required", 400, corsHeaders);
+    }
+    
+    const industry = detectIndustry(prompt);
     const answers = body.answers || {};
     const constraints = body.constraints;
     
-    let blueprint = generateBlueprint(body.prompt, industry, answers, constraints);
+    let blueprint = generateBlueprint(prompt, industry, answers, constraints);
     let usedAI = false;
     
     // Try AI enhancement if API key is available
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (apiKey) {
       const enhancements = await enhanceBlueprintWithAI(
-        body.prompt,
+        prompt,
         industry,
         blueprint.brand.business_name,
         apiKey
@@ -1042,16 +1050,16 @@ serve(async (req) => {
       automations: blueprint.automations.rules.map(r => r.name),
     };
     
-    return json(200, {
+    return secureJsonResponse({
       blueprint,
       preview_summary: previewSummary,
       _meta: {
         ai_enhanced: usedAI,
         model: usedAI ? AI_MODEL : undefined,
       },
-    });
+    }, 200, corsHeaders);
   } catch (error) {
     console.error("[systems-compile] Error:", error);
-    return json(500, { error: "Internal server error" });
+    return errorResponse("Internal server error", 500, corsHeaders);
   }
 });

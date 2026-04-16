@@ -12,6 +12,11 @@ import os from 'os';
 import type { PreviewSession, FileMap, SessionStatus } from '../types.js';
 import { logger } from '../server.js';
 import { createPreviewAccessToken } from '../lib/previewAccess.js';
+import {
+  assertPreviewFileContent,
+  normalizePreviewFilePath,
+  resolveSessionPath,
+} from '../lib/fileSecurity.js';
 
 // ============================================
 // CONFIGURATION
@@ -26,6 +31,14 @@ const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:3001';
 // Port range for containers
 const PORT_RANGE_START = 4200;
 const PORT_RANGE_END = 4300;
+
+function getSessionBasePath(): string {
+  return process.env.SESSION_VOLUME_PATH || path.join(os.tmpdir(), 'preview-sessions');
+}
+
+function getSessionWorkDir(sessionId: string): string {
+  return path.join(getSessionBasePath(), sessionId);
+}
 
 // ============================================
 // SESSION MANAGER
@@ -117,21 +130,28 @@ export class SessionManager {
       throw new Error('Session not running');
     }
 
+    const normalizedPath = normalizePreviewFilePath(filePath);
+    if (!normalizedPath) {
+      throw new Error('Invalid file path');
+    }
+
+    assertPreviewFileContent(content);
+
     // Update session files
-    session.files[filePath] = content;
+    session.files[normalizedPath] = content;
     session.lastActivityAt = new Date();
 
     // Write file to container volume
-    const workDir = path.join(os.tmpdir(), 'preview-sessions', sessionId);
-    const fullPath = path.join(workDir, filePath);
+    const workDir = getSessionWorkDir(sessionId);
+    const fullPath = resolveSessionPath(workDir, normalizedPath);
     
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
     await fs.writeFile(fullPath, content, 'utf-8');
     
-    logger.debug({ sessionId, filePath }, 'File patched');
+    logger.debug({ sessionId, filePath: normalizedPath }, 'File patched');
 
     // If package.json was updated, re-run dependency installation inside the container
-    if (filePath === 'package.json' || filePath === '/package.json') {
+    if (normalizedPath === 'package.json') {
       await this.reinstallDependencies(sessionId);
     }
   }
@@ -281,14 +301,18 @@ export class SessionManager {
   }
 
   private async writeFilesToDisk(sessionId: string, files: FileMap): Promise<string> {
-    // Use the shared volume path for Docker-in-Docker compatibility
-    // This volume is shared between gateway and worker containers
-    const volumeBasePath = process.env.SESSION_VOLUME_PATH || '/tmp/preview-sessions';
-    const workDir = path.join(volumeBasePath, sessionId);
+    const workDir = getSessionWorkDir(sessionId);
     await fs.mkdir(workDir, { recursive: true });
 
     for (const [filePath, content] of Object.entries(files)) {
-      const fullPath = path.join(workDir, filePath);
+      const normalizedPath = normalizePreviewFilePath(filePath);
+      if (!normalizedPath) {
+        throw new Error(`Invalid file path: ${filePath}`);
+      }
+
+      assertPreviewFileContent(content);
+
+      const fullPath = resolveSessionPath(workDir, normalizedPath);
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content, 'utf-8');
     }
@@ -482,7 +506,7 @@ export class SessionManager {
     }
 
     // Clean up temp directory
-    const workDir = path.join(os.tmpdir(), 'preview-sessions', sessionId);
+    const workDir = getSessionWorkDir(sessionId);
     try {
       await fs.rm(workDir, { recursive: true, force: true });
     } catch {

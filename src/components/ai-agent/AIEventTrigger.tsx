@@ -55,7 +55,7 @@ export function AIEventTrigger({
       onEventEmitted?.(eventId);
 
       // Optionally trigger immediate processing
-      const result = await triggerRun(eventId);
+      const result = await triggerRun({ businessId, eventId });
       
       if (result.status === 'completed' && result.result) {
         toast.success(`Lead scored: ${result.result.score}%`);
@@ -132,7 +132,7 @@ export function AIEventTrigger({
             <Button
               type="button"
               variant="outline"
-              onClick={() => triggerRun()}
+              onClick={() => triggerRun({ businessId })}
               disabled={isRunning}
             >
               <Play className="h-4 w-4 mr-2" />

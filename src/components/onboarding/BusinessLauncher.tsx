@@ -352,23 +352,23 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
         : null;
       const entryPath = normalizedEntryPoint && reactFiles?.[normalizedEntryPoint] && isRenderableEntryPath(normalizedEntryPoint)
         ? normalizedEntryPoint
-        : normalizedFiles?.["/src/App.tsx"]
+        : reactFiles?.["/src/App.tsx"]
           ? "/src/App.tsx"
-          : normalizedFiles?.["/App.tsx"]
+          : reactFiles?.["/App.tsx"]
             ? "/App.tsx"
             : reactFiles
               ? Object.keys(reactFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
                 Object.keys(reactFiles).find((path) => isRenderableEntryPath(path)) ||
                 null
               : null;
-      const code = entryPath ? normalizedFiles?.[entryPath] || "" : "";
+      const code = entryPath ? reactFiles?.[entryPath] || "" : "";
 
-      if (!normalizedFiles || Object.keys(normalizedFiles).length === 0 || !code || code.length < 50) {
+      if (!reactFiles || Object.keys(reactFiles).length === 0 || !code || code.length < 50) {
         throw new Error("Launcher must return structured VFS files for Web Builder");
       }
 
       setGeneratedCode(code);
-      setGeneratedVfsFiles(normalizedFiles);
+      setGeneratedVfsFiles(reactFiles);
       setGeneratedEntryPoint(entryPath);
       setGeneratedSystemsBuildContext(blueprint);
       

@@ -5,15 +5,19 @@
 
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
-import { corsHeaders } from "./utils.ts";
+
+export interface ProviderEarlyError {
+  status: number;
+  error: string;
+}
 
 export interface ProviderCallResult {
   content: string;
   reasoning: string;
   /** Which model produced the successful response */
   modelUsed?: string;
-  /** Non-null when we should return an early HTTP response (rate limit, payment required) */
-  earlyResponse?: Response;
+  /** Non-null when we should return an early HTTP error (rate limit, payment required) */
+  earlyError?: ProviderEarlyError;
 }
 
 export async function runProviderLoop(opts: {
@@ -66,19 +70,19 @@ export async function runProviderLoop(opts: {
         if (resp.status === 429) {
           return {
             content: '', reasoning: '', modelUsed: undefined,
-            earlyResponse: new Response(
-              JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
-              { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            ),
+            earlyError: {
+              status: 429,
+              error: 'Rate limit exceeded. Please try again later.',
+            },
           };
         }
         if (resp.status === 402) {
           return {
             content: '', reasoning: '', modelUsed: undefined,
-            earlyResponse: new Response(
-              JSON.stringify({ error: 'Payment required. Please add credits to your workspace.' }),
-              { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            ),
+            earlyError: {
+              status: 402,
+              error: 'Payment required. Please add credits to your workspace.',
+            },
           };
         }
 

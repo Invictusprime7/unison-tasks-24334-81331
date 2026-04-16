@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+import path from 'node:path';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -14,13 +16,24 @@ interface ApiSecurityOptions {
   cacheControl?: string;
 }
 
+const MAX_PREVIEW_FILE_PATH_LENGTH = 240;
+export const MAX_PREVIEW_FILE_CONTENT_BYTES = 1_000_000;
+
+export function createRequestId(): string {
+  if (typeof crypto.randomUUID === 'function') {
+    return `req_${crypto.randomUUID()}`;
+  }
+
+  return `req_${crypto.randomBytes(16).toString('hex')}`;
+}
+
 export function getRequestId(req: VercelRequest): string {
   const headerValue = req.headers['x-request-id'];
   if (typeof headerValue === 'string' && headerValue.trim()) {
     return headerValue.trim();
   }
 
-  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+  return createRequestId();
 }
 
 export function resolveAllowedOrigin(req: VercelRequest): string | null {
@@ -89,6 +102,46 @@ export function handlePreflight(req: VercelRequest, res: VercelResponse): boolea
 
 export function isValidSessionId(value: unknown): value is string {
   return typeof value === 'string' && /^[a-zA-Z0-9_-]{8,128}$/.test(value);
+}
+
+export function normalizePreviewFilePath(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_PREVIEW_FILE_PATH_LENGTH) {
+    return null;
+  }
+
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) {
+    return null;
+  }
+
+  const slashNormalized = trimmed.replace(/\\/g, '/');
+  const withoutLeadingSlash = slashNormalized.replace(/^\/+/, '');
+  if (!withoutLeadingSlash) {
+    return null;
+  }
+
+  const normalized = path.posix.normalize(withoutLeadingSlash);
+  if (
+    !normalized ||
+    normalized === '.' ||
+    normalized.startsWith('../') ||
+    normalized.includes('/../') ||
+    normalized.endsWith('/..') ||
+    path.posix.isAbsolute(normalized)
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+export function isAllowedPreviewFileContent(value: unknown): value is string {
+  return typeof value === 'string' &&
+    Buffer.byteLength(value, 'utf8') <= MAX_PREVIEW_FILE_CONTENT_BYTES;
 }
 
 export function getPreviewGatewayUrl(): string | null {

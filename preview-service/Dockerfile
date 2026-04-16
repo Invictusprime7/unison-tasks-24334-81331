@@ -1,7 +1,7 @@
 # Preview Service - Vite Runtime Container
 # Runs a Vite dev server with HMR for live preview
 
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Install dependencies
 RUN apk add --no-cache git

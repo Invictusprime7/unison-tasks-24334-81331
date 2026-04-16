@@ -443,7 +443,7 @@ Organization-level quotas with real-time enforcement:
 
 ### Prerequisites
 
-- Node.js 20.x
+- Node.js 20.x or 22.x
 - Supabase account (local or cloud)
 - Docker (for preview service)
 - Inngest account (for workflow automation, optional for dev)

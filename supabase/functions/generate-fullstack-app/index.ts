@@ -1,20 +1,47 @@
 import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { verifyAuth, authError } from "../_shared/auth.ts";
+import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
+import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
 
 serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
+  if (preflight) {
+    return preflight;
+  }
+
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   try {
+    const auth = await verifyAuth(req);
+    if (!auth.user) {
+      return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
+    }
+
+    const { data: body, error: parseError } = await safeParseBody<{
+      prompt?: string;
+      type?: string;
+      features?: string[];
+      database?: boolean;
+      authentication?: boolean;
+      framework?: string;
+      includeBackend?: boolean;
+      sampleData?: boolean;
+      colorScheme?: string;
+      brandColors?: { primary?: string; secondary?: string; accent?: string };
+    }>(req, 262_144);
+    if (parseError || !body) {
+      const status = parseError?.includes("exceeds") ? 413 : 400;
+      return errorResponse(parseError || "Invalid request body", status, corsHeaders);
+    }
+
     const { 
-      prompt, 
-      type, 
+      prompt: rawPrompt = "", 
+      type: rawType = "", 
       features = [], 
       database = true, 
       authentication = false,
@@ -23,17 +50,28 @@ serve(async (req: Request) => {
       sampleData = true,
       colorScheme = 'light',
       brandColors
-    } = await req.json();
+    } = body;
+
+    const prompt = sanitizeString(rawPrompt, 20_000);
+    const type = sanitizeString(rawType, 100);
+    const sanitizedFeatures = Array.isArray(features)
+      ? features.filter((feature): feature is string => typeof feature === "string").map((feature) => sanitizeString(feature, 100)).filter(Boolean).slice(0, 25)
+      : [];
+
+    if (!prompt || !type) {
+      return errorResponse("prompt and type are required", 400, corsHeaders);
+    }
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
     if (!LOVABLE_API_KEY) {
-      return new Response(
-        JSON.stringify({ 
+      return secureJsonResponse(
+        { 
           error: "AI features are not available. Please deploy to Lovable Cloud.",
           isLocalDevelopment: true
-        }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        },
+        503,
+        corsHeaders
       );
     }
 
@@ -312,9 +350,9 @@ Example structure:
 </html>
 \`\`\`
 
-${features.length > 0 ? `
+${sanitizedFeatures.length > 0 ? `
 **REQUESTED FEATURES:**
-${features.map((f: string) => `- ${f}`).join('\n')}
+${sanitizedFeatures.map((f: string) => `- ${f}`).join('\n')}
 ` : ''}
 
 ${brandColors ? `
@@ -329,7 +367,7 @@ ${prompt}
 
 Generate a COMPLETE, PRODUCTION-READY application now. Include ALL components, pages, database schema, and API endpoints. Make it beautiful, functional, and immediately usable.`;
 
-    console.log('[Full-Stack Generator] Generating application:', { type, features, database, authentication });
+    console.log('[Full-Stack Generator] Generating application:', { type, features: sanitizedFeatures, database, authentication });
 
     // Use AbortController with extended timeout for full-stack app generation
     const controller = new AbortController();
@@ -357,18 +395,12 @@ Generate a COMPLETE, PRODUCTION-READY application now. Include ALL components, p
 
     if (!response.ok) {
       if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
       }
       if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Payment required. Please add credits to your workspace." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse("Payment required. Please add credits to your workspace.", 402, corsHeaders);
       }
-      throw new Error(`AI Gateway error: ${response.status}`);
+      return errorResponse(`AI Gateway error: ${response.status}`, 503, corsHeaders);
     }
 
     const data = await response.json();
@@ -379,10 +411,7 @@ Generate a COMPLETE, PRODUCTION-READY application now. Include ALL components, p
       generatedApp = JSON.parse(content);
     } catch (e) {
       console.error('[Full-Stack Generator] Failed to parse JSON response:', e);
-      return new Response(
-        JSON.stringify({ error: "Failed to parse AI response" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse("Failed to parse AI response", 500, corsHeaders);
     }
 
     // Save generation pattern for learning
@@ -394,24 +423,18 @@ Generate a COMPLETE, PRODUCTION-READY application now. Include ALL components, p
       pattern_type: `fullstack_${type}`,
       description: `Full-stack ${type} application`,
       code_snippet: JSON.stringify(generatedApp.config),
-      tags: [type, 'fullstack', ...features],
+      tags: [type, 'fullstack', ...sanitizedFeatures],
       usage_count: 1,
       success_rate: 100
     });
 
     console.log('[Full-Stack Generator] Application generated successfully');
 
-    return new Response(
-      JSON.stringify(generatedApp),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return secureJsonResponse(generatedApp, 200, corsHeaders);
 
   } catch (error) {
     console.error('[Full-Stack Generator] Error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-    return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse(errorMessage, 500, corsHeaders);
   }
 });

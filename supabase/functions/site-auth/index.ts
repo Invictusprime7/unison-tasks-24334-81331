@@ -16,7 +16,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { SignJWT, jwtVerify } from "https://deno.land/x/jose@v5.2.0/index.ts";
-import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString, isValidEmail, isValidUUID } from "../_shared/validate.ts";
 
@@ -57,18 +57,19 @@ const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_RAW || "");
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 serve(async (req) => {
-  const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
+  const corsHeaders = getCorsHeaders(req);
+  const preflight = handleCorsPreflightRequest(req, corsHeaders);
   if (preflight) {
     return preflight;
   }
 
   if (req.method !== "POST") {
-    return errorResponse("Method not allowed", 405, publicCorsHeaders);
+    return errorResponse("Method not allowed", 405, corsHeaders);
   }
 
   // Reject if JWT secret is not configured
   if (!JWT_SECRET_RAW) {
-    return errorResponse("Authentication service not configured", 503, publicCorsHeaders);
+    return errorResponse("Authentication service not configured", 503, corsHeaders);
   }
 
   try {
@@ -83,7 +84,7 @@ serve(async (req) => {
 
     const { data: payload, error: parseError } = await safeParseBody<SiteAuthPayload>(req);
     if (parseError || !payload) {
-      return errorResponse(parseError || "Invalid request body", 400, publicCorsHeaders);
+      return errorResponse(parseError || "Invalid request body", 400, corsHeaders);
     }
 
     const {
@@ -100,7 +101,10 @@ serve(async (req) => {
     // Validate siteId for all actions
     const normalizedSiteId = typeof siteId === "string" ? sanitizeString(siteId, 200) : "";
     if (!normalizedSiteId) {
-      return errorResponse("siteId is required", 400, publicCorsHeaders);
+      return errorResponse("siteId is required", 400, corsHeaders);
+    }
+    if (!isValidUUID(normalizedSiteId)) {
+      return errorResponse("Invalid siteId format", 400, corsHeaders);
     }
 
     const allowedActions = new Set<SiteAuthPayload["action"]>([
@@ -112,13 +116,13 @@ serve(async (req) => {
     ]);
 
     if (!action || !allowedActions.has(action)) {
-      return errorResponse("Invalid action", 400, publicCorsHeaders);
+      return errorResponse("Invalid action", 400, corsHeaders);
     }
 
     const normalizedBusinessId =
       typeof businessId === "string" ? sanitizeString(businessId, 100) : undefined;
     if (normalizedBusinessId && !isValidUUID(normalizedBusinessId)) {
-      return errorResponse("Invalid businessId format", 400, publicCorsHeaders);
+      return errorResponse("Invalid businessId format", 400, corsHeaders);
     }
 
     console.log(`[site-auth] Action: ${action}, siteId: ${normalizedSiteId}`);
@@ -129,20 +133,20 @@ serve(async (req) => {
       // ====================================================================
       case "register": {
         if (!email || !password) {
-          return errorResponse("Email and password are required", 400, publicCorsHeaders);
+          return errorResponse("Email and password are required", 400, corsHeaders);
         }
 
         const normalizedEmail = sanitizeString(email.toLowerCase(), 320);
         if (!isValidEmail(normalizedEmail)) {
-          return errorResponse("Invalid email format", 400, publicCorsHeaders);
+          return errorResponse("Invalid email format", 400, corsHeaders);
         }
 
         // Validate password strength (min 8 chars, at least one letter and one number)
         if (!password || password.length < 8) {
-          return errorResponse("Password must be at least 8 characters", 400, publicCorsHeaders);
+          return errorResponse("Password must be at least 8 characters", 400, corsHeaders);
         }
         if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-          return errorResponse("Password must contain at least one letter and one number", 400, publicCorsHeaders);
+          return errorResponse("Password must contain at least one letter and one number", 400, corsHeaders);
         }
 
         // Check if user already exists for THIS site (not globally)
@@ -157,7 +161,7 @@ serve(async (req) => {
           return errorResponse(
             "An account with this email already exists for this site",
             409,
-            publicCorsHeaders
+            corsHeaders
           );
         }
 
@@ -173,7 +177,7 @@ serve(async (req) => {
           finalBusinessId = project?.business_id;
           
           if (!finalBusinessId) {
-            return errorResponse("Invalid site or missing business association", 400, publicCorsHeaders);
+            return errorResponse("Invalid site or missing business association", 400, corsHeaders);
           }
         }
 
@@ -196,7 +200,7 @@ serve(async (req) => {
 
         if (insertError) {
           console.error("[site-auth] Insert error:", insertError);
-          return errorResponse("Failed to create account", 500, publicCorsHeaders);
+          return errorResponse("Failed to create account", 500, corsHeaders);
         }
 
         // Generate session token
@@ -209,7 +213,7 @@ serve(async (req) => {
           message: "Account created successfully",
           user: sanitizeUser(newUser),
           session,
-        }, 200, publicCorsHeaders);
+        }, 200, corsHeaders);
       }
 
       // ====================================================================
@@ -217,12 +221,12 @@ serve(async (req) => {
       // ====================================================================
       case "login": {
         if (!email || !password) {
-          return errorResponse("Email and password are required", 400, publicCorsHeaders);
+          return errorResponse("Email and password are required", 400, corsHeaders);
         }
 
         const normalizedEmail = sanitizeString(email.toLowerCase(), 320);
         if (!isValidEmail(normalizedEmail)) {
-          return errorResponse("Invalid email format", 400, publicCorsHeaders);
+          return errorResponse("Invalid email format", 400, corsHeaders);
         }
 
         // Find user for this specific site
@@ -235,14 +239,14 @@ serve(async (req) => {
 
         if (findError || !user) {
           console.log(`[site-auth] Login failed - user not found: ${normalizedEmail} on site ${normalizedSiteId}`);
-          return errorResponse("Invalid email or password", 401, publicCorsHeaders);
+          return errorResponse("Invalid email or password", 401, corsHeaders);
         }
 
         // Verify password
         const passwordValid = await bcrypt.compare(password, user.password_hash);
         if (!passwordValid) {
           console.log(`[site-auth] Login failed - invalid password for: ${normalizedEmail}`);
-          return errorResponse("Invalid email or password", 401, publicCorsHeaders);
+          return errorResponse("Invalid email or password", 401, corsHeaders);
         }
 
         // Update last login timestamp
@@ -261,7 +265,7 @@ serve(async (req) => {
           message: "Login successful",
           user: sanitizeUser(user),
           session,
-        }, 200, publicCorsHeaders);
+        }, 200, corsHeaders);
       }
 
       // ====================================================================
@@ -269,7 +273,7 @@ serve(async (req) => {
       // ====================================================================
       case "verify-session": {
         if (!sessionToken) {
-          return errorResponse("Session token is required", 400, publicCorsHeaders);
+          return errorResponse("Session token is required", 400, corsHeaders);
         }
 
         try {
@@ -277,7 +281,7 @@ serve(async (req) => {
 
           // Verify token is for the correct site
           if (decoded.siteId !== normalizedSiteId) {
-            return errorResponse("Session is not valid for this site", 401, publicCorsHeaders);
+            return errorResponse("Session is not valid for this site", 401, corsHeaders);
           }
 
           // Get current user data
@@ -289,7 +293,7 @@ serve(async (req) => {
             .single();
 
           if (userError || !user) {
-            return errorResponse("User not found", 401, publicCorsHeaders);
+            return errorResponse("User not found", 401, corsHeaders);
           }
 
           return secureJsonResponse({
@@ -301,10 +305,10 @@ serve(async (req) => {
               siteId: normalizedSiteId,
               userId: user.id,
             },
-          }, 200, publicCorsHeaders);
+          }, 200, corsHeaders);
         } catch (err) {
           console.log("[site-auth] Token verification failed:", err);
-          return errorResponse("Invalid or expired session", 401, publicCorsHeaders);
+          return errorResponse("Invalid or expired session", 401, corsHeaders);
         }
       }
 
@@ -313,29 +317,30 @@ serve(async (req) => {
       // ====================================================================
       case "get-user": {
         if (!sessionToken) {
-          return errorResponse("Session token is required", 400, publicCorsHeaders);
+          return errorResponse("Session token is required", 400, corsHeaders);
         }
 
         try {
           const { payload: decoded } = await jwtVerify(sessionToken, JWT_SECRET);
 
           if (decoded.siteId !== normalizedSiteId) {
-            return errorResponse("Session is not valid for this site", 401, publicCorsHeaders);
+            return errorResponse("Session is not valid for this site", 401, corsHeaders);
           }
 
           const { data: user } = await supabase
             .from("site_users")
             .select("id, email, name, metadata, created_at")
             .eq("id", decoded.userId)
+            .eq("site_id", normalizedSiteId)
             .single();
 
           if (!user) {
-            return errorResponse("User not found", 404, publicCorsHeaders);
+            return errorResponse("User not found", 404, corsHeaders);
           }
 
-          return secureJsonResponse({ success: true, user: sanitizeUser(user) }, 200, publicCorsHeaders);
+          return secureJsonResponse({ success: true, user: sanitizeUser(user) }, 200, corsHeaders);
         } catch {
-          return errorResponse("Invalid session", 401, publicCorsHeaders);
+          return errorResponse("Invalid session", 401, corsHeaders);
         }
       }
 
@@ -346,15 +351,15 @@ serve(async (req) => {
         // Note: JWT tokens are stateless, so logout is handled client-side
         // by removing the token from localStorage. This endpoint just acknowledges.
         console.log(`[site-auth] Logout acknowledged for site ${normalizedSiteId}`);
-        return secureJsonResponse({ success: true, message: "Logged out successfully" }, 200, publicCorsHeaders);
+        return secureJsonResponse({ success: true, message: "Logged out successfully" }, 200, corsHeaders);
       }
 
       default:
-        return errorResponse(`Unknown action: ${action}`, 400, publicCorsHeaders);
+        return errorResponse(`Unknown action: ${action}`, 400, corsHeaders);
     }
   } catch (error) {
     console.error("[site-auth] Error:", error);
-    return errorResponse("Internal server error", 500, publicCorsHeaders);
+    return errorResponse("Internal server error", 500, corsHeaders);
   }
 });
 

@@ -96,9 +96,11 @@ import { isValidAesthetic, completeAestheticCSS } from '@/utils/aestheticToCSS';
 import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
 import { getTemplateReactCodeWithCSS } from '@/data/templates';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
+import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from '@/types/playground';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
+import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import {
   applyStructuralChange,
@@ -915,6 +917,11 @@ interface WebBuilderRouteState {
   siteBundle?: LauncherHandoff['siteBundle'];
   sitePlan?: GeneratedSitePlan;
   systemsBuildContext?: SystemsBuildContext;
+  siteBundleSnapshot?: SiteBundleSnapshot;
+  materializedPlayground?: PlaygroundState;
+  compiledPlayground?: PlaygroundCompileResult;
+  pipelineManifest?: RuntimeManifest;
+  wizardSelections?: WizardSelections;
 }
 
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
@@ -942,6 +949,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       siteBundle: launch.siteBundle,
       sitePlan: launch.sitePlan,
       systemsBuildContext: launch.systemsBuildContext,
+      siteBundleSnapshot: launch.siteBundleSnapshot,
+      materializedPlayground: launch.materializedPlayground,
+      compiledPlayground: launch.compiledPlayground,
+      pipelineManifest: launch.pipelineManifest,
+      wizardSelections: launch.wizardSelections,
     };
   }, [launch]);
   const effectiveRouteState = useMemo<WebBuilderRouteState | null>(() => {
@@ -1516,6 +1528,9 @@ export default function App() {
     if (Object.keys(creatorPlayground.pageRegistry.pages).length > 0) return;
 
     const navState = effectiveRouteState;
+    const snapshot = (navState as any)?.siteBundleSnapshot;
+    const materializedState = (navState as any)?.materializedPlayground;
+    const canonicalRegistry = snapshot?.pageRegistry || materializedState?.pageRegistry || null;
     let sitePlan = navState?.sitePlan || null;
 
     // Try recovering from session storage if not in nav state
@@ -1530,15 +1545,9 @@ export default function App() {
           persistTopology(dbPlan);
           activeSitePlanRef.current = dbPlan;
           const registry = populateRegistryFromTopology(dbPlan);
-          for (const page of Object.values(registry.pages)) {
-            creatorPlayground.addPage(page.title, page.path, page.pageType, {
-              filePath: page.filePath,
-              showInNav: page.showInNav, isHome: page.isHome, navOrder: page.navOrder,
-              seo: page.seo, redirectRules: page.redirectRules, createdBy: page.createdBy,
-            });
-          }
+          creatorPlayground.hydrateCanonicalState({ pageRegistry: registry });
           const existingFiles = virtualFS.getSandpackFiles();
-          const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, creatorPlayground.pageRegistry);
+          const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, registry);
           if (Object.keys(missingFiles).length > 0) {
             virtualFS.importFiles(missingFiles);
           }
@@ -1554,6 +1563,14 @@ export default function App() {
       return; // will be handled by async callback
     }
 
+    if (canonicalRegistry) {
+      creatorPlayground.hydrateCanonicalState({
+        pageRegistry: canonicalRegistry,
+        creatorData: materializedState?.creatorData,
+      });
+      console.log(`[WebBuilder] Hydrated canonical PageRegistry: ${Object.keys(canonicalRegistry.pages).length} pages`);
+    }
+
     if (sitePlan && sitePlan.pages.length > 0) {
       // Persist for refresh survival (session + DB)
       persistTopology(sitePlan);
@@ -1562,38 +1579,21 @@ export default function App() {
       });
       activeSitePlanRef.current = sitePlan;
 
-      // Populate from structured topology — the canonical path
-      const registry = populateRegistryFromTopology(sitePlan);
-      for (const page of Object.values(registry.pages)) {
-        creatorPlayground.addPage(page.title, page.path, page.pageType, {
-          filePath: page.filePath,
-          showInNav: page.showInNav,
-          isHome: page.isHome,
-          navOrder: page.navOrder,
-          seo: page.seo,
-          redirectRules: page.redirectRules,
-          createdBy: page.createdBy,
-        });
+      if (!canonicalRegistry) {
+        const registry = populateRegistryFromTopology(sitePlan);
+        creatorPlayground.hydrateCanonicalState({ pageRegistry: registry });
+        console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
       }
-      console.log(`[WebBuilder] Hydrated PageRegistry from topology: ${Object.keys(registry.pages).length} pages, ${sitePlan.funnels.length} funnels`);
 
       // Hydrate playground state — prefer siteBundleSnapshot (canonical pipeline) over raw materializedPlayground
-      const snapshot = (navState as any)?.siteBundleSnapshot;
-      const materializedState = snapshot || (navState as any)?.materializedPlayground;
-      if (materializedState) {
+      const canonicalState = snapshot || materializedState;
+      if (canonicalState) {
         const bindingsSource = snapshot?.bindings || materializedState.bindings;
         const calendarsSource = snapshot?.calendars || materializedState.calendars;
         const popupsSource = snapshot?.popups || materializedState.popups;
         if (bindingsSource) setPlaygroundBindings(bindingsSource);
         if (calendarsSource) setPlaygroundCalendars(calendarsSource);
         if (popupsSource) setPlaygroundPopups(popupsSource);
-        // Hydrate forms into creator playground
-        const formsSource = materializedState.creatorData?.forms;
-        if (formsSource) {
-          for (const form of Object.values(formsSource)) {
-            creatorPlayground.addForm(form as any);
-          }
-        }
         console.log(`[WebBuilder] Hydrated from ${snapshot ? 'SiteBundleSnapshot (canonical)' : 'materializedPlayground'}: ${Object.keys(bindingsSource || {}).length} bindings, ${Object.keys(calendarsSource || {}).length} calendars, ${Object.keys(popupsSource || {}).length} popups`);
       }
       if (sitePlan.validationErrors?.length) {
@@ -1602,7 +1602,7 @@ export default function App() {
 
       // Auto-scaffold placeholders + router for missing pages
       const existingFiles = virtualFS.getSandpackFiles();
-      const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, creatorPlayground.pageRegistry);
+      const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, canonicalRegistry || populateRegistryFromTopology(sitePlan));
       if (Object.keys(missingFiles).length > 0) {
         virtualFS.importFiles(missingFiles);
         console.log(`[WebBuilder] Scaffolded ${Object.keys(missingFiles).length} placeholder pages:`, Object.keys(missingFiles));
@@ -1619,6 +1619,15 @@ export default function App() {
             triggerPageGenRef.current(pageName, page.title, null);
           }, idx * 1500); // 1.5s stagger between pages
         });
+      }
+    } else if (snapshot?.vfsFiles && Object.keys(snapshot.vfsFiles).length > 0) {
+      const existingFiles = virtualFS.getSandpackFiles();
+      const missingSnapshotFiles = Object.fromEntries(
+        Object.entries(snapshot.vfsFiles).filter(([path]) => !existingFiles[path])
+      ) as Record<string, string>;
+      if (Object.keys(missingSnapshotFiles).length > 0) {
+        virtualFS.importFiles(missingSnapshotFiles);
+        console.log(`[WebBuilder] Imported ${Object.keys(missingSnapshotFiles).length} canonical snapshot files`);
       }
     } else {
       // Fallback: seed single Home page

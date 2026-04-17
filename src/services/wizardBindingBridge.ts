@@ -1,0 +1,592 @@
+import * as ts from 'typescript';
+import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
+import type { PlaygroundBinding } from '@/types/playground';
+import type { BuilderPage } from '@/types/pageRegistry';
+
+export interface WizardBindingApplicationResult {
+  files: Record<string, string>;
+  appliedBindings: number;
+  missingBindings: Array<{
+    bindingId: string;
+    filePath?: string;
+    elementKey?: string;
+    reason: string;
+  }>;
+}
+
+const INTERACTIVE_TAGS = ['button', 'a', 'Link', 'Button', 'NavLink', 'motion.button', 'motion.a'] as const;
+const ICON_TRIGGER_TAGS = [...INTERACTIVE_TAGS, 'div', 'span'] as const;
+
+interface JsxCandidate {
+  haystack: string;
+  openTagEnd: number;
+  openTagStart: number;
+  text: string;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function buildTagPattern(tags: readonly string[]): string {
+  return tags.map((tag) => escapeRegex(tag)).join('|');
+}
+
+function toComponentName(path: string): string {
+  const cleaned = path.replace(/^\//, '').replace(/\.html?$/i, '') || 'home';
+  return cleaned
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => segment.replace(/[^a-zA-Z0-9]+/g, ' '))
+    .map((segment) => segment.replace(/\b\w/g, (char) => char.toUpperCase()).replace(/\s+/g, ''))
+    .join('') || 'Home';
+}
+
+function normalizeRoute(path: string): string {
+  if (!path || path === '/') return '/';
+  const trimmed = path.replace(/\.html?$/i, '').trim();
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+function resolveBindingFilePath(files: Record<string, string>, page: BuilderPage | undefined): string | undefined {
+  if (!page) return undefined;
+
+  const candidates = new Set<string>();
+  if (page.filePath) candidates.add(page.filePath);
+  if (page.isHome) {
+    candidates.add('/src/App.tsx');
+    candidates.add('/App.tsx');
+  }
+
+  const route = normalizeRoute(page.path);
+  if (!page.isHome) {
+    const componentName = toComponentName(route);
+    candidates.add(`/src/pages/${componentName}.tsx`);
+    candidates.add(`/pages/${componentName}.tsx`);
+  }
+
+  for (const candidate of candidates) {
+    if (candidate && files[candidate]) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function getSlotMarkers(binding: PlaygroundBinding): string[] {
+  const section = binding.sourceSection;
+  const slot = binding.sourceSlot;
+
+  if (!section || !slot) return [];
+
+  if (section === 'hero' && slot === 'primary-cta') return ['cta.hero'];
+  if (section === 'hero' && slot === 'secondary-cta') return ['cta.hero-secondary'];
+  if (section === 'navbar' && slot === 'primary-cta') return ['cta.nav'];
+  if (slot === 'card-cta') return ['cta.card'];
+  if (slot === 'checkout-cta') return ['cta.checkout'];
+  if (slot === 'form-submit') return ['cta.form-submit'];
+  if (slot === 'newsletter') return ['cta.newsletter'];
+  if (slot === 'cart-trigger') return ['icon.cart'];
+  if (slot.startsWith('icon-')) return [`icon.${slot.replace(/^icon-/, '')}`];
+  if (slot === 'nav-link') return ['cta.nav-link'];
+  if (slot === 'social-link') return ['cta.social-link'];
+
+  return [];
+}
+
+function normalizeText(value: string): string {
+  return value
+    .replace(/\{[^}]*\}/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[_.-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function getIconKeywords(binding: PlaygroundBinding): string[] {
+  const slot = binding.sourceSlot || '';
+  const label = binding.sourceLabel || '';
+  const target = `${slot} ${label}`.toLowerCase();
+
+  if (target.includes('cart')) return ['cart', 'bag', 'basket'];
+  if (target.includes('search')) return ['search'];
+  if (target.includes('menu')) return ['menu', 'hamburger', 'nav'];
+  if (target.includes('user') || target.includes('account')) return ['user', 'account', 'profile', 'login', 'sign in'];
+  if (target.includes('calendar') || target.includes('book')) return ['calendar', 'book', 'appointment', 'reserve'];
+  if (target.includes('filter')) return ['filter'];
+  if (target.includes('sort')) return ['sort'];
+  if (target.includes('favorite')) return ['favorite', 'wishlist', 'heart', 'save'];
+  return [];
+}
+
+function getFallbackMatchLimit(binding: PlaygroundBinding): number {
+  switch (binding.sourceSlot) {
+    case 'card-cta':
+    case 'nav-link':
+    case 'social-link':
+      return Number.POSITIVE_INFINITY;
+    case 'icon-favorite':
+      return Number.POSITIVE_INFINITY;
+    default:
+      return 1;
+  }
+}
+
+function getScriptKind(filePath: string): ts.ScriptKind {
+  if (/\.tsx$/i.test(filePath)) return ts.ScriptKind.TSX;
+  if (/\.jsx$/i.test(filePath)) return ts.ScriptKind.JSX;
+  if (/\.ts$/i.test(filePath)) return ts.ScriptKind.TS;
+  if (/\.js$/i.test(filePath)) return ts.ScriptKind.JS;
+  return ts.ScriptKind.Unknown;
+}
+
+function getJsxTagName(node: ts.JsxTagNameExpression, sourceFile: ts.SourceFile): string {
+  return node.getText(sourceFile);
+}
+
+function findOpeningTagStart(content: string, guess: number): number | undefined {
+  for (let index = guess; index >= 0 && guess - index < 200; index -= 1) {
+    if (content[index] === '<') {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+function collectStaticJsxText(children: readonly ts.JsxChild[]): string {
+  const parts: string[] = [];
+
+  for (const child of children) {
+    if (ts.isJsxText(child)) {
+      parts.push(child.getText());
+      continue;
+    }
+
+    if (ts.isJsxExpression(child)) {
+      const expression = child.expression;
+      if (!expression) continue;
+      if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
+        parts.push(expression.text);
+      }
+      continue;
+    }
+
+    if (ts.isJsxElement(child)) {
+      parts.push(collectStaticJsxText(child.children));
+      continue;
+    }
+
+    if (ts.isJsxFragment(child)) {
+      parts.push(collectStaticJsxText(child.children));
+    }
+  }
+
+  return parts.join(' ');
+}
+
+function collectJsxCandidates(
+  content: string,
+  filePath: string,
+  allowedTags: readonly string[],
+): JsxCandidate[] {
+  if (!/\.[jt]sx$/i.test(filePath)) {
+    return [];
+  }
+
+  const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, getScriptKind(filePath));
+  const allowed = new Set(allowedTags);
+  const candidates: JsxCandidate[] = [];
+
+  const pushCandidate = (tagName: string, rawStart: number, openTagEnd: number, fullEnd: number, text: string) => {
+    if (!allowed.has(tagName)) {
+      return;
+    }
+
+    const rawElement = content.slice(rawStart, fullEnd);
+    candidates.push({
+      haystack: normalizeText(`${rawElement} ${text}`),
+      openTagEnd,
+      openTagStart: rawStart,
+      text: normalizeText(text),
+    });
+  };
+
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxElement(node)) {
+      const tagName = getJsxTagName(node.openingElement.tagName, sourceFile);
+      const openTagStart = findOpeningTagStart(content, node.openingElement.getStart(sourceFile));
+      if (openTagStart !== undefined) {
+        pushCandidate(
+          tagName,
+          openTagStart,
+          node.openingElement.getEnd(),
+          node.getEnd(),
+          collectStaticJsxText(node.children),
+        );
+      }
+    } else if (ts.isJsxSelfClosingElement(node)) {
+      const tagName = getJsxTagName(node.tagName, sourceFile);
+      const openTagStart = findOpeningTagStart(content, node.getStart(sourceFile));
+      if (openTagStart !== undefined) {
+        pushCandidate(tagName, openTagStart, node.getEnd(), node.getEnd(), '');
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return candidates;
+}
+
+function getDomIntent(binding: PlaygroundBinding): string {
+  switch (binding.intent) {
+    case 'nav.goto_page':
+      return 'nav.goto_page';
+    case 'external.open':
+      return 'nav.external';
+    case 'checkout.start':
+      if (binding.coreIntent === 'cart.add') return 'cart.add';
+      if (binding.coreIntent === 'cart.checkout') return 'cart.checkout';
+      if (binding.coreIntent === 'pay.checkout') return 'pay.checkout';
+      return binding.coreIntent || 'pay.checkout';
+    case 'calendar.open':
+    case 'form.open':
+    case 'popup.open':
+      return binding.coreIntent || 'button.click';
+    default:
+      return binding.coreIntent || binding.intent;
+  }
+}
+
+function getBindingAttrs(binding: PlaygroundBinding, snapshot: SiteBundleSnapshot): Record<string, string> {
+  const attrs: Record<string, string> = {
+    'data-ut-intent': getDomIntent(binding),
+    'data-intent': getDomIntent(binding),
+  };
+
+  if (binding.sourceLabel) {
+    attrs['data-ut-label'] = binding.sourceLabel;
+  }
+  if (binding.uiAction) {
+    attrs['data-ut-ui-action'] = binding.uiAction;
+  }
+  if (binding.bindingId) {
+    attrs['data-ut-binding-id'] = binding.bindingId;
+  }
+  if (binding.elementKey) {
+    attrs['data-ut-binding-key'] = binding.elementKey;
+  }
+
+  if (binding.targetType === 'page') {
+    const targetPage = snapshot.pageRegistry.pages[binding.targetId];
+    if (targetPage) {
+      attrs['data-ut-path'] = normalizeRoute(targetPage.path);
+      attrs['data-ut-target-page-id'] = binding.targetId;
+    }
+  }
+
+  attrs['data-ut-target-id'] = binding.targetId;
+  attrs['data-ut-target-type'] = binding.targetType;
+
+  if (binding.targetType === 'url') {
+    attrs['data-ut-url'] = binding.targetId;
+  }
+
+  if (binding.payloadTemplate) {
+    for (const [key, value] of Object.entries(binding.payloadTemplate)) {
+      if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') continue;
+      const stringValue = String(value);
+      if (stringValue.startsWith('$')) continue;
+      attrs[`data-ut-${key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)}`] = stringValue;
+    }
+  }
+
+  return attrs;
+}
+
+function upsertAttrs(tag: string, attrs: Record<string, string>): string {
+  let next = tag;
+  for (const [attr, value] of Object.entries(attrs)) {
+    const attrPattern = new RegExp(`\\s${escapeRegex(attr)}=(["']).*?\\1`, 'i');
+    next = next.replace(attrPattern, '');
+    if (/\/>$/.test(next.trimEnd())) {
+      next = next.replace(/\s*\/>$/, ` ${attr}="${escapeAttr(value)}" />`);
+      continue;
+    }
+
+    next = next.replace(/>$/, ` ${attr}="${escapeAttr(value)}">`);
+  }
+  return next;
+}
+
+function applyBindingToContent(
+  content: string,
+  markers: string[],
+  attrs: Record<string, string>,
+): { content: string; applied: boolean } {
+  for (const marker of markers) {
+    const markerRegex = new RegExp(
+      `<([A-Za-z][^\\s/>]*)([^>]*?\\bdata-ut-cta=(["'])${escapeRegex(marker)}\\3[^>]*)>`,
+      'g',
+    );
+    let applied = false;
+    const next = content.replace(markerRegex, (match) => {
+      applied = true;
+      return upsertAttrs(match, attrs);
+    });
+
+    if (applied) {
+      return { content: next, applied: true };
+    }
+  }
+
+  return { content, applied: false };
+}
+
+function applyBindingByLabel(
+  content: string,
+  binding: PlaygroundBinding,
+  attrs: Record<string, string>,
+): { content: string; applied: boolean } {
+  const label = normalizeText(binding.sourceLabel || '');
+  if (!label) {
+    return { content, applied: false };
+  }
+
+  const tagPattern = buildTagPattern(INTERACTIVE_TAGS);
+  const elementRegex = new RegExp(
+    `<(${tagPattern})(\\s[^>]*)?>([\\s\\S]*?)</\\1>`,
+    'g',
+  );
+  const limit = getFallbackMatchLimit(binding);
+  let matchCount = 0;
+
+  const next = content.replace(elementRegex, (match, tagName, attrChunk = '', innerContent = '') => {
+    if (matchCount >= limit) return match;
+
+    const normalizedInner = normalizeText(String(innerContent));
+    const labelMatches =
+      normalizedInner === label ||
+      normalizedInner.includes(label) ||
+      label.includes(normalizedInner);
+
+    if (!normalizedInner || !labelMatches) {
+      return match;
+    }
+
+    matchCount += 1;
+    return upsertAttrs(match, attrs);
+  });
+
+  return { content: next, applied: matchCount > 0 };
+}
+
+function applyBindingByJsxAst(
+  content: string,
+  filePath: string,
+  binding: PlaygroundBinding,
+  attrs: Record<string, string>,
+): { content: string; applied: boolean } {
+  const label = normalizeText(binding.sourceLabel || '');
+  const limit = getFallbackMatchLimit(binding);
+  const labelCandidates = collectJsxCandidates(content, filePath, INTERACTIVE_TAGS);
+  const iconCandidates = collectJsxCandidates(content, filePath, ICON_TRIGGER_TAGS);
+  const keywords = getIconKeywords(binding);
+  const matched = new Set<number>();
+  const selected: JsxCandidate[] = [];
+
+  if (label) {
+    for (const candidate of labelCandidates) {
+      if (selected.length >= limit) break;
+      const text = candidate.text;
+      const labelMatches = text && (text === label || text.includes(label) || label.includes(text));
+      if (!labelMatches) continue;
+
+      matched.add(candidate.openTagStart);
+      selected.push(candidate);
+    }
+  }
+
+  if (selected.length < limit && keywords.length > 0) {
+    for (const candidate of iconCandidates) {
+      if (selected.length >= limit) break;
+      if (matched.has(candidate.openTagStart)) continue;
+      if (!keywords.some((keyword) => candidate.haystack.includes(normalizeText(keyword)))) {
+        continue;
+      }
+
+      matched.add(candidate.openTagStart);
+      selected.push(candidate);
+    }
+  }
+
+  if (selected.length === 0) {
+    return { content, applied: false };
+  }
+
+  let next = content;
+  const edits = [...selected].sort((a, b) => b.openTagStart - a.openTagStart);
+  for (const candidate of edits) {
+    const tag = next.slice(candidate.openTagStart, candidate.openTagEnd);
+    const rewrittenTag = upsertAttrs(tag, attrs);
+    next = `${next.slice(0, candidate.openTagStart)}${rewrittenTag}${next.slice(candidate.openTagEnd)}`;
+  }
+
+  return { content: next, applied: true };
+}
+
+function applyBindingByIconAffinity(
+  content: string,
+  binding: PlaygroundBinding,
+  attrs: Record<string, string>,
+): { content: string; applied: boolean } {
+  const keywords = getIconKeywords(binding);
+  if (keywords.length === 0) {
+    return { content, applied: false };
+  }
+
+  const limit = getFallbackMatchLimit(binding);
+  const tagPattern = buildTagPattern(ICON_TRIGGER_TAGS);
+  const openTagRegex = new RegExp(`<(${tagPattern})(\\s[^>]*)?>`, 'g');
+  let appliedCount = 0;
+
+  const next = content.replace(openTagRegex, (match, tagName, attrChunk = '') => {
+    if (appliedCount >= limit) return match;
+
+    const haystack = normalizeText(String(attrChunk));
+    if (!haystack) return match;
+    if (!keywords.some((keyword) => haystack.includes(keyword))) {
+      return match;
+    }
+
+    appliedCount += 1;
+    return upsertAttrs(match, attrs);
+  });
+
+  return { content: next, applied: appliedCount > 0 };
+}
+
+function describeBindingTarget(binding: PlaygroundBinding, snapshot: SiteBundleSnapshot): string {
+  if (binding.targetType === 'page') {
+    const targetPage = snapshot.pageRegistry.pages[binding.targetId];
+    return targetPage ? `${targetPage.title} (${normalizeRoute(targetPage.path)})` : binding.targetId;
+  }
+  return binding.targetId;
+}
+
+export function buildWizardBindingGuide(snapshot: SiteBundleSnapshot): string {
+  const bindings = Object.values(snapshot.bindings)
+    .filter((binding) => binding.sourceSection && binding.sourceSlot)
+    .sort((a, b) => `${a.sourcePageId}:${a.elementKey || a.bindingId}`.localeCompare(`${b.sourcePageId}:${b.elementKey || b.bindingId}`));
+
+  if (bindings.length === 0) {
+    return '';
+  }
+
+  const lines = [
+    '--- INTERACTION WIRING CONTRACT ---',
+    'Use the exact `data-ut-cta` markers below so the launcher can stamp final hooks before import.',
+    'Do not invent alternate CTA marker names for these slots.',
+    'Keep the visible CTA/link text equal to the specified label when possible so label-based fallback wiring remains deterministic.',
+    'For icon-only triggers, include a descriptive `aria-label` or `title` that matches the intended action.',
+  ];
+
+  for (const binding of bindings) {
+    const sourcePage = snapshot.pageRegistry.pages[binding.sourcePageId];
+    const markers = getSlotMarkers(binding);
+    if (!sourcePage || markers.length === 0) continue;
+
+    lines.push(
+      `- Page ${sourcePage.title} (${normalizeRoute(sourcePage.path)}), slot ${binding.sourceSection}.${binding.sourceSlot}: ` +
+      `label "${binding.sourceLabel || 'CTA'}", marker ${markers.map((marker) => `data-ut-cta="${marker}"`).join(' or ')}, ` +
+      `intent ${getDomIntent(binding)}, target ${describeBindingTarget(binding, snapshot)}`
+    );
+  }
+
+  lines.push('Every internal page link must still use `data-ut-intent="nav.goto"` or `data-ut-intent="nav.goto_page"` with `data-ut-path`.');
+  lines.push('Every product/cart CTA must include product payload attrs when real product data exists.');
+
+  return lines.join('\n');
+}
+
+export function applyWizardBindingsToVfs(
+  files: Record<string, string>,
+  snapshot: SiteBundleSnapshot,
+): WizardBindingApplicationResult {
+  const nextFiles = { ...files };
+  let appliedBindings = 0;
+  const missingBindings: WizardBindingApplicationResult['missingBindings'] = [];
+
+  for (const binding of Object.values(snapshot.bindings)) {
+    const page = snapshot.pageRegistry.pages[binding.sourcePageId];
+    const filePath = resolveBindingFilePath(nextFiles, page);
+    const markers = getSlotMarkers(binding);
+
+    if (!filePath || !page) {
+      missingBindings.push({
+        bindingId: binding.bindingId,
+        filePath,
+        elementKey: binding.elementKey,
+        reason: 'No source file resolved for binding page',
+      });
+      continue;
+    }
+
+    if (markers.length === 0) {
+      missingBindings.push({
+        bindingId: binding.bindingId,
+        filePath,
+        elementKey: binding.elementKey,
+        reason: 'No deterministic slot marker available for binding',
+      });
+      continue;
+    }
+
+    const attrs = getBindingAttrs(binding, snapshot);
+    let result = applyBindingToContent(nextFiles[filePath], markers, attrs);
+
+    if (!result.applied) {
+      result = applyBindingByJsxAst(result.content, filePath, binding, attrs);
+    }
+
+    if (!result.applied) {
+      result = applyBindingByLabel(result.content, binding, attrs);
+    }
+
+    if (!result.applied) {
+      result = applyBindingByIconAffinity(result.content, binding, attrs);
+    }
+
+    nextFiles[filePath] = result.content;
+
+    if (result.applied) {
+      appliedBindings += 1;
+    } else {
+      missingBindings.push({
+        bindingId: binding.bindingId,
+        filePath,
+        elementKey: binding.elementKey,
+        reason: `No matching ${markers.join(', ')} marker or semantic JSX target found in source file`,
+      });
+    }
+  }
+
+  return {
+    files: nextFiles,
+    appliedBindings,
+    missingBindings,
+  };
+}

@@ -47,6 +47,10 @@ import { generateDesignVariation, randomFontPairing } from "@/utils/designVariat
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { createLaunchState } from "@/types/launchState";
+import { executeCanonicalPipeline } from "@/services/canonicalPipeline";
+import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
+import { mergeGeneratedVfsWithCanonicalSnapshot } from "@/services/canonicalLaunchVfs";
+import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -99,6 +103,73 @@ function getSystemTypeForChip(chipId: string): BusinessSystemType {
   const industry = getCanonicalIndustry(chipId);
   const profile = getIndustryProfile(industry);
   return profile?.systemType || 'agency';
+}
+
+const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
+  booking: 'appointment_service',
+  saas: 'saas_digital',
+  agency: 'quote_lead',
+  portfolio: 'portfolio_creator',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const CANONICAL_TO_INDUSTRY_OVERLAY: Record<string, IndustryOverlay> = {
+  'local-service': 'contractor',
+  salon: 'salon',
+  restaurant: 'restaurant',
+  ecommerce: 'ecommerce',
+  portfolio: 'creator',
+  coaching: 'coaching',
+  'real-estate': 'real_estate',
+  nonprofit: 'nonprofit',
+};
+
+function inferPrimaryGoal(systemType: BusinessSystemType, prompt: string): string {
+  const normalizedPrompt = prompt.toLowerCase();
+
+  if (systemType === 'store' || /shop|product|checkout|cart|order/.test(normalizedPrompt)) {
+    return 'sell_offers';
+  }
+  if (systemType === 'booking' || /book|booking|appointment|reservation/.test(normalizedPrompt)) {
+    return 'book_appointments';
+  }
+  if (systemType === 'portfolio' || /portfolio|gallery|showcase/.test(normalizedPrompt)) {
+    return 'showcase_work';
+  }
+  if (/newsletter|email list|subscribe/.test(normalizedPrompt)) {
+    return 'grow_email_list';
+  }
+
+  return 'collect_leads';
+}
+
+function buildWizardSelectionsForChip(chipId: string, prompt: string, businessName: string): WizardSelections {
+  const systemType = getSystemTypeForChip(chipId);
+  const normalizedPrompt = prompt.toLowerCase();
+  const needsBooking = systemType === 'booking' || /book|booking|appointment|reservation/.test(normalizedPrompt);
+  const sellsProducts = systemType === 'store' || /shop|product|checkout|cart|order/.test(normalizedPrompt);
+  const wantsLeadCapture =
+    systemType === 'agency' ||
+    systemType === 'content' ||
+    /lead|quote|contact|consult|form|call/.test(normalizedPrompt);
+  const secondaryGoals: string[] = [];
+
+  if (needsBooking) secondaryGoals.push('book_service');
+  if (sellsProducts) secondaryGoals.push('buy_offer');
+  if (wantsLeadCapture) secondaryGoals.push('request_quote');
+  if (/newsletter|email list|subscribe/.test(normalizedPrompt)) secondaryGoals.push('fill_form');
+
+  return {
+    businessName,
+    businessModel: SYSTEM_TO_BUSINESS_MODEL[systemType] || 'general',
+    industryOverlay: CANONICAL_TO_INDUSTRY_OVERLAY[getCanonicalIndustry(chipId)] || 'general',
+    primaryGoal: inferPrimaryGoal(systemType, prompt),
+    secondaryGoals,
+    needsBooking,
+    sellsProducts,
+    wantsLeadCapture,
+  };
 }
 
 // Industry/business prompt chips for quick actions
@@ -256,6 +327,11 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
     systemName?: string;
     templateCategory?: LayoutCategory;
     systemsBuildContext?: SystemsBuildContext;
+    siteBundleSnapshot?: ReturnType<typeof executeCanonicalPipeline>['siteBundleSnapshot'];
+    materializedPlayground?: ReturnType<typeof executeCanonicalPipeline>['playground'];
+    compiledPlayground?: ReturnType<typeof executeCanonicalPipeline>['compileResult'];
+    pipelineManifest?: ReturnType<typeof executeCanonicalPipeline>['runtimeManifest'];
+    wizardSelections?: WizardSelections;
   }) => {
     setLaunch(
       createLaunchState({
@@ -270,6 +346,11 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         startInPreview: true,
         intentRuntime: true,
         systemsBuildContext: input.systemsBuildContext,
+        siteBundleSnapshot: input.siteBundleSnapshot,
+        materializedPlayground: input.materializedPlayground,
+        compiledPlayground: input.compiledPlayground,
+        pipelineManifest: input.pipelineManifest,
+        wizardSelections: input.wizardSelections,
       }),
     );
   }, [setLaunch]);
@@ -406,6 +487,25 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
       // Templates have premium CSS built-in - use as-is for quality output
       if (selectedCodeChip) {
         const ref = getTemplateReference(selectedCodeChip);
+        const chipLabel = codePromptChips.find(c => c.id === selectedCodeChip)?.label || "website";
+        const chipBusinessName = ref?.templateName || chipLabel;
+        const chipWizardSelections = buildWizardSelectionsForChip(selectedCodeChip, codePrompt, chipBusinessName);
+        const chipPipeline = executeCanonicalPipeline(chipWizardSelections);
+        const {
+          playground: materializedPlayground,
+          compileResult: compiledPlayground,
+          siteBundleSnapshot,
+          runtimeManifest: pipelineManifest,
+        } = chipPipeline;
+        const bindingGuide = buildWizardBindingGuide(siteBundleSnapshot);
+        const chipBuildContext = buildContractAndContext(selectedCodeChip, codePrompt, chipBusinessName).context;
+
+        if (chipPipeline.warnings.length > 0) {
+          console.warn('[SystemsAIPanel] Chip pipeline warnings:', chipPipeline.warnings);
+        }
+        if (chipPipeline.errors.length > 0) {
+          console.warn('[SystemsAIPanel] Chip pipeline errors:', chipPipeline.errors);
+        }
         
         // If we have a premium template, use its React code directly
         if (ref && ref.templateCode) {
@@ -416,22 +516,40 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           
           console.log(`[SystemsAIPanel] Design profile ${hasProfile ? 'applied' : 'not available'} (${savedProjectCount} projects)`);
           
-          sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify({ "src/App.tsx": reactCode }));
+          const normalizedLaunchVfs = normalizeLauncherFiles(
+            templateToVFSFiles(reactCode, ref.templateName.replace(/[^a-zA-Z0-9]/g, '')),
+            { entryPoint: '/src/App.tsx' },
+          );
+          const bindingApplication = applyWizardBindingsToVfs(normalizedLaunchVfs, siteBundleSnapshot);
+          const wiredVfsFiles = mergeGeneratedVfsWithCanonicalSnapshot(
+            bindingApplication.files,
+            compiledPlayground.vfsFiles,
+            siteBundleSnapshot,
+          );
+          if (bindingApplication.missingBindings.length > 0) {
+            console.warn('[SystemsAIPanel] Template binding misses:', bindingApplication.missingBindings);
+          }
+
+          sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(wiredVfsFiles));
           setDroppedFiles([]); // Clear files on success
-          const contractContext = buildContractAndContext(selectedCodeChip, codePrompt).context;
           const templateCategory = getCategoryForChip(selectedCodeChip);
-          const launchVfsFiles = templateToVFSFiles(reactCode, ref.templateName.replace(/[^a-zA-Z0-9]/g, ''));
           persistLaunchState({
-            vfsFiles: launchVfsFiles,
+            vfsFiles: wiredVfsFiles,
             templateName: ref.templateName,
             aesthetic: "premium",
             systemType: ref.systemType,
             systemName: ref.templateName,
             templateCategory,
-            systemsBuildContext: contractContext,
+            systemsBuildContext: chipBuildContext,
+            siteBundleSnapshot,
+            materializedPlayground,
+            compiledPlayground,
+            pipelineManifest,
+            wizardSelections: chipWizardSelections,
           });
           navigate("/web-builder", {
             state: {
+              vfsFiles: wiredVfsFiles,
               generatedCode: reactCode,
               templateName: ref.templateName,
               aesthetic: "premium",
@@ -442,7 +560,12 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
                 projectCount: savedProjectCount,
                 dominantStyle: designProfile?.dominantStyle,
               } : undefined,
-              systemsBuildContext: contractContext,
+              systemsBuildContext: chipBuildContext,
+              siteBundleSnapshot,
+              materializedPlayground,
+              compiledPlayground,
+              pipelineManifest,
+              wizardSelections: chipWizardSelections,
             },
           });
           toast({ 
@@ -457,10 +580,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         // No pre-built template found - AI generation via ai-code-assistant (same as in-builder AI)
         console.log(`[SystemsAIPanel] No pre-built template for ${selectedCodeChip}, using ai-code-assistant`);
 
-        const chipLabel = codePromptChips.find(c => c.id === selectedCodeChip)?.label || "website";
-        const chipBuildContext = buildContractAndContext(selectedCodeChip, codePrompt).context;
         const designProfileContext = hasProfile ? getDesignPromptContext() : null;
-        const chipPrompt = `Create a complete, polished, production-ready ${chipLabel} website. ${codePrompt}${fileContext}`;
+        const chipPrompt = `Create a complete, polished, production-ready ${chipLabel} website. ${codePrompt}${bindingGuide ? `\n\n${bindingGuide}` : ''}${fileContext}`;
         const enhancedChipPrompt = designProfileContext
           ? `${designProfileContext}\n\n---\n\nUser Request:\n${chipPrompt}`
           : chipPrompt;
@@ -513,23 +634,37 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         const chipStructuredFiles = extractLauncherFilesPayload(chipContent);
 
         if (chipStructuredFiles && Object.keys(chipStructuredFiles).length > 0) {
-          const chipVfsFiles = normalizeLauncherFiles(chipStructuredFiles, { entryPoint: '/src/App.tsx' });
-          const generatedCode = chipVfsFiles['/src/App.tsx'] || chipVfsFiles['/App.tsx'] || Object.values(chipVfsFiles)[0] || '';
+          const normalizedChipVfsFiles = normalizeLauncherFiles(chipStructuredFiles, { entryPoint: '/src/App.tsx' });
+          const bindingApplication = applyWizardBindingsToVfs(normalizedChipVfsFiles, siteBundleSnapshot);
+          const wiredVfsFiles = mergeGeneratedVfsWithCanonicalSnapshot(
+            bindingApplication.files,
+            compiledPlayground.vfsFiles,
+            siteBundleSnapshot,
+          );
+          if (bindingApplication.missingBindings.length > 0) {
+            console.warn('[SystemsAIPanel] AI chip binding misses:', bindingApplication.missingBindings);
+          }
+          const generatedCode = wiredVfsFiles['/src/App.tsx'] || wiredVfsFiles['/App.tsx'] || Object.values(wiredVfsFiles)[0] || '';
 
-          sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(chipVfsFiles));
+          sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(wiredVfsFiles));
           setDroppedFiles([]);
           persistLaunchState({
-            vfsFiles: chipVfsFiles,
+            vfsFiles: wiredVfsFiles,
             templateName: `AI ${chipLabel}`,
             aesthetic: "modern",
             systemType: ref?.systemType,
             systemName: chipLabel,
             templateCategory: getCategoryForChip(selectedCodeChip),
             systemsBuildContext: chipBuildContext,
+            siteBundleSnapshot,
+            materializedPlayground,
+            compiledPlayground,
+            pipelineManifest,
+            wizardSelections: chipWizardSelections,
           });
           navigate("/web-builder", {
             state: {
-              vfsFiles: chipVfsFiles,
+              vfsFiles: wiredVfsFiles,
               generatedCode,
               templateName: `AI ${chipLabel}`,
               aesthetic: "modern",
@@ -537,6 +672,11 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
               systemType: ref?.systemType,
               userDesignProfile: hasProfile ? { projectCount: savedProjectCount, dominantStyle: designProfile?.dominantStyle } : undefined,
               systemsBuildContext: chipBuildContext,
+              siteBundleSnapshot,
+              materializedPlayground,
+              compiledPlayground,
+              pipelineManifest,
+              wizardSelections: chipWizardSelections,
             },
           });
           toast({ title: "Website generated!", description: "Opening in Web Builder..." });
@@ -552,22 +692,39 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         if (chipCode && chipCode.length > 100) {
           console.log('[SystemsAIPanel] ai-code-assistant chip generation:', chipCode.length, 'chars');
           // Create VFS from React/TSX code
-          const chipVfsFiles = templateToVFSFiles(chipCode, chipLabel.replace(/[^a-zA-Z0-9]/g, ''));
+          const normalizedChipVfsFiles = normalizeLauncherFiles(
+            templateToVFSFiles(chipCode, chipLabel.replace(/[^a-zA-Z0-9]/g, '')),
+            { entryPoint: '/src/App.tsx' },
+          );
+          const bindingApplication = applyWizardBindingsToVfs(normalizedChipVfsFiles, siteBundleSnapshot);
+          const wiredVfsFiles = mergeGeneratedVfsWithCanonicalSnapshot(
+            bindingApplication.files,
+            compiledPlayground.vfsFiles,
+            siteBundleSnapshot,
+          );
+          if (bindingApplication.missingBindings.length > 0) {
+            console.warn('[SystemsAIPanel] AI single-file chip binding misses:', bindingApplication.missingBindings);
+          }
           
-          sessionStorage.setItem('ai_assistant_generated_code', chipCode);
+          sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(wiredVfsFiles));
           setDroppedFiles([]);
           persistLaunchState({
-            vfsFiles: chipVfsFiles,
+            vfsFiles: wiredVfsFiles,
             templateName: `AI ${chipLabel}`,
             aesthetic: "modern",
             systemType: ref?.systemType,
             systemName: chipLabel,
             templateCategory: getCategoryForChip(selectedCodeChip),
             systemsBuildContext: chipBuildContext,
+            siteBundleSnapshot,
+            materializedPlayground,
+            compiledPlayground,
+            pipelineManifest,
+            wizardSelections: chipWizardSelections,
           });
           navigate("/web-builder", {
             state: {
-              vfsFiles: chipVfsFiles,
+              vfsFiles: wiredVfsFiles,
               generatedCode: chipCode,
               templateName: `AI ${chipLabel}`,
               aesthetic: "modern",
@@ -575,6 +732,11 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
               systemType: ref?.systemType,
               userDesignProfile: hasProfile ? { projectCount: savedProjectCount, dominantStyle: designProfile?.dominantStyle } : undefined,
               systemsBuildContext: chipBuildContext,
+              siteBundleSnapshot,
+              materializedPlayground,
+              compiledPlayground,
+              pipelineManifest,
+              wizardSelections: chipWizardSelections,
             },
           });
           toast({ title: "Website generated!", description: "Opening in Web Builder..." });

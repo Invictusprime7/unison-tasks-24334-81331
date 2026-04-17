@@ -52,15 +52,28 @@ export function compilePlayground(
     vfsFiles['/src/App.tsx'] = routerContent;
   }
 
+  const homePage = pages.find((page) => page.isHome) || null;
+
   // For each page, check if file already exists in VFS
   for (const page of pages) {
-    if (page.isHome) continue; // Home is part of router
     const fp = page.filePath!;
-    if (existingVfsFiles[fp]) {
-      // File exists — carry forward (don't overwrite AI-generated content)
+    const existingPageFile = existingVfsFiles[fp];
+
+    if (existingPageFile) {
       vfsFiles[fp] = existingVfsFiles[fp];
+      continue;
     }
-    // If missing, we DON'T scaffold a stub — the AI generation pipeline handles it
+
+    // Preserve pre-router single-page launcher output by moving App.tsx into the home page file.
+    if (page.isHome) {
+      const legacyHomeSource = existingVfsFiles['/src/App.tsx'] || existingVfsFiles['/App.tsx'];
+      if (legacyHomeSource) {
+        vfsFiles[fp] = rebaseHomeModuleForPageFile(legacyHomeSource);
+        continue;
+      }
+    }
+
+    vfsFiles[fp] = generatePlaygroundPagePlaceholder(page, businessName, homePage);
   }
 
   // 4. Build binding manifest
@@ -83,6 +96,65 @@ export function compilePlayground(
       homeRoute,
     },
   };
+}
+
+function rebaseHomeModuleForPageFile(content: string): string {
+  return content.replace(
+    /(from\s+['"])\.\/([^'"]+['"])/g,
+    (_match, prefix, target) => `${prefix}../${target}`,
+  ).replace(
+    /(import\s+['"])\.\/([^'"]+['"])/g,
+    (_match, prefix, target) => `${prefix}../${target}`,
+  );
+}
+
+function generatePlaygroundPagePlaceholder(
+  page: BuilderPage,
+  businessName?: string,
+  homePage?: BuilderPage | null,
+): string {
+  const homePath = homePage?.path || '/';
+  const homeTarget = page.isHome ? '#' : `#${homePath}`;
+
+  return `import React from 'react';
+
+export default function ${toComponentName(page.filePath || page.path || page.title)}() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="border-b border-border/40 bg-background/80 backdrop-blur-sm">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+          <a href="${homeTarget}" className="text-lg font-semibold">
+            ${escapeTemplateLiteral(businessName || 'Business')}
+          </a>
+          <span className="text-sm text-muted-foreground">${escapeTemplateLiteral(page.title)}</span>
+        </div>
+      </header>
+
+      <main className="mx-auto flex min-h-[60vh] max-w-4xl flex-col items-center justify-center px-6 py-24 text-center">
+        <p className="mb-3 text-sm uppercase tracking-[0.3em] text-muted-foreground">Page Ready</p>
+        <h1 className="mb-3 text-4xl font-semibold">${escapeTemplateLiteral(page.title)}</h1>
+        <p className="max-w-xl text-muted-foreground">
+          This page was scaffolded from the canonical playground so routing, bindings, and preview stay wired while content generation catches up.
+        </p>
+      </main>
+    </div>
+  );
+}
+`;
+}
+
+function toComponentName(value: string): string {
+  const fileName = value.split('/').pop() || value;
+  return fileName
+    .replace(/\.(tsx|jsx|ts|js)$/i, '')
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join('') || 'Page';
+}
+
+function escapeTemplateLiteral(value: string): string {
+  return value.replace(/[`$\\]/g, (char) => `\\${char}`);
 }
 
 // ============================================================================

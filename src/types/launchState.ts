@@ -14,6 +14,8 @@ import type { LauncherHandoff, RuntimeManifest } from './runtimeManifest';
 import type { SystemsBuildContext } from './systemsBuildContext';
 import type { GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import type { LayoutCategory } from '@/data/templates/types';
+import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from './playground';
+import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
 
 // ============================================================================
 // Core Launch State
@@ -84,6 +86,11 @@ export interface LaunchState {
   siteBundle?: LauncherHandoff['siteBundle'];
   sitePlan?: GeneratedSitePlan;
   systemsBuildContext?: SystemsBuildContext;
+  siteBundleSnapshot?: SiteBundleSnapshot;
+  materializedPlayground?: PlaygroundState;
+  compiledPlayground?: PlaygroundCompileResult;
+  pipelineManifest?: RuntimeManifest;
+  wizardSelections?: WizardSelections;
   
   // Timestamps
   createdAt?: string;
@@ -146,6 +153,11 @@ export function createLaunchState(
     siteBundle: input.siteBundle,
     sitePlan: input.sitePlan,
     systemsBuildContext: input.systemsBuildContext,
+    siteBundleSnapshot: input.siteBundleSnapshot,
+    materializedPlayground: input.materializedPlayground,
+    compiledPlayground: input.compiledPlayground,
+    pipelineManifest: input.pipelineManifest,
+    wizardSelections: input.wizardSelections,
     blueprint: input.blueprint || {
       version: '1.0',
       identity: {

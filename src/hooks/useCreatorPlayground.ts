@@ -22,6 +22,7 @@ export interface UseCreatorPlaygroundReturn {
   // State
   creatorData: CreatorData;
   pageRegistry: PageRegistry;
+  hydrateCanonicalState: (state: { creatorData?: CreatorData; pageRegistry?: PageRegistry }) => void;
 
   // Page CRUD
   addPage: (title: string, path: string, pageType: BuilderPageType, options?: Partial<BuilderPage>) => BuilderPage;
@@ -480,9 +481,20 @@ export function useCreatorPlayground(
     return result;
   }, [pageRegistry, creatorData]);
 
+  const hydrateCanonicalState = useCallback((state: { creatorData?: CreatorData; pageRegistry?: PageRegistry }) => {
+    if (state.pageRegistry) {
+      setPageRegistry(state.pageRegistry);
+    }
+    if (state.creatorData) {
+      setCreatorData(state.creatorData);
+    }
+    setIsDirty(false);
+  }, []);
+
   return {
     creatorData,
     pageRegistry,
+    hydrateCanonicalState,
     addPage, updatePage, removePage, setHomePage, duplicatePage, reorderPages,
     getNavPages: getNavPagesHelper, getAllPages: getAllPagesHelper,
     addFunnel, updateFunnel, removeFunnel, addFunnelStep, removeFunnelStep, reorderFunnelSteps,

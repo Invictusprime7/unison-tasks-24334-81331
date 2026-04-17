@@ -53,6 +53,8 @@ import {
   type PremiumSectionReference,
 } from "@/sections/references";
 import { executeCanonicalPipeline, type CanonicalPipelineResult } from "@/services/canonicalPipeline";
+import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
+import { mergeGeneratedVfsWithCanonicalSnapshot } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
 import { extractLauncherFilesPayload } from "@/utils/launcherPayload";
@@ -650,6 +652,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // Execute the canonical pipeline — single source of truth
       const pipelineResult = executeCanonicalPipeline(wizardSelections);
       const { playground: materializedPlayground, compileResult: compiledPlayground, siteBundleSnapshot, runtimeManifest: pipelineManifest } = pipelineResult;
+      const bindingGuide = buildWizardBindingGuide(siteBundleSnapshot);
 
       if (pipelineResult.warnings.length > 0) {
         console.warn('[SystemLauncher] Pipeline warnings:', pipelineResult.warnings);
@@ -705,7 +708,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         : "";
 
       const userPrompt = clampPromptText(
-        `Create a premium ${resolvedIndustry} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}`,
+        `Create a premium ${resolvedIndustry} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}${bindingGuide ? `\n\n${bindingGuide}\n` : ''}`,
         AI_MESSAGE_CHAR_LIMIT
       );
 
@@ -816,8 +819,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const normalizedVfsFiles = normalizeLauncherFiles(parsedFiles, {
           entryPoint: '/src/App.tsx',
         });
+        const bindingApplication = applyWizardBindingsToVfs(normalizedVfsFiles, siteBundleSnapshot);
+        const wiredVfsFiles = mergeGeneratedVfsWithCanonicalSnapshot(
+          bindingApplication.files,
+          compiledPlayground.vfsFiles,
+          siteBundleSnapshot,
+        );
+        if (bindingApplication.appliedBindings > 0) {
+          console.log(`[SystemLauncher] Applied ${bindingApplication.appliedBindings} wizard bindings to generated VFS`);
+        }
+        if (bindingApplication.missingBindings.length > 0) {
+          console.warn('[SystemLauncher] Wizard bindings missing source markers:', bindingApplication.missingBindings);
+        }
 
-        const runtimeManifest = createRuntimeManifest(normalizedVfsFiles, {
+        const runtimeManifest = createRuntimeManifest(wiredVfsFiles, {
           industry: generationCategory,
           brandName: businessName.trim(),
           aesthetic: selectedTheme?.id,
@@ -832,7 +847,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           templateName: `${businessName.trim()} Site`,
           templateCategory: generationCategory as any,
           blueprint: blueprint as any,
-          vfsFiles: normalizedVfsFiles,
+          vfsFiles: wiredVfsFiles,
           aesthetic: selectedTheme?.id,
           preloadedIntents: canonicalIntents,
           startInPreview: true,
@@ -842,12 +857,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           entryPoint: runtimeManifest.entryPoint,
           siteBundle: parsedSiteBundle,
           sitePlan,
+          siteBundleSnapshot,
+          materializedPlayground,
+          compiledPlayground,
+          pipelineManifest,
+          wizardSelections,
         });
         setLaunch(launchState);
 
         navigate("/web-builder", {
           state: {
-            vfsFiles,
+            vfsFiles: wiredVfsFiles,
             runtimeManifest,
             entryPoint: runtimeManifest.entryPoint,
             siteBundle: parsedSiteBundle,
@@ -871,8 +891,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const normalizedSingleFileVfs = normalizeLauncherFiles(singleFileVfs, {
           entryPoint: '/src/App.tsx',
         });
+        const bindingApplication = applyWizardBindingsToVfs(normalizedSingleFileVfs, siteBundleSnapshot);
+        const wiredSingleFileVfs = mergeGeneratedVfsWithCanonicalSnapshot(
+          bindingApplication.files,
+          compiledPlayground.vfsFiles,
+          siteBundleSnapshot,
+        );
+        if (bindingApplication.appliedBindings > 0) {
+          console.log(`[SystemLauncher] Applied ${bindingApplication.appliedBindings} wizard bindings to single-file VFS`);
+        }
+        if (bindingApplication.missingBindings.length > 0) {
+          console.warn('[SystemLauncher] Wizard bindings missing source markers:', bindingApplication.missingBindings);
+        }
 
-        const runtimeManifest = createRuntimeManifest(normalizedSingleFileVfs, {
+        const runtimeManifest = createRuntimeManifest(wiredSingleFileVfs, {
           industry: generationCategory,
           brandName: businessName.trim(),
           aesthetic: selectedTheme?.id,
@@ -887,7 +919,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           templateName: `${businessName.trim()} Site`,
           templateCategory: generationCategory as any,
           blueprint: blueprint as any,
-          vfsFiles: normalizedSingleFileVfs,
+          vfsFiles: wiredSingleFileVfs,
           aesthetic: selectedTheme?.id,
           preloadedIntents: canonicalIntents,
           startInPreview: true,
@@ -896,12 +928,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           runtimeManifest,
           entryPoint: runtimeManifest.entryPoint,
           sitePlan,
+          siteBundleSnapshot,
+          materializedPlayground,
+          compiledPlayground,
+          pipelineManifest,
+          wizardSelections,
         });
         setLaunch(launchState);
 
         navigate("/web-builder", {
           state: {
-            vfsFiles: normalizedSingleFileVfs,
+            vfsFiles: wiredSingleFileVfs,
             runtimeManifest,
             entryPoint: runtimeManifest.entryPoint,
             ...navState,

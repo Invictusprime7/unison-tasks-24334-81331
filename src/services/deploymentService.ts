@@ -41,6 +41,8 @@ export interface DeploymentStatus {
   progress: number; // 0-100
   message: string;
   result?: DeploymentResponse;
+  /** Publish blockers when the gate rejects deployment. */
+  blockers?: PublishBlocker[];
 }
 
 /**

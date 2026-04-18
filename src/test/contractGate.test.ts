@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isPreviewReady,
   isPublishReady,
+  getPublishBlockers,
   type CompiledContract,
 } from '@/contracts/contractCompiler';
 

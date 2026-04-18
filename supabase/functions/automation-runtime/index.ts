@@ -902,15 +902,15 @@ async function ghlCreateContact(
   const locationId = config.locationId as string;
   if (!locationId) return { created: false, reason: 'No GHL locationId configured' };
 
-  const contact = context.contact || {};
-  const payload = context.payload || {};
+  const contact = context.contact ?? {} as NonNullable<RunContext['contact']>;
+  const payload = context.payload ?? {};
 
   const body: Record<string, unknown> = {
     locationId,
-    firstName: contact.name?.split(' ')[0] || payload.name as string || '',
+    firstName: contact.name?.split(' ')[0] || (payload.name as string) || '',
     lastName: contact.name?.split(' ').slice(1).join(' ') || '',
-    email: contact.email || payload.email as string || '',
-    phone: contact.phone || payload.phone as string || '',
+    email: contact.email || (payload.email as string) || '',
+    phone: contact.phone || (payload.phone as string) || '',
     source: `Unison:${context.intent}`,
     ...(config.customFields ? { customFields: config.customFields } : {}),
   };

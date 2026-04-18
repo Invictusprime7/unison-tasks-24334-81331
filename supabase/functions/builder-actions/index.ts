@@ -131,7 +131,7 @@ serve(async (req) => {
     }
 
     if (projectId && projectId !== "current" && isValidUUID(projectId)) {
-      const hasProjectAccess = await verifyProjectAccess(supabase, auth.user.id, projectId);
+      const hasProjectAccess = await verifyProjectAccess(supabase as never, auth.user.id, projectId);
       if (!hasProjectAccess) {
         return errorResponse("Access denied to this project", 403, corsHeaders);
       }

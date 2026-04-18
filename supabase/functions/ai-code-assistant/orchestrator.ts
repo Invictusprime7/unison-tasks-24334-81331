@@ -446,7 +446,7 @@ async function runBuilderLane(
     requiresApproval: reviewResult?.requiresApproval,
     removedFiles: reviewResult?.removedFiles,
     reviewSummary: reviewResult?.reviewSummary,
-    applyState,
+    applyState: applyState as Record<string, unknown> | undefined,
   });
 
   return new Response(

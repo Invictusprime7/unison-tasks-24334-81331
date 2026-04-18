@@ -35,6 +35,7 @@ import {
   type ProvisioningStatus,
   isPreviewReady,
   isPublishReady,
+  getPublishBlockers,
 } from '@/contracts';
 
 // ============================================================================

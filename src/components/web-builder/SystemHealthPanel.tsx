@@ -261,6 +261,27 @@ export const SystemHealthPanel: React.FC<SystemHealthPanelProps> = ({
           </div>
         )}
 
+        {/* Publish Blockers (Closure B) */}
+        {!publishReady && previewReady && publishBlockers.length > 0 && (
+          <div className="space-y-1 rounded-lg border border-destructive/40 bg-destructive/5 p-2">
+            <h4 className="text-xs font-medium text-destructive uppercase tracking-wide mb-1 flex items-center gap-1">
+              <XCircle className="w-3 h-3" /> Publish Blockers
+            </h4>
+            <ul className="space-y-1">
+              {publishBlockers.slice(0, 5).map((b, i) => (
+                <li key={i} className="text-xs text-foreground/80 leading-snug">
+                  • {b.message}
+                </li>
+              ))}
+              {publishBlockers.length > 5 && (
+                <li className="text-[10px] text-muted-foreground pl-2">
+                  +{publishBlockers.length - 5} more blocker(s)
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+
         {/* Action Button */}
         <Button
           className="w-full"
@@ -270,7 +291,7 @@ export const SystemHealthPanel: React.FC<SystemHealthPanelProps> = ({
           {publishReady
             ? 'Run Publish Checks'
             : previewReady
-              ? 'Preview Ready — Install Backend to Publish'
+              ? `Preview Ready — ${publishBlockers.length} blocker(s) before publish`
               : 'Resolve Errors First'}
           <ChevronRight className="w-4 h-4 ml-2" />
         </Button>

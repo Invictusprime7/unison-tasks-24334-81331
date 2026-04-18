@@ -38,6 +38,9 @@ jobs:
       - name: Lint code
         run: npm run lint
 
+      - name: Run unit & contract tests (blocking)
+        run: npx vitest run --reporter=default
+
       - name: Build application
         run: npm run build
         env:

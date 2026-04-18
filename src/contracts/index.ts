@@ -44,6 +44,8 @@ export {
   validateIntentsAgainstCapabilities,
   isPreviewReady,
   isPublishReady,
+  getPublishBlockers,
+  type PublishBlocker,
   type ContractValidation,
   type ValidationIssue,
   type ValidationSeverity,

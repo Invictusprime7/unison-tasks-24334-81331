@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isPreviewReady,
   isPublishReady,
+  getPublishBlockers,
   type CompiledContract,
 } from '@/contracts/contractCompiler';
 
@@ -124,5 +125,90 @@ describe('contract gate — isPublishReady (must be stricter than preview)', () 
       ],
     });
     expect(isPublishReady(c)).toBe(false);
+  });
+});
+
+describe('contract gate — business-critical capability hardening (Closure B)', () => {
+  it('blocks publish when a critical capability (commerce) is stubbed, even if previewReady', () => {
+    const c = makeContract({
+      provisioningReport: {
+        previewReady: true,
+        productionReady: true,
+        capabilities: [
+          {
+            capabilityId: 'commerce',
+            capabilityName: 'Commerce',
+            status: 'stub',
+            checks: [],
+          },
+        ],
+      } as never,
+    });
+    expect(isPreviewReady(c)).toBe(true);
+    expect(isPublishReady(c)).toBe(false);
+    const blockers = getPublishBlockers(c);
+    expect(blockers.some(b => b.code === 'critical-capability-stub' && b.capabilityId === 'commerce')).toBe(true);
+  });
+
+  it('blocks publish when a critical capability (auth) is missing', () => {
+    const c = makeContract({
+      provisioningReport: {
+        previewReady: true,
+        productionReady: true,
+        capabilities: [
+          {
+            capabilityId: 'auth',
+            capabilityName: 'Authentication',
+            status: 'missing',
+            checks: [],
+          },
+        ],
+      } as never,
+    });
+    expect(isPublishReady(c)).toBe(false);
+    expect(getPublishBlockers(c).some(b => b.code === 'critical-capability-missing')).toBe(true);
+  });
+
+  it('blocks publish when a critical workflow check is not provisioned', () => {
+    const c = makeContract({
+      provisioningReport: {
+        previewReady: true,
+        productionReady: true,
+        capabilities: [
+          {
+            capabilityId: 'booking',
+            capabilityName: 'Booking',
+            status: 'provisioned',
+            checks: [
+              { check: 'workflow', label: 'Booking confirmation email', status: 'stub' },
+            ],
+          },
+        ],
+      } as never,
+    });
+    expect(isPublishReady(c)).toBe(false);
+    expect(getPublishBlockers(c).some(b => b.code === 'critical-workflow-not-provisioned')).toBe(true);
+  });
+
+  it('does NOT block publish when a non-critical capability (newsletter) is stubbed', () => {
+    const c = makeContract({
+      provisioningReport: {
+        previewReady: true,
+        productionReady: true,
+        capabilities: [
+          {
+            capabilityId: 'newsletter',
+            capabilityName: 'Newsletter',
+            status: 'stub',
+            checks: [],
+          },
+        ],
+      } as never,
+    });
+    expect(isPublishReady(c)).toBe(true);
+  });
+
+  it('returns empty blockers array for a fully publish-ready contract', () => {
+    expect(getPublishBlockers(makeContract())).toEqual([]);
   });
 });

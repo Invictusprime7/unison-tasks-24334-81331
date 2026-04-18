@@ -6,6 +6,11 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import {
+  getPublishBlockers,
+  type CompiledContract,
+  type PublishBlocker,
+} from '@/contracts';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
 
@@ -14,6 +19,11 @@ export interface DeploymentRequest {
   siteName?: string;
   customDomain?: string;
   files: Record<string, string>; // path -> content
+  /**
+   * Optional compiled contract. When supplied, the publish gate runs before
+   * any network call — preventing a half-wired site from going live.
+   */
+  contract?: CompiledContract | null;
 }
 
 export interface DeploymentResponse {
@@ -31,6 +41,8 @@ export interface DeploymentStatus {
   progress: number; // 0-100
   message: string;
   result?: DeploymentResponse;
+  /** Publish blockers when the gate rejects deployment. */
+  blockers?: PublishBlocker[];
 }
 
 /**
@@ -154,6 +166,31 @@ export async function deployToProvider(
   };
 
   try {
+    // Closure B — publish gate. If a contract was supplied, enforce it BEFORE
+    // any network/billing-incurring call. Stubbed business-critical capabilities
+    // (commerce/auth/booking/lead-capture/quoting/donation) block publish even
+    // when preview was happy.
+    if (request.contract) {
+      const blockers = getPublishBlockers(request.contract);
+      if (blockers.length > 0) {
+        const summary = blockers.map(b => `• ${b.message}`).join('\n');
+        const errorMessage = `Publish blocked by contract gate:\n${summary}`;
+        const errorResponse: DeploymentResponse = {
+          status: 'error',
+          provider: request.provider,
+          error: errorMessage,
+        };
+        onProgress?.({
+          isDeploying: false,
+          progress: 0,
+          message: 'Publish blocked — fix critical capabilities before deploying.',
+          result: errorResponse,
+          blockers,
+        });
+        return errorResponse;
+      }
+    }
+
     updateProgress(10, 'Preparing files for deployment...');
 
     // Normalize file paths (remove leading slashes for Vercel)

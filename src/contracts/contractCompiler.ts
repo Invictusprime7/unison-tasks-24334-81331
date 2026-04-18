@@ -489,6 +489,35 @@ export function validateIntentsAgainstCapabilities(
 // Contract Gate — Rejects non-compiled preview input
 // ============================================================================
 
+/**
+ * Capabilities whose stub/missing status blocks PUBLISH (but not preview).
+ * Stubbing these in production would mean a generated site claims to take
+ * money / accept logins / book appointments without actually doing so.
+ */
+const BUSINESS_CRITICAL_CAPABILITIES: readonly CapabilityId[] = [
+  'commerce',
+  'auth',
+  'booking',
+  'lead-capture',
+  'quoting',
+  'donation',
+] as const;
+
+export interface PublishBlocker {
+  code:
+    | 'preview-not-ready'
+    | 'validation-errors'
+    | 'production-not-ready'
+    | 'unresolved-slots'
+    | 'blocked-bindings'
+    | 'critical-capability-stub'
+    | 'critical-capability-missing'
+    | 'critical-workflow-not-provisioned';
+  message: string;
+  /** Optional capability the blocker is tied to */
+  capabilityId?: CapabilityId;
+}
+
 export function isPreviewReady(contract: CompiledContract): boolean {
   if (!contract.validation.valid) return false;
   if (!contract.provisioningReport.previewReady) return false;
@@ -497,11 +526,91 @@ export function isPreviewReady(contract: CompiledContract): boolean {
   return true;
 }
 
+/**
+ * Returns ALL publish blockers (empty array = publish-ready).
+ *
+ * This is intentionally stricter than `isPreviewReady`:
+ *   - Preview tolerates stubs (so creators can iterate on UX).
+ *   - Publish does NOT tolerate stubs on business-critical capabilities,
+ *     because a published site that "looks" like it accepts payments or
+ *     bookings but silently no-ops is the worst possible failure mode.
+ */
+export function getPublishBlockers(contract: CompiledContract): PublishBlocker[] {
+  const blockers: PublishBlocker[] = [];
+
+  if (!isPreviewReady(contract)) {
+    blockers.push({
+      code: 'preview-not-ready',
+      message: 'Preview gate failed — fix preview readiness before publishing.',
+    });
+  }
+
+  if (!contract.validation.valid) {
+    blockers.push({
+      code: 'validation-errors',
+      message: `Contract has ${contract.validation.errors} validation error(s).`,
+    });
+  }
+
+  if (!contract.provisioningReport.productionReady) {
+    blockers.push({
+      code: 'production-not-ready',
+      message: 'Provisioning report is not production-ready (backend or capability install incomplete).',
+    });
+  }
+
+  if (contract.slotBindingPolicy.unresolved.length > 0) {
+    blockers.push({
+      code: 'unresolved-slots',
+      message: `${contract.slotBindingPolicy.unresolved.length} slot(s) have no binding.`,
+    });
+  }
+
+  const blockedBindings = contract.intentBindings.filter(b => b.readiness === 'blocked');
+  if (blockedBindings.length > 0) {
+    blockers.push({
+      code: 'blocked-bindings',
+      message: `${blockedBindings.length} interactive element(s) are blocked (missing handler/payload).`,
+    });
+  }
+
+  // Business-critical capability gates — stubs are acceptable in preview, not in publish.
+  for (const capReport of contract.provisioningReport.capabilities) {
+    const isCritical = BUSINESS_CRITICAL_CAPABILITIES.includes(capReport.capabilityId);
+    if (!isCritical) continue;
+
+    if (capReport.status === 'missing') {
+      blockers.push({
+        code: 'critical-capability-missing',
+        capabilityId: capReport.capabilityId,
+        message: `Critical capability "${capReport.capabilityName}" is missing required handlers.`,
+      });
+      continue;
+    }
+    if (capReport.status === 'stub') {
+      blockers.push({
+        code: 'critical-capability-stub',
+        capabilityId: capReport.capabilityId,
+        message: `Critical capability "${capReport.capabilityName}" is stubbed — publishing would expose a non-functional flow.`,
+      });
+    }
+
+    // Workflow-level check: any required workflow that is not provisioned blocks publish.
+    const stubbedWorkflowCheck = capReport.checks.find(
+      c => c.check === 'workflow' && c.status !== 'provisioned',
+    );
+    if (stubbedWorkflowCheck) {
+      blockers.push({
+        code: 'critical-workflow-not-provisioned',
+        capabilityId: capReport.capabilityId,
+        message: `Workflow "${stubbedWorkflowCheck.label}" for "${capReport.capabilityName}" is not provisioned.`,
+      });
+    }
+  }
+
+  return blockers;
+}
+
 export function isPublishReady(contract: CompiledContract): boolean {
-  if (!isPreviewReady(contract)) return false;
-  if (!contract.provisioningReport.productionReady) return false;
-  if (contract.slotBindingPolicy.unresolved.length > 0) return false;
-  // All bindings must be publish-ready
-  if (contract.intentBindings.some(b => b.readiness === 'blocked')) return false;
-  return true;
+  return getPublishBlockers(contract).length === 0;
 }

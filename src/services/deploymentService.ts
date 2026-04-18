@@ -6,6 +6,11 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import {
+  getPublishBlockers,
+  type CompiledContract,
+  type PublishBlocker,
+} from '@/contracts';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
 
@@ -14,6 +19,11 @@ export interface DeploymentRequest {
   siteName?: string;
   customDomain?: string;
   files: Record<string, string>; // path -> content
+  /**
+   * Optional compiled contract. When supplied, the publish gate runs before
+   * any network call — preventing a half-wired site from going live.
+   */
+  contract?: CompiledContract | null;
 }
 
 export interface DeploymentResponse {

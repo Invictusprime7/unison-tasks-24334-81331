@@ -83,6 +83,7 @@ export const SystemHealthPanel: React.FC<SystemHealthPanelProps> = ({
 }) => {
   const previewReady = useMemo(() => contract ? isPreviewReady(contract) : false, [contract]);
   const publishReady = useMemo(() => contract ? isPublishReady(contract) : false, [contract]);
+  const publishBlockers = useMemo(() => contract ? getPublishBlockers(contract) : [], [contract]);
 
   const healthScore = useMemo(() => {
     if (!contract) return 0;

@@ -166,6 +166,31 @@ export async function deployToProvider(
   };
 
   try {
+    // Closure B — publish gate. If a contract was supplied, enforce it BEFORE
+    // any network/billing-incurring call. Stubbed business-critical capabilities
+    // (commerce/auth/booking/lead-capture/quoting/donation) block publish even
+    // when preview was happy.
+    if (request.contract) {
+      const blockers = getPublishBlockers(request.contract);
+      if (blockers.length > 0) {
+        const summary = blockers.map(b => `• ${b.message}`).join('\n');
+        const errorMessage = `Publish blocked by contract gate:\n${summary}`;
+        const errorResponse: DeploymentResponse = {
+          status: 'error',
+          provider: request.provider,
+          error: errorMessage,
+        };
+        onProgress?.({
+          isDeploying: false,
+          progress: 0,
+          message: 'Publish blocked — fix critical capabilities before deploying.',
+          result: errorResponse,
+          blockers,
+        });
+        return errorResponse;
+      }
+    }
+
     updateProgress(10, 'Preparing files for deployment...');
 
     // Normalize file paths (remove leading slashes for Vercel)

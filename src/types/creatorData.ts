@@ -145,7 +145,13 @@ export interface CreatorBusinessInfo {
   description?: string;
   phone?: string;
   email?: string;
+  notificationEmail?: string;
   address?: string;
+  bookingOwner?: string;
+  paymentProvider?: string;
+  crmDestination?: string;
+  publishDomain?: string;
+  followUpChannel?: string;
   hours?: Array<{ day: string; open: string; close: string; closed?: boolean }>;
   socialLinks?: Record<string, string>;
   logoAssetId?: string;

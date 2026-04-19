@@ -40,13 +40,19 @@ import { getCompositionReactCode, getCompositionMeta } from "@/utils/composition
 import { cn } from "@/lib/utils";
 import { templateToVFSFiles } from "@/utils/templateToVFS";
 import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
-import { extractLauncherFilesPayload, sanitizeLauncherResponseText } from "@/utils/launcherPayload";
+import {
+  extractLauncherPayload,
+  isRenderableLauncherEntryPath,
+  resolveLauncherEntryPoint,
+  sanitizeLauncherResponseText,
+} from "@/utils/launcherPayload";
 import { fixJsxVoidElements, fixJsxStyleStrings } from "@/utils/aiCodeCleaner";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { createLaunchState } from "@/types/launchState";
+import { createRuntimeManifest } from "@/types/runtimeManifest";
 import { executeCanonicalPipeline } from "@/services/canonicalPipeline";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { mergeGeneratedVfsWithCanonicalSnapshot } from "@/services/canonicalLaunchVfs";
@@ -326,6 +332,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
     systemType?: BusinessSystemType;
     systemName?: string;
     templateCategory?: LayoutCategory;
+    entryPoint?: string;
+    runtimeManifest?: ReturnType<typeof createRuntimeManifest>;
     systemsBuildContext?: SystemsBuildContext;
     siteBundleSnapshot?: ReturnType<typeof executeCanonicalPipeline>['siteBundleSnapshot'];
     materializedPlayground?: ReturnType<typeof executeCanonicalPipeline>['playground'];
@@ -345,6 +353,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         preloadedIntents: input.systemsBuildContext?.intents?.map((item) => item.intent) || [],
         startInPreview: true,
         intentRuntime: true,
+        entryPoint: input.entryPoint,
+        runtimeManifest: input.runtimeManifest,
         systemsBuildContext: input.systemsBuildContext,
         siteBundleSnapshot: input.siteBundleSnapshot,
         materializedPlayground: input.materializedPlayground,
@@ -526,6 +536,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             compiledPlayground.vfsFiles,
             siteBundleSnapshot,
           );
+          const resolvedEntryPoint = resolveLauncherEntryPoint(wiredVfsFiles, '/src/App.tsx');
+          const runtimeManifest = createRuntimeManifest(wiredVfsFiles, {
+            entryPoint: resolvedEntryPoint,
+            industry: getCanonicalIndustry(selectedCodeChip),
+            brandName: ref.templateName,
+            aesthetic: "premium",
+            backendRequired: false,
+          });
           if (bindingApplication.missingBindings.length > 0) {
             console.warn('[SystemsAIPanel] Template binding misses:', bindingApplication.missingBindings);
           }
@@ -540,6 +558,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             systemType: ref.systemType,
             systemName: ref.templateName,
             templateCategory,
+            entryPoint: runtimeManifest.entryPoint,
+            runtimeManifest,
             systemsBuildContext: chipBuildContext,
             siteBundleSnapshot,
             materializedPlayground,
@@ -550,6 +570,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           navigate("/web-builder", {
             state: {
               vfsFiles: wiredVfsFiles,
+              entryPoint: runtimeManifest.entryPoint,
+              runtimeManifest,
               generatedCode: reactCode,
               templateName: ref.templateName,
               aesthetic: "premium",
@@ -631,20 +653,35 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         }
 
         const chipContent = sanitizeLauncherResponseText((chipData?.content as string) || (chipData?.code as string) || "");
-        const chipStructuredFiles = extractLauncherFilesPayload(chipContent);
+        const chipStructuredPayload = extractLauncherPayload(chipContent);
 
-        if (chipStructuredFiles && Object.keys(chipStructuredFiles).length > 0) {
-          const normalizedChipVfsFiles = normalizeLauncherFiles(chipStructuredFiles, { entryPoint: '/src/App.tsx' });
+        if (chipStructuredPayload?.files && Object.keys(chipStructuredPayload.files).length > 0) {
+          const normalizedChipVfsFiles = normalizeLauncherFiles(chipStructuredPayload.files, {
+            entryPoint: chipStructuredPayload.entryPoint || '/src/App.tsx',
+          });
           const bindingApplication = applyWizardBindingsToVfs(normalizedChipVfsFiles, siteBundleSnapshot);
           const wiredVfsFiles = mergeGeneratedVfsWithCanonicalSnapshot(
             bindingApplication.files,
             compiledPlayground.vfsFiles,
             siteBundleSnapshot,
           );
+          const resolvedEntryPoint = resolveLauncherEntryPoint(wiredVfsFiles, chipStructuredPayload.entryPoint);
+          const runtimeManifest = createRuntimeManifest(wiredVfsFiles, {
+            entryPoint: resolvedEntryPoint,
+            industry: getCanonicalIndustry(selectedCodeChip),
+            brandName: chipLabel,
+            aesthetic: "modern",
+            backendRequired: false,
+          });
           if (bindingApplication.missingBindings.length > 0) {
             console.warn('[SystemsAIPanel] AI chip binding misses:', bindingApplication.missingBindings);
           }
-          const generatedCode = wiredVfsFiles['/src/App.tsx'] || wiredVfsFiles['/App.tsx'] || Object.values(wiredVfsFiles)[0] || '';
+          const generatedCode =
+            (isRenderableLauncherEntryPath(resolvedEntryPoint) ? wiredVfsFiles[resolvedEntryPoint] : undefined) ||
+            wiredVfsFiles['/src/App.tsx'] ||
+            wiredVfsFiles['/App.tsx'] ||
+            Object.values(wiredVfsFiles)[0] ||
+            '';
 
           sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(wiredVfsFiles));
           setDroppedFiles([]);
@@ -655,6 +692,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             systemType: ref?.systemType,
             systemName: chipLabel,
             templateCategory: getCategoryForChip(selectedCodeChip),
+            entryPoint: runtimeManifest.entryPoint,
+            runtimeManifest,
             systemsBuildContext: chipBuildContext,
             siteBundleSnapshot,
             materializedPlayground,
@@ -665,6 +704,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           navigate("/web-builder", {
             state: {
               vfsFiles: wiredVfsFiles,
+              entryPoint: runtimeManifest.entryPoint,
+              runtimeManifest,
               generatedCode,
               templateName: `AI ${chipLabel}`,
               aesthetic: "modern",
@@ -702,6 +743,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             compiledPlayground.vfsFiles,
             siteBundleSnapshot,
           );
+          const resolvedEntryPoint = resolveLauncherEntryPoint(wiredVfsFiles, '/src/App.tsx');
+          const runtimeManifest = createRuntimeManifest(wiredVfsFiles, {
+            entryPoint: resolvedEntryPoint,
+            industry: getCanonicalIndustry(selectedCodeChip),
+            brandName: chipLabel,
+            aesthetic: "modern",
+            backendRequired: false,
+          });
           if (bindingApplication.missingBindings.length > 0) {
             console.warn('[SystemsAIPanel] AI single-file chip binding misses:', bindingApplication.missingBindings);
           }
@@ -715,6 +764,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             systemType: ref?.systemType,
             systemName: chipLabel,
             templateCategory: getCategoryForChip(selectedCodeChip),
+            entryPoint: runtimeManifest.entryPoint,
+            runtimeManifest,
             systemsBuildContext: chipBuildContext,
             siteBundleSnapshot,
             materializedPlayground,
@@ -725,6 +776,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           navigate("/web-builder", {
             state: {
               vfsFiles: wiredVfsFiles,
+              entryPoint: runtimeManifest.entryPoint,
+              runtimeManifest,
               generatedCode: chipCode,
               templateName: `AI ${chipLabel}`,
               aesthetic: "modern",
@@ -795,11 +848,26 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
       }
 
       const freeformContent = sanitizeLauncherResponseText((freeformData?.content as string) || (freeformData?.code as string) || "");
-      const freeformStructuredFiles = extractLauncherFilesPayload(freeformContent);
+      const freeformStructuredPayload = extractLauncherPayload(freeformContent);
 
-      if (freeformStructuredFiles && Object.keys(freeformStructuredFiles).length > 0) {
-        const freeVfsFiles = normalizeLauncherFiles(freeformStructuredFiles, { entryPoint: '/src/App.tsx' });
-        const generatedCode = freeVfsFiles['/src/App.tsx'] || freeVfsFiles['/App.tsx'] || Object.values(freeVfsFiles)[0] || '';
+      if (freeformStructuredPayload?.files && Object.keys(freeformStructuredPayload.files).length > 0) {
+        const freeVfsFiles = normalizeLauncherFiles(freeformStructuredPayload.files, {
+          entryPoint: freeformStructuredPayload.entryPoint || '/src/App.tsx',
+        });
+        const resolvedEntryPoint = resolveLauncherEntryPoint(freeVfsFiles, freeformStructuredPayload.entryPoint);
+        const runtimeManifest = createRuntimeManifest(freeVfsFiles, {
+          entryPoint: resolvedEntryPoint,
+          industry: 'general',
+          brandName: 'AI Generated',
+          aesthetic: 'modern',
+          backendRequired: false,
+        });
+        const generatedCode =
+          (isRenderableLauncherEntryPath(resolvedEntryPoint) ? freeVfsFiles[resolvedEntryPoint] : undefined) ||
+          freeVfsFiles['/src/App.tsx'] ||
+          freeVfsFiles['/App.tsx'] ||
+          Object.values(freeVfsFiles)[0] ||
+          '';
 
         sessionStorage.setItem('ai_assistant_generated_code', JSON.stringify(freeVfsFiles));
         setDroppedFiles([]);
@@ -810,10 +878,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           systemType: "content",
           systemName: "AI Generated",
           templateCategory: "landing",
+          entryPoint: runtimeManifest.entryPoint,
+          runtimeManifest,
         });
         navigate("/web-builder", {
           state: {
             vfsFiles: freeVfsFiles,
+            entryPoint: runtimeManifest.entryPoint,
+            runtimeManifest,
             generatedCode,
             templateName: "AI Generated",
             aesthetic: "modern",
@@ -836,6 +908,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
       if (generatedCode) {
         // Create VFS from React/TSX code
         const freeVfsFiles = templateToVFSFiles(generatedCode, 'CustomWebsite');
+        const resolvedEntryPoint = resolveLauncherEntryPoint(freeVfsFiles, '/src/App.tsx');
+        const runtimeManifest = createRuntimeManifest(freeVfsFiles, {
+          entryPoint: resolvedEntryPoint,
+          industry: 'general',
+          brandName: 'AI Generated',
+          aesthetic: 'modern',
+          backendRequired: false,
+        });
         
         sessionStorage.setItem('ai_assistant_generated_code', generatedCode);
         setDroppedFiles([]);
@@ -846,10 +926,14 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           systemType: "content",
           systemName: "AI Generated",
           templateCategory: "landing",
+          entryPoint: runtimeManifest.entryPoint,
+          runtimeManifest,
         });
         navigate("/web-builder", {
           state: {
             vfsFiles: freeVfsFiles,
+            entryPoint: runtimeManifest.entryPoint,
+            runtimeManifest,
             generatedCode,
             templateName: "AI Generated",
             aesthetic: "modern",

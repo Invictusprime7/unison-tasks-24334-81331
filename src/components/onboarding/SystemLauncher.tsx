@@ -57,7 +57,7 @@ import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wi
 import { mergeGeneratedVfsWithCanonicalSnapshot } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
-import { extractLauncherFilesPayload } from "@/utils/launcherPayload";
+import { extractLauncherPayload, resolveLauncherEntryPoint } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
@@ -760,27 +760,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       let vfsFiles: Record<string, string> | null = null;
       let parsedEntryPoint: string | undefined;
       let parsedSiteBundle: LauncherHandoff["siteBundle"] | undefined;
-      try {
-        const parsed = JSON.parse(rawContent);
-        if (parsed.files && typeof parsed.files === "object") {
-          parsedEntryPoint = parsed.entryPoint || undefined;
-          if (parsed.siteBundle && typeof parsed.siteBundle === "object") {
-            parsedSiteBundle = parsed.siteBundle as LauncherHandoff["siteBundle"];
-          }
-          const normalizedParsedEntryPoint = parsedEntryPoint
-            ? (parsedEntryPoint.startsWith("/") ? parsedEntryPoint : `/${parsedEntryPoint}`)
-            : undefined;
-          const safeEntryPoint = normalizedParsedEntryPoint && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(normalizedParsedEntryPoint)
-            ? undefined
-            : normalizedParsedEntryPoint;
-          // Use normalizeLauncherFiles to ensure consistent structure
-          vfsFiles = normalizeLauncherFiles(parsed.files, {
-            entryPoint: safeEntryPoint,
-          });
-          parsedEntryPoint = safeEntryPoint;
+      const structuredPayload = extractLauncherPayload(rawContent);
+      if (structuredPayload) {
+        parsedEntryPoint = structuredPayload.entryPoint;
+        if (structuredPayload.siteBundle && typeof structuredPayload.siteBundle === "object") {
+          parsedSiteBundle = structuredPayload.siteBundle as LauncherHandoff["siteBundle"];
         }
-      } catch {
-        // single-file output
+        vfsFiles = normalizeLauncherFiles(structuredPayload.files, {
+          entryPoint: parsedEntryPoint,
+        });
       }
 
       // ── Await backend provisioning (runs in parallel with AI generation) ──
@@ -813,11 +801,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      const parsedFiles = extractLauncherFilesPayload(rawContent);
+      const structuredFiles = vfsFiles ?? structuredPayload?.files ?? null;
 
-      if (parsedFiles) {
-        const normalizedVfsFiles = normalizeLauncherFiles(parsedFiles, {
-          entryPoint: '/src/App.tsx',
+      if (structuredFiles) {
+        const normalizedVfsFiles = vfsFiles ?? normalizeLauncherFiles(structuredFiles, {
+          entryPoint: parsedEntryPoint || '/src/App.tsx',
         });
         const bindingApplication = applyWizardBindingsToVfs(normalizedVfsFiles, siteBundleSnapshot);
         const wiredVfsFiles = mergeGeneratedVfsWithCanonicalSnapshot(
@@ -825,6 +813,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           compiledPlayground.vfsFiles,
           siteBundleSnapshot,
         );
+        const resolvedEntryPoint = resolveLauncherEntryPoint(wiredVfsFiles, parsedEntryPoint);
         if (bindingApplication.appliedBindings > 0) {
           console.log(`[SystemLauncher] Applied ${bindingApplication.appliedBindings} wizard bindings to generated VFS`);
         }
@@ -833,6 +822,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         }
 
         const runtimeManifest = createRuntimeManifest(wiredVfsFiles, {
+          entryPoint: resolvedEntryPoint,
           industry: generationCategory,
           brandName: businessName.trim(),
           aesthetic: selectedTheme?.id,

@@ -12,6 +12,7 @@
 
 import type { LaunchState } from '@/types/launchState';
 import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 
 export type SandpackFiles = Record<string, string>;
 
@@ -39,9 +40,13 @@ export function launchStateToSandpackFiles(
   config: LaunchToSandpackConfig
 ): SandpackFiles {
   const { launchState, vfsFiles, debug = false } = config;
+  const entryPoint = resolveLauncherEntryPoint(
+    vfsFiles,
+    launchState.runtimeManifest?.entryPoint || launchState.entryPoint,
+  );
 
   const normalizedFiles = normalizeLauncherFiles(vfsFiles, {
-    entryPoint: '/src/App.tsx',
+    entryPoint,
   });
 
   const files: SandpackFiles = { ...normalizedFiles };
@@ -78,11 +83,11 @@ export function launchStateToSandpackFiles(
   // ========================================================================
   if (launchState.intentRuntime && launchState.preloadedIntents.length > 0) {
     // Find main entry file and enhance it
-    const entryKey = 
+    const entryKey =
       '/src/main.tsx' in files
         ? '/src/main.tsx'
-        : '/src/App.tsx' in files
-          ? '/src/App.tsx'
+        : entryPoint in files
+          ? entryPoint
           : '/src/index.tsx' in files
             ? '/src/index.tsx'
             : null;
@@ -101,7 +106,7 @@ export function launchStateToSandpackFiles(
   }
 
   const previewFiles = prepareSandpackFiles(files, {
-    entryPoint: '/src/App.tsx',
+    entryPoint,
     aesthetic: launchState.aesthetic,
   });
 

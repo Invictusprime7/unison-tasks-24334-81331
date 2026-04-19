@@ -35,6 +35,7 @@ import { createRuntimeManifest } from "@/types/runtimeManifest";
 import { createLaunchState } from "@/types/launchState";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { useLaunch } from "@/contexts/useLaunchHooks";
+import { resolveLauncherEntryPoint } from "@/utils/launcherPayload";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -80,10 +81,6 @@ function getSystemTypeForChip(chipId: string): BusinessSystemType {
   const industry = getCanonicalIndustry(chipId);
   const profile = getIndustryProfile(industry);
   return profile?.systemType || 'agency';
-}
-
-function isRenderableEntryPath(path: string): boolean {
-  return /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path);
 }
 
 /**
@@ -353,17 +350,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       const normalizedEntryPoint = typeof data?.entryPoint === "string"
         ? (data.entryPoint.startsWith("/") ? data.entryPoint : `/${data.entryPoint}`)
         : null;
-      const entryPath = normalizedEntryPoint && reactFiles?.[normalizedEntryPoint] && isRenderableEntryPath(normalizedEntryPoint)
-        ? normalizedEntryPoint
-        : reactFiles?.["/src/App.tsx"]
-          ? "/src/App.tsx"
-          : reactFiles?.["/App.tsx"]
-            ? "/App.tsx"
-            : reactFiles
-              ? Object.keys(reactFiles).find((path) => /\/(pages|components)\/.+\.(tsx|jsx)$/.test(path)) ||
-                Object.keys(reactFiles).find((path) => isRenderableEntryPath(path)) ||
-                null
-              : null;
+      const entryPath = reactFiles ? resolveLauncherEntryPoint(reactFiles, normalizedEntryPoint || undefined) : null;
       const code = entryPath ? reactFiles?.[entryPath] || "" : "";
 
       if (!reactFiles || Object.keys(reactFiles).length === 0 || !code || code.length < 50) {

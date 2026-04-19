@@ -259,6 +259,7 @@ interface AIBuilderPanelProps {
   currentCode?: string;
   systemType?: BusinessSystemType | null;
   templateName?: string | null;
+  defaultTargetFile?: string | null;
   onCodeGenerated?: (code: string) => void;
   onFilesPatch?: (files: Record<string, string>) => boolean;
   onViewEdits?: (edits: VFSEdit[]) => void;
@@ -328,6 +329,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   currentCode,
   systemType,
   templateName,
+  defaultTargetFile,
   onCodeGenerated,
   onFilesPatch,
   onViewEdits,
@@ -1299,7 +1301,7 @@ export default function App() {
       // Determine the target file path for single-file output.
       // If site analysis resolved a specific component file, use that path
       // to avoid overwriting the entire App.tsx with a single component's code.
-      const singleFilePath = resolvedTargetFile || '/src/App.tsx';
+      const singleFilePath = resolvedTargetFile || defaultTargetFile || '/src/App.tsx';
 
       // Determine VFS edits from response
       const edits: VFSEdit[] = [];
@@ -1685,7 +1687,9 @@ export default function App() {
           vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
           toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
         } else if (fixCode) {
-          const targetPath = error.file ? (error.file.startsWith('/') ? error.file : `/${error.file}`) : '/src/App.tsx';
+          const targetPath = error.file
+            ? (error.file.startsWith('/') ? error.file : `/${error.file}`)
+            : (defaultTargetFile || '/src/App.tsx');
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
           onApplyToVFS({ [targetPath]: fixCode });
           vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });

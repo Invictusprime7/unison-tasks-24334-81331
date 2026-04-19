@@ -102,6 +102,7 @@ import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
+import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {
   applyStructuralChange,
   syncRouterAndValidate,
@@ -963,6 +964,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       ...(routeState ?? {}),
     };
   }, [launchRouteState, routeState]);
+  const launchEntryPoint = useMemo(
+    () =>
+      normalizeLauncherEntryPoint(
+        effectiveRouteState?.runtimeManifest?.entryPoint || effectiveRouteState?.entryPoint,
+      ) || '/src/App.tsx',
+    [effectiveRouteState?.entryPoint, effectiveRouteState?.runtimeManifest?.entryPoint]
+  );
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [activeMode, setActiveMode] = useState<"insert" | "layout" | "text" | "vector">("insert");
@@ -1002,7 +1010,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(true);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
   const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
-  const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | undefined>(undefined);
+  const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | "intent_registry" | "readiness" | "business" | undefined>(undefined);
+  const [playgroundInitialBindingId, setPlaygroundInitialBindingId] = useState<string | undefined>(undefined);
   const [playgroundBindings, setPlaygroundBindings] = useState<Record<string, import('@/types/playground').PlaygroundBinding>>({});
   const [playgroundCalendars, setPlaygroundCalendars] = useState<Record<string, import('@/types/playground').PlaygroundCalendar>>({});
   const [playgroundPopups, setPlaygroundPopups] = useState<Record<string, import('@/types/playground').PlaygroundPopup>>({});
@@ -1046,6 +1055,18 @@ export default function App() {
     setViewMode,
     clearSelection,
   } = useWebBuilderState(fabricCanvas);
+
+  const selectedPlaygroundBinding = useMemo(() => {
+    const attributes = (selectedHTMLElement?.attributes || {}) as Record<string, string>;
+    const bindingId = attributes['data-ut-binding-id'];
+    if (bindingId && playgroundBindings[bindingId]) {
+      return playgroundBindings[bindingId];
+    }
+
+    const elementKey = attributes['data-ut-binding-key'] || attributes['data-element-key'];
+    if (!elementKey) return null;
+    return Object.values(playgroundBindings).find((binding) => binding.elementKey === elementKey) || null;
+  }, [selectedHTMLElement, playgroundBindings]);
 
   // Template Customizer - full DOM control
   const templateCustomizer = useTemplateCustomizer();
@@ -1495,7 +1516,7 @@ export default function App() {
   const autoRewireHtmlIntentsRef = useRef<((fileId: string, content: string) => void) | null>(null);
   
   // Multi-page navigation state — split into three concerns
-  const [activePagePath, setActivePagePath] = useState<string>('/src/App.tsx');
+  const [activePagePath, setActivePagePath] = useState<string>(launchEntryPoint);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [activePreviewRoute, setActivePreviewRoute] = useState<string>('/');
   
@@ -1647,7 +1668,7 @@ export default function App() {
 
     const resolvedPage =
       pages.find((page) => page.filePath === activePagePath) ||
-      pages.find((page) => page.isHome && (activePagePath === '/src/App.tsx' || activePagePath === '/App.tsx')) ||
+      pages.find((page) => page.isHome && activePagePath === launchEntryPoint) ||
       null;
 
     const nextPageId = resolvedPage?.pageId || null;
@@ -1655,7 +1676,7 @@ export default function App() {
 
     setActivePageId((prev) => (prev === nextPageId ? prev : nextPageId));
     setActivePreviewRoute((prev) => (prev === nextRoute ? prev : nextRoute));
-  }, [activePagePath, creatorPlayground.pageRegistry]);
+  }, [activePagePath, creatorPlayground.pageRegistry, launchEntryPoint]);
 
   // Feed route conflicts + topology validation into diagnostics aggregator
   useEffect(() => {
@@ -1704,12 +1725,12 @@ export default function App() {
     const vfsFiles = virtualFS.getSandpackFiles();
     const manifest: Record<string, string> = {};
     Object.entries(vfsFiles).forEach(([path, content]) => {
-      if (path.endsWith('.tsx') && (path.includes('/pages/') || path === '/src/App.tsx')) {
+      if (path.endsWith('.tsx') && (path.includes('/pages/') || path === launchEntryPoint)) {
         manifest[path] = content;
       }
     });
     return manifest;
-  }, [virtualFS.nodes]);
+  }, [launchEntryPoint, virtualFS.nodes]);
   
   // Sync page manifest to preview iframe when VFS changes
   // This enables instant in-place navigation (no new tabs)
@@ -1812,7 +1833,7 @@ export default function App() {
     if (resolved.existsInVFS && resolved.filePath && openFile) {
       handleSelectPage(resolved.filePath);
     } else if (page.isHome && openFile) {
-      handleSelectPage('/src/App.tsx');
+      handleSelectPage(launchEntryPoint);
     }
 
     if (updatePreview) {
@@ -1826,7 +1847,7 @@ export default function App() {
       creatorPlayground.updatePage(pageId, { filePath: fp });
       triggerPageGenRef.current(pageName, page.title, null);
     }
-  }, [creatorPlayground.pageRegistry, virtualFS, handleSelectPage]);
+  }, [creatorPlayground.pageRegistry, virtualFS, handleSelectPage, launchEntryPoint]);
 
   
   const handleAddPage = useCallback(() => {
@@ -1877,10 +1898,10 @@ export default function ${componentName}Page() {
     vfsImportFiles(allFiles);
     // Switch back to main page if we deleted the active one
     if (activePagePath === path) {
-      handleSelectPage('/src/App.tsx');
+      handleSelectPage(launchEntryPoint);
     }
     toast.success('Page removed');
-  }, [getSandpackFiles, vfsImportFiles, activePagePath, handleSelectPage]);
+  }, [getSandpackFiles, vfsImportFiles, activePagePath, handleSelectPage, launchEntryPoint]);
   
   // NOTE: previewCode→VFS sync is handled by the main sync effect below (Effect A).
   // A duplicate effect here previously wrote to /index.html and conflicted with
@@ -1961,12 +1982,12 @@ export default function ${componentName}Page() {
       return preferredPath;
     }
 
-    if (files['/src/App.tsx']) {
-      return '/src/App.tsx';
-    }
-
-    if (files['/App.tsx']) {
-      return '/App.tsx';
+    const resolvedEntryPath = resolveLauncherEntryPoint(
+      files,
+      preferredPath || launchEntryPoint,
+    );
+    if (resolvedEntryPath && files[resolvedEntryPath]) {
+      return resolvedEntryPath;
     }
 
     return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path))
@@ -1975,7 +1996,7 @@ export default function ${componentName}Page() {
       || (files['/index.html'] ? '/index.html' : null)
       || Object.keys(files)[0]
       || null;
-  }, []);
+  }, [launchEntryPoint]);
 
   const syncBuilderFromFiles = useCallback((
     files: Record<string, string>,
@@ -2017,13 +2038,12 @@ export default function ${componentName}Page() {
       entryPoint: normalizedEntryPoint,
     });
 
-    const appKey = normalizedFiles['/src/App.tsx']
-      ? '/src/App.tsx'
-      : normalizedFiles['/App.tsx']
-        ? '/App.tsx'
-        : null;
+    const appKey = resolveLauncherEntryPoint(
+      normalizedFiles,
+      normalizedEntryPoint || launchEntryPoint,
+    );
 
-    if (appKey && !normalizedFiles['/src/template.css']) {
+    if (appKey && normalizedFiles[appKey] && !normalizedFiles['/src/template.css']) {
       const { cleanCode, css } = extractEmbeddedCSS(normalizedFiles[appKey]);
       if (css) {
         normalizedFiles[appKey] = cleanCode;
@@ -2041,7 +2061,7 @@ export default function ${componentName}Page() {
       files: normalizedFiles,
       syncedEntry,
     };
-  }, [syncBuilderFromFiles, vfsImportFiles]);
+  }, [syncBuilderFromFiles, vfsImportFiles, launchEntryPoint]);
   
   // Effect A: previewCode → VFS  (one-way sync, runs when AI/templates/page-nav set previewCode)
   useEffect(() => {
@@ -2054,10 +2074,10 @@ export default function ${componentName}Page() {
     if (previewCode && previewCode !== lastSyncedCodeRef.current) {
       console.log('[WebBuilder] Effect A: Syncing previewCode to VFS, length:', previewCode.length);
       // All code is TSX — import directly to VFS as the active page file
-      const targetPath = activePagePath.endsWith('.tsx') ? activePagePath : '/src/App.tsx';
+      const targetPath = activePagePath.endsWith('.tsx') ? activePagePath : launchEntryPoint;
       const currentFiles = virtualFSRef.current.getSandpackFiles();
       const needsProjectScaffold =
-        targetPath === '/src/App.tsx' &&
+        targetPath === launchEntryPoint &&
         (!currentFiles['/src/main.tsx'] || !currentFiles['/src/index.css']);
 
       const importPayload = needsProjectScaffold
@@ -2075,7 +2095,7 @@ export default function ${componentName}Page() {
       virtualFSRef.current.importFiles(importPayload);
       lastSyncedCodeRef.current = previewCode;
     }
-  }, [previewCode, activePagePath, routeStateHasStructuredProject]);
+  }, [previewCode, activePagePath, launchEntryPoint, routeStateHasStructuredProject]);
   
   // NOTE: Effect B (VFS→previewCode) has been REMOVED.
   // Previously, it watched virtualFS.nodes and called setPreviewCode() whenever the
@@ -2234,6 +2254,13 @@ export default function ${componentName}Page() {
     loadCloudState();
     return () => { cancelled = true; };
   }, [businessId, projectId]);
+
+  const playgroundSetupSnapshot = useMemo(() => ({
+    publishStatus: cloudState.project.publishStatus,
+    customDomain: cloudState.project.customDomain,
+    notificationEmail: cloudState.business.notificationEmail,
+    projectName: cloudState.project.name,
+  }), [cloudState.business.notificationEmail, cloudState.project.customDomain, cloudState.project.name, cloudState.project.publishStatus]);
   
   const referrerPageName = systemName || 
     effectiveRouteState?.from || 
@@ -2625,7 +2652,7 @@ export default function ${componentName}Page() {
           .replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase())
           .replace(/^\w/, c => c.toUpperCase());
         const targetPath = !normalizedName || normalizedName === 'index' || normalizedName === 'home'
-          ? '/src/App.tsx'
+          ? launchEntryPoint
           : `/src/pages/${componentName}.tsx`;
         const vfsFiles = virtualFS.getSandpackFiles();
         const pageContent = vfsFiles[targetPath] || (pagePath ? vfsFiles[pagePath] : undefined);
@@ -2652,7 +2679,7 @@ export default function ${componentName}Page() {
           .replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase())
           .replace(/^\w/, c => c.toUpperCase());
         const targetPath = !normalizedName || normalizedName === 'index' || normalizedName === 'home'
-          ? '/src/App.tsx'
+          ? launchEntryPoint
           : `/src/pages/${componentName}.tsx`;
         const rawContent = pageContent || '';
         if (cacheScript) {
@@ -2660,7 +2687,7 @@ export default function ${componentName}Page() {
         }
 
         const converted = templateToVFSFiles(rawContent, componentName || 'Page');
-        const convertedEntry = converted['/src/App.tsx'] || converted['/App.tsx'] || '';
+        const convertedEntry = converted[resolveLauncherEntryPoint(converted, launchEntryPoint)] || '';
         if (!convertedEntry) {
           console.warn('[WebBuilder] NAV_PAGE_REPLACE conversion failed for path:', targetPath);
           toast.error('Could not convert page payload into React source');
@@ -3088,12 +3115,12 @@ export default function ${componentName}Page() {
     files: Record<string, string>,
     options?: { activePath?: string; entryContent?: string }
   ) => {
-    const activePath = options?.activePath || '/src/App.tsx';
+    const activePath = options?.activePath || launchEntryPoint;
     vfsResetToEmpty();
     const entryContent = options?.entryContent ?? files[activePath] ?? '';
     openBuilderFile(activePath, entryContent);
     vfsImportFiles(files);
-  }, [openBuilderFile, vfsImportFiles, vfsResetToEmpty]);
+  }, [launchEntryPoint, openBuilderFile, vfsImportFiles, vfsResetToEmpty]);
 
   /**
    * Trigger AI page generation with full context injection (React/TSX only).
@@ -3171,8 +3198,9 @@ export default function ${componentName}Page() {
           const parsed = JSON.parse(jsonCandidate);
           if (parsed.files && typeof parsed.files === 'object') {
             vfsImportFiles(parsed.files);
+            const parsedEntryPath = resolveLauncherEntryPoint(parsed.files, vfsPath || launchEntryPoint);
             pageCode = parsed.files[vfsPath] || parsed.files[`/src/pages/${componentName}.tsx`] ||
-                       parsed.files['/src/App.tsx'] || Object.values(parsed.files)[0] as string || '';
+                       parsed.files[parsedEntryPath] || Object.values(parsed.files)[0] as string || '';
             console.log('[WebBuilder] Nav page multi-file output:', Object.keys(parsed.files));
           }
         } catch { /* not valid JSON, continue with fence extraction */ }
@@ -3236,17 +3264,19 @@ export default ${componentName}Page;`;
         const activePlan = activeSitePlanRef.current;
         if (activePlan) {
           const routerPatched = patchVFS(allFiles, creatorPlayground.pageRegistry, activePlan.businessName);
-          if (routerPatched['/src/App.tsx'] && routerPatched['/src/App.tsx'] !== allFiles['/src/App.tsx']) {
-            vfsImportFiles({ '/src/App.tsx': routerPatched['/src/App.tsx'] });
-            lastSyncedCodeRef.current = routerPatched['/src/App.tsx'];
-            setPreviewCode(routerPatched['/src/App.tsx']);
+          const routerEntryPath = resolveLauncherEntryPoint(routerPatched, launchEntryPoint);
+          if (routerPatched[routerEntryPath] && routerPatched[routerEntryPath] !== allFiles[routerEntryPath]) {
+            vfsImportFiles({ [routerEntryPath]: routerPatched[routerEntryPath] });
+            lastSyncedCodeRef.current = routerPatched[routerEntryPath];
+            setPreviewCode(routerPatched[routerEntryPath]);
           }
         } else {
           // Fallback: use old scaffolder if no topology plan exists
-          const scaffolded = scaffoldMultiPageVFS(allFiles['/src/App.tsx'] || previewCode, allFiles);
-          if (scaffolded.scaffoldedPages.length > 0 || scaffolded.files['/src/App.tsx'] !== allFiles['/src/App.tsx']) {
+          const scaffolded = scaffoldMultiPageVFS(allFiles[launchEntryPoint] || previewCode, allFiles);
+          const scaffoldedEntryPath = resolveLauncherEntryPoint(scaffolded.files, launchEntryPoint);
+          if (scaffolded.scaffoldedPages.length > 0 || scaffolded.files[scaffoldedEntryPath] !== allFiles[scaffoldedEntryPath]) {
             vfsImportFiles(scaffolded.files);
-            const newAppCode = scaffolded.files['/src/App.tsx'] || previewCode;
+            const newAppCode = scaffolded.files[scaffoldedEntryPath] || previewCode;
             lastSyncedCodeRef.current = newAppCode;
             setPreviewCode(newAppCode);
           }
@@ -3282,7 +3312,7 @@ export default ${componentName}Page;`;
       setIsGeneratingPage(false);
       setCurrentNavPage(null);
     }
-  }, [getSandpackFiles, openBuilderFile, vfsImportFiles, previewCode, businessDataContext, userDesignProfile, activeSystemType, creatorPlayground.pageRegistry]);
+  }, [getSandpackFiles, openBuilderFile, vfsImportFiles, previewCode, businessDataContext, userDesignProfile, activeSystemType, creatorPlayground.pageRegistry, launchEntryPoint]);
 
   // Ref to always hold the latest triggerPageGeneration (avoids stale closure in INTENT_TRIGGER handler)
   const triggerPageGenRef = useRef(triggerPageGeneration);
@@ -3424,15 +3454,10 @@ export default ${componentName}Page;`;
       }
 
       if (Object.keys(vfsFiles).length > 0) {
-        const editableEntryPath = vfsFiles["/src/App.tsx"]
-          ? "/src/App.tsx"
-          : vfsFiles["/App.tsx"]
-            ? "/App.tsx"
-            : Object.keys(vfsFiles).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) ||
-              (normalizedEntryPoint && vfsFiles[normalizedEntryPoint] ? normalizedEntryPoint : null) ||
-              Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path)) ||
-              Object.keys(vfsFiles).find((path) => /\.(tsx|jsx)$/.test(path)) ||
-              activePagePath;
+        const editableEntryPath = resolveLauncherEntryPoint(
+          vfsFiles,
+          normalizedEntryPoint || launchEntryPoint,
+        ) || activePagePath;
         const entry = editableEntryPath ? vfsFiles[editableEntryPath] : undefined;
         const safeEntry = entry ? ensureReactImports(entry) : undefined;
         const importedFiles = editableEntryPath && safeEntry && entry !== safeEntry
@@ -3440,7 +3465,7 @@ export default ${componentName}Page;`;
           : vfsFiles;
 
         replaceProjectFiles(importedFiles, {
-          activePath: editableEntryPath || '/src/App.tsx',
+          activePath: editableEntryPath || launchEntryPoint,
           entryContent: safeEntry,
         });
 
@@ -3538,11 +3563,11 @@ export default ${componentName}Page;`;
         }
       }
 
-        nextFiles['/src/App.tsx'] = nextCode;
+        nextFiles[launchEntryPoint] = nextCode;
         // Normalize to ensure main.tsx and index.css exist
-        const normalizedFiles = normalizeLauncherFiles(nextFiles);
+        const normalizedFiles = normalizeLauncherFiles(nextFiles, { entryPoint: launchEntryPoint });
         replaceProjectFiles(normalizedFiles, {
-          activePath: '/src/App.tsx',
+          activePath: launchEntryPoint,
           entryContent: nextCode,
         });
         setEditorCode(nextCode);
@@ -3608,10 +3633,12 @@ ${sectionsJsx}
 `;
       // Wire through VFS so preview stays in sync
       const templateFiles = normalizeLauncherFiles({
-        '/src/App.tsx': reactCode,
+        [launchEntryPoint]: reactCode,
+      }, {
+        entryPoint: launchEntryPoint,
       });
       replaceProjectFiles(templateFiles, {
-        activePath: '/src/App.tsx',
+        activePath: launchEntryPoint,
         entryContent: reactCode,
       });
       setEditorCode(reactCode);
@@ -3623,14 +3650,14 @@ ${sectionsJsx}
       importedRouteStateRef.current = navStateSignature;
       window.history.replaceState({}, document.title);
     }
-  }, [effectiveRouteState, activePagePath, activeSystemType, creatorPlayground, replaceProjectFiles, virtualFS]);
+  }, [effectiveRouteState, activePagePath, activeSystemType, creatorPlayground, launchEntryPoint, replaceProjectFiles, virtualFS]);
 
   // Handle AI code generation
   const handleAICodeGenerated = (code: string) => {
     console.log('[WebBuilder] AI code received:', code.substring(0, 100));
     importBuilderFiles(templateToVFSFiles(code, currentTemplateName || 'AI Template'), {
-      preferredPath: '/src/App.tsx',
-      entryPoint: '/src/App.tsx',
+      preferredPath: launchEntryPoint,
+      entryPoint: launchEntryPoint,
     });
     setViewMode('canvas'); // Switch to canvas view to show the generated template preview
     toast('AI Template Generated!', {
@@ -3734,8 +3761,8 @@ ${html}
     }
     
     importBuilderFiles(templateToVFSFiles(code, template.name), {
-      preferredPath: '/src/App.tsx',
-      entryPoint: '/src/App.tsx',
+      preferredPath: launchEntryPoint,
+      entryPoint: launchEntryPoint,
     });
     
     // Track the current template ID and name for re-save
@@ -3750,7 +3777,7 @@ ${html}
     toast.success(`Opened "${template.name}"`, {
       description: 'Template loaded - you can continue editing',
     });
-  }, [templateFiles, integrateCSSIntoHTML, importBuilderFiles]);
+  }, [templateFiles, integrateCSSIntoHTML, importBuilderFiles, launchEntryPoint]);
 
   // Handle template selection from LayoutTemplatesPanel (used by FloatingDock)
   const handleSelectTemplate = useCallback((
@@ -3776,14 +3803,14 @@ ${html}
     setTemplateCtaAnalysis(normalized.analysis);
     
     importBuilderFiles(templateToVFSFiles(normalized.code, name), {
-      preferredPath: '/src/App.tsx',
-      entryPoint: '/src/App.tsx',
+      preferredPath: launchEntryPoint,
+      entryPoint: launchEntryPoint,
     });
     
     toast.success(`Loaded template: ${name}`, {
       description: 'Template loaded into preview'
     });
-  }, [systemType, manifestIdFromState, importBuilderFiles]);
+  }, [systemType, manifestIdFromState, importBuilderFiles, launchEntryPoint]);
 
   // Handle section layout swap from SectionLayoutPicker
   const handleSwapSection = useCallback((sectionId: string, variantId: string) => {
@@ -4209,13 +4236,13 @@ ${html}
       
       // Get current VFS files and patch App.tsx with the new element
       const currentFiles = getSandpackFiles();
-      const patchedFiles = elementToVFSPatch(currentFiles, wrappedJsx, element.name);
+      const patchedFiles = elementToVFSPatch(currentFiles, wrappedJsx, element.name, launchEntryPoint);
       
       // Apply to VFS — triggers Sandpack rebundle
       vfsImportFiles(patchedFiles);
       
       // Update previewCode/editorCode to stay in sync
-      const updatedApp = patchedFiles['/src/App.tsx'];
+      const updatedApp = patchedFiles[launchEntryPoint];
       if (updatedApp) {
         setPreviewCode(updatedApp);
         setEditorCode(updatedApp);
@@ -4838,11 +4865,32 @@ ${html}
 
           <div className="h-5 w-px bg-emerald-500/50" />
 
+          {selectedPlaygroundBinding && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setPlaygroundInitialSection("intent_registry");
+                setPlaygroundInitialBindingId(selectedPlaygroundBinding.bindingId);
+                setPlaygroundModalOpen(true);
+              }}
+              className="h-8 px-2.5 rounded-lg text-amber-300/80 hover:text-amber-300 hover:bg-amber-500/10 transition-all duration-200"
+              title="Open selected intent in Creator's Playground"
+            >
+              <span className="text-[11px] truncate max-w-[140px]">
+                {selectedPlaygroundBinding.coreIntent || selectedPlaygroundBinding.intent}
+              </span>
+            </Button>
+          )}
+
           {/* Creator's Playground Toggle */}
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setPlaygroundModalOpen(true)}
+            onClick={() => {
+              setPlaygroundInitialBindingId(undefined);
+              setPlaygroundModalOpen(true);
+            }}
             className="h-8 px-2.5 rounded-lg text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/15 hover:shadow-[0_0_10px_rgba(0,200,100,0.3)] transition-all duration-200"
             title="Open Creator's Playground"
           >
@@ -4857,15 +4905,21 @@ ${html}
         open={playgroundModalOpen}
         onOpenChange={(open) => {
           setPlaygroundModalOpen(open);
-          if (!open) setPlaygroundInitialSection(undefined);
+          if (!open) {
+            setPlaygroundInitialSection(undefined);
+            setPlaygroundInitialBindingId(undefined);
+          }
         }}
         playground={creatorPlayground}
         businessId={businessId || null}
         initialSection={playgroundInitialSection}
+        initialBindingId={playgroundInitialBindingId}
         bindings={playgroundBindings}
         calendars={playgroundCalendars}
         popups={playgroundPopups}
         vfsFiles={virtualFS.getSandpackFiles()}
+        setupSnapshot={playgroundSetupSnapshot}
+        wizardSelections={effectiveRouteState?.wizardSelections || null}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;
@@ -4901,7 +4955,7 @@ ${html}
           
           // Regenerate canonical router first so the route is registered
           const routerCode = regenerateRouter(creatorPlayground.pageRegistry);
-          if (routerCode) virtualFS.importFiles({ '/src/App.tsx': routerCode });
+          if (routerCode) virtualFS.importFiles({ [launchEntryPoint]: routerCode });
           
           // Then trigger AI generation
           triggerPageGenRef.current(pageName, label, null);
@@ -4956,6 +5010,7 @@ export default function ${componentName}() {
                 currentCode={previewCode}
                 systemType={activeSystemType}
                 templateName={currentTemplateName}
+                defaultTargetFile={launchEntryPoint}
                 iframeErrors={iframeErrors}
                 onClearErrors={() => setIframeErrors([])}
                 onClose={() => setAiPanelOpen(false)}
@@ -5124,11 +5179,11 @@ export default function ${componentName}() {
                   onInsertBlock={(html) => {
                     // Get current VFS files and patch with new element
                     const currentFiles = virtualFS.getSandpackFiles();
-                    const patchFiles = elementToVFSPatch(currentFiles, html, 'FunctionalBlock');
+                    const patchFiles = elementToVFSPatch(currentFiles, html, 'FunctionalBlock', launchEntryPoint);
                     virtualFS.importFiles(patchFiles);
                     
                     // Update legacy state
-                    const newAppCode = patchFiles['/src/App.tsx'] || '';
+                    const newAppCode = patchFiles[launchEntryPoint] || '';
                     if (newAppCode) {
                       setEditorCode(newAppCode);
                       setPreviewCode(newAppCode);
@@ -5144,7 +5199,7 @@ export default function ${componentName}() {
                   pageSEOMap={pageSEO.pageSEOMap}
                   isSaving={pageSEO.isSaving}
                   activePageKey={
-                    activePagePath === '/src/App.tsx' || activePagePath === '/App.tsx'
+                    activePagePath === launchEntryPoint
                       ? 'home'
                       : activePagePath
                         .replace(/^\/src\/pages\//, '')
@@ -5254,6 +5309,7 @@ export default function ${componentName}() {
               currentCode={previewCode}
               systemType={activeSystemType}
               templateName={currentTemplateName}
+              defaultTargetFile={launchEntryPoint}
               iframeErrors={iframeErrors}
               onClearErrors={() => setIframeErrors([])}
               onClose={() => setAiPanelOpen(false)}
@@ -5277,8 +5333,8 @@ export default function ${componentName}() {
               onViewEdits={() => { setViewMode('split'); setAiPanelOpen(false); }}
               onCodeGenerated={(code) => {
                 importBuilderFiles(templateToVFSFiles(code, currentTemplateName || 'AI Template'), {
-                  preferredPath: '/src/App.tsx',
-                  entryPoint: '/src/App.tsx',
+                  preferredPath: launchEntryPoint,
+                  entryPoint: launchEntryPoint,
                 });
                 setViewMode('canvas');
                 setAiPanelOpen(false);
@@ -5308,7 +5364,7 @@ export default function ${componentName}() {
                 virtualFS.getSandpackFiles(),
               );
               if (result.routerCode) {
-                virtualFS.importFiles({ '/src/App.tsx': result.routerCode });
+                virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
               }
               toast.success('Homepage updated');
             }}

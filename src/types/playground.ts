@@ -239,6 +239,16 @@ export interface PlaygroundBinding {
   uiAction?: 'navigate' | 'overlay' | 'state' | 'toast';
   /** Payload template */
   payloadTemplate?: Record<string, unknown>;
+  /** Preview readiness status */
+  previewStatus?: PlaygroundReadinessStatus;
+  /** Publish readiness status */
+  publishStatus?: PlaygroundReadinessStatus;
+  /** Required capabilities for this intent to operate end-to-end */
+  requiredCapabilities?: string[];
+  /** Missing dependencies blocking preview or publish */
+  missingDependencies?: string[];
+  /** Suggested actions to resolve blockers */
+  fixHints?: string[];
   /** Readiness state */
   readiness?: 'preview-ready' | 'publish-ready' | 'stubbed' | 'blocked';
 }
@@ -315,6 +325,79 @@ export interface PlaygroundValidation {
   scope: 'pages' | 'funnels' | 'forms' | 'calendars' | 'products' | 'bindings' | 'router' | 'popups';
   message: string;
   targetId?: string;
+}
+
+// ============================================================================
+// Intent Readiness
+// ============================================================================
+
+export type PlaygroundReadinessStatus = 'ready' | 'partial' | 'blocked';
+export type PlaygroundReadinessMode = 'preview' | 'publish';
+export type PlaygroundResolverSection = 'business' | 'launch' | 'forms' | 'calendars' | 'products' | 'popups' | 'pages';
+export type PlaygroundSetupField =
+  | 'businessName'
+  | 'email'
+  | 'phone'
+  | 'address'
+  | 'notificationEmail'
+  | 'bookingOwner'
+  | 'paymentProvider'
+  | 'crmDestination'
+  | 'publishDomain'
+  | 'followUpChannel';
+
+export interface PlaygroundIntentDependency {
+  id: string;
+  mode: PlaygroundReadinessMode;
+  status: PlaygroundReadinessStatus;
+  label: string;
+  message: string;
+  fixHint?: string;
+  resolverSection?: PlaygroundResolverSection;
+  resolverField?: PlaygroundSetupField;
+  resolverStepId?: string;
+}
+
+export interface PlaygroundIntentReadiness {
+  bindingId: string;
+  previewStatus: PlaygroundReadinessStatus;
+  publishStatus: PlaygroundReadinessStatus;
+  requiredCapabilities: string[];
+  missingDependencies: string[];
+  fixHints: string[];
+  dependencies: PlaygroundIntentDependency[];
+  targetSummary: string;
+}
+
+export interface PlaygroundSetupStepSnapshot {
+  id: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped';
+  config?: Record<string, unknown>;
+}
+
+export interface PlaygroundSetupSnapshot {
+  publishStatus?: string | null;
+  customDomain?: string | null;
+  notificationEmail?: string | null;
+  projectName?: string | null;
+  setupSteps?: PlaygroundSetupStepSnapshot[];
+}
+
+export interface PlaygroundIntentReadinessReport {
+  bindings: Record<string, PlaygroundBinding>;
+  readiness: Record<string, PlaygroundIntentReadiness>;
+  summary: {
+    totalIntents: number;
+    previewReady: number;
+    previewPartial: number;
+    previewBlocked: number;
+    publishReady: number;
+    publishPartial: number;
+    publishBlocked: number;
+    hardened: number;
+    blocked: number;
+    previewOnly: number;
+  };
 }
 
 // ============================================================================

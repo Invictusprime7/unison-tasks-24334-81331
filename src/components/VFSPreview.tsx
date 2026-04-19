@@ -33,6 +33,7 @@ import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
+import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 import { useLaunch } from '@/contexts/useLaunchHooks';
@@ -425,12 +426,16 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   const handleRestart = useCallback(() => {
     if (backend === 'docker') {
-      dockerService.patchFile('/src/App.tsx', files['/src/App.tsx'] || '');
+      const entryPath = resolveLauncherEntryPoint(
+        files,
+        launch?.runtimeManifest?.entryPoint || launch?.entryPoint,
+      );
+      dockerService.patchFile(entryPath, files[entryPath] || '');
     } else {
       // Force Sandpack remount
       setSandpackKey(k => k + 1);
     }
-  }, [backend, dockerService, files]);
+  }, [backend, dockerService, files, launch]);
   
   const handleOpenInNewTab = useCallback(() => {
     if (backend === 'docker' && dockerService.session?.iframeUrl) {

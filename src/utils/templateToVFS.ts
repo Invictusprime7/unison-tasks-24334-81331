@@ -221,13 +221,15 @@ export default function App() {
 export function elementToVFSPatch(
   existingFiles: Record<string, string>,
   elementJsx: string,
-  elementName: string
+  elementName: string,
+  targetPath: string = '/src/App.tsx',
 ): Record<string, string> {
-  const appContent = existingFiles['/src/App.tsx'] || '';
+  const normalizedTargetPath = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
+  const appContent = existingFiles[normalizedTargetPath] || '';
 
   if (!appContent) {
     return {
-      '/src/App.tsx': `import React from 'react';
+      [normalizedTargetPath]: `import React from 'react';
 
 export default function App() {
   return (
@@ -242,6 +244,6 @@ export default function App() {
   }
 
   return {
-    '/src/App.tsx': appendElementToComponent(appContent, elementJsx, elementName)
+    [normalizedTargetPath]: appendElementToComponent(appContent, elementJsx, elementName)
   };
 }

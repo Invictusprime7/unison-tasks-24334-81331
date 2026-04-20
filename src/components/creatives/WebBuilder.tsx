@@ -62,6 +62,7 @@ import { setDefaultBusinessId, setCurrentSystemType, setDemoMode, handleIntent, 
 import { buildRedirectPageContext } from "@/utils/redirectPageGenerator";
 import { scaffoldMultiPageVFS } from "@/utils/multiPageScaffolder";
 import { classifyLabel, type ElementContext } from "@/utils/redirectLabelClassifier";
+import { resolvePreviewAction, type PageInventory } from "@/utils/previewActionResolver";
 import { IntentPipelineOverlay, type PipelineConfig } from "./web-builder/IntentPipelineOverlay";
 import { DemoIntentOverlay, type DemoIntentOverlayConfig } from "./web-builder/DemoIntentOverlay";
 import { ResearchOverlay, type ResearchOverlayPayload } from "./web-builder/ResearchOverlay";
@@ -2804,10 +2805,13 @@ export default function ${componentName}Page() {
         noIntent: !!(payload as any)?.noIntent,
         href: (payload as any)?.href || (payload as any)?.path,
       };
-      
-      // Classify the label to decide behavior
+
       const classification = classifyLabel(buttonLabel, elementCtx);
-      console.log('[WebBuilder] Label classification:', buttonLabel, classification);
+      const inPreviewHandled = !!(payload as any)?.inPreviewHandled;
+      const pageInventory = (payload as any)?.pageInventory as PageInventory | undefined;
+
+      console.log('[WebBuilder] Intent received:', intent, buttonLabel,
+        '| inPreview:', inPreviewHandled, '| inventory:', pageInventory);
 
       // ── nav.goto_page: resolve via RouteNavigationService ──
       if (intent === 'nav.goto_page') {
@@ -2819,7 +2823,6 @@ export default function ${componentName}Page() {
           vfsFiles,
         );
 
-        // Fallback: try topology resolver for redirect mapping
         if (!resolved.existsInRegistry) {
           const sitePlan = activeSitePlanRef.current;
           if (sitePlan) {
@@ -2842,13 +2845,25 @@ export default function ${componentName}Page() {
               }
             }
           }
-          // Not in registry at all — generate
-          const targetName = classification.suggestedPageType || buttonLabel || 'page';
-          triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
+          // Not in registry — use resolver before generating
+          const resolvedAction = resolvePreviewAction(
+            intent, buttonLabel, pageInventory, vfsFiles, classification, inPreviewHandled,
+          );
+          if (resolvedAction.action === 'navigate') {
+            if (source && requestId) {
+              source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolvedAction.route }, '*');
+            }
+            openBuilderFile(resolvedAction.vfsPath);
+            sendResultToIframe({ success: true });
+          } else if (resolvedAction.action !== 'acknowledge') {
+            const targetName = classification.suggestedPageType || buttonLabel || 'page';
+            triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
+          } else {
+            sendResultToIframe({ success: true });
+          }
           return;
         }
 
-        // Page exists in registry — use canonical navigation
         if (resolved.pageId) {
           navigateToBuilderPage(resolved.pageId);
           if (source && requestId) {
@@ -2866,7 +2881,6 @@ export default function ${componentName}Page() {
           sendResultToIframe({ success: true });
           return;
         }
-        
         if (path) {
           const vfsFiles = virtualFS.getSandpackFiles();
           const resolved = resolveNavigationTarget(
@@ -2874,7 +2888,6 @@ export default function ${componentName}Page() {
             creatorPlayground.pageRegistry,
             vfsFiles,
           );
-
           if (resolved.pageId) {
             navigateToBuilderPage(resolved.pageId);
             if (source && requestId) {
@@ -2883,207 +2896,104 @@ export default function ${componentName}Page() {
             toast(`Navigated to ${buttonLabel || path}`);
             sendResultToIframe({ success: true });
           } else {
-            // Page doesn't exist in registry → generate
             const pageName = path.replace(/^\//, '').replace(/\.html$/, '').replace(/[^a-zA-Z0-9-]/g, '-') || 'page';
-            const targetName = classification.suggestedPageType || pageName || 'details';
-            triggerPageGenRef.current(targetName, buttonLabel || targetName, source, requestId);
+            triggerPageGenRef.current(pageName, buttonLabel || pageName, source, requestId);
           }
         }
         return;
       }
 
-      if (intent === 'nav.external') {
-        // Treat external links as in-page navigation — generate a React page for it
-        const url = (payload as any)?.url || (payload as any)?.path || '';
-        const pageName = url.replace(/^https?:\/\/[^/]+\/?/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'external';
-        const label = buttonLabel || url || 'External Page';
-        triggerPageGenRef.current(pageName, label, source, requestId);
-        return;
-      }
+      // ── All other intents: run through the resolver ───────────────────────
+      const vfsFiles = virtualFS.getSandpackFiles();
+      const resolvedAction = resolvePreviewAction(
+        intent, buttonLabel, pageInventory, vfsFiles, classification, inPreviewHandled,
+      );
 
-      if (intent === 'button.click') {
-        // Check if this button label warrants page generation
-        if (classification.category === 'redirect') {
-          const pageName = classification.suggestedPageType || 'details';
-          console.log('[WebBuilder] Redirect-worthy button.click, generating:', pageName, buttonLabel);
-          triggerPageGenRef.current(pageName, buttonLabel, source, requestId);
+      console.log('[WebBuilder] Resolved action:', resolvedAction);
+
+      switch (resolvedAction.action) {
+
+        // ── Acknowledge: preview already handled it, just confirm ─────────
+        case 'acknowledge': {
+          sendResultToIframe({ success: true });
           return;
         }
-        // Generic button click - just acknowledge, no overlay needed
-        toast(`${buttonLabel || 'Button'} clicked`);
-        sendResultToIframe({ success: true });
-        return;
-      }
-      
-      // Check for redirect-worthy intents that aren't nav.goto/button.click
-      if (classification.category === 'redirect' && !['booking.create', 'contact.submit', 'newsletter.subscribe', 'quote.request', 'lead.capture'].includes(intent)) {
-        const pageName = classification.suggestedPageType || 'details';
-        const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase()).replace(/^\w/, c => c.toUpperCase());
-        const vfsPath = `/src/pages/${componentName}.tsx`;
-        const vfsFilesForCheck = virtualFS.getSandpackFiles();
-        const existingPage = vfsFilesForCheck[vfsPath];
-        if (!existingPage) {
-          console.log('[WebBuilder] Redirect-worthy intent, generating React page:', pageName, buttonLabel);
-          triggerPageGenRef.current(pageName, buttonLabel, source, requestId);
-          return;
-        }
-        // Page exists in VFS, navigate via React Router
-        if (source && requestId) {
-          source.postMessage({ type: 'NAV_ROUTE', requestId, route: `/${pageName}` }, '*');
-        }
-        openBuilderFile(vfsPath);
-        toast(`Navigated to ${buttonLabel || pageName}`);
-        sendResultToIframe({ success: true });
-        return;
-      }
 
-      const decision = decideIntentUx(intent, payload as Record<string, unknown> | undefined);
-
-      // Booking: always prefer scrolling within the preview iframe.
-      if (intent === 'booking.create') {
-        void (async () => {
+        // ── Scroll: send INTENT_COMMAND to the iframe ──────────────────────
+        case 'scroll': {
           if (!source) {
-            toast('Scroll to booking form');
+            sendResultToIframe({ success: true });
             return;
           }
-
-          const scrollRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-          const handled = await new Promise<boolean>((resolve) => {
-            const timeout = window.setTimeout(() => {
-              window.removeEventListener('message', onResult);
-              console.log('[WebBuilder] Booking scroll command timed out');
-              resolve(false);
-            }, 1000); // Increased timeout for slower templates
-
-            const onResult = (evt: MessageEvent) => {
-              if (evt.data?.type !== 'INTENT_COMMAND_RESULT') return;
-              if (evt.data?.command !== 'booking.scroll') return;
-              if (evt.data?.requestId !== scrollRequestId) return;
-              window.clearTimeout(timeout);
-              window.removeEventListener('message', onResult);
-              console.log('[WebBuilder] Booking scroll result:', evt.data?.handled);
-              resolve(!!evt.data?.handled);
-            };
-
-            window.addEventListener('message', onResult);
-            source.postMessage({ type: 'INTENT_COMMAND', command: 'booking.scroll', requestId: scrollRequestId }, '*');
-          });
-
-          if (handled) {
-            // Form was found and scrolled to - wait for user to fill it out
-            toast.info('Fill out the booking form below');
-            // Don't send success yet - let the form submission handle it
-          } else {
-            // Form not found - execute booking intent directly
-            console.log('[WebBuilder] Booking form not found - executing intent directly');
-            try {
-              const res = await handleIntent(intent, payload as IntentPayload);
-              if (res.success) {
-                toast.success('Booking request submitted');
-                sendResultToIframe({
-                  success: true,
-                  bookingId: `BK-${Date.now().toString(36).toUpperCase()}`,
-                  ...res,
-                  message: 'Booking request submitted'
-                });
-              } else {
-                toast.error(res.error || 'Booking failed');
-                sendResultToIframe({ success: false, error: res.error || 'Booking failed' });
-              }
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : 'Unknown error';
-              toast.error(msg);
-              sendResultToIframe({ success: false, error: msg });
-            }
-          }
-        })();
-        return;
-      }
-
-      // Demo intents: generate in-place (no new tabs).
-      if (decision.mode === 'demo') {
-        const pageName = 'demo';
-        const label = buttonLabel || 'Demo';
-        triggerPageGenRef.current(pageName, label, source, requestId);
-        return;
-      }
-
-      // Redirect intents: Navigate without showing "complete" toast
-      if (decision.mode === 'redirect') {
-        const target = decision.toastLabel || '/';
-        toast(`Navigating to ${target}...`);
-        // Trigger page generation or navigation
-        const pageName = target.replace(/^\//, '').replace(/\.html$/, '') || 'page';
-        triggerPageGenRef.current(pageName, buttonLabel || pageName, source, requestId);
-        return;
-      }
-
-      // All other modes (autorun, modal, confirm, pipeline): Execute intent directly.
-      const toastLabel = decision.toastLabel || buttonLabel || 'Action';
-      void (async () => {
-        try {
-          const res = await handleIntent(intent, payload as IntentPayload);
-          
-          // Check if result requests user interaction (modal, form, etc.)
-          // In this case, don't show "complete" - the workflow is pending user input
-          const hasUiDirective = res.ui?.openModal || res.ui?.navigate;
-          const hasMissingData = (res as any).missing?.fields?.length > 0;
-          
-          if (res.success && !hasUiDirective && !hasMissingData) {
-            // Workflow actually completed
-            toast.success(res.message || `${toastLabel} complete`);
-            sendResultToIframe({
-              success: true,
-              ...res,
-              message: res.message || `${toastLabel} complete`
+          void (async () => {
+            const scrollReqId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const scrolled = await new Promise<boolean>((resolve) => {
+              const t = window.setTimeout(() => {
+                window.removeEventListener('message', onScroll);
+                resolve(false);
+              }, 1200);
+              const onScroll = (evt: MessageEvent) => {
+                if (evt.data?.type !== 'INTENT_COMMAND_RESULT') return;
+                if (evt.data?.requestId !== scrollReqId) return;
+                window.clearTimeout(t);
+                window.removeEventListener('message', onScroll);
+                resolve(!!evt.data?.handled);
+              };
+              window.addEventListener('message', onScroll);
+              source.postMessage({ type: 'INTENT_COMMAND', command: resolvedAction.command, requestId: scrollReqId }, '*');
             });
-          } else if (res.success && hasUiDirective) {
-            // Workflow needs user interaction - show info toast instead
-            const modalType = res.ui?.openModal;
-            if (modalType === 'booking' || modalType === 'booking-confirmation') {
-              toast.info('Complete the booking form');
-            } else if (modalType === 'quote') {
-              toast.info('Fill out the quote request form');
-            } else if (modalType === 'contact') {
-              toast.info('Fill out the contact form');
-            } else if (modalType?.startsWith('auth')) {
-              toast.info('Sign in to continue');
+            if (scrolled) {
+              // Contextual hint toast per intent
+              const hints: Record<string, string> = {
+                'booking.create':       'Fill out the booking form below',
+                'contact.submit':       'Fill out the contact form below',
+                'newsletter.subscribe': 'Enter your email to subscribe',
+                'quote.request':        'Fill out the quote form below',
+                'lead.capture':         'Fill out the form below',
+                'auth.login':           'Sign in to continue',
+                'auth.register':        'Create your account below',
+                'pay.checkout':         'Choose a plan below',
+                'cart.checkout':        'Review your cart below',
+              };
+              toast.info(hints[intent] ?? 'Fill out the form below');
+              sendResultToIframe({ success: true });
             } else {
-              toast.info(`Complete ${toastLabel.toLowerCase()}`);
+              // Section not found — fall back to executing the intent directly
+              console.log('[WebBuilder] Scroll target not found, executing intent:', intent);
+              try {
+                const res = await handleIntent(intent, payload as IntentPayload);
+                if (res.success) {
+                  sendResultToIframe({ success: true, ...res });
+                } else {
+                  toast.error(res.error || 'Action failed');
+                  sendResultToIframe({ success: false, error: res.error });
+                }
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : 'Unknown error';
+                sendResultToIframe({ success: false, error: msg });
+              }
             }
-            sendResultToIframe({
-              success: true,
-              ...res,
-              pending: true,
-              message: `${toastLabel} pending user input`
-            });
-          } else if (res.success && hasMissingData) {
-            // Missing required fields
-            const missingFields = (res as any).missing?.fields?.join(', ') || 'required fields';
-            toast.info(`Please provide: ${missingFields}`);
-            sendResultToIframe({
-              success: true,
-              ...res,
-              pending: true,
-              message: `Missing: ${missingFields}`
-            });
-          } else {
-            toast.error(res.error || `${toastLabel} failed`);
-            sendResultToIframe({
-              success: false,
-              error: res.error || `${toastLabel} failed`
-            });
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Unknown error';
-          toast.error(msg);
-          sendResultToIframe({
-            success: false,
-            error: msg
-          });
+          })();
+          return;
         }
-      })();
+
+        // ── Navigate: page exists — route without generating ───────────────
+        case 'navigate': {
+          if (source && requestId) {
+            source.postMessage({ type: 'NAV_ROUTE', requestId, route: resolvedAction.route }, '*');
+          }
+          openBuilderFile(resolvedAction.vfsPath);
+          toast(`Navigated to ${buttonLabel || resolvedAction.route}`);
+          sendResultToIframe({ success: true });
+          return;
+        }
+
+        // ── Generate: last resort AI page creation ─────────────────────────
+        case 'generate': {
+          triggerPageGenRef.current(resolvedAction.pageType, resolvedAction.label, source, requestId);
+          return;
+        }
+      }
     };
     
     window.addEventListener('message', handleIntentMessage);

@@ -155,6 +155,121 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
 
   const normalizePath = (rawPath: string) => rawPath.replace(/^\\//, '').replace(/\\.html(?:[?#].*)?$/, '').replace(/[?#].*$/, '') || 'index';
 
+  // ── In-preview action helpers ─────────────────────────────────────────────
+
+  /** Render a transient feedback toast directly inside the preview iframe */
+  function __showPreviewFeedback(message: string, bgColor: string) {
+    const existing = document.getElementById('__ut-preview-feedback');
+    if (existing) existing.remove();
+    const fb = document.createElement('div');
+    fb.id = '__ut-preview-feedback';
+    fb.setAttribute('style',
+      'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
+      'background:' + (bgColor || '#18181b') + ';color:#fff;padding:10px 18px;' +
+      'border-radius:8px;font-size:13px;font-weight:500;z-index:99999;' +
+      'box-shadow:0 4px 16px rgba(0,0,0,0.25);pointer-events:none;' +
+      'transition:opacity 0.25s ease;white-space:nowrap;'
+    );
+    fb.textContent = message;
+    document.body.appendChild(fb);
+    setTimeout(function() { fb.style.opacity = '0'; setTimeout(function() { fb.remove(); }, 250); }, 2200);
+  }
+
+  /** Priority-ordered CSS selector lists for each canonical intent's target section */
+  function __intentSelectors(intent: string): string[] {
+    const MAP: Record<string, string[]> = {
+      'booking.create':       ['form[data-ut-intent="booking.create"]','[data-ut-intent="booking.create"]:not(button):not(a)','form[data-ut-intent*="booking"]','#booking','[id*="booking-form"]','[class*="booking-form"]','section[id*="book"]','.booking'],
+      'contact.submit':       ['form[data-ut-intent="contact.submit"]','[data-ut-intent="contact.submit"]:not(button):not(a)','form[data-ut-intent*="contact"]','#contact','[id*="contact-form"]','[class*="contact-form"]','section[id*="contact"]','.contact-section'],
+      'newsletter.subscribe': ['form[data-ut-intent="newsletter.subscribe"]','[data-ut-intent="newsletter.subscribe"]:not(button):not(a)','form[data-ut-intent*="newsletter"]','#newsletter','[id*="newsletter"]','[class*="newsletter"]','input[type="email"]'],
+      'quote.request':        ['form[data-ut-intent="quote.request"]','[data-ut-intent="quote.request"]:not(button):not(a)','form[data-ut-intent*="quote"]','#quote','[id*="quote-form"]','[class*="quote-form"]','section[id*="quote"]'],
+      'lead.capture':         ['form[data-ut-intent="lead.capture"]','[data-ut-intent="lead.capture"]:not(button):not(a)','form[data-ut-intent*="lead"]','#lead','#contact','[id*="lead-form"]','input[type="email"]'],
+      'auth.login':           ['form[data-ut-intent="auth.login"]','[data-ut-intent="auth.login"]:not(button):not(a)','form[data-ut-intent*="auth"]','#login','#auth','[id*="login-form"]','[class*="auth-form"]'],
+      'auth.register':        ['form[data-ut-intent="auth.register"]','[data-ut-intent="auth.register"]:not(button):not(a)','form[data-ut-intent*="register"]','#register','#signup','[id*="register-form"]','[class*="auth-form"]'],
+      'pay.checkout':         ['[data-ut-intent="pay.checkout"]:not(button):not(a)','#pricing','[id*="pricing"]','[class*="pricing-section"]','#checkout','[class*="checkout"]'],
+      'cart.checkout':        ['[data-ut-intent="cart.checkout"]:not(button):not(a)','#cart','[id*="cart"]','[class*="cart-section"]','#checkout','[class*="checkout"]'],
+    };
+    return MAP[intent] || [];
+  }
+
+  /** Find the best scroll-target element for an intent, skipping the clicked element */
+  function __findIntentTarget(intent: string, clicked: Element): Element | null {
+    for (const sel of __intentSelectors(intent)) {
+      const found = Array.from(document.querySelectorAll(sel)).find(function(t) {
+        return t !== clicked && !t.contains(clicked) && !clicked.contains(t);
+      });
+      if (found) return found;
+    }
+    return null;
+  }
+
+  /**
+   * Build a lightweight inventory of what UI sections/forms currently exist on the page.
+   * Sent with every INTENT_TRIGGER so the parent can make smarter routing decisions
+   * without having to re-parse the VFS source.
+   */
+  function __buildPageInventory(): Record<string, unknown> {
+    // Collect all unique data-ut-intent values present on page (not buttons/anchors — structural elements)
+    const sectionIntents = Array.from(
+      new Set(
+        Array.from(document.querySelectorAll('[data-ut-intent]:not(button):not(a)'))
+          .map(function(e) { return e.getAttribute('data-ut-intent'); })
+          .filter(Boolean)
+      )
+    );
+    // Collect important landmark IDs
+    const LANDMARK_IDS = ['pricing','booking','contact','newsletter','hero','features','services','about','team','gallery','faq','testimonials','portfolio','products','shop','cart','checkout','login','signup','register','auth'];
+    const presentIds = LANDMARK_IDS.filter(function(id) { return !!document.getElementById(id); });
+    // Detect forms by their intent
+    const formIntents = Array.from(
+      new Set(
+        Array.from(document.querySelectorAll('form[data-ut-intent]'))
+          .map(function(e) { return e.getAttribute('data-ut-intent'); })
+          .filter(Boolean)
+      )
+    );
+    // Detect nav links (page names discoverable without generating)
+    const navHrefs = Array.from(
+      new Set(
+        Array.from(document.querySelectorAll('nav a[href], header a[href]'))
+          .map(function(e) {
+            const h = e.getAttribute('href') || '';
+            return h.replace(/^#\\//, '/').replace(/^\\//, '').replace(/\\.html$/, '').replace(/[?#].*$/, '').toLowerCase().trim();
+          })
+          .filter(function(h) { return h && h !== '' && h !== 'index' && !h.startsWith('http'); })
+      )
+    );
+    return { sectionIntents, presentIds, formIntents, navHrefs };
+  }
+
+  /**
+   * Attempt an in-preview UI action for the given intent.
+   * Returns true if an action was taken so the parent can skip its own duplicate feedback.
+   */
+  function __handleIntentInPreview(intent: string, clicked: Element): boolean {
+    // Visual-feedback-only intents
+    if (intent === 'cart.add') {
+      __showPreviewFeedback('Added to cart \u2713', '#16a34a');
+      return true;
+    }
+    if (intent === 'form.submit') {
+      __showPreviewFeedback('Submitted \u2713', '#2563eb');
+      return true;
+    }
+    // Scroll-to-section intents
+    const target = __findIntentTarget(intent, clicked);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Focus the first relevant input inside the target section after scroll settles
+      const input = (target as HTMLElement).querySelector(
+        'input:not([type="hidden"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]), textarea'
+      ) as HTMLElement | null;
+      if (input) setTimeout(function() { input.focus(); }, 480);
+      return true;
+    }
+    return false;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   document.addEventListener('click', function (event) {
     const target = event.target as HTMLElement | null;
     const el = target?.closest?.('a[href], [data-ut-intent], [data-ut-path], button[data-ut-intent]') as HTMLElement | null;
@@ -163,7 +278,7 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     const utIntent = el.getAttribute('data-ut-intent') || '';
     const path = el.getAttribute('data-ut-path') || el.getAttribute('href') || '';
 
-    // ── Intent bridge: forward non-nav intents to parent as INTENT_TRIGGER ──
+    // ── Action intents: execute in-preview first, then notify parent ──
     if (utIntent && utIntent !== 'nav.goto' && utIntent !== 'nav.goto_page' && utIntent !== 'nav.anchor' && utIntent !== 'nav.external') {
       event.preventDefault();
       event.stopPropagation();
@@ -176,6 +291,10 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
       }
       intentPayload.buttonLabel = el.textContent ? el.textContent.trim().substring(0, 60) : '';
       intentPayload.source = 'preview';
+      // Attempt the direct in-preview action; tell the parent whether we handled it
+      intentPayload.inPreviewHandled = __handleIntentInPreview(utIntent, el);
+      // Send a lightweight DOM inventory so the parent can route intelligently
+      intentPayload.pageInventory = __buildPageInventory();
       window.parent.postMessage({
         type: 'INTENT_TRIGGER',
         intent: utIntent,
@@ -264,6 +383,8 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     const payload: Record<string, unknown> = {};
     formData.forEach((value, key) => { payload[key] = value.toString(); });
     payload.source = 'preview-form';
+    // Show immediate in-preview confirmation
+    __showPreviewFeedback('Submitted \u2713', '#2563eb');
     window.parent.postMessage({
       type: 'INTENT_TRIGGER',
       intent: formIntent,
@@ -277,16 +398,26 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
     if (event.data?.type === 'NAV_ROUTE' && event.data.route) {
       window.location.hash = event.data.route;
     }
-    // Handle intent commands from parent (e.g. booking.scroll)
+    // Handle intent-based scroll/focus commands from parent
     if (event.data?.type === 'INTENT_COMMAND') {
       const { command, requestId: cmdReqId } = event.data;
       let handled = false;
-      if (command === 'booking.scroll') {
-        const bookingEl = document.querySelector('[data-ut-intent="booking.create"], form[data-ut-intent*="booking"], #booking, .booking, [id*="book"]');
-        if (bookingEl) {
-          bookingEl.scrollIntoView({ behavior: 'smooth' });
-          handled = true;
-        }
+      // Derive the canonical intent from the command name
+      // e.g. "booking.scroll" → "booking.create", "contact.scroll" → "contact.submit"
+      const intentKey: string = (
+        command === 'booking.scroll'     ? 'booking.create'       :
+        command === 'contact.scroll'     ? 'contact.submit'       :
+        command === 'newsletter.scroll'  ? 'newsletter.subscribe' :
+        command === 'quote.scroll'       ? 'quote.request'        :
+        command === 'lead.scroll'        ? 'lead.capture'         :
+        command === 'auth.scroll'        ? 'auth.login'           :
+        command === 'checkout.scroll'    ? 'pay.checkout'         :
+        command
+      );
+      const target = __findIntentTarget(intentKey, document.documentElement);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        handled = true;
       }
       window.parent.postMessage({ type: 'INTENT_COMMAND_RESULT', command, requestId: cmdReqId, handled }, '*');
     }
@@ -517,11 +648,31 @@ export const useWorkflowTrigger = () => ({ trigger: () => Promise.resolve(), isT
 export const useCounter = (initial = 0) => { const [count, setCount] = reactUseState(initial); return { count, increment: () => setCount(c => c + 1), decrement: () => setCount(c => c - 1) }; };
 export const useToggle = (initial = false) => { const [value, setValue] = reactUseState(initial); return [value, () => setValue(v => !v)]; };
 export const useIntentHandlers = () => ({
-  handleBooking: (service) => { const el = document.querySelector('[data-ut-intent="booking.create"]'); if (el) el.click(); else console.log('[Intent] booking.create:', service); },
-  handleContact: (data) => { console.log('[Intent] contact.submit:', data); },
-  handleNewsletter: (email) => { console.log('[Intent] newsletter.subscribe:', email); },
+  handleBooking: (service) => {
+    const sel = 'form[data-ut-intent="booking.create"],form[data-ut-intent*="booking"],#booking,[id*="booking-form"],[class*="booking-form"],.booking';
+    const el = document.querySelector(sel);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); const inp = el.querySelector('input:not([type="hidden"]):not([type="submit"]),textarea'); if (inp) setTimeout(() => (inp as HTMLElement).focus(), 480); }
+    else console.log('[Intent] booking.create:', service);
+  },
+  handleContact: (data) => {
+    const sel = 'form[data-ut-intent="contact.submit"],form[data-ut-intent*="contact"],#contact,[id*="contact-form"],[class*="contact-form"]';
+    const el = document.querySelector(sel);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); const inp = el.querySelector('input:not([type="hidden"]):not([type="submit"]),textarea'); if (inp) setTimeout(() => (inp as HTMLElement).focus(), 480); }
+    else console.log('[Intent] contact.submit:', data);
+  },
+  handleNewsletter: (email) => {
+    const sel = 'form[data-ut-intent="newsletter.subscribe"],form[data-ut-intent*="newsletter"],#newsletter,[id*="newsletter"],[class*="newsletter"],input[type="email"]';
+    const el = document.querySelector(sel);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); const inp = (el as HTMLElement).tagName === 'INPUT' ? el : el.querySelector('input[type="email"]'); if (inp) setTimeout(() => (inp as HTMLElement).focus(), 480); }
+    else console.log('[Intent] newsletter.subscribe:', email);
+  },
   handleNavigation: (path) => { const section = document.querySelector(path); if (section) section.scrollIntoView({ behavior: 'smooth' }); },
-  handleAuth: (action) => { console.log('[Intent] auth.' + action); },
+  handleAuth: (action) => {
+    const sel = 'form[data-ut-intent^="auth."],#login,#auth,#register,[id*="login-form"],[class*="auth-form"]';
+    const el = document.querySelector(sel);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); const inp = el.querySelector('input:not([type="hidden"]):not([type="submit"])'); if (inp) setTimeout(() => (inp as HTMLElement).focus(), 480); }
+    else console.log('[Intent] auth.' + action);
+  },
 });
 export const useNavigate = () => (path) => {
   if (path.startsWith('#')) {
@@ -4342,7 +4493,7 @@ export function prepareSandpackFiles(
       const tagRegex = new RegExp(`(?:${routerTagPattern})\\s*>`, '');
 
       if (tagRegex.test(content)) {
-        let fixed = content
+        const fixed = content
           .replace(/import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g, (match) => {
             // Keep non-Router imports from the same line
             const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
@@ -4430,7 +4581,7 @@ export function prepareSandpackFiles(
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (!filePath.endsWith('.jsx')) continue;
     // Replace non-null assertions: identifier! followed by . or [ or ) or , or ;
-    sandpackFiles[filePath] = content.replace(/(\w)\!(?=[\.\[\),;\s}])/g, '$1');
+    sandpackFiles[filePath] = content.replace(/(\w)!(?=[[.),;\s}])/g, '$1');
   }
 
   // Ensure template.css exists if any file imports it

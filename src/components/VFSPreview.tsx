@@ -460,7 +460,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       // Broadcast to all iframes as fallback
       const allIframes = document.querySelectorAll('iframe');
       allIframes.forEach(f => {
-        try { f.contentWindow?.postMessage({ type: 'NAV_ROUTE', route }, '*'); } catch {}
+        try { f.contentWindow?.postMessage({ type: 'NAV_ROUTE', route }, '*'); } catch (_e) { /* cross-origin iframe */ }
       });
       return;
     }

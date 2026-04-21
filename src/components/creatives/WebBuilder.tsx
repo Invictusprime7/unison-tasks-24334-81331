@@ -1395,51 +1395,81 @@ export default function App() {
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const templateFiles = useTemplateFiles();
   
-  // Load template from URL parameter on mount
+  // Load saved project from URL parameter on mount.
+  // Hydrates the FULL VFS (multi-page, router, entry point) when present;
+  // falls back to single-file legacy load for legacy design_templates rows.
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const templateId = searchParams.get('id');
-    
-    if (templateId) {
-      const loadTemplateFromUrl = async () => {
-        const template = await templateFiles.loadTemplate(templateId);
-        if (template) {
-          const canvasData = template.canvas_data as { html?: string; css?: string; previewCode?: string; js?: string };
-          let code = canvasData?.previewCode || canvasData?.html || '';
-          
-          if (code) {
-            // If there's separate CSS, integrate it
-            const separateCss = canvasData?.css || '';
-            if (separateCss && !code.includes(separateCss.substring(0, 50))) {
-              if (code.includes('</head>')) {
-                code = code.replace('</head>', `<style>\n${separateCss}\n</style>\n</head>`);
-              } else {
-                code = `<style>\n${separateCss}\n</style>\n${code}`;
-              }
-            }
-            
-            // If there's separate JS, integrate it
-            const separateJs = canvasData?.js || '';
-            if (separateJs && !code.includes(separateJs.substring(0, 50))) {
-              const scriptTag = `<script>\n${separateJs}\n</script>`;
-              if (code.includes('</body>')) {
-                code = code.replace('</body>', `${scriptTag}\n</body>`);
-              } else {
-                code = code + `\n${scriptTag}`;
-              }
-            }
-            
-            setEditorCode(code);
-            setPreviewCode(code);
-            setCurrentTemplateName(template.name);
-            setSaveProjectName(template.name);
-            setSaveProjectDescription(template.description || '');
-          }
-        }
+    if (!templateId) return;
+
+    let cancelled = false;
+    (async () => {
+      const template = await templateFiles.loadTemplate(templateId);
+      if (!template || cancelled) return;
+
+      const canvasData = template.canvas_data as {
+        html?: string;
+        css?: string;
+        previewCode?: string;
+        js?: string;
+        vfsFiles?: Record<string, string>;
+        entryPoint?: string;
+        activePagePath?: string;
+        version?: number;
       };
-      
-      loadTemplateFromUrl();
-    }
+
+      // v2: full VFS round-trip
+      if (canvasData?.vfsFiles && Object.keys(canvasData.vfsFiles).length > 0) {
+        const entry = canvasData.entryPoint || launchEntryPoint;
+        const preferred = canvasData.activePagePath || entry;
+        importBuilderFiles(canvasData.vfsFiles, {
+          preferredPath: preferred,
+          entryPoint: entry,
+        });
+        if (canvasData.activePagePath) {
+          setActivePagePath(canvasData.activePagePath);
+        }
+        setCurrentTemplateName(template.name);
+        setSaveProjectName(template.name);
+        setSaveProjectDescription(template.description || '');
+        setBuilderMode('preview');
+        toast.success(`Opened "${template.name}"`, {
+          description: 'Project restored from your saved state',
+        });
+        return;
+      }
+
+      // Legacy fallback: single-file design_templates row
+      let code = canvasData?.previewCode || canvasData?.html || '';
+      if (!code) return;
+
+      const separateCss = canvasData?.css || '';
+      if (separateCss && !code.includes(separateCss.substring(0, 50))) {
+        if (code.includes('</head>')) {
+          code = code.replace('</head>', `<style>\n${separateCss}\n</style>\n</head>`);
+        } else {
+          code = `<style>\n${separateCss}\n</style>\n${code}`;
+        }
+      }
+      const separateJs = canvasData?.js || '';
+      if (separateJs && !code.includes(separateJs.substring(0, 50))) {
+        const scriptTag = `<script>\n${separateJs}\n</script>`;
+        if (code.includes('</body>')) {
+          code = code.replace('</body>', `${scriptTag}\n</body>`);
+        } else {
+          code = code + `\n${scriptTag}`;
+        }
+      }
+      setEditorCode(code);
+      setPreviewCode(code);
+      setCurrentTemplateName(template.name);
+      setSaveProjectName(template.name);
+      setSaveProjectDescription(template.description || '');
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
   // Get full cloud context from location state (from CloudProjects or System Launcher)

@@ -30,6 +30,8 @@ import {
   buildElementsLibraryBlock,
   buildVfsFilesContext,
   buildFastPathSystemPrompt,
+  buildUserDBContext,
+  type UserDBContext,
 } from "./contextBuilders.ts";
 import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditReinforcement } from "./prompts/editPrompts.ts";
 import { buildCodeModePrompt } from "./prompts/codePrompt.ts";
@@ -65,11 +67,12 @@ export async function runAssistantOrchestrator(
   parsed: AIRequest,
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
+  userId?: string,
 ): Promise<Response> {
   if (task.type === "wizard_template_react") {
     return runWizardLane(parsed, task, corsHeaders);
   }
-  return runBuilderLane(parsed, task, corsHeaders);
+  return runBuilderLane(parsed, task, corsHeaders, userId);
 }
 
 // ============================================================================
@@ -146,6 +149,7 @@ async function runBuilderLane(
   parsed: AIRequest,
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
+  userId?: string,
 ): Promise<Response> {
   console.log(`[orchestrator] LANE B: ${task.type} (sub-behavior: ${
     task.type === 'debug_fix' ? 'builder_debug' :
@@ -203,6 +207,10 @@ async function runBuilderLane(
   const templateStructure = currentCode ? analyzeTemplateStructure(currentCode) : '';
   const templateActionCtx = buildTemplateActionContext(templateAction ?? undefined);
   const editModeContext = buildEditModeContext(editMode, currentCode ?? undefined, templateStructure, templateActionCtx);
+
+  // ── 3a. User DB context (history + drafts) — non-blocking ──────────────
+  const userDBCtx = userId && !task.fastPath ? await fetchUserContext(userId).catch(() => null) : null;
+  const userDBContextBlock = buildUserDBContext(userDBCtx);
 
   // ── 4. Base system prompt ──────────────────────────────────────────────
   let basePrompt: string;
@@ -359,6 +367,11 @@ async function runBuilderLane(
     finalSystemPrompt += `\n\n[🧠 Component Behavior Map]\n${componentBehaviorContext}\nUse this to identify interactive elements, their current handlers, state, and wiring when making edits.`;
   }
 
+  // Inject user history + draft context from Supabase
+  if (userDBContextBlock) {
+    finalSystemPrompt += `\n\n${userDBContextBlock}`;
+  }
+
   const aiMessages = [
     { role: 'system', content: finalSystemPrompt },
     ...processedMessages,
@@ -432,7 +445,7 @@ async function runBuilderLane(
     // Not JSON multi-file output — skip review
   }
 
-  if (savePattern) saveLearningSession(parsed, content);
+  if (savePattern) saveLearningSession(parsed, content, userId);
 
   const responseBody = buildResponseBody({
     content: reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content,
@@ -489,6 +502,36 @@ ${categories.includes('palette') ? '- REPLACE the default color palette with col
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Fetches recent AI sessions and draft metadata for a user to enrich prompts.
+ */
+async function fetchUserContext(userId: string): Promise<UserDBContext> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  const [sessionsResult, draftsResult] = await Promise.all([
+    supabase
+      .from('ai_learning_sessions')
+      .select('session_type, user_prompt, technologies_used')
+      .eq('user_id', userId)
+      .eq('was_successful', true)
+      .order('created_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('builder_drafts')
+      .select('template_id, metadata, updated_at')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(3),
+  ]);
+
+  return {
+    recentSessions: (sessionsResult.data ?? []) as UserDBContext['recentSessions'],
+    recentDraftsMeta: (draftsResult.data ?? []) as UserDBContext['recentDraftsMeta'],
+  };
+}
+
 async function fetchLearnedPatterns(): Promise<string> {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -517,7 +560,7 @@ ${p.code_snippet.substring(0, 600)}${p.code_snippet.length > 600 ? '...' : ''}
   return 'No learned patterns yet.';
 }
 
-function saveLearningSession(parsed: AIRequest, content: string): void {
+function saveLearningSession(parsed: AIRequest, content: string, userId?: string): void {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -531,6 +574,7 @@ function saveLearningSession(parsed: AIRequest, content: string): void {
         ai_response: content.substring(0, 500),
         was_successful: true,
         technologies_used: ['React', 'TypeScript', 'Tailwind CSS'],
+        user_id: userId ?? null,
       }).then(() => console.log('Learning session saved'));
     }
   } catch {

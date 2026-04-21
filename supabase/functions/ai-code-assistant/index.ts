@@ -67,7 +67,7 @@ serve(async (req: Request) => {
       `[ai-code-assistant] task=${task.type} fastPath=${task.fastPath} elapsed-classify=${Date.now() - startMs}ms`,
     );
 
-    const response = await runAssistantOrchestrator(parsed.data, task, corsHeaders);
+    const response = await runAssistantOrchestrator(parsed.data, task, corsHeaders, auth.user.id);
     console.log(`[ai-code-assistant] completed task=${task.type} total=${Date.now() - startMs}ms`);
     return response;
   } catch (error) {

@@ -265,3 +265,52 @@ RULES:
    If you need an icon not in this list, use a CLOSE MATCH from the list above. NEVER guess icon names.
 16. FRAMER MOTION — only use { motion, AnimatePresence } from 'framer-motion'. Do NOT import useAnimation, useInView, useScroll, or other hooks from framer-motion. For scroll animations, use Intersection Observer via React useEffect + useRef instead.`;
 }
+
+// ── User DB context (fetched server-side and injected into Lane B) ────────────
+
+export interface UserDBContext {
+  recentSessions: Array<{
+    session_type: string;
+    user_prompt: string;
+    technologies_used: string[] | null;
+  }>;
+  recentDraftsMeta: Array<{
+    template_id: string | null;
+    metadata: Record<string, unknown> | null;
+    updated_at: string;
+  }>;
+}
+
+/**
+ * Formats server-fetched user context into an AI prompt block.
+ * Call this in Lane B after fetching from Supabase.
+ */
+export function buildUserDBContext(ctx: UserDBContext | null): string {
+  if (!ctx) return '';
+  const { recentSessions, recentDraftsMeta } = ctx;
+  if (recentSessions.length === 0 && recentDraftsMeta.length === 0) return '';
+
+  const lines: string[] = ['[User History & Project Context]'];
+
+  if (recentSessions.length > 0) {
+    lines.push('Recent AI sessions (most recent first):');
+    for (const s of recentSessions) {
+      const techs = s.technologies_used?.join(', ') || 'unknown';
+      lines.push(`  • [${s.session_type}] "${s.user_prompt}" (stack: ${techs})`);
+    }
+  }
+
+  if (recentDraftsMeta.length > 0) {
+    lines.push('Recent project drafts:');
+    for (const d of recentDraftsMeta) {
+      const meta = d.metadata as Record<string, unknown> | null;
+      const industry = (meta?.industry as string) || (meta?.systemType as string) || 'unknown';
+      const name = (meta?.businessName as string) || (meta?.business_name as string) || '';
+      const label = name ? `"${name}" (${industry})` : industry;
+      lines.push(`  • ${label} — last edited ${d.updated_at.slice(0, 10)}`);
+    }
+  }
+
+  lines.push('Use this history to generate consistent, personalized output.');
+  return lines.join('\n');
+}

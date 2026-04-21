@@ -52,6 +52,8 @@ import {
   type IndustryTag,
   type PremiumSectionReference,
 } from "@/sections/references";
+import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
+import { compositionToReactCode } from "@/sections/PageRenderer";
 import { executeCanonicalPipeline, type CanonicalPipelineResult } from "@/services/canonicalPipeline";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { mergeGeneratedVfsWithCanonicalSnapshot } from "@/services/canonicalLaunchVfs";
@@ -155,8 +157,8 @@ const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
   content: ["universal"],
 };
 
-// Industry display metadata
-const INDUSTRY_DISPLAY: Record<IndustryTag, { label: string; icon: string }> = {
+// Industry display metadata — covers both IndustryTag and composition industry values
+const INDUSTRY_DISPLAY: Record<string, { label: string; icon: string }> = {
   salon: { label: "Salon & Beauty", icon: "💇" },
   "local-service": { label: "Local Service", icon: "🔧" },
   coaching: { label: "Coaching & Consulting", icon: "🎯" },
@@ -167,9 +169,14 @@ const INDUSTRY_DISPLAY: Record<IndustryTag, { label: string; icon: string }> = {
   realestate: { label: "Real Estate", icon: "🏠" },
   photography: { label: "Photography", icon: "📷" },
   universal: { label: "Universal", icon: "✦" },
+  // Composition industry values
+  saas: { label: "SaaS & Software", icon: "🚀" },
+  agency: { label: "Agency & Creative", icon: "🏢" },
+  portfolio: { label: "Portfolio & Creative", icon: "🎨" },
+  store: { label: "Store & E-Commerce", icon: "🛍️" },
 };
 
-const TEMPLATE_INDUSTRY_TO_CATEGORY: Partial<Record<IndustryTag, LayoutCategory>> = {
+const TEMPLATE_INDUSTRY_TO_CATEGORY: Partial<Record<string, LayoutCategory>> = {
   salon: "salon",
   "local-service": "contractor",
   coaching: "coaching",
@@ -179,6 +186,11 @@ const TEMPLATE_INDUSTRY_TO_CATEGORY: Partial<Record<IndustryTag, LayoutCategory>
   photography: "portfolio",
   legal: "agency",
   fitness: "coaching",
+  // Composition industry values
+  saas: "saas",
+  agency: "agency",
+  portfolio: "portfolio",
+  store: "store",
 };
 
 // Extended industry cards with richer visuals
@@ -248,10 +260,11 @@ interface TemplateCardData {
   id: string;
   label: string;
   description: string;
-  industry: IndustryTag;
+  industry: string;  // covers both IndustryTag and composition industry values
   sectionTypes: string[];
   traits: string[];
   heroRef?: PremiumSectionReference;
+  themeColors?: { primary: string; secondary: string };  // actual HSL values from composition theme
 }
 
 function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
@@ -312,6 +325,32 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
   }
 
   return cards;
+}
+
+/**
+ * Build template cards from real TemplateComposition objects.
+ * Falls back to reference-based cards when no compositions exist for the system.
+ */
+function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[] {
+  const compositions = getCompositionsBySystemType(systemId);
+  if (compositions.length > 0) {
+    return compositions.map(c => ({
+      id: c.id,
+      label: c.name,
+      description: c.description,
+      industry: c.industry,
+      sectionTypes: c.sections.map(s => s.type),
+      traits: (c.tags && c.tags.length > 0) ? c.tags : [c.category],
+      themeColors: c.theme ? {
+        primary: c.theme.colors.primary,
+        secondary: c.theme.colors.secondary,
+      } : undefined,
+    }));
+  }
+
+  // Fallback: build from section references when no compositions are registered
+  const tags = SYSTEM_TO_INDUSTRY[systemId] || ["universal"];
+  return buildTemplateCards(tags as IndustryTag[]);
 }
 
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
@@ -380,9 +419,12 @@ function getFunctionErrorMessage(error: unknown): string {
   return "Generation failed";
 }
 
-// Mini preview component
+// Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
   const display = INDUSTRY_DISPLAY[card.industry];
+  // Use actual composition theme colors when available
+  const primaryHsl = card.themeColors?.primary ?? '217.2 91.2% 59.8%';
+  const secondaryHsl = card.themeColors?.secondary ?? '279 50% 55%';
 
   return (
     <motion.button
@@ -414,14 +456,14 @@ const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData
           </div>
           {/* Hero block */}
           <div className="flex-1 rounded-lg p-2 flex flex-col justify-center" style={{
-            background: `linear-gradient(135deg, hsl(var(--primary) / 0.12), hsl(var(--accent) / 0.08))`,
+            background: `linear-gradient(135deg, hsl(${primaryHsl} / 0.15), hsl(${secondaryHsl} / 0.08))`,
           }}>
-            <div className="w-8 h-1 rounded-full bg-primary/40 mb-1.5" />
+            <div className="w-8 h-1 rounded-full mb-1.5" style={{ background: `hsl(${primaryHsl} / 0.45)` }} />
             <div className="w-16 h-2 rounded bg-white/25 mb-1" />
             <div className="w-12 h-1 rounded bg-white/10 mb-2" />
             <div className="flex gap-1">
-              <div className="w-6 h-2 rounded-full bg-primary/50" />
-              <div className="w-5 h-2 rounded-full border border-white/15" />
+              <div className="w-6 h-2 rounded-full" style={{ background: `hsl(${primaryHsl} / 0.55)` }} />
+              <div className="w-5 h-2 rounded-full border" style={{ borderColor: `hsl(${primaryHsl} / 0.25)` }} />
             </div>
           </div>
           {/* Section blocks */}
@@ -501,11 +543,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
 
-  // Build template cards based on selected system
+  // Build template cards from real compositions (falls back to references if none exist)
   const templateCards = useMemo(() => {
     if (!selectedSystem) return [];
-    const tags = SYSTEM_TO_INDUSTRY[selectedSystem] || ["universal"];
-    return buildTemplateCards(tags as IndustryTag[]);
+    return buildCompositionCards(selectedSystem);
   }, [selectedSystem]);
 
   // Group templates by industry
@@ -935,8 +976,61 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           },
         });
       } else {
-        toast.error("AI generation produced no output. Try again.");
-        return;
+        // Last resort: if a real composition was selected, use it directly
+        const comp = selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null;
+        if (comp) {
+          const compositionCode = compositionToReactCode(comp);
+          const compositionVfs = normalizeLauncherFiles(
+            { '/src/App.tsx': compositionCode },
+            { entryPoint: '/src/App.tsx' }
+          );
+          const bindingApplication = applyWizardBindingsToVfs(compositionVfs, siteBundleSnapshot);
+          const wiredCompositionVfs = mergeGeneratedVfsWithCanonicalSnapshot(
+            bindingApplication.files,
+            compiledPlayground.vfsFiles,
+            siteBundleSnapshot,
+          );
+          const runtimeManifest = createRuntimeManifest(wiredCompositionVfs, {
+            industry: generationCategory,
+            brandName: businessName.trim(),
+            aesthetic: selectedTheme?.id,
+            backendRequired: false,
+          });
+          const launchState = createLaunchState({
+            systemType: selectedSystem as any,
+            systemName: system.name,
+            businessName: businessName.trim(),
+            templateName: `${businessName.trim()} Site`,
+            templateCategory: generationCategory as any,
+            blueprint: blueprint as any,
+            vfsFiles: wiredCompositionVfs,
+            aesthetic: selectedTheme?.id,
+            preloadedIntents: canonicalIntents,
+            startInPreview: true,
+            intentRuntime: true,
+            businessId: provisionedBusinessId || undefined,
+            runtimeManifest,
+            entryPoint: runtimeManifest.entryPoint,
+            sitePlan,
+            siteBundleSnapshot,
+            materializedPlayground,
+            compiledPlayground,
+            pipelineManifest,
+            wizardSelections,
+          });
+          setLaunch(launchState);
+          navigate("/web-builder", {
+            state: {
+              vfsFiles: wiredCompositionVfs,
+              runtimeManifest,
+              entryPoint: runtimeManifest.entryPoint,
+              ...navState,
+            },
+          });
+        } else {
+          toast.error("AI generation produced no output. Try again.");
+          return;
+        }
       }
 
       onOpenChange(false);

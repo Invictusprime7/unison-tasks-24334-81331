@@ -1,19 +1,37 @@
 /**
  * Template Compositions Index
- * 
- * All hardcoded industry templates have been removed.
- * The Launcher pipeline generates sites purely from AI + aesthetic CSS tokens.
- * These empty collections are kept so existing consumers compile without errors.
+ *
+ * Real, production-quality page compositions per industry.
+ * Each template has its own unique layout, navigation, and intent-wired button labels.
+ * AI Enhancement still applies on top — these compositions serve as a rich baseline.
  */
 import type { TemplateComposition } from '../types';
+import { SALON_COMPOSITIONS } from './salon';
+import { RESTAURANT_COMPOSITIONS } from './restaurant';
+import { SAAS_COMPOSITIONS } from './saas';
+import { AGENCY_COMPOSITIONS } from './agency';
+import { PORTFOLIO_COMPOSITIONS } from './portfolio';
+import { STORE_COMPOSITIONS } from './store';
+import { COACHING_COMPOSITIONS } from './coaching';
 
-// No hardcoded compositions — everything is AI-generated via the Launcher pipeline
-export const ALL_COMPOSITIONS: TemplateComposition[] = [];
+export const ALL_COMPOSITIONS: TemplateComposition[] = [
+  ...SALON_COMPOSITIONS,
+  ...RESTAURANT_COMPOSITIONS,
+  ...SAAS_COMPOSITIONS,
+  ...AGENCY_COMPOSITIONS,
+  ...PORTFOLIO_COMPOSITIONS,
+  ...STORE_COMPOSITIONS,
+  ...COACHING_COMPOSITIONS,
+];
 
-export const getCompositionById = (_id: string): TemplateComposition | undefined => undefined;
+export const getCompositionById = (id: string): TemplateComposition | undefined =>
+  ALL_COMPOSITIONS.find(c => c.id === id);
 
-export const getCompositionsByIndustry = (_industry: string): TemplateComposition[] => [];
+export const getCompositionsByIndustry = (industry: string): TemplateComposition[] =>
+  ALL_COMPOSITIONS.filter(c => c.industry === industry);
 
-export const getCompositionsByCategory = (_category: string): TemplateComposition[] => [];
+export const getCompositionsByCategory = (category: string): TemplateComposition[] =>
+  ALL_COMPOSITIONS.filter(c => c.category === category);
 
-export const getCompositionsBySystemType = (_systemType: string): TemplateComposition[] => [];
+export const getCompositionsBySystemType = (systemType: string): TemplateComposition[] =>
+  ALL_COMPOSITIONS.filter(c => c.systemType === systemType);

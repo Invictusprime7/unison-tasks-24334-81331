@@ -310,16 +310,80 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return firstCode || '/App.tsx';
   }, [sandpackFiles, normalizedActiveFile]);
   
-  // Handle messages from preview iframe (intent system)
+  // Track Sandpack iframe + bridge readiness for the Edit-mode selection bridge
+  const sandpackIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const bridgeReadyRef = useRef(false);
+  const editActivationKeyRef = useRef(0);
+
+  // Resolve a target window for posting bridge messages (Sandpack iframe or docker iframe)
+  const getPreviewWindow = useCallback((): Window | null => {
+    if (sandpackIframeRef.current?.contentWindow) return sandpackIframeRef.current.contentWindow;
+    const sp = document.querySelector('iframe.sp-preview-iframe, .sp-preview iframe') as HTMLIFrameElement | null;
+    if (sp?.contentWindow) {
+      sandpackIframeRef.current = sp;
+      return sp.contentWindow;
+    }
+    if (iframeRef.current?.contentWindow) return iframeRef.current.contentWindow;
+    return null;
+  }, []);
+
+  // Push the current Edit-mode state into the preview iframe.
+  // Retries briefly to cover the brief window before the bridge boots.
+  const pushEditModeState = useCallback((enabled: boolean) => {
+    const key = ++editActivationKeyRef.current;
+    let attempts = 0;
+    const send = () => {
+      const win = getPreviewWindow();
+      if (win) {
+        win.postMessage({ type: 'EDIT_MODE_TOGGLE', enabled, activationKey: key }, '*');
+      }
+      attempts++;
+      if (!bridgeReadyRef.current && attempts < 12) {
+        setTimeout(send, 250);
+      }
+    };
+    send();
+  }, [getPreviewWindow]);
+
+  // Re-push state whenever Edit/Select mode toggles
+  useEffect(() => {
+    pushEditModeState(enableSelection);
+  }, [enableSelection, pushEditModeState, sandpackKey]);
+
+  // Handle messages from preview iframe (intent system + selection bridge)
   useEffect(() => {
     const handlePreviewMessage = (event: MessageEvent) => {
       const data = event.data;
       if (!data?.type) return;
-      
+
+      // ── Selection bridge ────────────────────────────────────────────────
+      if (data.type === 'EDIT_MODE_BRIDGE_READY' || data.type === 'EDIT_MODE_READY') {
+        bridgeReadyRef.current = true;
+        // On first ready, push the current state so a freshly-mounted iframe
+        // immediately matches the parent's enableSelection prop.
+        if (data.type === 'EDIT_MODE_BRIDGE_READY') {
+          const win = getPreviewWindow();
+          if (win) {
+            win.postMessage({
+              type: 'EDIT_MODE_TOGGLE',
+              enabled: enableSelection,
+              activationKey: editActivationKeyRef.current,
+            }, '*');
+          }
+        }
+        return;
+      }
+      if (data.type === 'ELEMENT_SELECTED' && data.element) {
+        // Ignore stale selections from a previous activation cycle
+        if (typeof data.activationKey === 'number' && data.activationKey !== editActivationKeyRef.current) return;
+        onElementSelect?.(data.element);
+        return;
+      }
+
       if (data.type === 'preview-nav' && data.intent === 'nav.goto') {
         onNavigate?.(data.path);
       }
-      
+
       // Forward NAV_PAGE_GENERATE from Sandpack iframe to WebBuilder
       if (data.type === 'NAV_PAGE_GENERATE') {
         const pageName = data.pageName || '';
@@ -327,7 +391,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           onNavigate?.(pageName);
         }
       }
-      
+
       if (data.type === 'INTENT_TRIGGER') {
         const { intent, payload } = data;
         const enrichedPayload = {
@@ -349,10 +413,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         }
       }
     };
-    
+
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
-  }, [onNavigate, onIntentTrigger, businessId, siteId, onError]);
+  }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow]);
   
   // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {

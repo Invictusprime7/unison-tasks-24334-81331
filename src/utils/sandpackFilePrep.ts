@@ -694,6 +694,9 @@ if (typeof window !== 'undefined' && (window as any).tailwind) {
 ${PREVIEW_NAV_BRIDGE}
 __initLovablePreviewNavBridge();
 
+${PREVIEW_SELECTION_BRIDGE}
+__initLovablePreviewSelectionBridge();
+
 // Error boundary as secondary safety net
 class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {

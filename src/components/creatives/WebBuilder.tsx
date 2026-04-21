@@ -3788,24 +3788,32 @@ ${html}
     return previewCode;
   }, [templateCustomizer, previewCode]);
 
+  // Build the v2 save payload — full multi-page VFS round-trip
+  const buildSavePayload = useCallback(() => ({
+    vfsFiles: virtualFS.getSandpackFiles(),
+    entryPoint: launchEntryPoint,
+    activePagePath,
+    businessId: businessId ?? null,
+  }), [virtualFS, launchEntryPoint, activePagePath, businessId]);
+
   const handleSaveTemplate = useCallback(async (
     name: string,
     description: string,
     isPublic: boolean
   ) => {
     const finalCode = getFinalCodeWithOverrides();
-    await templateFiles.saveTemplate(name, description, isPublic, finalCode);
-  }, [templateFiles, getFinalCodeWithOverrides]);
+    await templateFiles.saveTemplate(name, description, isPublic, finalCode, buildSavePayload());
+  }, [templateFiles, getFinalCodeWithOverrides, buildSavePayload]);
 
   // Handle quick save (update existing template)
   const handleQuickSave = useCallback(async () => {
     if (templateFiles.currentTemplateId) {
       const finalCode = getFinalCodeWithOverrides();
-      await templateFiles.updateTemplate(templateFiles.currentTemplateId, finalCode);
+      await templateFiles.updateTemplate(templateFiles.currentTemplateId, finalCode, buildSavePayload());
     } else {
       setFileManagerOpen(true);
     }
-  }, [templateFiles, getFinalCodeWithOverrides]);
+  }, [templateFiles, getFinalCodeWithOverrides, buildSavePayload]);
 
   // Handle save to projects from preview
   const handleSaveToProjects = useCallback(async (saveAsNew: boolean = false) => {
@@ -3818,14 +3826,15 @@ ${html}
     try {
       const isUpdating = templateFiles.currentTemplateId && !saveAsNew;
       const finalCode = getFinalCodeWithOverrides();
+      const payload = buildSavePayload();
       
       if (isUpdating) {
-        // Update existing template
-        await templateFiles.updateTemplate(templateFiles.currentTemplateId, finalCode);
+        // Update existing project
+        await templateFiles.updateTemplate(templateFiles.currentTemplateId, finalCode, payload);
         toast.success(`Updated "${saveProjectName}"`);
       } else {
-        // Save as new template
-        await templateFiles.saveTemplate(saveProjectName, saveProjectDescription, false, finalCode);
+        // Save as new project
+        await templateFiles.saveTemplate(saveProjectName, saveProjectDescription, false, finalCode, payload);
         toast.success(`Saved "${saveProjectName}" to Projects`);
       }
       
@@ -3833,11 +3842,11 @@ ${html}
       clearDraft(); // Clear auto-save draft after successful save
     } catch (error) {
       console.error("Error saving to projects:", error);
-      toast.error("Failed to save template");
+      toast.error("Failed to save project");
     } finally {
       setIsSavingProject(false);
     }
-  }, [saveProjectName, saveProjectDescription, templateFiles, getFinalCodeWithOverrides, clearDraft]);
+  }, [saveProjectName, saveProjectDescription, templateFiles, getFinalCodeWithOverrides, clearDraft, buildSavePayload]);
 
   // Render code from Code Editor to Fabric.js canvas
   const handleRenderToCanvas = async () => {

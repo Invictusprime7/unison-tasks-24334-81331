@@ -1296,12 +1296,14 @@ function injectPreviewNavBridge(code: string, filePath: string): string {
   if (!/^\/index\.(?:tsx?|jsx?)$/.test(filePath)) return code;
   if (code.includes('__initLovablePreviewNavBridge')) return code;
 
+  const bridges = `${PREVIEW_NAV_BRIDGE}\n__initLovablePreviewNavBridge();\n\n${PREVIEW_SELECTION_BRIDGE}\n__initLovablePreviewSelectionBridge();`;
+
   const importBlock = code.match(/^(?:import[^\n]*\n)+/);
   if (importBlock) {
-    return `${importBlock[0]}\n${PREVIEW_NAV_BRIDGE}\n__initLovablePreviewNavBridge();\n\n${code.slice(importBlock[0].length)}`;
+    return `${importBlock[0]}\n${bridges}\n\n${code.slice(importBlock[0].length)}`;
   }
 
-  return `${PREVIEW_NAV_BRIDGE}\n__initLovablePreviewNavBridge();\n\n${code}`;
+  return `${bridges}\n\n${code}`;
 }
 
 function getFileDirectory(filePath: string): string {

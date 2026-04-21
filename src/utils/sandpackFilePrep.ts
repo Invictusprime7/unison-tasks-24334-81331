@@ -426,6 +426,194 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
 `;
 
 /**
+ * PREVIEW_SELECTION_BRIDGE — element selection bridge for the Web Builder
+ * "Edit / Select" mode. Injected into Sandpack's /index.tsx alongside the
+ * navigation bridge.
+ *
+ * Responsibilities:
+ *  - Listen for EDIT_MODE_TOGGLE from the parent (with an activationKey).
+ *  - When active: install hover outline + click capture that suppresses
+ *    default navigation/intents and posts ELEMENT_SELECTED to the parent
+ *    with a stable selector + minimal element metadata.
+ *  - When inactive: tear everything down so the preview behaves normally.
+ *
+ * This is the missing half of the Edit-mode wiring referenced in
+ * mem://features/web-builder/edit-mode-selection-bridge — the parent already
+ * had ElementFloatingToolbar and onElementSelect plumbing, but no script in
+ * the iframe ever produced the ELEMENT_SELECTED message.
+ */
+const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge() {
+  const bridgeWindow = window as Window & { __lovablePreviewSelectionBridgeInstalled?: boolean };
+  if (bridgeWindow.__lovablePreviewSelectionBridgeInstalled) return;
+  bridgeWindow.__lovablePreviewSelectionBridgeInstalled = true;
+
+  let active = false;
+  let activationKey = 0;
+  let hoverEl: HTMLElement | null = null;
+  let selectedEl: HTMLElement | null = null;
+
+  const STYLE_ID = '__ut-select-style';
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = [
+      '.__ut-hover { outline: 2px dashed hsl(190 95% 55%) !important; outline-offset: 2px !important; cursor: pointer !important; }',
+      '.__ut-selected { outline: 2px solid hsl(190 95% 55%) !important; outline-offset: 2px !important; box-shadow: 0 0 0 4px hsla(190, 95%, 55%, 0.18) !important; }',
+      'html.__ut-select-mode, html.__ut-select-mode body { cursor: crosshair !important; }',
+    ].join('\\n');
+    document.head.appendChild(style);
+  }
+
+  function clearHover() { if (hoverEl) { hoverEl.classList.remove('__ut-hover'); hoverEl = null; } }
+  function clearSelected() { if (selectedEl) { selectedEl.classList.remove('__ut-selected'); selectedEl = null; } }
+
+  function cssEscape(s: string): string {
+    return (window as any).CSS && (window as any).CSS.escape
+      ? (window as any).CSS.escape(s)
+      : s.replace(/([^\\\\w-])/g, '\\\\$1');
+  }
+  function computeSelector(el: Element): string {
+    if (!el || el === document.body || el === document.documentElement) return 'body';
+    if ((el as HTMLElement).id) return '#' + cssEscape((el as HTMLElement).id);
+    const dataKey = el.getAttribute('data-ut-key');
+    if (dataKey) return '[data-ut-key="' + cssEscape(dataKey) + '"]';
+    const dataBinding = el.getAttribute('data-ut-binding-id');
+    if (dataBinding) return '[data-ut-binding-id="' + cssEscape(dataBinding) + '"]';
+    const parts: string[] = [];
+    let node: Element | null = el;
+    let depth = 0;
+    while (node && node !== document.body && depth < 6) {
+      const tag = node.tagName.toLowerCase();
+      const parent = node.parentElement;
+      if (!parent) { parts.unshift(tag); break; }
+      const sameTag = Array.from(parent.children).filter(c => c.tagName === node!.tagName);
+      if (sameTag.length === 1) {
+        parts.unshift(tag);
+      } else {
+        const idx = sameTag.indexOf(node) + 1;
+        parts.unshift(tag + ':nth-of-type(' + idx + ')');
+      }
+      node = parent;
+      depth++;
+    }
+    return parts.join(' > ');
+  }
+
+  function findSection(el: Element): string | null {
+    let cur: Element | null = el;
+    while (cur && cur !== document.body) {
+      if (cur.tagName === 'SECTION') {
+        return cur.getAttribute('id') || cur.getAttribute('data-section') || cur.tagName.toLowerCase();
+      }
+      const dataSection = cur.getAttribute('data-section') || cur.getAttribute('data-ut-section');
+      if (dataSection) return dataSection;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  function snapshotStyles(el: Element): Record<string, string> {
+    const cs = window.getComputedStyle(el);
+    return {
+      color: cs.color, backgroundColor: cs.backgroundColor,
+      fontSize: cs.fontSize, fontWeight: cs.fontWeight,
+      fontStyle: cs.fontStyle, fontFamily: cs.fontFamily,
+      textDecoration: cs.textDecoration, textAlign: cs.textAlign,
+      padding: cs.padding, margin: cs.margin, borderRadius: cs.borderRadius,
+    };
+  }
+
+  function snapshotAttrs(el: Element): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const a of Array.from(el.attributes)) out[a.name] = a.value;
+    return out;
+  }
+
+  function isUiChrome(el: Element | null): boolean {
+    if (!el) return true;
+    const id = (el as HTMLElement).id || '';
+    if (id.startsWith('__ut-')) return true;
+    return false;
+  }
+
+  function onMouseOver(e: MouseEvent) {
+    if (!active) return;
+    const t = e.target as HTMLElement | null;
+    if (!t || isUiChrome(t) || t === hoverEl) return;
+    clearHover();
+    hoverEl = t;
+    t.classList.add('__ut-hover');
+  }
+  function onMouseOut(e: MouseEvent) {
+    if (!active) return;
+    if (e.target === hoverEl) clearHover();
+  }
+  function onClickCapture(e: MouseEvent) {
+    if (!active) return;
+    const t = e.target as HTMLElement | null;
+    if (!t || isUiChrome(t)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof (e as any).stopImmediatePropagation === 'function') (e as any).stopImmediatePropagation();
+    clearHover();
+    clearSelected();
+    selectedEl = t;
+    t.classList.add('__ut-selected');
+    const selector = computeSelector(t);
+    const html = t.outerHTML.length > 4000 ? t.outerHTML.slice(0, 4000) : t.outerHTML;
+    window.parent.postMessage({
+      type: 'ELEMENT_SELECTED',
+      activationKey,
+      element: {
+        tagName: t.tagName.toLowerCase(),
+        textContent: (t.textContent || '').trim().slice(0, 500),
+        selector, html,
+        styles: snapshotStyles(t),
+        attributes: snapshotAttrs(t),
+        section: findSection(t),
+      },
+    }, '*');
+  }
+
+  function activate() {
+    if (active) return;
+    active = true;
+    ensureStyles();
+    document.documentElement.classList.add('__ut-select-mode');
+    document.addEventListener('mouseover', onMouseOver, true);
+    document.addEventListener('mouseout', onMouseOut, true);
+    document.addEventListener('click', onClickCapture, true);
+  }
+  function deactivate() {
+    if (!active) return;
+    active = false;
+    clearHover();
+    clearSelected();
+    document.documentElement.classList.remove('__ut-select-mode');
+    document.removeEventListener('mouseover', onMouseOver, true);
+    document.removeEventListener('mouseout', onMouseOut, true);
+    document.removeEventListener('click', onClickCapture, true);
+  }
+
+  window.addEventListener('message', function (event) {
+    const data = event.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'EDIT_MODE_TOGGLE') {
+      activationKey = typeof data.activationKey === 'number' ? data.activationKey : activationKey + 1;
+      if (data.enabled) activate(); else deactivate();
+      window.parent.postMessage({ type: 'EDIT_MODE_READY', activationKey, enabled: !!data.enabled }, '*');
+    }
+    if (data.type === 'EDIT_MODE_CLEAR_SELECTION') {
+      clearSelected();
+    }
+  });
+
+  window.parent.postMessage({ type: 'EDIT_MODE_BRIDGE_READY' }, '*');
+}
+`;
+
+/**
  * DEFAULT_INDEX — the canonical Sandpack entry point.
  * Sandpack react-ts uses /index.tsx, NOT /main.tsx.
  */

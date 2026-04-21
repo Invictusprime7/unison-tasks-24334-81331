@@ -46,16 +46,16 @@ const Index = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load recent projects when user is authenticated
+  // Load recent projects (saved Web Builder drafts) when authenticated
   useEffect(() => {
     const loadRecentProjects = async () => {
       if (!user || !isSupabaseConfigured) return;
-      
+
       setLoadingProjects(true);
       try {
         const { data, error } = await supabase
-          .from('design_templates')
-          .select('id, name, description, is_public, updated_at, created_at, canvas_data')
+          .from('builder_drafts')
+          .select('id, code, editor_code, vfs_files, metadata, updated_at, created_at')
           .eq('user_id', user.id)
           .order('updated_at', { ascending: false })
           .limit(4);
@@ -63,7 +63,20 @@ const Index = () => {
         if (error) {
           console.error('Error loading recent projects:', error);
         } else {
-          setRecentProjects(data || []);
+          const projects: RecentProject[] = (data || []).map((row: any) => {
+            const meta = (row.metadata || {}) as Record<string, any>;
+            const previewCode = row.editor_code || row.code || '';
+            return {
+              id: row.id,
+              name: meta.name || 'Untitled Project',
+              description: meta.description ?? null,
+              is_public: false,
+              updated_at: row.updated_at,
+              created_at: row.created_at,
+              canvas_data: { previewCode, html: previewCode },
+            };
+          });
+          setRecentProjects(projects);
         }
       } catch (err) {
         console.error('Failed to load recent projects:', err);

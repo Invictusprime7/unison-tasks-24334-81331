@@ -1,13 +1,14 @@
-import { Button } from "@/components/ui/button";
+﻿import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SubscriptionBadge } from "@/components/SubscriptionBadge";
 import { DocHelper } from "@/components/docs";
 import { 
   CheckSquare, 
   Menu, 
-  Cloud, 
+  LayoutDashboard,
   LogOut, 
-  ArrowRight,
+  Zap,
+  Users,
   X
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
@@ -34,189 +35,170 @@ export function NavigationBar({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <nav className="bg-[#0d0d18]/95 backdrop-blur-sm border-b border-cyan-500/20 shadow-[0_4px_20px_rgba(0,255,255,0.1)] sticky top-0 z-50">
-      <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4 flex justify-between items-center">
-        {/* Left: Logo */}
-        <div className="flex items-center gap-2 sm:gap-3">
+    <nav className="bg-[#0a0a14]/95 backdrop-blur-md border-b border-white/5 sticky top-0 z-50">
+      <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+        {/* Left: docs trigger + logo */}
+        <div className="flex items-center gap-3">
           <Sheet open={docsOpen} onOpenChange={onDocsOpenChange}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 text-cyan-400/70 hover:text-cyan-400 hover:bg-cyan-500/20">
-                <Menu className="h-4 w-4 sm:h-5 sm:w-5" />
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white/30 hover:text-white/70 hover:bg-white/5">
+                <Menu className="h-4 w-4" />
                 <span className="sr-only">Open documentation</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[85vw] max-w-[450px] p-0 overflow-hidden bg-[#0d0d18] border-cyan-500/20">
+            <SheetContent side="left" className="w-[85vw] max-w-[450px] p-0 overflow-hidden bg-[#0d0d18] border-white/8">
               <DocHelper embedded className="h-full" />
             </SheetContent>
           </Sheet>
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <CheckSquare className="h-6 w-6 sm:h-8 sm:w-8 text-cyan-400 drop-shadow-[0_0_10px_rgba(0,255,255,0.6)]" />
-            <span className="text-lg sm:text-2xl font-bold text-cyan-400 drop-shadow-[0_0_15px_rgba(0,255,255,0.5)]">Unison Tasks</span>
-          </div>
+          <button
+            onClick={() => navigate("/home")}
+            className="flex items-center gap-2 group"
+          >
+            <CheckSquare className="h-6 w-6 text-cyan-400 group-hover:drop-shadow-[0_0_10px_rgba(0,255,255,0.8)] transition-all" />
+            <span className="text-base font-bold text-white">Unison Tasks</span>
+          </button>
         </div>
 
         {/* Center: Desktop nav links */}
-        <div className="hidden md:flex items-center gap-6">
-          <a href="#systems" className="text-gray-400 hover:text-cyan-400 transition-colors">Systems</a>
-          <a href="#features" className="text-gray-400 hover:text-lime-400 transition-colors">Features</a>
-          <a href="#pricing" className="text-gray-400 hover:text-fuchsia-400 transition-colors">Pricing</a>
+        <div className="hidden md:flex items-center gap-6 text-sm">
+          <a href="#systems"   className="text-white/40 hover:text-white transition-colors">Systems</a>
+          <a href="#features"  className="text-white/40 hover:text-white transition-colors">Features</a>
+          <a href="#pricing"   className="text-white/40 hover:text-white transition-colors">Pricing</a>
         </div>
 
         {/* Right: Desktop actions */}
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-2">
           {user && <SubscriptionBadge />}
-          <Button 
-            variant="ghost" 
-            onClick={() => navigate("/cloud")} 
-            className={cn(
-              "border border-blue-500/30 text-blue-400",
-              "hover:bg-blue-500/20 hover:border-blue-500/50",
-              "hover:shadow-[0_0_15px_rgba(59,130,246,0.3)]",
-              "transition-all duration-200"
-            )}
-          >
-            <Cloud className="h-4 w-4 mr-2" />
-            Cloud
-          </Button>
           {user ? (
             <>
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => navigate("/dashboard")}
-                className="text-cyan-400/70 hover:text-cyan-400 hover:bg-cyan-500/20"
+                className="text-white/50 hover:text-white hover:bg-white/5 gap-1.5"
               >
+                <LayoutDashboard className="h-3.5 w-3.5" />
                 Dashboard
               </Button>
-              <Button 
-                variant="ghost" 
-                onClick={onSignOut}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/team")}
+                className="text-white/50 hover:text-white hover:bg-white/5 gap-1.5"
+              >
+                <Users className="h-3.5 w-3.5" />
+                Team
+              </Button>
+              <Button
+                onClick={onStartLauncher}
+                size="sm"
                 className={cn(
-                  "border border-red-500/30 text-red-400",
-                  "hover:bg-red-500/20 hover:border-red-500/50",
+                  "bg-cyan-500 text-black font-bold gap-1.5",
+                  "hover:bg-cyan-400",
+                  "shadow-[0_0_20px_rgba(0,200,255,0.3)]",
+                  "hover:shadow-[0_0_28px_rgba(0,200,255,0.5)]",
                   "transition-all duration-200"
                 )}
               >
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
+                <Zap className="h-3.5 w-3.5" />
+                Build Your Site
+              </Button>
+              <Button 
+                variant="ghost"
+                size="icon"
+                onClick={onSignOut}
+                className="h-8 w-8 text-white/30 hover:text-red-400 hover:bg-red-500/10"
+                title="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
               </Button>
             </>
           ) : (
             <>
               <Button 
-                variant="ghost" 
+                variant="ghost"
+                size="sm"
                 onClick={() => navigate("/auth")}
-                className="text-cyan-400/70 hover:text-cyan-400 hover:bg-cyan-500/20"
+                className="text-white/50 hover:text-white hover:bg-white/5"
               >
                 Sign In
               </Button>
               <Button 
+                size="sm"
                 onClick={onStartLauncher}
                 className={cn(
-                  "bg-lime-400 text-black font-bold",
-                  "shadow-[0_0_15px_rgba(0,255,0,0.4)]",
-                  "hover:bg-lime-300 hover:shadow-[0_0_25px_rgba(0,255,0,0.6)]",
-                  "active:scale-95 transition-all duration-200"
+                  "bg-cyan-500 text-black font-bold gap-1.5",
+                  "hover:bg-cyan-400",
+                  "shadow-[0_0_20px_rgba(0,200,255,0.3)]",
+                  "transition-all duration-200"
                 )}
               >
-                Start Free
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <Zap className="h-3.5 w-3.5" />
+                Get Started Free
               </Button>
             </>
           )}
         </div>
 
-        {/* Mobile: hamburger + primary CTA */}
+        {/* Mobile: CTA + hamburger */}
         <div className="flex md:hidden items-center gap-2">
           {user && <SubscriptionBadge />}
-          {!user && (
-            <Button 
-              size="sm"
-              onClick={onStartLauncher}
-              className={cn(
-                "bg-lime-400 text-black font-bold text-xs px-3 h-8",
-                "shadow-[0_0_10px_rgba(0,255,0,0.3)]",
-                "active:scale-95 transition-all duration-200"
-              )}
-            >
-              Start Free
-            </Button>
-          )}
+          <Button
+            size="sm"
+            onClick={onStartLauncher}
+            className={cn(
+              "bg-cyan-500 text-black font-bold text-xs px-3 h-8 gap-1",
+              "hover:bg-cyan-400 shadow-[0_0_12px_rgba(0,200,255,0.3)]"
+            )}
+          >
+            <Zap className="h-3 w-3" />
+            {user ? "Build" : "Start Free"}
+          </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 text-cyan-400/70 hover:text-cyan-400 hover:bg-cyan-500/20"
+            className="h-8 w-8 text-white/40 hover:text-white hover:bg-white/5"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </Button>
         </div>
       </div>
 
-      {/* Mobile menu dropdown */}
+      {/* Mobile dropdown */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-cyan-500/10 bg-[#0d0d18]/98 backdrop-blur-md animate-fade-in">
-          <div className="container mx-auto px-4 py-4 flex flex-col gap-1">
-            {/* Nav links */}
-            <a 
-              href="#systems" 
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-3 px-4 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors text-base"
-            >
-              Systems
-            </a>
-            <a 
-              href="#features" 
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-3 px-4 rounded-lg text-gray-400 hover:text-lime-400 hover:bg-lime-500/10 transition-colors text-base"
-            >
-              Features
-            </a>
-            <a 
-              href="#pricing" 
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-3 px-4 rounded-lg text-gray-400 hover:text-fuchsia-400 hover:bg-fuchsia-500/10 transition-colors text-base"
-            >
-              Pricing
-            </a>
+        <div className="md:hidden border-t border-white/5 bg-[#0a0a14]/98 backdrop-blur-md">
+          <div className="container mx-auto px-4 py-3 flex flex-col gap-1">
+            <a href="#systems"  onClick={() => setMobileMenuOpen(false)} className="py-2.5 px-3 rounded-lg text-white/50 hover:text-white hover:bg-white/5 text-sm transition-colors">Systems</a>
+            <a href="#features" onClick={() => setMobileMenuOpen(false)} className="py-2.5 px-3 rounded-lg text-white/50 hover:text-white hover:bg-white/5 text-sm transition-colors">Features</a>
+            <a href="#pricing"  onClick={() => setMobileMenuOpen(false)} className="py-2.5 px-3 rounded-lg text-white/50 hover:text-white hover:bg-white/5 text-sm transition-colors">Pricing</a>
 
-            <div className="border-t border-cyan-500/10 my-2" />
-
-            {/* Action buttons */}
-            <Button 
-              variant="ghost" 
-              onClick={() => { navigate("/cloud"); setMobileMenuOpen(false); }}
-              className="justify-start h-12 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20"
-            >
-              <Cloud className="h-4 w-4 mr-3" />
-              Cloud
-            </Button>
+            <div className="border-t border-white/5 my-2" />
 
             {user ? (
               <>
-                <Button 
-                  variant="ghost" 
-                  onClick={() => { navigate("/dashboard"); setMobileMenuOpen(false); }}
-                  className="justify-start h-12 text-cyan-400/70 hover:text-cyan-400 hover:bg-cyan-500/20"
-                >
-                  Dashboard
+                <Button variant="ghost" onClick={() => { navigate("/dashboard"); setMobileMenuOpen(false); }} className="justify-start h-10 text-white/60 hover:text-white hover:bg-white/5 gap-2">
+                  <LayoutDashboard className="h-4 w-4" />Dashboard
                 </Button>
-                <Button 
-                  variant="ghost" 
-                  onClick={() => { onSignOut(); setMobileMenuOpen(false); }}
-                  className="justify-start h-12 border border-red-500/30 text-red-400 hover:bg-red-500/20"
-                >
-                  <LogOut className="h-4 w-4 mr-3" />
-                  Sign Out
+                <Button variant="ghost" onClick={() => { navigate("/team"); setMobileMenuOpen(false); }} className="justify-start h-10 text-white/60 hover:text-white hover:bg-white/5 gap-2">
+                  <Users className="h-4 w-4" />Team
+                </Button>
+                <Button onClick={() => { onStartLauncher(); setMobileMenuOpen(false); }} className="justify-start h-10 bg-cyan-500 text-black font-bold hover:bg-cyan-400 gap-2">
+                  <Zap className="h-4 w-4" />Build Your Site
+                </Button>
+                <Button variant="ghost" onClick={() => { onSignOut(); setMobileMenuOpen(false); }} className="justify-start h-10 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 gap-2">
+                  <LogOut className="h-4 w-4" />Sign Out
                 </Button>
               </>
             ) : (
-              <Button 
-                variant="ghost" 
-                onClick={() => { navigate("/auth"); setMobileMenuOpen(false); }}
-                className="justify-start h-12 text-cyan-400/70 hover:text-cyan-400 hover:bg-cyan-500/20"
-              >
-                Sign In
-              </Button>
+              <>
+                <Button variant="ghost" onClick={() => { navigate("/auth"); setMobileMenuOpen(false); }} className="justify-start h-10 text-white/60 hover:text-white hover:bg-white/5">
+                  Sign In
+                </Button>
+                <Button onClick={() => { onStartLauncher(); setMobileMenuOpen(false); }} className="justify-start h-10 bg-cyan-500 text-black font-bold hover:bg-cyan-400 gap-2">
+                  <Zap className="h-4 w-4" />Get Started Free
+                </Button>
+              </>
             )}
           </div>
         </div>

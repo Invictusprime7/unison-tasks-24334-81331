@@ -2140,7 +2140,15 @@ export default function ${componentName}Page() {
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedCodeRef = useRef<string>('');
-  const AUTO_SAVE_KEY = 'webbuilder_autosave_draft';
+  // Keep the current template id in a ref so callbacks always read the
+  // latest value without stale-closure issues (avoids re-creating intervals).
+  const currentTemplateIdRef = useRef<string | null>(templateFiles.currentTemplateId);
+  currentTemplateIdRef.current = templateFiles.currentTemplateId;
+  const getAutoSaveKey = useCallback(() =>
+    currentTemplateIdRef.current
+      ? `webbuilder_autosave_${currentTemplateIdRef.current}`
+      : 'webbuilder_autosave_draft'
+  , []);
   const AUTO_SAVE_INTERVAL = 30000; // 30 seconds
   
   // Track unsaved changes for back button warning
@@ -2572,13 +2580,14 @@ export default function ${componentName}Page() {
     if (previewCode && previewCode !== lastSavedCodeRef.current) {
       setAutoSaveStatus('saving');
       try {
+        const saveKey = getAutoSaveKey();
         const draft = {
           code: previewCode,
           editorCode: editorCode,
           savedAt: new Date().toISOString(),
-          templateId: templateFiles.currentTemplateId || null,
+          templateId: currentTemplateIdRef.current || null,
         };
-        localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(draft));
+        localStorage.setItem(saveKey, JSON.stringify(draft));
         lastSavedCodeRef.current = previewCode;
         setLastSavedAt(new Date());
         setAutoSaveStatus('saved');
@@ -2588,7 +2597,7 @@ export default function ${componentName}Page() {
         setAutoSaveStatus('idle');
       }
     }
-  }, [previewCode, editorCode, templateFiles.currentTemplateId]);
+  }, [previewCode, editorCode, getAutoSaveKey]);
   
   // Handle back navigation - go to home/launcher
   const handleBackNavigation = useCallback(() => {
@@ -2616,10 +2625,19 @@ export default function ${componentName}Page() {
     };
   }, [saveDraft]);
   
-  // Restore draft on mount
+  // Restore draft on mount — ONLY when NOT loading a specific saved project by URL.
+  // If ?id= is present the Supabase load is the authoritative source; restoring a
+  // stale localStorage draft here would overwrite the correct project state.
   useEffect(() => {
     try {
-      const savedDraft = localStorage.getItem(AUTO_SAVE_KEY);
+      // If the user navigated here to open a specific saved project, skip restore.
+      const urlId = new URLSearchParams(location.search).get('id');
+      if (urlId) return;
+
+      // Also skip if incoming route state already carries structured project files.
+      if (routeStateHasStructuredProject) return;
+
+      const savedDraft = localStorage.getItem('webbuilder_autosave_draft');
       if (savedDraft) {
         const draft = JSON.parse(savedDraft);
         const savedTime = new Date(draft.savedAt);
@@ -2643,7 +2661,7 @@ export default function ${componentName}Page() {
               action: {
                 label: 'Discard',
                 onClick: () => {
-                  localStorage.removeItem(AUTO_SAVE_KEY);
+                  localStorage.removeItem('webbuilder_autosave_draft');
                   setPreviewCode('import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}');
                 },
               },
@@ -2654,6 +2672,7 @@ export default function ${componentName}Page() {
     } catch (error) {
       console.error('[AutoSave] Error restoring draft:', error);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
    
   // Listen for INTENT_TRIGGER messages from iframe previews
@@ -3294,9 +3313,9 @@ export default ${componentName}Page;`;
   
   // Clear draft when template is saved
   const clearDraft = useCallback(() => {
-    localStorage.removeItem(AUTO_SAVE_KEY);
+    localStorage.removeItem(getAutoSaveKey());
     lastSavedCodeRef.current = '';
-  }, []);
+  }, [getAutoSaveKey]);
 
   // Add console log to confirm component is rendering
   console.log('[WebBuilder] Component rendering with CodeMirror...');

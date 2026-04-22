@@ -1,0 +1,3 @@
+-- Empty migration placeholder.
+-- This file was created by `supabase migration new` but content was written
+-- to 20260421235409 instead. Kept here for remote history alignment.

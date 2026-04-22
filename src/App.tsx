@@ -37,6 +37,8 @@ const Settings = lazy(() => import("./pages/Settings"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const ProjectSetup = lazy(() => import("./pages/ProjectSetup"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 
 const queryClient = new QueryClient();
 
@@ -166,6 +168,16 @@ const App = () => (
             <Route path="/checkout/cancel" element={
               <AsyncBoundary loading={<PageLoader />}>
                 <CheckoutCancel />
+              </AsyncBoundary>
+            } />
+            <Route path="/onboarding" element={
+              <AsyncBoundary loading={<PageLoader />}>
+                <Onboarding />
+              </AsyncBoundary>
+            } />
+            <Route path="/team" element={
+              <AsyncBoundary loading={<PageLoader />}>
+                <TeamManagement />
               </AsyncBoundary>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

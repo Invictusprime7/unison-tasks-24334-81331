@@ -14,16 +14,41 @@ const Auth = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
 
+  // Resolve destination after sign-in/up: /onboarding for new users, /dashboard for returning.
+  // If the user was mid-checkout before authenticating, send them back to /pricing.
+  const resolvePostAuthDestination = async (userId: string, isNewSignup = false) => {
+    const checkoutPlan = sessionStorage.getItem("checkout_plan");
+    if (checkoutPlan) {
+      sessionStorage.removeItem("checkout_plan");
+      return "/pricing";
+    }
+    if (isNewSignup) return "/onboarding";
+    try {
+      const { data } = await supabase
+        .from("onboarding_state")
+        .select("completed")
+        .eq("user_id", userId)
+        .maybeSingle();
+      return data?.completed ? "/dashboard" : "/onboarding";
+    } catch {
+      return "/dashboard";
+    }
+  };
+
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        navigate("/home");
+    let handled = false;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session && !handled) {
+        handled = true;
+        const dest = await resolvePostAuthDestination(session.user.id, event === "SIGNED_UP");
+        navigate(dest);
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        navigate("/home");
+        const dest = await resolvePostAuthDestination(session.user.id);
+        navigate(dest);
       }
     });
 
@@ -43,7 +68,7 @@ const Auth = () => {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/home`,
+        emailRedirectTo: `${window.location.origin}/onboarding`,
         data: {
           full_name: fullName,
         },

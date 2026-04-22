@@ -135,6 +135,16 @@ const Index = () => {
     }
   };
 
+  // Entry point for the wizard — skip the CreateProjectDialog step.
+  // Project row creation is handled by the db trigger after the draft is saved.
+  const handleNewProject = () => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    setLauncherOpen(true);
+  };
+
   const handleStartLauncher = () => {
     setLauncherOpen(true);
   };
@@ -262,13 +272,13 @@ const Index = () => {
         docsOpen={docsOpen}
         onDocsOpenChange={setDocsOpen}
         onSignOut={handleSignOut}
-        onStartLauncher={handleStartLauncher}
+        onStartLauncher={handleNewProject}
       />
 
       {/* Hero Section */}
       <HeroSection 
         user={user}
-        onStartLauncher={handleStartLauncher}
+        onStartLauncher={handleNewProject}
         onAuthRequired={() => navigate("/auth")}
       />
 
@@ -277,7 +287,7 @@ const Index = () => {
         <RecentProjectsSection
           projects={recentProjects}
           loading={loadingProjects}
-          onStartLauncher={handleStartLauncher}
+          onStartLauncher={handleNewProject}
         />
       )}
 
@@ -303,7 +313,7 @@ const Index = () => {
       {/* Footer */}
       <FooterSection />
 
-      {/* System Launcher Wizard - Industry → Theme → Template */}
+      {/* System Launcher Wizard — direct entry, no pre-dialog step */}
       <SystemLauncher open={launcherOpen} onOpenChange={setLauncherOpen} />
     </div>
   );

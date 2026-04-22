@@ -20,24 +20,31 @@ const CheckoutSuccess = () => {
   useEffect(() => {
     const verifyAndFetchSubscription = async () => {
       try {
-        // Wait a moment for webhook to process
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
           navigate("/auth");
           return;
         }
 
-        // Fetch updated subscription
-        const { data: sub } = await supabase
-          .from("user_subscriptions")
-          .select("plan, status")
-          .eq("user_id", user.id)
-          .single();
+        // Poll until the webhook updates the subscription (up to 5 × 2s = 10s)
+        let found = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        if (sub) {
-          setSubscription(sub);
+          const { data: sub } = await supabase
+            .from("user_subscriptions")
+            .select("plan, status")
+            .eq("user_id", user.id)
+            .single();
+
+          if (sub && sub.status === "active" && sub.plan !== "free") {
+            found = sub;
+            break;
+          }
+        }
+
+        if (found) {
+          setSubscription(found);
         }
       } catch (error) {
         console.error("Error fetching subscription:", error);

@@ -10,13 +10,20 @@ const responseHeaders = {
   "X-Frame-Options": "DENY",
 };
 
-// Map Stripe price IDs to plan types
-const PRICE_TO_PLAN: Record<string, string> = {
-  [Deno.env.get("STRIPE_PRO_PRICE_ID") || "price_pro_monthly"]: "pro",
-  [Deno.env.get("STRIPE_BUSINESS_PRICE_ID") || "price_business_monthly"]: "business",
-  [Deno.env.get("STRIPE_PRO_YEARLY_PRICE_ID") || "price_pro_yearly"]: "pro",
-  [Deno.env.get("STRIPE_BUSINESS_YEARLY_PRICE_ID") || "price_business_yearly"]: "business",
-};
+// Build price→plan map lazily per invocation so env vars are always fresh
+function buildPriceToPlanMap(): Record<string, string> {
+  const map: Record<string, string> = {};
+  const entries: Array<[string | undefined, string]> = [
+    [Deno.env.get("STRIPE_PRO_PRICE_ID"), "pro"],
+    [Deno.env.get("STRIPE_BUSINESS_PRICE_ID"), "business"],
+    [Deno.env.get("STRIPE_PRO_YEARLY_PRICE_ID"), "pro"],
+    [Deno.env.get("STRIPE_BUSINESS_YEARLY_PRICE_ID"), "business"],
+  ];
+  for (const [priceId, plan] of entries) {
+    if (priceId) map[priceId] = plan;
+  }
+  return map;
+}
 
 serve(async (req) => {
   if (req.method !== "POST") {
@@ -64,7 +71,11 @@ serve(async (req) => {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        await handleCheckoutComplete(supabase, stripe, session);
+        if (session.mode === "subscription") {
+          await handleCheckoutComplete(supabase, stripe, session);
+        } else if (session.mode === "payment") {
+          await handleOrderPaymentComplete(supabase, session);
+        }
         break;
       }
 
@@ -133,7 +144,8 @@ async function handleCheckoutComplete(
   // Get the subscription details
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
   const priceId = subscription.items.data[0]?.price.id;
-  const plan = session.metadata?.plan || PRICE_TO_PLAN[priceId] || "pro";
+  const priceToPlan = buildPriceToPlanMap();
+  const plan = session.metadata?.plan || priceToPlan[priceId] || "pro";
 
   // Update user subscription in database
   const { error } = await supabase
@@ -190,7 +202,8 @@ async function updateSubscriptionInDb(
   subscription: Stripe.Subscription
 ) {
   const priceId = subscription.items.data[0]?.price.id;
-  const plan = PRICE_TO_PLAN[priceId] || subscription.metadata?.plan || "pro";
+  const priceToPlan = buildPriceToPlanMap();
+  const plan = priceToPlan[priceId] || subscription.metadata?.plan || "pro";
 
   // Map Stripe status to our status
   let status: string;
@@ -330,4 +343,34 @@ async function handlePaymentFailed(
     .eq("user_id", sub.user_id);
 
   console.log(`Marked subscription as past_due for user ${sub.user_id}`);
+}
+
+async function handleOrderPaymentComplete(
+  supabase: SupabaseClient,
+  session: Stripe.Checkout.Session,
+) {
+  const orderId = session.metadata?.order_id;
+  if (!orderId) {
+    console.error("Missing order_id in payment session metadata");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("orders")
+    .update({
+      status: "paid",
+      // Confirm payment_intent_id in case create-order-checkout missed it
+      payment_intent_id: typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : undefined,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", orderId);
+
+  if (error) {
+    console.error("Error updating order status:", error);
+    throw error;
+  }
+
+  console.log(`Order ${orderId} marked as paid`);
 }

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { loadStripe } from "@stripe/stripe-js";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckSquare, Check, Star, ArrowLeft, Zap, Loader2 } from "lucide-react";
@@ -10,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { createCheckoutSession, resolveCheckoutSessionBody } from "@/runtime/checkoutClient";
 
 // Initialize Stripe - use the publishable key from environment
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
 
 const pricingTiers = [
   {
@@ -159,7 +157,6 @@ const Pricing = () => {
 
       const checkoutBody = resolveCheckoutSessionBody({
         plan: tier.name.toLowerCase(),
-        priceId: tier.stripePriceId,
       });
 
       if (!checkoutBody) {

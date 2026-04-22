@@ -20,9 +20,11 @@ interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   userId: string;
+  /** Called with the new project ID right after creation — use this to open the wizard launcher */
+  onProjectCreated?: (projectId: string) => void;
 }
 
-export const CreateProjectDialog = ({ open, onOpenChange, userId }: CreateProjectDialogProps) => {
+export const CreateProjectDialog = ({ open, onOpenChange, userId, onProjectCreated }: CreateProjectDialogProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -35,13 +37,15 @@ export const CreateProjectDialog = ({ open, onOpenChange, userId }: CreateProjec
     const name = formData.get("name") as string;
     const description = formData.get("description") as string;
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('projects')
       .insert({
         name,
         description,
         owner_id: userId,
-      });
+      })
+      .select('id')
+      .single();
 
     setLoading(false);
 
@@ -53,12 +57,16 @@ export const CreateProjectDialog = ({ open, onOpenChange, userId }: CreateProjec
       });
     } else {
       toast({
-        title: "Success",
-        description: "Project created! Opening creative tools...",
+        title: "Project created!",
+        description: "Now let's build your system...",
       });
       onOpenChange(false);
       (e.target as HTMLFormElement).reset();
-      navigate("/creatives");
+      if (onProjectCreated && data?.id) {
+        onProjectCreated(data.id);
+      } else {
+        navigate("/creatives");
+      }
     }
   };
 
@@ -82,7 +90,7 @@ export const CreateProjectDialog = ({ open, onOpenChange, userId }: CreateProjec
             </DialogTitle>
           </div>
           <DialogDescription className="text-gray-400">
-            Add a new project to organize your team's tasks.
+            Name your project — then pick a system and launch it.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">

@@ -141,7 +141,7 @@ export function useSubscription() {
     const limits = getLimits();
     if (limits.aiGenerations === Infinity) return true;
     
-    // Check if reset is needed (monthly)
+    // Check if a monthly reset is overdue
     const resetAt = subscription?.ai_generations_reset_at;
     if (resetAt) {
       const resetDate = new Date(resetAt);
@@ -149,14 +149,24 @@ export function useSubscription() {
       const monthsSinceReset = (now.getFullYear() - resetDate.getFullYear()) * 12 + 
         (now.getMonth() - resetDate.getMonth());
       
-      if (monthsSinceReset >= 1) {
-        // Reset should have happened
+      if (monthsSinceReset >= 1 && user) {
+        // Apply the reset to the DB (fire-and-forget; idempotent)
+        const nowIso = now.toISOString();
+        supabase
+          .from('user_subscriptions')
+          .update({ ai_generations_used: 0, ai_generations_reset_at: nowIso })
+          .eq('user_id', user.id)
+          .then(() => {
+            setSubscription(prev =>
+              prev ? { ...prev, ai_generations_used: 0, ai_generations_reset_at: nowIso } : null
+            );
+          });
         return true;
       }
     }
     
     return (subscription?.ai_generations_used || 0) < limits.aiGenerations;
-  }, [subscription, getLimits]);
+  }, [subscription, getLimits, user]);
 
   const incrementAIUsage = useCallback(async (): Promise<boolean> => {
     if (!subscription || !user) return false;

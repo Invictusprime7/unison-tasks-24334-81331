@@ -6,12 +6,13 @@ import { verifyAuth, authError } from "../_shared/auth.ts";
 import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString, isValidUrl } from "../_shared/validate.ts";
 
-// Price IDs for each plan (configure these in your Stripe dashboard)
-const PLAN_PRICE_IDS: Record<string, string> = {
-  pro: Deno.env.get("STRIPE_PRO_PRICE_ID") || "price_pro_monthly",
-  business: Deno.env.get("STRIPE_BUSINESS_PRICE_ID") || "price_business_monthly",
-  pro_yearly: Deno.env.get("STRIPE_PRO_YEARLY_PRICE_ID") || "price_pro_yearly",
-  business_yearly: Deno.env.get("STRIPE_BUSINESS_YEARLY_PRICE_ID") || "price_business_yearly",
+// Price IDs for each plan — must be set via Stripe dashboard env vars.
+// If unset the checkout will fail with a clear 400 (not a silent Stripe rejection).
+const PLAN_PRICE_IDS: Record<string, string | undefined> = {
+  pro: Deno.env.get("STRIPE_PRO_PRICE_ID"),
+  business: Deno.env.get("STRIPE_BUSINESS_PRICE_ID"),
+  pro_yearly: Deno.env.get("STRIPE_PRO_YEARLY_PRICE_ID"),
+  business_yearly: Deno.env.get("STRIPE_BUSINESS_YEARLY_PRICE_ID"),
 };
 
 interface CreateCheckoutRequest {

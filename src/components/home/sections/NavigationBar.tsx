@@ -9,6 +9,7 @@ import {
   LogOut, 
   Zap,
   Users,
+  Cloud,
   X
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
@@ -79,6 +80,15 @@ export function NavigationBar({
               >
                 <LayoutDashboard className="h-3.5 w-3.5" />
                 Dashboard
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/cloud")}
+                className="text-white/50 hover:text-cyan-400 hover:bg-cyan-500/10 gap-1.5"
+              >
+                <Cloud className="h-3.5 w-3.5" />
+                Cloud
               </Button>
               <Button
                 variant="ghost"
@@ -179,6 +189,9 @@ export function NavigationBar({
               <>
                 <Button variant="ghost" onClick={() => { navigate("/dashboard"); setMobileMenuOpen(false); }} className="justify-start h-10 text-white/60 hover:text-white hover:bg-white/5 gap-2">
                   <LayoutDashboard className="h-4 w-4" />Dashboard
+                </Button>
+                <Button variant="ghost" onClick={() => { navigate("/cloud"); setMobileMenuOpen(false); }} className="justify-start h-10 text-white/60 hover:text-cyan-400 hover:bg-cyan-500/10 gap-2">
+                  <Cloud className="h-4 w-4" />Cloud
                 </Button>
                 <Button variant="ghost" onClick={() => { navigate("/team"); setMobileMenuOpen(false); }} className="justify-start h-10 text-white/60 hover:text-white hover:bg-white/5 gap-2">
                   <Users className="h-4 w-4" />Team

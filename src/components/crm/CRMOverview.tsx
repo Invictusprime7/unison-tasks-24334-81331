@@ -15,9 +15,11 @@ interface OverviewStats {
 
 interface CRMOverviewProps {
   onNavigate: (view: "contacts" | "leads" | "pipeline" | "workflows" | "automations" | "forms") => void;
+  businessId?: string;
+  projectId?: string;
 }
 
-export function CRMOverview({ onNavigate }: CRMOverviewProps) {
+export function CRMOverview({ onNavigate, businessId, projectId }: CRMOverviewProps) {
   const [stats, setStats] = useState<OverviewStats>({
     contacts: 0,
     leads: 0,
@@ -32,12 +34,29 @@ export function CRMOverview({ onNavigate }: CRMOverviewProps) {
   useEffect(() => {
     async function fetchStats() {
       try {
+        let contactsQuery = supabase.from("crm_contacts").select("id", { count: "exact", head: true });
+        let leadsQuery = supabase.from("crm_leads").select("*").order("created_at", { ascending: false }).limit(5);
+        let dealsQuery = supabase.from("crm_deals").select("id", { count: "exact", head: true });
+        let workflowsQuery = supabase.from("crm_workflows").select("id", { count: "exact", head: true });
+        let submissionsQuery = supabase.from("crm_form_submissions").select("*").order("created_at", { ascending: false }).limit(5);
+
+        if (projectId) {
+          contactsQuery = contactsQuery.eq("project_id", projectId);
+          leadsQuery = leadsQuery.eq("project_id", projectId);
+          dealsQuery = dealsQuery.eq("project_id", projectId);
+          workflowsQuery = workflowsQuery.eq("project_id", projectId);
+          submissionsQuery = submissionsQuery.eq("project_id", projectId);
+        } else if (businessId) {
+          contactsQuery = contactsQuery.eq("business_id", businessId);
+          submissionsQuery = submissionsQuery.eq("business_id", businessId);
+        }
+
         const [contactsRes, leadsRes, dealsRes, workflowsRes, submissionsRes] = await Promise.all([
-          supabase.from("crm_contacts").select("id", { count: "exact", head: true }),
-          supabase.from("crm_leads").select("*").order("created_at", { ascending: false }).limit(5),
-          supabase.from("crm_deals").select("id", { count: "exact", head: true }),
-          supabase.from("crm_workflows").select("id", { count: "exact", head: true }),
-          supabase.from("crm_form_submissions").select("*").order("created_at", { ascending: false }).limit(5),
+          contactsQuery,
+          leadsQuery,
+          dealsQuery,
+          workflowsQuery,
+          submissionsQuery,
         ]);
 
         setStats({
@@ -57,7 +76,7 @@ export function CRMOverview({ onNavigate }: CRMOverviewProps) {
     }
 
     fetchStats();
-  }, []);
+  }, [businessId, projectId]);
 
   const statCards = [
     { title: "Total Contacts", value: stats.contacts, icon: Users, color: "text-blue-500", view: "contacts" as const },

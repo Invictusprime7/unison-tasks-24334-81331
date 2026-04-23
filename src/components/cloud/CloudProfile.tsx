@@ -74,14 +74,14 @@ const PLAN_CONFIG = {
   pro: {
     name: 'Pro',
     price: 29,
-    color: 'from-blue-500 to-cyan-500',
-    badge: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    color: 'from-cyan-500 to-cyan-400',
+    badge: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
   },
   team: {
     name: 'Team',
     price: 99,
-    color: 'from-purple-500 to-pink-500',
-    badge: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+    color: 'from-fuchsia-500 to-pink-500',
+    badge: 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30',
   },
   enterprise: {
     name: 'Enterprise',
@@ -419,12 +419,12 @@ export function CloudProfile({ user }: CloudProfileProps) {
   return (
     <div className="space-y-8">
       {/* NEW Profile Hero Banner */}
-      <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-slate-800/90 to-slate-900/90 backdrop-blur-xl">
+      <div className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.04] via-white/[0.02] to-white/[0.02] backdrop-blur-xl">
         {/* Animated Background Effects */}
         <div className="absolute inset-0">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.1),rgba(255,255,255,0))]" />
+          <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/8 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-96 h-96 bg-fuchsia-500/8 rounded-full blur-3xl" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(0,255,255,0.05),rgba(255,255,255,0))]" />
         </div>
         
         {/* Content */}
@@ -435,12 +435,12 @@ export function CloudProfile({ user }: CloudProfileProps) {
             <div className="flex items-center gap-6">
               <div className="relative group">
                 {/* Glow effect */}
-                <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500 rounded-full opacity-20 group-hover:opacity-40 blur-xl transition-all duration-500" />
+                <div className="absolute -inset-2 bg-gradient-to-r from-cyan-500 via-fuchsia-500 to-cyan-400 rounded-full opacity-20 group-hover:opacity-40 blur-xl transition-all duration-500" />
                 
                 {/* Avatar */}
-                <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-blue-500 via-purple-600 to-cyan-500 p-1 shadow-2xl">
-                  <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center">
-                    <span className="text-3xl sm:text-4xl font-bold bg-gradient-to-br from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-cyan-500 via-fuchsia-600 to-cyan-400 p-1 shadow-2xl">
+                  <div className="w-full h-full rounded-full bg-[#0a0a12] flex items-center justify-center">
+                    <span className="text-3xl sm:text-4xl font-bold bg-gradient-to-br from-cyan-400 to-fuchsia-400 bg-clip-text text-transparent">
                       {getInitials()}
                     </span>
                   </div>
@@ -448,7 +448,7 @@ export function CloudProfile({ user }: CloudProfileProps) {
                 
                 {/* Camera Button */}
                 <button 
-                  className="absolute -bottom-1 -right-1 p-2.5 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full border-2 border-slate-900 opacity-0 group-hover:opacity-100 hover:scale-110 transition-all duration-300 shadow-xl"
+                  className="absolute -bottom-1 -right-1 p-2.5 bg-gradient-to-r from-cyan-600 to-fuchsia-600 rounded-full border-2 border-[#0a0a12] opacity-0 group-hover:opacity-100 hover:scale-110 transition-all duration-300 shadow-xl"
                   onClick={() => toast({ title: 'Coming soon', description: 'Avatar upload will be available soon.' })}
                 >
                   <Camera className="h-4 w-4 text-white" />
@@ -471,7 +471,7 @@ export function CloudProfile({ user }: CloudProfileProps) {
                         setFullName(profile?.full_name || '');
                       }
                     }}
-                    className="h-12 text-2xl font-bold bg-slate-800/50 border-blue-500/50 focus:border-blue-500 text-white placeholder:text-slate-500 rounded-xl"
+                    className="h-12 text-2xl font-bold bg-white/5 border-cyan-500/50 focus:border-cyan-500 text-white placeholder:text-white/30 rounded-xl"
                     placeholder="Enter your name"
                     autoFocus
                     disabled={saving}
@@ -481,7 +481,7 @@ export function CloudProfile({ user }: CloudProfileProps) {
                       size="lg"
                       onClick={saveProfile} 
                       disabled={saving || !fullName.trim()}
-                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white shadow-lg"
+                      className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold shadow-[0_0_20px_rgba(0,200,255,0.3)]"
                     >
                       {saving ? (
                         <Loader2 className="h-5 w-5 animate-spin" />
@@ -518,7 +518,7 @@ export function CloudProfile({ user }: CloudProfileProps) {
                     className="p-2 hover:bg-white/10 rounded-xl transition-all duration-200 group flex-shrink-0"
                     title="Edit name"
                   >
-                    <Edit2 className="h-5 w-5 text-slate-400 group-hover:text-blue-400 transition-colors" />
+                    <Edit2 className="h-5 w-5 text-white/40 group-hover:text-cyan-400 transition-colors" />
                   </button>
                   {!fullName && (
                     <Badge className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 text-yellow-300 border-yellow-500/30 px-3 py-1">
@@ -539,7 +539,7 @@ export function CloudProfile({ user }: CloudProfileProps) {
                   <Check className="h-3.5 w-3.5 mr-1.5" />
                   Verified
                 </Badge>
-                <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 px-3 py-1">
+                <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30 px-3 py-1">
                   <Calendar className="h-3.5 w-3.5 mr-1.5" />
                   Joined {memberSince}
                 </Badge>
@@ -557,7 +557,7 @@ export function CloudProfile({ user }: CloudProfileProps) {
                 
                 {/* Plan Card */}
                 <div className={cn(
-                  "relative px-6 py-4 rounded-2xl border-2 bg-slate-900/90 backdrop-blur-sm",
+                  "relative px-6 py-4 rounded-2xl border-2 bg-[#0a0a12]/90 backdrop-blur-sm",
                   "border-white/20 group-hover:border-white/30 transition-all duration-300"
                 )}>
                   <div className="flex items-center gap-3 mb-3">
@@ -568,7 +568,7 @@ export function CloudProfile({ user }: CloudProfileProps) {
                       <Crown className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                      <p className="text-xs text-slate-400 uppercase tracking-wider">Current Plan</p>
+                      <p className="text-xs text-white/40 uppercase tracking-wider">Current Plan</p>
                       <p className="text-xl font-bold text-white">{planConfig.name}</p>
                     </div>
                   </div>
@@ -619,19 +619,19 @@ export function CloudProfile({ user }: CloudProfileProps) {
               icon={Calendar} 
               label="Member Since" 
               value={memberSince}
-              color="bg-blue-500/20 text-blue-400"
+              color="bg-cyan-500/20 text-cyan-400"
             />
             <ProfileStat 
               icon={Activity} 
               label="Last Active" 
               value={user?.last_sign_in_at ? 'Today' : 'Unknown'}
-              color="bg-green-500/20 text-green-400"
+              color="bg-lime-500/20 text-lime-400"
             />
             <ProfileStat 
               icon={Star} 
               label="Projects" 
               value={String(usage?.projects.current || 0)}
-              color="bg-purple-500/20 text-purple-400"
+              color="bg-fuchsia-500/20 text-fuchsia-400"
             />
             <ProfileStat 
               icon={Award} 
@@ -643,21 +643,21 @@ export function CloudProfile({ user }: CloudProfileProps) {
 
           {/* Quick Actions */}
           <div className="space-y-3">
-            <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">Account Settings</h3>
+            <h3 className="text-sm font-medium text-white/40 uppercase tracking-wider">Account Settings</h3>
             <div className="grid gap-2">
               {/* Change Password */}
               <button 
                 onClick={() => setPasswordDialogOpen(true)}
                 className="group flex items-center gap-4 w-full p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all duration-300 text-left"
               >
-                <div className="p-2 rounded-lg bg-slate-800/50 group-hover:bg-slate-700/50 transition-colors">
-                  <Key className="h-5 w-5 text-slate-400 group-hover:text-white transition-colors" />
+                <div className="p-2 rounded-lg bg-white/[0.05] group-hover:bg-white/[0.08] transition-colors">
+                  <Key className="h-5 w-5 text-white/40 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
                   <p className="font-medium text-white">Change Password</p>
-                  <p className="text-sm text-slate-500">Update your security credentials</p>
+                  <p className="text-sm text-white/30">Update your security credentials</p>
                 </div>
-                <ChevronRight className="h-5 w-5 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                <ChevronRight className="h-5 w-5 text-white/25 group-hover:text-white/50 transition-colors" />
               </button>
 
               {/* Two-Factor Auth */}
@@ -665,19 +665,19 @@ export function CloudProfile({ user }: CloudProfileProps) {
                 onClick={() => setTwoFaDialogOpen(true)}
                 className="group flex items-center gap-4 w-full p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all duration-300 text-left"
               >
-                <div className="p-2 rounded-lg bg-slate-800/50 group-hover:bg-slate-700/50 transition-colors">
-                  <Shield className="h-5 w-5 text-slate-400 group-hover:text-white transition-colors" />
+                <div className="p-2 rounded-lg bg-white/[0.05] group-hover:bg-white/[0.08] transition-colors">
+                  <Shield className="h-5 w-5 text-white/40 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-white">Two-Factor Auth</p>
-                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 text-green-400 border-green-500/30">
+                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 text-cyan-400 border-cyan-500/30">
                       Recommended
                     </Badge>
                   </div>
-                  <p className="text-sm text-slate-500">Add an extra layer of security</p>
+                  <p className="text-sm text-white/30">Add an extra layer of security</p>
                 </div>
-                <ChevronRight className="h-5 w-5 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                <ChevronRight className="h-5 w-5 text-white/25 group-hover:text-white/50 transition-colors" />
               </button>
 
               {/* Preferences */}
@@ -685,14 +685,14 @@ export function CloudProfile({ user }: CloudProfileProps) {
                 onClick={() => setPreferencesDialogOpen(true)}
                 className="group flex items-center gap-4 w-full p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all duration-300 text-left"
               >
-                <div className="p-2 rounded-lg bg-slate-800/50 group-hover:bg-slate-700/50 transition-colors">
-                  <Settings className="h-5 w-5 text-slate-400 group-hover:text-white transition-colors" />
+                <div className="p-2 rounded-lg bg-white/[0.05] group-hover:bg-white/[0.08] transition-colors">
+                  <Settings className="h-5 w-5 text-white/40 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
                   <p className="font-medium text-white">Preferences</p>
-                  <p className="text-sm text-slate-500">Notification and display settings</p>
+                  <p className="text-sm text-white/30">Notification and display settings</p>
                 </div>
-                <ChevronRight className="h-5 w-5 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                <ChevronRight className="h-5 w-5 text-white/25 group-hover:text-white/50 transition-colors" />
               </button>
             </div>
           </div>
@@ -865,10 +865,10 @@ export function CloudProfile({ user }: CloudProfileProps) {
 
       {/* Password Reset Dialog */}
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="bg-slate-900 border-white/10">
+        <DialogContent className="bg-[#0d0d18] border-white/10">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Key className="h-5 w-5 text-blue-400" />
+              <Key className="h-5 w-5 text-cyan-400" />
               Change Password
             </DialogTitle>
             <DialogDescription>
@@ -876,8 +876,8 @@ export function CloudProfile({ user }: CloudProfileProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
-              <p className="text-sm text-blue-300">
+            <div className="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+              <p className="text-sm text-cyan-300">
                 A password reset link will be sent to <strong>{user?.email}</strong>
               </p>
             </div>
@@ -902,10 +902,10 @@ export function CloudProfile({ user }: CloudProfileProps) {
 
       {/* Two-Factor Auth Dialog */}
       <Dialog open={twoFaDialogOpen} onOpenChange={setTwoFaDialogOpen}>
-        <DialogContent className="bg-slate-900 border-white/10">
+        <DialogContent className="bg-[#0d0d18] border-white/10">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-green-400" />
+              <Shield className="h-5 w-5 text-cyan-400" />
               Two-Factor Authentication
             </DialogTitle>
             <DialogDescription>
@@ -913,10 +913,10 @@ export function CloudProfile({ user }: CloudProfileProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="py-6 text-center">
-            <div className="inline-block p-4 rounded-2xl bg-green-500/10 mb-4">
-              <Shield className="h-12 w-12 text-green-400" />
+            <div className="inline-block p-4 rounded-2xl bg-cyan-500/10 mb-4">
+              <Shield className="h-12 w-12 text-cyan-400" />
             </div>
-            <p className="text-slate-400 mb-4">
+            <p className="text-white/40 mb-4">
               Two-factor authentication adds an extra layer of security to your account by requiring a code from your authenticator app.
             </p>
             <Badge variant="outline" className="text-amber-400 border-amber-500/30">
@@ -933,10 +933,10 @@ export function CloudProfile({ user }: CloudProfileProps) {
 
       {/* Preferences Dialog */}
       <Dialog open={preferencesDialogOpen} onOpenChange={setPreferencesDialogOpen}>
-        <DialogContent className="bg-slate-900 border-white/10">
+        <DialogContent className="bg-[#0d0d18] border-white/10">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5 text-purple-400" />
+              <Settings className="h-5 w-5 text-fuchsia-400" />
               Preferences
             </DialogTitle>
             <DialogDescription>
@@ -944,11 +944,11 @@ export function CloudProfile({ user }: CloudProfileProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-white/40">
               For email notification preferences, visit the Email settings tab.
             </p>
-            <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20">
-              <p className="text-sm text-purple-300">
+            <div className="p-4 rounded-xl bg-fuchsia-500/10 border border-fuchsia-500/20">
+              <p className="text-sm text-fuchsia-300">
                 Additional preferences will be available in a future update.
               </p>
             </div>
@@ -963,7 +963,7 @@ export function CloudProfile({ user }: CloudProfileProps) {
 
       {/* Upgrade Dialog */}
       <Dialog open={upgradeDialogOpen} onOpenChange={setUpgradeDialogOpen}>
-        <DialogContent className="bg-slate-900 border-white/10 sm:max-w-lg">
+        <DialogContent className="bg-[#0d0d18] border-white/10 sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Zap className="h-5 w-5 text-yellow-400" />

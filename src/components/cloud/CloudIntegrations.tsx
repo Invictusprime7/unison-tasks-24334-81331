@@ -425,32 +425,32 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
       {/* Stats Bar */}
       <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-white/[0.02] to-transparent border border-white/5">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-green-500/20">
-            <Plug className="h-5 w-5 text-green-400" />
+          <div className="p-2 rounded-lg bg-cyan-500/20">
+            <Plug className="h-5 w-5 text-cyan-400" />
           </div>
           <div>
             <p className="text-2xl font-bold">{connectedCount}</p>
-            <p className="text-xs text-slate-500">Connected</p>
+            <p className="text-xs text-white/30">Connected</p>
           </div>
         </div>
         <div className="h-8 w-px bg-white/10 hidden sm:block" />
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-slate-500/20">
-            <Globe className="h-5 w-5 text-slate-400" />
+          <div className="p-2 rounded-lg bg-white/5">
+            <Globe className="h-5 w-5 text-white/40" />
           </div>
           <div>
             <p className="text-2xl font-bold">{integrations.length}</p>
-            <p className="text-xs text-slate-500">Available</p>
+            <p className="text-xs text-white/30">Available</p>
           </div>
         </div>
         <div className="h-8 w-px bg-white/10 hidden sm:block" />
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-purple-500/20">
-            <Key className="h-5 w-5 text-purple-400" />
+          <div className="p-2 rounded-lg bg-fuchsia-500/20">
+            <Key className="h-5 w-5 text-fuchsia-400" />
           </div>
           <div>
             <p className="text-2xl font-bold">{generatedApiKeys.length}</p>
-            <p className="text-xs text-slate-500">API Keys</p>
+            <p className="text-xs text-white/30">API Keys</p>
           </div>
         </div>
       </div>
@@ -458,7 +458,7 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
       {/* Integrations by Category */}
       {Object.entries(groupedIntegrations).map(([category, categoryIntegrations]) => (
         <div key={category} className="space-y-4">
-          <div className="flex items-center gap-2 text-sm text-slate-400">
+          <div className="flex items-center gap-2 text-sm text-white/40">
             {CATEGORY_LABELS[category].icon}
             <span className="font-medium">{CATEGORY_LABELS[category].label}</span>
           </div>
@@ -470,7 +470,7 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
                 className={cn(
                   "group relative rounded-2xl border transition-all duration-300 overflow-hidden hover:-translate-y-1 hover:shadow-lg",
                   integration.connected
-                    ? "border-green-500/30 bg-green-500/5"
+                    ? "border-cyan-500/30 bg-cyan-500/5"
                     : "border-white/5 bg-white/[0.02] hover:border-white/20"
                 )}
               >
@@ -481,19 +481,19 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
                       {integration.icon}
                     </div>
                     {integration.connected ? (
-                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                      <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
                         <CheckCircle2 className="h-3 w-3 mr-1" />
                         Connected
                       </Badge>
                     ) : (
-                      <Badge variant="outline" className="border-white/10 text-slate-500">
+                      <Badge variant="outline" className="border-white/10 text-white/30">
                         <XCircle className="h-3 w-3 mr-1" />
                         Not Connected
                       </Badge>
                     )}
                   </div>
                   <h3 className="font-bold mb-1">{integration.name}</h3>
-                  <p className="text-sm text-slate-400 mb-4 line-clamp-2">{integration.description}</p>
+                  <p className="text-sm text-white/40 mb-4 line-clamp-2">{integration.description}</p>
                   
                   <div className="flex items-center gap-2">
                     {integration.connected ? (
@@ -528,7 +528,7 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
                             Connect
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="bg-slate-900 border-white/10">
+                        <DialogContent className="bg-[#0d0d18] border-white/10">
                           <DialogHeader>
                             <DialogTitle className="flex items-center gap-3">
                               <div className={cn("p-2 rounded-lg bg-gradient-to-r", integration.color)}>
@@ -536,7 +536,7 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
                               </div>
                               Connect {integration.name}
                             </DialogTitle>
-                            <DialogDescription className="text-slate-400">
+                          <DialogDescription className="text-white/40">
                               Enter your API credentials to connect {integration.name} with Unison Tasks.
                             </DialogDescription>
                           </DialogHeader>
@@ -549,20 +549,20 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
                                   placeholder={integration.apiKeyPlaceholder}
                                   value={apiKey}
                                   onChange={(e) => setApiKey(e.target.value)}
-                                  className="pr-10 bg-white/[0.03] border-white/10 focus:border-blue-500/50"
+                                  className="pr-10 bg-white/[0.03] border-white/10 focus:border-cyan-500/50"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => setShowApiKey(!showApiKey)}
-                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
                                 >
                                   {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                 </button>
                               </div>
                             </div>
-                            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                              <Shield className="h-4 w-4 text-blue-400 mt-0.5" />
-                              <p className="text-xs text-blue-300">
+                            <div className="flex items-start gap-2 p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                              <Shield className="h-4 w-4 text-cyan-400 mt-0.5" />
+                              <p className="text-xs text-cyan-300">
                                 Your credentials are encrypted and stored securely. We never share your API keys.
                               </p>
                             </div>
@@ -606,17 +606,17 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-r from-purple-500/20 to-pink-500/20">
-              <Key className="h-5 w-5 text-purple-400" />
+            <div className="p-2 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-pink-500/20">
+              <Key className="h-5 w-5 text-fuchsia-400" />
             </div>
             <div>
               <h2 className="text-lg font-bold">Your API Keys</h2>
-              <p className="text-sm text-slate-400">Access Unison Tasks programmatically</p>
+              <p className="text-sm text-white/40">Access Unison Tasks programmatically</p>
             </div>
           </div>
           <Button 
             onClick={generateApiKey}
-            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500"
+            className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500"
           >
             <Plus className="h-4 w-4 mr-2" />
             Generate New Key
@@ -625,11 +625,11 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
 
         {generatedApiKeys.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center">
-            <div className="inline-block p-4 rounded-2xl bg-purple-500/10 mb-4">
-              <Key className="h-8 w-8 text-purple-400" />
+            <div className="inline-block p-4 rounded-2xl bg-fuchsia-500/10 mb-4">
+              <Key className="h-8 w-8 text-fuchsia-400" />
             </div>
             <h3 className="font-bold mb-2">No API Keys Yet</h3>
-            <p className="text-sm text-slate-400 mb-4">
+              <p className="text-sm text-white/40 mb-4">
               Generate an API key to access Unison Tasks from your applications.
             </p>
           </div>
@@ -641,14 +641,14 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
                   key={keyData.key} 
                   className="flex items-center gap-4 p-4 hover:bg-white/[0.02] transition-colors"
                 >
-                  <div className="p-2 rounded-lg bg-purple-500/20">
-                    <Key className="h-4 w-4 text-purple-400" />
+                  <div className="p-2 rounded-lg bg-fuchsia-500/20">
+                    <Key className="h-4 w-4 text-fuchsia-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <code className="text-sm font-mono text-slate-300 truncate block">
+                    <code className="text-sm font-mono text-white/60 truncate block">
                       {keyData.key.substring(0, 12)}...{keyData.key.substring(keyData.key.length - 8)}
                     </code>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-white/30">
                       Created {new Date(keyData.created).toLocaleDateString()}
                     </p>
                   </div>
@@ -656,7 +656,7 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
                     size="sm"
                     variant="ghost"
                     onClick={() => copyToClipboard(keyData.key)}
-                    className="text-slate-400 hover:text-white"
+                    className="text-white/40 hover:text-white"
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
@@ -677,7 +677,7 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
 
       {/* Integration Settings Dialog */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="bg-slate-900 border-white/10 max-w-md">
+        <DialogContent className="bg-[#0d0d18] border-white/10 max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
               {settingsIntegration && (
@@ -687,17 +687,17 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
               )}
               {settingsIntegration?.name} Settings
             </DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogDescription className="text-white/40">
               Configure your {settingsIntegration?.name} integration.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">
-            <div className="flex items-center justify-between p-4 rounded-xl bg-green-500/10 border border-green-500/20">
+            <div className="flex items-center justify-between p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-green-400" />
-                <span className="text-green-400 font-medium">Connected</span>
+                <CheckCircle2 className="h-5 w-5 text-cyan-400" />
+                <span className="text-cyan-400 font-medium">Connected</span>
               </div>
-              <Badge variant="outline" className="border-green-500/30 text-green-400">Active</Badge>
+              <Badge variant="outline" className="border-cyan-500/30 text-cyan-400">Active</Badge>
             </div>
             
             <div className="space-y-2">

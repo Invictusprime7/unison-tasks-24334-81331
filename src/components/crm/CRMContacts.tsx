@@ -35,7 +35,12 @@ interface Contact {
   created_at: string;
 }
 
-export function CRMContacts() {
+interface CRMContactsProps {
+  businessId?: string;
+  projectId?: string;
+}
+
+export function CRMContacts({ businessId, projectId }: CRMContactsProps = {}) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -52,14 +57,22 @@ export function CRMContacts() {
 
   useEffect(() => {
     fetchContacts();
-  }, []);
+  }, [businessId, projectId]);
 
   async function fetchContacts() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("crm_contacts")
         .select("*")
         .order("created_at", { ascending: false });
+
+      if (projectId) {
+        query = query.eq("project_id", projectId);
+      } else if (businessId) {
+        query = query.eq("business_id", businessId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setContacts(data || []);
@@ -82,6 +95,8 @@ export function CRMContacts() {
         phone: formData.phone || null,
         company: formData.company || null,
         tags: formData.tags ? formData.tags.split(",").map((t) => t.trim()) : [],
+        business_id: businessId || null,
+        project_id: projectId || null,
       };
 
       if (editingContact) {

@@ -146,7 +146,7 @@ function SecurityStat({
   status?: 'good' | 'warning' | 'danger';
 }) {
   const statusColors = {
-    good: 'ring-2 ring-green-500/30',
+    good: 'ring-2 ring-cyan-500/30',
     warning: 'ring-2 ring-yellow-500/30',
     danger: 'ring-2 ring-red-500/30',
   };
@@ -163,7 +163,7 @@ function SecurityStat({
           <Icon className="h-4 w-4 text-white" />
         </div>
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-wider">{label}</p>
+          <p className="text-xs text-white/30 uppercase tracking-wider">{label}</p>
           <p className="text-lg font-semibold text-white">{value}</p>
         </div>
       </div>
@@ -186,26 +186,26 @@ function SessionCard({
       className={cn(
         'p-4 rounded-xl border transition-all duration-300',
         session.isCurrent
-          ? 'bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-500/30'
+          ? 'bg-gradient-to-r from-cyan-500/10 to-cyan-400/10 border-cyan-500/30'
           : 'bg-white/[0.02] border-white/5 hover:border-white/10'
       )}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-lg bg-white/[0.05]">
-            <Monitor className="h-5 w-5 text-slate-400" />
+            <Monitor className="h-5 w-5 text-white/40" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <p className="font-medium text-white">{session.device}</p>
               {session.isCurrent && (
-                <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">
+                <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30 text-xs">
                   Current
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-slate-400">{session.browser}</p>
-            <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
+            <p className="text-sm text-white/40">{session.browser}</p>
+            <div className="flex items-center gap-3 mt-2 text-xs text-white/30">
               <span className="flex items-center gap-1">
                 <MapPin className="h-3 w-3" />
                 {session.location}
@@ -270,7 +270,7 @@ function LoginHistoryItem({ event }: { event: LoginEvent }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className={cn('font-medium', config.color)}>{config.label}</p>
-        <div className="flex items-center gap-3 text-xs text-slate-500">
+        <div className="flex items-center gap-3 text-xs text-white/30">
           <span>{event.device}</span>
           <span>•</span>
           <span>{event.location}</span>
@@ -281,7 +281,7 @@ function LoginHistoryItem({ event }: { event: LoginEvent }) {
           <p className="text-xs text-red-400 mt-1">{event.reason}</p>
         )}
       </div>
-      <span className="text-xs text-slate-500">
+      <span className="text-xs text-white/30">
         {new Date(event.timestamp).toLocaleString()}
       </span>
     </div>
@@ -522,11 +522,11 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
     return (
       <div className="space-y-6">
         <div className="animate-pulse">
-          <div className="h-32 bg-gradient-to-r from-slate-800/50 to-slate-700/50 rounded-2xl" />
+          <div className="h-32 bg-gradient-to-r from-white/[0.04] to-white/[0.02] rounded-2xl" />
         </div>
         <div className="grid grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-20 bg-slate-800/30 rounded-xl animate-pulse" />
+            <div key={i} className="h-20 bg-white/[0.03] rounded-xl animate-pulse" />
           ))}
         </div>
       </div>
@@ -537,17 +537,17 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
     <div className="space-y-8">
       {/* Security Overview Hero */}
       <div className="relative overflow-hidden rounded-2xl">
-        <div className="absolute inset-0 bg-gradient-to-br from-green-600/20 via-emerald-600/20 to-teal-600/20" />
+        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-fuchsia-500/10 to-cyan-500/10" />
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-50" />
 
         <div className="relative p-8">
           <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500">
-              <ShieldCheck className="h-8 w-8 text-white" />
+            <div className="p-3 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400">
+              <ShieldCheck className="h-8 w-8 text-black" />
             </div>
             <div>
               <h2 className="text-2xl font-bold text-white">Security Center</h2>
-              <p className="text-slate-400">Manage your account security and authentication</p>
+              <p className="text-white/40">Manage your account security and authentication</p>
             </div>
           </div>
 
@@ -557,21 +557,21 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
               icon={Shield}
               label="Security Score"
               value={twoFaEnabled ? '95/100' : '70/100'}
-              color="bg-gradient-to-r from-green-500 to-emerald-500"
+              color="bg-gradient-to-r from-cyan-500 to-cyan-400"
               status={twoFaEnabled ? 'good' : 'warning'}
             />
             <SecurityStat
               icon={Monitor}
               label="Active Sessions"
               value={String(sessions.length)}
-              color="bg-gradient-to-r from-blue-500 to-cyan-500"
+              color="bg-gradient-to-r from-cyan-500 to-cyan-400"
               status="good"
             />
             <SecurityStat
               icon={Fingerprint}
               label="2FA Status"
               value={twoFaEnabled ? 'Enabled' : 'Disabled'}
-              color="bg-gradient-to-r from-purple-500 to-pink-500"
+              color="bg-gradient-to-r from-fuchsia-500 to-pink-500"
               status={twoFaEnabled ? 'good' : 'warning'}
             />
             <SecurityStat
@@ -590,8 +590,8 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
         <Card className="bg-white/[0.02] border-white/5 backdrop-blur-sm">
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500">
-                <Key className="h-5 w-5 text-white" />
+              <div className="p-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-400">
+                <Key className="h-5 w-5 text-black" />
               </div>
               <div>
                 <CardTitle className="text-white">Password</CardTitle>
@@ -600,12 +600,12 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-slate-400 mb-4">
+            <p className="text-sm text-white/40 mb-4">
               Use a strong, unique password with a mix of letters, numbers, and symbols.
             </p>
             <Button
               onClick={() => setPasswordDialogOpen(true)}
-              className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+              className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold shadow-[0_0_20px_rgba(0,200,255,0.3)]"
             >
               <Lock className="h-4 w-4 mr-2" />
               Change Password
@@ -617,7 +617,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
         <Card className="bg-white/[0.02] border-white/5 backdrop-blur-sm">
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500">
+              <div className="p-2 rounded-lg bg-gradient-to-r from-fuchsia-500 to-pink-500">
                 <Smartphone className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -629,12 +629,12 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
           <CardContent>
             <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] border border-white/5">
               <div className="flex items-center gap-3">
-                <Fingerprint className={cn('h-6 w-6', twoFaEnabled ? 'text-green-400' : 'text-slate-500')} />
+                <Fingerprint className={cn('h-6 w-6', twoFaEnabled ? 'text-cyan-400' : 'text-white/30')} />
                 <div>
                   <p className="font-medium text-white">
                     {twoFaEnabled ? '2FA is Active' : '2FA is Disabled'}
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-white/40">
                     {twoFaEnabled
                       ? 'Your account is protected'
                       : 'Enable for enhanced security'}
@@ -699,7 +699,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
               />
             ))}
             {sessions.length === 0 && (
-              <p className="text-center text-slate-500 py-8">No active sessions</p>
+              <p className="text-center text-white/30 py-8">No active sessions</p>
             )}
           </div>
         </CardContent>
@@ -724,7 +724,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
               <LoginHistoryItem key={event.id} event={event} />
             ))}
             {loginHistory.length === 0 && (
-              <p className="text-center text-slate-500 py-8">No login history available</p>
+              <p className="text-center text-white/30 py-8">No login history available</p>
             )}
           </div>
         </CardContent>
@@ -732,7 +732,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
 
       {/* Change Password Dialog */}
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="bg-slate-900 border-white/10">
+        <DialogContent className="bg-[#0d0d18] border-white/10">
           <DialogHeader>
             <DialogTitle className="text-white">Change Password</DialogTitle>
             <DialogDescription>
@@ -748,13 +748,13 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
                   type={showPassword ? 'text' : 'password'}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="bg-slate-800 border-white/10 pr-10"
+                  className="bg-white/[0.03] border-white/10 pr-10"
                   placeholder="Enter new password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -777,7 +777,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
                     </span>
                   </div>
                   {passwordStrength.feedback.length > 0 && (
-                    <ul className="text-xs text-slate-400 space-y-1">
+                    <ul className="text-xs text-white/40 space-y-1">
                       {passwordStrength.feedback.map((fb, i) => (
                         <li key={i} className="flex items-center gap-1">
                           <XCircle className="h-3 w-3 text-red-400" />
@@ -796,7 +796,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
                 type={showPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="bg-slate-800 border-white/10"
+                className="bg-white/[0.03] border-white/10"
                 placeholder="Confirm new password"
               />
               {confirmPassword && !passwordsMatch && (
@@ -806,7 +806,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
                 </p>
               )}
               {confirmPassword && passwordsMatch && (
-                <p className="text-xs text-green-400 flex items-center gap-1">
+                <p className="text-xs text-cyan-400 flex items-center gap-1">
                   <CheckCircle2 className="h-3 w-3" />
                   Passwords match
                 </p>
@@ -821,7 +821,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
             <Button
               onClick={handleChangePassword}
               disabled={!canChangePassword || changingPassword}
-              className="bg-gradient-to-r from-blue-500 to-cyan-500"
+              className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold"
             >
               {changingPassword && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Update Password
@@ -832,7 +832,7 @@ export function CloudSecurity({ userId }: CloudSecurityProps) {
 
       {/* Revoke All Sessions Dialog */}
       <AlertDialog open={revokeAllDialogOpen} onOpenChange={setRevokeAllDialogOpen}>
-        <AlertDialogContent className="bg-slate-900 border-white/10">
+        <AlertDialogContent className="bg-[#0d0d18] border-white/10">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-white flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-red-400" />

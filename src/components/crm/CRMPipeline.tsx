@@ -47,8 +47,8 @@ const stages = [
   { id: "closed_lost", label: "Closed Lost", color: "bg-red-100 border-red-300" },
 ];
 
-export function CRMPipeline({ businessId }: { businessId?: string } = {}) {
-  const crm = useCRMActions(businessId);
+export function CRMPipeline({ businessId, projectId }: { businessId?: string; projectId?: string } = {}) {
+  const crm = useCRMActions({ businessId, projectId });
   const [deals, setDeals] = useState<Deal[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -69,14 +69,22 @@ export function CRMPipeline({ businessId }: { businessId?: string } = {}) {
     fetchDeals();
     fetchContacts();
     fetchLeads();
-  }, []);
+  }, [businessId, projectId]);
 
   async function fetchDeals() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("crm_deals")
         .select("*")
         .order("created_at", { ascending: false });
+
+      if (projectId) {
+        query = query.eq("project_id", projectId);
+      } else if (businessId) {
+        query = query.eq("business_id", businessId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setDeals(data || []);
@@ -90,10 +98,18 @@ export function CRMPipeline({ businessId }: { businessId?: string } = {}) {
 
   async function fetchContacts() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("crm_contacts")
         .select("id, first_name, last_name, email")
         .limit(100);
+
+      if (projectId) {
+        query = query.eq("project_id", projectId);
+      } else if (businessId) {
+        query = query.eq("business_id", businessId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setContacts(data || []);
@@ -104,10 +120,18 @@ export function CRMPipeline({ businessId }: { businessId?: string } = {}) {
 
   async function fetchLeads() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("crm_leads")
         .select("id, title")
         .limit(100);
+
+      if (projectId) {
+        query = query.eq("project_id", projectId);
+      } else if (businessId) {
+        query = query.eq("business_id", businessId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setLeads(data || []);

@@ -381,7 +381,7 @@ export function CloudAssets({
       <div className="space-y-6">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {[...Array(10)].map((_, i) => (
-            <div key={i} className="aspect-square rounded-2xl bg-gradient-to-br from-slate-800/50 to-slate-700/30 animate-pulse" />
+            <div key={i} className="aspect-square rounded-2xl bg-gradient-to-br from-white/[0.04] to-white/[0.02] animate-pulse" />
           ))}
         </div>
       </div>
@@ -398,32 +398,32 @@ export function CloudAssets({
     >
       {isDragging && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center">
-          <div className="p-8 rounded-3xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border-2 border-dashed border-blue-500/50">
-            <CloudUpload className="h-16 w-16 text-blue-400 mx-auto mb-4 animate-bounce" />
+          <div className="p-8 rounded-3xl bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 border-2 border-dashed border-cyan-500/50">
+            <CloudUpload className="h-16 w-16 text-cyan-400 mx-auto mb-4 animate-bounce" />
             <p className="text-xl font-semibold text-white text-center">Drop files to upload</p>
-            <p className="text-slate-400 text-center mt-2">Images, videos, PDFs, and documents</p>
+            <p className="text-white/40 text-center mt-2">Images, videos, PDFs, and documents</p>
           </div>
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-white/[0.02] to-transparent border border-white/5">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-blue-500/20">
-            <HardDrive className="h-5 w-5 text-blue-400" />
+          <div className="p-2 rounded-lg bg-cyan-500/20">
+            <HardDrive className="h-5 w-5 text-cyan-400" />
           </div>
           <div>
             <p className="text-2xl font-bold">{formatFileSize(totalSize)}</p>
-            <p className="text-xs text-slate-500">Storage used</p>
+            <p className="text-xs text-white/30">Storage used</p>
           </div>
         </div>
         <div className="h-8 w-px bg-white/10 hidden sm:block" />
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-purple-500/20">
-            <Folder className="h-5 w-5 text-purple-400" />
+          <div className="p-2 rounded-lg bg-fuchsia-500/20">
+            <Folder className="h-5 w-5 text-fuchsia-400" />
           </div>
           <div>
             <p className="text-2xl font-bold">{assets.length}</p>
-            <p className="text-xs text-slate-500">Total files</p>
+            <p className="text-xs text-white/30">Total files</p>
           </div>
         </div>
         <div className="flex-1" />
@@ -438,7 +438,7 @@ export function CloudAssets({
         <Button 
           onClick={() => fileInputRef.current?.click()} 
           disabled={uploading}
-          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500"
+          className="bg-gradient-to-r from-cyan-600 to-fuchsia-600 hover:from-cyan-500 hover:to-fuchsia-500"
         >
           {uploading ? (
             <>
@@ -456,12 +456,12 @@ export function CloudAssets({
 
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
           <Input
             placeholder="Search assets..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-11 bg-white/[0.03] border-white/5 focus:border-blue-500/50 rounded-xl h-11"
+            className="pl-11 bg-white/[0.03] border-white/5 focus:border-cyan-500/50 rounded-xl h-11"
           />
         </div>
         <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/5">
@@ -492,18 +492,18 @@ export function CloudAssets({
 
       {filteredAssets.length === 0 ? (
         <div className="relative rounded-2xl border-2 border-dashed border-white/10 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-purple-500/5" />
+          <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-fuchsia-500/5" />
           <div className="relative text-center py-20 px-4">
             <div className="relative inline-block mb-6">
-              <div className="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full" />
-              <div className="relative p-6 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-700/50 border border-white/10">
-                <CloudUpload className="h-12 w-12 text-blue-400" />
+              <div className="absolute inset-0 bg-cyan-500/20 blur-2xl rounded-full" />
+              <div className="relative p-6 rounded-2xl bg-gradient-to-br from-white/[0.04] to-white/[0.02] border border-white/10">
+                <CloudUpload className="h-12 w-12 text-cyan-400" />
               </div>
             </div>
             <h3 className="text-xl font-bold mb-2">
               {searchQuery ? 'No assets found' : 'Your asset library is empty'}
             </h3>
-            <p className="text-slate-400 mb-6 max-w-md mx-auto">
+            <p className="text-white/40 mb-6 max-w-md mx-auto">
               {searchQuery
                 ? 'Try a different search term or clear the filter.'
                 : 'Drag and drop files here, or click to browse. Supports images, videos, PDFs, and documents.'}
@@ -511,7 +511,7 @@ export function CloudAssets({
             {!searchQuery && (
               <Button 
                 onClick={() => fileInputRef.current?.click()}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500"
+                className="bg-gradient-to-r from-cyan-600 to-fuchsia-600 hover:from-cyan-500 hover:to-fuchsia-500"
               >
                 <Sparkles className="h-4 w-4 mr-2" />
                 Upload Your First Asset
@@ -530,7 +530,7 @@ export function CloudAssets({
                 key={asset.id} 
                 className="group relative rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/20 transition-all duration-300 overflow-hidden hover:-translate-y-1 hover:shadow-xl hover:shadow-black/20"
               >
-                <div className="aspect-square relative bg-gradient-to-br from-slate-800/50 to-slate-900/50">
+                <div className="aspect-square relative bg-gradient-to-br from-white/[0.03] to-white/[0.01]">
                   {isImage(asset.mime_type) && asset.url ? (
                     <img
                       src={asset.url}
@@ -581,7 +581,7 @@ export function CloudAssets({
                   <p className="text-sm font-medium truncate text-white" title={asset.name}>
                     {asset.name}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-white/30">
                     {formatFileSize(asset.size)}
                   </p>
                 </div>
@@ -601,7 +601,7 @@ export function CloudAssets({
                   key={asset.id}
                   className="group flex items-center gap-4 p-4 hover:bg-white/[0.02] transition-colors"
                 >
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-slate-800/50 to-slate-700/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-white/[0.04] to-white/[0.02] flex items-center justify-center overflow-hidden flex-shrink-0">
                     {isImage(asset.mime_type) && asset.url ? (
                       <img
                         src={asset.url}
@@ -616,7 +616,7 @@ export function CloudAssets({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate text-white">{asset.name}</p>
-                    <p className="text-sm text-slate-500">
+                    <p className="text-sm text-white/30">
                       {formatFileSize(asset.size)} · {new Date(asset.created_at).toLocaleDateString()}
                     </p>
                   </div>
@@ -626,7 +626,7 @@ export function CloudAssets({
                         <MoreVertical className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-slate-900 border-white/10">
+                    <DropdownMenuContent align="end" className="bg-[#0d0d18] border-white/10">
                       {asset.url && (
                         <DropdownMenuItem onClick={() => copyUrl(asset.url!)}>
                           <Link2 className="h-4 w-4 mr-2" />

@@ -60,7 +60,12 @@ const statusColors: Record<string, string> = {
   lost: "bg-red-100 text-red-700",
 };
 
-export function CRMLeads() {
+interface CRMLeadsProps {
+  businessId?: string;
+  projectId?: string;
+}
+
+export function CRMLeads({ businessId, projectId }: CRMLeadsProps = {}) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -78,17 +83,19 @@ export function CRMLeads() {
   });
 
   // Hook for automation event emission
-  const activeBizId = selectedBusinessId !== "all" ? selectedBusinessId : undefined;
-  const crm = useCRMActions(activeBizId);
+  const activeBizId = businessId || (selectedBusinessId !== "all" ? selectedBusinessId : undefined);
+  const crm = useCRMActions({ businessId: activeBizId, projectId });
 
   useEffect(() => {
-    loadBusinesses();
-  }, []);
+    if (!businessId && !projectId) {
+      loadBusinesses();
+    }
+  }, [businessId, projectId]);
 
   useEffect(() => {
     fetchLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBusinessId]);
+  }, [selectedBusinessId, projectId]);
 
   async function loadBusinesses() {
     try {
@@ -114,7 +121,11 @@ export function CRMLeads() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (selectedBusinessId !== 'all') {
+      if (projectId) {
+        q = q.eq('project_id', projectId);
+      } else if (businessId) {
+        q = q.eq('business_id', businessId);
+      } else if (selectedBusinessId !== 'all') {
         q = q.eq('business_id', selectedBusinessId);
       }
 
@@ -140,6 +151,7 @@ export function CRMLeads() {
         value: formData.value ? parseFloat(formData.value) : null,
         source: formData.source || null,
         notes: formData.notes || null,
+        project_id: projectId || null,
       };
 
       if (editingLead) {
@@ -165,6 +177,7 @@ export function CRMLeads() {
           sendInngestEvent('crm/lead.created', {
             leadId: data.id,
             businessId: activeBizId,
+            projectId,
             source: formData.source || 'crm',
           }).catch(console.warn);
         }
@@ -213,6 +226,7 @@ export function CRMLeads() {
         sendInngestEvent('crm/lead.status.changed', {
           leadId: id,
           businessId: activeBizId,
+          projectId,
           previousStatus: oldStatus,
           newStatus,
         }).catch(console.warn);
@@ -306,19 +320,21 @@ export function CRMLeads() {
             </SelectContent>
           </Select>
 
-          <Select value={selectedBusinessId} onValueChange={setSelectedBusinessId}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Business" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All businesses</SelectItem>
-              {businesses.map((b) => (
-                <SelectItem key={b.id} value={b.id}>
-                  {b.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {!businessId && !projectId && (
+            <Select value={selectedBusinessId} onValueChange={setSelectedBusinessId}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Business" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All businesses</SelectItem>
+                {businesses.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>

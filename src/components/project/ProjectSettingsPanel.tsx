@@ -58,6 +58,62 @@ interface ProjectSettings {
   settings: GeneralSettings;
 }
 
+const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+  id: "",
+  project_id: "",
+  crm_config: {
+    pipeline_stages: ["Lead", "Qualified", "Proposal", "Won"],
+    custom_fields: [],
+    lead_sources: ["Website", "Referral", "Email"],
+    auto_assign: false,
+  },
+  automation_config: {
+    welcome_email: false,
+    lead_notification: true,
+    booking_confirmation: true,
+    follow_up_sequence: false,
+    workflows: [],
+  },
+  settings: {
+    notifications: {
+      email: true,
+      sms: false,
+    },
+    integrations: {},
+    domain: null,
+    analytics_enabled: true,
+  },
+};
+
+function mergeProjectSettings(
+  projectId: string,
+  data?: Partial<ProjectSettings> | null
+): ProjectSettings {
+  return {
+    ...DEFAULT_PROJECT_SETTINGS,
+    ...data,
+    project_id: projectId,
+    crm_config: {
+      ...DEFAULT_PROJECT_SETTINGS.crm_config,
+      ...(data?.crm_config || {}),
+    },
+    automation_config: {
+      ...DEFAULT_PROJECT_SETTINGS.automation_config,
+      ...(data?.automation_config || {}),
+      workflows: data?.automation_config?.workflows || DEFAULT_PROJECT_SETTINGS.automation_config.workflows,
+    },
+    settings: {
+      ...DEFAULT_PROJECT_SETTINGS.settings,
+      ...(data?.settings || {}),
+      notifications: {
+        ...DEFAULT_PROJECT_SETTINGS.settings.notifications,
+        ...(data?.settings?.notifications || {}),
+      },
+      integrations: data?.settings?.integrations || DEFAULT_PROJECT_SETTINGS.settings.integrations,
+    },
+  };
+}
+
 // ─── Pipeline Stage Editor ────────────────────────────────────────────────────
 
 function PipelineStageEditor({
@@ -255,7 +311,7 @@ export function ProjectSettingsPanel({
     if (error) {
       console.error("project_settings load error:", error);
     }
-    setSettings(data as unknown as ProjectSettings | null);
+    setSettings(mergeProjectSettings(projectId, data as unknown as Partial<ProjectSettings> | null));
     setLoading(false);
   }, [projectId]);
 
@@ -266,7 +322,7 @@ export function ProjectSettingsPanel({
   const save = async () => {
     if (!settings) return;
     setSaving(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("project_settings")
       .upsert(
         {
@@ -279,11 +335,14 @@ export function ProjectSettingsPanel({
           settings: settings.settings as any,
         },
         { onConflict: "project_id" }
-      );
+      )
+      .select("*")
+      .single();
 
     if (error) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
     } else {
+      setSettings(mergeProjectSettings(projectId, data as unknown as Partial<ProjectSettings> | null));
       toast({ title: "Settings saved" });
     }
     setSaving(false);
@@ -324,11 +383,7 @@ export function ProjectSettingsPanel({
           <div className="flex items-center justify-center py-12">
             <Zap className="h-6 w-6 text-cyan-400 animate-pulse" />
           </div>
-        ) : !settings ? (
-          <div className="py-8 text-center text-white/40 text-sm">
-            No settings found for this project.
-          </div>
-        ) : (
+        ) : settings ? (
           <div className="pt-6">
             <Tabs defaultValue="crm">
               <TabsList className="bg-white/5 border border-white/10 p-0.5 rounded-lg mb-6">
@@ -485,6 +540,10 @@ export function ProjectSettingsPanel({
                 {saving ? "Saving..." : "Save Settings"}
               </Button>
             </div>
+          </div>
+        ) : (
+          <div className="py-8 text-center text-white/40 text-sm">
+            Select a project to manage workspace settings.
           </div>
         )}
       </SheetContent>

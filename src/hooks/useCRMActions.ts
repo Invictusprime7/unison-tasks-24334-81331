@@ -6,7 +6,7 @@
  * so that automation recipes fire automatically.
  *
  * Usage:
- *   const crm = useCRMActions(businessId);
+ *   const crm = useCRMActions({ businessId, projectId });
  *   await crm.createDeal({ title, stage, value });     // → DB insert + deal.created event
  *   await crm.moveDealStage(dealId, old, new);         // → DB update + deal.stage.changed event
  *   await crm.createLead({ title, email, source });    // → DB insert + lead.created event
@@ -61,11 +61,20 @@ interface CRMActionResult<T = unknown> {
   error?: string;
 }
 
+interface CRMScopeOptions {
+  businessId?: string;
+  projectId?: string;
+}
+
 // ============================================================================
 // Hook
 // ============================================================================
 
-export function useCRMActions(businessId?: string) {
+export function useCRMActions(scope?: string | CRMScopeOptions) {
+  const normalizedScope: CRMScopeOptions =
+    typeof scope === 'string' ? { businessId: scope } : scope || {};
+  const businessId = normalizedScope.businessId;
+  const projectId = normalizedScope.projectId;
   // ---- DEALS ----
 
   const createDeal = useCallback(async (input: CRMDealInput): Promise<CRMActionResult<{ id: string }>> => {
@@ -79,6 +88,7 @@ export function useCRMActions(businessId?: string) {
           expected_close_date: input.expected_close_date ?? null,
           contact_id: input.contact_id ?? null,
           lead_id: input.lead_id ?? null,
+          ...(projectId ? { project_id: projectId } : {}),
         })
         .select('id')
         .single();
@@ -90,6 +100,7 @@ export function useCRMActions(businessId?: string) {
         sendInngestEvent('crm/deal.created', {
           dealId: data.id,
           businessId,
+          projectId,
           title: input.title,
           value: input.value ?? undefined,
           stage: input.stage,
@@ -100,7 +111,7 @@ export function useCRMActions(businessId?: string) {
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
-  }, [businessId]);
+  }, [businessId, projectId]);
 
   const moveDealStage = useCallback(async (
     dealId: string,
@@ -121,6 +132,7 @@ export function useCRMActions(businessId?: string) {
         sendInngestEvent('crm/deal.stage.changed', {
           dealId,
           businessId,
+          projectId,
           previousStage,
           newStage,
           contactEmail,
@@ -131,7 +143,7 @@ export function useCRMActions(businessId?: string) {
       if (businessId) {
         const intent = newStage === 'closed_won' ? 'deal.won' : newStage === 'closed_lost' ? 'deal.lost' : null;
         if (intent && isAutomatable(intent)) {
-          const ctx: IntentContext = { businessId, payload: { dealId, previousStage, newStage, contactEmail } };
+          const ctx: IntentContext = { businessId, payload: { dealId, projectId, previousStage, newStage, contactEmail } };
           const result: IntentResult = { ok: true, data: { dealId } };
           dispatchAutomation(intent, ctx, result).catch(console.warn);
         }
@@ -141,7 +153,7 @@ export function useCRMActions(businessId?: string) {
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
-  }, [businessId]);
+  }, [businessId, projectId]);
 
   const deleteDeal = useCallback(async (dealId: string): Promise<CRMActionResult> => {
     try {
@@ -166,6 +178,7 @@ export function useCRMActions(businessId?: string) {
           source: input.source ?? null,
           notes: input.notes ?? null,
           business_id: input.business_id ?? null,
+          ...(projectId ? { project_id: projectId } : {}),
         })
         .select('id')
         .single();
@@ -177,6 +190,7 @@ export function useCRMActions(businessId?: string) {
         sendInngestEvent('crm/lead.created', {
           leadId: data.id,
           businessId,
+          projectId,
           email: input.email,
           phone: input.phone,
           source: input.source ?? 'crm',
@@ -187,7 +201,7 @@ export function useCRMActions(businessId?: string) {
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
-  }, [businessId]);
+  }, [businessId, projectId]);
 
   const updateLead = useCallback(async (
     leadId: string,
@@ -231,6 +245,7 @@ export function useCRMActions(businessId?: string) {
         sendInngestEvent('crm/lead.status.changed', {
           leadId,
           businessId,
+          projectId,
           previousStatus,
           newStatus,
         }).catch(console.warn);
@@ -238,7 +253,7 @@ export function useCRMActions(businessId?: string) {
 
       // Dispatch through orchestrator ONLY for terminal lead states (automatable lifecycle)
       if (businessId && (newStatus === 'won' || newStatus === 'qualified') && isAutomatable('lead.capture')) {
-        const ctx: IntentContext = { businessId, payload: { leadId, email, previousStatus, newStatus } };
+        const ctx: IntentContext = { businessId, payload: { leadId, projectId, email, previousStatus, newStatus } };
         const result: IntentResult = { ok: true };
         dispatchAutomation('lead.capture', ctx, result).catch(console.warn);
       }
@@ -247,7 +262,7 @@ export function useCRMActions(businessId?: string) {
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
-  }, [businessId]);
+  }, [businessId, projectId]);
 
   const deleteLead = useCallback(async (leadId: string): Promise<CRMActionResult> => {
     try {
@@ -272,6 +287,8 @@ export function useCRMActions(businessId?: string) {
           phone: input.phone ?? null,
           company: input.company ?? null,
           tags: input.tags ?? [],
+          ...(businessId ? { business_id: businessId } : {}),
+          ...(projectId ? { project_id: projectId } : {}),
         })
         .select('id')
         .single();
@@ -283,6 +300,7 @@ export function useCRMActions(businessId?: string) {
         sendInngestEvent('crm/contact.created', {
           contactId: data.id,
           businessId,
+          projectId,
           email: input.email,
           phone: input.phone,
           firstName: input.first_name,
@@ -294,7 +312,7 @@ export function useCRMActions(businessId?: string) {
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
-  }, [businessId]);
+  }, [businessId, projectId]);
 
   const deleteContact = useCallback(async (contactId: string): Promise<CRMActionResult> => {
     try {
@@ -318,6 +336,7 @@ export function useCRMActions(businessId?: string) {
         const result = await sendInngestEvent('automation/trigger', {
           automationId: `workflow-${workflowId}`,
           businessId,
+          projectId,
           triggerId: `manual_${Date.now()}`,
           triggerType: 'workflow.manual',
           payload: { workflowId, ...triggerData },
@@ -338,7 +357,7 @@ export function useCRMActions(businessId?: string) {
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
-  }, [businessId]);
+  }, [businessId, projectId]);
 
   // ---- BOOKINGS ----
 
@@ -357,6 +376,7 @@ export function useCRMActions(businessId?: string) {
       sendInngestEvent('booking/created', {
         bookingId,
         businessId,
+        projectId,
         contactEmail: input.customerEmail,
         contactPhone: input.customerPhone,
         service: input.serviceId || 'General',
@@ -365,7 +385,7 @@ export function useCRMActions(businessId?: string) {
     }
 
     return { success: true, data: { bookingId } };
-  }, [businessId]);
+  }, [businessId, projectId]);
 
   return {
     // Deals

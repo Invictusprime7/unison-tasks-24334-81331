@@ -37,9 +37,16 @@ interface FormSubmission {
   ip_address: string | null;
   workflow_triggered: boolean;
   created_at: string;
+  business_id?: string | null;
+  project_id?: string | null;
 }
 
-export function CRMFormSubmissions() {
+interface CRMFormSubmissionsProps {
+  businessId?: string;
+  projectId?: string;
+}
+
+export function CRMFormSubmissions({ businessId, projectId }: CRMFormSubmissionsProps = {}) {
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -49,14 +56,22 @@ export function CRMFormSubmissions() {
 
   useEffect(() => {
     fetchSubmissions();
-  }, []);
+  }, [businessId, projectId]);
 
   async function fetchSubmissions() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("crm_form_submissions")
         .select("*")
         .order("created_at", { ascending: false });
+
+      if (projectId) {
+        query = query.eq("project_id", projectId);
+      } else if (businessId) {
+        query = query.eq("business_id", businessId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setSubmissions((data || []) as FormSubmission[]);

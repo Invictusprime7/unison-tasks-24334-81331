@@ -58,6 +58,11 @@ export interface UseCreatorPlaygroundReturn {
   updateForm: (formId: string, updates: Partial<CreatorForm>) => void;
   removeForm: (formId: string) => void;
 
+  // Component Instance CRUD
+  addComponentInstance: (instance: Omit<CreatorComponentInstance, "instanceId"> & { instanceId?: string }) => CreatorComponentInstance;
+  updateComponentInstance: (instanceId: string, updates: Partial<CreatorComponentInstance>) => void;
+  removeComponentInstance: (instanceId: string) => void;
+
   // Business info
   updateBusinessInfo: (updates: Partial<CreatorBusinessInfo>) => void;
 
@@ -442,6 +447,35 @@ export function useCreatorPlayground(
     patchCreatorData("forms", rest);
   }, [creatorData.forms, patchCreatorData]);
 
+  // Component Instances
+  const addComponentInstance = useCallback((
+    instance: Omit<CreatorComponentInstance, "instanceId"> & { instanceId?: string }
+  ): CreatorComponentInstance => {
+    const nextInstance: CreatorComponentInstance = {
+      ...instance,
+      instanceId: instance.instanceId || `cmp_${nanoid(8)}`,
+    };
+    patchCreatorData("componentInstances", {
+      ...creatorData.componentInstances,
+      [nextInstance.instanceId]: nextInstance,
+    });
+    return nextInstance;
+  }, [creatorData.componentInstances, patchCreatorData]);
+
+  const updateComponentInstance = useCallback((instanceId: string, updates: Partial<CreatorComponentInstance>) => {
+    const existing = creatorData.componentInstances[instanceId];
+    if (!existing) return;
+    patchCreatorData("componentInstances", {
+      ...creatorData.componentInstances,
+      [instanceId]: { ...existing, ...updates },
+    });
+  }, [creatorData.componentInstances, patchCreatorData]);
+
+  const removeComponentInstance = useCallback((instanceId: string) => {
+    const { [instanceId]: _, ...rest } = creatorData.componentInstances;
+    patchCreatorData("componentInstances", rest);
+  }, [creatorData.componentInstances, patchCreatorData]);
+
   // Business Info
   const updateBusinessInfo = useCallback((updates: Partial<CreatorBusinessInfo>) => {
     setCreatorData(prev => ({
@@ -502,6 +536,7 @@ export function useCreatorPlayground(
     addProduct, updateProduct, removeProduct,
     addService, updateService, removeService,
     addForm, updateForm, removeForm,
+    addComponentInstance, updateComponentInstance, removeComponentInstance,
     updateBusinessInfo,
     addCollection, removeCollection,
     hydrateFromVFS,

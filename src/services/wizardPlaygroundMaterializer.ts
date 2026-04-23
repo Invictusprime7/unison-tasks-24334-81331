@@ -21,10 +21,13 @@ import type {
   PlaygroundBindingSpecV2,
 } from '@/types/playground';
 import type { PageRegistry } from '@/types/pageRegistry';
-import type { CreatorData, CreatorForm, CreatorFormField } from '@/types/creatorData';
+import type { CreatorFormField } from '@/types/creatorData';
 import { createEmptyCreatorData } from '@/types/creatorData';
 import { planSiteTopology, populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { normalizePlaygroundIntent, inferUIAction } from '@/contracts/intentNormalizer';
+import {
+  createCanonicalComponentInstance,
+} from '@/services/canonicalComponentRegistry';
 
 // ============================================================================
 // Industry → Industry Key mapping
@@ -202,6 +205,27 @@ const POPUP_TEMPLATES: Record<string, Omit<PlaygroundPopup, 'popupId' | 'sortOrd
   free_session_offer: { name: 'Free Session Offer', trigger: 'timer', triggerConfig: { delayMs: 8000 }, contentType: 'form', showOncePerSession: true },
 };
 
+const PRODUCT_TEMPLATES: Record<string, { name: string; description: string; price: number; category: string }> = {
+  starter_offer: {
+    name: 'Starter Offer',
+    description: 'Core starter package for new customers.',
+    price: 99,
+    category: 'Starter',
+  },
+  signature_offer: {
+    name: 'Signature Offer',
+    description: 'Primary flagship offer for your business.',
+    price: 199,
+    category: 'Signature',
+  },
+  ecommerce_primary: {
+    name: 'Featured Product',
+    description: 'Primary shoppable product wired into checkout.',
+    price: 49,
+    category: 'Shop',
+  },
+};
+
 // ============================================================================
 // Element Key Generator
 // ============================================================================
@@ -222,6 +246,28 @@ function generateElementKey(
   slot: string,
 ): string {
   return `${pageRole}.${section}.${slot}`;
+}
+
+function toTitleCase(rawValue: string) {
+  return rawValue
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
+function getPrimaryPageId(
+  roleToPageId: Record<string, string>,
+  ...roles: PlaygroundPageRole[]
+) {
+  return roles.map((role) => roleToPageId[role]).find(Boolean) || '';
+}
+
+function inferComponentSlugForForm(formName: string) {
+  const normalized = formName.toLowerCase();
+  if (normalized.includes('quote')) return 'request-quote';
+  if (normalized.includes('newsletter')) return 'newsletter-signup';
+  return 'contact-form';
 }
 
 // ============================================================================
@@ -298,6 +344,28 @@ export function materializePlayground(
       successPageId: confirmPageId || undefined,
       attachedPageIds: bookingPageId ? [bookingPageId] : [],
       sortOrder: Object.keys(calendars).length,
+    };
+  }
+
+  // 6b. Materialize products
+  for (const productKey of capabilities.requiredProducts) {
+    const template = PRODUCT_TEMPLATES[productKey] || {
+      name: toTitleCase(productKey),
+      description: `Canonical ${toTitleCase(productKey).toLowerCase()} product.`,
+      price: 99,
+      category: 'General',
+    };
+
+    const productId = `prod_${nanoid(8)}`;
+    creatorData.products[productId] = {
+      productId,
+      name: template.name,
+      description: template.description,
+      price: template.price,
+      currency: 'USD',
+      category: template.category,
+      inStock: true,
+      sortOrder: Object.keys(creatorData.products).length,
     };
   }
 
@@ -431,6 +499,65 @@ export function materializePlayground(
         coreIntent: normalizePlaygroundIntent(spec.intent, spec.targetRef),
         readiness: 'preview-ready',
       };
+    }
+  }
+
+  // 8b. Materialize canonical component instances
+  const homePageId = getPrimaryPageId(roleToPageId, 'home');
+  const contactPageId = getPrimaryPageId(roleToPageId, 'contact', 'home');
+  const bookingPageId = getPrimaryPageId(roleToPageId, 'booking', 'home');
+  const shopPageId = getPrimaryPageId(roleToPageId, 'shop', 'pricing', 'home');
+
+  for (const form of Object.values(creatorData.forms)) {
+    const slug = inferComponentSlugForForm(form.name);
+    const component = createCanonicalComponentInstance(slug, {
+      label: form.name,
+      usedOnPages: [slug === 'newsletter-signup' ? homePageId : contactPageId].filter(Boolean),
+      bindings: { formId: form.formId },
+    });
+
+    if (component) {
+      component.status = 'ready';
+      creatorData.componentInstances[component.instanceId] = component;
+    }
+  }
+
+  for (const calendar of Object.values(calendars)) {
+    const component = createCanonicalComponentInstance('booking-scheduler', {
+      label: `${calendar.name} Scheduler`,
+      usedOnPages: [...new Set([...calendar.attachedPageIds, bookingPageId])].filter(Boolean),
+      bindings: { calendarId: calendar.calendarId },
+    });
+
+    if (component) {
+      component.status = 'ready';
+      creatorData.componentInstances[component.instanceId] = component;
+    }
+  }
+
+  const firstProduct = Object.values(creatorData.products).sort((a, b) => a.sortOrder - b.sortOrder)[0];
+  if (firstProduct) {
+    const checkoutComponent = createCanonicalComponentInstance('checkout-cta', {
+      label: `${firstProduct.name} Checkout`,
+      usedOnPages: [shopPageId || homePageId].filter(Boolean),
+      bindings: { productId: firstProduct.productId },
+    });
+
+    if (checkoutComponent) {
+      checkoutComponent.status = 'ready';
+      creatorData.componentInstances[checkoutComponent.instanceId] = checkoutComponent;
+    }
+  }
+
+  if (selections.wantsLeadCapture || selections.businessModel === 'quote_lead' || selections.businessModel === 'saas_digital') {
+    const chatWidget = createCanonicalComponentInstance('chat-widget', {
+      label: 'Chat Widget',
+      usedOnPages: [homePageId].filter(Boolean),
+    });
+
+    if (chatWidget) {
+      chatWidget.status = 'stubbed';
+      creatorData.componentInstances[chatWidget.instanceId] = chatWidget;
     }
   }
 

@@ -30,8 +30,13 @@ import type {
 import { validatePlayground, getValidationSummary } from "@/services/playgroundValidationService";
 import { buildIntentReadinessReport } from "@/services/intentReadinessService";
 import {
+  CANONICAL_COMPONENT_DEFINITIONS,
+  createCanonicalComponentInstance,
+} from "@/services/canonicalComponentRegistry";
+import {
   AlertTriangle,
   ArrowRight,
+  Blocks,
   Briefcase,
   Calendar,
   CheckCircle,
@@ -86,6 +91,7 @@ type Section =
   | "intent_registry"
   | "readiness"
   | "forms"
+  | "components"
   | "calendars"
   | "products"
   | "popups"
@@ -100,6 +106,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highligh
   { id: "intent_registry", label: "Intent Registry", icon: Link2 },
   { id: "readiness", label: "Readiness", icon: ShieldCheck },
   { id: "forms", label: "Forms", icon: FormInput },
+  { id: "components", label: "Components", icon: Blocks },
   { id: "calendars", label: "Calendars", icon: Calendar },
   { id: "products", label: "Products", icon: ShoppingBag },
   { id: "popups", label: "Popups", icon: MessageSquare },
@@ -325,6 +332,7 @@ export function CreatorPlaygroundModal({
                 {id === "pages" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{playground.getAllPages().length}</Badge>}
                 {id === "funnels" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{Object.keys(playground.pageRegistry.funnels).length}</Badge>}
                 {id === "products" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{Object.keys(playground.creatorData.products).length}</Badge>}
+                {id === "components" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{Object.keys(playground.creatorData.componentInstances).length}</Badge>}
                 {id === "intent_registry" && Object.keys(readinessReport.bindings).length > 0 && (
                   <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{Object.keys(readinessReport.bindings).length}</Badge>
                 )}
@@ -357,6 +365,13 @@ export function CreatorPlaygroundModal({
                 {activeSection === "products" && <ProductsSection playground={playground} />}
                 {activeSection === "services" && <ServicesSection playground={playground} />}
                 {activeSection === "forms" && <FormsSection playground={playground} />}
+                {activeSection === "components" && (
+                  <ComponentsSection
+                    playground={playground}
+                    calendars={calendars}
+                    readinessReport={readinessReport}
+                  />
+                )}
                 {activeSection === "calendars" && <CalendarsSection calendars={calendars} registry={playground.pageRegistry} />}
                 {activeSection === "popups" && <PopupsSection popups={popups} registry={playground.pageRegistry} />}
                 {activeSection === "intent_registry" && (
@@ -378,6 +393,9 @@ export function CreatorPlaygroundModal({
                     onInspectBinding={(bindingId) => {
                       setSelectedBindingId(bindingId);
                       setActiveSection("intent_registry");
+                    }}
+                    onInspectComponent={() => {
+                      setActiveSection("components");
                     }}
                     onResolveDependency={handleResolveDependency}
                   />
@@ -419,6 +437,7 @@ function OverviewSection({
   const funnels = Object.values(playground.pageRegistry.funnels);
   const products = Object.values(playground.creatorData.products);
   const forms = Object.values(playground.creatorData.forms);
+  const components = Object.values(playground.creatorData.componentInstances);
 
   const cards = [
     { section: "intent_registry" as Section, label: "Total Intents", count: readinessReport.summary.totalIntents, icon: Link2, color: "text-emerald-400", bg: "bg-emerald-500/10" },
@@ -461,6 +480,7 @@ function OverviewSection({
             <QuickCountCard label="Pages" count={pages.length} onClick={() => onNavigate("pages")} />
             <QuickCountCard label="Funnels" count={funnels.length} onClick={() => onNavigate("funnels")} />
             <QuickCountCard label="Forms" count={forms.length} onClick={() => onNavigate("forms")} />
+            <QuickCountCard label="Components" count={components.length} onClick={() => onNavigate("components")} />
             <QuickCountCard label="Products" count={products.length} onClick={() => onNavigate("products")} />
           </div>
           <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[11px] text-muted-foreground">
@@ -473,6 +493,7 @@ function OverviewSection({
           <div className="mt-3 space-y-2 text-xs">
             <SummaryRow label="Preview" value={`${readinessReport.summary.previewReady} ready / ${readinessReport.summary.previewPartial} partial / ${readinessReport.summary.previewBlocked} blocked`} />
             <SummaryRow label="Publish" value={`${readinessReport.summary.publishReady} ready / ${readinessReport.summary.publishPartial} partial / ${readinessReport.summary.publishBlocked} blocked`} />
+            <SummaryRow label="Components" value={`${readinessReport.summary.componentPublishReady} ready / ${readinessReport.summary.componentPublishBlocked} blocked`} />
             <SummaryRow label="Structural Validation" value={`${validationSummary.errors} errors / ${validationSummary.warnings} warnings`} />
           </div>
           <Button variant="outline" size="sm" className="mt-4 h-8 text-xs" onClick={() => onNavigate("readiness")}>Open Readiness</Button>
@@ -650,6 +671,136 @@ function FormsSection({ playground }: { playground: UseCreatorPlaygroundReturn }
         </Button>
       </div>
       <SimpleObjectList items={forms.map((form) => ({ id: form.formId, label: form.name, meta: `${form.fields.length} fields` }))} onRemove={(id) => playground.removeForm(id)} empty="No forms configured yet." />
+    </div>
+  );
+}
+
+function getDefaultComponentBindings(
+  slug: string,
+  playground: UseCreatorPlaygroundReturn,
+  calendars: Record<string, PlaygroundCalendar>,
+) {
+  const firstForm = Object.values(playground.creatorData.forms)[0];
+  const firstKnownCalendar = Object.values(calendars)[0];
+  const firstProduct = Object.values(playground.creatorData.products)[0];
+
+  switch (slug) {
+    case "contact-form":
+    case "request-quote":
+    case "newsletter-signup":
+      return firstForm ? { formId: firstForm.formId } : {};
+    case "booking-scheduler":
+      return firstKnownCalendar ? { calendarId: firstKnownCalendar.calendarId } : {};
+    case "checkout-cta":
+      return firstProduct ? { productId: firstProduct.productId } : {};
+    default:
+      return {};
+  }
+}
+
+function getDefaultComponentPages(slug: string, playground: UseCreatorPlaygroundReturn) {
+  const pages = playground.getAllPages();
+  const homePageId = pages.find((page) => page.isHome)?.pageId;
+  const contactPageId = pages.find((page) => page.pageType === "contact")?.pageId;
+  const bookingPageId = pages.find((page) => page.pageType === "booking")?.pageId;
+  const shopPageId = pages.find((page) => page.pageType === "shop" || page.pageType === "pricing")?.pageId;
+
+  if (slug === "booking-scheduler") return [bookingPageId || homePageId].filter(Boolean) as string[];
+  if (slug === "checkout-cta") return [shopPageId || homePageId].filter(Boolean) as string[];
+  if (slug === "chat-widget") return [homePageId].filter(Boolean) as string[];
+  return [contactPageId || homePageId].filter(Boolean) as string[];
+}
+
+function ComponentsSection({
+  playground,
+  calendars,
+  readinessReport,
+}: {
+  playground: UseCreatorPlaygroundReturn;
+  calendars: Record<string, PlaygroundCalendar>;
+  readinessReport: PlaygroundIntentReadinessReport;
+}) {
+  const componentList = Object.values(playground.creatorData.componentInstances);
+  const pagesById = playground.pageRegistry.pages;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-foreground">Canonical Components</h2>
+          <p className="text-xs text-muted-foreground mt-1">Reusable forms, booking, checkout, and chat blocks now live on the same business graph as the rest of the playground.</p>
+        </div>
+        <Badge variant="outline" className="text-[10px]">{componentList.length} instances</Badge>
+      </div>
+
+      <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Add Canonical Primitive</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {CANONICAL_COMPONENT_DEFINITIONS.map((definition) => (
+            <Button
+              key={definition.slug}
+              variant="outline"
+              size="sm"
+              className="h-8 text-[11px]"
+              onClick={() => {
+                const nextInstance = createCanonicalComponentInstance(definition.slug, {
+                  label: definition.name,
+                  usedOnPages: getDefaultComponentPages(definition.slug, playground),
+                  bindings: getDefaultComponentBindings(definition.slug, playground, calendars),
+                });
+                if (nextInstance) playground.addComponentInstance(nextInstance);
+              }}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              {definition.name}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {componentList.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No canonical component instances exist yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {componentList.map((component) => {
+            const readiness = readinessReport.componentReadiness[component.instanceId];
+            const pageLabels = component.usedOnPages.map((pageId) => pagesById[pageId]?.title || pageId).join(", ") || "none";
+            const bindingSummary = Object.entries(component.bindings || {})
+              .map(([key, value]) => `${key}: ${value}`)
+              .join(" • ") || "no bindings";
+
+            return (
+              <div key={component.instanceId} className="rounded-xl border border-border/30 bg-muted/10 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-medium text-foreground">{component.label}</div>
+                      <Badge variant="outline" className="text-[9px] h-5 px-1.5">{component.componentSlug || component.componentType}</Badge>
+                      <Badge variant="outline" className={cn("text-[9px] h-5 px-1.5", getReadinessBadgeClass(readiness?.previewStatus))}>Preview {readiness?.previewStatus || component.status || "draft"}</Badge>
+                      <Badge variant="outline" className={cn("text-[9px] h-5 px-1.5", getReadinessBadgeClass(readiness?.publishStatus))}>Publish {readiness?.publishStatus || component.status || "draft"}</Badge>
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-foreground">Pages: {pageLabels}</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">Bindings: {bindingSummary}</div>
+                    {readiness?.missingDependencies.length ? (
+                      <div className="mt-2 text-[11px] text-amber-400">
+                        Needs: {readiness.missingDependencies.join(", ")}
+                      </div>
+                    ) : null}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive"
+                    onClick={() => playground.removeComponentInstance(component.instanceId)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -932,6 +1083,7 @@ function ReadinessSection({
   readinessReport,
   registry,
   onInspectBinding,
+  onInspectComponent,
   onResolveDependency,
 }: {
   validations: PlaygroundValidation[];
@@ -939,10 +1091,13 @@ function ReadinessSection({
   readinessReport: PlaygroundIntentReadinessReport;
   registry: PageRegistry;
   onInspectBinding: (bindingId: string) => void;
+  onInspectComponent: () => void;
   onResolveDependency: (dependency: PlaygroundIntentDependency) => void;
 }) {
   const blockedBindings = Object.values(readinessReport.bindings).filter((binding) => binding.publishStatus === "blocked");
   const partialBindings = Object.values(readinessReport.bindings).filter((binding) => binding.publishStatus === "partial");
+  const blockedComponents = Object.values(readinessReport.componentReadiness).filter((component) => component.publishStatus === "blocked");
+  const partialComponents = Object.values(readinessReport.componentReadiness).filter((component) => component.publishStatus === "partial");
 
   const severityIcon = (severity: PlaygroundValidation["severity"]) => {
     switch (severity) {
@@ -962,8 +1117,9 @@ function ReadinessSection({
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Preview" value={`${readinessReport.summary.previewReady} ready / ${readinessReport.summary.previewPartial} partial / ${readinessReport.summary.previewBlocked} blocked`} />
         <SummaryCard title="Publish" value={`${readinessReport.summary.publishReady} ready / ${readinessReport.summary.publishPartial} partial / ${readinessReport.summary.publishBlocked} blocked`} />
+        <SummaryCard title="Components" value={`${readinessReport.summary.componentPublishReady} ready / ${readinessReport.summary.componentPublishBlocked} blocked`} />
         <SummaryCard title="Validation" value={`${summary.errors} errors / ${summary.warnings} warnings / ${summary.info} info`} />
-        <SummaryCard title="Publish Blockers" value={`${blockedBindings.length}`} />
+        <SummaryCard title="Publish Blockers" value={`${blockedBindings.length + blockedComponents.length}`} />
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
@@ -974,7 +1130,9 @@ function ReadinessSection({
           </div>
           <div className="mt-3 space-y-2">
             {blockedBindings.length === 0 ? (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-400">No publish blockers are currently open.</div>
+              blockedComponents.length === 0 ? (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-400">No publish blockers are currently open.</div>
+              ) : null
             ) : (
               blockedBindings.map((binding) => {
                 const readiness = readinessReport.readiness[binding.bindingId];
@@ -1000,24 +1158,52 @@ function ReadinessSection({
                 );
               })
             )}
+            {blockedComponents.map((component) => (
+              <div key={component.instanceId} className="rounded-lg border border-border/20 bg-background/30 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] font-medium text-foreground">{component.label}</div>
+                    <div className="text-[10px] text-muted-foreground">{component.componentType}</div>
+                  </div>
+                  <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={onInspectComponent}>Inspect</Button>
+                </div>
+                <div className="mt-2 space-y-2">
+                  {component.dependencies.filter((dependency) => dependency.status === "blocked").map((dependency) => (
+                    <div key={dependency.id} className="rounded-md border border-red-500/20 bg-red-500/5 px-2.5 py-2">
+                      <div className="text-[11px] text-foreground">{dependency.message}</div>
+                      {dependency.fixHint && <div className="mt-1 text-[10px] text-muted-foreground">{dependency.fixHint}</div>}
+                      {(dependency.resolverSection || dependency.resolverStepId) && <Button variant="outline" size="sm" className="mt-2 h-7 text-[11px]" onClick={() => onResolveDependency(dependency)}>Resolve</Button>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-foreground">Preview-Only Intents</h4>
-            <Badge variant="outline" className="border-amber-500/30 text-amber-400">{partialBindings.length}</Badge>
+            <h4 className="text-sm font-semibold text-foreground">Partial Readiness</h4>
+            <Badge variant="outline" className="border-amber-500/30 text-amber-400">{partialBindings.length + partialComponents.length}</Badge>
           </div>
           <div className="mt-3 space-y-2">
-            {partialBindings.length === 0 ? (
-              <div className="rounded-lg border border-border/20 bg-background/30 px-3 py-2 text-[11px] text-muted-foreground">No preview-only intents are waiting on publish setup.</div>
+            {partialBindings.length === 0 && partialComponents.length === 0 ? (
+              <div className="rounded-lg border border-border/20 bg-background/30 px-3 py-2 text-[11px] text-muted-foreground">No partial surfaces are waiting on publish setup.</div>
             ) : (
-              partialBindings.map((binding) => (
-                <button key={binding.bindingId} type="button" className="w-full rounded-lg border border-border/20 bg-background/30 px-3 py-2 text-left" onClick={() => onInspectBinding(binding.bindingId)}>
-                  <div className="text-[11px] font-medium text-foreground">{binding.coreIntent || binding.intent}</div>
-                  <div className="mt-1 text-[10px] text-muted-foreground">{readinessReport.readiness[binding.bindingId]?.missingDependencies.join(", ") || "Needs publish setup"}</div>
-                </button>
-              ))
+              <>
+                {partialBindings.map((binding) => (
+                  <button key={binding.bindingId} type="button" className="w-full rounded-lg border border-border/20 bg-background/30 px-3 py-2 text-left" onClick={() => onInspectBinding(binding.bindingId)}>
+                    <div className="text-[11px] font-medium text-foreground">{binding.coreIntent || binding.intent}</div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">{readinessReport.readiness[binding.bindingId]?.missingDependencies.join(", ") || "Needs publish setup"}</div>
+                  </button>
+                ))}
+                {partialComponents.map((component) => (
+                  <button key={component.instanceId} type="button" className="w-full rounded-lg border border-border/20 bg-background/30 px-3 py-2 text-left" onClick={onInspectComponent}>
+                    <div className="text-[11px] font-medium text-foreground">{component.label}</div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">{component.missingDependencies.join(", ") || "Needs publish setup"}</div>
+                  </button>
+                ))}
+              </>
             )}
           </div>
         </div>

@@ -322,7 +322,7 @@ export interface PlaygroundMaterializationResult {
 export interface PlaygroundValidation {
   id: string;
   severity: 'error' | 'warning' | 'info';
-  scope: 'pages' | 'funnels' | 'forms' | 'calendars' | 'products' | 'bindings' | 'router' | 'popups';
+  scope: 'pages' | 'funnels' | 'forms' | 'calendars' | 'products' | 'bindings' | 'router' | 'popups' | 'components';
   message: string;
   targetId?: string;
 }
@@ -333,7 +333,7 @@ export interface PlaygroundValidation {
 
 export type PlaygroundReadinessStatus = 'ready' | 'partial' | 'blocked';
 export type PlaygroundReadinessMode = 'preview' | 'publish';
-export type PlaygroundResolverSection = 'business' | 'launch' | 'forms' | 'calendars' | 'products' | 'popups' | 'pages';
+export type PlaygroundResolverSection = 'business' | 'launch' | 'forms' | 'calendars' | 'products' | 'popups' | 'pages' | 'components';
 export type PlaygroundSetupField =
   | 'businessName'
   | 'email'
@@ -369,6 +369,17 @@ export interface PlaygroundIntentReadiness {
   targetSummary: string;
 }
 
+export interface PlaygroundComponentReadiness {
+  instanceId: string;
+  componentType: string;
+  label: string;
+  previewStatus: PlaygroundReadinessStatus;
+  publishStatus: PlaygroundReadinessStatus;
+  dependencies: PlaygroundIntentDependency[];
+  missingDependencies: string[];
+  fixHints: string[];
+}
+
 export interface PlaygroundSetupStepSnapshot {
   id: string;
   status: 'pending' | 'in_progress' | 'completed' | 'skipped';
@@ -386,6 +397,7 @@ export interface PlaygroundSetupSnapshot {
 export interface PlaygroundIntentReadinessReport {
   bindings: Record<string, PlaygroundBinding>;
   readiness: Record<string, PlaygroundIntentReadiness>;
+  componentReadiness: Record<string, PlaygroundComponentReadiness>;
   summary: {
     totalIntents: number;
     previewReady: number;
@@ -397,6 +409,9 @@ export interface PlaygroundIntentReadinessReport {
     hardened: number;
     blocked: number;
     previewOnly: number;
+    totalComponents: number;
+    componentPublishReady: number;
+    componentPublishBlocked: number;
   };
 }
 

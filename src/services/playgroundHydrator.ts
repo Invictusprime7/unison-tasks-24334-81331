@@ -16,6 +16,10 @@ import type { CreatorData, CreatorProduct, CreatorService, CreatorTestimonial, C
 import { createEmptyCreatorData } from "@/types/creatorData";
 import type { PageRegistry, BuilderPage, FunnelGraph, FunnelStep, BuilderPageType, FunnelRole } from "@/types/pageRegistry";
 import { createEmptyPageRegistry, createBuilderPage, createFunnelGraph } from "@/types/pageRegistry";
+import {
+  createCanonicalComponentInstance,
+  inferCanonicalComponentSlug,
+} from "@/services/canonicalComponentRegistry";
 
 // ============================================================================
 // Types
@@ -31,6 +35,7 @@ export interface HydrationResult {
     servicesExtracted: number;
     testimonialsExtracted: number;
     faqsExtracted: number;
+    componentsExtracted: number;
     funnelSteps: number;
   };
 }
@@ -268,6 +273,68 @@ function extractBusinessInfo(allContent: string): Partial<CreatorBusinessInfo> {
   return info;
 }
 
+function getTagAttribute(attributes: string, attributeName: string) {
+  const match = attributes.match(new RegExp(`${attributeName}=["']([^"']+)["']`, "i"));
+  return match?.[1] || "";
+}
+
+function extractComponentInstances(
+  pages: DetectedPage[],
+  creatorData: CreatorData,
+): CreatorData["componentInstances"] {
+  const componentInstances: CreatorData["componentInstances"] = {};
+  const firstForm = Object.values(creatorData.forms)[0];
+  const firstProduct = Object.values(creatorData.products)[0];
+
+  for (const page of pages) {
+    let order = 0;
+    const tagRegex = /<([a-z0-9-]+)\b([^>]*(?:data-ut-component-slug|data-component)=["'][^"']+["'][^>]*)>/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = tagRegex.exec(page.content)) !== null) {
+      const attributes = match[2] || "";
+      const explicitSlug = getTagAttribute(attributes, "data-ut-component-slug");
+      const rawComponent = getTagAttribute(attributes, "data-component");
+      const slug = explicitSlug || inferCanonicalComponentSlug(rawComponent);
+      if (!slug) continue;
+
+      const bindings: Record<string, string> = {};
+      const formId = getTagAttribute(attributes, "data-form-id") || firstForm?.formId || "";
+      const calendarId = getTagAttribute(attributes, "data-calendar-id");
+      const productId = getTagAttribute(attributes, "data-product-id") || firstProduct?.productId || "";
+
+      if (formId && ["contact-form", "request-quote", "newsletter-signup"].includes(slug)) {
+        bindings.formId = formId;
+      }
+      if (calendarId && slug === "booking-scheduler") {
+        bindings.calendarId = calendarId;
+      }
+      if (productId && slug === "checkout-cta") {
+        bindings.productId = productId;
+      }
+
+      const instance = createCanonicalComponentInstance(slug, {
+        label: `${slug.replace(/-/g, " ")} ${order + 1}`,
+        usedOnPages: [`page_${page.componentName.toLowerCase()}`],
+        bindings,
+        props: {
+          hydratedFrom: page.filePath,
+          sourceComponent: rawComponent || explicitSlug,
+          order,
+        },
+      });
+
+      if (!instance) continue;
+
+      instance.status = Object.keys(bindings).length > 0 ? "ready" : "stubbed";
+      componentInstances[instance.instanceId] = instance;
+      order += 1;
+    }
+  }
+
+  return componentInstances;
+}
+
 // ============================================================================
 // Funnel Auto-Wirer
 // ============================================================================
@@ -432,6 +499,7 @@ export function hydratePlaygroundFromVFS(
   
   const bizInfo = extractBusinessInfo(combinedContent);
   data.businessInfo = { ...data.businessInfo, ...bizInfo };
+  data.componentInstances = extractComponentInstances(detectedPages, data);
   
   // Set version
   registry.version = 1;
@@ -446,6 +514,7 @@ export function hydratePlaygroundFromVFS(
       servicesExtracted: services.length,
       testimonialsExtracted: testimonials.length,
       faqsExtracted: faqs.length,
+      componentsExtracted: Object.keys(data.componentInstances).length,
       funnelSteps: funnel?.steps.length || 0,
     },
   };
@@ -497,6 +566,9 @@ export function mergeHydrationResult(
   }
   for (const [id, f] of Object.entries(incoming.creatorData.faqs)) {
     if (!mergedData.faqs[id]) mergedData.faqs[id] = f;
+  }
+  for (const [id, component] of Object.entries(incoming.creatorData.componentInstances)) {
+    if (!mergedData.componentInstances[id]) mergedData.componentInstances[id] = component;
   }
   
   // Business info: merge fields, prefer existing non-empty values

@@ -165,13 +165,19 @@ export interface CreatorBusinessInfo {
 export interface CreatorComponentInstance {
   instanceId: string;
   componentType: string; // "hero" | "pricing-table" | "product-grid" | etc.
+  componentSlug?: string;
   label: string;
+  category?: "leads" | "booking" | "commerce" | "support" | "payments";
+  targetType?: "form" | "calendar" | "product" | "checkout" | "chat";
   /** Data bindings — what content this component reads */
   bindings: Record<string, string>; // e.g. { collectionId: "col_1", formId: "form_1" }
   /** Override props */
   props: Record<string, unknown>;
   /** Which pages use this instance */
   usedOnPages: PageId[];
+  requiredCapabilities?: string[];
+  outputEvents?: string[];
+  status?: "draft" | "ready" | "stubbed";
 }
 
 // ============================================================================

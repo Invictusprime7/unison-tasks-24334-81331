@@ -3865,6 +3865,42 @@ export function processCode(code: string, filePath: string): string {
     });
   }
 
+  // ── Fix: hoist __LucideFallback & deduplicate namespace import ────────
+  // The AI sometimes generates a file that already has the namespace import
+  // + hand-written `const X = __LucideIcons['X'] || __LucideFallback;` lines
+  // (without the fallback defined), then a remaining named import gets processed
+  // and the replacement inserts __LucideFallback *below* those existing lookups,
+  // causing a TDZ ReferenceError.  Remove duplicate namespace imports and ensure
+  // the fallback declaration always sits right after the first namespace import.
+  {
+    const nsLine = `import * as __LucideIcons from 'lucide-react';`;
+    const fbDecl = `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`;
+
+    const hasNs = code.includes(nsLine);
+    const hasFb = code.includes('const __LucideFallback =');
+    const hasFbRef = code.includes('__LucideFallback');
+
+    if (hasNs && hasFbRef) {
+      // 1. Strip all existing __LucideFallback declarations (may be misplaced or duplicated)
+      if (hasFb) {
+        code = code.replace(/^const __LucideFallback\s*=.*$/m, '');
+      }
+
+      // 2. Deduplicate the namespace import (keep only the first occurrence)
+      let seenNs = false;
+      code = code.split('\n').filter(line => {
+        if (line.trim() === nsLine) {
+          if (seenNs) return false;
+          seenNs = true;
+        }
+        return true;
+      }).join('\n');
+
+      // 3. Insert fallback declaration immediately after the namespace import
+      code = code.replace(nsLine, nsLine + '\n' + fbDecl);
+    }
+  }
+
   // ── Auto-inject missing lucide icon references ────────────────────────
   // AI sometimes uses lucide icon names (e.g. `icon: Database`) without
   // importing them. Detect PascalCase identifiers that look like lucide

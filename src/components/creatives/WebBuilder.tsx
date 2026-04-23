@@ -114,6 +114,8 @@ import {
   scaffoldMissingTopologyPagesWithRouter,
   getTopologyPagesForAIGeneration,
 } from '@/services/unifiedPreviewPipeline';
+import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
+import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -1394,6 +1396,73 @@ export default function App() {
   // Template file management
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const templateFiles = useTemplateFiles();
+
+  const hydrateSavedTemplate = useCallback((template: {
+    name: string;
+    description?: string | null;
+    canvas_data?: Record<string, unknown> | null;
+  }) => {
+    const canvasData = (template.canvas_data || {}) as {
+      html?: string;
+      css?: string;
+      previewCode?: string;
+      js?: string;
+      vfsFiles?: Record<string, string>;
+      entryPoint?: string;
+      activePagePath?: string;
+    };
+
+    if (canvasData?.vfsFiles && Object.keys(canvasData.vfsFiles).length > 0) {
+      const entry = canvasData.entryPoint || launchEntryPoint;
+      const preferred = canvasData.activePagePath || entry;
+      importBuilderFiles(canvasData.vfsFiles, {
+        preferredPath: preferred,
+        entryPoint: entry,
+      });
+      if (canvasData.activePagePath) {
+        setActivePagePath(canvasData.activePagePath);
+      }
+      setCurrentTemplateName(template.name);
+      setSaveProjectName(template.name);
+      setSaveProjectDescription(template.description || '');
+      setBuilderMode('preview');
+      return true;
+    }
+
+    let code = canvasData?.previewCode || canvasData?.html || '';
+    if (!code) {
+      return false;
+    }
+
+    const separateCss = canvasData?.css || '';
+    if (separateCss && !code.includes(separateCss.substring(0, 50))) {
+      if (code.includes('</head>')) {
+        code = code.replace('</head>', `<style>\n${separateCss}\n</style>\n</head>`);
+      } else {
+        code = `<style>\n${separateCss}\n</style>\n${code}`;
+      }
+    }
+    const separateJs = canvasData?.js || '';
+    if (separateJs && !code.includes(separateJs.substring(0, 50))) {
+      const scriptTag = `<script>\n${separateJs}\n</script>`;
+      if (code.includes('</body>')) {
+        code = code.replace('</body>', `${scriptTag}\n</body>`);
+      } else {
+        code = code + `\n${scriptTag}`;
+      }
+    }
+    setEditorCode(code);
+    setPreviewCode(code);
+    setCurrentTemplateName(template.name);
+    setSaveProjectName(template.name);
+    setSaveProjectDescription(template.description || '');
+    return true;
+  // importBuilderFiles is declared after this hook in the file; removing it from deps
+  // avoids a temporal dead zone (TDZ) ReferenceError at render time. The closure body
+  // captures it correctly because it is only invoked asynchronously (inside async IIFEs)
+  // by which point importBuilderFiles is fully initialized.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [launchEntryPoint]);
   
   // Load saved project from URL parameter on mount.
   // Hydrates the FULL VFS (multi-page, router, entry point) when present;
@@ -1407,65 +1476,10 @@ export default function App() {
     (async () => {
       const template = await templateFiles.loadTemplate(templateId);
       if (!template || cancelled) return;
-
-      const canvasData = template.canvas_data as {
-        html?: string;
-        css?: string;
-        previewCode?: string;
-        js?: string;
-        vfsFiles?: Record<string, string>;
-        entryPoint?: string;
-        activePagePath?: string;
-        version?: number;
-      };
-
-      // v2: full VFS round-trip
-      if (canvasData?.vfsFiles && Object.keys(canvasData.vfsFiles).length > 0) {
-        const entry = canvasData.entryPoint || launchEntryPoint;
-        const preferred = canvasData.activePagePath || entry;
-        importBuilderFiles(canvasData.vfsFiles, {
-          preferredPath: preferred,
-          entryPoint: entry,
-        });
-        if (canvasData.activePagePath) {
-          setActivePagePath(canvasData.activePagePath);
-        }
-        setCurrentTemplateName(template.name);
-        setSaveProjectName(template.name);
-        setSaveProjectDescription(template.description || '');
-        setBuilderMode('preview');
-        toast.success(`Opened "${template.name}"`, {
-          description: 'Project restored from your saved state',
-        });
-        return;
-      }
-
-      // Legacy fallback: single-file design_templates row
-      let code = canvasData?.previewCode || canvasData?.html || '';
-      if (!code) return;
-
-      const separateCss = canvasData?.css || '';
-      if (separateCss && !code.includes(separateCss.substring(0, 50))) {
-        if (code.includes('</head>')) {
-          code = code.replace('</head>', `<style>\n${separateCss}\n</style>\n</head>`);
-        } else {
-          code = `<style>\n${separateCss}\n</style>\n${code}`;
-        }
-      }
-      const separateJs = canvasData?.js || '';
-      if (separateJs && !code.includes(separateJs.substring(0, 50))) {
-        const scriptTag = `<script>\n${separateJs}\n</script>`;
-        if (code.includes('</body>')) {
-          code = code.replace('</body>', `${scriptTag}\n</body>`);
-        } else {
-          code = code + `\n${scriptTag}`;
-        }
-      }
-      setEditorCode(code);
-      setPreviewCode(code);
-      setCurrentTemplateName(template.name);
-      setSaveProjectName(template.name);
-      setSaveProjectDescription(template.description || '');
+      if (!hydrateSavedTemplate(template)) return;
+      toast.success(`Opened "${template.name}"`, {
+        description: 'Project restored from your saved state',
+      });
     })();
 
     return () => { cancelled = true; };
@@ -1482,6 +1496,47 @@ export default function App() {
   const projectNameFromState = effectiveRouteState?.projectName;
   const publishStatusFromState = effectiveRouteState?.publishStatus;
   const customDomainFromState = effectiveRouteState?.customDomain;
+
+  useEffect(() => {
+    const urlId = new URLSearchParams(location.search).get('id');
+    if (!projectId || urlId || routeStateHasStructuredProject || templateFiles.currentTemplateId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const draftId = await findBuilderDraftIdForProject({
+        projectId,
+        projectName: projectNameFromState,
+        businessId,
+      });
+
+      if (!draftId || cancelled) {
+        return;
+      }
+
+      const template = await templateFiles.loadTemplate(draftId);
+      if (!template || cancelled || !hydrateSavedTemplate(template)) {
+        return;
+      }
+
+      toast.success(`Opened "${template.name}"`, {
+        description: 'Project restored from Cloud workspace',
+      });
+    })();
+
+    return () => { cancelled = true; };
+  }, [
+    businessId,
+    hydrateSavedTemplate,
+    location.search,
+    projectId,
+    projectNameFromState,
+    routeStateHasStructuredProject,
+    templateFiles.currentTemplateId,
+    templateFiles.loadTemplate,
+  ]);
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
   const systemsBuildContextFromState = effectiveRouteState?.systemsBuildContext ?? null;
   
@@ -2227,12 +2282,17 @@ export default function ${componentName}Page() {
         // Load project settings if we have a projectId
         let projectData: { id: string; name: string; slug: string | null; publish_status: string | null; custom_domain: string | null; settings: any } | null = null;
         if (projectId) {
-          const { data } = await supabase
-            .from('projects')
-            .select('id, name, slug, publish_status, custom_domain, settings')
-            .eq('id', projectId)
-            .maybeSingle() as { data: typeof projectData };
-          projectData = data;
+          const { data } = await getProjectByIdCompat(projectId);
+          projectData = data
+            ? {
+                id: data.id,
+                name: data.name,
+                slug: data.slug || null,
+                publish_status: data.publish_status || null,
+                custom_domain: data.custom_domain || null,
+                settings: data.settings || {},
+              }
+            : null;
         }
         
         // Load entitlements
@@ -3813,7 +3873,8 @@ ${html}
     entryPoint: launchEntryPoint,
     activePagePath,
     businessId: businessId ?? null,
-  }), [virtualFS, launchEntryPoint, activePagePath, businessId]);
+    projectId: projectId ?? null,
+  }), [virtualFS, launchEntryPoint, activePagePath, businessId, projectId]);
 
   const handleSaveTemplate = useCallback(async (
     name: string,
@@ -6301,7 +6362,7 @@ export default function ${componentName}() {
         onOpenChange={setShowBusinessSetup}
         systemType={activeSystemType}
         templateName={currentTemplateName}
-        projectId={projectId || templateFiles.currentTemplateId || undefined}
+        projectId={projectId || undefined}
         businessId={businessId || undefined}
         onOpenSetupWizard={() => {
           setPlaygroundInitialSection("launch");

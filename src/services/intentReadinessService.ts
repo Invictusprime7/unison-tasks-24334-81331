@@ -1,5 +1,6 @@
 import type {
   PlaygroundBinding,
+  PlaygroundComponentReadiness,
   PlaygroundIntentDependency,
   PlaygroundIntentReadiness,
   PlaygroundIntentReadinessReport,
@@ -8,6 +9,11 @@ import type {
   PlaygroundState,
   PlaygroundValidation,
 } from '@/types/playground';
+import type { CreatorBusinessInfo, CreatorComponentInstance } from '@/types/creatorData';
+import {
+  getCanonicalComponentDefinition,
+  inferCanonicalComponentSlug,
+} from '@/services/canonicalComponentRegistry';
 
 function mergeStatus(
   current: PlaygroundReadinessStatus,
@@ -68,6 +74,245 @@ function getRequiredCapabilities(binding: PlaygroundBinding): string[] {
     default:
       return [];
   }
+}
+
+function isBlankValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === 'string') return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function getSetupStepsMap(setupSnapshot: PlaygroundSetupSnapshot) {
+  return new Map((setupSnapshot.setupSteps || []).map((step) => [step.id, step]));
+}
+
+function getResolvedBusinessField(
+  field: string,
+  businessInfo: CreatorBusinessInfo,
+  setupSnapshot: PlaygroundSetupSnapshot,
+) {
+  const setupSteps = getSetupStepsMap(setupSnapshot);
+  const notificationStep = setupSteps.get('notifications');
+  const paymentStep = setupSteps.get('payments');
+  const bookingStep = setupSteps.get('booking_calendar');
+
+  switch (field) {
+    case 'notificationEmail':
+      return (
+        setupSnapshot.notificationEmail ||
+        (typeof notificationStep?.config?.notificationEmail === 'string'
+          ? notificationStep.config.notificationEmail
+          : null) ||
+        businessInfo.notificationEmail ||
+        businessInfo.email ||
+        null
+      );
+    case 'paymentProvider':
+      return (
+        businessInfo.paymentProvider ||
+        (paymentStep?.status === 'completed' ? 'configured' : null) ||
+        (paymentStep?.config?.stripeConnected === true ? 'stripe' : null)
+      );
+    case 'bookingOwner':
+      return (
+        businessInfo.bookingOwner ||
+        (typeof bookingStep?.config?.bookingOwner === 'string'
+          ? bookingStep.config.bookingOwner
+          : null)
+      );
+    case 'crmDestination':
+      return businessInfo.crmDestination || (setupSteps.get('database') ? 'lovable_cloud' : null);
+    case 'publishDomain':
+      return businessInfo.publishDomain || setupSnapshot.customDomain || null;
+    case 'followUpChannel':
+      return businessInfo.followUpChannel || null;
+    default:
+      return (businessInfo as Record<string, unknown>)[field];
+  }
+}
+
+function isSetupStepSatisfied(
+  stepId: string,
+  businessInfo: CreatorBusinessInfo,
+  setupSnapshot: PlaygroundSetupSnapshot,
+) {
+  const setupSteps = getSetupStepsMap(setupSnapshot);
+  const step = setupSteps.get(stepId);
+
+  if (!step) return false;
+  if (step.status === 'completed') return true;
+
+  switch (stepId) {
+    case 'payments':
+      return step.config?.stripeConnected === true || !isBlankValue(businessInfo.paymentProvider);
+    case 'booking_calendar':
+      return Boolean(
+        !isBlankValue(businessInfo.bookingOwner) ||
+        (
+          Array.isArray(step.config?.businessDays) &&
+          step.config.businessDays.length > 0 &&
+          typeof step.config.opensAt === 'string' &&
+          typeof step.config.closesAt === 'string'
+        ),
+      );
+    case 'notifications':
+      return !isBlankValue(getResolvedBusinessField('notificationEmail', businessInfo, setupSnapshot));
+    default:
+      return step.status === 'completed';
+  }
+}
+
+function getComponentTargetResolverSection(targetType: CreatorComponentInstance['targetType']) {
+  switch (targetType) {
+    case 'form':
+      return 'forms' as const;
+    case 'calendar':
+      return 'calendars' as const;
+    case 'product':
+    case 'checkout':
+      return 'products' as const;
+    case 'chat':
+    default:
+      return 'components' as const;
+  }
+}
+
+function getComponentTargetSummary(
+  instance: CreatorComponentInstance,
+  state: PlaygroundState,
+): string {
+  if (instance.targetType === 'form') {
+    return state.creatorData.forms[instance.bindings.formId]?.name || instance.bindings.formId || 'unbound form';
+  }
+  if (instance.targetType === 'calendar') {
+    return state.calendars[instance.bindings.calendarId]?.name || instance.bindings.calendarId || 'unbound calendar';
+  }
+  if (instance.targetType === 'product' || instance.targetType === 'checkout') {
+    return state.creatorData.products[instance.bindings.productId]?.name || instance.bindings.productId || 'unbound product';
+  }
+  return instance.componentSlug || instance.componentType;
+}
+
+function buildComponentDependencies(
+  instance: CreatorComponentInstance,
+  state: PlaygroundState,
+  setupSnapshot: PlaygroundSetupSnapshot,
+): PlaygroundIntentDependency[] {
+  const dependencies: PlaygroundIntentDependency[] = [];
+  const slug = instance.componentSlug || inferCanonicalComponentSlug(instance.componentType || '');
+  const definition = slug ? getCanonicalComponentDefinition(slug) : null;
+  const targetResolverSection = getComponentTargetResolverSection(instance.targetType);
+
+  if (!definition) {
+    dependencies.push({
+      id: `${instance.instanceId}:unknown-definition`,
+      mode: 'preview',
+      status: 'partial',
+      label: 'Canonical definition',
+      message: 'This component exists in the canvas but is not registered in the canonical component graph yet.',
+      fixHint: 'Replace it with a canonical component or register its definition before publish.',
+      resolverSection: 'components',
+    });
+  }
+
+  if (!instance.usedOnPages.length) {
+    dependencies.push({
+      id: `${instance.instanceId}:surface`,
+      mode: 'preview',
+      status: 'partial',
+      label: 'Placement surface',
+      message: 'This component is not attached to any page yet.',
+      fixHint: 'Attach it to at least one page so the runtime graph has a visible surface.',
+      resolverSection: 'components',
+    });
+  }
+
+  for (const bindingKey of definition?.requiredBindingKeys || []) {
+    const targetId = instance.bindings?.[bindingKey];
+    if (!targetId) {
+      dependencies.push({
+        id: `${instance.instanceId}:${bindingKey}`,
+        mode: 'preview',
+        status: 'blocked',
+        label: bindingKey,
+        message: `This component is missing its required ${bindingKey} binding.`,
+        fixHint: `Bind the component to a ${bindingKey.replace(/Id$/, '')} before previewing or publishing.`,
+        resolverSection: 'components',
+      });
+      continue;
+    }
+
+    if (bindingKey === 'formId' && !state.creatorData.forms[targetId]) {
+      dependencies.push({
+        id: `${instance.instanceId}:${bindingKey}:target`,
+        mode: 'preview',
+        status: 'blocked',
+        label: 'Target form',
+        message: `The form bound to this component no longer exists: ${targetId}.`,
+        fixHint: 'Reconnect the component to an existing form.',
+        resolverSection: targetResolverSection,
+      });
+    }
+
+    if (bindingKey === 'calendarId' && !state.calendars[targetId]) {
+      dependencies.push({
+        id: `${instance.instanceId}:${bindingKey}:target`,
+        mode: 'preview',
+        status: 'blocked',
+        label: 'Target calendar',
+        message: `The calendar bound to this component no longer exists: ${targetId}.`,
+        fixHint: 'Reconnect the component to an existing calendar.',
+        resolverSection: targetResolverSection,
+      });
+    }
+
+    if (bindingKey === 'productId' && !state.creatorData.products[targetId]) {
+      dependencies.push({
+        id: `${instance.instanceId}:${bindingKey}:target`,
+        mode: 'preview',
+        status: 'blocked',
+        label: 'Target product',
+        message: `The product bound to this component no longer exists: ${targetId}.`,
+        fixHint: 'Reconnect the component to an existing product.',
+        resolverSection: targetResolverSection,
+      });
+    }
+  }
+
+  for (const field of definition?.requiredBusinessFields || []) {
+    const resolvedValue = getResolvedBusinessField(field, state.creatorData.businessInfo, setupSnapshot);
+    if (!isBlankValue(resolvedValue)) continue;
+
+    const isPartial = field === 'crmDestination';
+    dependencies.push({
+      id: `${instance.instanceId}:business:${field}`,
+      mode: 'publish',
+      status: isPartial ? 'partial' : 'blocked',
+      label: field,
+      message: `Publish readiness is missing the ${field} required by ${instance.label}.`,
+      fixHint: `Set ${field} in Business Setup so this component can operate after publish.`,
+      resolverSection: 'business',
+      resolverField: field as any,
+    });
+  }
+
+  for (const stepId of definition?.requiredSetupSteps || []) {
+    if (isSetupStepSatisfied(stepId, state.creatorData.businessInfo, setupSnapshot)) continue;
+
+    dependencies.push({
+      id: `${instance.instanceId}:setup:${stepId}`,
+      mode: 'publish',
+      status: 'blocked',
+      label: stepId,
+      message: `${instance.label} is blocked until the ${stepId.replace(/_/g, ' ')} setup is completed.`,
+      fixHint: 'Finish the required launch setup before publishing this component.',
+      resolverSection: 'launch',
+      resolverStepId: stepId,
+    });
+  }
+
+  return dependencies;
 }
 
 function buildStructuralDependencies(
@@ -411,6 +656,7 @@ export function buildIntentReadinessReport(
   setupSnapshot: PlaygroundSetupSnapshot = {},
 ): PlaygroundIntentReadinessReport {
   const readiness: Record<string, PlaygroundIntentReadiness> = {};
+  const componentReadiness: Record<string, PlaygroundComponentReadiness> = {};
   const enrichedBindings: Record<string, PlaygroundBinding> = {};
 
   for (const binding of Object.values(state.bindings)) {
@@ -447,6 +693,30 @@ export function buildIntentReadinessReport(
     };
   }
 
+  const componentList = Object.values(state.creatorData.componentInstances || {});
+  for (const instance of componentList) {
+    const dependencies = buildComponentDependencies(instance, state, setupSnapshot);
+    const previewStatus = dependencyStatusToReadiness(dependencies, 'preview');
+    const publishStatus = mergeStatus(previewStatus, dependencyStatusToReadiness(dependencies, 'publish'));
+    const missingDependencies = dependencies
+      .filter((dependency) => dependency.status !== 'ready')
+      .map((dependency) => dependency.label);
+    const fixHints = dependencies
+      .map((dependency) => dependency.fixHint)
+      .filter((hint): hint is string => Boolean(hint));
+
+    componentReadiness[instance.instanceId] = {
+      instanceId: instance.instanceId,
+      componentType: instance.componentType,
+      label: instance.label || getComponentTargetSummary(instance, state),
+      previewStatus,
+      publishStatus,
+      dependencies,
+      missingDependencies: Array.from(new Set(missingDependencies)),
+      fixHints: Array.from(new Set(fixHints)),
+    };
+  }
+
   const bindingList = Object.values(enrichedBindings);
   const summary = {
     totalIntents: bindingList.length,
@@ -461,11 +731,15 @@ export function buildIntentReadinessReport(
     previewOnly: bindingList.filter(
       (binding) => binding.previewStatus === 'ready' && binding.publishStatus !== 'ready',
     ).length,
+    totalComponents: componentList.length,
+    componentPublishReady: Object.values(componentReadiness).filter((component) => component.publishStatus === 'ready').length,
+    componentPublishBlocked: Object.values(componentReadiness).filter((component) => component.publishStatus === 'blocked').length,
   };
 
   return {
     bindings: enrichedBindings,
     readiness,
+    componentReadiness,
     summary,
   };
 }

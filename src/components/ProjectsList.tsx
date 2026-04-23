@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Folder, ArrowRight, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { listProjectsCompat } from "@/services/projectSchemaCompat";
 
 interface Project {
   id: string;
@@ -45,15 +46,60 @@ export const ProjectsList = ({ userId }: ProjectsListProps) => {
   }, [userId]);
 
   const fetchProjects = async () => {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      if (!userId) {
+        setProjects([]);
+        return;
+      }
 
-    if (!error && data) {
-      setProjects(data);
+      const [
+        { data: ownedBusinesses, error: ownedError },
+        { data: memberBusinesses, error: memberError },
+      ] = await Promise.all([
+        supabase
+          .from('businesses')
+          .select('id')
+          .eq('owner_id', userId),
+        supabase
+          .from('business_members')
+          .select('business:businesses(id)')
+          .eq('user_id', userId),
+      ]);
+
+      if (ownedError && memberError) {
+        throw ownedError || memberError;
+      }
+
+      const accessibleBusinessIds = Array.from(new Set([
+        ...((ownedBusinesses || []).map((business) => business.id)),
+        ...((memberBusinesses || [])
+          .map((entry: any) => entry.business?.id)
+          .filter((businessId: string | undefined): businessId is string => Boolean(businessId))),
+      ]));
+
+      if (accessibleBusinessIds.length === 0) {
+        setProjects([]);
+        return;
+      }
+
+      const { data, error } = await listProjectsCompat({
+        ownerId: userId,
+        businessIds: accessibleBusinessIds,
+      });
+
+      if (error) throw error;
+      setProjects((data || []).map((project) => ({
+        id: project.id,
+        name: project.name,
+        description: project.description || null,
+        created_at: project.created_at || new Date().toISOString(),
+      })));
+    } catch (error) {
+      console.error('Error loading workspace projects:', error);
+      setProjects([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (loading) {

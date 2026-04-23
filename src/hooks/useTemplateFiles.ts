@@ -39,6 +39,7 @@ export interface SaveProjectPayload {
   entryPoint?: string;
   activePagePath?: string;
   businessId?: string | null;
+  projectId?: string | null;
   metadata?: Record<string, unknown>;
 }
 
@@ -132,6 +133,7 @@ export function useTemplateFiles() {
         description: description || null,
         entryPoint: payload?.entryPoint,
         activePagePath: payload?.activePagePath,
+        projectId: payload?.projectId ?? null,
         ...(payload?.metadata || {}),
       } as unknown as Json;
 
@@ -199,6 +201,7 @@ export function useTemplateFiles() {
         ...prevMeta,
         ...(payload?.entryPoint ? { entryPoint: payload.entryPoint } : {}),
         ...(payload?.activePagePath ? { activePagePath: payload.activePagePath } : {}),
+        ...(payload?.projectId !== undefined ? { projectId: payload.projectId } : {}),
         ...(payload?.metadata || {}),
       } as unknown as Json;
 

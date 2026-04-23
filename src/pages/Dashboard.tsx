@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { ProjectsList } from "@/components/ProjectsList";
-import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { SubscriptionBadge } from "@/components/SubscriptionBadge";
 import { LogOut, Plus, CheckSquare, Inbox, Zap, Menu } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -17,7 +16,6 @@ const Dashboard = () => {
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { canCreateProject, incrementProjectCount } = useSubscription();
 
@@ -31,7 +29,7 @@ const Dashboard = () => {
       navigate("/pricing");
       return;
     }
-    setCreateDialogOpen(true);
+    navigate("/cloud", { state: { tab: "projects" } });
   };
 
   useEffect(() => {
@@ -215,12 +213,6 @@ const Dashboard = () => {
       <main className="container mx-auto px-4 py-8">
         <ProjectsList userId={user?.id || ""} />
       </main>
-
-      <CreateProjectDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        userId={user?.id || ""}
-      />
     </div>
   );
 };

@@ -39,6 +39,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { BusinessSystemType } from '@/data/templates/types';
+import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 
 // Setup section types
 type SetupSection = 'payments' | 'database' | 'email' | 'calendar' | 'content' | 'domain' | 'analytics' | 'automations';
@@ -192,14 +193,10 @@ export default function ProjectSetup() {
       }
 
       try {
-        // Load project
-        const { data: projectData, error: projectError } = await supabase
-          .from('web_templates')
-          .select('*')
-          .eq('id', projectId)
-          .single();
-
-        if (projectError) throw projectError;
+        const { data: projectData, error: projectError } = await getProjectByIdCompat(projectId);
+        if (projectError || !projectData) {
+          throw projectError || new Error('Project not found');
+        }
         
         setProject(projectData);
 
@@ -216,8 +213,21 @@ export default function ProjectSetup() {
           }
         }
 
+        const { data: projectSettingsData } = await supabase
+          .from('project_settings')
+          .select('settings')
+          .eq('project_id', projectId)
+          .maybeSingle();
+
+        const projectSettings =
+          projectSettingsData?.settings && typeof projectSettingsData.settings === 'object' && !Array.isArray(projectSettingsData.settings)
+            ? projectSettingsData.settings
+            : {};
+
         // Load completion status from project settings
-        const completedFromSettings = projectData?.settings?.completed_setup_sections || [];
+        const completedFromSettings = Array.isArray(projectSettings.completed_setup_sections)
+          ? projectSettings.completed_setup_sections
+          : [];
         setCompletedSections(new Set(completedFromSettings));
 
       } catch (error) {
@@ -247,15 +257,22 @@ export default function ProjectSetup() {
 
     // Persist to project settings
     try {
+      const nextSettings = {
+        ...((project?.settings && typeof project.settings === 'object' && !Array.isArray(project.settings)) ? project.settings : {}),
+        completed_setup_sections: Array.from(newCompleted),
+      };
+
       await supabase
-        .from('web_templates')
-        .update({
-          settings: {
-            ...(project?.settings || {}),
-            completed_setup_sections: Array.from(newCompleted),
+        .from('project_settings')
+        .upsert(
+          {
+            project_id: projectId,
+            settings: nextSettings,
           },
-        })
-        .eq('id', projectId);
+          { onConflict: 'project_id' },
+        );
+
+      setProject((current) => current ? { ...current, settings: nextSettings } : current);
       
       toast.success(`${SETUP_SECTIONS.find(s => s.id === sectionId)?.title} setup complete!`);
     } catch (error) {

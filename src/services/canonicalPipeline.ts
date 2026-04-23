@@ -27,6 +27,7 @@ import type {
   PlaygroundCalendar,
   PlaygroundPopup,
 } from '@/types/playground';
+import type { CreatorData } from '@/types/creatorData';
 import type { PageRegistry } from '@/types/pageRegistry';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
 import type { SiteBundle, SiteManifest, RouteDef, NavItem } from '@/types/siteBundle';
@@ -93,6 +94,8 @@ export interface SiteBundleSnapshot {
   /** Calendars, popups — structured business objects */
   calendars: Record<string, PlaygroundCalendar>;
   popups: Record<string, PlaygroundPopup>;
+  creatorData: CreatorData;
+  componentInstances: CreatorData['componentInstances'];
 
   /** Available routes for preview */
   routes: string[];
@@ -273,6 +276,8 @@ function projectToSiteBundleSnapshot(
     bindings: compileResult.bindingManifest,
     calendars: playground.calendars,
     popups: playground.popups,
+    creatorData: playground.creatorData,
+    componentInstances: playground.creatorData.componentInstances,
     routes: compileResult.previewManifest.routes,
     homeRoute: compileResult.previewManifest.homeRoute,
     createdAt: new Date().toISOString(),

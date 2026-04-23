@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -53,6 +54,11 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { downloadMultiPageSite } from '@/utils/multiPageExporter';
+import {
+  createProjectCompat,
+  listProjectIdsByBusinessCompat,
+  listProjectsCompat,
+} from '@/services/projectSchemaCompat';
 
 // CRM Components
 import { CRMContacts } from '@/components/crm/CRMContacts';
@@ -126,6 +132,8 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const [businessSelectionMode, setBusinessSelectionMode] = useState(false);
+  const [selectedBusinessIds, setSelectedBusinessIds] = useState<string[]>([]);
   const [activeSection, setActiveSection] = useState<BusinessSection>('projects');
   const [crmSubTab, setCrmSubTab] = useState<CRMSubTab>('overview');
   const [loading, setLoading] = useState(true);
@@ -136,6 +144,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
   const [createBusinessOpen, setCreateBusinessOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{ type: 'business' | 'project'; item: Business | Project } | null>(null);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -240,25 +249,13 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
 
   const loadProjects = async (businessId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('business_id', businessId)
-        .order('updated_at', { ascending: false });
+      const { data, error } = await listProjectsCompat({
+        ownerId: userId,
+        businessId,
+      });
 
       if (error) {
-        // Fallback to owner_id
-        const { data: fallbackData } = await supabase
-          .from('projects')
-          .select('*')
-          .eq('owner_id', userId)
-          .order('updated_at', { ascending: false });
-        setProjects(fallbackData || []);
-        setSelectedProjectScopeId((current) =>
-          current && (fallbackData || []).some((project) => project.id === current)
-            ? current
-            : (fallbackData || [])[0]?.id || null
-        );
+        throw error;
       } else {
         setProjects(data || []);
         setSelectedProjectScopeId((current) =>
@@ -269,6 +266,8 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
       }
     } catch (error) {
       console.error('Error loading projects:', error);
+      setProjects([]);
+      setSelectedProjectScopeId(null);
     }
   };
 
@@ -302,21 +301,18 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
     setCreatingProject(true);
     try {
       const slug = newProjectName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').substring(0, 50);
-      const { data, error } = await supabase
-        .from('projects')
-        .insert({
-          name: newProjectName,
-          description: newProjectDescription || null,
-          slug,
-          owner_id: userId,
-          business_id: selectedBusiness.id,
-          status: 'draft',
-          publish_status: 'draft',
-        })
-        .select()
-        .single();
+      const { data, error } = await createProjectCompat({
+        name: newProjectName,
+        description: newProjectDescription || null,
+        slug,
+        owner_id: userId,
+        business_id: selectedBusiness.id,
+        status: 'draft',
+        publish_status: 'draft',
+      });
 
       if (error) throw error;
+      if (!data) throw new Error('Project creation returned no data.');
 
       setProjects([data, ...projects]);
       setSelectedProjectScopeId(data.id);
@@ -331,9 +327,108 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
     }
   };
 
+  const cleanupBusinessScopedArtifacts = async (businessIds: string[]) => {
+    const targetBusinessIds = Array.from(new Set(businessIds.filter(Boolean)));
+    if (targetBusinessIds.length === 0) return;
+
+    const { data: drafts, error: draftsError } = await supabase
+      .from('builder_drafts')
+      .select('id, user_id, metadata')
+      .in('business_id', targetBusinessIds);
+
+    if (draftsError) throw draftsError;
+
+    const { data: scopedProjects, error: projectsError } = await listProjectIdsByBusinessCompat(targetBusinessIds);
+
+    if (projectsError) throw projectsError;
+
+    const draftIds = (drafts || []).map((draft) => draft.id);
+    const scopedProjectIds = (scopedProjects || []).map((project) => project.id);
+
+    const legacyDraftKeys = Array.from(new Set(
+      (drafts || [])
+        .map((draft) => {
+          const metadata = (draft.metadata || {}) as Record<string, unknown>;
+          const draftName = String(
+            metadata.name ||
+            metadata.projectName ||
+            metadata.business_name ||
+            ''
+          ).trim();
+          if (!draft.user_id || !draftName) return null;
+          return `${draft.user_id}:::${draftName}`;
+        })
+        .filter((value): value is string => Boolean(value)),
+    ));
+
+    let legacyProjectIds: string[] = [];
+    if (legacyDraftKeys.length > 0) {
+      const { data: legacyProjects, error: legacyProjectsError } = await listProjectsCompat({
+        ownerId: userId,
+      });
+
+      if (legacyProjectsError) throw legacyProjectsError;
+
+      legacyProjectIds = (legacyProjects || [])
+        .filter((project) => {
+          const projectKey = `${project.owner_id}:::${String(project.name || '').trim()}`;
+          if (!legacyDraftKeys.includes(projectKey)) {
+            return false;
+          }
+          if (project.business_id) {
+            return false;
+          }
+          if (project.status && project.status !== 'draft') {
+            return false;
+          }
+          if (project.publish_status && project.publish_status !== 'draft') {
+            return false;
+          }
+          if (project.custom_domain || project.published_at || project.template_type) {
+            return false;
+          }
+          return true;
+        })
+        .map((project) => project.id);
+    }
+
+    const projectIds = Array.from(new Set([...scopedProjectIds, ...legacyProjectIds]));
+
+    if (draftIds.length > 0) {
+      const { error } = await supabase
+        .from('builder_drafts')
+        .delete()
+        .in('id', draftIds);
+
+      if (error) throw error;
+    }
+
+    if (projectIds.length > 0) {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .in('id', projectIds);
+
+      if (error) throw error;
+    }
+  };
+
   const confirmDelete = (type: 'business' | 'project', item: Business | Project) => {
     setItemToDelete({ type, item });
     setDeleteConfirmOpen(true);
+  };
+
+  const exitBusinessSelectionMode = () => {
+    setBusinessSelectionMode(false);
+    setSelectedBusinessIds([]);
+  };
+
+  const toggleBusinessSelection = (businessId: string) => {
+    setSelectedBusinessIds((current) =>
+      current.includes(businessId)
+        ? current.filter((id) => id !== businessId)
+        : [...current, businessId]
+    );
   };
 
   const executeDelete = async () => {
@@ -341,6 +436,10 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
     
     const { type, item } = itemToDelete;
     try {
+      if (type === 'business') {
+        await cleanupBusinessScopedArtifacts([item.id]);
+      }
+
       const { error } = await supabase
         .from(type === 'business' ? 'businesses' : 'projects')
         .delete()
@@ -351,8 +450,13 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
       if (type === 'business') {
         const updated = businesses.filter(b => b.id !== item.id);
         setBusinesses(updated);
+        setSelectedBusinessIds((current) => current.filter((id) => id !== item.id));
         if (selectedBusiness?.id === item.id) {
           setSelectedBusiness(updated[0] || null);
+          if (updated.length === 0) {
+            setProjects([]);
+            setSelectedProjectScopeId(null);
+          }
         }
       } else {
         const updatedProjects = projects.filter(p => p.id !== item.id);
@@ -375,25 +479,62 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
     }
   };
 
+  const executeBulkDeleteBusinesses = async () => {
+    if (selectedBusinessIds.length === 0) return;
+
+    try {
+      await cleanupBusinessScopedArtifacts(selectedBusinessIds);
+
+      const { error } = await supabase
+        .from('businesses')
+        .delete()
+        .in('id', selectedBusinessIds);
+
+      if (error) throw error;
+
+      const selectedIds = new Set(selectedBusinessIds);
+      const updatedBusinesses = businesses.filter((business) => !selectedIds.has(business.id));
+      setBusinesses(updatedBusinesses);
+
+      if (selectedBusiness && selectedIds.has(selectedBusiness.id)) {
+        setSelectedBusiness(updatedBusinesses[0] || null);
+        if (updatedBusinesses.length === 0) {
+          setProjects([]);
+          setSelectedProjectScopeId(null);
+        }
+      }
+
+      toast({
+        title: `${selectedBusinessIds.length} business${selectedBusinessIds.length === 1 ? '' : 'es'} deleted`,
+      });
+      exitBusinessSelectionMode();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete businesses.',
+        variant: 'destructive',
+      });
+    } finally {
+      setBulkDeleteConfirmOpen(false);
+    }
+  };
+
   const duplicateProject = async (project: Project) => {
     try {
       const newSlug = `${project.slug || 'project'}-copy-${Date.now().toString(36)}`;
-      const { data, error } = await supabase
-        .from('projects')
-        .insert({
-          name: `${project.name} (Copy)`,
-          description: project.description,
-          slug: newSlug,
-          owner_id: userId,
-          business_id: project.business_id || selectedBusiness?.id,
-          status: 'draft',
-          publish_status: 'draft',
-          settings: project.settings,
-        })
-        .select()
-        .single();
+      const { data, error } = await createProjectCompat({
+        name: `${project.name} (Copy)`,
+        description: project.description,
+        slug: newSlug,
+        owner_id: userId,
+        business_id: project.business_id || selectedBusiness?.id || null,
+        status: 'draft',
+        publish_status: 'draft',
+        settings: project.settings,
+      });
 
       if (error) throw error;
+      if (!data) throw new Error('Project duplication returned no data.');
       setProjects([data, ...projects]);
       setSelectedProjectScopeId(data.id);
       toast({ title: 'Project duplicated' });
@@ -487,7 +628,12 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (p.description?.toLowerCase().includes(searchQuery.toLowerCase()))
   );
-
+  const ownedBusinesses = businesses.filter((business) => business.owner_id === userId);
+  const selectedOwnedBusinesses = ownedBusinesses.filter((business) => selectedBusinessIds.includes(business.id));
+  const allOwnedBusinessesSelected =
+    ownedBusinesses.length > 0 && selectedOwnedBusinesses.length === ownedBusinesses.length;
+  const selectedBusinessPreview = selectedOwnedBusinesses.slice(0, 3).map((business) => business.name).join(', ');
+  
   const selectedScopeProject =
     projects.find((project) => project.id === selectedProjectScopeId) || null;
 
@@ -620,20 +766,79 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
   // ==================== MAIN LAYOUT ====================
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] gap-6">
+    <div className="flex h-full min-h-0 gap-6">
       {/* Left Sidebar - Business List */}
-      <aside className="w-64 flex-shrink-0 flex flex-col">
+      <aside className="flex w-64 min-h-0 flex-shrink-0 flex-col">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-sm text-white/40 uppercase tracking-wide">Businesses</h3>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="h-7 w-7 p-0"
-            onClick={() => setCreateBusinessOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {ownedBusinesses.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("h-7 px-2 text-xs", businessSelectionMode && "bg-white/10 text-white")}
+                onClick={() => {
+                  if (businessSelectionMode) {
+                    exitBusinessSelectionMode();
+                    return;
+                  }
+                  setBusinessSelectionMode(true);
+                }}
+              >
+                {businessSelectionMode ? 'Done' : 'Select'}
+              </Button>
+            )}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-7 w-7 p-0"
+              onClick={() => setCreateBusinessOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
+
+        {businessSelectionMode && (
+          <div className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium text-white">
+                  {selectedOwnedBusinesses.length > 0
+                    ? `${selectedOwnedBusinesses.length} selected`
+                    : 'Select businesses'}
+                </p>
+                <p className="text-xs text-white/40">
+                  Only businesses you own can be deleted in bulk.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+                disabled={selectedOwnedBusinesses.length === 0}
+                onClick={() => setBulkDeleteConfirmOpen(true)}
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                Delete
+              </Button>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                className="text-xs text-white/60 transition-colors hover:text-white"
+                onClick={() =>
+                  setSelectedBusinessIds(
+                    allOwnedBusinessesSelected ? [] : ownedBusinesses.map((business) => business.id)
+                  )
+                }
+              >
+                {allOwnedBusinessesSelected ? 'Clear selection' : 'Select all owned'}
+              </button>
+              <span className="text-[11px] text-white/35">{ownedBusinesses.length} owned total</span>
+            </div>
+          </div>
+        )}
         
         <ScrollArea className="flex-1 -mx-2">
           <div className="px-2 space-y-1">
@@ -641,6 +846,10 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
               <button
                 key={business.id}
                 onClick={() => {
+                  if (businessSelectionMode && business.owner_id === userId) {
+                    toggleBusinessSelection(business.id);
+                    return;
+                  }
                   setSelectedBusiness(business);
                   setActiveSection('projects');
                 }}
@@ -648,9 +857,22 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all group",
                   selectedBusiness?.id === business.id
                     ? "bg-white/10 text-white"
-                    : "text-white/40 hover:text-white hover:bg-white/5"
+                    : "text-white/40 hover:text-white hover:bg-white/5",
+                  businessSelectionMode && business.owner_id === userId && selectedBusinessIds.includes(business.id) && "bg-red-500/10 text-white ring-1 ring-red-500/30"
                 )}
               >
+                {businessSelectionMode && (
+                  business.owner_id === userId ? (
+                    <Checkbox
+                      checked={selectedBusinessIds.includes(business.id)}
+                      onCheckedChange={() => toggleBusinessSelection(business.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      className="border-white/20 data-[state=checked]:border-red-500/70 data-[state=checked]:bg-red-500 data-[state=checked]:text-white"
+                    />
+                  ) : (
+                    <div className="w-4 text-[10px] font-medium uppercase tracking-wide text-white/25">Shared</div>
+                  )
+                )}
                 <div className={cn(
                   "p-1.5 rounded-md transition-colors",
                   selectedBusiness?.id === business.id
@@ -662,15 +884,17 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate text-sm">{business.name}</p>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    confirmDelete('business', business);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-red-400 transition-opacity"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                {!businessSelectionMode && business.owner_id === userId && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      confirmDelete('business', business);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-red-400 transition-opacity"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </button>
             ))}
           </div>
@@ -678,7 +902,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {selectedBusiness ? (
           <>
             {/* Business Header & Navigation */}
@@ -733,7 +957,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
             </div>
 
             {/* Section Content */}
-            <div className="flex-1 overflow-auto">
+            <div className="min-h-0 flex-1 overflow-auto">
               {activeSection === 'projects' && (
                 <div className="space-y-4">
                   {/* Toolbar */}
@@ -1347,15 +1571,21 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                           <p className="mt-1 text-sm text-white/45">
                             Deleting the business removes the shared parent container for every project workspace in this account.
                           </p>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            className="mt-4"
-                            onClick={() => confirmDelete('business', selectedBusiness)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete Business
-                          </Button>
+                          {selectedBusiness.owner_id === userId ? (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="mt-4"
+                              onClick={() => confirmDelete('business', selectedBusiness)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete Business
+                            </Button>
+                          ) : (
+                            <p className="mt-4 text-xs text-white/40">
+                              Only the business owner can delete this shared workspace.
+                            </p>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -1749,6 +1979,25 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
             <AlertDialogCancel className="bg-transparent border-white/10">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={executeDelete} className="bg-red-600 hover:bg-red-700">
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <AlertDialogContent className="bg-[#0d0d18] border-white/10">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete selected businesses?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {selectedOwnedBusinesses.length} business{selectedOwnedBusinesses.length === 1 ? '' : 'es'}
+              {selectedBusinessPreview ? ` including ${selectedBusinessPreview}` : ''}.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-transparent border-white/10">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeBulkDeleteBusinesses} className="bg-red-600 hover:bg-red-700">
+              Delete Selected
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

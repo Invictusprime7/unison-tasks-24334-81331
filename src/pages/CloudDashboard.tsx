@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode, Suspense, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
   ArrowLeft,
@@ -24,8 +24,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { listProjectsCompat } from '@/services/projectSchemaCompat';
 import {
   CloudAssets,
   CloudEmail,
@@ -87,6 +95,10 @@ interface DashboardSnapshot {
   connectedIntegrations: string[];
   emailTemplateCount: number;
   notificationsEnabled: number;
+}
+
+interface CloudDashboardLocationState {
+  tab?: CloudTab;
 }
 
 const TABS: TabConfig[] = [
@@ -219,7 +231,7 @@ function AnimatedBackground() {
         }}
       />
       <div
-        className="absolute inset-0 opacity-[0.015]"
+        className="pointer-events-none absolute inset-0 opacity-[0.015]"
         style={{
           backgroundImage:
             'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")',
@@ -344,11 +356,11 @@ function OverviewPanel({
   onSelectTab: (tab: CloudTab) => void;
 }) {
   const readinessChecks = [
-    { label: 'Identity profile', ready: Boolean(snapshot.profileName || user?.email) },
-    { label: 'Business layer', ready: stats.businesses > 0 },
-    { label: 'Project layer', ready: stats.projects > 0 },
-    { label: 'Integrations', ready: stats.integrations > 0 },
-    { label: 'Email system', ready: snapshot.emailTemplateCount > 0 || snapshot.notificationsEnabled > 0 },
+    { label: 'Identity profile', ready: Boolean(snapshot.profileName || user?.email), tab: 'profile' as const },
+    { label: 'Business layer', ready: stats.businesses > 0, tab: 'projects' as const },
+    { label: 'Project layer', ready: stats.projects > 0, tab: 'projects' as const },
+    { label: 'Integrations', ready: stats.integrations > 0, tab: 'integrations' as const },
+    { label: 'Email system', ready: snapshot.emailTemplateCount > 0 || snapshot.notificationsEnabled > 0, tab: 'email' as const },
   ];
   const readinessScore = Math.round(
     (readinessChecks.filter((check) => check.ready).length / readinessChecks.length) * 100
@@ -407,8 +419,8 @@ function OverviewPanel({
 
   return (
     <div className="space-y-8">
-      <Card className="overflow-hidden border-white/5 bg-[#0d0d18]/90">
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_55%)]" />
+      <Card className="relative overflow-hidden border-white/5 bg-[#0d0d18]/90">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_55%)]" />
         <CardContent className="relative p-6 sm:p-8">
           <div className="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-3xl space-y-4">
@@ -473,8 +485,8 @@ function OverviewPanel({
             onClick={() => onSelectTab(card.tab)}
             className="group text-left"
           >
-            <Card className="h-full overflow-hidden border-white/5 bg-[#0d0d18]/80 transition-all duration-300 group-hover:border-white/12 group-hover:bg-[#141420]">
-              <div className={cn('absolute inset-0 bg-gradient-to-br opacity-0 transition-opacity group-hover:opacity-100', card.gradient)} />
+            <Card className="relative h-full overflow-hidden border-white/5 bg-[#0d0d18]/80 transition-all duration-300 group-hover:border-white/12 group-hover:bg-[#141420]">
+              <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-br opacity-0 transition-opacity group-hover:opacity-100', card.gradient)} />
               <CardContent className="relative flex h-full flex-col p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="rounded-xl border border-white/10 bg-black/20 p-3">
@@ -534,7 +546,12 @@ function OverviewPanel({
             {readinessChecks.map((check) => (
               <div
                 key={check.label}
-                className="flex items-center justify-between rounded-xl border border-white/8 bg-black/20 px-4 py-3"
+                className={cn(
+                  'flex items-center justify-between rounded-xl border px-4 py-3',
+                  check.ready
+                    ? 'border-white/8 bg-black/20'
+                    : 'border-amber-300/20 bg-amber-300/[0.06]',
+                )}
               >
                 <span className="text-sm text-white/70">{check.label}</span>
                 <div className="flex items-center gap-2 text-sm">
@@ -546,7 +563,13 @@ function OverviewPanel({
                   ) : (
                     <>
                       <Activity className="h-4 w-4 text-amber-300" />
-                      <span className="text-amber-300">Needs setup</span>
+                      <button
+                        type="button"
+                        onClick={() => onSelectTab(check.tab)}
+                        className="font-medium text-amber-300 underline decoration-amber-300/40 underline-offset-4 transition-colors hover:text-amber-200"
+                      >
+                        Needs setup
+                      </button>
                     </>
                   )}
                 </div>
@@ -626,6 +649,7 @@ function ContextRail({
   snapshot,
   onSelectTab,
   onPrimaryAction,
+  className,
 }: {
   user: any;
   activeTab: CloudTab;
@@ -633,6 +657,7 @@ function ContextRail({
   snapshot: DashboardSnapshot;
   onSelectTab: (tab: CloudTab) => void;
   onPrimaryAction: () => void;
+  className?: string;
 }) {
   const recommendedNextStep =
     stats.businesses === 0
@@ -666,7 +691,7 @@ function ContextRail({
   };
 
   return (
-    <div className="space-y-6 xl:sticky xl:top-28">
+    <div className={cn('space-y-6 xl:sticky xl:top-28', className)}>
       <Card className="border-white/5 bg-[#0d0d18]/90">
         <CardHeader>
           <CardTitle>Account Context</CardTitle>
@@ -735,12 +760,14 @@ function ContextRail({
 
 export default function CloudDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeTab, setActiveTab] = useState<CloudTab>('overview');
   const [cloudStatus, setCloudStatus] = useState<'online' | 'syncing' | 'offline'>('online');
+  const [contextRailOpen, setContextRailOpen] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
     projects: 0,
     assets: 0,
@@ -755,6 +782,13 @@ export default function CloudDashboard() {
     emailTemplateCount: 0,
     notificationsEnabled: 0,
   });
+
+  useEffect(() => {
+    const requestedTab = (location.state as CloudDashboardLocationState | null)?.tab;
+    if (requestedTab && TABS.some((tab) => tab.id === requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     void checkUser();
@@ -839,30 +873,16 @@ export default function CloudDashboard() {
 
       const accessibleBusinessIds = accessibleBusinesses.map((business) => business.id);
 
-      let recentProjects: ProjectSummary[] = [];
-      let projectCount = 0;
-
-      if (accessibleBusinessIds.length > 0) {
-        const { data, count } = await supabase
-          .from('projects')
-          .select('id, name, slug, status, publish_status, business_id, updated_at, created_at', { count: 'exact' })
-          .in('business_id', accessibleBusinessIds)
-          .order('updated_at', { ascending: false })
-          .limit(6);
-
-        recentProjects = (data || []) as ProjectSummary[];
-        projectCount = count || 0;
-      } else {
-        const { data, count } = await supabase
-          .from('projects')
-          .select('id, name, slug, status, publish_status, business_id, updated_at, created_at', { count: 'exact' })
-          .eq('owner_id', user.id)
-          .order('updated_at', { ascending: false })
-          .limit(6);
-
-        recentProjects = (data || []) as ProjectSummary[];
-        projectCount = count || 0;
+      const { data: projectData, count: projectCount, error: projectError } = await listProjectsCompat({
+        ownerId: user.id,
+        businessIds: accessibleBusinessIds,
+        limit: 6,
+        withCount: true,
+      });
+      if (projectError) {
+        throw projectError;
       }
+      const recentProjects = (projectData || []) as ProjectSummary[];
 
       const settings = parseSettings(userSettingsResult.data?.settings);
       const integrationSettings =
@@ -878,7 +898,7 @@ export default function CloudDashboard() {
       const templateSettings = Array.isArray(emailSettings.templates) ? emailSettings.templates : [];
 
       setStats({
-        projects: projectCount,
+        projects: projectCount || 0,
         businesses: accessibleBusinesses.length,
         assets: assetCountResult.count || 0,
         integrations: connectedIntegrations.length,
@@ -1042,7 +1062,12 @@ export default function CloudDashboard() {
       </header>
 
       <div className="mx-auto max-w-[1900px] px-4 py-6 sm:px-6 lg:px-8">
-        <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+        <div
+          className={cn(
+            "grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]",
+            activeTab === 'projects' && "xl:min-h-[calc(100vh-8.5rem)]",
+          )}
+        >
           <aside className="hidden xl:block">
             <div className="sticky top-28 space-y-4">
               <Card className="border-white/5 bg-[#0d0d18]/90">
@@ -1072,7 +1097,7 @@ export default function CloudDashboard() {
             </div>
           </aside>
 
-          <main className="min-w-0 space-y-6">
+          <main className={cn("min-w-0", activeTab === 'projects' ? "flex min-h-0 flex-col gap-6" : "space-y-6")}>
             <div className="overflow-x-auto xl:hidden">
               <div className="flex min-w-max gap-2 pb-1">
                 {TABS.map((tab) => {
@@ -1097,8 +1122,8 @@ export default function CloudDashboard() {
               </div>
             </div>
 
-            <Card className="overflow-hidden border-white/5 bg-[#0d0d18]/90">
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),transparent_60%)]" />
+            <Card className="relative overflow-hidden border-white/5 bg-[#0d0d18]/90">
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),transparent_60%)]" />
               <CardContent className="relative p-6">
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex items-start gap-4">
@@ -1122,6 +1147,14 @@ export default function CloudDashboard() {
                   </div>
 
                   <div className="flex flex-col gap-3 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      className="border-white/10 text-white/80 hover:bg-white/[0.04] hover:text-white"
+                      onClick={() => setContextRailOpen(true)}
+                    >
+                      <User className="mr-2 h-4 w-4" />
+                      Account Context
+                    </Button>
                     <Button
                       onClick={handlePrimaryAction}
                       className="border border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]"
@@ -1150,7 +1183,7 @@ export default function CloudDashboard() {
               </CardContent>
             </Card>
 
-            <div className="min-h-[640px]">
+            <div className={cn(activeTab === 'projects' ? "min-h-0 flex-1" : "min-h-[640px]")}>
               <Suspense
                 fallback={
                   <div className="flex h-96 items-center justify-center">
@@ -1162,19 +1195,42 @@ export default function CloudDashboard() {
               </Suspense>
             </div>
           </main>
-
-          <aside className="hidden xl:block">
-            <ContextRail
-              user={user}
-              activeTab={activeTab}
-              stats={stats}
-              snapshot={snapshot}
-              onSelectTab={setActiveTab}
-              onPrimaryAction={handlePrimaryAction}
-            />
-          </aside>
         </div>
       </div>
+
+      <Sheet open={contextRailOpen} onOpenChange={setContextRailOpen}>
+        <SheetContent
+          side="right"
+          className="w-full overflow-y-auto border-white/10 bg-[#0a0a12] p-0 text-white sm:max-w-lg"
+        >
+          <div className="min-h-full bg-[#0a0a12] p-6">
+            <SheetHeader className="border-b border-white/5 pb-4 text-left">
+              <SheetTitle className="text-white">Account Context</SheetTitle>
+              <SheetDescription className="text-white/45">
+                Open this panel when you need account state, recommendations, and connected-service context.
+              </SheetDescription>
+            </SheetHeader>
+
+            <div className="pt-6">
+              <ContextRail
+                user={user}
+                activeTab={activeTab}
+                stats={stats}
+                snapshot={snapshot}
+                onSelectTab={(tab) => {
+                  setActiveTab(tab);
+                  setContextRailOpen(false);
+                }}
+                onPrimaryAction={() => {
+                  handlePrimaryAction();
+                  setContextRailOpen(false);
+                }}
+                className="space-y-6"
+              />
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -31,11 +31,11 @@ import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types"
 import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
-import { createRuntimeManifest } from "@/types/runtimeManifest";
 import { createLaunchState } from "@/types/launchState";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { resolveLauncherEntryPoint } from "@/utils/launcherPayload";
+import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -405,12 +405,6 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       return;
     }
 
-    const runtimeManifest = createRuntimeManifest(generatedVfsFiles, {
-      entryPoint: generatedEntryPoint || '/src/App.tsx',
-      industry: selectedChip ? getCanonicalIndustry(selectedChip) : undefined,
-      backendRequired: false,
-    });
-
     // Generate site topology for the builder
     const industryKey = selectedChip ? getCanonicalIndustry(selectedChip) : 'general';
     const businessName = extractBusinessName(prompt);
@@ -419,6 +413,19 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       primaryIntent: industryProfile?.primaryIntent,
     });
     console.log(`[BusinessLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, ${sitePlan.funnels.length} funnels`);
+    const launchArtifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: generatedVfsFiles,
+      preferredEntryPoint: generatedEntryPoint || '/src/App.tsx',
+      systemType: selectedChip ? getSystemTypeForChip(selectedChip) : "content",
+      systemName: businessName || "AI Generated",
+      templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
+      templateCategory: selectedChip ? getCategoryForChip(selectedChip) : "landing",
+      businessName: businessName || "AI Generated",
+      industry: selectedChip ? getCanonicalIndustry(selectedChip) : 'general',
+      aesthetic: 'modern',
+      backendRequired: false,
+    });
+    const runtimeManifest = launchArtifacts.runtimeManifest;
 
     setLaunch(createLaunchState({
       systemType: selectedChip ? getSystemTypeForChip(selectedChip) : "content",
@@ -427,11 +434,11 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
       templateCategory: selectedChip ? getCategoryForChip(selectedChip) : "landing",
       aesthetic: "modern",
-      vfsFiles: generatedVfsFiles,
+      vfsFiles: launchArtifacts.files,
       preloadedIntents: generatedSystemsBuildContext?.intents?.map((item) => item.intent) || [],
       startInPreview: true,
       intentRuntime: true,
-      entryPoint: runtimeManifest.entryPoint,
+      entryPoint: launchArtifacts.entryPoint,
       runtimeManifest,
       sitePlan,
       systemsBuildContext: generatedSystemsBuildContext ?? undefined,
@@ -439,8 +446,8 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
 
     navigate("/web-builder", {
       state: {
-        vfsFiles: generatedVfsFiles,
-        entryPoint: runtimeManifest.entryPoint,
+        vfsFiles: launchArtifacts.files,
+        entryPoint: launchArtifacts.entryPoint,
         runtimeManifest,
         templateName: `AI ${selectedChip ? industryChips.find(c => c.id === selectedChip)?.label : "Generated"}`,
         aesthetic: "modern",

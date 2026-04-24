@@ -287,6 +287,35 @@ function createCartManager(sessionId: string): IntentManagers['cart'] {
       return cartStorage.get(sessionId) || null;
     },
 
+    update: async (productId, quantity) => {
+      const cart = getOrCreateCart(sessionId);
+      if (quantity <= 0) {
+        cart.items = cart.items.filter((item) => item.productId !== productId);
+      } else {
+        cart.items = cart.items.map((item) =>
+          item.productId === productId
+            ? { ...item, quantity }
+            : item,
+        );
+      }
+      cart.total = cart.items.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0);
+      return { cartId: cart.id, itemCount: cart.items.length };
+    },
+
+    remove: async (productId) => {
+      const cart = getOrCreateCart(sessionId);
+      cart.items = cart.items.filter((item) => item.productId !== productId);
+      cart.total = cart.items.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0);
+      return { cartId: cart.id, itemCount: cart.items.length };
+    },
+
+    clear: async () => {
+      const cart = getOrCreateCart(sessionId);
+      cart.items = [];
+      cart.total = 0;
+      return { cartId: cart.id, itemCount: 0 };
+    },
+
     checkout: async () => {
       const cart = getOrCreateCart(sessionId);
       const checkoutBody = resolveCheckoutSessionBody({

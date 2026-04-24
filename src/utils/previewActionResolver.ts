@@ -14,23 +14,21 @@
  */
 
 import type { ClassificationResult } from './redirectLabelClassifier';
+import {
+  hasInlineIntentTarget,
+  resolveDeterministicIntentSurface,
+  type PreviewIntentInventory,
+} from '@/runtime/deterministicIntentUi';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export interface PageInventory {
-  /** data-ut-intent values on non-button/anchor elements (structural sections) */
-  sectionIntents: string[];
-  /** Landmark element IDs found on the page (e.g. "booking", "contact") */
-  presentIds: string[];
-  /** data-ut-intent values on <form> elements */
-  formIntents: string[];
-  /** Normalised page names extracted from nav/header links */
-  navHrefs: string[];
-}
+export type PageInventory = PreviewIntentInventory;
 
 export type ResolvedAction =
   | { action: 'scroll';      command: string }
   | { action: 'navigate';    route: string; vfsPath: string }
+  | { action: 'overlay';     overlayId: string }
+  | { action: 'cart';        step: 'cart' | 'checkout' }
   | { action: 'acknowledge' }
   | { action: 'generate';    pageType: string; label: string };
 
@@ -175,6 +173,7 @@ export function resolvePreviewAction(
   vfsFiles: Record<string, string>,
   classification: ClassificationResult,
   inPreviewHandled: boolean,
+  payload?: Record<string, unknown>,
 ): ResolvedAction {
   const inv = inventory ?? { sectionIntents: [], presentIds: [], formIntents: [], navHrefs: [] };
 
@@ -182,7 +181,7 @@ export function resolvePreviewAction(
   if (inPreviewHandled) {
     // For form-type intents the bridge scrolled/focused — nothing more needed
     const formIntents = ['contact.submit', 'newsletter.subscribe', 'quote.request',
-                         'lead.capture', 'form.submit', 'cart.add'];
+                         'lead.capture', 'form.submit'];
     if (formIntents.includes(intent)) return { action: 'acknowledge' };
     // For booking/auth the bridge scrolled too — parent just needs to know
     const scrolledIntents = ['booking.create', 'auth.login', 'auth.register'];
@@ -191,19 +190,20 @@ export function resolvePreviewAction(
 
   // ── 2. Scroll — section exists on current page ────────────────────────────
   const scrollDef = SCROLL_DEFS[intent];
-  if (scrollDef) {
-    const hasForm = scrollDef.matchIntents.some(i =>
-      inv.formIntents.includes(i) || inv.sectionIntents.includes(i)
-    );
-    const hasId = scrollDef.matchIds.some(id => inv.presentIds.includes(id));
-    if (hasForm || hasId) {
-      return { action: 'scroll', command: scrollDef.command };
-    }
+  if (scrollDef && hasInlineIntentTarget(intent, inv)) {
+    return { action: 'scroll', command: scrollDef.command };
   }
 
   // ── 3. Navigate — page already exists in VFS or in the site nav ──────────
   // 3a. Check intent-specific page affinity candidates
   const affinityCandidates = INTENT_PAGE_AFFINITY[intent] ?? [];
+  const surface = resolveDeterministicIntentSurface(intent, payload, inv);
+  if (surface.kind === 'cart') {
+    return { action: 'cart', step: surface.step };
+  }
+  if (surface.kind === 'overlay') {
+    return { action: 'overlay', overlayId: surface.overlayId };
+  }
   const affinityMatch = resolveToExistingPage(affinityCandidates, inv.navHrefs, vfsFiles);
   if (affinityMatch) return { action: 'navigate', ...affinityMatch };
 
@@ -241,7 +241,7 @@ export function resolvePreviewAction(
   // and let the existing booking/contact flow handle it through the backend.
   const formOnlyIntents = ['contact.submit', 'newsletter.subscribe', 'quote.request',
                            'lead.capture', 'booking.create', 'auth.login', 'auth.register',
-                           'cart.add', 'form.submit'];
+                           'cart.add', 'cart.view', 'cart.checkout', 'checkout.start', 'form.submit'];
   if (formOnlyIntents.includes(intent) && !pageType) {
     return { action: 'acknowledge' };
   }

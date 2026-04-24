@@ -20,6 +20,7 @@ describe("normalizeIntent", () => {
     expect(normalizeIntent("nav.navigate")).toBe("nav.goto");
     expect(normalizeIntent("shop.checkout")).toBe("pay.checkout");
     expect(normalizeIntent("checkout.start")).toBe("pay.checkout");
+    expect(normalizeIntent("cart.open")).toBe("cart.view");
     expect(normalizeIntent("booking.schedule")).toBe("booking.create");
     expect(normalizeIntent("newsletter.signup")).toBe("newsletter.subscribe");
   });
@@ -48,6 +49,7 @@ describe("isNormalizedCoreIntent", () => {
     expect(isNormalizedCoreIntent("nav.goto")).toBe(true);
     expect(isNormalizedCoreIntent("pay.checkout")).toBe(true);
     expect(isNormalizedCoreIntent("contact.submit")).toBe(true);
+    expect(isNormalizedCoreIntent("cart.view")).toBe(true);
   });
 
   it("returns true for aliases (they normalize to canonical)", () => {

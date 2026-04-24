@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS public.project_component_instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   builder_draft_id UUID REFERENCES public.builder_drafts(id) ON DELETE SET NULL,
+  source_instance_id TEXT NOT NULL,
   definition_slug TEXT REFERENCES public.component_definitions(slug) ON DELETE SET NULL,
   component_type TEXT NOT NULL,
   label TEXT NOT NULL,
@@ -209,7 +210,8 @@ CREATE TABLE IF NOT EXISTS public.project_component_instances (
   required_capabilities JSONB NOT NULL DEFAULT '[]'::jsonb,
   output_events JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, source_instance_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_component_instances_project_id

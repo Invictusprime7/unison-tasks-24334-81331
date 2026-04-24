@@ -27,6 +27,17 @@ describe('normalizePlaygroundIntent', () => {
     expect(normalizePlaygroundIntent('form.open', 'lead_capture')).toBe('lead.capture');
   });
 
+  it('routes reusable intake and inquiry forms to lead.capture', () => {
+    expect(normalizePlaygroundIntent('form.open', 'demo_request')).toBe('lead.capture');
+    expect(normalizePlaygroundIntent('form.open', 'project_inquiry')).toBe('lead.capture');
+    expect(normalizePlaygroundIntent('form.open', 'volunteer')).toBe('lead.capture');
+  });
+
+  it('routes newsletter forms to newsletter.subscribe', () => {
+    expect(normalizePlaygroundIntent('form.open', 'newsletter')).toBe('newsletter.subscribe');
+    expect(normalizePlaygroundIntent('form.open', 'waitlist')).toBe('newsletter.subscribe');
+  });
+
   it('maps booking and checkout intents canonically', () => {
     expect(normalizePlaygroundIntent('calendar.open')).toBe('booking.create');
     expect(normalizePlaygroundIntent('checkout.start')).toBe('pay.checkout');

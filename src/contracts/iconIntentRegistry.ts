@@ -115,7 +115,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   cart: {
     iconKey: 'cart',
     lucideIcon: 'ShoppingCart',
-    coreIntent: 'cart.checkout',
+    coreIntent: 'cart.view',
     ariaLabel: 'Shopping cart',
     description: 'Opens the cart drawer/overlay showing items and checkout',
     behaviorByPlacement: {

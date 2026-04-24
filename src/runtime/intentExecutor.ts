@@ -28,6 +28,8 @@ import { classifyIntent } from './intentClassifier';
 import { logIntentExecution, createLogEntryFromResult } from '@/services/intentExecutionLogger';
 import { lookupIntentBinding, recordBindingTriggered } from '@/services/intentBindingService';
 import { dispatchAutomation } from '@/services/automationOrchestrator';
+import { logProjectGraphEvents } from '@/services/componentGraphPersistence';
+import { resolveDeterministicOverlayId } from './deterministicIntentUi';
 
 // ============ TYPES ============
 
@@ -36,6 +38,7 @@ import { dispatchAutomation } from '@/services/automationOrchestrator';
  */
 export interface UIDirective {
   openModal?: string;
+  openModalPayload?: Record<string, unknown>;
   closeModal?: string;
   navigate?: string;
   scrollTo?: string;
@@ -134,6 +137,9 @@ export interface IntentManagers {
   cart?: {
     add: (item: CartItem) => Promise<{ cartId: string; itemCount: number }>;
     get: () => Promise<Cart | null>;
+    update: (productId: string, quantity: number) => Promise<{ cartId: string; itemCount: number }>;
+    remove: (productId: string) => Promise<{ cartId: string; itemCount: number }>;
+    clear: () => Promise<{ cartId: string; itemCount: number }>;
     checkout: () => Promise<{ checkoutUrl: string }>;
   };
   auth?: {
@@ -224,6 +230,14 @@ export interface CheckoutOptions {
 // ============ HANDLER REGISTRY ============
 
 type IntentHandler = (ctx: IntentContext) => Promise<IntentResult> | IntentResult;
+
+async function ensureCrmPipeline(managers?: IntentManagers) {
+  let pipeline = await managers?.crm?.getPipeline();
+  if (!pipeline) {
+    pipeline = await managers?.crm?.createDefaultPipeline();
+  }
+  return pipeline;
+}
 
 const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
   // ============ NAVIGATION ============
@@ -331,22 +345,21 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
     // Validate required fields
     const email = payload.email as string;
     if (!email) {
+      const overlayId = resolveDeterministicOverlayId('contact.submit') || 'contact';
       return {
-        ok: false,
-        missing: {
-          fields: ['email'],
-          prompt: 'Please enter your email address',
+        ok: true,
+        ui: {
+          openModal: overlayId,
+          openModalPayload: {
+            source: payload.source || 'website',
+            headline: payload.headline,
+          },
         },
-        ui: { focus: 'input[name="email"]' },
       };
     }
 
     // Context hydration: ensure pipeline exists
-    let pipeline = await managers?.crm?.getPipeline();
-    if (!pipeline) {
-      console.log('[IntentExecutor] No pipeline found, creating default...');
-      pipeline = await managers?.crm?.createDefaultPipeline();
-    }
+    const pipeline = await ensureCrmPipeline(managers);
 
     const result = await managers?.crm?.submitLead({
       name: payload.name as string,
@@ -369,9 +382,16 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
   'newsletter.subscribe': async (ctx) => {
     const email = ctx.payload?.email as string;
     if (!email) {
+      const overlayId = resolveDeterministicOverlayId('newsletter.subscribe') || 'newsletter';
       return {
-        ok: false,
-        missing: { fields: ['email'], prompt: 'Enter your email to subscribe' },
+        ok: true,
+        ui: {
+          openModal: overlayId,
+          openModalPayload: {
+            source: ctx.payload?.source || 'newsletter',
+            lists: ctx.payload?.lists,
+          },
+        },
       };
     }
 
@@ -399,9 +419,10 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
 
     // If no service selected, open booking modal with service selection
     if (!payload.serviceId && services.length > 0) {
+      const overlayId = resolveDeterministicOverlayId('booking.create') || 'booking';
       return {
         ok: true,
-        ui: { openModal: 'booking' },
+        ui: { openModal: overlayId },
         data: { services, step: 'select-service' },
       };
     }
@@ -420,16 +441,58 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
       ok: true,
       data: result,
       toast: { type: 'success', message: 'Booking confirmed!' },
-      ui: { closeModal: 'booking', openModal: 'booking-confirmation' },
+      ui: {
+        closeModal: resolveDeterministicOverlayId('booking.create') || 'booking',
+        openModal: 'booking-confirmation',
+      },
       events: [{ name: 'booking.requested', payload: { bookingId: result?.bookingId }, timestamp: Date.now() }],
     };
   },
 
   'quote.request': async (ctx) => {
-    // Quote request follows same pattern as contact but opens quote modal
+    const payload = ctx.payload || {};
+    const email = payload.email as string | undefined;
+    const name = payload.name as string | undefined;
+
+    if (!email || !name) {
+      const overlayId = resolveDeterministicOverlayId('quote.request') || 'quote';
+      return {
+        ok: true,
+        ui: {
+          openModal: overlayId,
+          openModalPayload: {
+            service: payload.service,
+            source: payload.source || 'quote_request',
+          },
+        },
+      };
+    }
+
+    const pipeline = await ensureCrmPipeline(ctx.managers);
+    const result = await ctx.managers?.crm?.submitLead({
+      name,
+      email,
+      phone: payload.phone as string | undefined,
+      message: (payload.message as string) || (payload.description as string) || (payload.details as string),
+      source: (payload.source as string) || 'quote_request',
+      metadata: {
+        pipelineId: pipeline?.id,
+        service: payload.service,
+        budget: payload.budget,
+        timeline: payload.timeline,
+      },
+    });
+
     return {
       ok: true,
-      ui: { openModal: 'quote' },
+      data: result,
+      toast: { type: 'success', message: 'Quote request submitted!' },
+      ui: { closeModal: resolveDeterministicOverlayId('quote.request') || 'quote' },
+      events: [{
+        name: 'quote.requested',
+        payload: { leadId: result?.leadId, pipelineId: pipeline?.id },
+        timestamp: Date.now(),
+      }],
     };
   },
 
@@ -476,8 +539,31 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
       ok: true,
       data: result,
       toast: { type: 'success', message: `${productName || 'Item'} added to cart` },
-      ui: { openModal: 'cart-toast' },
+      ui: {
+        openModal: 'cart',
+        openModalPayload: {
+          cart: await managers?.cart?.get(),
+          step: 'cart',
+          lastAddedProductId: productId,
+        },
+      },
       events: [{ name: 'cart.item_added', payload: { productId, quantity }, timestamp: Date.now() }],
+    };
+  },
+
+  'cart.view': async (ctx) => {
+    const cart = await ctx.managers?.cart?.get();
+
+    return {
+      ok: true,
+      data: cart,
+      ui: {
+        openModal: 'cart',
+        openModalPayload: {
+          cart,
+          step: (ctx.payload?.step as string) || 'cart',
+        },
+      },
     };
   },
 
@@ -516,9 +602,10 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
     }
 
     managers?.auth?.showLogin();
+    const overlayId = resolveDeterministicOverlayId('auth.login') || 'auth-login';
     return {
       ok: true,
-      ui: { openModal: 'auth-login' },
+      ui: { openModal: overlayId },
     };
   },
 
@@ -533,9 +620,10 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
     }
 
     managers?.auth?.showRegister();
+    const overlayId = resolveDeterministicOverlayId('auth.register') || 'auth-register';
     return {
       ok: true,
-      ui: { openModal: 'auth-register' },
+      ui: { openModal: overlayId },
     };
   },
 
@@ -765,6 +853,23 @@ export async function executeIntent(
       }
     }
 
+    if (result.events?.length && ctx.siteId) {
+      logProjectGraphEvents({
+        projectId: ctx.siteId,
+        events: result.events.map((event) => ({ name: event.name, payload: event.payload })),
+        payload: (ctx.payload ?? {}) as Record<string, unknown>,
+        componentInstanceId:
+          typeof ctx.payload?.componentInstanceId === 'string'
+            ? ctx.payload.componentInstanceId
+            : null,
+        pageId:
+          typeof ctx.payload?.pagePath === 'string'
+            ? ctx.payload.pagePath
+            : null,
+        source: ctx.businessId ? 'runtime' : 'preview',
+      }).catch(() => {});
+    }
+
     // Step 9: Dispatch automation via orchestrator (recipe matching + Inngest)
     // ONLY for 'automatable' lane — backend intents (auth, pay, cart.checkout)
     // must NEVER enter the automation pipeline.
@@ -841,7 +946,7 @@ export async function executeIntent(
  */
 function processUIDirectives(ui: UIDirective, managers: IntentManagers): void {
   if (ui.openModal && managers.overlay) {
-    managers.overlay.open(ui.openModal);
+    managers.overlay.open(ui.openModal, ui.openModalPayload);
   }
   if (ui.closeModal && managers.overlay) {
     managers.overlay.close(ui.closeModal);

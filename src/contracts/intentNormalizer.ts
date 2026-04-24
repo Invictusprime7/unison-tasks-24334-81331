@@ -21,7 +21,11 @@ const PLAYGROUND_TO_CORE: Record<PlaygroundBindingIntent, CoreIntent | ((targetT
   'funnel.goto_step': 'nav.goto',
   'form.open':        (targetType?: string) => {
     if (targetType === 'quote' || targetType === 'quote_request') return 'quote.request';
+    if (targetType === 'newsletter' || targetType === 'waitlist') return 'newsletter.subscribe';
     if (targetType === 'lead' || targetType === 'lead_capture') return 'lead.capture';
+    if (targetType && ['demo_request', 'project_inquiry', 'property_inquiry', 'consultation_intake', 'patient_intake', 'volunteer'].includes(targetType)) {
+      return 'lead.capture';
+    }
     return 'contact.submit';
   },
   'popup.open':       'nav.anchor',

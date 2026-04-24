@@ -45,6 +45,7 @@ export const AUTOMATION_INTENTS = [
   'auth.login',        // Auth form submission
   'auth.register',     // Registration form
   'cart.add',          // Add to cart
+  'cart.view',         // Open cart drawer
   'cart.checkout',     // Begin checkout
   'cart.abandoned',    // Cart abandonment (timer-based)
   'booking.confirmed', // Booking confirmed

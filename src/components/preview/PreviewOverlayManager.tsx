@@ -20,11 +20,11 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Mail, Lock, User, Phone, Calendar, MessageSquare, CreditCard, CheckCircle, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { executeIntent, type IntentContext } from '@/runtime/intentExecutor';
+import { handleIntent, type IntentPayload } from '@/runtime/intentRouter';
 
 // ============ TYPES ============
 
-export type OverlayType = 'auth-login' | 'auth-register' | 'booking' | 'contact' | 'checkout' | 'confirmation' | 'upgrade';
+export type OverlayType = 'auth-login' | 'auth-register' | 'booking' | 'contact' | 'quote' | 'newsletter' | 'checkout' | 'confirmation' | 'upgrade';
 
 export interface OverlayConfig {
   type: OverlayType;
@@ -42,6 +42,50 @@ export interface PreviewOverlayManagerProps {
   onClose: () => void;
   businessId?: string;
   siteId?: string;
+}
+
+function buildOverlayIntentPayload(
+  payload: Record<string, unknown> | undefined,
+  businessId?: string,
+  siteId?: string,
+): IntentPayload {
+  return {
+    ...(payload || {}),
+    ...(businessId ? { businessId } : {}),
+    ...(siteId ? { siteId, projectId: siteId } : {}),
+  };
+}
+
+function resolveContactSubmitLabel(source?: unknown): string {
+  switch (source) {
+    case 'lead_capture':
+      return 'Send Details';
+    case 'demo_request':
+      return 'Request Demo';
+    case 'project_inquiry':
+      return 'Start Project';
+    case 'property_inquiry':
+      return 'Send Inquiry';
+    case 'volunteer':
+      return 'Join the Mission';
+    default:
+      return 'Send Message';
+  }
+}
+
+function resolveContactMessagePlaceholder(source?: unknown): string {
+  switch (source) {
+    case 'demo_request':
+      return 'Tell us about your team, timeline, or what you want to see in the demo.';
+    case 'project_inquiry':
+      return 'Describe the project, style, or deliverables you need.';
+    case 'property_inquiry':
+      return 'Which listing are you interested in, and what questions do you have?';
+    case 'volunteer':
+      return 'Tell us how you would like to help and when you are available.';
+    default:
+      return 'How can we help you?';
+  }
 }
 
 // ============ AUTH OVERLAY ============
@@ -270,11 +314,12 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({ mode, siteId, businessId, onS
 interface BookingOverlayProps {
   payload?: Record<string, unknown>;
   businessId?: string;
+  siteId?: string;
   onSuccess: (result: unknown) => void;
   onClose: () => void;
 }
 
-const BookingOverlay: React.FC<BookingOverlayProps> = ({ payload, businessId, onSuccess, onClose }) => {
+const BookingOverlay: React.FC<BookingOverlayProps> = ({ payload, businessId, siteId, onSuccess }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -288,25 +333,20 @@ const BookingOverlay: React.FC<BookingOverlayProps> = ({ payload, businessId, on
     setLoading(true);
 
     try {
-      const context: IntentContext = {
-        businessId,
-        payload: {
-          customerName: name,
-          customerEmail: email,
-          customerPhone: phone,
-          datetime: `${date}T${time}`,
-          notes,
-          serviceId: payload?.serviceId,
-        },
-      };
-
-      const result = await executeIntent('booking.create', context);
+      const result = await handleIntent('booking.create', buildOverlayIntentPayload({
+        customerName: name,
+        customerEmail: email,
+        customerPhone: phone,
+        datetime: `${date}T${time}`,
+        notes,
+        serviceId: payload?.serviceId,
+      }, businessId, siteId));
       
-      if (result.ok) {
-        toast.success('Booking confirmed! Check your email for details.');
+      if (result.success) {
+        toast.success(result.message || 'Booking confirmed! Check your email for details.');
         onSuccess(result);
       } else {
-        toast.error(result.error?.message || 'Failed to create booking');
+        toast.error(result.error || 'Failed to create booking');
       }
     } catch (err) {
       toast.error('Failed to create booking');
@@ -429,40 +469,38 @@ const BookingOverlay: React.FC<BookingOverlayProps> = ({ payload, businessId, on
 interface ContactOverlayProps {
   payload?: Record<string, unknown>;
   businessId?: string;
+  siteId?: string;
   onSuccess: (result: unknown) => void;
   onClose: () => void;
 }
 
-const ContactOverlay: React.FC<ContactOverlayProps> = ({ payload, businessId, onSuccess, onClose }) => {
+const ContactOverlay: React.FC<ContactOverlayProps> = ({ payload, businessId, siteId, onSuccess }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const submitLabel = resolveContactSubmitLabel(payload?.source);
+  const messagePlaceholder = resolveContactMessagePlaceholder(payload?.source);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const context: IntentContext = {
-        businessId,
-        payload: {
-          name,
-          email,
-          phone,
-          message,
-          source: (payload?.source as string) || 'contact_form',
-        },
-      };
-
-      const result = await executeIntent('contact.submit', context);
+      const result = await handleIntent('contact.submit', buildOverlayIntentPayload({
+        name,
+        email,
+        phone,
+        message,
+        source: (payload?.source as string) || 'contact_form',
+      }, businessId, siteId));
       
-      if (result.ok) {
-        toast.success('Message sent! We\'ll be in touch soon.');
+      if (result.success) {
+        toast.success(result.message || 'Message sent! We\'ll be in touch soon.');
         onSuccess(result);
       } else {
-        toast.error(result.error?.message || 'Failed to send message');
+        toast.error(result.error || 'Failed to send message');
       }
     } catch (err) {
       toast.error('Failed to send message');
@@ -524,7 +562,7 @@ const ContactOverlay: React.FC<ContactOverlayProps> = ({ payload, businessId, on
         <Label htmlFor="contactMessage">Message</Label>
         <textarea
           id="contactMessage"
-          placeholder="How can we help you?"
+          placeholder={messagePlaceholder}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           className="w-full min-h-[100px] px-3 py-2 text-sm rounded-md border border-input bg-background"
@@ -539,7 +577,207 @@ const ContactOverlay: React.FC<ContactOverlayProps> = ({ payload, businessId, on
             Sending...
           </>
         ) : (
-          'Send Message'
+          submitLabel
+        )}
+      </Button>
+    </form>
+  );
+};
+
+interface QuoteOverlayProps {
+  payload?: Record<string, unknown>;
+  businessId?: string;
+  siteId?: string;
+  onSuccess: (result: unknown) => void;
+  onClose: () => void;
+}
+
+const QuoteOverlay: React.FC<QuoteOverlayProps> = ({ payload, businessId, siteId, onSuccess }) => {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [service, setService] = useState(String(payload?.service || 'General'));
+  const [details, setDetails] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const result = await handleIntent('quote.request', buildOverlayIntentPayload({
+        name,
+        email,
+        phone,
+        service,
+        description: details,
+        source: (payload?.source as string) || 'quote_request',
+      }, businessId, siteId));
+
+      if (result.success) {
+        toast.success(result.message || 'Quote request submitted!');
+        onSuccess(result);
+      } else {
+        toast.error(result.error || 'Failed to submit quote request');
+      }
+    } catch (err) {
+      toast.error('Failed to submit quote request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="quoteName">Your Name</Label>
+        <div className="relative">
+          <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <Input
+            id="quoteName"
+            type="text"
+            placeholder="John Doe"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="pl-10"
+            required
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="quoteEmail">Email</Label>
+          <div className="relative">
+            <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="quoteEmail"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="pl-10"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="quotePhone">Phone</Label>
+          <div className="relative">
+            <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="quotePhone"
+              type="tel"
+              placeholder="+1 (555) 000-0000"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="quoteService">Service Needed</Label>
+        <Input
+          id="quoteService"
+          type="text"
+          placeholder="What do you need help with?"
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="quoteDetails">Project Details</Label>
+        <textarea
+          id="quoteDetails"
+          placeholder="Describe the project, timeline, or scope..."
+          value={details}
+          onChange={(e) => setDetails(e.target.value)}
+          className="w-full min-h-[120px] px-3 py-2 text-sm rounded-md border border-input bg-background"
+          required
+        />
+      </div>
+
+      <Button type="submit" className="w-full" disabled={loading}>
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Submitting...
+          </>
+        ) : (
+          'Request Quote'
+        )}
+      </Button>
+    </form>
+  );
+};
+
+interface NewsletterOverlayProps {
+  payload?: Record<string, unknown>;
+  businessId?: string;
+  siteId?: string;
+  onSuccess: (result: unknown) => void;
+  onClose: () => void;
+}
+
+const NewsletterOverlay: React.FC<NewsletterOverlayProps> = ({ payload, businessId, siteId, onSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const result = await handleIntent('newsletter.subscribe', buildOverlayIntentPayload({
+        email,
+        lists: payload?.lists,
+        source: (payload?.source as string) || 'newsletter',
+      }, businessId, siteId));
+
+      if (result.success) {
+        toast.success(result.message || 'You are subscribed!');
+        onSuccess(result);
+      } else {
+        toast.error(result.error || 'Failed to subscribe');
+      }
+    } catch (err) {
+      toast.error('Failed to subscribe');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="newsletterEmail">Email</Label>
+        <div className="relative">
+          <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <Input
+            id="newsletterEmail"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="pl-10"
+            required
+          />
+        </div>
+      </div>
+
+      <Button type="submit" className="w-full" disabled={loading}>
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Subscribing...
+          </>
+        ) : (
+          'Subscribe'
         )}
       </Button>
     </form>
@@ -551,11 +789,12 @@ const ContactOverlay: React.FC<ContactOverlayProps> = ({ payload, businessId, on
 interface CheckoutOverlayProps {
   payload?: Record<string, unknown>;
   businessId?: string;
+  siteId?: string;
   onSuccess: (result: unknown) => void;
   onClose: () => void;
 }
 
-const CheckoutOverlay: React.FC<CheckoutOverlayProps> = ({ payload, businessId, onSuccess, onClose }) => {
+const CheckoutOverlay: React.FC<CheckoutOverlayProps> = ({ payload, businessId, siteId, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
 
@@ -563,22 +802,18 @@ const CheckoutOverlay: React.FC<CheckoutOverlayProps> = ({ payload, businessId, 
     setLoading(true);
 
     try {
-      const context: IntentContext = {
-        businessId,
-        payload: {
-          ...payload,
-          customerEmail: email,
-        },
-      };
-
-      const result = await executeIntent('pay.checkout', context);
+      const result = await handleIntent('pay.checkout', buildOverlayIntentPayload({
+        ...payload,
+        customerEmail: email,
+      }, businessId, siteId));
       
-      if (result.ok && result.ui?.navigate) {
-        // Redirect to Stripe checkout
-        window.location.href = result.ui.navigate;
+      if (result.success && result.redirectUrl) {
+        window.location.href = result.redirectUrl;
         onSuccess(result);
-      } else if (result.toast?.type === 'error') {
-        toast.error(result.toast.message);
+      } else if (result.success) {
+        onSuccess(result);
+      } else {
+        toast.error(result.error || 'Failed to start checkout');
       }
     } catch (err) {
       toast.error('Failed to start checkout');
@@ -758,7 +993,17 @@ export const PreviewOverlayManager: React.FC<PreviewOverlayManagerProps> = ({
       case 'booking':
         return activeOverlay.title || 'Book an Appointment';
       case 'contact':
-        return activeOverlay.title || 'Get in Touch';
+        if (activeOverlay.title) return activeOverlay.title;
+        if (activeOverlay.payload?.source === 'demo_request') return 'Request a Demo';
+        if (activeOverlay.payload?.source === 'project_inquiry') return 'Start Your Project';
+        if (activeOverlay.payload?.source === 'property_inquiry') return 'Contact an Agent';
+        if (activeOverlay.payload?.source === 'volunteer') return 'Volunteer With Us';
+        if (activeOverlay.payload?.source === 'lead_capture') return 'Get the Details';
+        return 'Get in Touch';
+      case 'quote':
+        return activeOverlay.title || 'Request a Quote';
+      case 'newsletter':
+        return activeOverlay.title || 'Subscribe';
       case 'checkout':
         return activeOverlay.title || 'Checkout';
       case 'confirmation':
@@ -780,7 +1025,16 @@ export const PreviewOverlayManager: React.FC<PreviewOverlayManagerProps> = ({
       case 'booking':
         return activeOverlay.description || 'Select a date and time for your appointment';
       case 'contact':
-        return activeOverlay.description || 'We\'ll get back to you as soon as possible';
+        if (activeOverlay.description) return activeOverlay.description;
+        if (activeOverlay.payload?.source === 'demo_request') return 'Share your use case and we will schedule the right walkthrough';
+        if (activeOverlay.payload?.source === 'project_inquiry') return 'Tell us what you are building and we will follow up with next steps';
+        if (activeOverlay.payload?.source === 'property_inquiry') return 'Ask about the property and an agent will follow up';
+        if (activeOverlay.payload?.source === 'volunteer') return 'Tell us how you want to help and our team will reach out';
+        return 'We\'ll get back to you as soon as possible';
+      case 'quote':
+        return activeOverlay.description || 'Tell us about your project and we will follow up with pricing';
+      case 'newsletter':
+        return activeOverlay.description || 'Get updates, launches, and offers delivered to your inbox';
       case 'checkout':
         return activeOverlay.description || 'Complete your purchase';
       default:
@@ -808,6 +1062,7 @@ export const PreviewOverlayManager: React.FC<PreviewOverlayManagerProps> = ({
           <BookingOverlay
             payload={activeOverlay.payload}
             businessId={businessId || activeOverlay.businessId}
+            siteId={siteId || activeOverlay.siteId}
             onSuccess={handleSuccess}
             onClose={onClose}
           />
@@ -818,6 +1073,29 @@ export const PreviewOverlayManager: React.FC<PreviewOverlayManagerProps> = ({
           <ContactOverlay
             payload={activeOverlay.payload}
             businessId={businessId || activeOverlay.businessId}
+            siteId={siteId || activeOverlay.siteId}
+            onSuccess={handleSuccess}
+            onClose={onClose}
+          />
+        );
+
+      case 'quote':
+        return (
+          <QuoteOverlay
+            payload={activeOverlay.payload}
+            businessId={businessId || activeOverlay.businessId}
+            siteId={siteId || activeOverlay.siteId}
+            onSuccess={handleSuccess}
+            onClose={onClose}
+          />
+        );
+
+      case 'newsletter':
+        return (
+          <NewsletterOverlay
+            payload={activeOverlay.payload}
+            businessId={businessId || activeOverlay.businessId}
+            siteId={siteId || activeOverlay.siteId}
             onSuccess={handleSuccess}
             onClose={onClose}
           />
@@ -828,6 +1106,7 @@ export const PreviewOverlayManager: React.FC<PreviewOverlayManagerProps> = ({
           <CheckoutOverlay
             payload={activeOverlay.payload}
             businessId={businessId || activeOverlay.businessId}
+            siteId={siteId || activeOverlay.siteId}
             onSuccess={handleSuccess}
             onClose={onClose}
           />

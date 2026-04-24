@@ -212,6 +212,66 @@ function createWiredCartManager(
       };
     },
 
+    update: async (productId, quantity) => {
+      if (!supabase) {
+        return { cartId: sessionId, itemCount: 0 };
+      }
+
+      const query = supabase
+        .from('cart_items')
+        .select('id')
+        .eq('product_id', productId)
+        .eq(userId ? 'user_id' : 'session_id', userId || sessionId);
+      const { data: existing } = await query.single();
+
+      if (existing?.id) {
+        if (quantity <= 0) {
+          await supabase.from('cart_items').delete().eq('id', existing.id);
+        } else {
+          await supabase.from('cart_items').update({ quantity }).eq('id', existing.id);
+        }
+      }
+
+      const { count } = await supabase
+        .from('cart_items')
+        .select('*', { count: 'exact', head: true })
+        .eq(userId ? 'user_id' : 'session_id', userId || sessionId);
+
+      return { cartId: sessionId, itemCount: count || 0 };
+    },
+
+    remove: async (productId) => {
+      if (!supabase) {
+        return { cartId: sessionId, itemCount: 0 };
+      }
+
+      await supabase
+        .from('cart_items')
+        .delete()
+        .eq('product_id', productId)
+        .eq(userId ? 'user_id' : 'session_id', userId || sessionId);
+
+      const { count } = await supabase
+        .from('cart_items')
+        .select('*', { count: 'exact', head: true })
+        .eq(userId ? 'user_id' : 'session_id', userId || sessionId);
+
+      return { cartId: sessionId, itemCount: count || 0 };
+    },
+
+    clear: async () => {
+      if (!supabase) {
+        return { cartId: sessionId, itemCount: 0 };
+      }
+
+      await supabase
+        .from('cart_items')
+        .delete()
+        .eq(userId ? 'user_id' : 'session_id', userId || sessionId);
+
+      return { cartId: sessionId, itemCount: 0 };
+    },
+
     checkout: async () => {
       if (!supabase) {
         return { checkoutUrl: '/checkout' };

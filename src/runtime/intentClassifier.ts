@@ -118,6 +118,7 @@ const LANE_OVERRIDES: Record<string, IntentClassification> = {
   'auth.login':      { lane: 'backend',   emitsEvent: false, requiresBusinessId: false, requiresNetwork: true },
   'auth.register':   { lane: 'backend',   emitsEvent: false, requiresBusinessId: false, requiresNetwork: true },
   'cart.add':        { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
+  'cart.view':       { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
   'cart.checkout':   { lane: 'backend',   emitsEvent: false, requiresBusinessId: true,  requiresNetwork: true },
   'cart.abandoned':  { lane: 'automatable', emitsEvent: true, requiresBusinessId: true, requiresNetwork: true },
 };

@@ -109,10 +109,9 @@ export const INTENT_ALIASES: Record<string, CoreIntent> = {
   'shop.add_to_cart': 'cart.add',
   'cart.add_item': 'cart.add',
   'product.add_to_cart': 'cart.add',
-  'shop.open_cart': 'cart.add', // Opening cart is same flow
-  'cart.open': 'cart.add',
-  'cart.view': 'cart.add',
-  'cart.show': 'cart.add',
+  'shop.open_cart': 'cart.view',
+  'cart.open': 'cart.view',
+  'cart.show': 'cart.view',
   'checkout.open': 'cart.checkout',
   'shop.view_product': 'cart.add', // View → potential add
 

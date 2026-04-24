@@ -17,6 +17,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDemoResponse, type BusinessSystemType } from "@/data/templates";
 import { normalizeIntent } from './intentAliases';
 import { classifyIntent } from './intentClassifier';
+import {
+  closeBrowserCartOverlay,
+  createBrowserCartManager,
+  openBrowserCartOverlay,
+} from './browserCartManager';
 import { createCheckoutSession, resolveCheckoutSessionBody } from './checkoutClient';
 import { 
   CORE_INTENTS, 
@@ -867,6 +872,14 @@ export async function handleIntent(intent: string, payload: IntentPayload): Prom
 function buildIntentContext(payload: IntentPayload): import('./intentExecutor').IntentContext {
   const pagePath = getStringValue(payload.pagePath) || getPageId(payload);
   const elementKey = getElementKey(payload);
+  const businessId = typeof payload.businessId === 'string' ? payload.businessId : undefined;
+  const siteId = getSiteId(payload);
+  const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined;
+  const cartManager = createBrowserCartManager({
+    businessId,
+    siteId,
+    sessionId,
+  });
 
   return {
     payload: {
@@ -874,10 +887,10 @@ function buildIntentContext(payload: IntentPayload): import('./intentExecutor').
       pagePath,
       ...(elementKey ? { elementKey } : {}),
     },
-    businessId: payload.businessId as string,
-    siteId: getSiteId(payload),
+    businessId,
+    siteId,
     userId: typeof payload.userId === 'string' ? payload.userId : undefined,
-    sessionId: typeof payload.sessionId === 'string' ? payload.sessionId : undefined,
+    sessionId,
     managers: {
       navigation: {
         goto: (path, p) => {
@@ -898,6 +911,37 @@ function buildIntentContext(payload: IntentPayload): import('./intentExecutor').
           el?.scrollIntoView({ behavior: 'smooth' });
         },
       },
+      overlay: {
+        open: (id, overlayPayload) => {
+          if (id === 'cart') {
+            openBrowserCartOverlay(
+              {
+                businessId,
+                siteId,
+                sessionId,
+              },
+              overlayPayload,
+            );
+            return;
+          }
+
+          if (typeof window !== 'undefined') {
+            window.postMessage({ type: 'OVERLAY_OPEN', overlayId: id, payload: overlayPayload }, '*');
+          }
+        },
+        close: (id) => {
+          if (id === 'cart' || !id) {
+            closeBrowserCartOverlay();
+            return;
+          }
+
+          if (typeof window !== 'undefined') {
+            window.postMessage({ type: 'OVERLAY_CLOSE', overlayId: id }, '*');
+          }
+        },
+        isOpen: () => false,
+      },
+      cart: cartManager,
     },
   };
 }

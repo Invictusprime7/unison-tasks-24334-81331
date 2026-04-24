@@ -60,6 +60,13 @@ interface ElementFloatingToolbarProps {
   systemType?: BusinessSystemType | null;
   /** Full business blueprint from systems-build for richer AI context */
   systemsBuildContext?: SystemsBuildContext | null;
+  readiness?: {
+    surfaceLabel?: string;
+    previewStatus?: 'ready' | 'partial' | 'blocked' | 'draft' | 'stubbed';
+    publishStatus?: 'ready' | 'partial' | 'blocked' | 'draft' | 'stubbed';
+    missingDependencies?: string[];
+    onOpenSetup?: () => void;
+  } | null;
 }
 
 const FONT_OPTIONS = [
@@ -283,6 +290,7 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
   className,
   systemType,
   systemsBuildContext,
+  readiness,
 }) => {
   const [isEditingText, setIsEditingText] = useState(false);
   const [editText, setEditText] = useState('');
@@ -335,6 +343,52 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
       'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2',
       className
     )}>
+      {readiness && (
+        <div className="mb-2 flex items-center gap-1.5 flex-wrap rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
+          {readiness.surfaceLabel ? (
+            <span className="text-[10px] font-semibold text-cyan-300">{readiness.surfaceLabel}</span>
+          ) : null}
+          {readiness.previewStatus ? (
+            <span className={cn(
+              "rounded-md px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide",
+              readiness.previewStatus === "ready"
+                ? "bg-emerald-500/15 text-emerald-300"
+                : readiness.previewStatus === "blocked"
+                  ? "bg-red-500/15 text-red-300"
+                  : "bg-amber-500/15 text-amber-300",
+            )}>
+              Preview {readiness.previewStatus}
+            </span>
+          ) : null}
+          {readiness.publishStatus ? (
+            <span className={cn(
+              "rounded-md px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide",
+              readiness.publishStatus === "ready"
+                ? "bg-emerald-500/15 text-emerald-300"
+                : readiness.publishStatus === "blocked"
+                  ? "bg-red-500/15 text-red-300"
+                  : "bg-amber-500/15 text-amber-300",
+            )}>
+              Publish {readiness.publishStatus}
+            </span>
+          ) : null}
+          {readiness.missingDependencies?.length ? (
+            <span className="max-w-[240px] truncate text-[10px] text-white/55">
+              {readiness.missingDependencies.join(", ")}
+            </span>
+          ) : null}
+          {readiness.onOpenSetup && readiness.publishStatus && readiness.publishStatus !== "ready" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={readiness.onOpenSetup}
+              className="ml-auto h-6 border-amber-500/30 bg-amber-500/10 px-2 text-[10px] text-amber-300 hover:bg-amber-500/20"
+            >
+              Needs Setup
+            </Button>
+          ) : null}
+        </div>
+      )}
       {/* ── Buttons row ── */}
       <div className="flex items-center gap-1.5 flex-wrap">
         {/* Element badge */}

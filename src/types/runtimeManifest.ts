@@ -24,6 +24,23 @@ export type LauncherEngine = 'sandpack' | 'docker';
 /** @deprecated Use LauncherEngine — kept for backward compat */
 export type PreviewEngine = LauncherEngine;
 
+export interface RuntimeAppContext {
+  businessId?: string;
+  projectId?: string;
+  manifestId?: string;
+  snapshotId?: string;
+  businessName?: string;
+  templateName?: string;
+  templateCategory?: string;
+  systemType?: string;
+  systemName?: string;
+  industry?: string;
+  entryPoint?: string;
+  routes?: string[];
+  wizardSelections?: Record<string, unknown>;
+  generatedAt: string;
+}
+
 export interface RuntimeManifest {
   /** Canonical entry point path (e.g. "/src/App.tsx") */
   entryPoint: string;
@@ -51,6 +68,15 @@ export interface RuntimeManifest {
 
   /** Aesthetic theme ID */
   aesthetic?: string;
+
+  /** Shared app context propagated across launcher, VFS, and preview runtime */
+  appContext?: RuntimeAppContext;
+
+  /** Canonical metadata files injected into the VFS */
+  metadataFiles?: string[];
+
+  /** Stable key used to avoid duplicate preview sessions for the same app context */
+  sessionKey?: string;
 }
 
 // ─── Launcher Handoff Payload ───────────────────────────────────────────────
@@ -95,18 +121,22 @@ export function createRuntimeManifest(
     brandName?: string;
     aesthetic?: string;
     backendRequired?: boolean;
+    dependencyOverrides?: Record<string, string>;
+    appContext?: Partial<Omit<RuntimeAppContext, 'generatedAt'>> & { generatedAt?: string };
+    metadataFiles?: string[];
+    sessionKey?: string;
   }
 ): RuntimeManifest {
   const filePaths = Object.keys(sourceFiles);
 
   // Infer routes from /src/pages/ files
-  const routes = filePaths
+  const routes = Array.from(new Set(filePaths
     .filter(p => /\/src\/pages\/[^/]+\.(tsx|jsx)$/i.test(p))
     .map(p => {
       const name = p.match(/\/pages\/([^/]+)\.(tsx|jsx)$/i)?.[1] || '';
       if (/^(home|index)$/i.test(name)) return '/';
       return '/' + name.toLowerCase();
-    });
+    })));
 
   if (routes.length === 0) routes.push('/');
 
@@ -128,18 +158,36 @@ export function createRuntimeManifest(
     }
   }
 
+  const mergedDependencies = {
+    ...dependencies,
+    ...(options?.dependencyOverrides || {}),
+  };
+
+  const appContext = options?.appContext
+    ? {
+        ...options.appContext,
+        entryPoint: options.appContext.entryPoint || options.entryPoint || '/src/App.tsx',
+        industry: options.appContext.industry || options.industry,
+        routes: options.appContext.routes || routes,
+        generatedAt: options.appContext.generatedAt || new Date().toISOString(),
+      }
+    : undefined;
+
   return {
     entryPoint: options?.entryPoint || '/src/App.tsx',
     backendRequired,
     previewEngine: backendRequired ? 'docker' : 'sandpack',
     routes,
-    dependencies,
+    dependencies: mergedDependencies,
     envRequirements: backendRequired
       ? ['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY']
       : [],
     industry: options?.industry,
     brandName: options?.brandName,
     aesthetic: options?.aesthetic,
+    appContext,
+    metadataFiles: options?.metadataFiles,
+    sessionKey: options?.sessionKey,
   };
 }
 

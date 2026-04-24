@@ -39,8 +39,7 @@ import {
   randomFontPairing,
 } from "@/utils/designVariation";
 import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
-import { normalizeLauncherFiles } from "@/utils/sandpackFilePrep";
-import { createRuntimeManifest, type LauncherHandoff } from "@/types/runtimeManifest";
+import { type LauncherHandoff } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,
   getCompositionMeta,
@@ -55,11 +54,11 @@ import {
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
 import { executeCanonicalPipeline, type CanonicalPipelineResult } from "@/services/canonicalPipeline";
-import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
-import { mergeGeneratedVfsWithCanonicalSnapshot } from "@/services/canonicalLaunchVfs";
+import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
+import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
-import { extractLauncherPayload, resolveLauncherEntryPoint } from "@/utils/launcherPayload";
+import { extractLauncherPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
@@ -807,9 +806,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         if (structuredPayload.siteBundle && typeof structuredPayload.siteBundle === "object") {
           parsedSiteBundle = structuredPayload.siteBundle as LauncherHandoff["siteBundle"];
         }
-        vfsFiles = normalizeLauncherFiles(structuredPayload.files, {
-          entryPoint: parsedEntryPoint,
-        });
+        vfsFiles = structuredPayload.files;
       }
 
       // ── Await backend provisioning (runs in parallel with AI generation) ──
@@ -845,30 +842,31 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const structuredFiles = vfsFiles ?? structuredPayload?.files ?? null;
 
       if (structuredFiles) {
-        const normalizedVfsFiles = vfsFiles ?? normalizeLauncherFiles(structuredFiles, {
-          entryPoint: parsedEntryPoint || '/src/App.tsx',
-        });
-        const bindingApplication = applyWizardBindingsToVfs(normalizedVfsFiles, siteBundleSnapshot);
-        const wiredVfsFiles = mergeGeneratedVfsWithCanonicalSnapshot(
-          bindingApplication.files,
-          compiledPlayground.vfsFiles,
+        const launchArtifacts = buildCanonicalLaunchArtifacts({
+          generatedFiles: vfsFiles ?? structuredFiles,
+          preferredEntryPoint: parsedEntryPoint || '/src/App.tsx',
           siteBundleSnapshot,
-        );
-        const resolvedEntryPoint = resolveLauncherEntryPoint(wiredVfsFiles, parsedEntryPoint);
-        if (bindingApplication.appliedBindings > 0) {
-          console.log(`[SystemLauncher] Applied ${bindingApplication.appliedBindings} wizard bindings to generated VFS`);
-        }
-        if (bindingApplication.missingBindings.length > 0) {
-          console.warn('[SystemLauncher] Wizard bindings missing source markers:', bindingApplication.missingBindings);
-        }
-
-        const runtimeManifest = createRuntimeManifest(wiredVfsFiles, {
-          entryPoint: resolvedEntryPoint,
+          compiledPlayground,
+          canonicalPlayground: materializedPlayground,
+          businessId: provisionedBusinessId || undefined,
+          systemType: selectedSystem,
+          systemName: system.name,
+          templateName: `${businessName.trim()} Site`,
+          templateCategory: generationCategory,
+          businessName: businessName.trim(),
           industry: generationCategory,
-          brandName: businessName.trim(),
           aesthetic: selectedTheme?.id,
           backendRequired: false,
+          wizardSelections,
         });
+        const wiredVfsFiles = launchArtifacts.files;
+        const runtimeManifest = launchArtifacts.runtimeManifest;
+        if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
+          console.log(`[SystemLauncher] Applied ${launchArtifacts.bindingApplication?.appliedBindings} wizard bindings to generated VFS`);
+        }
+        if ((launchArtifacts.bindingApplication?.missingBindings.length || 0) > 0) {
+          console.warn('[SystemLauncher] Wizard bindings missing source markers:', launchArtifacts.bindingApplication?.missingBindings);
+        }
 
         // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
         const launchState = createLaunchState({
@@ -885,10 +883,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           intentRuntime: true,
           businessId: provisionedBusinessId || undefined,
           runtimeManifest,
-          entryPoint: runtimeManifest.entryPoint,
+          entryPoint: launchArtifacts.entryPoint,
           siteBundle: parsedSiteBundle,
           sitePlan,
-          siteBundleSnapshot,
+          siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
           materializedPlayground,
           compiledPlayground,
           pipelineManifest,
@@ -900,9 +898,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           state: {
             vfsFiles: wiredVfsFiles,
             runtimeManifest,
-            entryPoint: runtimeManifest.entryPoint,
+            entryPoint: launchArtifacts.entryPoint,
             siteBundle: parsedSiteBundle,
             ...navState,
+            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
           },
         });
       } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
@@ -919,28 +918,31 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
           "/src/index.css": baseCSS,
         };
-        const normalizedSingleFileVfs = normalizeLauncherFiles(singleFileVfs, {
-          entryPoint: '/src/App.tsx',
-        });
-        const bindingApplication = applyWizardBindingsToVfs(normalizedSingleFileVfs, siteBundleSnapshot);
-        const wiredSingleFileVfs = mergeGeneratedVfsWithCanonicalSnapshot(
-          bindingApplication.files,
-          compiledPlayground.vfsFiles,
+        const launchArtifacts = buildCanonicalLaunchArtifacts({
+          generatedFiles: singleFileVfs,
+          preferredEntryPoint: '/src/App.tsx',
           siteBundleSnapshot,
-        );
-        if (bindingApplication.appliedBindings > 0) {
-          console.log(`[SystemLauncher] Applied ${bindingApplication.appliedBindings} wizard bindings to single-file VFS`);
-        }
-        if (bindingApplication.missingBindings.length > 0) {
-          console.warn('[SystemLauncher] Wizard bindings missing source markers:', bindingApplication.missingBindings);
-        }
-
-        const runtimeManifest = createRuntimeManifest(wiredSingleFileVfs, {
+          compiledPlayground,
+          canonicalPlayground: materializedPlayground,
+          businessId: provisionedBusinessId || undefined,
+          systemType: selectedSystem,
+          systemName: system.name,
+          templateName: `${businessName.trim()} Site`,
+          templateCategory: generationCategory,
+          businessName: businessName.trim(),
           industry: generationCategory,
-          brandName: businessName.trim(),
           aesthetic: selectedTheme?.id,
           backendRequired: false,
+          wizardSelections,
         });
+        const wiredSingleFileVfs = launchArtifacts.files;
+        if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
+          console.log(`[SystemLauncher] Applied ${launchArtifacts.bindingApplication?.appliedBindings} wizard bindings to single-file VFS`);
+        }
+        if ((launchArtifacts.bindingApplication?.missingBindings.length || 0) > 0) {
+          console.warn('[SystemLauncher] Wizard bindings missing source markers:', launchArtifacts.bindingApplication?.missingBindings);
+        }
+        const runtimeManifest = launchArtifacts.runtimeManifest;
 
         // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
         const launchState = createLaunchState({
@@ -957,9 +959,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           intentRuntime: true,
           businessId: provisionedBusinessId || undefined,
           runtimeManifest,
-          entryPoint: runtimeManifest.entryPoint,
+          entryPoint: launchArtifacts.entryPoint,
           sitePlan,
-          siteBundleSnapshot,
+          siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
           materializedPlayground,
           compiledPlayground,
           pipelineManifest,
@@ -971,8 +973,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           state: {
             vfsFiles: wiredSingleFileVfs,
             runtimeManifest,
-            entryPoint: runtimeManifest.entryPoint,
+            entryPoint: launchArtifacts.entryPoint,
             ...navState,
+            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
           },
         });
       } else {
@@ -980,22 +983,25 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const comp = selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null;
         if (comp) {
           const compositionCode = compositionToReactCode(comp);
-          const compositionVfs = normalizeLauncherFiles(
-            { '/src/App.tsx': compositionCode },
-            { entryPoint: '/src/App.tsx' }
-          );
-          const bindingApplication = applyWizardBindingsToVfs(compositionVfs, siteBundleSnapshot);
-          const wiredCompositionVfs = mergeGeneratedVfsWithCanonicalSnapshot(
-            bindingApplication.files,
-            compiledPlayground.vfsFiles,
+          const launchArtifacts = buildCanonicalLaunchArtifacts({
+            generatedFiles: { '/src/App.tsx': compositionCode },
+            preferredEntryPoint: '/src/App.tsx',
             siteBundleSnapshot,
-          );
-          const runtimeManifest = createRuntimeManifest(wiredCompositionVfs, {
+            compiledPlayground,
+            canonicalPlayground: materializedPlayground,
+            businessId: provisionedBusinessId || undefined,
+            systemType: selectedSystem,
+            systemName: system.name,
+            templateName: `${businessName.trim()} Site`,
+            templateCategory: generationCategory,
+            businessName: businessName.trim(),
             industry: generationCategory,
-            brandName: businessName.trim(),
             aesthetic: selectedTheme?.id,
             backendRequired: false,
+            wizardSelections,
           });
+          const wiredCompositionVfs = launchArtifacts.files;
+          const runtimeManifest = launchArtifacts.runtimeManifest;
           const launchState = createLaunchState({
             systemType: selectedSystem as any,
             systemName: system.name,
@@ -1010,9 +1016,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             intentRuntime: true,
             businessId: provisionedBusinessId || undefined,
             runtimeManifest,
-            entryPoint: runtimeManifest.entryPoint,
+            entryPoint: launchArtifacts.entryPoint,
             sitePlan,
-            siteBundleSnapshot,
+            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
             materializedPlayground,
             compiledPlayground,
             pipelineManifest,
@@ -1023,8 +1029,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             state: {
               vfsFiles: wiredCompositionVfs,
               runtimeManifest,
-              entryPoint: runtimeManifest.entryPoint,
+              entryPoint: launchArtifacts.entryPoint,
               ...navState,
+              siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
             },
           });
         } else {

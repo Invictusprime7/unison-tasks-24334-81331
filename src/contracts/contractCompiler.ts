@@ -37,7 +37,7 @@ import {
 } from './capabilityRegistry';
 import { getIndustryProfile } from './industryMatrix';
 import { getCompositionsByIndustry } from '@/sections/templates';
-import { buildRoutePolicy, type RoutePolicy } from './routePolicy';
+import { buildRoutePolicy, isOverlayIntent, type RoutePolicy } from './routePolicy';
 import { resolveSlotBindings, type SlotBindingPolicy } from './slotBindingPolicy';
 import { validateProvisioning, type ProvisioningReport } from './provisioningValidator';
 
@@ -318,7 +318,7 @@ export function compileContract(
   // Slot-policy-driven bindings (primary source)
   for (const binding of slotBindingPolicy.resolved) {
     const bindingKey = `${binding.section}.${binding.slot}`;
-    const isOverlay = ['booking.create', 'quote.request', 'cart.checkout'].includes(binding.intent);
+    const isOverlay = isOverlayIntent(binding.intent);
 
     intentBindings.push({
       bindingKey,
@@ -374,7 +374,8 @@ export function compileContract(
       elementRole: 'hero-secondary-cta',
       intent: blueprint.intents.secondaryCta,
       target: {
-        kind: 'route',
+        kind: routePolicy.overlayRoutes.includes(routePolicy.ctaRouteMap[blueprint.intents.secondaryCta] || '')
+          ? 'overlay' : 'route',
         ref: routePolicy.ctaRouteMap[blueprint.intents.secondaryCta] || '/#services',
       },
       params: {},

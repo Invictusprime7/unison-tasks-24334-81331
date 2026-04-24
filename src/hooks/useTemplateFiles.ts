@@ -11,6 +11,7 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Json } from "@/integrations/supabase/types";
+import { syncCanonicalComponentGraph } from "@/services/componentGraphPersistence";
 
 interface TemplateData {
   html: string;
@@ -20,6 +21,8 @@ interface TemplateData {
   vfsFiles?: Record<string, string>;
   entryPoint?: string;
   activePagePath?: string;
+  canonicalPlayground?: Record<string, unknown>;
+  siteBundleSnapshot?: Record<string, unknown>;
   version?: number;
 }
 
@@ -40,6 +43,8 @@ export interface SaveProjectPayload {
   activePagePath?: string;
   businessId?: string | null;
   projectId?: string | null;
+  canonicalPlayground?: Record<string, unknown>;
+  siteBundleSnapshot?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
 
@@ -66,6 +71,8 @@ const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateDa
   ...(payload?.vfsFiles ? { vfsFiles: payload.vfsFiles } : {}),
   ...(payload?.entryPoint ? { entryPoint: payload.entryPoint } : {}),
   ...(payload?.activePagePath ? { activePagePath: payload.activePagePath } : {}),
+  ...(payload?.canonicalPlayground ? { canonicalPlayground: payload.canonicalPlayground } : {}),
+  ...(payload?.siteBundleSnapshot ? { siteBundleSnapshot: payload.siteBundleSnapshot } : {}),
 });
 
 /** Convert a builder_drafts row to a SavedTemplate envelope. */
@@ -87,6 +94,8 @@ const draftRowToTemplate = (row: any): SavedTemplate => {
       vfsFiles,
       entryPoint: meta.entryPoint,
       activePagePath: meta.activePagePath,
+      canonicalPlayground: (meta.canonicalPlayground || undefined) as Record<string, unknown> | undefined,
+      siteBundleSnapshot: (meta.siteBundleSnapshot || undefined) as Record<string, unknown> | undefined,
     },
   };
 };
@@ -134,6 +143,8 @@ export function useTemplateFiles() {
         entryPoint: payload?.entryPoint,
         activePagePath: payload?.activePagePath,
         projectId: payload?.projectId ?? null,
+        canonicalPlayground: payload?.canonicalPlayground ?? null,
+        siteBundleSnapshot: payload?.siteBundleSnapshot ?? null,
         ...(payload?.metadata || {}),
       } as unknown as Json;
 
@@ -151,6 +162,12 @@ export function useTemplateFiles() {
         .single();
 
       if (error) throw error;
+
+      await syncCanonicalComponentGraph({
+        projectId: payload?.projectId ?? null,
+        draftId: data.id,
+        canonicalPlayground: payload?.canonicalPlayground,
+      });
 
       setCurrentTemplateId(data.id);
       toast.success("Project saved!", {
@@ -202,6 +219,8 @@ export function useTemplateFiles() {
         ...(payload?.entryPoint ? { entryPoint: payload.entryPoint } : {}),
         ...(payload?.activePagePath ? { activePagePath: payload.activePagePath } : {}),
         ...(payload?.projectId !== undefined ? { projectId: payload.projectId } : {}),
+        ...(payload?.canonicalPlayground !== undefined ? { canonicalPlayground: payload.canonicalPlayground } : {}),
+        ...(payload?.siteBundleSnapshot !== undefined ? { siteBundleSnapshot: payload.siteBundleSnapshot } : {}),
         ...(payload?.metadata || {}),
       } as unknown as Json;
 
@@ -221,6 +240,11 @@ export function useTemplateFiles() {
         .eq("id", id);
 
       if (error) throw error;
+      await syncCanonicalComponentGraph({
+        projectId: payload?.projectId ?? null,
+        draftId: id,
+        canonicalPlayground: payload?.canonicalPlayground,
+      });
       toast.success("Project updated!");
       return true;
     } catch (error) {
@@ -335,6 +359,31 @@ export function useTemplateFiles() {
       };
       if (payload?.vfsFiles !== undefined) {
         updatePatch.vfs_files = payload.vfsFiles as unknown as Json;
+      }
+      if (
+        payload?.entryPoint !== undefined ||
+        payload?.activePagePath !== undefined ||
+        payload?.projectId !== undefined ||
+        payload?.canonicalPlayground !== undefined ||
+        payload?.siteBundleSnapshot !== undefined ||
+        payload?.metadata
+      ) {
+        const { data: existing } = await supabase
+          .from("builder_drafts")
+          .select("metadata")
+          .eq("id", currentTemplateId)
+          .maybeSingle();
+
+        const prevMeta = (existing?.metadata || {}) as Record<string, unknown>;
+        updatePatch.metadata = {
+          ...prevMeta,
+          ...(payload?.entryPoint !== undefined ? { entryPoint: payload.entryPoint } : {}),
+          ...(payload?.activePagePath !== undefined ? { activePagePath: payload.activePagePath } : {}),
+          ...(payload?.projectId !== undefined ? { projectId: payload.projectId } : {}),
+          ...(payload?.canonicalPlayground !== undefined ? { canonicalPlayground: payload.canonicalPlayground } : {}),
+          ...(payload?.siteBundleSnapshot !== undefined ? { siteBundleSnapshot: payload.siteBundleSnapshot } : {}),
+          ...(payload?.metadata || {}),
+        } as Json;
       }
 
       const { error } = await supabase

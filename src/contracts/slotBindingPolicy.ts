@@ -106,7 +106,7 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     section: 'navbar',
     slot: 'cart-trigger',
     intentPriority: [
-      { capability: 'commerce', intent: 'cart.checkout' },
+      { capability: 'commerce', intent: 'cart.view' },
     ],
     fallbackIntent: 'nav.anchor',
   },
@@ -152,7 +152,7 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     section: 'cart',
     slot: 'checkout-cta',
     intentPriority: [
-      { capability: 'commerce', intent: 'pay.checkout' },
+      { capability: 'commerce', intent: 'cart.checkout' },
     ],
     fallbackIntent: 'nav.goto',
   },
@@ -224,7 +224,7 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     section: 'navbar',
     slot: 'icon-cart',
     intentPriority: [
-      { capability: 'commerce', intent: 'cart.checkout' },
+      { capability: 'commerce', intent: 'cart.view' },
     ],
     fallbackIntent: 'nav.anchor',
   },

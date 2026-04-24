@@ -61,16 +61,25 @@ const CAPABILITY_ROUTES: Partial<Record<CapabilityId, RouteEntry[]>> = {
   booking: [
     { path: '/book', label: 'Book Now', kind: 'overlay', intent: 'booking.create', ownedBy: 'booking' },
   ],
+  contact: [
+    { path: '/_contact', label: 'Contact Overlay', kind: 'overlay', intent: 'contact.submit', ownedBy: 'contact' },
+  ],
+  newsletter: [
+    { path: '/_newsletter', label: 'Newsletter Overlay', kind: 'overlay', intent: 'newsletter.subscribe', ownedBy: 'newsletter' },
+  ],
   commerce: [
     { path: '/shop', label: 'Shop', kind: 'page', intent: 'nav.goto', ownedBy: 'commerce' },
-    { path: '/cart', label: 'Cart', kind: 'overlay', intent: 'cart.checkout', ownedBy: 'commerce' },
-    { path: '/checkout', label: 'Checkout', kind: 'page', intent: 'pay.checkout', ownedBy: 'commerce' },
+    { path: '/cart', label: 'Cart', kind: 'overlay', intent: 'cart.view', ownedBy: 'commerce' },
+    { path: '/checkout', label: 'Checkout', kind: 'overlay', intent: 'cart.checkout', ownedBy: 'commerce' },
   ],
   quoting: [
     { path: '/request-quote', label: 'Request Quote', kind: 'overlay', intent: 'quote.request', ownedBy: 'quoting' },
   ],
   donation: [
     { path: '/donate', label: 'Donate', kind: 'overlay', intent: 'pay.checkout', ownedBy: 'donation' },
+  ],
+  'lead-capture': [
+    { path: '/_lead', label: 'Lead Overlay', kind: 'overlay', intent: 'lead.capture', ownedBy: 'lead-capture' },
   ],
 };
 
@@ -81,8 +90,13 @@ const CAPABILITY_ROUTES: Partial<Record<CapabilityId, RouteEntry[]>> = {
 /** Map of intents that resolve to overlays instead of page navigation */
 const OVERLAY_INTENTS: CoreIntent[] = [
   'booking.create',
+  'contact.submit',
+  'newsletter.subscribe',
+  'lead.capture',
   'quote.request',
+  'cart.view',
   'cart.checkout',
+  'pay.checkout',
   'auth.login',
   'auth.register',
 ];
@@ -121,6 +135,9 @@ export function buildRoutePolicy(
         // Map intent → route
         if (route.intent) {
           ctaRouteMap[route.intent] = route.path;
+          if (route.intent === 'cart.checkout') {
+            ctaRouteMap['pay.checkout'] = route.path;
+          }
         }
         if (route.kind === 'overlay') {
           overlayRoutes.push(route.path);

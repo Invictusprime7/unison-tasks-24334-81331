@@ -29,7 +29,7 @@ import type {
 } from '@/types/playground';
 import type { CreatorData } from '@/types/creatorData';
 import type { PageRegistry } from '@/types/pageRegistry';
-import type { RuntimeManifest } from '@/types/runtimeManifest';
+import type { RuntimeAppContext, RuntimeManifest } from '@/types/runtimeManifest';
 import type { SiteBundle, SiteManifest, RouteDef, NavItem } from '@/types/siteBundle';
 import { resolveCapabilities } from './wizardCapabilityResolver';
 import { materializePlayground } from './wizardPlaygroundMaterializer';
@@ -103,6 +103,9 @@ export interface SiteBundleSnapshot {
 
   /** Timestamp */
   createdAt: string;
+
+  /** Shared app context propagated at launch/save time */
+  appContext?: RuntimeAppContext;
 }
 
 // ============================================================================

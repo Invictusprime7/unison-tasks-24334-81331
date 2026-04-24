@@ -12,8 +12,8 @@
  * VFS → FileMap Snapshot → ECS Worker (Vite) → Gateway → iframe
  */
 
-import { supabase } from '@/integrations/supabase/client';
 import { extractDependencies } from '@/utils/dependencyExtractor';
+import type { RuntimeManifest } from '@/types/runtimeManifest';
 
 // ============================================
 // TYPES
@@ -282,7 +282,12 @@ export function vfsToFileMap(nodes: VirtualNode[]): FileMap {
  * Injects missing files from defaults.
  * Generates a dynamic package.json with dependencies extracted from VFS imports.
  */
-export function ensureViteRootFiles(fileMap: FileMap): FileMap {
+export function ensureViteRootFiles(
+  fileMap: FileMap,
+  options?: {
+    extraDependencies?: Record<string, string>;
+  },
+): FileMap {
   const result = { ...fileMap };
 
   // --- Dynamic dependency extraction ---
@@ -311,6 +316,7 @@ export function ensureViteRootFiles(fileMap: FileMap): FileMap {
   const mergedDeps: Record<string, string> = {
     ...baseDeps,
     ...extractedDeps,   // auto-detected from code
+    ...(options?.extraDependencies || {}),
     ...existingDeps,    // user-specified always wins
   };
 
@@ -398,6 +404,61 @@ const PREVIEW_API_BASE = import.meta.env.VITE_PREVIEW_API_URL || '/api/preview';
 // Session cache
 let currentSession: PreviewSession | null = null;
 let keepaliveInterval: NodeJS.Timeout | null = null;
+let currentSessionFingerprint:
+  | {
+      projectId: string;
+      sessionKey: string;
+      fileSignature: string;
+    }
+  | null = null;
+
+function safeParseJson<T>(value: string | undefined): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function hashString(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function buildFileSignature(fileMap: FileMap): string {
+  const digest = Object.keys(fileMap)
+    .sort()
+    .map((path) => {
+      const content = fileMap[path] || '';
+      return `${path}:${content.length}:${content.slice(0, 120)}:${content.slice(-120)}`;
+    })
+    .join('|');
+
+  return hashString(digest);
+}
+
+function deriveSessionKey(projectId: string, fileMap: FileMap): string {
+  const manifest = safeParseJson<RuntimeManifest>(fileMap['/.unison/runtime-manifest.json']);
+  if (typeof manifest?.sessionKey === 'string' && manifest.sessionKey.trim()) {
+    return manifest.sessionKey;
+  }
+
+  const appContext = manifest?.appContext
+    || safeParseJson<{ projectId?: string; snapshotId?: string; entryPoint?: string; templateName?: string }>(
+      fileMap['/.unison/app-context.json'],
+    );
+
+  return [
+    appContext?.projectId || projectId,
+    appContext?.snapshotId || appContext?.templateName || 'preview',
+    appContext?.entryPoint || manifest?.entryPoint || '/src/App.tsx',
+  ].join('::');
+}
 
 /**
  * Start a new preview session
@@ -414,6 +475,28 @@ export async function startPreviewSession(
   try {
     // Ensure all required files exist
     const completeFiles = ensureViteRootFiles(files);
+    const sessionKey = deriveSessionKey(projectId, completeFiles);
+    const fileSignature = buildFileSignature(completeFiles);
+
+    if (
+      currentSession &&
+      currentSessionFingerprint &&
+      currentSessionFingerprint.projectId === projectId &&
+      currentSessionFingerprint.sessionKey === sessionKey &&
+      currentSessionFingerprint.fileSignature === fileSignature
+    ) {
+      return { success: true, session: currentSession };
+    }
+
+    if (
+      currentSession &&
+      currentSessionFingerprint &&
+      currentSessionFingerprint.projectId === projectId &&
+      currentSessionFingerprint.sessionKey === sessionKey &&
+      currentSessionFingerprint.fileSignature !== fileSignature
+    ) {
+      await stopPreviewSession(currentSession.id);
+    }
 
     const response = await fetch(`${PREVIEW_API_BASE}/start`, {
       method: 'POST',
@@ -439,6 +522,11 @@ export async function startPreviewSession(
     }
 
     currentSession = data.session;
+    currentSessionFingerprint = {
+      projectId,
+      sessionKey,
+      fileSignature,
+    };
 
     // Start keepalive pings
     startKeepalive(data.session.id);
@@ -532,6 +620,7 @@ export async function stopPreviewSession(sessionId: string): Promise<boolean> {
 
     if (currentSession?.id === sessionId) {
       currentSession = null;
+      currentSessionFingerprint = null;
     }
 
     return response.ok;
@@ -611,6 +700,7 @@ export function getCurrentSession(): PreviewSession | null {
 export function clearCurrentSession(): void {
   stopKeepalive();
   currentSession = null;
+  currentSessionFingerprint = null;
 }
 
 // ============================================

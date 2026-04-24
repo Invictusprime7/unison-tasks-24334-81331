@@ -101,7 +101,7 @@ import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from 
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
-import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
+import { recompileFromPlayground, type SiteBundleSnapshot } from '@/services/canonicalPipeline';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {
@@ -116,6 +116,17 @@ import {
 } from '@/services/unifiedPreviewPipeline';
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
+import { buildIntentReadinessReport } from '@/services/intentReadinessService';
+import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistence';
+import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
+import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
+import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
+import PreviewCartDrawer from '@/components/preview/PreviewCartDrawer';
+import {
+  BROWSER_CART_EVENT,
+  createBrowserCartManager,
+  readBrowserCart,
+} from '@/runtime/browserCartManager';
 
 function getOrCreatePreviewBusinessId(systemType?: string): string {
   const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
@@ -1013,7 +1024,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(true);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
   const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
-  const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | "intent_registry" | "readiness" | "business" | undefined>(undefined);
+  const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | "intent_registry" | "readiness" | "business" | "components" | undefined>(undefined);
   const [playgroundInitialBindingId, setPlaygroundInitialBindingId] = useState<string | undefined>(undefined);
   const [playgroundBindings, setPlaygroundBindings] = useState<Record<string, import('@/types/playground').PlaygroundBinding>>({});
   const [playgroundCalendars, setPlaygroundCalendars] = useState<Record<string, import('@/types/playground').PlaygroundCalendar>>({});
@@ -1410,7 +1421,40 @@ export default function App() {
       vfsFiles?: Record<string, string>;
       entryPoint?: string;
       activePagePath?: string;
+      canonicalPlayground?: {
+        pageRegistry?: import('@/types/pageRegistry').PageRegistry;
+        creatorData?: import('@/types/creatorData').CreatorData;
+        bindings?: Record<string, import('@/types/playground').PlaygroundBinding>;
+        calendars?: Record<string, import('@/types/playground').PlaygroundCalendar>;
+        popups?: Record<string, import('@/types/playground').PlaygroundPopup>;
+      };
+      siteBundleSnapshot?: {
+        pageRegistry?: import('@/types/pageRegistry').PageRegistry;
+        creatorData?: import('@/types/creatorData').CreatorData;
+        bindings?: Record<string, import('@/types/playground').PlaygroundBinding>;
+        calendars?: Record<string, import('@/types/playground').PlaygroundCalendar>;
+        popups?: Record<string, import('@/types/playground').PlaygroundPopup>;
+      };
     };
+    const persistedPlayground = canvasData.canonicalPlayground || (
+      canvasData.siteBundleSnapshot ? {
+        pageRegistry: canvasData.siteBundleSnapshot.pageRegistry,
+        creatorData: canvasData.siteBundleSnapshot.creatorData,
+        bindings: canvasData.siteBundleSnapshot.bindings,
+        calendars: canvasData.siteBundleSnapshot.calendars,
+        popups: canvasData.siteBundleSnapshot.popups,
+      } : null
+    );
+
+    if (persistedPlayground?.pageRegistry || persistedPlayground?.creatorData) {
+      creatorPlayground.hydrateCanonicalState({
+        pageRegistry: persistedPlayground.pageRegistry,
+        creatorData: persistedPlayground.creatorData,
+      });
+    }
+    if (persistedPlayground?.bindings) setPlaygroundBindings(persistedPlayground.bindings);
+    if (persistedPlayground?.calendars) setPlaygroundCalendars(persistedPlayground.calendars);
+    if (persistedPlayground?.popups) setPlaygroundPopups(persistedPlayground.popups);
 
     if (canvasData?.vfsFiles && Object.keys(canvasData.vfsFiles).length > 0) {
       const entry = canvasData.entryPoint || launchEntryPoint;
@@ -1462,7 +1506,7 @@ export default function App() {
   // captures it correctly because it is only invoked asynchronously (inside async IIFEs)
   // by which point importBuilderFiles is fully initialized.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [launchEntryPoint]);
+  }, [creatorPlayground, launchEntryPoint]);
   
   // Load saved project from URL parameter on mount.
   // Hydrates the FULL VFS (multi-page, router, entry point) when present;
@@ -1496,6 +1540,23 @@ export default function App() {
   const projectNameFromState = effectiveRouteState?.projectName;
   const publishStatusFromState = effectiveRouteState?.publishStatus;
   const customDomainFromState = effectiveRouteState?.customDomain;
+  const [previewCartVersion, setPreviewCartVersion] = useState(0);
+  const previewCartManager = useMemo(
+    () =>
+      createBrowserCartManager({
+        businessId: businessId || undefined,
+        siteId: projectId || undefined,
+      }),
+    [businessId, projectId],
+  );
+  const previewCart = useMemo(
+    () =>
+      readBrowserCart({
+        businessId: businessId || undefined,
+        siteId: projectId || undefined,
+      }),
+    [businessId, projectId, previewCartVersion],
+  );
 
   useEffect(() => {
     const urlId = new URLSearchParams(location.search).get('id');
@@ -1537,6 +1598,41 @@ export default function App() {
     templateFiles.currentTemplateId,
     templateFiles.loadTemplate,
   ]);
+
+  const loadedCanonicalGraphProjectRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!projectId || loadedCanonicalGraphProjectRef.current === projectId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const componentInstances = await loadCanonicalComponentGraph(projectId);
+      if (cancelled) return;
+
+      loadedCanonicalGraphProjectRef.current = projectId;
+      if (!componentInstances || Object.keys(componentInstances).length === 0) {
+        return;
+      }
+
+      creatorPlayground.hydrateCanonicalState({
+        pageRegistry: creatorPlayground.pageRegistry,
+        creatorData: {
+          ...creatorPlayground.creatorData,
+          componentInstances: {
+            ...creatorPlayground.creatorData.componentInstances,
+            ...componentInstances,
+          },
+        },
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, creatorPlayground]);
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
   const systemsBuildContextFromState = effectiveRouteState?.systemsBuildContext ?? null;
   
@@ -2005,6 +2101,10 @@ export default function ${componentName}Page() {
   // Research Overlay state (contextual web research from preview clicks)
   const [researchOverlayOpen, setResearchOverlayOpen] = useState(false);
   const [researchPayload, setResearchPayload] = useState<ResearchOverlayPayload | null>(null);
+  const [activeRuntimeOverlay, setActiveRuntimeOverlay] = useState<OverlayConfig | null>(null);
+  const [previewCartOpen, setPreviewCartOpen] = useState(false);
+  const [previewCartStep, setPreviewCartStep] = useState<'cart' | 'checkout' | 'success'>('cart');
+  const [previewCartSubmitting, setPreviewCartSubmitting] = useState(false);
   
   // Track file modifications for UI indicators
   const trackFileModification = useCallback((fileId: string, content: string) => {
@@ -2360,6 +2460,81 @@ export default function ${componentName}Page() {
     notificationEmail: cloudState.business.notificationEmail,
     projectName: cloudState.project.name,
   }), [cloudState.business.notificationEmail, cloudState.project.customDomain, cloudState.project.name, cloudState.project.publishStatus]);
+
+  const playgroundReadinessReport = useMemo(() => buildIntentReadinessReport(
+    {
+      creatorData: creatorPlayground.creatorData,
+      pageRegistry: creatorPlayground.pageRegistry,
+      bindings: playgroundBindings,
+      calendars: playgroundCalendars,
+      popups: playgroundPopups,
+    },
+    [],
+    playgroundSetupSnapshot,
+  ), [
+    creatorPlayground.creatorData,
+    creatorPlayground.pageRegistry,
+    playgroundBindings,
+    playgroundCalendars,
+    playgroundPopups,
+    playgroundSetupSnapshot,
+  ]);
+
+  const selectedPlaygroundComponent = useMemo(() => {
+    const attributes = (selectedHTMLElement?.attributes || {}) as Record<string, string>;
+    const explicitInstanceId = attributes['data-ut-component-instance-id'];
+    if (explicitInstanceId && creatorPlayground.creatorData.componentInstances[explicitInstanceId]) {
+      return creatorPlayground.creatorData.componentInstances[explicitInstanceId];
+    }
+
+    const rawSlug =
+      attributes['data-ut-component-slug'] ||
+      inferCanonicalComponentSlug(attributes['data-component'] || '');
+    if (!rawSlug) return null;
+
+    const candidates = Object.values(creatorPlayground.creatorData.componentInstances).filter((instance) => {
+      if ((instance.componentSlug || '') !== rawSlug) return false;
+      if (!activePageId) return true;
+      return instance.usedOnPages.includes(activePageId);
+    });
+
+    return candidates[0] || null;
+  }, [activePageId, creatorPlayground.creatorData.componentInstances, selectedHTMLElement]);
+
+  const selectedElementReadiness = useMemo(() => {
+    if (selectedPlaygroundComponent) {
+      const readiness = playgroundReadinessReport.componentReadiness[selectedPlaygroundComponent.instanceId];
+      if (!readiness) return null;
+      return {
+        surfaceLabel: selectedPlaygroundComponent.label,
+        previewStatus: readiness.previewStatus,
+        publishStatus: readiness.publishStatus,
+        missingDependencies: readiness.missingDependencies,
+        onOpenSetup: () => {
+          setPlaygroundInitialSection('components');
+          setPlaygroundModalOpen(true);
+        },
+      };
+    }
+
+    if (selectedPlaygroundBinding) {
+      const readiness = playgroundReadinessReport.readiness[selectedPlaygroundBinding.bindingId];
+      if (!readiness) return null;
+      return {
+        surfaceLabel: selectedPlaygroundBinding.coreIntent || selectedPlaygroundBinding.intent,
+        previewStatus: readiness.previewStatus,
+        publishStatus: readiness.publishStatus,
+        missingDependencies: readiness.missingDependencies,
+        onOpenSetup: () => {
+          setPlaygroundInitialSection('readiness');
+          setPlaygroundInitialBindingId(selectedPlaygroundBinding.bindingId);
+          setPlaygroundModalOpen(true);
+        },
+      };
+    }
+
+    return null;
+  }, [playgroundReadinessReport, selectedPlaygroundBinding, selectedPlaygroundComponent]);
   
   const referrerPageName = systemName || 
     effectiveRouteState?.from || 
@@ -2735,6 +2910,113 @@ export default function ${componentName}Page() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
    
+  const refreshPreviewCart = useCallback(() => {
+    setPreviewCartVersion((version) => version + 1);
+  }, []);
+
+  const openPreviewCart = useCallback((step: 'cart' | 'checkout' | 'success' = 'cart') => {
+    refreshPreviewCart();
+    setPreviewCartStep(step);
+    setPreviewCartOpen(true);
+  }, [refreshPreviewCart]);
+
+  const mapOverlayIdToConfig = useCallback((
+    overlayId: string,
+    payload?: Record<string, unknown>,
+  ): OverlayConfig | null => {
+    switch (overlayId) {
+      case 'auth-login':
+        return { type: 'auth-login', payload };
+      case 'auth-register':
+        return { type: 'auth-register', payload };
+      case 'booking':
+      case 'booking_intake':
+      case 'consultation_intake':
+      case 'reservation':
+      case 'patient_intake':
+        return { type: 'booking', payload };
+      case 'contact':
+      case 'lead':
+      case 'lead-capture':
+      case 'project_inquiry':
+      case 'property_inquiry':
+      case 'volunteer':
+      case 'demo_request':
+        return { type: 'contact', payload };
+      case 'quote':
+      case 'quote_request':
+        return { type: 'quote', payload };
+      case 'newsletter':
+      case 'waitlist':
+        return { type: 'newsletter', payload };
+      case 'checkout':
+      case 'payments-setup':
+        return { type: 'checkout', payload };
+      case 'booking-confirmation':
+      case 'order-confirmation':
+      case 'confirmation':
+        return { type: 'confirmation', payload };
+      case 'upgrade':
+        return { type: 'upgrade', payload };
+      default:
+        return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleBrowserCartUpdate = () => {
+      refreshPreviewCart();
+    };
+    const handleCartViewIntent = () => openPreviewCart('cart');
+
+    const handleRuntimeOverlayMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OVERLAY_OPEN') {
+        const overlayId = String(event.data.overlayId || '');
+        const payload = (event.data.payload || {}) as Record<string, unknown>;
+
+        if (overlayId === 'cart') {
+          const requestedStep = payload.step === 'checkout' ? 'checkout' : 'cart';
+          openPreviewCart(requestedStep);
+          return;
+        }
+
+        const nextOverlay = mapOverlayIdToConfig(overlayId, payload);
+        if (nextOverlay) {
+          setActiveRuntimeOverlay(nextOverlay);
+        }
+      }
+
+      if (event.data?.type === 'OVERLAY_CLOSE') {
+        const overlayId = String(event.data.overlayId || '');
+        if (!overlayId || overlayId === 'cart') {
+          setPreviewCartOpen(false);
+          setPreviewCartStep('cart');
+        }
+        if (!overlayId || overlayId !== 'cart') {
+          setActiveRuntimeOverlay(null);
+        }
+      }
+
+      if (event.data?.type === 'TOAST_SHOW' && event.data.toast?.message) {
+        const nextToast = event.data.toast as { type?: string; message: string };
+        if (nextToast.type === 'error') toast.error(nextToast.message);
+        else if (nextToast.type === 'warning') toast.warning(nextToast.message);
+        else if (nextToast.type === 'success') toast.success(nextToast.message);
+        else toast(nextToast.message);
+      }
+    };
+
+    window.addEventListener(BROWSER_CART_EVENT, handleBrowserCartUpdate as EventListener);
+    window.addEventListener('message', handleRuntimeOverlayMessage);
+    window.addEventListener('intent:cart.view', handleCartViewIntent);
+
+    return () => {
+      window.removeEventListener(BROWSER_CART_EVENT, handleBrowserCartUpdate as EventListener);
+      window.removeEventListener('message', handleRuntimeOverlayMessage);
+      window.removeEventListener('intent:cart.view', handleCartViewIntent);
+    };
+  }, [mapOverlayIdToConfig, openPreviewCart, refreshPreviewCart]);
+
   // Listen for INTENT_TRIGGER messages from iframe previews
   useEffect(() => {
     const handleIntentMessage = (event: MessageEvent) => {
@@ -2897,9 +3179,8 @@ export default function ${componentName}Page() {
         }
       };
 
-      // Never open overlays for preview click actions (these are disruptive in the builder).
-      // Instead: autorun, open demo in a new tab, or ask the iframe to scroll to an on-page form.
-      // Close overlays proactively (we don't want them for preview click actions).
+      // Reset any unrelated preview chrome before routing the next deterministic action.
+      // Overlays are now allowed, but only through the shared surface resolver below.
       setPipelineOverlayOpen(false);
       setPipelineConfig(null);
       setDemoOverlayOpen(false);
@@ -2956,7 +3237,7 @@ export default function ${componentName}Page() {
           }
           // Not in registry — use resolver before generating
           const resolvedAction = resolvePreviewAction(
-            intent, buttonLabel, pageInventory, vfsFiles, classification, inPreviewHandled,
+            intent, buttonLabel, pageInventory, vfsFiles, classification, inPreviewHandled, payload as Record<string, unknown> | undefined,
           );
           if (resolvedAction.action === 'navigate') {
             if (source && requestId) {
@@ -3015,7 +3296,7 @@ export default function ${componentName}Page() {
       // ── All other intents: run through the resolver ───────────────────────
       const vfsFiles = virtualFS.getSandpackFiles();
       const resolvedAction = resolvePreviewAction(
-        intent, buttonLabel, pageInventory, vfsFiles, classification, inPreviewHandled,
+        intent, buttonLabel, pageInventory, vfsFiles, classification, inPreviewHandled, payload as Record<string, unknown> | undefined,
       );
 
       console.log('[WebBuilder] Resolved action:', resolvedAction);
@@ -3029,6 +3310,50 @@ export default function ${componentName}Page() {
         }
 
         // ── Scroll: send INTENT_COMMAND to the iframe ──────────────────────
+        case 'cart': {
+          if (intent === 'cart.add' || intent === 'cart.view') {
+            void handleIntent(intent, {
+              ...(payload as IntentPayload),
+              businessId,
+              projectId,
+            }).then((result) => {
+              refreshPreviewCart();
+              if (result.success) {
+                openPreviewCart(resolvedAction.step);
+              }
+              sendResultToIframe({ success: result.success, ...result });
+            }).catch((error) => {
+              const message = error instanceof Error ? error.message : 'Cart action failed';
+              toast.error(message);
+              sendResultToIframe({ success: false, error: message });
+            });
+            return;
+          }
+
+          openPreviewCart(resolvedAction.step);
+          sendResultToIframe({ success: true, ui: { openModal: 'cart' } });
+          return;
+        }
+
+        case 'overlay': {
+          const overlayPayload = {
+            ...(payload as Record<string, unknown>),
+            businessId,
+            siteId: projectId,
+            projectId,
+            source: (payload as Record<string, unknown> | undefined)?.source
+              || (intent === 'lead.capture' ? 'lead_capture' : intent),
+          };
+          const overlayConfig = mapOverlayIdToConfig(resolvedAction.overlayId, overlayPayload);
+          if (overlayConfig) {
+            setActiveRuntimeOverlay(overlayConfig);
+            sendResultToIframe({ success: true, ui: { openModal: resolvedAction.overlayId } });
+            return;
+          }
+          sendResultToIframe({ success: false, error: `Unsupported overlay: ${resolvedAction.overlayId}` });
+          return;
+        }
+
         case 'scroll': {
           if (!source) {
             sendResultToIframe({ success: true });
@@ -3070,7 +3395,11 @@ export default function ${componentName}Page() {
               // Section not found — fall back to executing the intent directly
               console.log('[WebBuilder] Scroll target not found, executing intent:', intent);
               try {
-                const res = await handleIntent(intent, payload as IntentPayload);
+                const res = await handleIntent(intent, {
+                  ...(payload as IntentPayload),
+                  businessId,
+                  projectId,
+                });
                 if (res.success) {
                   sendResultToIframe({ success: true, ...res });
                 } else {
@@ -3868,13 +4197,78 @@ ${html}
   }, [templateCustomizer, previewCode]);
 
   // Build the v2 save payload — full multi-page VFS round-trip
-  const buildSavePayload = useCallback(() => ({
-    vfsFiles: virtualFS.getSandpackFiles(),
-    entryPoint: launchEntryPoint,
+  const buildSavePayload = useCallback(() => {
+    const canonicalPlayground = {
+      pageRegistry: creatorPlayground.pageRegistry,
+      creatorData: creatorPlayground.creatorData,
+      bindings: playgroundBindings,
+      calendars: playgroundCalendars,
+      popups: playgroundPopups,
+    };
+    const currentFiles = virtualFS.getSandpackFiles();
+    const effectiveBusinessName =
+      creatorPlayground.creatorData.businessInfo.businessName ||
+      currentTemplateName ||
+      projectNameFromState ||
+      systemName ||
+      'Business';
+    const recompilation = recompileFromPlayground(
+      canonicalPlayground,
+      currentFiles,
+      effectiveBusinessName,
+      effectiveRouteState?.siteBundleSnapshot?.industry,
+    );
+    const launchArtifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: currentFiles,
+      preferredEntryPoint: launchEntryPoint,
+      siteBundleSnapshot: recompilation.siteBundleSnapshot,
+      compiledPlayground: recompilation.compileResult,
+      canonicalPlayground,
+      businessId: businessId ?? undefined,
+      projectId: projectId ?? undefined,
+      manifestId: currentManifestId || manifestIdFromState || undefined,
+      systemType: activeSystemType || systemType || undefined,
+      systemName: systemName || effectiveBusinessName,
+      templateName: currentTemplateName || effectiveBusinessName,
+      templateCategory: currentTemplateCategory || undefined,
+      businessName: effectiveBusinessName,
+      industry: recompilation.siteBundleSnapshot.industry,
+      aesthetic: currentDesignPreset || undefined,
+      backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
+      wizardSelections: effectiveRouteState?.wizardSelections || undefined,
+    });
+
+    return {
+      vfsFiles: launchArtifacts.files,
+      entryPoint: launchArtifacts.entryPoint,
+      activePagePath,
+      businessId: businessId ?? null,
+      projectId: projectId ?? null,
+      canonicalPlayground: launchArtifacts.canonicalPlayground,
+      siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+    };
+  }, [
+    virtualFS,
+    launchEntryPoint,
     activePagePath,
-    businessId: businessId ?? null,
-    projectId: projectId ?? null,
-  }), [virtualFS, launchEntryPoint, activePagePath, businessId, projectId]);
+    businessId,
+    projectId,
+    creatorPlayground.pageRegistry,
+    creatorPlayground.creatorData,
+    playgroundBindings,
+    playgroundCalendars,
+    playgroundPopups,
+    currentTemplateName,
+    projectNameFromState,
+    systemName,
+    effectiveRouteState,
+    currentManifestId,
+    manifestIdFromState,
+    activeSystemType,
+    systemType,
+    currentTemplateCategory,
+    currentDesignPreset,
+  ]);
 
   const handleSaveTemplate = useCallback(async (
     name: string,
@@ -4006,6 +4400,36 @@ ${html}
     livePreviewRef.current?.refresh();
     setTimeout(() => setIsRefreshing(false), 600);
   }, []);
+
+  const handlePreviewCartQuantityChange = useCallback(async (productId: string, quantity: number) => {
+    await previewCartManager.update(productId, quantity);
+    refreshPreviewCart();
+  }, [previewCartManager, refreshPreviewCart]);
+
+  const handlePreviewCartRemove = useCallback(async (productId: string) => {
+    await previewCartManager.remove(productId);
+    refreshPreviewCart();
+  }, [previewCartManager, refreshPreviewCart]);
+
+  const handlePreviewCartCheckout = useCallback(async (customer: { email: string; name: string }) => {
+    try {
+      setPreviewCartSubmitting(true);
+      if (!customer.email) {
+        toast.error('Email is required to submit checkout');
+        return false;
+      }
+
+      toast.success('Checkout submitted', {
+        description: `Captured ${previewCart.items.length} item${previewCart.items.length === 1 ? '' : 's'} for ${customer.email}.`,
+      });
+      await previewCartManager.clear();
+      refreshPreviewCart();
+      setPreviewCartStep('success');
+      return true;
+    } finally {
+      setPreviewCartSubmitting(false);
+    }
+  }, [previewCart.items.length, previewCartManager, refreshPreviewCart]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -5278,7 +5702,7 @@ export default function ${componentName}() {
                       }}
                       onTestIntent={(intent, payload) => {
                         // Fire test intent
-                        handleIntent(intent, { ...payload, businessId });
+                        handleIntent(intent, { ...payload, businessId, projectId });
                       }}
                     />
                   </TabsContent>
@@ -6015,6 +6439,7 @@ export default function ${componentName}() {
               onClear={() => setSelectedHTMLElement(null)}
               systemType={activeSystemType}
               systemsBuildContext={systemsBuildContextFromState}
+              readiness={selectedElementReadiness}
               onAIEditComplete={async (selector, newHtml) => {
                 const res = applyElementHtmlUpdate(previewCode, selector, newHtml);
                 if (res.ok) {
@@ -6103,6 +6528,29 @@ export default function ${componentName}() {
           <span className="text-[10px] font-medium">Props</span>
         </button>
       </div>
+
+      <PreviewOverlayManager
+        activeOverlay={activeRuntimeOverlay}
+        onClose={() => setActiveRuntimeOverlay(null)}
+        businessId={businessId || undefined}
+        siteId={projectId || undefined}
+      />
+
+      <PreviewCartDrawer
+        open={previewCartOpen}
+        cart={previewCart}
+        initialStep={previewCartStep}
+        submitting={previewCartSubmitting}
+        onOpenChange={(open) => {
+          setPreviewCartOpen(open);
+          if (!open) {
+            setPreviewCartStep('cart');
+          }
+        }}
+        onUpdateQuantity={handlePreviewCartQuantityChange}
+        onRemove={handlePreviewCartRemove}
+        onCheckout={handlePreviewCartCheckout}
+      />
 
       {/* Code Preview Dialog */}
       <CodePreviewDialog

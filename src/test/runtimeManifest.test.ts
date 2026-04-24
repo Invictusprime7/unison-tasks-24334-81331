@@ -81,6 +81,28 @@ describe("createRuntimeManifest", () => {
     expect(manifest.aesthetic).toBe("warm-earth");
   });
 
+  it("carries app context and dependency overrides", () => {
+    const manifest = createRuntimeManifest(
+      { "/src/App.tsx": "export default () => <div />" },
+      {
+        entryPoint: "/src/App.tsx",
+        dependencyOverrides: { "@tanstack/react-query": "^5.0.0" },
+        appContext: {
+          projectId: "project_123",
+          templateName: "Launch Site",
+          industry: "agency",
+        },
+        metadataFiles: ["/.unison/app-context.json"],
+        sessionKey: "project_123::snap_1::/src/App.tsx",
+      }
+    );
+    expect(manifest.dependencies["@tanstack/react-query"]).toBe("^5.0.0");
+    expect(manifest.appContext?.projectId).toBe("project_123");
+    expect(manifest.appContext?.templateName).toBe("Launch Site");
+    expect(manifest.metadataFiles).toEqual(["/.unison/app-context.json"]);
+    expect(manifest.sessionKey).toBe("project_123::snap_1::/src/App.tsx");
+  });
+
   it("defaults to / route when no pages found", () => {
     const manifest = createRuntimeManifest({
       "/src/App.tsx": "export default () => <div />",

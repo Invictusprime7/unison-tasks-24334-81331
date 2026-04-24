@@ -70,6 +70,17 @@ const MODEL_FORMS: Record<BusinessModel, string[]> = {
   general:             ['contact'],
 };
 
+const MODEL_CALENDARS: Record<BusinessModel, string[]> = {
+  appointment_service: ['main_booking'],
+  quote_lead:          [],
+  ecommerce:           [],
+  portfolio_creator:   [],
+  restaurant_hospitality: ['reservation'],
+  saas_digital:        [],
+  nonprofit:           [],
+  general:             [],
+};
+
 // ============================================================================
 // Industry Overlay Augmentation (V2 — slot-bound)
 // ============================================================================
@@ -228,16 +239,80 @@ const INDUSTRY_AUGMENTS: Partial<Record<IndustryOverlay, IndustryAugment>> = {
       { sourcePageRole: 'gallery', sourceSection: 'gallery', sourceSlot: 'card-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'session_booking', uiAction: 'overlay' },
     ],
   },
+  auto_detailing: {
+    extraPages: ['gallery'],
+    extraForms: ['quote_request'],
+    popups: ['free_estimate_popup'],
+    extraBindingsV2: [
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get Detailing Quote', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+      { sourcePageRole: 'gallery', sourceSection: 'gallery', sourceSlot: 'card-cta', label: 'Book This Package', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+    ],
+  },
+  moving: {
+    extraForms: ['quote_request'],
+    extraPages: ['faq'],
+    extraBindingsV2: [
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get Moving Quote', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+      { sourcePageRole: 'services', sourceSection: 'services', sourceSlot: 'card-cta', label: 'Request Estimate', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+    ],
+  },
+  legal: {
+    calendars: ['consultation_booking'],
+    extraForms: ['consultation_intake'],
+    extraPages: ['faq'],
+    extraBindingsV2: [
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Book Consultation', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'consultation_booking', uiAction: 'overlay' },
+      { sourcePageRole: 'services', sourceSection: 'services', sourceSlot: 'card-cta', label: 'Request Case Review', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'consultation_intake', uiAction: 'overlay' },
+    ],
+  },
+  cafe: {
+    calendars: ['reservation'],
+    extraBindingsV2: [
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Reserve a Table', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'reservation', uiAction: 'overlay' },
+    ],
+  },
+  bakery: {
+    extraForms: ['quote_request'],
+    extraBindingsV2: [
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Order Catering', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+      { sourcePageRole: 'services', sourceSection: 'services', sourceSlot: 'card-cta', label: 'Request Catering', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+    ],
+  },
+  creator: {
+    extraPages: ['gallery', 'pricing'],
+    extraForms: ['project_inquiry'],
+    extraBindingsV2: [
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Start Project', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'project_inquiry', uiAction: 'overlay' },
+      { sourcePageRole: 'gallery', sourceSection: 'gallery', sourceSlot: 'card-cta', label: 'Request Availability', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'project_inquiry', uiAction: 'overlay' },
+    ],
+  },
+  agency: {
+    extraPages: ['pricing'],
+    extraForms: ['quote_request'],
+    calendars: ['discovery_call'],
+    extraBindingsV2: [
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Request Proposal', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Book Strategy Call', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'discovery_call', uiAction: 'overlay' },
+      { sourcePageRole: 'pricing', sourceSection: 'pricing', sourceSlot: 'card-cta', label: 'Discuss This Plan', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+    ],
+  },
+  nonprofit: {
+    extraForms: ['volunteer'],
+    extraBindingsV2: [
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get Involved', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'volunteer', uiAction: 'overlay' },
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Contact Our Team', coreIntent: 'contact.submit', intent: 'form.open', targetRef: 'contact', uiAction: 'overlay' },
+    ],
+  },
   ecommerce: {
-    products: ['starter_product'],
+    products: ['ecommerce_primary'],
     extraBindings: [
       { sourcePageRole: 'home', sourceLabel: 'Shop Now', intent: 'nav.goto_page', targetRef: 'shop' },
     ],
     extraBindingsV2: [
       { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Shop Now', coreIntent: 'nav.goto', intent: 'nav.goto_page', targetRef: 'shop', uiAction: 'navigate' },
       { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'card-cta', label: 'Add to Cart', coreIntent: 'cart.add', intent: 'checkout.start', targetRef: 'cart', uiAction: 'state', payloadTemplate: { productId: '$product.id', name: '$product.name', price: '$product.price', quantity: 1 } },
-      { sourcePageRole: 'shop', sourceSection: 'cart', sourceSlot: 'checkout-cta', label: 'Checkout', coreIntent: 'pay.checkout', intent: 'checkout.start', targetRef: '/checkout', uiAction: 'navigate' },
-      { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'cart-trigger', label: 'Cart', coreIntent: 'cart.checkout', intent: 'checkout.start', targetRef: 'cart-overlay', uiAction: 'overlay' },
+      { sourcePageRole: 'shop', sourceSection: 'cart', sourceSlot: 'checkout-cta', label: 'Checkout', coreIntent: 'cart.checkout', intent: 'checkout.start', targetRef: 'cart-overlay', uiAction: 'overlay' },
+      { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'cart-trigger', label: 'Cart', coreIntent: 'cart.view', intent: 'cart.view', targetRef: 'cart-overlay', uiAction: 'overlay' },
     ],
   },
   real_estate: {
@@ -271,7 +346,7 @@ const UNIVERSAL_ICON_BINDINGS: PlaygroundBindingSpecV2[] = [
 /** Ecommerce-specific icon bindings */
 const ECOMMERCE_ICON_BINDINGS: PlaygroundBindingSpecV2[] = [
   // Cart icon in navbar — opens cart drawer with badge
-  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-cart', label: 'Cart', coreIntent: 'cart.checkout', intent: 'checkout.start', targetRef: 'cart-overlay', uiAction: 'overlay', payloadTemplate: { iconKey: 'cart', interactive: 'cart-drawer', uiBehavior: 'overlay', hasBadge: true } },
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-cart', label: 'Cart', coreIntent: 'cart.view', intent: 'cart.view', targetRef: 'cart-overlay', uiAction: 'overlay', payloadTemplate: { iconKey: 'cart', interactive: 'cart-drawer', uiBehavior: 'overlay', hasBadge: true } },
   // Filter icon on shop grid
   { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-filter', label: 'Filter', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'filter', uiAction: 'overlay', payloadTemplate: { iconKey: 'filter', interactive: 'filter-panel', uiBehavior: 'inline-expand' } },
   // Sort icon on shop grid
@@ -292,56 +367,60 @@ const BOOKING_ICON_BINDINGS: PlaygroundBindingSpecV2[] = [
 
 const MODEL_BINDINGS_V2: Record<BusinessModel, PlaygroundBindingSpecV2[]> = {
   appointment_service: [
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'nav.goto_page', targetRef: 'booking', uiAction: 'navigate' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'main_booking', uiAction: 'overlay' },
     { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'View Services', coreIntent: 'nav.goto', intent: 'nav.goto_page', targetRef: 'services', uiAction: 'navigate' },
-    { sourcePageRole: 'services', sourceSection: 'services', sourceSlot: 'card-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'nav.goto_page', targetRef: 'booking', uiAction: 'navigate' },
-    { sourcePageRole: 'pricing', sourceSection: 'pricing', sourceSlot: 'card-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'nav.goto_page', targetRef: 'booking', uiAction: 'navigate' },
-    { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'primary-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'nav.goto_page', targetRef: 'booking', uiAction: 'navigate' },
+    { sourcePageRole: 'services', sourceSection: 'services', sourceSlot: 'card-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'main_booking', uiAction: 'overlay' },
+    { sourcePageRole: 'pricing', sourceSection: 'pricing', sourceSlot: 'card-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'main_booking', uiAction: 'overlay' },
+    { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'primary-cta', label: 'Book Now', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'main_booking', uiAction: 'overlay' },
   ],
   quote_lead: [
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get a Quote', coreIntent: 'quote.request', intent: 'nav.goto_page', targetRef: 'contact', uiAction: 'navigate' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get a Quote', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
     { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'View Services', coreIntent: 'nav.goto', intent: 'nav.goto_page', targetRef: 'services', uiAction: 'navigate' },
-    { sourcePageRole: 'services', sourceSection: 'services', sourceSlot: 'card-cta', label: 'Get a Quote', coreIntent: 'quote.request', intent: 'nav.goto_page', targetRef: 'contact', uiAction: 'navigate' },
+    { sourcePageRole: 'services', sourceSection: 'services', sourceSlot: 'card-cta', label: 'Get a Quote', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
+    { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'primary-cta', label: 'Request Quote', coreIntent: 'quote.request', intent: 'form.open', targetRef: 'quote_request', uiAction: 'overlay' },
   ],
   ecommerce: [
     { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Shop Now', coreIntent: 'nav.goto', intent: 'nav.goto_page', targetRef: 'shop', uiAction: 'navigate' },
     { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'card-cta', label: 'Add to Cart', coreIntent: 'cart.add', intent: 'checkout.start', targetRef: 'cart', uiAction: 'state', payloadTemplate: { productId: '$product.id', name: '$product.name', price: '$product.price', quantity: 1 } },
-    { sourcePageRole: 'shop', sourceSection: 'cart', sourceSlot: 'checkout-cta', label: 'Checkout', coreIntent: 'pay.checkout', intent: 'checkout.start', targetRef: '/checkout', uiAction: 'navigate' },
+    { sourcePageRole: 'shop', sourceSection: 'cart', sourceSlot: 'checkout-cta', label: 'Checkout', coreIntent: 'cart.checkout', intent: 'checkout.start', targetRef: 'cart-overlay', uiAction: 'overlay' },
   ],
   portfolio_creator: [
     { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'View Work', coreIntent: 'nav.goto', intent: 'nav.goto_page', targetRef: 'gallery', uiAction: 'navigate' },
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Get in Touch', coreIntent: 'contact.submit', intent: 'nav.goto_page', targetRef: 'contact', uiAction: 'navigate' },
-    { sourcePageRole: 'gallery', sourceSection: 'gallery', sourceSlot: 'card-cta', label: 'Contact', coreIntent: 'contact.submit', intent: 'nav.goto_page', targetRef: 'contact', uiAction: 'navigate' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Start Project', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'project_inquiry', uiAction: 'overlay' },
+    { sourcePageRole: 'gallery', sourceSection: 'gallery', sourceSlot: 'card-cta', label: 'Request Availability', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'project_inquiry', uiAction: 'overlay' },
   ],
   restaurant_hospitality: [
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Reserve a Table', coreIntent: 'booking.create', intent: 'nav.goto_page', targetRef: 'booking', uiAction: 'navigate' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Reserve a Table', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'reservation', uiAction: 'overlay' },
     { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'View Menu', coreIntent: 'nav.goto', intent: 'nav.goto_page', targetRef: 'services', uiAction: 'navigate' },
+    { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'primary-cta', label: 'Reserve', coreIntent: 'booking.create', intent: 'calendar.open', targetRef: 'reservation', uiAction: 'overlay' },
   ],
   saas_digital: [
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get Started', coreIntent: 'nav.goto', intent: 'nav.goto_page', targetRef: 'pricing', uiAction: 'navigate' },
-    { sourcePageRole: 'pricing', sourceSection: 'pricing', sourceSlot: 'card-cta', label: 'Contact Sales', coreIntent: 'contact.submit', intent: 'nav.goto_page', targetRef: 'contact', uiAction: 'navigate' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Start Free Trial', coreIntent: 'auth.register', intent: 'popup.open', targetRef: 'auth-register', uiAction: 'overlay' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Request Demo', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'demo_request', uiAction: 'overlay' },
+    { sourcePageRole: 'pricing', sourceSection: 'pricing', sourceSlot: 'card-cta', label: 'Contact Sales', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'demo_request', uiAction: 'overlay' },
+    { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'primary-cta', label: 'Start Trial', coreIntent: 'auth.register', intent: 'popup.open', targetRef: 'auth-register', uiAction: 'overlay' },
   ],
   nonprofit: [
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Learn More', coreIntent: 'nav.goto', intent: 'nav.goto_page', targetRef: 'about', uiAction: 'navigate' },
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Get Involved', coreIntent: 'contact.submit', intent: 'nav.goto_page', targetRef: 'contact', uiAction: 'navigate' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get Involved', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'volunteer', uiAction: 'overlay' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Contact Our Team', coreIntent: 'contact.submit', intent: 'form.open', targetRef: 'contact', uiAction: 'overlay' },
   ],
   general: [
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Contact Us', coreIntent: 'contact.submit', intent: 'nav.goto_page', targetRef: 'contact', uiAction: 'navigate' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Contact Us', coreIntent: 'contact.submit', intent: 'form.open', targetRef: 'contact', uiAction: 'overlay' },
   ],
 };
 
 /** @deprecated Legacy label-bound bindings. Use MODEL_BINDINGS_V2. */
 const MODEL_BINDINGS: Record<BusinessModel, PlaygroundBindingSpec[]> = {
   appointment_service: [
-    { sourcePageRole: 'home', sourceLabel: 'Book Now', intent: 'nav.goto_page', targetRef: 'booking' },
+    { sourcePageRole: 'home', sourceLabel: 'Book Now', intent: 'calendar.open', targetRef: 'main_booking' },
     { sourcePageRole: 'home', sourceLabel: 'View Services', intent: 'nav.goto_page', targetRef: 'services' },
-    { sourcePageRole: 'services', sourceLabel: 'Book Now', intent: 'nav.goto_page', targetRef: 'booking' },
-    { sourcePageRole: 'pricing', sourceLabel: 'Book Now', intent: 'nav.goto_page', targetRef: 'booking' },
+    { sourcePageRole: 'services', sourceLabel: 'Book Now', intent: 'calendar.open', targetRef: 'main_booking' },
+    { sourcePageRole: 'pricing', sourceLabel: 'Book Now', intent: 'calendar.open', targetRef: 'main_booking' },
   ],
   quote_lead: [
-    { sourcePageRole: 'home', sourceLabel: 'Get a Quote', intent: 'nav.goto_page', targetRef: 'contact' },
+    { sourcePageRole: 'home', sourceLabel: 'Get a Quote', intent: 'form.open', targetRef: 'quote_request' },
     { sourcePageRole: 'home', sourceLabel: 'View Services', intent: 'nav.goto_page', targetRef: 'services' },
-    { sourcePageRole: 'services', sourceLabel: 'Get a Quote', intent: 'nav.goto_page', targetRef: 'contact' },
+    { sourcePageRole: 'services', sourceLabel: 'Get a Quote', intent: 'form.open', targetRef: 'quote_request' },
   ],
   ecommerce: [
     { sourcePageRole: 'home', sourceLabel: 'Shop Now', intent: 'nav.goto_page', targetRef: 'shop' },
@@ -349,23 +428,23 @@ const MODEL_BINDINGS: Record<BusinessModel, PlaygroundBindingSpec[]> = {
   ],
   portfolio_creator: [
     { sourcePageRole: 'home', sourceLabel: 'View Work', intent: 'nav.goto_page', targetRef: 'gallery' },
-    { sourcePageRole: 'home', sourceLabel: 'Get in Touch', intent: 'nav.goto_page', targetRef: 'contact' },
-    { sourcePageRole: 'gallery', sourceLabel: 'Contact', intent: 'nav.goto_page', targetRef: 'contact' },
+    { sourcePageRole: 'home', sourceLabel: 'Get in Touch', intent: 'form.open', targetRef: 'project_inquiry' },
+    { sourcePageRole: 'gallery', sourceLabel: 'Contact', intent: 'form.open', targetRef: 'project_inquiry' },
   ],
   restaurant_hospitality: [
-    { sourcePageRole: 'home', sourceLabel: 'Reserve a Table', intent: 'nav.goto_page', targetRef: 'booking' },
+    { sourcePageRole: 'home', sourceLabel: 'Reserve a Table', intent: 'calendar.open', targetRef: 'reservation' },
     { sourcePageRole: 'home', sourceLabel: 'View Menu', intent: 'nav.goto_page', targetRef: 'services' },
   ],
   saas_digital: [
-    { sourcePageRole: 'home', sourceLabel: 'Get Started', intent: 'nav.goto_page', targetRef: 'pricing' },
-    { sourcePageRole: 'pricing', sourceLabel: 'Contact Sales', intent: 'nav.goto_page', targetRef: 'contact' },
+    { sourcePageRole: 'home', sourceLabel: 'Get Started', intent: 'popup.open', targetRef: 'auth-register' },
+    { sourcePageRole: 'pricing', sourceLabel: 'Contact Sales', intent: 'form.open', targetRef: 'demo_request' },
   ],
   nonprofit: [
     { sourcePageRole: 'home', sourceLabel: 'Learn More', intent: 'nav.goto_page', targetRef: 'about' },
-    { sourcePageRole: 'home', sourceLabel: 'Get Involved', intent: 'nav.goto_page', targetRef: 'contact' },
+    { sourcePageRole: 'home', sourceLabel: 'Get Involved', intent: 'form.open', targetRef: 'volunteer' },
   ],
   general: [
-    { sourcePageRole: 'home', sourceLabel: 'Contact Us', intent: 'nav.goto_page', targetRef: 'contact' },
+    { sourcePageRole: 'home', sourceLabel: 'Contact Us', intent: 'form.open', targetRef: 'contact' },
   ],
 };
 
@@ -409,7 +488,8 @@ export function resolveCapabilities(selections: WizardSelections): CapabilityPac
   if (augment.extraForms) augment.extraForms.forEach(f => formSet.add(f));
 
   // 4. Calendars
-  const calendarSet = new Set<string>(augment.calendars || []);
+  const calendarSet = new Set<string>(MODEL_CALENDARS[model] || []);
+  if (augment.calendars) augment.calendars.forEach((calendar) => calendarSet.add(calendar));
 
   // 5. Products
   const productSet = new Set<string>(augment.products || []);

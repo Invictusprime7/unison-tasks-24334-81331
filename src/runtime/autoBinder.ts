@@ -128,7 +128,7 @@ const TEXT_PATTERNS: Array<{
   },
   {
     patterns: [/^cart$/i, /^view cart$/i, /^my cart$/i, /^shopping cart$/i],
-    intent: 'cart.add', // Opens cart view
+    intent: 'cart.view',
     confidence: 0.90,
     payloadExtractor: () => ({ action: 'view' }),
   },
@@ -173,9 +173,32 @@ const TEXT_PATTERNS: Array<{
     confidence: 0.95,
   },
   {
+    patterns: [/^request (a )?proposal$/i, /^start (my )?project$/i, /^request consultation$/i, /^book consultation$/i],
+    intent: 'quote.request',
+    confidence: 0.92,
+  },
+  {
     patterns: [/^inquire$/i, /^learn more$/i, /^find out more$/i, /^more info$/i],
     intent: 'contact.submit',
     confidence: 0.70,
+  },
+  {
+    patterns: [/^talk to sales$/i, /^contact sales$/i, /^request demo$/i, /^book demo$/i],
+    intent: 'lead.capture',
+    confidence: 0.92,
+    payloadExtractor: () => ({ source: 'demo_request' }),
+  },
+  {
+    patterns: [/^volunteer$/i, /^get involved$/i, /^join our mission$/i, /^apply to volunteer$/i],
+    intent: 'lead.capture',
+    confidence: 0.9,
+    payloadExtractor: () => ({ source: 'volunteer' }),
+  },
+  {
+    patterns: [/^donate$/i, /^donate now$/i, /^support now$/i, /^give now$/i],
+    intent: 'pay.checkout',
+    confidence: 0.88,
+    payloadExtractor: () => ({ plan: 'donation' }),
   },
   {
     patterns: [/^call( us)?( now)?$/i, /^call now$/i],

@@ -40,7 +40,7 @@ const Auth = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session && !handled) {
         handled = true;
-        const dest = await resolvePostAuthDestination(session.user.id, event === "SIGNED_UP");
+        const dest = await resolvePostAuthDestination(session.user.id, (event as string) === "SIGNED_UP");
         navigate(dest);
       }
     });

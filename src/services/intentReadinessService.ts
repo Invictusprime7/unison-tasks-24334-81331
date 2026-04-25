@@ -128,7 +128,7 @@ function getResolvedBusinessField(
     case 'followUpChannel':
       return businessInfo.followUpChannel || null;
     default:
-      return (businessInfo as Record<string, unknown>)[field];
+      return (businessInfo as unknown as Record<string, unknown>)[field];
   }
 }
 

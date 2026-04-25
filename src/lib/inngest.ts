@@ -19,6 +19,7 @@ type Events = {
     data: {
       dealId: string;
       businessId: string;
+      projectId?: string;
       title: string;
       value?: number;
       contactId?: string;
@@ -29,6 +30,7 @@ type Events = {
     data: {
       dealId: string;
       businessId: string;
+      projectId?: string;
       previousStage: string;
       newStage: string;
       contactId?: string;
@@ -39,6 +41,7 @@ type Events = {
     data: {
       leadId: string;
       businessId: string;
+      projectId?: string;
       email?: string;
       phone?: string;
       source?: string;
@@ -49,6 +52,7 @@ type Events = {
     data: {
       leadId: string;
       businessId: string;
+      projectId?: string;
       previousStatus: string;
       newStatus: string;
     };
@@ -57,6 +61,7 @@ type Events = {
     data: {
       contactId: string;
       businessId: string;
+      projectId?: string;
       email?: string;
       phone?: string;
       firstName?: string;
@@ -69,6 +74,7 @@ type Events = {
     data: {
       bookingId: string;
       businessId: string;
+      projectId?: string;
       contactId?: string;
       contactEmail?: string;
       contactPhone?: string;
@@ -187,6 +193,7 @@ type Events = {
     data: {
       automationId: string;
       businessId: string;
+      projectId?: string;
       triggerId: string;
       triggerType: string;
       payload: Record<string, unknown>;

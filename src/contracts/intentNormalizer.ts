@@ -32,6 +32,7 @@ const PLAYGROUND_TO_CORE: Record<PlaygroundBindingIntent, CoreIntent | ((targetT
   'calendar.open':    'booking.create',
   'checkout.start':   'pay.checkout',
   'product.view':     'nav.goto',
+  'cart.view':        'nav.goto',
   'external.open':    'nav.external',
 };
 

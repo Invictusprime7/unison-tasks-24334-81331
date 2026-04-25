@@ -212,6 +212,7 @@ export type PlaygroundBindingIntent =
   | 'calendar.open'
   | 'checkout.start'
   | 'product.view'
+  | 'cart.view'
   | 'external.open';
 
 export interface PlaygroundBinding {

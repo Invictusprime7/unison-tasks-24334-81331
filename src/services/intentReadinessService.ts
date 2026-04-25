@@ -128,7 +128,7 @@ function getResolvedBusinessField(
     case 'followUpChannel':
       return businessInfo.followUpChannel || null;
     default:
-      return (businessInfo as Record<string, unknown>)[field];
+      return (businessInfo as unknown as Record<string, unknown>)[field];
   }
 }
 
@@ -159,7 +159,7 @@ function isSetupStepSatisfied(
     case 'notifications':
       return !isBlankValue(getResolvedBusinessField('notificationEmail', businessInfo, setupSnapshot));
     default:
-      return step.status === 'completed';
+      return (step.status as string) === 'completed';
   }
 }
 

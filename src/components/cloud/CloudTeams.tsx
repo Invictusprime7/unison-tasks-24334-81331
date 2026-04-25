@@ -461,7 +461,7 @@ export function CloudTeams({ userId, organizationId }: CloudTeamsProps) {
 
     if (error) throw error;
 
-    const nextRecord = data as BusinessRecord;
+    const nextRecord = data as unknown as BusinessRecord;
     setBusinessRecord(nextRecord);
     return nextRecord;
   };
@@ -479,7 +479,7 @@ export function CloudTeams({ userId, organizationId }: CloudTeamsProps) {
 
       if (error) throw error;
 
-      const businessData = business as BusinessRecord;
+      const businessData = business as unknown as BusinessRecord;
       const settings = parseBusinessSettings(businessData.settings);
       const storedTeam = settings.team as Partial<TeamState> | undefined;
       const authResult = await supabase.auth.getUser();

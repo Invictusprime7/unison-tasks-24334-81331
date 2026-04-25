@@ -109,6 +109,7 @@ export interface VFSPreviewHandle {
   getIframe: () => HTMLIFrameElement | null;
   /** Navigate the preview to a hash route (e.g. "/contact") */
   navigateToRoute: (route: string) => void;
+  clearSelectedElement: () => void;
 }
 
 // ============================================================================
@@ -314,6 +315,19 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const sandpackIframeRef = useRef<HTMLIFrameElement | null>(null);
   const bridgeReadyRef = useRef(false);
   const editActivationKeyRef = useRef(0);
+  const directHoverRef = useRef<HTMLElement | null>(null);
+  const directSelectedRef = useRef<HTMLElement | null>(null);
+
+  const clearDirectPreviewSelection = useCallback(() => {
+    if (directHoverRef.current) {
+      removeHighlight(directHoverRef.current);
+      directHoverRef.current = null;
+    }
+    if (directSelectedRef.current) {
+      removeHighlight(directSelectedRef.current);
+      directSelectedRef.current = null;
+    }
+  }, []);
 
   // Resolve a target window for posting bridge messages (Sandpack iframe or docker iframe)
   const getPreviewWindow = useCallback((): Window | null => {
@@ -326,6 +340,14 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     if (iframeRef.current?.contentWindow) return iframeRef.current.contentWindow;
     return null;
   }, []);
+
+  const clearSelectedElement = useCallback(() => {
+    clearDirectPreviewSelection();
+    const win = getPreviewWindow();
+    if (win) {
+      win.postMessage({ type: 'EDIT_MODE_CLEAR_SELECTION' }, '*');
+    }
+  }, [clearDirectPreviewSelection, getPreviewWindow]);
 
   // Push the current Edit-mode state into the preview iframe.
   // Retries briefly to cover the brief window before the bridge boots.
@@ -348,9 +370,106 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   // Re-push state whenever Edit/Select mode toggles
   useEffect(() => {
     pushEditModeState(enableSelection);
-  }, [enableSelection, pushEditModeState, sandpackKey]);
+    if (!enableSelection) {
+      clearSelectedElement();
+    }
+  }, [clearSelectedElement, enableSelection, pushEditModeState, sandpackKey]);
 
   // Handle messages from preview iframe (intent system + selection bridge)
+  useEffect(() => {
+    if (backend === 'sandpack') {
+      clearDirectPreviewSelection();
+      return;
+    }
+
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    let cleanup: (() => void) | null = null;
+
+    const attach = () => {
+      cleanup?.();
+      clearDirectPreviewSelection();
+      if (!enableSelection) return;
+
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!doc?.body) return;
+
+        const isUiChrome = (el: HTMLElement | null) => {
+          if (!el) return true;
+          const id = el.id || '';
+          return id.startsWith('__ut-') || el.closest('[data-ut-builder-chrome="true"]') !== null;
+        };
+
+        const clearHover = () => {
+          if (directHoverRef.current && directHoverRef.current !== directSelectedRef.current) {
+            removeHighlight(directHoverRef.current);
+          }
+          directHoverRef.current = null;
+        };
+
+        const handleMouseOver = (event: MouseEvent) => {
+          if (!enableSelection) return;
+          const target = event.target as HTMLElement | null;
+          if (!target || target === directSelectedRef.current || isUiChrome(target)) return;
+          if (directHoverRef.current && directHoverRef.current !== target) {
+            removeHighlight(directHoverRef.current);
+          }
+          directHoverRef.current = target;
+          highlightElement(target, '#22d3ee');
+        };
+
+        const handleMouseOut = (event: MouseEvent) => {
+          if (event.target === directHoverRef.current) {
+            clearHover();
+          }
+        };
+
+        const handleClick = (event: MouseEvent) => {
+          if (!enableSelection) return;
+          const target = event.target as HTMLElement | null;
+          if (!target || isUiChrome(target)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (typeof (event as Event & { stopImmediatePropagation?: () => void }).stopImmediatePropagation === 'function') {
+            (event as Event & { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.();
+          }
+
+          clearHover();
+          if (directSelectedRef.current && directSelectedRef.current !== target) {
+            removeHighlight(directSelectedRef.current);
+          }
+          directSelectedRef.current = target;
+          highlightElement(target, '#06b6d4');
+          onElementSelect?.(getSelectedElementData(target));
+        };
+
+        doc.addEventListener('mouseover', handleMouseOver, true);
+        doc.addEventListener('mouseout', handleMouseOut, true);
+        doc.addEventListener('click', handleClick, true);
+
+        cleanup = () => {
+          doc.removeEventListener('mouseover', handleMouseOver, true);
+          doc.removeEventListener('mouseout', handleMouseOut, true);
+          doc.removeEventListener('click', handleClick, true);
+          clearDirectPreviewSelection();
+        };
+      } catch {
+        cleanup = null;
+      }
+    };
+
+    attach();
+    iframe.addEventListener('load', attach);
+
+    return () => {
+      iframe.removeEventListener('load', attach);
+      cleanup?.();
+      clearDirectPreviewSelection();
+    };
+  }, [backend, clearDirectPreviewSelection, enableSelection, onElementSelect]);
+
   useEffect(() => {
     const handlePreviewMessage = (event: MessageEvent) => {
       const data = event.data;
@@ -376,6 +495,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       if (data.type === 'ELEMENT_SELECTED' && data.element) {
         // Ignore stale selections from a previous activation cycle
         if (typeof data.activationKey === 'number' && data.activationKey !== editActivationKeyRef.current) return;
+        clearDirectPreviewSelection();
         onElementSelect?.(data.element);
         return;
       }
@@ -416,7 +536,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
-  }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow]);
+  }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
   
   // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {
@@ -540,7 +660,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     openInNewTab: handleOpenInNewTab,
     getIframe: () => iframeRef.current,
     navigateToRoute: handleNavigateToRoute,
-  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab, handleNavigateToRoute]);
+    clearSelectedElement,
+  }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab, handleNavigateToRoute, clearSelectedElement]);
   
   // Docker preview URL
   const dockerUrl = useMemo(() => {

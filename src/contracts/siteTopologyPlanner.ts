@@ -20,10 +20,12 @@ import type {
   BuilderPage,
   BuilderPageType,
   RedirectRule,
+  FunnelType,
 } from '@/types/pageRegistry';
 import {
   createEmptyPageRegistry,
   createBuilderPage,
+  inferPageRoleFromType,
 } from '@/types/pageRegistry';
 import { generateUUID } from '@/utils/uuid';
 
@@ -76,6 +78,7 @@ export interface RedirectBinding {
 export interface FunnelPlan {
   funnelId: string;
   name: string;
+  funnelType?: FunnelType;
   steps: Array<{
     pageId: string;
     role: string;
@@ -260,7 +263,7 @@ function planFromProfile(
       // Tag pages with funnelId
       bookingPage.funnelId = funnelId;
       if (thankYouPage) thankYouPage.funnelId = funnelId;
-      funnels.push({ funnelId, name: 'Booking Funnel', steps });
+      funnels.push({ funnelId, name: 'Booking Funnel', funnelType: 'booking', steps });
     }
   }
 
@@ -281,7 +284,7 @@ function planFromProfile(
       shopPage.funnelId = funnelId;
       checkoutPage.funnelId = funnelId;
       if (thankYouPage) thankYouPage.funnelId = funnelId;
-      funnels.push({ funnelId, name: 'Purchase Funnel', steps });
+      funnels.push({ funnelId, name: 'Purchase Funnel', funnelType: 'checkout', steps });
     }
   }
 
@@ -301,7 +304,7 @@ function planFromProfile(
       }
       contactPage.funnelId = funnelId;
       if (thankYouPage) thankYouPage.funnelId = funnelId;
-      funnels.push({ funnelId, name: 'Lead Capture Funnel', steps });
+      funnels.push({ funnelId, name: 'Lead Capture Funnel', funnelType: 'lead', steps });
     }
   }
 
@@ -477,6 +480,11 @@ export function populateRegistryFromTopology(plan: GeneratedSitePlan): PageRegis
         createdBy: node.generatedBy === 'wizard' ? 'template' : node.generatedBy === 'ai' ? 'ai' : 'manual',
         seo: node.seo,
         redirectRules: pageRedirects.length > 0 ? pageRedirects : undefined,
+        pageRole: node.role === 'services' ? 'service' : inferPageRoleFromType(pageType),
+        routeState: 'generated',
+        publishedStatus: 'unpublished',
+        funnelId: node.funnelId || undefined,
+        funnelIds: node.funnelId ? [node.funnelId] : [],
       }
     );
 
@@ -488,6 +496,7 @@ export function populateRegistryFromTopology(plan: GeneratedSitePlan): PageRegis
     registry.funnels[funnelPlan.funnelId] = {
       funnelId: funnelPlan.funnelId,
       name: funnelPlan.name,
+      funnelType: funnelPlan.funnelType || 'custom',
       steps: funnelPlan.steps.map(s => ({
         stepId: generateUUID(),
         pageId: s.pageId,
@@ -500,6 +509,18 @@ export function populateRegistryFromTopology(plan: GeneratedSitePlan): PageRegis
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+  }
+
+  for (const funnel of Object.values(registry.funnels)) {
+    for (const step of funnel.steps) {
+      const page = registry.pages[step.pageId];
+      if (!page) continue;
+      const funnelIds = new Set(page.funnelIds || []);
+      funnelIds.add(funnel.funnelId);
+      page.funnelIds = Array.from(funnelIds);
+      page.funnelId = page.funnelId || funnel.funnelId;
+      page.funnelRole = step.role;
+    }
   }
 
   registry.version = 1;

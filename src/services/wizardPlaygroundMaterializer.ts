@@ -21,6 +21,7 @@ import type {
   PlaygroundBindingSpecV2,
 } from '@/types/playground';
 import type { PageRegistry } from '@/types/pageRegistry';
+import { inferPageRoleFromType } from '@/types/pageRegistry';
 import type { CreatorFormField } from '@/types/creatorData';
 import { createEmptyCreatorData } from '@/types/creatorData';
 import { planSiteTopology, populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
@@ -685,12 +686,21 @@ function ensureRequiredPages(
       title: defaults.title,
       path: defaults.route,
       pageType: defaults.pageType as any,
+      pageRole: role === 'services' ? 'service' : role === 'thankyou' || role === 'booking_confirmation' ? 'thank_you' : inferPageRoleFromType(defaults.pageType as any),
+      routeState: 'generated',
+      publishedStatus: 'unpublished',
+      setupStatus: 'not_started',
+      readinessSummary: {
+        preview: 'unknown',
+        publish: 'unknown',
+      },
       filePath: defaults.filePath,
       source: { kind: 'react_tsx', content: '', contentHash: '' },
       output: {},
       showInNav: defaults.showInNav,
       navOrder: navOrder + (addedCount * 10),
       isHome: false,
+      funnelIds: [],
       createdBy: 'template' as const,
       seo: {
         title: `${defaults.title} | ${businessName}`,

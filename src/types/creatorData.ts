@@ -12,13 +12,24 @@ import type { AssetRef, IntentId, PageId } from "./siteBundle";
 export interface CreatorProduct {
   productId: string;
   name: string;
+  slug?: string;
+  sku?: string;
   description?: string;
   price: number;
+  compareAtPrice?: number;
+  priceSuffix?: string;
   currency: string;
   imageAssetId?: string;
   images?: AssetRef[];
   category?: string;
   tags?: string[];
+  featured?: boolean;
+  visibility?: "public" | "hidden" | "featured";
+  billingType?: "one_time" | "subscription";
+  billingInterval?: "week" | "month" | "quarter" | "year";
+  ctaLabel?: string;
+  checkoutLabel?: string;
+  fulfillmentType?: "digital" | "physical" | "service" | "custom";
   variants?: Array<{ label: string; price?: number; sku?: string }>;
   inStock: boolean;
   sortOrder: number;
@@ -27,12 +38,19 @@ export interface CreatorProduct {
 export interface CreatorService {
   serviceId: string;
   name: string;
+  slug?: string;
+  serviceCode?: string;
   description?: string;
   price?: number;
   duration?: number; // minutes
   currency?: string;
   imageAssetId?: string;
   category?: string;
+  locationLabel?: string;
+  availabilitySummary?: string;
+  ctaLabel?: string;
+  featured?: boolean;
+  visibility?: "public" | "hidden" | "featured";
   bookable: boolean;
   sortOrder: number;
 }
@@ -97,6 +115,8 @@ export interface CreatorFormField {
   label: string;
   type: FormFieldType;
   placeholder?: string;
+  helpText?: string;
+  width?: "full" | "half";
   required: boolean;
   options?: string[]; // for select
   sortOrder: number;
@@ -108,6 +128,11 @@ export interface CreatorForm {
   fields: CreatorFormField[];
   submitLabel: string;
   successMessage: string;
+  themeName?: string;
+  destinationType?: "crm" | "email" | "webhook" | "calendar" | "custom";
+  destinationLabel?: string;
+  enablePayments?: boolean;
+  paymentProductId?: string;
   /** Intent to fire on submit */
   submitIntentId?: IntentId;
   /** Where to redirect after submit */
@@ -156,6 +181,16 @@ export interface CreatorBusinessInfo {
   socialLinks?: Record<string, string>;
   logoAssetId?: string;
   faviconAssetId?: string;
+  brandProfile?: {
+    primaryColor?: string;
+    secondaryColor?: string;
+    accentColor?: string;
+    surfaceColor?: string;
+    headingFont?: string;
+    bodyFont?: string;
+    buttonRadius?: string;
+  };
+  customValues?: Record<string, string>;
 }
 
 // ============================================================================

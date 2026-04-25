@@ -75,6 +75,7 @@ export interface ElementOverride {
   styles: Record<string, string>;
   textContent?: string;
   imageSrc?: string;
+  attributes?: Record<string, string>;
 }
 
 export interface ThemePreset {

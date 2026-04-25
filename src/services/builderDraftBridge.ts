@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 
 interface FindBuilderDraftForProjectInput {
-  projectId: string;
+  projectId?: string | null;
   projectName?: string | null;
   businessId?: string | null;
   userId?: string | null;
@@ -32,25 +32,27 @@ export async function findBuilderDraftIdForProject({
 
   const rows = data || [];
 
-  const exactMatch = rows.find((row) => {
-    const metadata = (row.metadata || {}) as Record<string, unknown>;
-    const linkedProjectIds = [
-      metadata.projectId,
-      metadata.project_id,
-      metadata.linkedProjectId,
-    ]
-      .map((value) => (typeof value === 'string' ? value : null))
-      .filter((value): value is string => Boolean(value));
+  if (projectId) {
+    const exactMatch = rows.find((row) => {
+      const metadata = (row.metadata || {}) as Record<string, unknown>;
+      const linkedProjectIds = [
+        metadata.projectId,
+        metadata.project_id,
+        metadata.linkedProjectId,
+      ]
+        .map((value) => (typeof value === 'string' ? value : null))
+        .filter((value): value is string => Boolean(value));
 
-    return linkedProjectIds.includes(projectId);
-  });
+      return linkedProjectIds.includes(projectId);
+    });
 
-  if (exactMatch) {
-    return exactMatch.id;
+    if (exactMatch) {
+      return exactMatch.id;
+    }
   }
 
   const normalizedProjectName = (projectName || '').trim().toLowerCase();
-  if (!normalizedProjectName) {
+  if (!normalizedProjectName || !businessId) {
     return null;
   }
 

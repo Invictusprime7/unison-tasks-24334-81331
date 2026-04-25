@@ -29,6 +29,48 @@ export type BuilderPageType =
   | "legal"
   | "custom";
 
+export type BuilderPageRole =
+  | "home"
+  | "landing"
+  | "service"
+  | "contact"
+  | "checkout"
+  | "thank_you"
+  | "upsell"
+  | "booking"
+  | "shop"
+  | "gallery"
+  | "faq"
+  | "blog"
+  | "about"
+  | "pricing"
+  | "legal"
+  | "custom";
+
+export type BuilderRouteState =
+  | "draft"
+  | "generated"
+  | "rendering"
+  | "preview_ready"
+  | "preview_error"
+  | "published";
+
+export type BuilderPublishedStatus =
+  | "unpublished"
+  | "published"
+  | "stale";
+
+export type BuilderSetupStatus =
+  | "not_started"
+  | "partial"
+  | "ready";
+
+export type BuilderReadinessStatus =
+  | "unknown"
+  | "ready"
+  | "partial"
+  | "blocked";
+
 export type FunnelRole =
   | "entry"
   | "offer"
@@ -37,6 +79,13 @@ export type FunnelRole =
   | "downsell"
   | "confirmation"
   | "thankyou";
+
+export type FunnelType =
+  | "lead"
+  | "booking"
+  | "checkout"
+  | "application"
+  | "custom";
 
 export type RedirectCondition =
   | "afterSubmit"
@@ -112,11 +161,27 @@ export interface BuilderPage {
   /** Stable VFS file path (e.g. /src/pages/Contact.tsx) */
   filePath?: string;
   pageType: BuilderPageType;
+  /** Canonical operational role used by the Playground control plane */
+  pageRole?: BuilderPageRole;
 
   /** Funnel role (optional — only set if page is part of a funnel) */
   funnelRole?: FunnelRole;
   /** Which funnel this page belongs to */
   funnelId?: string;
+  /** All funnel memberships for this page */
+  funnelIds?: string[];
+
+  /** Route lifecycle in preview/publish flows */
+  routeState?: BuilderRouteState;
+  previewLastSyncedAt?: string;
+  previewThumbnailUrl?: string;
+  previewError?: string;
+  publishedStatus?: BuilderPublishedStatus;
+  setupStatus?: BuilderSetupStatus;
+  readinessSummary?: {
+    preview: BuilderReadinessStatus;
+    publish: BuilderReadinessStatus;
+  };
 
   /** Source code (the editable/AI-generated source of truth) */
   source: PageSource;
@@ -171,6 +236,7 @@ export interface FunnelGraph {
   funnelId: string;
   name: string;
   description?: string;
+  funnelType?: FunnelType;
   /** Ordered steps */
   steps: FunnelStep[];
   /** Entry step ID */
@@ -222,6 +288,14 @@ export function createBuilderPage(
     title,
     path,
     pageType,
+    pageRole: inferPageRoleFromType(pageType),
+    routeState: "draft",
+    publishedStatus: "unpublished",
+    setupStatus: "not_started",
+    readinessSummary: {
+      preview: "unknown",
+      publish: "unknown",
+    },
     source: { kind: "react_tsx", content: "", contentHash: "" },
     output: {},
     showInNav: true,
@@ -237,18 +311,57 @@ export function createBuilderPage(
 export function createFunnelGraph(
   funnelId: string,
   name: string,
-  steps: FunnelStep[] = []
+  steps: FunnelStep[] = [],
+  options?: Partial<FunnelGraph>
 ): FunnelGraph {
   const now = new Date().toISOString();
   return {
     funnelId,
     name,
+    funnelType: "custom",
     steps,
     entryStepId: steps[0]?.stepId || "",
     isActive: true,
     createdAt: now,
     updatedAt: now,
+    ...options,
   };
+}
+
+export function inferPageRoleFromType(pageType: BuilderPageType): BuilderPageRole {
+  switch (pageType) {
+    case "home":
+      return "home";
+    case "landing":
+      return "landing";
+    case "contact":
+      return "contact";
+    case "checkout":
+      return "checkout";
+    case "thankyou":
+      return "thank_you";
+    case "booking":
+      return "booking";
+    case "shop":
+    case "product":
+    case "cart":
+      return "shop";
+    case "gallery":
+      return "gallery";
+    case "faq":
+      return "faq";
+    case "blog":
+      return "blog";
+    case "about":
+      return "about";
+    case "pricing":
+      return "pricing";
+    case "legal":
+      return "legal";
+    case "custom":
+    default:
+      return "custom";
+  }
 }
 
 /**

@@ -480,6 +480,12 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
     if (dataKey) return '[data-ut-key="' + cssEscape(dataKey) + '"]';
     const dataBinding = el.getAttribute('data-ut-binding-id');
     if (dataBinding) return '[data-ut-binding-id="' + cssEscape(dataBinding) + '"]';
+    const bindingKey = el.getAttribute('data-ut-binding-key') || el.getAttribute('data-element-key');
+    if (bindingKey) return '[data-ut-binding-key="' + cssEscape(bindingKey) + '"], [data-element-key="' + cssEscape(bindingKey) + '"]';
+    const componentInstanceId = el.getAttribute('data-ut-component-instance-id');
+    if (componentInstanceId) return '[data-ut-component-instance-id="' + cssEscape(componentInstanceId) + '"]';
+    const componentSlug = el.getAttribute('data-component');
+    if (componentSlug) return '[data-component="' + cssEscape(componentSlug) + '"]';
     const parts: string[] = [];
     let node: Element | null = el;
     let depth = 0;

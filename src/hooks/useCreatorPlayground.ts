@@ -179,6 +179,14 @@ export function useCreatorPlayground(
       title: `${existing.title} (Copy)`,
       path: `${existing.path}-copy`,
       isHome: false,
+      funnelId: undefined,
+      funnelIds: [],
+      funnelRole: undefined,
+      routeState: "draft",
+      publishedStatus: "unpublished",
+      previewLastSyncedAt: undefined,
+      previewThumbnailUrl: undefined,
+      previewError: undefined,
       navOrder: Object.keys(pageRegistry.pages).length,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -230,7 +238,14 @@ export function useCreatorPlayground(
       const pages = { ...prev.pages };
       steps.forEach(step => {
         if (pages[step.pageId]) {
-          pages[step.pageId] = { ...pages[step.pageId], funnelId, funnelRole: step.role };
+          const funnelIds = new Set(pages[step.pageId].funnelIds || []);
+          funnelIds.add(funnelId);
+          pages[step.pageId] = {
+            ...pages[step.pageId],
+            funnelId,
+            funnelIds: Array.from(funnelIds),
+            funnelRole: step.role,
+          };
         }
       });
       return {
@@ -266,8 +281,14 @@ export function useCreatorPlayground(
       // Clear funnel references from pages
       const pages = { ...prev.pages };
       for (const [pid, page] of Object.entries(pages)) {
-        if (page.funnelId === funnelId) {
-          pages[pid] = { ...page, funnelId: undefined, funnelRole: undefined };
+        if (page.funnelId === funnelId || page.funnelIds?.includes(funnelId)) {
+          const nextFunnelIds = (page.funnelIds || []).filter((id) => id !== funnelId);
+          pages[pid] = {
+            ...page,
+            funnelId: nextFunnelIds[0],
+            funnelIds: nextFunnelIds,
+            funnelRole: page.funnelId === funnelId ? undefined : page.funnelRole,
+          };
         }
       }
       return { ...prev, pages, funnels: rest, version: prev.version + 1 };
@@ -298,7 +319,14 @@ export function useCreatorPlayground(
 
       const pages = { ...prev.pages };
       if (pages[pageId]) {
-        pages[pageId] = { ...pages[pageId], funnelId, funnelRole: role };
+        const funnelIds = new Set(pages[pageId].funnelIds || []);
+        funnelIds.add(funnelId);
+        pages[pageId] = {
+          ...pages[pageId],
+          funnelId,
+          funnelIds: Array.from(funnelIds),
+          funnelRole: role,
+        };
       }
 
       return {
@@ -333,7 +361,13 @@ export function useCreatorPlayground(
 
       const pages = { ...prev.pages };
       if (pages[removedStep.pageId]) {
-        pages[removedStep.pageId] = { ...pages[removedStep.pageId], funnelId: undefined, funnelRole: undefined };
+        const nextFunnelIds = (pages[removedStep.pageId].funnelIds || []).filter((id) => id !== funnelId);
+        pages[removedStep.pageId] = {
+          ...pages[removedStep.pageId],
+          funnelId: nextFunnelIds[0],
+          funnelIds: nextFunnelIds,
+          funnelRole: undefined,
+        };
       }
 
       return {

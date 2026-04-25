@@ -76,6 +76,21 @@ export const generateSelector = (element: HTMLElement): string => {
       return `#${element.id}`;
     }
 
+    const dataKey = element.getAttribute('data-ut-key');
+    if (dataKey) return `[data-ut-key="${dataKey}"]`;
+
+    const bindingId = element.getAttribute('data-ut-binding-id');
+    if (bindingId) return `[data-ut-binding-id="${bindingId}"]`;
+
+    const bindingKey = element.getAttribute('data-ut-binding-key') || element.getAttribute('data-element-key');
+    if (bindingKey) return `[data-ut-binding-key="${bindingKey}"]`;
+
+    const componentInstanceId = element.getAttribute('data-ut-component-instance-id');
+    if (componentInstanceId) return `[data-ut-component-instance-id="${componentInstanceId}"]`;
+
+    const componentSlug = element.getAttribute('data-component');
+    if (componentSlug) return `[data-component="${componentSlug}"]`;
+
     const path: string[] = [];
     let current: HTMLElement | null = element;
     // Use element's own document body (important for iframe elements)

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
 import { useSetupWizard, type SetupStepId } from "@/hooks/useSetupWizard";
@@ -18,6 +19,7 @@ import type { BuilderPageType, FunnelRole, PageRegistry } from "@/types/pageRegi
 import type {
   PlaygroundBinding,
   PlaygroundCalendar,
+  PlaygroundControlPlaneModel,
   PlaygroundIntentDependency,
   PlaygroundIntentReadinessReport,
   PlaygroundPopup,
@@ -27,8 +29,7 @@ import type {
   PlaygroundValidation,
   WizardSelections,
 } from "@/types/playground";
-import { validatePlayground, getValidationSummary } from "@/services/playgroundValidationService";
-import { buildIntentReadinessReport } from "@/services/intentReadinessService";
+import { resolvePlaygroundControlPlane } from "@/services/playgroundControlPlaneResolver";
 import {
   CANONICAL_COMPONENT_DEFINITIONS,
   createCanonicalComponentInstance,
@@ -94,6 +95,7 @@ type Section =
   | "components"
   | "calendars"
   | "products"
+  | "customization"
   | "popups"
   | "services"
   | "business";
@@ -109,6 +111,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highligh
   { id: "components", label: "Components", icon: Blocks },
   { id: "calendars", label: "Calendars", icon: Calendar },
   { id: "products", label: "Products", icon: ShoppingBag },
+  { id: "customization", label: "Customization", icon: Star },
   { id: "popups", label: "Popups", icon: MessageSquare },
   { id: "services", label: "Services", icon: Briefcase },
   { id: "business", label: "Business Setup", icon: Settings },
@@ -228,12 +231,10 @@ export function CreatorPlaygroundModal({
     popups,
   }), [bindings, calendars, playground.creatorData, playground.pageRegistry, popups]);
 
-  const validations = useMemo(() => validatePlayground(playgroundState, vfsFiles), [playgroundState, vfsFiles]);
-  const validationSummary = useMemo(() => getValidationSummary(validations), [validations]);
-  const readinessReport = useMemo<PlaygroundIntentReadinessReport>(() => buildIntentReadinessReport(
-    playgroundState,
-    validations,
-    {
+  const controlPlane = useMemo<PlaygroundControlPlaneModel>(() => resolvePlaygroundControlPlane({
+    state: playgroundState,
+    vfsFiles,
+    setupSnapshot: {
       ...setupSnapshot,
       setupSteps: setupWizard.steps.map((step) => ({
         id: step.id,
@@ -241,7 +242,11 @@ export function CreatorPlaygroundModal({
         config: step.config,
       })),
     },
-  ), [playgroundState, setupSnapshot, setupWizard.steps, validations]);
+  }), [playgroundState, setupSnapshot, setupWizard.steps, vfsFiles]);
+
+  const validations = controlPlane.validations;
+  const validationSummary = controlPlane.validationSummary;
+  const readinessReport = controlPlane.readinessReport;
 
   useEffect(() => {
     if (open && initialSection) setActiveSection(initialSection);
@@ -329,12 +334,12 @@ export function CreatorPlaygroundModal({
                     {setupWizard.completedCount}/{setupWizard.totalCount}
                   </Badge>
                 )}
-                {id === "pages" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{playground.getAllPages().length}</Badge>}
-                {id === "funnels" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{Object.keys(playground.pageRegistry.funnels).length}</Badge>}
+                {id === "pages" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{controlPlane.overview.totalPages}</Badge>}
+                {id === "funnels" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{controlPlane.overview.totalFunnels}</Badge>}
                 {id === "products" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{Object.keys(playground.creatorData.products).length}</Badge>}
                 {id === "components" && <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{Object.keys(playground.creatorData.componentInstances).length}</Badge>}
-                {id === "intent_registry" && Object.keys(readinessReport.bindings).length > 0 && (
-                  <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{Object.keys(readinessReport.bindings).length}</Badge>
+                {id === "intent_registry" && controlPlane.intentRegistry.length > 0 && (
+                  <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-border/40">{controlPlane.intentRegistry.length}</Badge>
                 )}
                 {id === "readiness" && readinessReport.summary.blocked > 0 && (
                   <Badge variant="outline" className="ml-auto text-[8px] h-4 px-1 border-red-500/40 text-red-400 bg-red-500/10">{readinessReport.summary.blocked}</Badge>
@@ -353,16 +358,15 @@ export function CreatorPlaygroundModal({
                 {activeSection === "overview" && (
                   <OverviewSection
                     playground={playground}
-                    bindings={readinessReport.bindings}
-                    readinessReport={readinessReport}
+                    controlPlane={controlPlane}
                     wizardSelections={wizardSelections}
-                    validationSummary={validationSummary}
                     onNavigate={setActiveSection}
                   />
                 )}
-                {activeSection === "pages" && <PagesSection playground={playground} onPageSelect={onPageSelect} onPageAdd={onPageAdd} onPageRemove={onPageRemove} />}
-                {activeSection === "funnels" && <FunnelsSection playground={playground} onFunnelCreate={onFunnelCreate} />}
+                {activeSection === "pages" && <PagesSection playground={playground} controlPlane={controlPlane} onPageSelect={onPageSelect} onPageAdd={onPageAdd} onPageRemove={onPageRemove} />}
+                {activeSection === "funnels" && <FunnelsSection playground={playground} controlPlane={controlPlane} onFunnelCreate={onFunnelCreate} />}
                 {activeSection === "products" && <ProductsSection playground={playground} />}
+                {activeSection === "customization" && <CustomizationSection playground={playground} />}
                 {activeSection === "services" && <ServicesSection playground={playground} />}
                 {activeSection === "forms" && <FormsSection playground={playground} />}
                 {activeSection === "components" && (
@@ -419,31 +423,27 @@ export function CreatorPlaygroundModal({
 
 function OverviewSection({
   playground,
-  bindings,
-  readinessReport,
+  controlPlane,
   wizardSelections,
-  validationSummary,
   onNavigate,
 }: {
   playground: UseCreatorPlaygroundReturn;
-  bindings: Record<string, PlaygroundBinding>;
-  readinessReport: PlaygroundIntentReadinessReport;
+  controlPlane: PlaygroundControlPlaneModel;
   wizardSelections?: WizardSelections | null;
-  validationSummary: ReturnType<typeof getValidationSummary>;
   onNavigate: (section: Section) => void;
 }) {
   const activePackLabel = formatIntentPackLabel(wizardSelections);
-  const pages = playground.getAllPages();
-  const funnels = Object.values(playground.pageRegistry.funnels);
+  const pages = controlPlane.pages;
+  const funnels = controlPlane.funnels;
   const products = Object.values(playground.creatorData.products);
   const forms = Object.values(playground.creatorData.forms);
   const components = Object.values(playground.creatorData.componentInstances);
 
   const cards = [
-    { section: "intent_registry" as Section, label: "Total Intents", count: readinessReport.summary.totalIntents, icon: Link2, color: "text-emerald-400", bg: "bg-emerald-500/10" },
-    { section: "readiness" as Section, label: "Hardened", count: readinessReport.summary.hardened, icon: ShieldCheck, color: "text-cyan-400", bg: "bg-cyan-500/10" },
-    { section: "readiness" as Section, label: "Preview Only", count: readinessReport.summary.previewOnly, icon: Eye, color: "text-amber-400", bg: "bg-amber-500/10" },
-    { section: "readiness" as Section, label: "Blocked", count: readinessReport.summary.blocked, icon: AlertTriangle, color: "text-red-400", bg: "bg-red-500/10" },
+    { section: "intent_registry" as Section, label: "Total Intents", count: controlPlane.overview.totalIntents, icon: Link2, color: "text-emerald-400", bg: "bg-emerald-500/10" },
+    { section: "readiness" as Section, label: "Ready Pages", count: controlPlane.overview.publishReadyPages, icon: ShieldCheck, color: "text-cyan-400", bg: "bg-cyan-500/10" },
+    { section: "readiness" as Section, label: "Blocked Pages", count: controlPlane.overview.blockedPages, icon: Eye, color: "text-amber-400", bg: "bg-amber-500/10" },
+    { section: "launch" as Section, label: "Launch Tasks", count: controlPlane.overview.blockedLaunchTasks, icon: AlertTriangle, color: "text-red-400", bg: "bg-red-500/10" },
   ];
 
   return (
@@ -477,24 +477,24 @@ function OverviewSection({
             {activePackLabel && <Badge variant="outline" className="border-emerald-500/30 text-emerald-400">{activePackLabel}</Badge>}
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-            <QuickCountCard label="Pages" count={pages.length} onClick={() => onNavigate("pages")} />
-            <QuickCountCard label="Funnels" count={funnels.length} onClick={() => onNavigate("funnels")} />
+            <QuickCountCard label="Pages" count={controlPlane.overview.totalPages} onClick={() => onNavigate("pages")} />
+            <QuickCountCard label="Funnels" count={controlPlane.overview.totalFunnels} onClick={() => onNavigate("funnels")} />
             <QuickCountCard label="Forms" count={forms.length} onClick={() => onNavigate("forms")} />
             <QuickCountCard label="Components" count={components.length} onClick={() => onNavigate("components")} />
             <QuickCountCard label="Products" count={products.length} onClick={() => onNavigate("products")} />
           </div>
           <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[11px] text-muted-foreground">
-            Active registry: {Object.keys(bindings).length} intent{Object.keys(bindings).length === 1 ? "" : "s"} mapped into the canvas and business graph.
+            Active registry: {controlPlane.intentRegistry.length} intent{controlPlane.intentRegistry.length === 1 ? "" : "s"} mapped into the canvas and business graph.
           </div>
         </div>
 
         <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
-          <h3 className="text-sm font-semibold text-foreground">Readiness Snapshot</h3>
+          <h3 className="text-sm font-semibold text-foreground">Control Plane Snapshot</h3>
           <div className="mt-3 space-y-2 text-xs">
-            <SummaryRow label="Preview" value={`${readinessReport.summary.previewReady} ready / ${readinessReport.summary.previewPartial} partial / ${readinessReport.summary.previewBlocked} blocked`} />
-            <SummaryRow label="Publish" value={`${readinessReport.summary.publishReady} ready / ${readinessReport.summary.publishPartial} partial / ${readinessReport.summary.publishBlocked} blocked`} />
-            <SummaryRow label="Components" value={`${readinessReport.summary.componentPublishReady} ready / ${readinessReport.summary.componentPublishBlocked} blocked`} />
-            <SummaryRow label="Structural Validation" value={`${validationSummary.errors} errors / ${validationSummary.warnings} warnings`} />
+            <SummaryRow label="Pages" value={`${controlPlane.overview.publishReadyPages} publish-ready / ${controlPlane.overview.blockedPages} blocked`} />
+            <SummaryRow label="Funnels" value={`${controlPlane.overview.totalFunnels - controlPlane.overview.blockedFunnels} healthy / ${controlPlane.overview.blockedFunnels} blocked`} />
+            <SummaryRow label="Launch Tasks" value={`${controlPlane.launchTasks.filter((task) => task.category === "required_for_publish").length} required / ${controlPlane.launchTasks.length} total`} />
+            <SummaryRow label="Structural Validation" value={`${controlPlane.validationSummary.errors} errors / ${controlPlane.validationSummary.warnings} warnings`} />
           </div>
           <Button variant="outline" size="sm" className="mt-4 h-8 text-xs" onClick={() => onNavigate("readiness")}>Open Readiness</Button>
         </div>
@@ -523,11 +523,13 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 function PagesSection({
   playground,
+  controlPlane,
   onPageSelect,
   onPageAdd,
   onPageRemove,
 }: {
   playground: UseCreatorPlaygroundReturn;
+  controlPlane: PlaygroundControlPlaneModel;
   onPageSelect?: (pageId: string) => void;
   onPageAdd?: (pageId: string, title: string, path: string, pageType: BuilderPageType) => void;
   onPageRemove?: (pageId: string, path: string) => void;
@@ -535,7 +537,7 @@ function PagesSection({
   const [newTitle, setNewTitle] = useState("");
   const [newPath, setNewPath] = useState("");
   const [newType, setNewType] = useState<BuilderPageType>("custom");
-  const pages = playground.getAllPages().sort((a, b) => a.navOrder - b.navOrder);
+  const pages = controlPlane.pages;
 
   const handleAdd = () => {
     if (!newTitle.trim()) return;
@@ -555,6 +557,13 @@ function PagesSection({
         <Badge variant="outline" className="text-[10px]">{pages.length} pages</Badge>
       </div>
 
+      <div className="grid gap-3 md:grid-cols-4">
+        <SummaryCard title="Preview Ready" value={`${pages.filter((page) => page.previewStatus === "ready").length}`} />
+        <SummaryCard title="Publish Ready" value={`${pages.filter((page) => page.publishStatus === "ready").length}`} />
+        <SummaryCard title="Blocked" value={`${pages.filter((page) => page.publishStatus === "blocked").length}`} />
+        <SummaryCard title="In Funnels" value={`${pages.filter((page) => page.funnelIds.length > 0).length}`} />
+      </div>
+
       <div className="flex gap-2 p-3 rounded-lg border border-border/30 bg-muted/10">
         <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Page title..." className="h-8 text-xs flex-1 bg-background/50" />
         <Input value={newPath} onChange={(e) => setNewPath(e.target.value)} placeholder="/path (auto)" className="h-8 text-xs w-32 bg-background/50" />
@@ -567,18 +576,61 @@ function PagesSection({
 
       <div className="space-y-1">
         {pages.map((page) => (
-          <div key={page.pageId} className="group flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-muted/30 cursor-pointer border border-transparent hover:border-border/30" onClick={() => onPageSelect?.(page.pageId)}>
-            <GripVertical className="h-3.5 w-3.5 text-muted-foreground/30 flex-shrink-0" />
+          <div key={page.pageId} className="group flex items-stretch gap-3 px-3 py-3 rounded-xl hover:bg-muted/30 cursor-pointer border border-border/20" onClick={() => onPageSelect?.(page.pageId)}>
+            <div className="flex w-20 flex-shrink-0 items-center justify-center rounded-lg border border-border/20 bg-background/40">
+              {page.previewThumbnailUrl ? (
+                <img src={page.previewThumbnailUrl} alt={page.title} className="h-14 w-full rounded-lg object-cover" />
+              ) : (
+                <div className="px-2 text-center text-[10px] text-muted-foreground">
+                  {page.routeState === "preview_ready" || page.routeState === "published" ? "Preview ready" : "No preview"}
+                </div>
+              )}
+            </div>
+            <GripVertical className="mt-1 h-3.5 w-3.5 text-muted-foreground/30 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-sm font-medium truncate">{page.title}</span>
                 {page.isHome && <Home className="h-3 w-3 text-amber-400 flex-shrink-0" />}
+                <Badge variant="outline" className="text-[9px] h-5 px-1.5 uppercase">{page.routeState.replace(/_/g, " ")}</Badge>
+                <Badge variant="outline" className="text-[9px] h-5 px-1.5">{page.pageRole}</Badge>
+                {page.funnelRoles.map((role) => (
+                  <Badge key={`${page.pageId}-${role}`} variant="secondary" className="text-[9px] h-5 px-1.5">
+                    {role}
+                  </Badge>
+                ))}
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
+              <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className="text-[10px] text-muted-foreground font-mono truncate">{page.path}</span>
                 <Badge variant="outline" className="text-[9px] h-4 px-1.5">{page.pageType}</Badge>
-                {page.funnelRole && <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{page.funnelRole}</Badge>}
+                <Badge variant="outline" className={cn("text-[9px] h-4 px-1.5", getReadinessBadgeClass(page.previewStatus))}>Preview {page.previewStatus}</Badge>
+                <Badge variant="outline" className={cn("text-[9px] h-4 px-1.5", getReadinessBadgeClass(page.publishStatus))}>Publish {page.publishStatus}</Badge>
+                <Badge variant="outline" className="text-[9px] h-4 px-1.5">{page.boundIntentCount} intent{page.boundIntentCount === 1 ? "" : "s"}</Badge>
+                {!page.showInNav && <Badge variant="outline" className="text-[9px] h-4 px-1.5">hidden</Badge>}
               </div>
+              {(page.funnelNames.length > 0 || page.routeIssues.length > 0 || page.previewError) && (
+                <div className="mt-2 space-y-1">
+                  {page.funnelNames.length > 0 && (
+                    <div className="text-[10px] text-muted-foreground">
+                      Funnels: <span className="text-foreground">{page.funnelNames.join(", ")}</span>
+                    </div>
+                  )}
+                  {page.routeIssues.length > 0 && (
+                    <div className="text-[10px] text-amber-400">
+                      Route health: {page.routeIssues[0]?.message}
+                    </div>
+                  )}
+                  {page.previewError && (
+                    <div className="text-[10px] text-red-400">
+                      Preview error: {page.previewError}
+                    </div>
+                  )}
+                </div>
+              )}
+              {page.previewLastSyncedAt && (
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  Last synced: {new Date(page.previewLastSyncedAt).toLocaleString()}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(event) => { event.stopPropagation(); playground.updatePage(page.pageId, { showInNav: !page.showInNav }); }}>
@@ -594,10 +646,18 @@ function PagesSection({
   );
 }
 
-function FunnelsSection({ playground, onFunnelCreate }: { playground: UseCreatorPlaygroundReturn; onFunnelCreate?: CreatorPlaygroundModalProps["onFunnelCreate"] }) {
+function FunnelsSection({
+  playground,
+  controlPlane,
+  onFunnelCreate,
+}: {
+  playground: UseCreatorPlaygroundReturn;
+  controlPlane: PlaygroundControlPlaneModel;
+  onFunnelCreate?: CreatorPlaygroundModalProps["onFunnelCreate"];
+}) {
   const [newName, setNewName] = useState("");
   const [expandedFunnel, setExpandedFunnel] = useState<string | null>(null);
-  const funnels = Object.values(playground.pageRegistry.funnels);
+  const funnels = controlPlane.funnels;
 
   const handleAdd = () => {
     if (!newName.trim()) return;
@@ -609,6 +669,18 @@ function FunnelsSection({ playground, onFunnelCreate }: { playground: UseCreator
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-foreground">Funnels</h2>
+        <Badge variant="outline" className="text-[10px]">{funnels.length} funnels</Badge>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <SummaryCard title="Healthy" value={`${funnels.filter((funnel) => funnel.publishStatus === "ready").length}`} />
+        <SummaryCard title="Blocked" value={`${funnels.filter((funnel) => funnel.publishStatus === "blocked").length}`} />
+        <SummaryCard title="Booking" value={`${funnels.filter((funnel) => funnel.funnelType === "booking").length}`} />
+        <SummaryCard title="Checkout" value={`${funnels.filter((funnel) => funnel.funnelType === "checkout").length}`} />
+      </div>
+
       <div className="flex gap-2 p-3 rounded-lg border border-border/30 bg-muted/10">
         <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Funnel name..." className="h-8 text-xs flex-1 bg-background/50" />
         <Button size="sm" onClick={handleAdd} disabled={!newName.trim()} className="h-8 px-3"><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>
@@ -619,7 +691,18 @@ function FunnelsSection({ playground, onFunnelCreate }: { playground: UseCreator
           <div key={funnel.funnelId} className="rounded-xl border border-border/30 overflow-hidden">
             <div className="flex items-center gap-2.5 px-4 py-3 bg-muted/20 cursor-pointer hover:bg-muted/30" onClick={() => setExpandedFunnel(expandedFunnel === funnel.funnelId ? null : funnel.funnelId)}>
               <GitBranch className="h-4 w-4 text-fuchsia-400 flex-shrink-0" />
-              <span className="text-sm font-medium flex-1">{funnel.name}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{funnel.name}</span>
+                  <Badge variant="outline" className="text-[9px] h-4 px-1.5">{funnel.funnelType}</Badge>
+                  <Badge variant="outline" className={cn("text-[9px] h-4 px-1.5", getReadinessBadgeClass(funnel.publishStatus))}>Publish {funnel.publishStatus}</Badge>
+                </div>
+                {funnel.missingDependencies.length > 0 && (
+                  <div className="mt-1 text-[10px] text-muted-foreground">
+                    Needs attention: {funnel.missingDependencies.join(", ")}
+                  </div>
+                )}
+              </div>
               <Badge variant="outline" className="text-[10px] h-5 px-2">{funnel.steps.length} steps</Badge>
               {expandedFunnel === funnel.funnelId ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
               <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={(event) => { event.stopPropagation(); playground.removeFunnel(funnel.funnelId); }}>
@@ -629,12 +712,21 @@ function FunnelsSection({ playground, onFunnelCreate }: { playground: UseCreator
             {expandedFunnel === funnel.funnelId && (
               <div className="px-4 py-3 space-y-2 bg-background/30">
                 {funnel.steps.length === 0 && <p className="text-[11px] text-muted-foreground">No funnel steps added yet.</p>}
-                {funnel.steps.sort((a, b) => a.sortOrder - b.sortOrder).map((step, index) => (
+                {funnel.steps.map((step, index) => (
                   <div key={step.stepId} className="flex items-center gap-2">
                     {index > 0 && <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />}
-                    <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/30 text-sm">
-                      <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{step.role}</Badge>
-                      <span className="truncate">{playground.pageRegistry.pages[step.pageId]?.title || step.pageId}</span>
+                    <div className="flex-1 rounded-lg bg-muted/30 px-3 py-2 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{step.role}</Badge>
+                        <span className="truncate">{step.title}</span>
+                        <Badge variant="outline" className={cn("text-[9px] h-4 px-1.5", getReadinessBadgeClass(step.previewStatus))}>Preview {step.previewStatus}</Badge>
+                        <Badge variant="outline" className={cn("text-[9px] h-4 px-1.5", getReadinessBadgeClass(step.publishStatus))}>Publish {step.publishStatus}</Badge>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                        <span className="font-mono">{step.path}</span>
+                        <span>{step.boundIntentCount} intent{step.boundIntentCount === 1 ? "" : "s"}</span>
+                        <span>{step.routeState.replace(/_/g, " ")}</span>
+                      </div>
                     </div>
                     <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => playground.removeFunnelStep(funnel.funnelId, step.stepId)}>
                       <Trash2 className="h-2.5 w-2.5" />
@@ -650,27 +742,685 @@ function FunnelsSection({ playground, onFunnelCreate }: { playground: UseCreator
   );
 }
 
+function toCommaList(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function CustomizationSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
+  const info = playground.creatorData.businessInfo;
+  const brand = info.brandProfile || {};
+  const customValues = Object.entries(info.customValues || {});
+  const [newCustomKey, setNewCustomKey] = useState("");
+  const [newCustomValue, setNewCustomValue] = useState("");
+
+  const updateBrand = (updates: Record<string, string>) => {
+    playground.updateBusinessInfo({
+      brandProfile: {
+        ...brand,
+        ...updates,
+      },
+    });
+  };
+
+  const upsertCustomValue = (key: string, value: string) => {
+    const nextKey = key.trim();
+    if (!nextKey) return;
+    playground.updateBusinessInfo({
+      customValues: {
+        ...(info.customValues || {}),
+        [nextKey]: value,
+      },
+    });
+  };
+
+  const removeCustomValue = (key: string) => {
+    const next = { ...(info.customValues || {}) };
+    delete next[key];
+    playground.updateBusinessInfo({ customValues: next });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-bold text-foreground">Customization</h2>
+        <p className="mt-1 text-xs text-muted-foreground">Brand-safe colors, fonts, and reusable custom values now live in the Playground instead of scattered setup flows.</p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">Brand Profile</h3>
+            <Badge variant="outline" className="text-[10px]">Global</Badge>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <Field label="Primary Color"><Input value={brand.primaryColor || ""} onChange={(e) => updateBrand({ primaryColor: e.target.value })} placeholder="#0f766e" className="h-9 text-sm" /></Field>
+            <Field label="Secondary Color"><Input value={brand.secondaryColor || ""} onChange={(e) => updateBrand({ secondaryColor: e.target.value })} placeholder="#1d4ed8" className="h-9 text-sm" /></Field>
+            <Field label="Accent Color"><Input value={brand.accentColor || ""} onChange={(e) => updateBrand({ accentColor: e.target.value })} placeholder="#f97316" className="h-9 text-sm" /></Field>
+            <Field label="Surface Color"><Input value={brand.surfaceColor || ""} onChange={(e) => updateBrand({ surfaceColor: e.target.value })} placeholder="#f8fafc" className="h-9 text-sm" /></Field>
+            <Field label="Heading Font"><Input value={brand.headingFont || ""} onChange={(e) => updateBrand({ headingFont: e.target.value })} placeholder="Space Grotesk" className="h-9 text-sm" /></Field>
+            <Field label="Body Font"><Input value={brand.bodyFont || ""} onChange={(e) => updateBrand({ bodyFont: e.target.value })} placeholder="DM Sans" className="h-9 text-sm" /></Field>
+            <Field label="Button Radius"><Input value={brand.buttonRadius || ""} onChange={(e) => updateBrand({ buttonRadius: e.target.value })} placeholder="16px" className="h-9 text-sm" /></Field>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Custom Values</h3>
+              <p className="mt-1 text-[11px] text-muted-foreground">Reusable tokens for URLs, copy, and business data.</p>
+            </div>
+            <Badge variant="outline" className="text-[10px]">{customValues.length}</Badge>
+          </div>
+          <div className="mt-3 space-y-2">
+            {customValues.length === 0 && (
+              <div className="rounded-lg border border-border/20 bg-background/30 px-3 py-2 text-[11px] text-muted-foreground">No custom values configured yet.</div>
+            )}
+            {customValues.map(([key, value]) => (
+              <div key={key} className="rounded-lg border border-border/20 bg-background/30 p-3">
+                <div className="flex items-center gap-2">
+                  <Input value={key} readOnly className="h-8 text-xs font-mono" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeCustomValue(key)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Input value={value} onChange={(e) => upsertCustomValue(key, e.target.value)} className="mt-2 h-8 text-xs" placeholder="Value" />
+              </div>
+            ))}
+            <div className="rounded-lg border border-dashed border-border/40 bg-background/20 p-3">
+              <div className="grid gap-2 md:grid-cols-[0.9fr_1.1fr_auto]">
+                <Input value={newCustomKey} onChange={(e) => setNewCustomKey(e.target.value)} placeholder="custom_values.booking_url" className="h-8 text-xs font-mono" />
+                <Input value={newCustomValue} onChange={(e) => setNewCustomValue(e.target.value)} placeholder="https://example.com/book" className="h-8 text-xs" />
+                <Button
+                  size="sm"
+                  className="h-8"
+                  onClick={() => {
+                    if (!newCustomKey.trim()) return;
+                    upsertCustomValue(newCustomKey, newCustomValue);
+                    setNewCustomKey("");
+                    setNewCustomValue("");
+                  }}
+                >
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  Add
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProductsSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
-  const products = Object.values(playground.creatorData.products);
-  return <SimpleObjectSection title="Products" empty="No products configured yet." items={products.map((product) => ({ id: product.productId, label: product.name, meta: `$${product.price}` }))} onRemove={(id) => playground.removeProduct(id)} />;
-}
+  const products = Object.values(playground.creatorData.products).sort((a, b) => a.sortOrder - b.sortOrder);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(products[0]?.productId || null);
 
-function ServicesSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
-  const services = Object.values(playground.creatorData.services);
-  return <SimpleObjectSection title="Services" empty="No services configured yet." items={services.map((service) => ({ id: service.serviceId, label: service.name, meta: service.duration ? `${service.duration} min` : "service" }))} onRemove={(id) => playground.removeService(id)} />;
-}
+  useEffect(() => {
+    if (!selectedProductId || !playground.creatorData.products[selectedProductId]) {
+      setSelectedProductId(products[0]?.productId || null);
+    }
+  }, [playground.creatorData.products, products, selectedProductId]);
 
-function FormsSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
-  const forms = Object.values(playground.creatorData.forms);
+  const selectedProduct = selectedProductId ? playground.creatorData.products[selectedProductId] : null;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold text-foreground">Forms</h2>
-        <Button size="sm" onClick={() => playground.addForm({ name: "New Form", fields: [{ fieldId: "f1", label: "Email", type: "email", required: true, sortOrder: 0 }], submitLabel: "Submit", successMessage: "Thanks!" })} className="h-8 px-3">
-          <Plus className="h-3.5 w-3.5 mr-1" />Add Form
+        <div>
+          <h2 className="text-base font-bold text-foreground">Products</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Configure offers, pricing, variants, and checkout copy directly from the Playground.</p>
+        </div>
+        <Button
+          size="sm"
+          className="h-8 px-3"
+          onClick={() => {
+            const created = playground.addProduct({
+              name: "New Offer",
+              description: "",
+              price: 99,
+              currency: "USD",
+              inStock: true,
+              ctaLabel: "Buy Now",
+              checkoutLabel: "Complete Purchase",
+              variants: [],
+            });
+            setSelectedProductId(created.productId);
+          }}
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add Product
         </Button>
       </div>
-      <SimpleObjectList items={forms.map((form) => ({ id: form.formId, label: form.name, meta: `${form.fields.length} fields` }))} onRemove={(id) => playground.removeForm(id)} empty="No forms configured yet." />
+
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-2">
+          {products.length === 0 && <p className="text-sm text-muted-foreground">No products configured yet.</p>}
+          {products.map((product) => (
+            <button
+              key={product.productId}
+              type="button"
+              onClick={() => setSelectedProductId(product.productId)}
+              className={cn(
+                "w-full rounded-xl border p-3 text-left transition-colors",
+                selectedProductId === product.productId ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-muted/10 hover:bg-muted/20",
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground">{product.name}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{product.currency} {product.price}{product.priceSuffix ? ` ${product.priceSuffix}` : ""}</div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {product.featured && <Badge variant="outline" className="text-[9px] h-4 px-1.5">Featured</Badge>}
+                    <Badge variant="outline" className="text-[9px] h-4 px-1.5">{product.inStock ? "In Stock" : "Out of Stock"}</Badge>
+                    {product.billingType && <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">{product.billingType.replace("_", " ")}</Badge>}
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-destructive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    playground.removeProduct(product.productId);
+                    if (selectedProductId === product.productId) setSelectedProductId(null);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
+          {!selectedProduct ? (
+            <p className="text-sm text-muted-foreground">Select a product to customize it.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Product Name"><Input value={selectedProduct.name} onChange={(e) => playground.updateProduct(selectedProduct.productId, { name: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Slug"><Input value={selectedProduct.slug || ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { slug: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="SKU"><Input value={selectedProduct.sku || ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { sku: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Category"><Input value={selectedProduct.category || ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { category: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Price"><Input type="number" value={selectedProduct.price} onChange={(e) => playground.updateProduct(selectedProduct.productId, { price: Number(e.target.value || 0) })} className="h-9 text-sm" /></Field>
+                <Field label="Compare At"><Input type="number" value={selectedProduct.compareAtPrice ?? ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { compareAtPrice: e.target.value ? Number(e.target.value) : undefined })} className="h-9 text-sm" /></Field>
+                <Field label="Currency"><Input value={selectedProduct.currency} onChange={(e) => playground.updateProduct(selectedProduct.productId, { currency: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Price Suffix"><Input value={selectedProduct.priceSuffix || ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { priceSuffix: e.target.value })} placeholder="/month" className="h-9 text-sm" /></Field>
+                <Field label="CTA Label"><Input value={selectedProduct.ctaLabel || ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { ctaLabel: e.target.value })} placeholder="Buy Now" className="h-9 text-sm" /></Field>
+                <Field label="Checkout Label"><Input value={selectedProduct.checkoutLabel || ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { checkoutLabel: e.target.value })} placeholder="Complete Purchase" className="h-9 text-sm" /></Field>
+                <Field label="Visibility">
+                  <Select value={selectedProduct.visibility || "public"} onValueChange={(value) => playground.updateProduct(selectedProduct.productId, { visibility: value as "public" | "hidden" | "featured" })}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">Public</SelectItem>
+                      <SelectItem value="featured">Featured Only</SelectItem>
+                      <SelectItem value="hidden">Hidden</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Billing">
+                  <Select value={selectedProduct.billingType || "one_time"} onValueChange={(value) => playground.updateProduct(selectedProduct.productId, { billingType: value as "one_time" | "subscription" })}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="one_time">One Time</SelectItem>
+                      <SelectItem value="subscription">Subscription</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <Field label="Description">
+                <Textarea value={selectedProduct.description || ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { description: e.target.value })} className="min-h-[88px] text-sm" />
+              </Field>
+
+              <Field label="Tags">
+                <Input value={(selectedProduct.tags || []).join(", ")} onChange={(e) => playground.updateProduct(selectedProduct.productId, { tags: toCommaList(e.target.value) })} placeholder="starter, featured, bestseller" className="h-9 text-sm" />
+              </Field>
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant={selectedProduct.featured ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => playground.updateProduct(selectedProduct.productId, { featured: !selectedProduct.featured })}>
+                  {selectedProduct.featured ? "Featured" : "Mark Featured"}
+                </Button>
+                <Button variant={selectedProduct.inStock ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => playground.updateProduct(selectedProduct.productId, { inStock: !selectedProduct.inStock })}>
+                  {selectedProduct.inStock ? "In Stock" : "Out of Stock"}
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-border/20 bg-background/30 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-foreground">Variants</div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
+                    onClick={() => playground.updateProduct(selectedProduct.productId, {
+                      variants: [...(selectedProduct.variants || []), { label: "New Variant" }],
+                    })}
+                  >
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add Variant
+                  </Button>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {(selectedProduct.variants || []).length === 0 && <div className="text-[11px] text-muted-foreground">No variants configured.</div>}
+                  {(selectedProduct.variants || []).map((variant, index) => (
+                    <div key={`${selectedProduct.productId}-variant-${index}`} className="grid gap-2 md:grid-cols-[1fr_120px_140px_auto]">
+                      <Input
+                        value={variant.label}
+                        onChange={(e) => {
+                          const variants = [...(selectedProduct.variants || [])];
+                          variants[index] = { ...variants[index], label: e.target.value };
+                          playground.updateProduct(selectedProduct.productId, { variants });
+                        }}
+                        className="h-8 text-xs"
+                        placeholder="Label"
+                      />
+                      <Input
+                        type="number"
+                        value={variant.price ?? ""}
+                        onChange={(e) => {
+                          const variants = [...(selectedProduct.variants || [])];
+                          variants[index] = { ...variants[index], price: e.target.value ? Number(e.target.value) : undefined };
+                          playground.updateProduct(selectedProduct.productId, { variants });
+                        }}
+                        className="h-8 text-xs"
+                        placeholder="Price"
+                      />
+                      <Input
+                        value={variant.sku || ""}
+                        onChange={(e) => {
+                          const variants = [...(selectedProduct.variants || [])];
+                          variants[index] = { ...variants[index], sku: e.target.value };
+                          playground.updateProduct(selectedProduct.productId, { variants });
+                        }}
+                        className="h-8 text-xs"
+                        placeholder="Variant SKU"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive"
+                        onClick={() => {
+                          const variants = [...(selectedProduct.variants || [])];
+                          variants.splice(index, 1);
+                          playground.updateProduct(selectedProduct.productId, { variants });
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ServicesSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
+  const services = Object.values(playground.creatorData.services).sort((a, b) => a.sortOrder - b.sortOrder);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(services[0]?.serviceId || null);
+
+  useEffect(() => {
+    if (!selectedServiceId || !playground.creatorData.services[selectedServiceId]) {
+      setSelectedServiceId(services[0]?.serviceId || null);
+    }
+  }, [playground.creatorData.services, selectedServiceId, services]);
+
+  const selectedService = selectedServiceId ? playground.creatorData.services[selectedServiceId] : null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-foreground">Services</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Control bookable offers, durations, pricing, and service-specific CTA copy.</p>
+        </div>
+        <Button
+          size="sm"
+          className="h-8 px-3"
+          onClick={() => {
+            const created = playground.addService({
+              name: "New Service",
+              description: "",
+              price: 150,
+              duration: 60,
+              currency: "USD",
+              bookable: true,
+              ctaLabel: "Book Now",
+            });
+            setSelectedServiceId(created.serviceId);
+          }}
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add Service
+        </Button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-2">
+          {services.length === 0 && <p className="text-sm text-muted-foreground">No services configured yet.</p>}
+          {services.map((service) => (
+            <button
+              key={service.serviceId}
+              type="button"
+              onClick={() => setSelectedServiceId(service.serviceId)}
+              className={cn(
+                "w-full rounded-xl border p-3 text-left transition-colors",
+                selectedServiceId === service.serviceId ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-muted/10 hover:bg-muted/20",
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-foreground">{service.name}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{service.duration ? `${service.duration} min` : "Flexible duration"}{service.price ? ` • ${service.currency || "USD"} ${service.price}` : ""}</div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-destructive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    playground.removeService(service.serviceId);
+                    if (selectedServiceId === service.serviceId) setSelectedServiceId(null);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
+          {!selectedService ? (
+            <p className="text-sm text-muted-foreground">Select a service to customize it.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Service Name"><Input value={selectedService.name} onChange={(e) => playground.updateService(selectedService.serviceId, { name: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Slug"><Input value={selectedService.slug || ""} onChange={(e) => playground.updateService(selectedService.serviceId, { slug: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Service Code"><Input value={selectedService.serviceCode || ""} onChange={(e) => playground.updateService(selectedService.serviceId, { serviceCode: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Category"><Input value={selectedService.category || ""} onChange={(e) => playground.updateService(selectedService.serviceId, { category: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Price"><Input type="number" value={selectedService.price ?? ""} onChange={(e) => playground.updateService(selectedService.serviceId, { price: e.target.value ? Number(e.target.value) : undefined })} className="h-9 text-sm" /></Field>
+                <Field label="Duration (min)"><Input type="number" value={selectedService.duration ?? ""} onChange={(e) => playground.updateService(selectedService.serviceId, { duration: e.target.value ? Number(e.target.value) : undefined })} className="h-9 text-sm" /></Field>
+                <Field label="Location"><Input value={selectedService.locationLabel || ""} onChange={(e) => playground.updateService(selectedService.serviceId, { locationLabel: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="CTA Label"><Input value={selectedService.ctaLabel || ""} onChange={(e) => playground.updateService(selectedService.serviceId, { ctaLabel: e.target.value })} className="h-9 text-sm" /></Field>
+              </div>
+              <Field label="Description">
+                <Textarea value={selectedService.description || ""} onChange={(e) => playground.updateService(selectedService.serviceId, { description: e.target.value })} className="min-h-[88px] text-sm" />
+              </Field>
+              <Field label="Availability Summary"><Input value={selectedService.availabilitySummary || ""} onChange={(e) => playground.updateService(selectedService.serviceId, { availabilitySummary: e.target.value })} placeholder="Mon-Fri • 9am-5pm" className="h-9 text-sm" /></Field>
+              <div className="flex flex-wrap gap-2">
+                <Button variant={selectedService.bookable ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => playground.updateService(selectedService.serviceId, { bookable: !selectedService.bookable })}>
+                  {selectedService.bookable ? "Bookable" : "Not Bookable"}
+                </Button>
+                <Button variant={selectedService.featured ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => playground.updateService(selectedService.serviceId, { featured: !selectedService.featured })}>
+                  {selectedService.featured ? "Featured" : "Mark Featured"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FormsSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
+  const forms = Object.values(playground.creatorData.forms).sort((a, b) => a.sortOrder - b.sortOrder);
+  const [selectedFormId, setSelectedFormId] = useState<string | null>(forms[0]?.formId || null);
+
+  useEffect(() => {
+    if (!selectedFormId || !playground.creatorData.forms[selectedFormId]) {
+      setSelectedFormId(forms[0]?.formId || null);
+    }
+  }, [forms, playground.creatorData.forms, selectedFormId]);
+
+  const selectedForm = selectedFormId ? playground.creatorData.forms[selectedFormId] : null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-foreground">Forms</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Build lead capture, order, and booking forms directly inside the control plane.</p>
+        </div>
+        <Button
+          size="sm"
+          className="h-8 px-3"
+          onClick={() => {
+            const created = playground.addForm({
+              name: "New Form",
+              fields: [{ fieldId: "f1", label: "Email", type: "email", required: true, sortOrder: 0, width: "full" }],
+              submitLabel: "Submit",
+              successMessage: "Thanks!",
+              destinationType: "crm",
+            });
+            setSelectedFormId(created.formId);
+          }}
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add Form
+        </Button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-2">
+          {forms.length === 0 && <p className="text-sm text-muted-foreground">No forms configured yet.</p>}
+          {forms.map((form) => (
+            <button
+              key={form.formId}
+              type="button"
+              onClick={() => setSelectedFormId(form.formId)}
+              className={cn(
+                "w-full rounded-xl border p-3 text-left transition-colors",
+                selectedFormId === form.formId ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-muted/10 hover:bg-muted/20",
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-foreground">{form.name}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{form.fields.length} fields • {form.destinationType || "crm"}</div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-destructive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    playground.removeForm(form.formId);
+                    if (selectedFormId === form.formId) setSelectedFormId(null);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
+          {!selectedForm ? (
+            <p className="text-sm text-muted-foreground">Select a form to customize it.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Form Name"><Input value={selectedForm.name} onChange={(e) => playground.updateForm(selectedForm.formId, { name: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Theme"><Input value={selectedForm.themeName || ""} onChange={(e) => playground.updateForm(selectedForm.formId, { themeName: e.target.value })} className="h-9 text-sm" placeholder="Minimal Dark" /></Field>
+                <Field label="Submit Label"><Input value={selectedForm.submitLabel} onChange={(e) => playground.updateForm(selectedForm.formId, { submitLabel: e.target.value })} className="h-9 text-sm" /></Field>
+                <Field label="Destination">
+                  <Select value={selectedForm.destinationType || "crm"} onValueChange={(value) => playground.updateForm(selectedForm.formId, { destinationType: value as "crm" | "email" | "webhook" | "calendar" | "custom" })}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="crm">CRM</SelectItem>
+                      <SelectItem value="email">Email</SelectItem>
+                      <SelectItem value="webhook">Webhook</SelectItem>
+                      <SelectItem value="calendar">Calendar</SelectItem>
+                      <SelectItem value="custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Destination Label"><Input value={selectedForm.destinationLabel || ""} onChange={(e) => playground.updateForm(selectedForm.formId, { destinationLabel: e.target.value })} className="h-9 text-sm" placeholder="Sales Pipeline" /></Field>
+              </div>
+
+              <Field label="Success Message">
+                <Textarea value={selectedForm.successMessage} onChange={(e) => playground.updateForm(selectedForm.formId, { successMessage: e.target.value })} className="min-h-[80px] text-sm" />
+              </Field>
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant={selectedForm.enablePayments ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => playground.updateForm(selectedForm.formId, { enablePayments: !selectedForm.enablePayments })}>
+                  {selectedForm.enablePayments ? "Payments Enabled" : "Enable Payments"}
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-border/20 bg-background/30 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-foreground">Fields</div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
+                    onClick={() => playground.updateForm(selectedForm.formId, {
+                      fields: [
+                        ...selectedForm.fields,
+                        {
+                          fieldId: `f${selectedForm.fields.length + 1}`,
+                          label: "New Field",
+                          type: "text",
+                          required: false,
+                          sortOrder: selectedForm.fields.length,
+                          width: "full",
+                        },
+                      ],
+                    })}
+                  >
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add Field
+                  </Button>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {selectedForm.fields.map((field, index) => (
+                    <div key={field.fieldId} className="rounded-lg border border-border/20 bg-muted/10 p-3">
+                      <div className="grid gap-2 md:grid-cols-[1fr_140px_120px_auto]">
+                        <Input
+                          value={field.label}
+                          onChange={(e) => {
+                            const fields = [...selectedForm.fields];
+                            fields[index] = { ...fields[index], label: e.target.value };
+                            playground.updateForm(selectedForm.formId, { fields });
+                          }}
+                          className="h-8 text-xs"
+                          placeholder="Field label"
+                        />
+                        <Select
+                          value={field.type}
+                          onValueChange={(value) => {
+                            const fields = [...selectedForm.fields];
+                            fields[index] = { ...fields[index], type: value as typeof field.type };
+                            playground.updateForm(selectedForm.formId, { fields });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="text">Text</SelectItem>
+                            <SelectItem value="email">Email</SelectItem>
+                            <SelectItem value="phone">Phone</SelectItem>
+                            <SelectItem value="textarea">Textarea</SelectItem>
+                            <SelectItem value="select">Select</SelectItem>
+                            <SelectItem value="checkbox">Checkbox</SelectItem>
+                            <SelectItem value="date">Date</SelectItem>
+                            <SelectItem value="number">Number</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={field.width || "full"}
+                          onValueChange={(value) => {
+                            const fields = [...selectedForm.fields];
+                            fields[index] = { ...fields[index], width: value as "full" | "half" };
+                            playground.updateForm(selectedForm.formId, { fields });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="full">Full Width</SelectItem>
+                            <SelectItem value="half">Half Width</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => {
+                            const fields = [...selectedForm.fields];
+                            fields.splice(index, 1);
+                            playground.updateForm(selectedForm.formId, { fields: fields.map((item, itemIndex) => ({ ...item, sortOrder: itemIndex })) });
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                        <Input
+                          value={field.placeholder || ""}
+                          onChange={(e) => {
+                            const fields = [...selectedForm.fields];
+                            fields[index] = { ...fields[index], placeholder: e.target.value };
+                            playground.updateForm(selectedForm.formId, { fields });
+                          }}
+                          className="h-8 text-xs"
+                          placeholder="Placeholder"
+                        />
+                        <Input
+                          value={field.helpText || ""}
+                          onChange={(e) => {
+                            const fields = [...selectedForm.fields];
+                            fields[index] = { ...fields[index], helpText: e.target.value };
+                            playground.updateForm(selectedForm.formId, { fields });
+                          }}
+                          className="h-8 text-xs"
+                          placeholder="Help text"
+                        />
+                        <Button
+                          variant={field.required ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => {
+                            const fields = [...selectedForm.fields];
+                            fields[index] = { ...fields[index], required: !fields[index].required };
+                            playground.updateForm(selectedForm.formId, { fields });
+                          }}
+                        >
+                          {field.required ? "Required" : "Optional"}
+                        </Button>
+                      </div>
+                      {field.type === "select" && (
+                        <Input
+                          value={(field.options || []).join(", ")}
+                          onChange={(e) => {
+                            const fields = [...selectedForm.fields];
+                            fields[index] = { ...fields[index], options: toCommaList(e.target.value) };
+                            playground.updateForm(selectedForm.formId, { fields });
+                          }}
+                          className="mt-2 h-8 text-xs"
+                          placeholder="Option A, Option B, Option C"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1087,7 +1837,7 @@ function ReadinessSection({
   onResolveDependency,
 }: {
   validations: PlaygroundValidation[];
-  summary: ReturnType<typeof getValidationSummary>;
+  summary: PlaygroundControlPlaneModel["validationSummary"];
   readinessReport: PlaygroundIntentReadinessReport;
   registry: PageRegistry;
   onInspectBinding: (bindingId: string) => void;

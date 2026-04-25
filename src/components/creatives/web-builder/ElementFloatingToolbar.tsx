@@ -18,7 +18,7 @@ import {
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   Type, Palette, Trash2, Copy, MoveUp, MoveDown, Edit3,
   ChevronDown, Image, Maximize2, Undo2, Sparkles,
-  Send, X, Loader2, AlertCircle, CheckCircle2,
+  Send, X, Loader2, AlertCircle, CheckCircle2, Link2, Eye, EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -40,6 +40,7 @@ interface ElementFloatingToolbarProps {
   element: SelectedElement | null;
   onUpdateStyles: (selector: string, styles: Record<string, string>) => void;
   onUpdateText: (selector: string, text: string) => void;
+  onUpdateAttributes?: (selector: string, attributes: Record<string, string>) => void;
   onReplaceImage: (selector: string, src: string) => void;
   onDelete: (selector: string) => void;
   onDuplicate: (selector: string) => void;
@@ -76,6 +77,13 @@ const FONT_OPTIONS = [
 ];
 
 const SIZE_OPTIONS = ['12', '14', '16', '18', '20', '24', '28', '32', '36', '42', '48', '56', '64', '72'];
+
+function getDefaultDisplay(tagName?: string) {
+  const tag = (tagName || '').toLowerCase();
+  if (['span', 'a', 'label', 'strong', 'em'].includes(tag)) return 'inline';
+  if (['img', 'button', 'input', 'select', 'textarea'].includes(tag)) return 'inline-block';
+  return 'block';
+}
 
 // ─── Inline AI Panel ─────────────────────────────────────────────────────────
 
@@ -279,6 +287,7 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
   element,
   onUpdateStyles,
   onUpdateText,
+  onUpdateAttributes,
   onReplaceImage,
   onDelete,
   onDuplicate,
@@ -295,10 +304,18 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
   const [isEditingText, setIsEditingText] = useState(false);
   const [editText, setEditText] = useState('');
   const [isAIOpen, setIsAIOpen] = useState(false);
+  const [attributeDraft, setAttributeDraft] = useState<Record<string, string>>({});
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (element?.textContent) setEditText(element.textContent);
+    setAttributeDraft({
+      href: element?.attributes?.href || '',
+      'data-ut-path': element?.attributes?.['data-ut-path'] || '',
+      'data-ut-url': element?.attributes?.['data-ut-url'] || '',
+      'aria-label': element?.attributes?.['aria-label'] || '',
+      alt: element?.attributes?.alt || '',
+    });
     setIsEditingText(false);
     setIsAIOpen(false);
     if (imageInputRef.current) imageInputRef.current.value = '';
@@ -313,6 +330,8 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
     (element.tagName || '').toLowerCase()
   );
   const hasAI = !!(onAIEditComplete || onRequestAI);
+  const isLinkLike = ['a', 'button'].includes((element.tagName || '').toLowerCase()) || !!element.attributes?.href || !!element.attributes?.['data-ut-path'] || !!element.attributes?.['data-ut-url'];
+  const isHidden = styles.display === 'none' || element.attributes?.hidden === 'true';
 
   const currentFontSize = parseInt(styles.fontSize || '16');
   const currentFontWeight = styles.fontWeight || '400';
@@ -323,6 +342,7 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
   const currentBgColor = styles.backgroundColor || 'transparent';
 
   const updateStyle = (prop: string, value: string) => onUpdateStyles(selector, { [prop]: value });
+  const updateAttributes = (attributes: Record<string, string>) => onUpdateAttributes?.(selector, attributes);
 
   const handleTextSave = () => {
     if (editText.trim() !== element.textContent) onUpdateText(selector, editText.trim());
@@ -335,6 +355,15 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
     const reader = new FileReader();
     reader.onload = () => onReplaceImage(selector, reader.result as string);
     reader.readAsDataURL(file);
+  };
+
+  const handleAttributeSave = () => {
+    if (!onUpdateAttributes) return;
+    const nextAttributes: Record<string, string> = {};
+    Object.entries(attributeDraft).forEach(([key, value]) => {
+      nextAttributes[key] = value.trim();
+    });
+    updateAttributes(nextAttributes);
   };
 
   return (
@@ -473,6 +502,72 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
           </>
         )}
 
+        {(isLinkLike || isImage || onUpdateAttributes) && (
+          <>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 px-2">
+                  <Link2 className="w-3 h-3" />Attrs
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 space-y-3 p-3" align="start">
+                {(isLinkLike || onUpdateAttributes) && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground block">Link / Route</Label>
+                      {element.attributes?.href !== undefined && (
+                        <Input
+                          value={attributeDraft.href || ''}
+                          onChange={(e) => setAttributeDraft((prev) => ({ ...prev, href: e.target.value }))}
+                          className="h-8 text-xs"
+                          placeholder="href"
+                        />
+                      )}
+                      <Input
+                        value={attributeDraft['data-ut-path'] || ''}
+                        onChange={(e) => setAttributeDraft((prev) => ({ ...prev, 'data-ut-path': e.target.value }))}
+                        className="h-8 text-xs"
+                        placeholder="data-ut-path"
+                      />
+                      <Input
+                        value={attributeDraft['data-ut-url'] || ''}
+                        onChange={(e) => setAttributeDraft((prev) => ({ ...prev, 'data-ut-url': e.target.value }))}
+                        className="h-8 text-xs"
+                        placeholder="data-ut-url"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground block">Accessibility</Label>
+                      <Input
+                        value={attributeDraft['aria-label'] || ''}
+                        onChange={(e) => setAttributeDraft((prev) => ({ ...prev, 'aria-label': e.target.value }))}
+                        className="h-8 text-xs"
+                        placeholder="aria-label"
+                      />
+                    </div>
+                  </>
+                )}
+                {isImage && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground block">Image Alt</Label>
+                    <Input
+                      value={attributeDraft.alt || ''}
+                      onChange={(e) => setAttributeDraft((prev) => ({ ...prev, alt: e.target.value }))}
+                      className="h-8 text-xs"
+                      placeholder="Describe the image"
+                    />
+                  </div>
+                )}
+                <Button size="sm" className="h-8 w-full text-xs" onClick={handleAttributeSave} disabled={!onUpdateAttributes}>
+                  Save Attributes
+                </Button>
+              </PopoverContent>
+            </Popover>
+
+            <Separator orientation="vertical" className="h-6 mx-0.5 bg-white/[0.1]" />
+          </>
+        )}
+
         {/* Color picker */}
         <Popover>
           <PopoverTrigger asChild>
@@ -526,6 +621,19 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
             ))}
           </PopoverContent>
         </Popover>
+
+        <Separator orientation="vertical" className="h-6 mx-0.5 bg-white/[0.1]" />
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => updateStyle('display', isHidden ? getDefaultDisplay(element.tagName) : 'none')}
+          className="h-7 text-xs gap-1 px-2"
+          title={isHidden ? 'Show element' : 'Hide element'}
+        >
+          {isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+          {isHidden ? 'Show' : 'Hide'}
+        </Button>
 
         <Separator orientation="vertical" className="h-6 mx-0.5 bg-white/[0.1]" />
 

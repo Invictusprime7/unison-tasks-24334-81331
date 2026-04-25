@@ -8,6 +8,13 @@
 import type { BuilderPageType, FunnelRole } from './pageRegistry';
 import type { CreatorData } from './creatorData';
 import type { PageRegistry } from './pageRegistry';
+import type {
+  BuilderPageRole,
+  BuilderPublishedStatus,
+  BuilderRouteState,
+  BuilderSetupStatus,
+  FunnelType,
+} from './pageRegistry';
 
 // ============================================================================
 // Wizard Input
@@ -413,6 +420,112 @@ export interface PlaygroundIntentReadinessReport {
     componentPublishReady: number;
     componentPublishBlocked: number;
   };
+}
+
+// ============================================================================
+// Control Plane Resolver
+// ============================================================================
+
+export type PlaygroundLaunchTaskCategory =
+  | 'required_for_publish'
+  | 'recommended_first'
+  | 'optional'
+  | 'growth';
+
+export interface PlaygroundControlPlanePage {
+  pageId: string;
+  title: string;
+  path: string;
+  pageType: BuilderPageType;
+  pageRole: BuilderPageRole;
+  routeState: BuilderRouteState;
+  publishedStatus: BuilderPublishedStatus;
+  setupStatus: BuilderSetupStatus;
+  previewStatus: PlaygroundReadinessStatus;
+  publishStatus: PlaygroundReadinessStatus;
+  previewThumbnailUrl?: string;
+  previewLastSyncedAt?: string;
+  previewError?: string;
+  navKey: string;
+  isHome: boolean;
+  showInNav: boolean;
+  funnelIds: string[];
+  funnelNames: string[];
+  funnelRoles: FunnelRole[];
+  routeIssues: PlaygroundValidation[];
+  boundIntentCount: number;
+}
+
+export interface PlaygroundControlPlaneFunnelStep {
+  stepId: string;
+  pageId: string;
+  title: string;
+  path: string;
+  role: FunnelRole;
+  routeState: BuilderRouteState;
+  previewStatus: PlaygroundReadinessStatus;
+  publishStatus: PlaygroundReadinessStatus;
+  previewThumbnailUrl?: string;
+  boundIntentCount: number;
+}
+
+export interface PlaygroundControlPlaneFunnel {
+  funnelId: string;
+  name: string;
+  funnelType: FunnelType;
+  previewStatus: PlaygroundReadinessStatus;
+  publishStatus: PlaygroundReadinessStatus;
+  steps: PlaygroundControlPlaneFunnelStep[];
+  missingDependencies: string[];
+}
+
+export interface PlaygroundLaunchTask {
+  id: string;
+  label: string;
+  description: string;
+  category: PlaygroundLaunchTaskCategory;
+  blockedCount: number;
+  relatedCount: number;
+  resolverSection?: PlaygroundResolverSection;
+  resolverField?: PlaygroundSetupField;
+  resolverStepId?: string;
+}
+
+export interface PlaygroundBusinessSetupSection {
+  id: string;
+  label: string;
+  status: PlaygroundReadinessStatus;
+  fields: PlaygroundSetupField[];
+  missingFields: PlaygroundSetupField[];
+}
+
+export interface PlaygroundControlPlaneOverview {
+  totalPages: number;
+  totalFunnels: number;
+  totalIntents: number;
+  previewReadyPages: number;
+  publishReadyPages: number;
+  blockedPages: number;
+  blockedFunnels: number;
+  blockedLaunchTasks: number;
+}
+
+export interface PlaygroundControlPlaneModel {
+  state: PlaygroundState;
+  validations: PlaygroundValidation[];
+  validationSummary: {
+    errors: number;
+    warnings: number;
+    info: number;
+    isHealthy: boolean;
+  };
+  readinessReport: PlaygroundIntentReadinessReport;
+  pages: PlaygroundControlPlanePage[];
+  funnels: PlaygroundControlPlaneFunnel[];
+  intentRegistry: PlaygroundBinding[];
+  launchTasks: PlaygroundLaunchTask[];
+  businessSetupSections: PlaygroundBusinessSetupSection[];
+  overview: PlaygroundControlPlaneOverview;
 }
 
 // ============================================================================

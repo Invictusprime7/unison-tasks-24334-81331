@@ -1082,6 +1082,10 @@ export default function App() {
     return Object.values(playgroundBindings).find((binding) => binding.elementKey === elementKey) || null;
   }, [selectedHTMLElement, playgroundBindings]);
 
+  const clearLivePreviewSelection = useCallback(() => {
+    livePreviewRef.current?.clearSelectedElement?.();
+  }, []);
+
   // Template Customizer - full DOM control
   const templateCustomizer = useTemplateCustomizer();
   const [customizerOpen, setCustomizerOpen] = useState(false);
@@ -1090,6 +1094,8 @@ export default function App() {
   
   // Business Setup Suggestions - shown after AI generates a site/template
   const [showBusinessSetup, setShowBusinessSetup] = useState(false);
+  const launcherDraftBootstrapRef = useRef<string | null>(null);
+  const draftPersistencePromiseRef = useRef<Promise<string | null> | null>(null);
 
   const importedRouteStateRef = useRef<string | null>(null);
 
@@ -1218,6 +1224,18 @@ export default function App() {
             });
           }
         }
+        if (override.attributes && Object.keys(override.attributes).length) {
+          const el = safeQuery(override.selector) as HTMLElement | null;
+          if (el) {
+            Object.entries(override.attributes).forEach(([key, value]) => {
+              if (value == null || value === '') {
+                el.removeAttribute(key);
+              } else {
+                el.setAttribute(key, value);
+              }
+            });
+          }
+        }
       } catch (e) {
         console.warn('[Customizer] DOM patch failed for', override.selector, e);
       }
@@ -1261,7 +1279,7 @@ export default function App() {
       html: el.html,
       section: el.section,
     });
-  }, []);
+  }, [setSelectedHTMLElement]);
 
   // Handle element-level edits from floating toolbar
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
@@ -1280,6 +1298,20 @@ export default function App() {
     console.log('[WebBuilder] handleFloatingImageReplace called:', selector, src.substring(0, 50));
     templateCustomizer.setElementOverride(selector, { imageSrc: src });
   }, [templateCustomizer]);
+
+  const handleFloatingAttributeUpdate = useCallback((selector: string, attributes: Record<string, string>) => {
+    console.log('[WebBuilder] handleFloatingAttributeUpdate called:', selector, attributes);
+    templateCustomizer.setElementOverride(selector, { attributes });
+    if (selectedHTMLElement?.selector === selector) {
+      setSelectedHTMLElement({
+        ...selectedHTMLElement,
+        attributes: {
+          ...(selectedHTMLElement.attributes || {}),
+          ...attributes,
+        },
+      });
+    }
+  }, [selectedHTMLElement, setSelectedHTMLElement, templateCustomizer]);
 
 
   const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {
@@ -1331,8 +1363,9 @@ export default function App() {
     setEditorCode(res.code);
     setPreviewCode(res.code);
     setSelectedHTMLElement(null);
+    clearLivePreviewSelection();
     toast.success('Element deleted');
-  }, [previewCode, applyElementDelete]);
+  }, [previewCode, applyElementDelete, clearLivePreviewSelection, setSelectedHTMLElement]);
 
   // Handle duplicate from floating toolbar - updates source code
   const handleFloatingDuplicate = useCallback((selector: string) => {
@@ -1343,8 +1376,9 @@ export default function App() {
     }
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    clearLivePreviewSelection();
     toast.success('Element duplicated');
-  }, [previewCode, applyElementDuplicate]);
+  }, [previewCode, applyElementDuplicate, clearLivePreviewSelection]);
 
   // Handle move up - swap element with its previous sibling in TSX source
   const handleFloatingMoveUp = useCallback((selector: string) => {
@@ -1372,8 +1406,9 @@ export default function App() {
     setEditorCode(res.code);
     setPreviewCode(res.code);
     setSelectedHTMLElement(null);
+    clearLivePreviewSelection();
     toast.success('Moved up');
-  }, [previewCode]);
+  }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement]);
 
   // Handle move down - swap element with its next sibling in TSX source
   const handleFloatingMoveDown = useCallback((selector: string) => {
@@ -1401,8 +1436,9 @@ export default function App() {
     setEditorCode(res.code);
     setPreviewCode(res.code);
     setSelectedHTMLElement(null);
+    clearLivePreviewSelection();
     toast.success('Moved down');
-  }, [previewCode]);
+  }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement]);
 
   // Template file management
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
@@ -2299,6 +2335,9 @@ export default function ${componentName}Page() {
   // latest value without stale-closure issues (avoids re-creating intervals).
   const currentTemplateIdRef = useRef<string | null>(templateFiles.currentTemplateId);
   currentTemplateIdRef.current = templateFiles.currentTemplateId;
+  useEffect(() => {
+    setCurrentTemplateId(templateFiles.currentTemplateId || null);
+  }, [templateFiles.currentTemplateId]);
   const getAutoSaveKey = useCallback(() =>
     currentTemplateIdRef.current
       ? `webbuilder_autosave_${currentTemplateIdRef.current}`
@@ -2810,8 +2849,181 @@ export default function ${componentName}Page() {
     setHasUnsavedChanges(hasChanges);
   }, [previewCode]);
   
+  // Helper to get final TSX with customizer overrides baked in
+  const getFinalCodeWithOverrides = useCallback(() => {
+    if (templateCustomizer.isDirty) {
+      const baseSource = templateCustomizer.getOriginalSource() || previewCode;
+      return templateCustomizer.applyOverrides(baseSource);
+    }
+    return previewCode;
+  }, [templateCustomizer, previewCode]);
+
+  // Build the v2 save payload — full multi-page VFS round-trip
+  const buildSavePayload = useCallback(() => {
+    const canonicalPlayground = {
+      pageRegistry: creatorPlayground.pageRegistry,
+      creatorData: creatorPlayground.creatorData,
+      bindings: playgroundBindings,
+      calendars: playgroundCalendars,
+      popups: playgroundPopups,
+    };
+    const currentFiles = virtualFS.getSandpackFiles();
+    const effectiveBusinessName =
+      creatorPlayground.creatorData.businessInfo.businessName ||
+      currentTemplateName ||
+      projectNameFromState ||
+      systemName ||
+      'Business';
+    const recompilation = recompileFromPlayground(
+      canonicalPlayground,
+      currentFiles,
+      effectiveBusinessName,
+      effectiveRouteState?.siteBundleSnapshot?.industry,
+    );
+    const launchArtifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: currentFiles,
+      preferredEntryPoint: launchEntryPoint,
+      siteBundleSnapshot: recompilation.siteBundleSnapshot,
+      compiledPlayground: recompilation.compileResult,
+      canonicalPlayground,
+      businessId: businessId ?? undefined,
+      projectId: projectId ?? undefined,
+      manifestId: currentManifestId || manifestIdFromState || undefined,
+      systemType: activeSystemType || systemType || undefined,
+      systemName: systemName || effectiveBusinessName,
+      templateName: currentTemplateName || effectiveBusinessName,
+      templateCategory: currentTemplateCategory || undefined,
+      businessName: effectiveBusinessName,
+      industry: recompilation.siteBundleSnapshot.industry,
+      aesthetic: currentDesignPreset || undefined,
+      backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
+      wizardSelections: effectiveRouteState?.wizardSelections || undefined,
+    });
+
+    return {
+      vfsFiles: launchArtifacts.files,
+      entryPoint: launchArtifacts.entryPoint,
+      activePagePath,
+      businessId: businessId ?? null,
+      projectId: projectId ?? null,
+      canonicalPlayground: launchArtifacts.canonicalPlayground,
+      siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+      metadata: {
+        name: currentTemplateName || effectiveBusinessName,
+        projectName: projectNameFromState || currentTemplateName || effectiveBusinessName,
+        businessName: effectiveBusinessName,
+        systemType: activeSystemType || systemType || null,
+        templateCategory: currentTemplateCategory || null,
+        aesthetic: currentDesignPreset || null,
+        manifestId: currentManifestId || manifestIdFromState || null,
+        launchSource: effectiveRouteState?.wizardSelections
+          ? 'system_launcher'
+          : effectiveRouteState?.systemsBuildContext
+            ? 'business_launcher'
+            : routeStateHasStructuredProject
+              ? 'launcher'
+              : 'web_builder',
+      },
+    };
+  }, [
+    virtualFS,
+    launchEntryPoint,
+    activePagePath,
+    businessId,
+    projectId,
+    creatorPlayground.pageRegistry,
+    creatorPlayground.creatorData,
+    playgroundBindings,
+    playgroundCalendars,
+    playgroundPopups,
+    currentTemplateName,
+    projectNameFromState,
+    systemName,
+    effectiveRouteState,
+    currentManifestId,
+    manifestIdFromState,
+    activeSystemType,
+    systemType,
+    currentTemplateCategory,
+    currentDesignPreset,
+    routeStateHasStructuredProject,
+  ]);
+
+  const ensureLauncherDraftSaved = useCallback(async (
+    reason: 'launcher_import' | 'interval_autosave',
+  ): Promise<string | null> => {
+    const effectiveName = (
+      saveProjectName.trim() ||
+      currentTemplateName ||
+      creatorPlayground.creatorData.businessInfo.businessName ||
+      projectNameFromState ||
+      effectiveRouteState?.templateName ||
+      systemName ||
+      'Untitled Project'
+    ).trim();
+
+    if (!effectiveName) {
+      return null;
+    }
+
+    const finalCode = getFinalCodeWithOverrides();
+    if (!finalCode || finalCode.includes('AI-generated code will appear here')) {
+      return null;
+    }
+
+    if (draftPersistencePromiseRef.current) {
+      return draftPersistencePromiseRef.current;
+    }
+
+    const payload = buildSavePayload();
+    const effectiveDescription = (
+      saveProjectDescription.trim() ||
+      `Generated from ${payload.metadata?.launchSource || 'launcher'}`
+    ).trim();
+
+    draftPersistencePromiseRef.current = templateFiles.ensureDraft(
+      effectiveName,
+      effectiveDescription,
+      finalCode,
+      {
+        ...payload,
+        metadata: {
+          ...(payload.metadata || {}),
+          autoSaved: true,
+          autoSaveReason: reason,
+          autoSavedAt: new Date().toISOString(),
+        },
+      },
+    ).then((draftId) => {
+      if (draftId) {
+        templateFiles.setCurrentTemplateId(draftId);
+        setCurrentTemplateId(draftId);
+        setCurrentTemplateName(effectiveName);
+        if (!saveProjectName.trim()) {
+          setSaveProjectName(effectiveName);
+        }
+      }
+      return draftId;
+    }).finally(() => {
+      draftPersistencePromiseRef.current = null;
+    });
+
+    return draftPersistencePromiseRef.current;
+  }, [
+    saveProjectName,
+    currentTemplateName,
+    creatorPlayground.creatorData.businessInfo.businessName,
+    projectNameFromState,
+    effectiveRouteState?.templateName,
+    systemName,
+    getFinalCodeWithOverrides,
+    buildSavePayload,
+    saveProjectDescription,
+    templateFiles,
+  ]);
+
   // Auto-save draft to localStorage
-  const saveDraft = useCallback(() => {
+  const saveDraft = useCallback(async () => {
     if (previewCode && previewCode !== lastSavedCodeRef.current) {
       setAutoSaveStatus('saving');
       try {
@@ -2825,6 +3037,21 @@ export default function ${componentName}Page() {
         localStorage.setItem(saveKey, JSON.stringify(draft));
         lastSavedCodeRef.current = previewCode;
         setLastSavedAt(new Date());
+
+        const existingDraftId = currentTemplateIdRef.current;
+        if (existingDraftId) {
+          await templateFiles.autoSave(previewCode, {
+            ...buildSavePayload(),
+            metadata: {
+              autoSaved: true,
+              autoSaveReason: 'interval_autosave',
+              autoSavedAt: new Date().toISOString(),
+            },
+          });
+        } else if (routeStateHasStructuredProject) {
+          await ensureLauncherDraftSaved('interval_autosave');
+        }
+
         setAutoSaveStatus('saved');
         setTimeout(() => setAutoSaveStatus('idle'), 2000);
       } catch (error) {
@@ -2832,7 +3059,7 @@ export default function ${componentName}Page() {
         setAutoSaveStatus('idle');
       }
     }
-  }, [previewCode, editorCode, getAutoSaveKey]);
+  }, [previewCode, editorCode, getAutoSaveKey, templateFiles, buildSavePayload, routeStateHasStructuredProject, ensureLauncherDraftSaved]);
   
   // Handle back navigation - go to home/launcher
   const handleBackNavigation = useCallback(() => {
@@ -3823,7 +4050,13 @@ export default ${componentName}Page;`;
         }
 
         // Keep builder metadata in sync for VFS-first launches
-        if (navState.templateName) setCurrentTemplateName(navState.templateName);
+        if (navState.templateName) {
+          setCurrentTemplateName(navState.templateName);
+          setSaveProjectName(navState.templateName);
+        }
+        if (!saveProjectDescription && navState.systemType) {
+          setSaveProjectDescription(`Generated from ${navState.systemType} launcher`);
+        }
         if (navState.systemType && !activeSystemType) {
           setActiveSystemType(navState.systemType as BusinessSystemType);
           console.log('[WebBuilder] Set active system type from VFS generation:', navState.systemType);
@@ -3999,6 +4232,52 @@ ${sectionsJsx}
       window.history.replaceState({}, document.title);
     }
   }, [effectiveRouteState, activePagePath, activeSystemType, creatorPlayground, launchEntryPoint, replaceProjectFiles, virtualFS]);
+
+  const launcherDraftBootstrapKey = useMemo(() => {
+    if (!routeStateHasStructuredProject) return null;
+    return JSON.stringify({
+      projectId: projectId || null,
+      businessId: businessId || null,
+      templateName: effectiveRouteState?.templateName || currentTemplateName || null,
+      systemType: effectiveRouteState?.systemType || null,
+      entryPoint: effectiveRouteState?.entryPoint || effectiveRouteState?.runtimeManifest?.entryPoint || null,
+    });
+  }, [
+    routeStateHasStructuredProject,
+    projectId,
+    businessId,
+    effectiveRouteState?.templateName,
+    effectiveRouteState?.systemType,
+    effectiveRouteState?.entryPoint,
+    effectiveRouteState?.runtimeManifest?.entryPoint,
+    currentTemplateName,
+  ]);
+
+  useEffect(() => {
+    if (!launcherDraftBootstrapKey || templateFiles.currentTemplateId) {
+      return;
+    }
+
+    if (!previewCode || previewCode.includes('AI-generated code will appear here')) {
+      return;
+    }
+
+    if (launcherDraftBootstrapRef.current === launcherDraftBootstrapKey) {
+      return;
+    }
+
+    launcherDraftBootstrapRef.current = launcherDraftBootstrapKey;
+    void ensureLauncherDraftSaved('launcher_import').then((draftId) => {
+      if (!draftId) {
+        launcherDraftBootstrapRef.current = null;
+      }
+    });
+  }, [
+    launcherDraftBootstrapKey,
+    templateFiles.currentTemplateId,
+    previewCode,
+    ensureLauncherDraftSaved,
+  ]);
 
   // Handle AI code generation
   const handleAICodeGenerated = (code: string) => {
@@ -4187,89 +4466,6 @@ ${html}
   }, [previewCode, currentTemplateName, activePagePath, importBuilderFiles]);
 
   // Handle saving current template
-  // Helper to get final TSX with customizer overrides baked in
-  const getFinalCodeWithOverrides = useCallback(() => {
-    if (templateCustomizer.isDirty) {
-      const baseSource = templateCustomizer.getOriginalSource() || previewCode;
-      return templateCustomizer.applyOverrides(baseSource);
-    }
-    return previewCode;
-  }, [templateCustomizer, previewCode]);
-
-  // Build the v2 save payload — full multi-page VFS round-trip
-  const buildSavePayload = useCallback(() => {
-    const canonicalPlayground = {
-      pageRegistry: creatorPlayground.pageRegistry,
-      creatorData: creatorPlayground.creatorData,
-      bindings: playgroundBindings,
-      calendars: playgroundCalendars,
-      popups: playgroundPopups,
-    };
-    const currentFiles = virtualFS.getSandpackFiles();
-    const effectiveBusinessName =
-      creatorPlayground.creatorData.businessInfo.businessName ||
-      currentTemplateName ||
-      projectNameFromState ||
-      systemName ||
-      'Business';
-    const recompilation = recompileFromPlayground(
-      canonicalPlayground,
-      currentFiles,
-      effectiveBusinessName,
-      effectiveRouteState?.siteBundleSnapshot?.industry,
-    );
-    const launchArtifacts = buildCanonicalLaunchArtifacts({
-      generatedFiles: currentFiles,
-      preferredEntryPoint: launchEntryPoint,
-      siteBundleSnapshot: recompilation.siteBundleSnapshot,
-      compiledPlayground: recompilation.compileResult,
-      canonicalPlayground,
-      businessId: businessId ?? undefined,
-      projectId: projectId ?? undefined,
-      manifestId: currentManifestId || manifestIdFromState || undefined,
-      systemType: activeSystemType || systemType || undefined,
-      systemName: systemName || effectiveBusinessName,
-      templateName: currentTemplateName || effectiveBusinessName,
-      templateCategory: currentTemplateCategory || undefined,
-      businessName: effectiveBusinessName,
-      industry: recompilation.siteBundleSnapshot.industry,
-      aesthetic: currentDesignPreset || undefined,
-      backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
-      wizardSelections: effectiveRouteState?.wizardSelections || undefined,
-    });
-
-    return {
-      vfsFiles: launchArtifacts.files,
-      entryPoint: launchArtifacts.entryPoint,
-      activePagePath,
-      businessId: businessId ?? null,
-      projectId: projectId ?? null,
-      canonicalPlayground: launchArtifacts.canonicalPlayground,
-      siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-    };
-  }, [
-    virtualFS,
-    launchEntryPoint,
-    activePagePath,
-    businessId,
-    projectId,
-    creatorPlayground.pageRegistry,
-    creatorPlayground.creatorData,
-    playgroundBindings,
-    playgroundCalendars,
-    playgroundPopups,
-    currentTemplateName,
-    projectNameFromState,
-    systemName,
-    effectiveRouteState,
-    currentManifestId,
-    manifestIdFromState,
-    activeSystemType,
-    systemType,
-    currentTemplateCategory,
-    currentDesignPreset,
-  ]);
-
   const handleSaveTemplate = useCallback(async (
     name: string,
     description: string,
@@ -4535,6 +4731,9 @@ ${html}
       action: () => {
         setBuilderMode('preview');
         setIsInteractiveMode(true);
+        setSelectedHTMLElement(null);
+        clearSelection();
+        clearLivePreviewSelection();
       },
     },
     {
@@ -5172,6 +5371,7 @@ ${html}
               if (mode === 'preview') {
                 setSelectedHTMLElement(null);
                 clearSelection();
+                clearLivePreviewSelection();
               }
             }}
             hasSelection={!!selectedHTMLElement || !!selectedObject}
@@ -6415,7 +6615,10 @@ export default function ${componentName}() {
                   setSelectedHTMLElement(updatedElement);
                 }
               }}
-              onClearHTMLSelection={() => setSelectedHTMLElement(null)}
+              onClearHTMLSelection={() => {
+                setSelectedHTMLElement(null);
+                clearLivePreviewSelection();
+              }}
               onDelete={handleDelete}
               onDuplicate={handleDuplicate}
             />
@@ -6431,12 +6634,16 @@ export default function ${componentName}() {
               element={selectedHTMLElement}
               onUpdateStyles={handleFloatingStyleUpdate}
               onUpdateText={handleFloatingTextUpdate}
+              onUpdateAttributes={handleFloatingAttributeUpdate}
               onReplaceImage={handleFloatingImageReplace}
               onDelete={handleFloatingDelete}
               onDuplicate={handleFloatingDuplicate}
               onMoveUp={handleFloatingMoveUp}
               onMoveDown={handleFloatingMoveDown}
-              onClear={() => setSelectedHTMLElement(null)}
+              onClear={() => {
+                setSelectedHTMLElement(null);
+                clearLivePreviewSelection();
+              }}
               systemType={activeSystemType}
               systemsBuildContext={systemsBuildContextFromState}
               readiness={selectedElementReadiness}

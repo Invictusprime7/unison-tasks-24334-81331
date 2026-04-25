@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Json } from "@/integrations/supabase/types";
 import { syncCanonicalComponentGraph } from "@/services/componentGraphPersistence";
+import { findBuilderDraftIdForProject } from "@/services/builderDraftBridge";
 
 interface TemplateData {
   html: string;
@@ -256,6 +257,35 @@ export function useTemplateFiles() {
     }
   }, []);
 
+  const ensureDraft = useCallback(async (
+    name: string,
+    description: string,
+    code: string,
+    payload?: SaveProjectPayload,
+  ): Promise<string | null> => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return null;
+    }
+
+    const existingId = currentTemplateId || await findBuilderDraftIdForProject({
+      projectId: payload?.projectId ?? null,
+      projectName: trimmedName,
+      businessId: payload?.businessId ?? null,
+    });
+
+    if (existingId) {
+      const didUpdate = await updateTemplate(existingId, code, payload);
+      if (!didUpdate) {
+        return null;
+      }
+      setCurrentTemplateId(existingId);
+      return existingId;
+    }
+
+    return saveTemplate(trimmedName, description, false, code, payload);
+  }, [currentTemplateId, saveTemplate, updateTemplate]);
+
   const loadTemplate = useCallback(async (id: string): Promise<SavedTemplate | null> => {
     setLoading(true);
     try {
@@ -391,6 +421,11 @@ export function useTemplateFiles() {
         .update(updatePatch)
         .eq("id", currentTemplateId);
       if (error) throw error;
+      await syncCanonicalComponentGraph({
+        projectId: payload?.projectId ?? null,
+        draftId: currentTemplateId,
+        canonicalPlayground: payload?.canonicalPlayground,
+      });
       return true;
     } catch (error) {
       console.error("Auto-save failed:", error);
@@ -429,6 +464,7 @@ export function useTemplateFiles() {
     currentTemplateId,
     saveTemplate,
     updateTemplate,
+    ensureDraft,
     loadTemplate,
     deleteTemplate,
     autoSave,

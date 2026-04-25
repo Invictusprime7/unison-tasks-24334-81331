@@ -337,9 +337,12 @@ function applyBindingToContent(
   markers: string[],
   attrs: Record<string, string>,
 ): { content: string; applied: boolean } {
+  // JSX-safe attribute chunk: allows > inside {expr} blocks (e.g. onClick={() => fn()})
+  const jsxAttrChunk = '(?:[^>{}]|{(?:[^{}]|{[^}]*})*})';
+
   for (const marker of markers) {
     const markerRegex = new RegExp(
-      `<([A-Za-z][^\\s/>]*)([^>]*?\\bdata-ut-cta=(["'])${escapeRegex(marker)}\\3[^>]*)>`,
+      `<([A-Za-z][^\\s/>]*)(${jsxAttrChunk}*?\\bdata-ut-cta=(["'])${escapeRegex(marker)}\\3${jsxAttrChunk}*)>`,
       'g',
     );
     let applied = false;
@@ -460,7 +463,9 @@ function applyBindingByIconAffinity(
 
   const limit = getFallbackMatchLimit(binding);
   const tagPattern = buildTagPattern(ICON_TRIGGER_TAGS);
-  const openTagRegex = new RegExp(`<(${tagPattern})(\\s[^>]*)?>`, 'g');
+  // JSX-safe: allow > inside {expr} blocks (e.g. onClick={() => fn()})
+  const jsxAttrChunk = '(?:[^>{}]|{(?:[^{}]|{[^}]*})*})';
+  const openTagRegex = new RegExp(`<(${tagPattern})(\\s${jsxAttrChunk}*)?>`, 'g');
   let appliedCount = 0;
 
   const next = content.replace(openTagRegex, (match, tagName, attrChunk = '') => {

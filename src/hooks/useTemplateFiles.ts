@@ -45,7 +45,7 @@ export interface SaveProjectPayload {
   businessId?: string | null;
   projectId?: string | null;
   canonicalPlayground?: Record<string, unknown>;
-  siteBundleSnapshot?: Record<string, unknown> | unknown;
+  siteBundleSnapshot?: unknown;
   metadata?: Record<string, unknown>;
 }
 
@@ -73,7 +73,7 @@ const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateDa
   ...(payload?.entryPoint ? { entryPoint: payload.entryPoint } : {}),
   ...(payload?.activePagePath ? { activePagePath: payload.activePagePath } : {}),
   ...(payload?.canonicalPlayground ? { canonicalPlayground: payload.canonicalPlayground } : {}),
-  ...(payload?.siteBundleSnapshot ? { siteBundleSnapshot: payload.siteBundleSnapshot } : {}),
+  ...(payload?.siteBundleSnapshot ? { siteBundleSnapshot: payload.siteBundleSnapshot as Record<string, unknown> } : {}),
 });
 
 /** Convert a builder_drafts row to a SavedTemplate envelope. */

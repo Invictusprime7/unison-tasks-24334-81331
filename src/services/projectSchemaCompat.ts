@@ -153,7 +153,7 @@ async function runProjectMutation(
 
   while (true) {
     const payload = sanitizeProjectMutation(input);
-    const result = await supabase
+    const result = await (supabase as any)
       .from('projects')
       .insert(payload)
       .select(buildProjectSelectColumns())
@@ -183,8 +183,8 @@ export function canUseProjectBusinessScope() {
 }
 
 export async function getProjectByIdCompat(projectId: string) {
-  const result = await runProjectQuery((selectColumns) =>
-    supabase
+  const result: any = await runProjectQuery((selectColumns) =>
+    (supabase as any)
       .from('projects')
       .select(selectColumns)
       .eq('id', projectId)
@@ -225,8 +225,8 @@ export async function listProjectsCompat(options: ProjectListOptions) {
   ));
 
   if (scopedBusinessIds.length > 0 && canUseProjectBusinessScope()) {
-    const businessScoped = await runProjectQuery((selectColumns) => {
-      let query = supabase
+    const businessScoped: any = await runProjectQuery((selectColumns) => {
+      let query = (supabase as any)
         .from('projects')
         .select(selectColumns, withCount ? { count: 'exact' } : undefined)
         .in('business_id', scopedBusinessIds)
@@ -248,8 +248,8 @@ export async function listProjectsCompat(options: ProjectListOptions) {
     }
   }
 
-  const ownerScoped = await runProjectQuery((selectColumns) => {
-    let query = supabase
+  const ownerScoped: any = await runProjectQuery((selectColumns) => {
+    let query = (supabase as any)
       .from('projects')
       .select(selectColumns, withCount ? { count: 'exact' } : undefined)
       .eq('owner_id', ownerId)

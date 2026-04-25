@@ -85,6 +85,12 @@ import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
+import {
+  mutateJSXStyles,
+  mutateJSXText,
+  mutateJSXImageSrc,
+  mutateJSXAttributes,
+} from "@/utils/jsxElementMutation";
 import { PageRouteBar, detectRouteConflicts } from "./web-builder/PageRouteBar";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { BusinessSetupSuggestions } from "@/components/onboarding/BusinessSetupSuggestions";

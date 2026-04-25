@@ -859,8 +859,8 @@ export default function CloudDashboard() {
         supabase.from('project_assets').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
       ]);
 
-      const ownedBusinesses = (ownedBusinessesResult.data || []) as BusinessSummary[];
-      const memberBusinesses = ((memberBusinessesResult.data || []) as Array<{ business?: BusinessSummary | null }>)
+      const ownedBusinesses = (ownedBusinessesResult.data || []) as unknown as BusinessSummary[];
+      const memberBusinesses = ((memberBusinessesResult.data || []) as unknown as Array<{ business?: BusinessSummary | null }>)
         .map((entry) => entry.business)
         .filter(Boolean) as BusinessSummary[];
 

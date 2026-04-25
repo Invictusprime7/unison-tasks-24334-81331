@@ -1498,7 +1498,7 @@ export default function App() {
   const hydrateSavedTemplate = useCallback((template: {
     name: string;
     description?: string | null;
-    canvas_data?: Record<string, unknown> | null;
+    canvas_data?: Record<string, unknown> | null | unknown;
   }) => {
     const canvasData = (template.canvas_data || {}) as {
       html?: string;

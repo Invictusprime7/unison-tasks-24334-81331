@@ -159,7 +159,7 @@ function isSetupStepSatisfied(
     case 'notifications':
       return !isBlankValue(getResolvedBusinessField('notificationEmail', businessInfo, setupSnapshot));
     default:
-      return step.status === 'completed';
+      return (step.status as string) === 'completed';
   }
 }
 

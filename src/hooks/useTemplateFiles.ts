@@ -45,7 +45,7 @@ export interface SaveProjectPayload {
   businessId?: string | null;
   projectId?: string | null;
   canonicalPlayground?: Record<string, unknown>;
-  siteBundleSnapshot?: Record<string, unknown>;
+  siteBundleSnapshot?: Record<string, unknown> | unknown;
   metadata?: Record<string, unknown>;
 }
 

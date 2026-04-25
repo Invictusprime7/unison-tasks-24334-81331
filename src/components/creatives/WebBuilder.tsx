@@ -1281,27 +1281,72 @@ export default function App() {
     });
   }, [setSelectedHTMLElement]);
 
-  // Handle element-level edits from floating toolbar
+  // Handle element-level edits from floating toolbar.
+  //
+  // IMPORTANT: Sandpack iframes are not exposed via getIframe() (only docker/local
+  // backends attach iframeRef), so direct DOM patches in the customizer override
+  // useEffect silently no-op for the default Sandpack pipeline. Element-level
+  // edits MUST therefore be baked into the TSX source so they flow through the
+  // canonical previewCode → VFS → Sandpack rebuild path.
+  //
+  // We *also* keep the templateCustomizer state in sync so the manual customizer
+  // panel reflects the latest values and so legacy CSS-injection still applies
+  // when the docker/local backend is active.
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);
     templateCustomizer.setElementOverride(selector, { styles });
-    // Don't call applyCustomizerOverrides synchronously — setElementOverride
-    // increments overrideVersion which triggers the reactive useEffect
-  }, [templateCustomizer]);
+    const next = mutateJSXStyles(previewCode, selector, styles, findElementBoundsInJSX);
+    if (next && next !== previewCode) {
+      setPreviewCode(next);
+      setEditorCode(next);
+    } else if (!next) {
+      console.warn('[WebBuilder] mutateJSXStyles failed for selector', selector);
+    }
+  }, [templateCustomizer, previewCode]);
 
   const handleFloatingTextUpdate = useCallback((selector: string, text: string) => {
     console.log('[WebBuilder] handleFloatingTextUpdate called:', selector, text);
     templateCustomizer.setElementOverride(selector, { textContent: text });
-  }, [templateCustomizer]);
+    const next = mutateJSXText(previewCode, selector, text, findElementBoundsInJSX);
+    if (next && next !== previewCode) {
+      setPreviewCode(next);
+      setEditorCode(next);
+      if (selectedHTMLElement?.selector === selector) {
+        setSelectedHTMLElement({ ...selectedHTMLElement, textContent: text });
+      }
+    } else if (!next) {
+      toast.error('Could not update text — element contains nested markup. Try the AI edit instead.');
+    }
+  }, [templateCustomizer, previewCode, selectedHTMLElement, setSelectedHTMLElement]);
 
   const handleFloatingImageReplace = useCallback((selector: string, src: string) => {
     console.log('[WebBuilder] handleFloatingImageReplace called:', selector, src.substring(0, 50));
     templateCustomizer.setElementOverride(selector, { imageSrc: src });
-  }, [templateCustomizer]);
+    const next = mutateJSXImageSrc(previewCode, selector, src, findElementBoundsInJSX);
+    if (next && next !== previewCode) {
+      setPreviewCode(next);
+      setEditorCode(next);
+      if (selectedHTMLElement?.selector === selector) {
+        setSelectedHTMLElement({
+          ...selectedHTMLElement,
+          attributes: { ...(selectedHTMLElement.attributes || {}), src },
+        });
+      }
+    } else if (!next) {
+      toast.error('Could not replace image. Try selecting the <img> directly.');
+    }
+  }, [templateCustomizer, previewCode, selectedHTMLElement, setSelectedHTMLElement]);
 
   const handleFloatingAttributeUpdate = useCallback((selector: string, attributes: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingAttributeUpdate called:', selector, attributes);
     templateCustomizer.setElementOverride(selector, { attributes });
+    const next = mutateJSXAttributes(previewCode, selector, attributes, findElementBoundsInJSX);
+    if (next && next !== previewCode) {
+      setPreviewCode(next);
+      setEditorCode(next);
+    } else if (!next) {
+      toast.error('Could not update attributes for the selected element.');
+    }
     if (selectedHTMLElement?.selector === selector) {
       setSelectedHTMLElement({
         ...selectedHTMLElement,
@@ -1311,7 +1356,7 @@ export default function App() {
         },
       });
     }
-  }, [selectedHTMLElement, setSelectedHTMLElement, templateCustomizer]);
+  }, [selectedHTMLElement, setSelectedHTMLElement, templateCustomizer, previewCode]);
 
 
   const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {

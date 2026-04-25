@@ -1,0 +1,308 @@
+/**
+ * JSX Element Mutation Utilities
+ *
+ * Mutates a JSX element inside a TSX source string, using a CSS-like selector
+ * (matching the format produced by the preview selection bridge:
+ *   tag > tag:nth-of-type(n) > #id > tag).
+ *
+ * These helpers operate on the *source string* so that edits flow through the
+ * canonical preview pipeline (TSX → VFS → Sandpack) instead of being applied
+ * as transient DOM patches that get wiped on the next Sandpack rebuild.
+ *
+ * NOTE: `findElementBoundsInJSX` lives in WebBuilder.tsx — this module accepts
+ * a finder callback to keep it decoupled from that file's internals.
+ */
+
+export type JSXBounds = { start: number; end: number };
+export type BoundsFinder = (jsx: string, selector: string) => JSXBounds | null;
+
+// ─── style attribute helpers ────────────────────────────────────────────────
+
+const camelCase = (k: string): string =>
+  k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+
+/**
+ * Parse a JSX style={{ ... }} attribute body into a key/value record.
+ * Supports object-literal syntax with string and unquoted keys.
+ * Returns null if parsing fails (we leave the attr untouched in that case).
+ */
+function parseStyleObject(body: string): Record<string, string> | null {
+  // Strip outer braces {{ ... }} → leave inner object body
+  const cleaned = body.trim();
+  // Body is the inner object: key: 'value', key: "value", 'key': 'value'
+  const out: Record<string, string> = {};
+  const re = /(?:'([^']+)'|"([^"]+)"|([A-Za-z_$][\w$-]*))\s*:\s*(?:'([^']*)'|"([^"]*)"|`([^`]*)`)\s*,?/g;
+  let m: RegExpExecArray | null;
+  let matched = false;
+  while ((m = re.exec(cleaned)) !== null) {
+    matched = true;
+    const key = m[1] || m[2] || m[3];
+    const val = m[4] ?? m[5] ?? m[6] ?? '';
+    if (key) out[camelCase(key)] = val;
+  }
+  if (!matched && cleaned.replace(/[{}\s]/g, '').length > 0) return null;
+  return out;
+}
+
+function serializeStyleObject(styles: Record<string, string>): string {
+  const entries = Object.entries(styles)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${camelCase(k)}: '${String(v).replace(/'/g, "\\'")}'`);
+  return `{{ ${entries.join(', ')} }}`;
+}
+
+// ─── opening-tag mutation ───────────────────────────────────────────────────
+
+interface OpenTag {
+  /** offset of the leading `<` */
+  start: number;
+  /** offset just past the closing `>` */
+  end: number;
+  /** offset just past the tag name (where attributes start) */
+  attrsStart: number;
+  /** offset of the closing `>` (or `/>`) */
+  attrsEnd: number;
+  /** whether the tag is self-closing `<.../>` */
+  selfClose: boolean;
+  raw: string;
+}
+
+function findOpenTag(source: string, elStart: number): OpenTag | null {
+  if (source[elStart] !== '<') return null;
+  // Tag name
+  const tagMatch = source.substring(elStart).match(/^<([A-Za-z][\w-]*)/);
+  if (!tagMatch) return null;
+  const attrsStart = elStart + tagMatch[0].length;
+
+  // Walk forward, respecting strings, template literals, and balanced braces (JSX expressions)
+  let i = attrsStart;
+  let depth = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (depth === 0) {
+      if (ch === '>') {
+        const selfClose = source[i - 1] === '/';
+        return {
+          start: elStart,
+          end: i + 1,
+          attrsStart,
+          attrsEnd: i,
+          selfClose,
+          raw: source.substring(elStart, i + 1),
+        };
+      }
+    }
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    else if (ch === '"' || ch === "'") {
+      const q = ch;
+      i++;
+      while (i < source.length && source[i] !== q) {
+        if (source[i] === '\\') i++;
+        i++;
+      }
+    } else if (ch === '`') {
+      i++;
+      while (i < source.length && source[i] !== '`') {
+        if (source[i] === '\\') i++;
+        i++;
+      }
+    }
+    i++;
+  }
+  return null;
+}
+
+/**
+ * Find an attribute on an opening tag.
+ * Returns offsets relative to `source` for the whole `key=value` span,
+ * plus the value span (without quotes/braces).
+ */
+interface AttrSpan {
+  fullStart: number;
+  fullEnd: number;
+  valueStart: number;
+  valueEnd: number;
+  /** delimiter: `"` `'` or `{` */
+  delimiter: '"' | "'" | '{';
+}
+
+function findAttribute(source: string, tag: OpenTag, attrName: string): AttrSpan | null {
+  const region = source.substring(tag.attrsStart, tag.attrsEnd);
+  // Match: <space>name=  → followed by ", ', or {
+  const re = new RegExp(`(^|\\s)(${attrName.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})\\s*=\\s*`, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(region)) !== null) {
+    const nameStart = tag.attrsStart + m.index + m[1].length;
+    const eqEnd = tag.attrsStart + m.index + m[0].length;
+    const delim = source[eqEnd];
+    if (delim === '"' || delim === "'") {
+      const valueStart = eqEnd + 1;
+      let i = valueStart;
+      while (i < source.length && source[i] !== delim) {
+        if (source[i] === '\\') i++;
+        i++;
+      }
+      const valueEnd = i;
+      return {
+        fullStart: nameStart,
+        fullEnd: valueEnd + 1,
+        valueStart,
+        valueEnd,
+        delimiter: delim,
+      };
+    }
+    if (delim === '{') {
+      const valueStart = eqEnd + 1;
+      let i = valueStart;
+      let depth = 1;
+      while (i < source.length && depth > 0) {
+        const c = source[i];
+        if (c === '{') depth++;
+        else if (c === '}') depth--;
+        else if (c === '"' || c === "'") {
+          const q = c;
+          i++;
+          while (i < source.length && source[i] !== q) {
+            if (source[i] === '\\') i++;
+            i++;
+          }
+        } else if (c === '`') {
+          i++;
+          while (i < source.length && source[i] !== '`') {
+            if (source[i] === '\\') i++;
+            i++;
+          }
+        }
+        if (depth > 0) i++;
+      }
+      const valueEnd = i; // position of closing brace
+      return {
+        fullStart: nameStart,
+        fullEnd: valueEnd + 1,
+        valueStart,
+        valueEnd,
+        delimiter: '{',
+      };
+    }
+  }
+  return null;
+}
+
+function setAttribute(source: string, tag: OpenTag, attrName: string, valueLiteral: string): string {
+  const existing = findAttribute(source, tag, attrName);
+  if (existing) {
+    return source.substring(0, existing.fullStart) +
+      `${attrName}=${valueLiteral}` +
+      source.substring(existing.fullEnd);
+  }
+  // Insert before closing `>` or `/>`
+  const insertAt = tag.selfClose ? tag.attrsEnd - 1 : tag.attrsEnd;
+  const padded = ` ${attrName}=${valueLiteral}`;
+  return source.substring(0, insertAt) + padded + source.substring(insertAt);
+}
+
+function removeAttribute(source: string, tag: OpenTag, attrName: string): string {
+  const existing = findAttribute(source, tag, attrName);
+  if (!existing) return source;
+  // Trim a leading whitespace so we don't leave `  ` gaps
+  let cutStart = existing.fullStart;
+  while (cutStart > tag.attrsStart && /\s/.test(source[cutStart - 1])) cutStart--;
+  return source.substring(0, cutStart) + source.substring(existing.fullEnd);
+}
+
+// ─── public mutators ────────────────────────────────────────────────────────
+
+export function mutateJSXStyles(
+  source: string,
+  selector: string,
+  styleUpdates: Record<string, string>,
+  findBounds: BoundsFinder,
+): string | null {
+  const bounds = findBounds(source, selector);
+  if (!bounds) return null;
+  const tag = findOpenTag(source, bounds.start);
+  if (!tag) return null;
+
+  const styleAttr = findAttribute(source, tag, 'style');
+  let merged: Record<string, string> = {};
+  if (styleAttr && styleAttr.delimiter === '{') {
+    // value is `{ ... }` — strip outer braces from {{ ... }} to get the inner object literal `{ ... }`
+    const inner = source.substring(styleAttr.valueStart, styleAttr.valueEnd);
+    const parsed = parseStyleObject(inner);
+    if (parsed) merged = parsed;
+  }
+  const next: Record<string, string> = { ...merged };
+  for (const [k, v] of Object.entries(styleUpdates)) {
+    next[camelCase(k)] = v;
+  }
+  return setAttribute(source, tag, 'style', serializeStyleObject(next));
+}
+
+export function mutateJSXAttributes(
+  source: string,
+  selector: string,
+  attributes: Record<string, string>,
+  findBounds: BoundsFinder,
+): string | null {
+  const bounds = findBounds(source, selector);
+  if (!bounds) return null;
+  let working = source;
+  // Re-find tag for each mutation since offsets change
+  for (const [key, raw] of Object.entries(attributes)) {
+    const b = findBounds(working, selector);
+    if (!b) return null;
+    const tag = findOpenTag(working, b.start);
+    if (!tag) return null;
+    const value = (raw ?? '').toString();
+    if (value === '') {
+      working = removeAttribute(working, tag, key);
+    } else {
+      const escaped = value.replace(/"/g, '&quot;');
+      working = setAttribute(working, tag, key, `"${escaped}"`);
+    }
+  }
+  return working;
+}
+
+export function mutateJSXImageSrc(
+  source: string,
+  selector: string,
+  src: string,
+  findBounds: BoundsFinder,
+): string | null {
+  return mutateJSXAttributes(source, selector, { src }, findBounds);
+}
+
+/**
+ * Replace the inner text of a JSX element. Only safe for elements whose
+ * children are a single text node or a {expression} that we will overwrite.
+ */
+export function mutateJSXText(
+  source: string,
+  selector: string,
+  text: string,
+  findBounds: BoundsFinder,
+): string | null {
+  const bounds = findBounds(source, selector);
+  if (!bounds) return null;
+  const tag = findOpenTag(source, bounds.start);
+  if (!tag) return null;
+  if (tag.selfClose) return null;
+
+  // Children span: just past the opening tag, up to the closing `</tag>` at bounds.end
+  const childStart = tag.end;
+  const closeTagMatch = source.substring(0, bounds.end).match(/<\/[A-Za-z][\w-]*\s*>\s*$/);
+  if (!closeTagMatch) return null;
+  const childEnd = bounds.end - closeTagMatch[0].length;
+  if (childEnd < childStart) return null;
+
+  // If existing children contain JSX elements (not just text/{expr}), refuse —
+  // we don't want to clobber nested markup.
+  const existing = source.substring(childStart, childEnd);
+  if (/<[A-Za-z]/.test(existing)) return null;
+
+  // Escape JSX-significant characters in the new text
+  const safe = text.replace(/[{}<>]/g, (c) => `{'${c}'}`);
+  return source.substring(0, childStart) + safe + source.substring(childEnd);
+}

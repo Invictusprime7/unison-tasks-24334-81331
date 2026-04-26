@@ -271,7 +271,22 @@ export function CloudAutomations({ userId }: CloudAutomationsProps) {
 
       if (installError) {
         console.error('[CloudAutomations] install-system failed', installError);
-        toast.error(`Install failed: ${installError.message}`);
+
+        let detailedMessage = installError.message;
+        const maybeContext = (installError as { context?: Response }).context;
+        if (maybeContext) {
+          try {
+            const contextBody = await maybeContext.clone().json();
+            const apiError = typeof contextBody?.error === 'string' ? contextBody.error : null;
+            detailedMessage = apiError
+              ? `${apiError} (status ${maybeContext.status})`
+              : `${installError.message} (status ${maybeContext.status})`;
+          } catch {
+            detailedMessage = `${installError.message} (status ${maybeContext.status})`;
+          }
+        }
+
+        toast.error(`Install failed: ${detailedMessage}`);
         return;
       }
 
@@ -290,6 +305,7 @@ export function CloudAutomations({ userId }: CloudAutomationsProps) {
       }
 
       const resultData = installData?.data || installData;
+      const warnings: string[] = Array.isArray(resultData?.warnings) ? resultData.warnings : [];
       setLastInstall({
         pack,
         result: resultData,
@@ -300,6 +316,10 @@ export function CloudAutomations({ userId }: CloudAutomationsProps) {
       toast.success(
         `${pack.name} installed: ${(resultData?.packs || []).length} backend packs, ${resultData?.intentsRegistered || 0} intents registered.`
       );
+
+      if (warnings.length > 0) {
+        toast.warning(`Install completed with warnings: ${warnings.join(', ')}`);
+      }
 
       // Refresh history panel data for this business (best-effort)
       await loadBusinessAutomationData(selectedBusiness.id);

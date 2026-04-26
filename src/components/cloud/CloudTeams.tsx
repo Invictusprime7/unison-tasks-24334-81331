@@ -158,6 +158,11 @@ const EMPTY_TEAM_STATE: TeamState = {
   invitations: [],
 };
 
+// Guardrail: settings is untrusted JSON and can grow unexpectedly large.
+// Keep processing bounded so one malformed business record cannot freeze the UI.
+const MAX_MEMBERS_FROM_SETTINGS = 500;
+const MAX_INVITATIONS_FROM_SETTINGS = 500;
+
 const parseBusinessSettings = (settings: Json | null) => {
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
     return {};
@@ -188,6 +193,30 @@ const normalizeInvitation = (invitation: Partial<Invitation>): Invitation => {
     expiresAt,
     status: new Date(expiresAt) < new Date() ? 'expired' : 'pending',
   };
+};
+
+const dedupeMembers = (members: TeamMember[]) => {
+  const seenIds = new Set<string>();
+  const seenUserIds = new Set<string>();
+  const seenEmails = new Set<string>();
+  const deduped: TeamMember[] = [];
+
+  for (const member of members) {
+    const memberId = member.id;
+    const memberUserId = member.userId || '';
+    const memberEmail = member.email.toLowerCase();
+
+    if (seenIds.has(memberId)) continue;
+    if (memberUserId && seenUserIds.has(memberUserId)) continue;
+    if (seenEmails.has(memberEmail)) continue;
+
+    seenIds.add(memberId);
+    if (memberUserId) seenUserIds.add(memberUserId);
+    seenEmails.add(memberEmail);
+    deduped.push(member);
+  }
+
+  return deduped;
 };
 
 const getInitials = (member: TeamMember) => {
@@ -486,11 +515,31 @@ export function CloudTeams({ userId, organizationId }: CloudTeamsProps) {
       const authUser = authResult.data.user;
 
       let normalizedMembers = Array.isArray(storedTeam?.members)
-        ? storedTeam!.members.map((member) => normalizeMember(member))
+        ? storedTeam!.members
+            .slice(0, MAX_MEMBERS_FROM_SETTINGS)
+            .map((member) => normalizeMember(member))
         : [];
       const normalizedInvitations = Array.isArray(storedTeam?.invitations)
-        ? storedTeam!.invitations.map((invitation) => normalizeInvitation(invitation))
+        ? storedTeam!.invitations
+            .slice(0, MAX_INVITATIONS_FROM_SETTINGS)
+            .map((invitation) => normalizeInvitation(invitation))
         : [];
+
+      if (Array.isArray(storedTeam?.members) && storedTeam.members.length > MAX_MEMBERS_FROM_SETTINGS) {
+        console.warn('[CloudTeams] Truncated oversized members array from business settings', {
+          businessId: organizationId,
+          originalLength: storedTeam.members.length,
+          maxLength: MAX_MEMBERS_FROM_SETTINGS,
+        });
+      }
+
+      if (Array.isArray(storedTeam?.invitations) && storedTeam.invitations.length > MAX_INVITATIONS_FROM_SETTINGS) {
+        console.warn('[CloudTeams] Truncated oversized invitations array from business settings', {
+          businessId: organizationId,
+          originalLength: storedTeam.invitations.length,
+          maxLength: MAX_INVITATIONS_FROM_SETTINGS,
+        });
+      }
 
       const ownerExists = normalizedMembers.some((member) => member.userId === businessData.owner_id || member.role === 'owner');
       if (!ownerExists) {
@@ -512,15 +561,7 @@ export function CloudTeams({ userId, organizationId }: CloudTeamsProps) {
         ];
       }
 
-      const dedupedMembers = normalizedMembers.filter(
-        (member, index, allMembers) =>
-          allMembers.findIndex(
-            (candidate) =>
-              candidate.id === member.id ||
-              (candidate.userId && candidate.userId === member.userId) ||
-              candidate.email.toLowerCase() === member.email.toLowerCase()
-          ) === index
-      );
+      const dedupedMembers = dedupeMembers(normalizedMembers);
 
       const myMember = dedupedMembers.find((member) => member.userId === userId);
 

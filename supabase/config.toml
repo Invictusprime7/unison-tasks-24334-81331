@@ -1,45 +1,51 @@
 project_id = "nfrdomdvyrbwuokathtw"
 
 [functions.gohighlevel-crm]
-verify_jwt = false
+verify_jwt = true
 
 [functions.template-automation]
 verify_jwt = false
 
 [functions.ai-code-assistant]
-verify_jwt = false
+verify_jwt = true
 
 [functions.ai-design-assistant]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-image]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-ai-template]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-template]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-template-image]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-page]
-verify_jwt = false
+verify_jwt = true
 
 [functions.copy-rewrite]
-verify_jwt = false
+verify_jwt = true
 
 [functions.publish-site]
-verify_jwt = false
+verify_jwt = true
 
 [functions.web-builder-ai]
-verify_jwt = false
+verify_jwt = true
 
 # Removed: [functions.ai-web-assistant] - unused (0 call sites)
 
 [functions.workflow-trigger]
-verify_jwt = false
+verify_jwt = true
+
+[functions.create-checkout]
+verify_jwt = true
+
+[functions.manage-subscription]
+verify_jwt = true
 
 [functions.workflow-cron]
 verify_jwt = false
@@ -51,25 +57,25 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.research]
-verify_jwt = false
+verify_jwt = true
 
 [functions.plugin-event-ingest]
 verify_jwt = false
 
 [functions.agent-runner]
-verify_jwt = false
+verify_jwt = true
 
 [functions.systems-build]
-verify_jwt = false
+verify_jwt = true
 
 [functions.systems-classify]
-verify_jwt = false
+verify_jwt = true
 
 [functions.systems-compile]
-verify_jwt = false
+verify_jwt = true
 
 [functions.install-system]
-verify_jwt = false
+verify_jwt = true
 
 [functions.automation-event]
 verify_jwt = false
@@ -78,13 +84,13 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.builder-actions]
-verify_jwt = false
+verify_jwt = true
 
 [functions.builder-provision]
-verify_jwt = false
+verify_jwt = true
 
 [functions.builder-provision-lite]
-verify_jwt = false
+verify_jwt = true
 
 [functions.create-booking]
 verify_jwt = false
@@ -95,8 +101,11 @@ verify_jwt = false
 [functions.create-lead-lite]
 verify_jwt = false
 
-[functions.generate-fullstack-app]
+[functions.create-order-checkout]
 verify_jwt = false
+
+[functions.generate-fullstack-app]
+verify_jwt = true
 
 [functions.intent-action]
 verify_jwt = false
@@ -110,8 +119,17 @@ verify_jwt = false
 [functions.intent-router-lite]
 verify_jwt = false
 
-[functions.save-email-provider]
+[functions.intent-exec]
 verify_jwt = false
 
+[functions.save-email-provider]
+verify_jwt = true
+
 [functions.template-backend]
+verify_jwt = false
+
+[functions.site-auth]
+verify_jwt = false
+
+[functions.stripe-webhook]
 verify_jwt = false

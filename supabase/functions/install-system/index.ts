@@ -111,6 +111,7 @@ serve(async (req) => {
     }
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
+    const warnings: string[] = [];
     
     let businessId: string;
     let businessCreated = false;
@@ -156,7 +157,8 @@ serve(async (req) => {
       }
     }
 
-    // 3) Record install
+    // 3) Record install. This should not block provisioning if the table is not
+    // present yet in an older environment.
     const packs = packsForSystem(systemType);
     const { error: installError } = await admin
       .from("business_installs")
@@ -169,7 +171,7 @@ serve(async (req) => {
       });
     if (installError) {
       console.error("[install-system] record install failed", installError);
-      return errorResponse("Failed to record install", 500, corsHeaders);
+      warnings.push("business_installs_unavailable");
     }
 
     // 3b) Persist launcher design preferences (optional)
@@ -189,28 +191,37 @@ serve(async (req) => {
       if (prefsError) {
         // Non-fatal: system install should still succeed.
         console.error("[install-system] upsert business_design_preferences failed", prefsError);
+        warnings.push("business_design_preferences_upsert_failed");
       }
     }
 
     // 4) Seed minimal demo data (real tables, real writes)
     if (systemType === "booking") {
-      await admin.from("services").insert([
+      const { error: servicesError } = await admin.from("services").insert([
         { business_id: businessId, name: "Consultation", duration_minutes: 30, price_cents: 0, is_active: true },
         { business_id: businessId, name: "Appointment", duration_minutes: 60, price_cents: 9900, is_active: true },
       ]);
+      if (servicesError) {
+        console.error("[install-system] seed services failed", servicesError);
+        warnings.push("services_seed_failed");
+      }
     }
 
     if (systemType === "store") {
-      await admin.from("products").insert([
+      const { error: productsError } = await admin.from("products").insert([
         { business_id: businessId, name: "Starter Product", price: 29, currency: "USD", is_active: true, inventory_count: 100 },
         { business_id: businessId, name: "Premium Product", price: 99, currency: "USD", is_active: true, inventory_count: 25 },
       ]);
+      if (productsError) {
+        console.error("[install-system] seed products failed", productsError);
+        warnings.push("products_seed_failed");
+      }
     }
 
     // 5) Register intent bindings
     const bindings = defaultIntentBindingsForSystem(systemType);
     if (bindings.length) {
-      await admin.from("intent_bindings").insert(
+      const { error: bindingsError } = await admin.from("intent_bindings").insert(
         bindings.map((b) => ({
           business_id: businessId,
           intent: b.intent,
@@ -219,6 +230,10 @@ serve(async (req) => {
           created_by: userId,
         })),
       );
+      if (bindingsError) {
+        console.error("[install-system] intent bindings registration failed", bindingsError);
+        warnings.push("intent_bindings_registration_failed");
+      }
     }
 
     return secureJsonResponse({
@@ -230,6 +245,7 @@ serve(async (req) => {
         systemType,
         templateId: body.templateId ? sanitizeString(body.templateId, 100) : null,
         intentsRegistered: bindings.length,
+        warnings,
       },
     }, 200, corsHeaders);
   } catch (e) {

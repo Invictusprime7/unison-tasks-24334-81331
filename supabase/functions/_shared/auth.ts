@@ -89,12 +89,19 @@ export async function verifyBusinessAccess(
   try {
     const admin = getAdminClient();
 
-    // Check if user owns the business
-    const { data: business } = await admin
+    // Check if user owns the business.
+    // Keep this query limited to stable columns because not all deployments
+    // have organization_id on businesses.
+    const { data: business, error: businessError } = await admin
       .from("businesses")
-      .select("id, owner_id, organization_id")
+      .select("id, owner_id")
       .eq("id", businessId)
       .maybeSingle();
+
+    if (businessError) {
+      console.error("[auth] Business lookup failed:", businessError);
+      return { allowed: false, error: "Authorization check failed" };
+    }
 
     if (!business) {
       return { allowed: false, error: "Business not found" };
@@ -105,30 +112,19 @@ export async function verifyBusinessAccess(
     }
 
     // Check explicit business membership when available
-    const { data: businessMember } = await admin
+    const { data: businessMember, error: memberError } = await admin
       .from("business_members")
       .select("role")
       .eq("business_id", businessId)
       .eq("user_id", userId)
       .maybeSingle();
 
-    if (businessMember) {
-      return { allowed: true };
+    if (memberError) {
+      console.error("[auth] Business membership check failed:", memberError);
     }
 
-    // Check organization membership
-    if (business.organization_id) {
-      const { data: orgMember } = await admin
-        .from("organization_members")
-        .select("role")
-        .eq("organization_id", business.organization_id)
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (orgMember) {
-        return { allowed: true };
-      }
+    if (businessMember) {
+      return { allowed: true };
     }
 
     return { allowed: false, error: "Access denied to this business" };

@@ -42,6 +42,11 @@ const PLAN_LIMITS = {
   enterprise: { members: 500, projects: 2000, storage: 500, apiCalls: 500000 },
 };
 
+const isMissingTableError = (message?: string | null) => {
+  if (!message) return false;
+  return message.includes("Could not find the table") || message.includes("schema cache");
+};
+
 export function CloudProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   
@@ -66,6 +71,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   
   // Usage state
   const [usageStats, setUsageStats] = useState<CloudUsageStats | null>(null);
+  const [hasOrganizationMembersTable, setHasOrganizationMembersTable] = useState(true);
 
   // Fetch user profile
   const refreshProfile = useCallback(async () => {
@@ -110,10 +116,57 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
         .eq('is_active', true);
 
       if (memberError) {
-        // Table may not exist yet â€” this is OK
+        if (isMissingTableError(memberError.message)) {
+          setHasOrganizationMembersTable(false);
+
+          // Fallback for environments that only have organizations, without membership table.
+          const { data: ownedOrganizations, error: ownedError } = await supabase
+            .from('organizations' as any)
+            .select('*')
+            .eq('owner_id', user.id)
+            .order('created_at', { ascending: false });
+
+          if (ownedError) {
+            console.warn('[CloudProvider] organizations fallback query failed:', ownedError.message);
+            setOrganizations([]);
+            return;
+          }
+
+          const fallbackOrgs: CloudOrganization[] = (ownedOrganizations || []).map((org: any) => {
+            const billing = org.billing as any || {};
+            return {
+              id: org.id,
+              name: org.name,
+              slug: org.slug,
+              description: org.description,
+              logoUrl: org.logo,
+              website: org.website,
+              industry: org.industry,
+              size: org.size,
+              ownerId: org.owner_id,
+              plan: billing.plan || 'free',
+              memberCount: org.member_count || 0,
+              projectCount: org.project_count || 0,
+              storageUsed: org.storage_used || 0,
+              status: org.status || 'active',
+              createdAt: org.created_at,
+              updatedAt: org.updated_at,
+            };
+          });
+
+          setOrganizations(fallbackOrgs);
+          if (!currentOrganization && fallbackOrgs.length > 0) {
+            setCurrentOrganization(fallbackOrgs[0]);
+          }
+          return;
+        }
+
+        // Non-schema errors are still logged.
         console.warn('[CloudProvider] organization_members query failed:', memberError.message);
         return;
       }
+
+      setHasOrganizationMembersTable(true);
 
       const orgs: CloudOrganization[] = (memberships || [])
         .filter((m: any) => m.organizations)
@@ -177,7 +230,18 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
         .eq('organization_id', currentOrganization.id)
         .eq('is_active', true);
 
-      if (membersError) throw membersError;
+      if (membersError) {
+        if (isMissingTableError(membersError.message)) {
+          setHasOrganizationMembersTable(false);
+          setTeamMembers([]);
+          setInvitations([]);
+          setCurrentUserRole(null);
+          return;
+        }
+        throw membersError;
+      }
+
+      setHasOrganizationMembersTable(true);
 
       const teamMembersList: TeamMember[] = (members || []).map((m: any) => ({
         id: m.id,
@@ -375,7 +439,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
 
       // Add owner as member
-      await supabase
+      const { error: memberInsertError } = await supabase
         .from('organization_members' as any)
         .insert({
           organization_id: data.id,
@@ -383,6 +447,10 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
           role: 'owner',
           is_active: true,
         });
+
+      if (memberInsertError && !isMissingTableError(memberInsertError.message)) {
+        throw memberInsertError;
+      }
 
       toast({
         title: 'Organization Created',
@@ -797,20 +865,22 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user || !currentOrganization) return;
 
-    // Subscribe to team member changes
-    const membersSubscription = supabase
-      .channel('organization_members')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'organization_members',
-          filter: `organization_id=eq.${currentOrganization.id}`,
-        },
-        () => refreshTeam()
-      )
-      .subscribe();
+    // Subscribe to team member changes only when the table exists.
+    const membersSubscription = hasOrganizationMembersTable
+      ? supabase
+          .channel('organization_members')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'organization_members',
+              filter: `organization_id=eq.${currentOrganization.id}`,
+            },
+            () => refreshTeam()
+          )
+          .subscribe()
+      : null;
 
     // Subscribe to invitation changes
     const invitationsSubscription = supabase
@@ -828,10 +898,10 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
-      membersSubscription.unsubscribe();
+      membersSubscription?.unsubscribe();
       invitationsSubscription.unsubscribe();
     };
-  }, [user, currentOrganization?.id, refreshTeam]);
+  }, [user, currentOrganization?.id, refreshTeam, hasOrganizationMembersTable]);
 
   const value = useMemo<CloudContextType>(() => ({
     user,

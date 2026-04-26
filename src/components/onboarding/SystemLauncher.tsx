@@ -658,10 +658,31 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
       }).then(({ data, error }) => {
         if (error) {
-          console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
+          const context = (error as { context?: Response }).context;
+          if (context) {
+            context.clone().text().then((body) => {
+              console.warn('[SystemLauncher] install-system failed (non-fatal):', {
+                message: error.message,
+                status: context.status,
+                body,
+              });
+            }).catch(() => {
+              console.warn('[SystemLauncher] install-system failed (non-fatal):', {
+                message: error.message,
+                status: context.status,
+              });
+            });
+          } else {
+            console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
+          }
           return null;
         }
-        console.log('[SystemLauncher] Backend provisioned:', data);
+        const warnings: string[] = Array.isArray(data?.data?.warnings) ? data.data.warnings : [];
+        if (warnings.length > 0) {
+          console.warn('[SystemLauncher] Backend provisioned with warnings:', warnings);
+        } else {
+          console.log('[SystemLauncher] Backend provisioned:', data);
+        }
         return data?.data?.businessId as string | null;
       }).catch(err => {
         console.warn('[SystemLauncher] install-system error (non-fatal):', err);

@@ -280,7 +280,22 @@ export function BusinessAutomationSettings({ businessId, businessIndustry }: Bus
       
       if (installError) {
         console.error("[installPack] Error calling install-system:", installError);
-        toast.error(`Installation failed: ${installError.message}`);
+
+        let detailedMessage = installError.message;
+        const maybeContext = (installError as { context?: Response }).context;
+        if (maybeContext) {
+          try {
+            const contextBody = await maybeContext.clone().json();
+            const apiError = typeof contextBody?.error === 'string' ? contextBody.error : null;
+            detailedMessage = apiError
+              ? `${apiError} (status ${maybeContext.status})`
+              : `${installError.message} (status ${maybeContext.status})`;
+          } catch {
+            detailedMessage = `${installError.message} (status ${maybeContext.status})`;
+          }
+        }
+
+        toast.error(`Installation failed: ${detailedMessage}`);
         return;
       }
       
@@ -327,9 +342,13 @@ export function BusinessAutomationSettings({ businessId, businessIndustry }: Bus
       
       // Show success with details
       const resultData = installData?.data || installData;
+      const warnings: string[] = Array.isArray(resultData?.warnings) ? resultData.warnings : [];
       toast.success(
         `${pack.name} installed! ${resultData?.packs?.length || 0} backend packs, ${resultData?.intentsRegistered || 0} intents registered.`
       );
+      if (warnings.length > 0) {
+        toast.warning(`Install completed with warnings: ${warnings.join(', ')}`);
+      }
     } catch (err) {
       console.error("[installPack] Error:", err);
       toast.error(`Failed to install pack: ${err instanceof Error ? err.message : 'Unknown error'}`);

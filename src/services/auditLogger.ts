@@ -146,13 +146,21 @@ class AuditLogger {
       // Get user's primary organization
       let organizationId: string | null = null;
       if (user) {
-        const { data: membership } = await supabase
+        const { data: membership, error: membershipError } = await supabase
           .from('organization_members')
           .select('organization_id')
           .eq('user_id', user.id)
           .eq('is_active', true)
           .limit(1)
           .single();
+
+        if (membershipError) {
+          const isMissingMembershipTable = membershipError.message?.includes("Could not find the table 'public.organization_members'") ||
+            membershipError.message?.includes('schema cache');
+          if (!isMissingMembershipTable) {
+            console.warn('Security event organization lookup failed:', membershipError.message);
+          }
+        }
         organizationId = membership?.organization_id || null;
       }
 

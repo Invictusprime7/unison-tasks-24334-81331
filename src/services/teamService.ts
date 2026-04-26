@@ -82,6 +82,32 @@ const ROLE_HIERARCHY: Record<TeamRole, number> = {
 };
 
 class TeamService {
+  private organizationMembersTableAvailable: boolean | null = null;
+
+  private isOrganizationMembersMissingError(error: { message?: string } | null | undefined): boolean {
+    const message = error?.message || '';
+    return message.includes("Could not find the table 'public.organization_members'") || message.includes('schema cache');
+  }
+
+  private async hasOrganizationMembersTable(): Promise<boolean> {
+    if (this.organizationMembersTableAvailable !== null) {
+      return this.organizationMembersTableAvailable;
+    }
+
+    const { error } = await supabase
+      .from('organization_members')
+      .select('id')
+      .limit(1);
+
+    if (error && this.isOrganizationMembersMissingError(error)) {
+      this.organizationMembersTableAvailable = false;
+      return false;
+    }
+
+    this.organizationMembersTableAvailable = true;
+    return true;
+  }
+
   /**
    * Get current user's organizations
    */
@@ -90,6 +116,36 @@ class TeamService {
     
     if (!user) {
       return [];
+    }
+
+    const hasMembershipTable = await this.hasOrganizationMembersTable();
+
+    // Fallback for schemas that do not include organization_members.
+    if (!hasMembershipTable) {
+      const { data: ownedOrganizations, error: ownedError } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('owner_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (ownedError || !ownedOrganizations) {
+        console.error('Error fetching organizations (fallback):', ownedError);
+        return [];
+      }
+
+      return ownedOrganizations.map((org) => ({
+        id: org.id as string,
+        name: org.name as string,
+        slug: org.slug as string,
+        description: org.description as string | null,
+        logoUrl: org.logo as string | null,
+        ownerId: org.owner_id as string,
+        memberCount: (org.member_count as number) ?? 1,
+        projectCount: (org.project_count as number) ?? 0,
+        status: (org.status as 'active' | 'suspended' | 'trial' | 'canceled') ?? 'active',
+        plan: 'free',
+        createdAt: org.created_at as string,
+      }));
     }
 
     // Get organizations where user is a member
@@ -172,6 +228,10 @@ class TeamService {
    * Get all members of an organization
    */
   async getMembers(organizationId: string): Promise<TeamMember[]> {
+    if (!(await this.hasOrganizationMembersTable())) {
+      return [];
+    }
+
     const { data: members, error } = await supabase
       .from('organization_members')
       .select(`
@@ -233,6 +293,11 @@ class TeamService {
       return null;
     }
 
+    if (!(await this.hasOrganizationMembersTable())) {
+      const org = await this.getOrganization(organizationId);
+      return org?.ownerId === user.id ? 'owner' : null;
+    }
+
     const { data, error } = await supabase
       .from('organization_members')
       .select('role')
@@ -271,6 +336,10 @@ class TeamService {
     
     if (!user) {
       return { success: false, error: 'Not authenticated' };
+    }
+
+    if (!(await this.hasOrganizationMembersTable())) {
+      return { success: false, error: 'Team memberships are not configured for this project schema yet' };
     }
 
     // Check permission
@@ -394,6 +463,10 @@ class TeamService {
       return { success: false, error: 'Not authenticated' };
     }
 
+    if (!(await this.hasOrganizationMembersTable())) {
+      return { success: false, error: 'Team memberships are not configured for this project schema yet' };
+    }
+
     // Check permission
     const canManage = await this.canPerform(organizationId, 'admin');
     if (!canManage) {
@@ -463,6 +536,10 @@ class TeamService {
       return { success: false, error: 'Not authenticated' };
     }
 
+    if (!(await this.hasOrganizationMembersTable())) {
+      return { success: false, error: 'Team memberships are not configured for this project schema yet' };
+    }
+
     // Check permission
     const canManage = await this.canPerform(organizationId, 'admin');
     if (!canManage) {
@@ -520,6 +597,10 @@ class TeamService {
     
     if (!user) {
       return { success: false, error: 'Not authenticated' };
+    }
+
+    if (!(await this.hasOrganizationMembersTable())) {
+      return { success: false, error: 'Team memberships are not configured for this project schema yet' };
     }
 
     // Only current owner can transfer
@@ -581,6 +662,10 @@ class TeamService {
     
     if (!user) {
       return { success: false, error: 'Not authenticated' };
+    }
+
+    if (!(await this.hasOrganizationMembersTable())) {
+      return { success: false, error: 'Team memberships are not configured for this project schema yet' };
     }
 
     const myRole = await this.getMyRole(organizationId);
@@ -645,16 +730,18 @@ class TeamService {
     }
 
     // Add creator as owner member
-    const { error: memberError } = await supabase
-      .from('organization_members')
-      .insert({
-        organization_id: org.id,
-        user_id: user.id,
-        role: 'owner',
-      });
+    if (await this.hasOrganizationMembersTable()) {
+      const { error: memberError } = await supabase
+        .from('organization_members')
+        .insert({
+          organization_id: org.id,
+          user_id: user.id,
+          role: 'owner',
+        });
 
-    if (memberError) {
-      console.error('Error adding owner as member:', memberError);
+      if (memberError) {
+        console.error('Error adding owner as member:', memberError);
+      }
     }
 
     await auditLogger.log({

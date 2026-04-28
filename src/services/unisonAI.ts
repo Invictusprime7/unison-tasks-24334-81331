@@ -204,23 +204,22 @@ async function logRun(args: {
   error?: string;
   promptChars: number;
   projectId?: string;
+  businessId?: string;
 }) {
   try {
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData?.user?.id;
-    if (!userId) return;
-    // Best-effort log into intent_execution_log (existing table).
+    // intent_execution_log requires business_id (not null). Skip telemetry
+    // when no business context is provided — gateway must never block on logging.
+    if (!args.businessId) return;
     await supabase.from("intent_execution_log").insert({
-      intent_name: `unison_ai.${args.module}`,
-      status: args.status,
-      executed_by: userId,
+      business_id: args.businessId,
       project_id: args.projectId ?? null,
-      metadata: {
-        edgeFunction: args.edgeFunction,
-        latencyMs: args.latencyMs,
-        promptChars: args.promptChars,
-        error: args.error,
-      } as never,
+      intent: `unison_ai.${args.module}`,
+      result_status: args.status,
+      error_message: args.error ?? null,
+      execution_time_ms: args.latencyMs,
+      payload: { promptChars: args.promptChars } as never,
+      result_data: { edgeFunction: args.edgeFunction } as never,
+      source: "unison_ai_gateway",
     } as never);
   } catch {
     // Logging is best-effort. Never block the gateway on telemetry failures.

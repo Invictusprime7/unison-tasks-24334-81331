@@ -270,6 +270,7 @@ export async function runUnisonAI(req: UnisonAIRequest): Promise<UnisonAIRespons
       error: invokeError,
       promptChars: req.prompt.length,
       projectId: ctx.projectId,
+      businessId: ctx.businessId,
     });
 
     return {
@@ -295,6 +296,7 @@ export async function runUnisonAI(req: UnisonAIRequest): Promise<UnisonAIRespons
     latencyMs,
     promptChars: req.prompt.length,
     projectId: ctx.projectId,
+    businessId: ctx.businessId,
   });
 
   return {

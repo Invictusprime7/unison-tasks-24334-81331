@@ -128,22 +128,39 @@ export class AIExecutionBridge {
     messages.push({ role: 'user', content: userMessage });
 
     try {
-      // For now, return a mock response
-      // In production, this would call the actual provider API
+      // Delegate to the unified Unison AI Gateway facade so the bridge,
+      // skill registry, and per-feature callsites all flow through one path.
+      const { runUnisonAI } = await import('@/services/unisonAI');
+      const gateway = await runUnisonAI({
+        module: 'code.patch',
+        prompt: userMessage,
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        options: { passthrough: { skillSystemPrompt: systemMessage.content } },
+      });
+
+      const content =
+        gateway.message ||
+        gateway.summary ||
+        (gateway.patchPlan?.files?.length
+          ? `Generated ${gateway.patchPlan.files.length} file change(s).`
+          : 'No content returned.');
+
+      const inputApprox = Math.ceil((systemMessage.content.length + userMessage.length) / 4);
+      const outputApprox = Math.ceil(content.length / 4);
       const response: AIBridgeResponse = {
-        content: `[Mock response to: ${userMessage}]`,
+        content,
         provider: session.provider,
         tokensUsed: {
-          input: Math.ceil(((systemMessage.content.length + userMessage.length) / 4)),
-          output: 100,
-          total: Math.ceil(((systemMessage.content.length + userMessage.length) / 4)) + 100,
+          input: inputApprox,
+          output: outputApprox,
+          total: inputApprox + outputApprox,
         },
-        cost: 0.001,
-        latency: Date.now() - startTime,
+        cost: 0,
+        latency: gateway.usage?.latencyMs ?? Date.now() - startTime,
       };
 
       // Record metrics
-      globalProviderRouter.recordRequest(session.provider, response.latency, true);
+      globalProviderRouter.recordRequest(session.provider, response.latency, gateway.ok);
 
       // Update session
       session.messages.push({ role: 'user', content: userMessage });
@@ -152,6 +169,10 @@ export class AIExecutionBridge {
       session.totalTokens += response.tokensUsed.total;
       session.totalCost += response.cost;
       session.updatedAt = Date.now();
+
+      if (!gateway.ok && gateway.error) {
+        throw new Error(gateway.error);
+      }
 
       return response;
     } catch (error) {

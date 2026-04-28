@@ -60,6 +60,20 @@ export {
   clearFeedback,
 } from './feedbackLogger';
 
+// Unison AI Gateway facade — single entry point for all AI modules.
+// Routes canonical UnisonAIModules to the existing edge functions
+// (ai-code-assistant, generate-page, systems-build, copy-rewrite, intent-router, …).
+export { runUnisonAI, runCodePatch, AI_MODULE_CONTRACTS } from '@/services/unisonAI';
+export type {
+  UnisonAIModule,
+  UnisonAIRequest,
+  UnisonAIResponse,
+  UnisonAIContext,
+  UnisonAIOptions,
+  UnisonAIPatchFile,
+  UnisonAIOutputKind,
+} from '@/ai/gatewayTypes';
+
 // ============================================================================
 // Convenience: Full interpretation pipeline
 // ============================================================================

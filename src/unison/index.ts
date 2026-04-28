@@ -58,6 +58,7 @@ export {
   loadLocalFeedback,
   getMisclassificationStats,
   clearFeedback,
+} from './feedbackLogger';
 
 // Unison AI Gateway facade — single entry point for all AI modules.
 // Routes canonical UnisonAIModules to the existing edge functions

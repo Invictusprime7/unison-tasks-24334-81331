@@ -858,16 +858,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
       // ── Step 3: Run Canonical Pipeline (single enforced pathway) ──
-      const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
+      // Derive booleans deterministically from CoreIntent selections.
+      const allIntents = new Set<string>([
+        ...(primaryGoal ? [primaryGoal as string] : []),
+        ...(customerNeeds as string[]),
+      ]);
       const wizardSelections: WizardSelections = {
         businessName: businessName.trim(),
         businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
         industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
-        primaryGoal: primaryGoal || 'collect_leads',
+        primaryGoal: (primaryGoal as string) || 'contact.submit',
         secondaryGoals: customerNeeds as string[],
-        needsBooking: goalNeeds.needsBooking || customerNeeds.includes('book_service'),
-        sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
-        wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
+        needsBooking: allIntents.has('booking.create'),
+        sellsProducts: allIntents.has('cart.add') || allIntents.has('pay.checkout'),
+        wantsLeadCapture: allIntents.has('contact.submit') || allIntents.has('quote.request') || allIntents.has('newsletter.subscribe'),
         templateId: selectedTemplate?.id,
         themeId: selectedTheme?.id,
       };

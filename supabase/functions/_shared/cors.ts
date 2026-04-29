@@ -31,8 +31,23 @@ export function getCorsHeaders(req: Request): Record<string, string> {
     origin.startsWith("http://localhost:") ||
     origin.startsWith("http://127.0.0.1:");
 
+  // Allow Lovable preview/sandbox/published origins
+  let isLovableOrigin = false;
+  try {
+    const host = origin ? new URL(origin).hostname : "";
+    isLovableOrigin =
+      host.endsWith(".lovableproject.com") ||
+      host.endsWith(".lovable.app") ||
+      host.endsWith(".lovable.dev") ||
+      host === "lovable.dev";
+  } catch {
+    isLovableOrigin = false;
+  }
+
   const allowedOrigin =
-    allowedOrigins.includes(origin) || isLocalDev ? origin : "";
+    allowedOrigins.includes(origin) || isLocalDev || isLovableOrigin
+      ? origin
+      : "";
 
   return {
     "Access-Control-Allow-Origin": allowedOrigin,

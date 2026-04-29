@@ -105,6 +105,37 @@ type CustomerNeed = CustomerNeedId;
 type PageChoice = PageChoiceId;
 
 // ============================================================================
+// Playground Pipeline Mappings (system → playground enums)
+// ============================================================================
+
+const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
+  booking: 'appointment_service',
+  saas: 'saas_digital',
+  agency: 'quote_lead',
+  portfolio: 'portfolio_creator',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const SYSTEM_TO_INDUSTRY_OVERLAY: Record<BusinessSystemType, IndustryOverlay> = {
+  booking: 'salon',
+  saas: 'general',
+  agency: 'agency',
+  portfolio: 'photographer',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
+  booking: ["salon", "restaurant", "fitness"],
+  saas: ["universal"],
+  agency: ["coaching", "universal"],
+  portfolio: ["photography", "universal"],
+  store: ["ecommerce", "universal"],
+  content: ["universal"],
+};
+
+// ============================================================================
 // Template Preview Card — renders a mini-preview of a premium section
 // ============================================================================
 

@@ -246,64 +246,20 @@ function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
 }
 
 function mapSelectedPagesToSpecs(selectedPages: PageChoice[]): PageSpec[] {
-  const PAGE_CHOICE_TO_SPEC: Record<PageChoice, PageSpec> = {
-    about: {
-      title: 'About',
-      path: '/about',
-      purpose: 'about',
-      expectedSections: ['navbar', 'about', 'team', 'footer'],
-    },
-    services: {
-      title: 'Services',
-      path: '/services',
-      purpose: 'services',
-      expectedSections: ['navbar', 'services', 'pricing', 'footer'],
-    },
-    pricing: {
-      title: 'Pricing',
-      path: '/pricing',
-      purpose: 'services',
-      expectedSections: ['navbar', 'pricing', 'faq', 'footer'],
-    },
-    gallery: {
-      title: 'Gallery',
-      path: '/gallery',
-      purpose: 'portfolio',
-      expectedSections: ['navbar', 'gallery', 'testimonials', 'footer'],
-    },
-    faq: {
-      title: 'FAQ',
-      path: '/faq',
-      purpose: 'about',
-      expectedSections: ['navbar', 'faq', 'cta', 'footer'],
-    },
-    contact: {
-      title: 'Contact',
-      path: '/contact',
-      purpose: 'contact',
-      expectedSections: ['navbar', 'contact', 'footer'],
-    },
-    booking: {
-      title: 'Booking',
-      path: '/booking',
-      purpose: 'booking',
-      expectedSections: ['navbar', 'booking', 'faq', 'footer'],
-    },
-    checkout: {
-      title: 'Checkout',
-      path: '/checkout',
-      purpose: 'checkout',
-      expectedSections: ['navbar', 'checkout', 'footer'],
-    },
-    blog: {
-      title: 'Blog',
-      path: '/blog',
-      purpose: 'blog',
-      expectedSections: ['navbar', 'blog', 'cta', 'footer'],
-    },
+  // Derived from PageSpec purposes (canonical registry). PageChoice is the
+  // PageSpec.purpose union — every entry maps deterministically.
+  const PURPOSE_TO_SPEC: Record<PageChoice, PageSpec> = {
+    landing:   { title: 'Home',     path: '/',         purpose: 'landing',   expectedSections: ['navbar', 'hero', 'services', 'cta', 'footer'] },
+    about:     { title: 'About',    path: '/about',    purpose: 'about',     expectedSections: ['navbar', 'about', 'team', 'footer'] },
+    services:  { title: 'Services', path: '/services', purpose: 'services',  expectedSections: ['navbar', 'services', 'pricing', 'footer'] },
+    portfolio: { title: 'Gallery',  path: '/gallery',  purpose: 'portfolio', expectedSections: ['navbar', 'gallery', 'testimonials', 'footer'] },
+    contact:   { title: 'Contact',  path: '/contact',  purpose: 'contact',   expectedSections: ['navbar', 'contact', 'footer'] },
+    booking:   { title: 'Booking',  path: '/booking',  purpose: 'booking',   expectedSections: ['navbar', 'booking', 'faq', 'footer'] },
+    shop:      { title: 'Shop',     path: '/shop',     purpose: 'shop',      expectedSections: ['navbar', 'services', 'footer'] },
+    checkout:  { title: 'Checkout', path: '/checkout', purpose: 'checkout',  expectedSections: ['navbar', 'checkout', 'footer'] },
+    blog:      { title: 'Blog',     path: '/blog',     purpose: 'blog',      expectedSections: ['navbar', 'blog', 'cta', 'footer'] },
   };
-
-  return selectedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]);
+  return selectedPages.map((page) => PURPOSE_TO_SPEC[page]).filter(Boolean);
 }
 
 /**

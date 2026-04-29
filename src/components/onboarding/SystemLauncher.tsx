@@ -164,7 +164,7 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
     if (heroRef) {
       cards.push({
         id: `${tag}-premium`,
-        label: `${getIndustryDisplay(tag).label} Premium`,
+        label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Premium`,
         description: ctx?.toneDirective.split(".")[0] || heroRef.description,
         industry: tag,
         sectionTypes: ctx?.sectionFlow.slice(0, 6).map((s) => s) || ["hero", "services", "cta"],
@@ -179,7 +179,7 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
       if (altHero) {
         cards.push({
           id: `${tag}-alt`,
-          label: `${getIndustryDisplay(tag).label} Minimal`,
+          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Minimal`,
           description: "Clean, focused layout emphasizing clarity and conversions",
           industry: tag,
           sectionTypes: ["hero", "services", "testimonials", "cta", "contact", "footer"],
@@ -511,7 +511,7 @@ function buildTemplateGuidance(card: TemplateCardData | null): string {
   if (!card) return "";
 
   const industryContext = INDUSTRY_CONTEXTS.find((entry) => entry.industry === card.industry);
-  const displayLabel = getIndustryDisplay(card.industry).label;
+  const displayLabel = INDUSTRY_DISPLAY[card.industry]?.label || card.industry;
   const sectionFlow = card.sectionTypes.length > 0
     ? card.sectionTypes
     : industryContext?.sectionFlow || [];
@@ -536,7 +536,7 @@ function getGenerationCategory(
   template: TemplateCardData | null
 ): LayoutCategory {
   const templateCategory = template
-    ? getCategoryForIndustry(template.industry)
+    ? TEMPLATE_INDUSTRY_TO_CATEGORY[template.industry]
     : undefined;
 
   return (templateCategory || system.templateCategories[0]) as LayoutCategory;
@@ -566,7 +566,7 @@ function getFunctionErrorMessage(error: unknown): string {
 
 // Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
-  const display = getIndustryDisplay(card.industry);
+  const display = INDUSTRY_DISPLAY[card.industry];
   // Use actual composition theme colors when available
   const primaryHsl = card.themeColors?.primary ?? '217.2 91.2% 59.8%';
   const secondaryHsl = card.themeColors?.secondary ?? '279 50% 55%';
@@ -1409,7 +1409,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-[640px] mx-auto">
-                {industryCards.map((card) => (
+                {INDUSTRY_CARDS.map((card) => (
                   <motion.button
                     key={card.systemId}
                     onClick={() => handleSystemSelect(card.systemId)}
@@ -1496,7 +1496,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     What is the main goal of your site?
                   </label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {goalCards.map((goal) => {
+                    {PRIMARY_GOALS.map((goal) => {
                       const isSelected = primaryGoal === goal.id;
                       return (
                         <button
@@ -1530,7 +1530,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     What do your customers need to do? <span className="text-white/20">(select all)</span>
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    {customerNeedChips.map((need) => {
+                    {CUSTOMER_NEEDS.map((need) => {
                       const isSelected = customerNeeds.includes(need.id);
                       return (
                         <button
@@ -1559,7 +1559,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     Which pages should your site have? <span className="text-white/20">(select all)</span>
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    {pageChoiceChips.map((page) => {
+                    {PAGE_CHOICES.map((page) => {
                       const isSelected = selectedPages.includes(page.id);
                       return (
                         <button
@@ -1590,7 +1590,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     <span className="flex items-center gap-1.5">
                       <Check className="h-3 w-3 text-cyan-400" />
                       <span className="text-cyan-400/70">
-                        {goalCards.find(g => g.id === primaryGoal)?.label}
+                        {PRIMARY_GOALS.find(g => g.id === primaryGoal)?.label}
                       </span>
                       {customerNeeds.length > 0 && (
                         <span className="text-white/20">• {customerNeeds.length} needs • {selectedPages.length} pages</span>
@@ -1638,7 +1638,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   <p className="text-xs text-white/30">
                     Premium layouts for{" "}
                     <span className="text-cyan-400/70 font-medium">
-                      {industryCards.find((c) => c.systemId === selectedSystem)?.label}
+                      {INDUSTRY_CARDS.find((c) => c.systemId === selectedSystem)?.label}
                     </span>
                   </p>
                 </div>
@@ -1646,7 +1646,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
               <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
                 {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
-                  const display = getIndustryDisplay(industryKey);
+                  const display = INDUSTRY_DISPLAY[industryKey as IndustryTag];
                   return (
                     <div key={industryKey} className="mb-5 last:mb-0">
                       <div className="flex items-center gap-2 mb-3">

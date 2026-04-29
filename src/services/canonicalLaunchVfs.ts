@@ -58,15 +58,6 @@ function looksLikeCanonicalRouter(content: string): boolean {
   return /react-router-dom|<Routes\b|<Route\b|BrowserRouter|HashRouter|createBrowserRouter/.test(content);
 }
 
-function isCanonicalPlaceholder(content: string | undefined): boolean {
-  if (!content) return false;
-  return [
-    'Generating page content...',
-    'This page was scaffolded from the canonical playground',
-    'Page Ready',
-  ].some((marker) => content.includes(marker));
-}
-
 function buildCanonicalPlayground(
   siteBundleSnapshot?: SiteBundleSnapshot,
   canonicalPlayground?: PlaygroundState | Record<string, unknown> | null,
@@ -158,15 +149,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
 
-  // Keep canonical router/runtime files authoritative, but allow generated page
-  // components to replace canonical placeholders.
-  const protectedCanonicalPaths = new Set<string>([
-    '/src/App.tsx',
-    '/App.tsx',
-    '/src/index.css',
-    snapshot.routerFile.path,
-  ]);
-
   for (const [path, content] of Object.entries(generatedFiles)) {
     const shouldMoveLegacyAppIntoHome =
       (path === '/src/App.tsx' || path === '/App.tsx') &&
@@ -177,26 +159,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     if (shouldMoveLegacyAppIntoHome) {
       merged[homeFilePath] = rebaseAppModuleForHomePage(content);
       continue;
-    }
-
-    if (protectedCanonicalPaths.has(path) && canonicalFiles[path]) {
-      continue;
-    }
-
-    const isCanonicalPage = registryPages.some((page) => page.filePath === path);
-    if (isCanonicalPage && canonicalFiles[path]) {
-      const canonicalIsPlaceholder = isCanonicalPlaceholder(canonicalFiles[path]);
-      const generatedIsPlaceholder = isCanonicalPlaceholder(content);
-
-      // Keep wizard-selected canonical template/layout authoritative.
-      // Only allow AI to override a page when canonical content is still a
-      // placeholder and AI produced real (non-placeholder) content.
-      if (!canonicalIsPlaceholder) {
-        continue;
-      }
-      if (canonicalIsPlaceholder && generatedIsPlaceholder) {
-        continue;
-      }
     }
 
     merged[path] = content;

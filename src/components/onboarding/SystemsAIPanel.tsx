@@ -12,7 +12,6 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { runUnisonAI } from "@/services/unisonAI";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -616,28 +615,25 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             await new Promise(res => setTimeout(res, 1000 * attempt));
             console.log(`[SystemsAIPanel] Retry attempt ${attempt} for chip generation`);
           }
-          const result = await runUnisonAI({
-            module: "code.patch",
-            prompt: enhancedChipPrompt,
-            options: {
-              passthrough: {
-                mode: "code",
-                templateAction: "full-control",
-                editMode: false,
-                systemType: ref?.systemType,
-                templateName: ref?.templateName,
-                attachments: attachments.length > 0 ? attachments : undefined,
-                userDesignProfile: hasProfile ? {
-                  projectCount: savedProjectCount,
-                  dominantStyle: designProfile?.dominantStyle,
-                  industryHints: designProfile?.industryHints,
-                } : undefined,
-                systemsBuildContext: chipBuildContext,
-              },
+          const result = await supabase.functions.invoke("ai-code-assistant", {
+            body: {
+              messages: [{ role: "user", content: enhancedChipPrompt }],
+              mode: "code",
+              templateAction: "full-control",
+              editMode: false,
+              systemType: ref?.systemType,
+              templateName: ref?.templateName,
+              attachments: attachments.length > 0 ? attachments : undefined,
+              userDesignProfile: hasProfile ? {
+                projectCount: savedProjectCount,
+                dominantStyle: designProfile?.dominantStyle,
+                industryHints: designProfile?.industryHints,
+              } : undefined,
+              systemsBuildContext: chipBuildContext,
             },
           });
-          chipError = result.ok ? null : { message: result.error ?? 'AI gateway error' };
-          chipData = result.raw as Record<string, unknown> | null;
+          chipError = result.error as { message?: string } | null;
+          chipData = result.data as Record<string, unknown> | null;
           if (!chipError) break;
         }
 
@@ -817,26 +813,23 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           await new Promise(res => setTimeout(res, 1000 * attempt));
           console.log(`[SystemsAIPanel] Retry attempt ${attempt} for free-form generation`);
         }
-        const result = await runUnisonAI({
-          module: "code.patch",
-          prompt: enhancedFreeformPrompt,
-          options: {
-            passthrough: {
-              mode: "code",
-              templateAction: "full-control",
-              editMode: false,
-              systemType: "content",
-              attachments: attachments.length > 0 ? attachments : undefined,
-              userDesignProfile: hasProfile ? {
-                projectCount: savedProjectCount,
-                dominantStyle: designProfile?.dominantStyle,
-                industryHints: designProfile?.industryHints,
-              } : undefined,
-            },
+        const result = await supabase.functions.invoke("ai-code-assistant", {
+          body: {
+            messages: [{ role: "user", content: enhancedFreeformPrompt }],
+            mode: "code",
+            templateAction: "full-control",
+            editMode: false,
+            systemType: "content",
+            attachments: attachments.length > 0 ? attachments : undefined,
+            userDesignProfile: hasProfile ? {
+              projectCount: savedProjectCount,
+              dominantStyle: designProfile?.dominantStyle,
+              industryHints: designProfile?.industryHints,
+            } : undefined,
           },
         });
-        freeformError = result.ok ? null : { message: result.error ?? 'AI gateway error' };
-        freeformData = result.raw as Record<string, unknown> | null;
+        freeformError = result.error as { message?: string } | null;
+        freeformData = result.data as Record<string, unknown> | null;
         if (!freeformError) break;
       }
 

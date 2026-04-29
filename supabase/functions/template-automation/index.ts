@@ -2,10 +2,7 @@ import { serve } from "serve";
 import { createClient } from "@supabase/supabase-js";
 import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
-import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 import { safeParseBody, sanitizeString, isValidEmail } from "../_shared/validate.ts";
-
-const RATE_LIMIT_CONFIG = { maxRequests: 120, windowSeconds: 60 };
 
 serve(async (req) => {
   const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
@@ -15,21 +12,6 @@ serve(async (req) => {
 
   if (req.method !== "POST") {
     return errorResponse("Method not allowed", 405, publicCorsHeaders);
-  }
-
-  const limiter = checkRateLimit("template-automation", getClientIp(req), RATE_LIMIT_CONFIG);
-  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
-  if (!limiter.allowed) {
-    return secureJsonResponse(
-      {
-        success: false,
-        error: "Too many requests. Please try again later.",
-        retryAfterSeconds: limiter.retryAfterSeconds,
-      },
-      429,
-      publicCorsHeaders,
-      rateHeaders,
-    );
   }
 
   try {

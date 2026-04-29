@@ -159,14 +159,6 @@ const HIDDEN_ROLES: Set<PageRole> = new Set([
   'checkout',
 ]);
 
-const REQUIRED_PAGE_BY_ROLE: Partial<Record<PageRole, { title: string; route: string; filePath: string; visibleInNav: boolean }>> = {
-  contact: { title: 'Contact', route: '/contact', filePath: '/src/pages/Contact.tsx', visibleInNav: true },
-  booking: { title: 'Booking', route: '/booking', filePath: '/src/pages/Booking.tsx', visibleInNav: true },
-  shop: { title: 'Shop', route: '/shop', filePath: '/src/pages/Shop.tsx', visibleInNav: true },
-  checkout: { title: 'Checkout', route: '/checkout', filePath: '/src/pages/Checkout.tsx', visibleInNav: false },
-  thank_you: { title: 'Thank You', route: '/thank-you', filePath: '/src/pages/ThankYou.tsx', visibleInNav: false },
-};
-
 // ============================================================================
 // Core Planner
 // ============================================================================
@@ -202,15 +194,15 @@ function planFromProfile(
 ): GeneratedSitePlan {
   const siteId = generateUUID();
   const pages: PageRouteNode[] = [];
+  const navItems: string[] = [];
   const redirects: RedirectBinding[] = [];
-  const primaryIntent = options?.primaryIntent || profile.primaryIntent;
   let homePageId = '';
 
   // 1. Build pages from industry defaultPages
-  const allPageSpecs = dedupePageSpecsByPath([
+  const allPageSpecs = [
     ...profile.defaultPages,
     ...(options?.additionalPages || []),
-  ]);
+  ];
 
   for (const spec of allPageSpecs) {
     const pageId = generateUUID();
@@ -239,6 +231,9 @@ function planFromProfile(
     };
 
     pages.push(node);
+    if (node.visibleInNav) {
+      navItems.push(pageId);
+    }
   }
 
   // Ensure we have a home page
@@ -247,18 +242,9 @@ function planFromProfile(
     pages[0].isHome = true;
   }
 
-  // Ensure funnel-critical pages always exist before we derive funnels/bindings.
-  ensureFunnelPrerequisitePages(pages, businessName, primaryIntent);
-
-  // Re-sync home page in case the initial loop produced none.
-  const resolvedHomePage = pages.find((p) => p.isHome) || pages[0];
-  if (resolvedHomePage) {
-    homePageId = resolvedHomePage.id;
-    resolvedHomePage.isHome = true;
-  }
-
   // 2. Build funnels from industry conversion patterns
   const funnels: FunnelPlan[] = [];
+  const primaryIntent = options?.primaryIntent || profile.primaryIntent;
 
   // Booking funnel: landing → booking → thank you
   if (primaryIntent.startsWith('booking.')) {
@@ -391,7 +377,7 @@ function planFromProfile(
     businessName,
     homePageId,
     pages,
-    navItems: pages.filter((page) => page.visibleInNav).map((page) => page.id),
+    navItems,
     funnels,
     redirects,
     generatedAt: new Date().toISOString(),
@@ -562,78 +548,6 @@ function roleToPageType(role: PageRole): BuilderPageType {
     custom: 'custom',
   };
   return map[role] || 'custom';
-}
-
-function dedupePageSpecsByPath(specs: PageSpec[]): PageSpec[] {
-  const byPath = new Map<string, PageSpec>();
-  for (const spec of specs) {
-    const normalizedPath = spec.path.startsWith('/') ? spec.path : `/${spec.path}`;
-    if (!byPath.has(normalizedPath)) {
-      byPath.set(normalizedPath, { ...spec, path: normalizedPath });
-    }
-  }
-  return Array.from(byPath.values());
-}
-
-function ensurePageNodeByRole(
-  pages: PageRouteNode[],
-  role: PageRole,
-  businessName: string,
-): void {
-  if (pages.some((page) => page.role === role)) {
-    return;
-  }
-
-  const defaults = REQUIRED_PAGE_BY_ROLE[role];
-  if (!defaults) {
-    return;
-  }
-
-  pages.push({
-    id: generateUUID(),
-    name: defaults.title,
-    title: defaults.title,
-    route: defaults.route,
-    role,
-    filePath: defaults.filePath,
-    visibleInNav: defaults.visibleInNav,
-    isHome: false,
-    generatedBy: 'wizard',
-    seo: {
-      title: `${defaults.title} | ${businessName}`,
-      description: `${defaults.title} page for ${businessName}`,
-    },
-  });
-}
-
-function ensureFunnelPrerequisitePages(
-  pages: PageRouteNode[],
-  businessName: string,
-  primaryIntent: string,
-): void {
-  if (primaryIntent.startsWith('booking.')) {
-    ensurePageNodeByRole(pages, 'booking', businessName);
-    ensurePageNodeByRole(pages, 'thank_you', businessName);
-    return;
-  }
-
-  if (primaryIntent === 'cart.add' || primaryIntent === 'cart.checkout') {
-    ensurePageNodeByRole(pages, 'shop', businessName);
-    ensurePageNodeByRole(pages, 'checkout', businessName);
-    ensurePageNodeByRole(pages, 'thank_you', businessName);
-    return;
-  }
-
-  if (primaryIntent === 'pay.checkout') {
-    ensurePageNodeByRole(pages, 'checkout', businessName);
-    ensurePageNodeByRole(pages, 'thank_you', businessName);
-    return;
-  }
-
-  if (primaryIntent.startsWith('contact.') || primaryIntent.startsWith('quote.')) {
-    ensurePageNodeByRole(pages, 'contact', businessName);
-    ensurePageNodeByRole(pages, 'thank_you', businessName);
-  }
 }
 
 function capitalize(s: string): string {

@@ -4235,79 +4235,6 @@ function pickRenderableLauncherEntry(
   );
 }
 
-function extractBalancedJsonObjectFromIndex(text: string, startIndex: number): string | null {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = startIndex; index < text.length; index += 1) {
-    const char = text[index];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (char === '\\' && inString) {
-      escaped = true;
-      continue;
-    }
-
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-
-    if (inString) continue;
-
-    if (char === '{') {
-      depth += 1;
-    } else if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        return text.slice(startIndex, index + 1);
-      }
-    }
-  }
-
-  return null;
-}
-
-function extractLauncherEnvelopeFromContent(content: string): {
-  files: Record<string, string>;
-  entryPoint?: string;
-} | null {
-  const match = content.match(/\{\s*"files"\s*:/);
-  if (match?.index == null) return null;
-
-  const jsonObject = extractBalancedJsonObjectFromIndex(content, match.index);
-  if (!jsonObject) return null;
-
-  try {
-    const parsed = JSON.parse(jsonObject) as {
-      files?: Record<string, unknown>;
-      entryPoint?: unknown;
-    };
-    if (!parsed?.files || typeof parsed.files !== 'object') return null;
-
-    const extractedFiles: Record<string, string> = {};
-    for (const [innerPath, innerContent] of Object.entries(parsed.files)) {
-      if (typeof innerContent === 'string' && innerContent.trim()) {
-        extractedFiles[innerPath] = innerContent;
-      }
-    }
-
-    if (Object.keys(extractedFiles).length === 0) return null;
-
-    return {
-      files: extractedFiles,
-      entryPoint: typeof parsed.entryPoint === 'string' ? parsed.entryPoint : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function normalizeLauncherFiles(
   files: Record<string, string>,
   options?: { entryPoint?: string }
@@ -4317,18 +4244,6 @@ export function normalizeLauncherFiles(
   // is such a wrapper, extract the inner files and replace the input map.
   let resolvedFiles = files;
   for (const [fPath, fContent] of Object.entries(files)) {
-    if (typeof fContent === 'string') {
-      const envelope = extractLauncherEnvelopeFromContent(fContent);
-      if (envelope) {
-        console.warn(`[normalizeLauncherFiles] Unwrapping JSON envelope in ${fPath}`);
-        resolvedFiles = envelope.files;
-        if (envelope.entryPoint && !options?.entryPoint) {
-          options = { ...options, entryPoint: envelope.entryPoint };
-        }
-        break;
-      }
-    }
-
     if (typeof fContent === 'string' && fContent.trimStart().startsWith('{')) {
       try {
         const parsed = JSON.parse(fContent);
@@ -4671,7 +4586,7 @@ export function prepareSandpackFiles(
     }
 
     // Fix imports in content to match flattened paths
-    let processedContent = recursivelyUnwrapJson(content, normalizedPath);
+    let processedContent = content;
 
     // Repair legacy/generated payloads that serialized THEME as undefined/null.
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && /const\s+THEME\s*=\s*(undefined|null);/.test(processedContent)) {
@@ -4960,21 +4875,11 @@ function recursivelyUnwrapJson(content: string, hintPath?: string, depth = 0): s
 
   // Check if content is a JSON string
   if (typeof content !== 'string') return content;
-  const trimmed = content.trim();
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('"')) return content;
+  if (!content.trim().startsWith('{')) return content;
   if (content.trim().length < 50) return content; // Too small to be meaningful JSON
 
   try {
     const parsed = JSON.parse(content);
-
-    // Handle double-serialized source files, e.g. "import React...\nexport default..."
-    if (typeof parsed === 'string') {
-      const reparsed = parsed.trim();
-      if (reparsed.includes('\n') || /(?:import\s|export\s|function\s|const\s|className=|return\s*\()/.test(reparsed)) {
-        return recursivelyUnwrapJson(parsed, hintPath, depth + 1);
-      }
-      return parsed;
-    }
     
     // If it's a files object, extract the appropriate file
     if (parsed && typeof parsed === 'object' && parsed.files && typeof parsed.files === 'object') {

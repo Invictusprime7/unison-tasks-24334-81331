@@ -1016,9 +1016,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
       console.log('[AICodeAssistant] Sending request - Mode:', mode, 'Template Action:', templateAction, 'Debug Mode:', mode === "debug");
 
       // The backend function enforces a hard 10k limit per message content. Keep a buffer.
-      // The gateway enforces a 50k limit per message — match that here so
-      // surgical-edit prompts (which include full rule sets + code) are not cut off.
-      const MAX_MESSAGE_CHARS = 50_000;
+      const MAX_MESSAGE_CHARS = 9_000;
       const clamp = (value: string) =>
         value.length > MAX_MESSAGE_CHARS
           ? value.slice(0, MAX_MESSAGE_CHARS) + "\n\n[Truncated to fit request limits]"
@@ -1056,25 +1054,6 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
           if (!result.error) return result;
 
           const err: any = result.error;
-
-          // Extract the real error body from FunctionsHttpError so callers see
-          // the Zod validation message instead of the generic "non-2xx" string.
-          if (err?.name === 'FunctionsHttpError' || typeof (err as any)?.context?.json === 'function') {
-            try {
-              const ctx = (err as { context?: Response }).context;
-              if (ctx && typeof ctx.json === 'function') {
-                const errorBody = await ctx.clone().json().catch(() => null);
-                const extractedMessage =
-                  (errorBody?.error && String(errorBody.error)) ||
-                  (errorBody?.details && `Validation: ${JSON.stringify(errorBody.details)}`) ||
-                  "";
-                if (extractedMessage) {
-                  result.error = new Error(extractedMessage);
-                }
-              }
-            } catch { /* ignore extraction failure */ }
-          }
-
           const isFetchError =
             err?.name === 'FunctionsFetchError' ||
             String(err?.message || '').includes('Failed to send a request to the Edge Function') ||

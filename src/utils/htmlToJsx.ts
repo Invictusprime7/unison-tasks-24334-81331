@@ -98,7 +98,7 @@ function convertAttributes(attrString: string): string {
   let result = attrString;
 
   // Convert style=\"...\" to style={{...}}
-  result = result.replace(/\bstyle="([^"]*)"/g, (_, styleStr) => {
+  result = result.replace(/\bstyle=\"([^\"]*)\"/g, (_, styleStr) => {
     return `style={${styleStringToObject(styleStr)}}`;
   });
 

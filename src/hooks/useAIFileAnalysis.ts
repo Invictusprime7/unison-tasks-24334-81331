@@ -107,8 +107,7 @@ For code files:
               ]
             }))
           ],
-          // No mode override — falls to general_code_assist; system message above
-          // instructs the model to output HTML for the canvas use-case.
+          mode: 'html', // Request HTML mode for vanilla output
         }
       });
 
@@ -182,7 +181,7 @@ Return ONLY the HTML code, no explanations.`
               ]
             }
           ],
-          // No mode override — system prompt controls HTML output format.
+          mode: 'html',
         }
       });
 

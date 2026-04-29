@@ -457,7 +457,6 @@ export function hydratePlaygroundFromVFS(
       {
         funnelRole: page.funnelRole,
         isHome: page.isHome,
-        filePath: page.filePath,
         navOrder: detectedPages.indexOf(page),
         showInNav: !["checkout", "thankyou", "cart", "legal"].includes(page.pageType),
         source: { kind: "react_tsx", content: page.content, contentHash: nanoid(8) },
@@ -533,59 +532,12 @@ export function mergeHydrationResult(
     ...existing.pageRegistry,
     version: existing.pageRegistry.version + 1,
   };
-
-  const normalizeText = (value?: string) => (value || '').trim().toLowerCase();
-  const findEquivalentPageId = (page: BuilderPage): string | null => {
-    if (mergedRegistry.pages[page.pageId]) return page.pageId;
-
-    const incomingFilePath = normalizeText(page.filePath);
-    const incomingPath = normalizeText(page.path);
-    const incomingTitle = normalizeText(page.title);
-
-    for (const [existingPageId, existingPage] of Object.entries(mergedRegistry.pages)) {
-      const existingFilePath = normalizeText(existingPage.filePath);
-      const existingPath = normalizeText(existingPage.path);
-      const existingTitle = normalizeText(existingPage.title);
-
-      if (incomingFilePath && existingFilePath && incomingFilePath === existingFilePath) {
-        return existingPageId;
-      }
-      if (incomingPath && existingPath && incomingPath === existingPath) {
-        if ((incomingTitle && existingTitle && incomingTitle === existingTitle) || page.isHome || existingPage.isHome) {
-          return existingPageId;
-        }
-      }
-      if (incomingTitle && existingTitle && incomingTitle === existingTitle && incomingPath && existingPath && incomingPath === existingPath) {
-        return existingPageId;
-      }
-    }
-
-    return null;
-  };
   
-  // Merge pages idempotently: reconcile VFS-detected pages back onto canonical pages
-  // by file path / route / title, preserving stable existing page IDs.
+  // Merge pages: incoming wins for new pages, existing wins for already-present pages
   for (const [pageId, page] of Object.entries(incoming.pageRegistry.pages)) {
-    const existingPageId = findEquivalentPageId(page);
-
-    if (!existingPageId) {
+    if (!mergedRegistry.pages[pageId]) {
       mergedRegistry.pages[pageId] = page;
-      continue;
     }
-
-    const existingPage = mergedRegistry.pages[existingPageId];
-    mergedRegistry.pages[existingPageId] = {
-      ...existingPage,
-      ...page,
-      pageId: existingPageId,
-      title: existingPage.title || page.title,
-      path: existingPage.path || page.path,
-      filePath: existingPage.filePath || page.filePath,
-      isHome: existingPage.isHome || page.isHome,
-      createdAt: existingPage.createdAt,
-      updatedAt: page.updatedAt || existingPage.updatedAt,
-      source: page.source?.content ? page.source : existingPage.source,
-    };
   }
   
   // Set home page if not already set

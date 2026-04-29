@@ -5,16 +5,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  {
-    ignores: [
-      "dist",
-      "zip_extract/**",
-      "openclaude-main/**",
-      "claude-code-main/**",
-      "supabase/functions/node_modules/**",
-      "**/*.tsbuildinfo",
-    ],
-  },
+  { ignores: ["dist", "zip_extract/**"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
@@ -35,7 +26,6 @@ export default tseslint.config(
       "react-hooks/set-state-in-effect": "off", 
       "react-hooks/immutability": "off",
       "react-hooks/purity": "off",
-      "react-hooks/refs": "off",
       "react-compiler/react-compiler": "off",
       "prefer-const": "warn",
       "no-case-declarations": "off",

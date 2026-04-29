@@ -24,13 +24,11 @@ import {
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { supabase } from "@/integrations/supabase/client";
-import { runUnisonAI, type UnisonAIResponse } from "@/services/unisonAI";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   getIndustryForCategory,
   getAllowedIntents,
-  type PageSpec,
 } from "@/contracts";
 import {
   planSiteTopology,
@@ -61,9 +59,7 @@ import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
 import { extractLauncherPayload } from "@/utils/launcherPayload";
-import { isTopologyPlaceholder, scaffoldMissingTopologyPagesWithRouter } from "@/utils/topologyVFSScaffolder";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
-import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 
 // ============================================================================
 // Types
@@ -363,312 +359,6 @@ const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
 function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
   if (value.length <= max) return value;
   return `${value.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
-}
-
-function mapSelectedPagesToSpecs(selectedPages: PageChoice[]): PageSpec[] {
-  const PAGE_CHOICE_TO_SPEC: Record<PageChoice, PageSpec> = {
-    about: {
-      title: 'About',
-      path: '/about',
-      purpose: 'about',
-      expectedSections: ['navbar', 'about', 'team', 'footer'],
-    },
-    services: {
-      title: 'Services',
-      path: '/services',
-      purpose: 'services',
-      expectedSections: ['navbar', 'services', 'pricing', 'footer'],
-    },
-    pricing: {
-      title: 'Pricing',
-      path: '/pricing',
-      purpose: 'services',
-      expectedSections: ['navbar', 'pricing', 'faq', 'footer'],
-    },
-    gallery: {
-      title: 'Gallery',
-      path: '/gallery',
-      purpose: 'portfolio',
-      expectedSections: ['navbar', 'gallery', 'testimonials', 'footer'],
-    },
-    faq: {
-      title: 'FAQ',
-      path: '/faq',
-      purpose: 'about',
-      expectedSections: ['navbar', 'faq', 'cta', 'footer'],
-    },
-    contact: {
-      title: 'Contact',
-      path: '/contact',
-      purpose: 'contact',
-      expectedSections: ['navbar', 'contact', 'footer'],
-    },
-    booking: {
-      title: 'Booking',
-      path: '/booking',
-      purpose: 'booking',
-      expectedSections: ['navbar', 'booking', 'faq', 'footer'],
-    },
-    checkout: {
-      title: 'Checkout',
-      path: '/checkout',
-      purpose: 'checkout',
-      expectedSections: ['navbar', 'checkout', 'footer'],
-    },
-    blog: {
-      title: 'Blog',
-      path: '/blog',
-      purpose: 'blog',
-      expectedSections: ['navbar', 'blog', 'cta', 'footer'],
-    },
-  };
-
-  return selectedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]);
-}
-
-/**
- * Build a mandatory topology contract block from the planned site topology.
- *
- * This block is injected directly into the AI prompt so the model knows:
- * 1. Exactly which files it MUST output as separate React component files.
- * 2. The nav links every page header must wire with <Link to="..."> routes.
- * 3. The primary CTA / action button wiring for each page role.
- *
- * Without this block the AI generates a homepage that links to pages it never
- * created, which causes "page not built by wizard" errors in the Web Builder.
- */
-function buildTopologyContractBlock(sitePlan: GeneratedSitePlan): string {
-  const navPages = sitePlan.pages.filter(p => p.visibleInNav);
-  const allPages = sitePlan.pages;
-
-  const fileManifest = allPages.map((p) => ({
-    filePath: p.filePath,
-    route: p.route,
-    role: p.role,
-    title: p.title,
-    visibleInNav: p.visibleInNav,
-  }));
-
-  const redirectBindings = sitePlan.redirects.map((r) => {
-    const sourcePage = sitePlan.pages.find((p) => p.id === r.sourcePageId);
-    return {
-      sourcePageRoute: sourcePage?.route || '/',
-      sourcePageTitle: sourcePage?.title || 'Home',
-      sourceElementLabel: r.sourceElementLabel,
-      intent: r.intent,
-      targetRoute: r.targetRoute,
-    };
-  });
-
-  const routerRoutes = allPages.map((p) => p.route);
-  const navRoutes = navPages.map((p) => p.route);
-  const manifestJson = JSON.stringify(fileManifest, null, 2);
-  const redirectsJson = JSON.stringify(redirectBindings, null, 2);
-
-  return `\n\nSITE_TOPOLOGY_CONTRACT (REQUIRED):
-You must generate a complete multi-page React Router site using this exact topology.
-Do not omit any file. Do not reference routes that are missing from the files output.
-
-REQUIRED_OUTPUT_FORMAT (JSON only, no markdown, no prose):
-{"files":{"<path>":"<full code>"},"entryPoint":"/src/App.tsx","siteBundle":{"pages":{},"theme":{},"metadata":{}}}
-
-REQUIRED_FILE_MANIFEST:
-${manifestJson}
-
-ROUTER_RULES:
-- /src/App.tsx must register Route entries for every route in: ${JSON.stringify(routerRoutes)}
-- Each non-home route must render from its matching filePath in REQUIRED_FILE_MANIFEST.
-
-NAV_RULES:
-- Each page must include a nav with links for: ${JSON.stringify(navRoutes)}
-- Keep links visually separated (list items or spaced inline links). Never concatenate nav labels.
-- Use react-router-dom Link for internal routes.
-
-ACTION_INTENT_RULES:
-- Every clickable CTA or nav link must include data-ut-intent.
-- Internal nav links must use data-ut-intent="nav.goto_page".
-- Form submits should use contextual intent (contact.submit, booking.create, newsletter.subscribe).
-- Purchase actions should use cart.add or cart.checkout when relevant.
-
-REDIRECT_BINDINGS (authoritative label->route mappings):
-${redirectsJson}
-
-QUALITY_RULES:
-- Maintain premium visual quality, clear spacing, and responsive layout.
-- Do not collapse navigation text into one token.
-- Ensure all pages are fully renderable with no undefined variables.
-`;
-}
-
-function buildWizardSiteBundleContext(input: {
-  snapshot: CanonicalPipelineResult['siteBundleSnapshot'];
-  selectedTheme: ThemePreset | null;
-  selectedTemplate: TemplateCardData | null;
-  generationCategory: LayoutCategory;
-}): LauncherHandoff['siteBundle'] {
-  const pages = Object.fromEntries(
-    Object.entries(input.snapshot.pageRegistry.pages).map(([pageId, page]) => [
-      pageId,
-      {
-        id: pageId,
-        title: page.title,
-        path: page.path,
-        route: page.path,
-        filePath: page.filePath,
-      },
-    ]),
-  );
-
-  return {
-    pages,
-    theme: {
-      id: input.selectedTheme?.id,
-      label: input.selectedTheme?.label,
-      palette: input.selectedTheme?.palette,
-      typography: input.selectedTheme?.typography,
-    },
-    metadata: {
-      name: input.snapshot.businessName,
-      industry: input.snapshot.industry,
-      templateCategory: input.generationCategory,
-      templateId: input.selectedTemplate?.id,
-      templateName: input.selectedTemplate?.label,
-      routes: input.snapshot.routes,
-      intents: Object.values(input.snapshot.bindings).map((binding) => binding.coreIntent || binding.intent),
-      bindings: Object.keys(input.snapshot.bindings),
-      components: Object.keys(input.snapshot.componentInstances || {}),
-    } as Record<string, unknown>,
-  };
-}
-
-function ensureTopologyCoverage(input: {
-  plan: GeneratedSitePlan;
-  files: Record<string, string>;
-  snapshot: CanonicalPipelineResult['siteBundleSnapshot'];
-}): { files: Record<string, string>; synthesizedPaths: string[] } {
-  const merged = { ...input.files };
-  const scaffolds = scaffoldMissingTopologyPagesWithRouter(
-    input.plan,
-    merged,
-    input.snapshot.pageRegistry,
-  );
-
-  const synthesizedPaths = Object.keys(scaffolds).filter((path) => !merged[path] && path !== '/src/App.tsx');
-  for (const [path, content] of Object.entries(scaffolds)) {
-    if (path === '/src/App.tsx') continue;
-    if (!merged[path]) {
-      merged[path] = content;
-    }
-  }
-
-  // If topology synthesis occurred, refresh router from plan so new pages are routable.
-  if (synthesizedPaths.length > 0 && scaffolds['/src/App.tsx']) {
-    merged['/src/App.tsx'] = scaffolds['/src/App.tsx'];
-  }
-
-  return { files: merged, synthesizedPaths };
-}
-
-function normalizeGeneratedFilePath(path: unknown): string | null {
-  if (typeof path !== "string" || !path.trim()) return null;
-  const trimmed = path.trim();
-  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-}
-
-function filesRecordFromUnknown(files: unknown): Record<string, string> | null {
-  const normalizedFiles: Record<string, string> = {};
-
-  if (Array.isArray(files)) {
-    for (const file of files) {
-      if (!file || typeof file !== "object") continue;
-
-      const candidate = file as Record<string, unknown>;
-      const operation = typeof candidate.operation === "string" ? candidate.operation.toLowerCase() : "update";
-      if (operation === "delete") continue;
-
-      const path = normalizeGeneratedFilePath(
-        candidate.path ?? candidate.filename ?? candidate.filePath ?? candidate.name,
-      );
-      const content = typeof candidate.content === "string"
-        ? candidate.content
-        : typeof candidate.code === "string"
-          ? candidate.code
-          : null;
-
-      if (path && content?.trim()) {
-        normalizedFiles[path] = content;
-      }
-    }
-  } else if (files && typeof files === "object") {
-    for (const [path, content] of Object.entries(files as Record<string, unknown>)) {
-      const normalizedPath = normalizeGeneratedFilePath(path);
-      if (normalizedPath && typeof content === "string" && content.trim()) {
-        normalizedFiles[normalizedPath] = content;
-      }
-    }
-  }
-
-  return Object.keys(normalizedFiles).length > 0 ? normalizedFiles : null;
-}
-
-function extractFilesRecordFromGatewayResponse(
-  data: unknown,
-  patchPlan?: UnisonAIResponse["patchPlan"],
-): Record<string, string> | null {
-  const response = data && typeof data === "object" ? data as Record<string, unknown> : {};
-  const rawPatchPlan = response.patchPlan && typeof response.patchPlan === "object"
-    ? response.patchPlan as Record<string, unknown>
-    : null;
-  const contentObject = response.content && typeof response.content === "object"
-    ? response.content as Record<string, unknown>
-    : null;
-  const contentPatchPlan = contentObject?.patchPlan && typeof contentObject.patchPlan === "object"
-    ? contentObject.patchPlan as Record<string, unknown>
-    : null;
-
-  return (
-    filesRecordFromUnknown(response.files) ||
-    filesRecordFromUnknown(rawPatchPlan?.files) ||
-    filesRecordFromUnknown(response.edits) ||
-    filesRecordFromUnknown(contentObject?.files) ||
-    filesRecordFromUnknown(contentPatchPlan?.files) ||
-    filesRecordFromUnknown(patchPlan?.files) ||
-    null
-  );
-}
-
-function validateWizardLaunchReadiness(input: {
-  sitePlan: GeneratedSitePlan;
-  files: Record<string, string>;
-  missingBindingsCount: number;
-}): { ready: boolean; issues: string[]; warnings: string[] } {
-  const issues: string[] = [];
-  const warnings: string[] = [];
-  const requiredPageFiles = Array.from(new Set(input.sitePlan.pages.map((page) => page.filePath)));
-  const missingPageFiles = requiredPageFiles.filter((path) => !input.files[path]);
-  const placeholderPageFiles = requiredPageFiles.filter((path) => isTopologyPlaceholder(input.files[path]));
-
-  if (input.sitePlan.validationErrors?.length) {
-    issues.push(`Topology validation failed: ${input.sitePlan.validationErrors.join('; ')}`);
-  }
-
-  if (missingPageFiles.length > 0) {
-    issues.push(`Missing required topology files: ${missingPageFiles.slice(0, 8).join(', ')}${missingPageFiles.length > 8 ? ` (+${missingPageFiles.length - 8} more)` : ''}`);
-  }
-
-  if (placeholderPageFiles.length > 0) {
-    warnings.push(`Generated site still contains placeholder pages: ${placeholderPageFiles.slice(0, 8).join(', ')}${placeholderPageFiles.length > 8 ? ` (+${placeholderPageFiles.length - 8} more)` : ''}`);
-  }
-
-  if (input.missingBindingsCount > 0) {
-    warnings.push(`Intent wiring incomplete: ${input.missingBindingsCount} unresolved button/label bindings.`);
-  }
-
-  return {
-    ready: issues.length === 0,
-    issues,
-    warnings,
-  };
 }
 
 function buildTemplateGuidance(card: TemplateCardData | null): string {
@@ -1000,20 +690,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       });
 
       // ── Step 2: Generate site topology BEFORE file generation ──
-      const selectedPageSpecs = mapSelectedPagesToSpecs(selectedPages);
-      const defaultPagePaths = new Set((industryProfile?.defaultPages || []).map((page) => page.path));
-      const additionalPages = selectedPageSpecs.filter((page) => !defaultPagePaths.has(page.path));
-
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
-        additionalPages,
       });
       console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
-      if (sitePlan.validationErrors?.length) {
-        console.error('[SystemLauncher] Invalid topology plan:', sitePlan.validationErrors);
-        toast.error('Topology prebuild failed. Please retry launch.');
-        return;
-      }
 
       // ── Step 3: Run Canonical Pipeline (single enforced pathway) ──
       const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
@@ -1034,12 +714,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const pipelineResult = executeCanonicalPipeline(wizardSelections);
       const { playground: materializedPlayground, compileResult: compiledPlayground, siteBundleSnapshot, runtimeManifest: pipelineManifest } = pipelineResult;
       const bindingGuide = buildWizardBindingGuide(siteBundleSnapshot);
-      const wizardSiteBundle = buildWizardSiteBundleContext({
-        snapshot: siteBundleSnapshot,
-        selectedTheme,
-        selectedTemplate,
-        generationCategory,
-      });
 
       if (pipelineResult.warnings.length > 0) {
         console.warn('[SystemLauncher] Pipeline warnings:', pipelineResult.warnings);
@@ -1094,12 +768,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         ? `\n\n--- TEMPLATE GUIDANCE ---\n${templateGuidance}\n`
         : "";
 
-      // Inject the full page manifest + nav/CTA wiring contract derived from the planned topology.
-      // This is the primary mechanism ensuring the AI generates every page the site needs.
-      const topologyContract = buildTopologyContractBlock(sitePlan);
-
       const userPrompt = clampPromptText(
-        `Create a premium ${resolvedIndustry} website for "${businessName.trim()}".${templateContext}${topologyContract}${industryContextBlock}${themeInstruction}${customInstruction}${bindingGuide ? `\n\n${bindingGuide}\n` : ''}`,
+        `Create a premium ${resolvedIndustry} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}${bindingGuide ? `\n\n${bindingGuide}\n` : ''}`,
         AI_MESSAGE_CHAR_LIMIT
       );
 
@@ -1108,89 +778,42 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // NOTE: We intentionally do NOT send compositionCode as currentCode here.
       // Sending it disables the fast-path in the edge function and causes timeouts.
       // The blueprint + template guidance in the user prompt provide enough context.
-      let rawContent = "";
-
-      const resp = await runUnisonAI({
-        module: "site.refine",
-        prompt: userPrompt,
-        context: {
+      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
+        body: {
+          messages: [{ role: "user", content: userPrompt }],
+          mode: "template-react",
+          variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          templateName: businessName.trim() || system.name,
+          aesthetic: selectedTheme?.id || "modern professional",
+          source: resolvedIndustry,
+          savePattern: false,
           systemsBuildContext: blueprint,
-          siteBundle: wizardSiteBundle,
-        },
-        options: {
-          passthrough: {
-            mode: "template-react",
-            // Override shapeBody defaults: wizard launch is NOT an edit or surgical operation
-            editMode: false,
-            surgicalEdit: false,
-            variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-            templateName: businessName.trim() || system.name,
-            aesthetic: selectedTheme?.id || "modern professional",
-            source: resolvedIndustry,
-            savePattern: false,
-            systemType: selectedSystem,
-          },
+          systemType: selectedSystem,
         },
       });
-      const data = resp.raw as any;
-      const directFilesRecord = extractFilesRecordFromGatewayResponse(data, resp.patchPlan);
-      const errorMessage = resp.ok ? "" : (resp.error ?? "Generation failed").trim();
 
-      if (errorMessage) {
-        const normalizedError = errorMessage.toLowerCase();
-        console.error("[SystemLauncher] ai-code-assistant failed:", {
-          message: errorMessage,
-        });
-
-        if (normalizedError.includes("401") || normalizedError.includes("unauthorized") || normalizedError.includes("jwt")) {
-          toast.error("Session expired. Please sign in again.");
-          navigate("/auth");
-          return;
-        }
-
-        if (normalizedError.includes("429") || normalizedError.includes("rate limit")) {
+      if (error) {
+        if (error.message?.includes("429")) {
           toast.error("Rate limit exceeded. Please try again shortly.");
           return;
         }
-
-        if (normalizedError.includes("402") || normalizedError.includes("credit")) {
+        if (error.message?.includes("402")) {
           toast.error("Credits required. Please add credits to continue.");
           return;
         }
-
-        if (normalizedError.includes("400") || normalizedError.includes("validation")) {
-          toast.error(errorMessage || "Invalid generation request. Please adjust inputs and try again.");
-          return;
-        }
-
-        toast.error(errorMessage);
-        return;
-      } else {
-        const contentCandidate =
-          (typeof data?.content === "string" && data.content) ||
-          (typeof data?.code === "string" && data.code) ||
-          (typeof data?.text === "string" && data.text) ||
-          (typeof data?.response === "string" && data.response) ||
-          (directFilesRecord ? JSON.stringify({
-            files: directFilesRecord,
-            entryPoint: data?.entryPoint,
-            siteBundle: data?.siteBundle,
-          }) : "");
-
-        rawContent = contentCandidate
-          .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-          .trim()
-          .replace(/^```json?\s*\n?/i, "")
-          .replace(/\n?```\s*$/i, "")
-          .trim();
+        throw error;
       }
 
+      let rawContent = (data?.content || data?.code || "")
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+        .trim()
+        .replace(/^```json?\s*\n?/i, "")
+        .replace(/\n?```\s*$/i, "")
+        .trim();
+
       // Strip leading non-JSON prose before the opening brace (AI sometimes prepends text)
-      if (!rawContent.startsWith('{')) {
-        const filesObjectMatch = rawContent.match(/\{\s*"files"\s*:/);
-        if (filesObjectMatch?.index != null) {
-          rawContent = rawContent.slice(filesObjectMatch.index);
-        }
+      if (!rawContent.startsWith('{') && rawContent.includes('{"files"')) {
+        rawContent = rawContent.slice(rawContent.indexOf('{"files"'));
       }
 
       const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
@@ -1198,24 +821,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       let vfsFiles: Record<string, string> | null = null;
       let parsedEntryPoint: string | undefined;
       let parsedSiteBundle: LauncherHandoff["siteBundle"] | undefined;
-      const directFilesPayload = directFilesRecord
-        ? {
-          files: directFilesRecord,
-          entryPoint: typeof data?.entryPoint === 'string' ? data.entryPoint : undefined,
-          siteBundle: data?.siteBundle,
-        }
-        : null;
-      const structuredPayload = extractLauncherPayload(directFilesPayload ? JSON.stringify(directFilesPayload) : rawContent);
+      const structuredPayload = extractLauncherPayload(rawContent);
       if (structuredPayload) {
         parsedEntryPoint = structuredPayload.entryPoint;
         if (structuredPayload.siteBundle && typeof structuredPayload.siteBundle === "object") {
           parsedSiteBundle = structuredPayload.siteBundle as LauncherHandoff["siteBundle"];
         }
         vfsFiles = structuredPayload.files;
-      }
-
-      if (!parsedSiteBundle) {
-        parsedSiteBundle = wizardSiteBundle;
       }
 
       // ── Await backend provisioning (runs in parallel with AI generation) ──
@@ -1240,7 +852,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         siteBundleSnapshot,
         pipelineManifest,
         wizardSelections,
-        systemsBuildContext: blueprint as SystemsBuildContext,
       };
       
       // Multiple generation attempted - now prepare launch state
@@ -1250,38 +861,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
       const structuredFiles = vfsFiles ?? structuredPayload?.files ?? null;
-      const topologyFallbackFiles = compiledPlayground?.vfsFiles || siteBundleSnapshot?.vfsFiles || null;
-      let launchFiles = structuredFiles ?? topologyFallbackFiles;
-      let synthesizedTopologyPaths: string[] = [];
 
-      if (!structuredFiles && topologyFallbackFiles) {
-        console.warn('[SystemLauncher] AI response did not contain structured files. Falling back to canonical topology files.');
-        toast('Launch note: using canonical topology fallback.', {
-          description: 'AI response was not schema-complete, so wizard used canonical topology files.',
-        });
-      }
-
-      if (launchFiles) {
-        const ensured = ensureTopologyCoverage({
-          plan: sitePlan,
-          files: launchFiles,
-          snapshot: siteBundleSnapshot,
-        });
-        launchFiles = ensured.files;
-        synthesizedTopologyPaths = ensured.synthesizedPaths;
-      }
-
-      if (synthesizedTopologyPaths.length > 0) {
-        console.warn('[SystemLauncher] Synthesized missing topology pages before launch:', synthesizedTopologyPaths);
-        toast('Launch note: synthesized missing topology pages.', {
-          description: `${synthesizedTopologyPaths.length} page(s) were auto-generated from topology scaffold.`,
-        });
-      }
-
-      if (launchFiles) {
+      if (structuredFiles) {
         const launchArtifacts = buildCanonicalLaunchArtifacts({
-          generatedFiles: launchFiles,
-          preferredEntryPoint: structuredFiles ? (parsedEntryPoint || '/src/App.tsx') : '/src/App.tsx',
+          generatedFiles: vfsFiles ?? structuredFiles,
+          preferredEntryPoint: parsedEntryPoint || '/src/App.tsx',
           siteBundleSnapshot,
           compiledPlayground,
           canonicalPlayground: materializedPlayground,
@@ -1303,26 +887,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         }
         if ((launchArtifacts.bindingApplication?.missingBindings.length || 0) > 0) {
           console.warn('[SystemLauncher] Wizard bindings missing source markers:', launchArtifacts.bindingApplication?.missingBindings);
-        }
-
-        const readiness = validateWizardLaunchReadiness({
-          sitePlan,
-          files: wiredVfsFiles,
-          missingBindingsCount: launchArtifacts.bindingApplication?.missingBindings.length || 0,
-        });
-        if (!readiness.ready) {
-          console.error('[SystemLauncher] Launch blocked due to incomplete topology/intents:', readiness.issues);
-          toast.error('Launch blocked: incomplete topology or intent wiring.', {
-            description: readiness.issues[0],
-          });
-          return;
-        }
-
-        if (readiness.warnings.length > 0) {
-          console.warn('[SystemLauncher] Launch proceeding with non-blocking binding warnings:', readiness.warnings);
-          toast('Launch note: best-effort intent wiring applied.', {
-            description: readiness.warnings[0],
-          });
         }
 
         // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
@@ -1348,7 +912,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           compiledPlayground,
           pipelineManifest,
           wizardSelections,
-          systemsBuildContext: blueprint as SystemsBuildContext,
         });
         setLaunch(launchState);
 
@@ -1424,7 +987,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           compiledPlayground,
           pipelineManifest,
           wizardSelections,
-          systemsBuildContext: blueprint as SystemsBuildContext,
         });
         setLaunch(launchState);
 
@@ -1438,8 +1000,65 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           },
         });
       } else {
-        toast.error("AI generation returned an unsupported response format. Please try again.");
-        return;
+        // Last resort: if a real composition was selected, use it directly
+        const comp = selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null;
+        if (comp) {
+          const compositionCode = compositionToReactCode(comp);
+          const launchArtifacts = buildCanonicalLaunchArtifacts({
+            generatedFiles: { '/src/App.tsx': compositionCode },
+            preferredEntryPoint: '/src/App.tsx',
+            siteBundleSnapshot,
+            compiledPlayground,
+            canonicalPlayground: materializedPlayground,
+            businessId: provisionedBusinessId || undefined,
+            systemType: selectedSystem,
+            systemName: system.name,
+            templateName: `${businessName.trim()} Site`,
+            templateCategory: generationCategory,
+            businessName: businessName.trim(),
+            industry: generationCategory,
+            aesthetic: selectedTheme?.id,
+            backendRequired: false,
+            wizardSelections,
+          });
+          const wiredCompositionVfs = launchArtifacts.files;
+          const runtimeManifest = launchArtifacts.runtimeManifest;
+          const launchState = createLaunchState({
+            systemType: selectedSystem as any,
+            systemName: system.name,
+            businessName: businessName.trim(),
+            templateName: `${businessName.trim()} Site`,
+            templateCategory: generationCategory as any,
+            blueprint: blueprint as any,
+            vfsFiles: wiredCompositionVfs,
+            aesthetic: selectedTheme?.id,
+            preloadedIntents: canonicalIntents,
+            startInPreview: true,
+            intentRuntime: true,
+            businessId: provisionedBusinessId || undefined,
+            runtimeManifest,
+            entryPoint: launchArtifacts.entryPoint,
+            sitePlan,
+            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+            materializedPlayground,
+            compiledPlayground,
+            pipelineManifest,
+            wizardSelections,
+          });
+          setLaunch(launchState);
+          navigate("/web-builder", {
+            state: {
+              vfsFiles: wiredCompositionVfs,
+              runtimeManifest,
+              entryPoint: launchArtifacts.entryPoint,
+              ...navState,
+              siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+            },
+          });
+        } else {
+          toast.error("AI generation produced no output. Try again.");
+          return;
+        }
       }
 
       onOpenChange(false);

@@ -9,24 +9,6 @@ import type { PlaygroundState, PlaygroundValidation, PlaygroundBinding } from '@
 import type { PageRegistry } from '@/types/pageRegistry';
 import { deriveFilePath } from './routeNavigationService';
 
-function resolveRouterSource(vfsFiles: Record<string, string>): { path: string; code: string } | null {
-  const canonicalCandidates = ['/src/App.tsx', '/src/App.jsx', '/App.tsx', '/App.jsx'];
-  for (const path of canonicalCandidates) {
-    const code = vfsFiles[path];
-    if (typeof code === 'string' && code.trim().length > 0) {
-      return { path, code };
-    }
-  }
-
-  for (const [path, code] of Object.entries(vfsFiles)) {
-    if (!/\.(tsx|jsx|ts|js)$/i.test(path)) continue;
-    if (!/(react-router-dom|<Routes\b|<Route\b|BrowserRouter|HashRouter|createBrowserRouter)/.test(code)) continue;
-    return { path, code };
-  }
-
-  return null;
-}
-
 // ============================================================================
 // Core Validator
 // ============================================================================
@@ -268,16 +250,16 @@ export function validatePlayground(
 
   // ── Router ────────────────────────────────────────────────────────────────
 
-  const routerSource = resolveRouterSource(vfsFiles);
-  if (routerSource?.code) {
+  const appTsx = vfsFiles['/src/App.tsx'] || '';
+  if (appTsx) {
     for (const page of pages) {
       if (page.isHome) continue;
-      if (!routerSource.code.includes(`"${page.path}"`) && !routerSource.code.includes(`'${page.path}'`)) {
+      if (!appTsx.includes(`"${page.path}"`) && !appTsx.includes(`'${page.path}'`)) {
         issues.push({
           id: `val_routermiss_${page.pageId}`,
           severity: 'warning',
           scope: 'router',
-          message: `"${page.title}" route "${page.path}" not found in router file ${routerSource.path}.`,
+          message: `"${page.title}" route "${page.path}" not found in App.tsx.`,
           targetId: page.pageId,
         });
       }

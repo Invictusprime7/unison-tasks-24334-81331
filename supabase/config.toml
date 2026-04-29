@@ -125,12 +125,6 @@ verify_jwt = false
 [functions.save-email-provider]
 verify_jwt = true
 
-[functions.send-test-email]
-verify_jwt = true
-
-[functions.send-invitation]
-verify_jwt = true
-
 [functions.template-backend]
 verify_jwt = false
 

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { runUnisonAI } from '@/services/unisonAI';
 import { toast } from 'sonner';
 
 export interface PageSchema {
@@ -43,26 +42,22 @@ export const usePageGenerator = () => {
   const generatePage = async (prompt: string, theme?: string): Promise<PageSchema | null> => {
     setLoading(true);
     try {
-      const resp = await runUnisonAI({
-        module: 'page.graph',
-        prompt,
-        options: { passthrough: { theme } },
+      const { data, error } = await supabase.functions.invoke('generate-page', {
+        body: { prompt, theme }
       });
 
-      if (!resp.ok) {
-        const errMsg = resp.error ?? '';
-        if (errMsg.includes('429')) {
+      if (error) {
+        if (error.message.includes('429')) {
           toast.error('Rate limit exceeded. Please try again later.');
-        } else if (errMsg.includes('402')) {
+        } else if (error.message.includes('402')) {
           toast.error('Payment required. Please add credits to your workspace.');
         } else {
-          toast.error('Failed to generate page: ' + errMsg);
+          toast.error('Failed to generate page: ' + error.message);
         }
         return null;
       }
 
-      const data = resp.raw as { schema?: PageSchema } | null;
-      const schema = data?.schema as PageSchema;
+      const schema = data.schema as PageSchema;
       setGeneratedPage(schema);
       toast.success('Page generated successfully!');
       return schema;
@@ -82,19 +77,16 @@ export const usePageGenerator = () => {
   ): Promise<PageSection | null> => {
     setLoading(true);
     try {
-      const resp = await runUnisonAI({
-        module: 'page.graph',
-        prompt,
-        options: { passthrough: { theme, sectionType } },
+      const { data, error } = await supabase.functions.invoke('generate-page', {
+        body: { prompt, theme, sectionType }
       });
 
-      if (!resp.ok) {
-        toast.error('Failed to generate section: ' + (resp.error ?? 'Unknown error'));
+      if (error) {
+        toast.error('Failed to generate section: ' + error.message);
         return null;
       }
 
-      const data = resp.raw as { schema?: { sections?: PageSection[] } } | null;
-      const section = data?.schema?.sections?.[0] as PageSection;
+      const section = data.schema.sections[0] as PageSection;
       toast.success('Section generated successfully!');
       return section;
     } catch (error) {

@@ -73,7 +73,7 @@ export function safetyCheck(
   }
 
   // ── Rule 7: Detect direct secret/key exposure ─────────────────────────
-  const secretPatterns = /(?:sk_live|sk_test|AKIA|AIza|ghp_|glpat-|xox[bopsa]-)[A-Za-z0-9_-]{10,}/;
+  const secretPatterns = /(?:sk_live|sk_test|AKIA|AIza|ghp_|glpat-|xox[bopsa]-)[A-Za-z0-9_\-]{10,}/;
   if (secretPatterns.test(content)) {
     return { action: "block", reason: "Hardcoded API key/secret detected", warnings: [] };
   }

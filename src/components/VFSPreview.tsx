@@ -1,8 +1,8 @@
-﻿/**
+/**
  * VFSPreview - Sandpack-Only Preview Component
  * 
  * All previews use Sandpack in-browser React/TypeScript bundling.
- * No static HTML fallback; everything renders as live React.
+ * No static HTML fallback — everything renders as live React.
  * 
  * Features:
  * - Sandpack in-browser bundling (primary and only engine)
@@ -33,7 +33,6 @@ import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
-import { openPreviewInNewTab } from '@/utils/previewBlobBuilder';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
@@ -114,7 +113,7 @@ export interface VFSPreviewHandle {
 }
 
 // ============================================================================
-// Sandpack Error Boundary; catches Sandpack/Babel crashes and provides retry
+// Sandpack Error Boundary — catches Sandpack/Babel crashes and provides retry
 // ============================================================================
 
 class SandpackErrorBoundary extends Component<
@@ -139,7 +138,7 @@ class SandpackErrorBoundary extends Component<
       return (
         <div className="flex items-center justify-center h-full bg-background text-foreground p-10">
           <div className="text-center max-w-md">
-            <div className="text-4xl mb-3">!</div>
+            <div className="text-4xl mb-3">⚡</div>
             <h3 className="text-lg font-semibold mb-2">Preview Error</h3>
             <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
               {this.state.error?.message || 'The preview encountered an issue during compilation.'}
@@ -160,7 +159,7 @@ class SandpackErrorBoundary extends Component<
 }
 
 // ============================================================================
-// Sandpack Error Listener; captures compile/runtime errors from Sandpack
+// Sandpack Error Listener — captures compile/runtime errors from Sandpack
 // ============================================================================
 
 const SandpackErrorListener: React.FC<{
@@ -234,7 +233,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 }, ref) => {
   const { launch } = useLaunch();
   const vfsContext = useVFSSafe();
-  // State - default to 'sandpack'; no HTML fallback
+  // State - default to 'sandpack' — no HTML fallback
   const [backend, setBackend] = useState<PreviewBackend>('sandpack');
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
@@ -293,7 +292,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return activeFile;
   }, [activeFile]);
   
-  // Determine Sandpack entry file; Model B always prefers App.tsx as the site router.
+  // Determine Sandpack entry file — Model B: always prefer App.tsx as the site router
   const sandpackEntryFile = useMemo(() => {
     // Always use App.tsx as the canonical entry (site router model)
     if (sandpackFiles['/App.tsx']) return '/App.tsx';
@@ -476,7 +475,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       const data = event.data;
       if (!data?.type) return;
 
-      // Selection bridge
+      // ── Selection bridge ────────────────────────────────────────────────
       if (data.type === 'EDIT_MODE_BRIDGE_READY' || data.type === 'EDIT_MODE_READY') {
         bridgeReadyRef.current = true;
         // On first ready, push the current state so a freshly-mounted iframe
@@ -539,7 +538,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return () => window.removeEventListener('message', handlePreviewMessage);
   }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
   
-  // Initialize backend; Docker for local dev, Sandpack for production.
+  // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {
     if (startAttemptedRef.current) return;
     startAttemptedRef.current = true;
@@ -627,26 +626,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       window.open(dockerService.session.iframeUrl, '_blank');
     } else if (backend === 'local' && LOCAL_PREVIEW_URL) {
       window.open(LOCAL_PREVIEW_URL, '_blank');
-    } else {
-      // Sandpack: build a self-contained blob bundle with Babel + hash routing
-      let currentRoute = '/';
-      let previewTitle = 'Site Preview';
-
-      try {
-        const previewWindow = getPreviewWindow();
-        const hash = previewWindow?.location?.hash || '';
-        if (hash.startsWith('#/')) {
-          currentRoute = hash.slice(1);
-        }
-        const title = previewWindow?.document?.title?.trim();
-        if (title) previewTitle = title;
-      } catch (_err) {
-        // Fallback to root route/title when iframe location isn't accessible
-      }
-
-      openPreviewInNewTab(sandpackFiles, { currentRoute, title: previewTitle });
     }
-  }, [backend, dockerService.session, sandpackFiles, getPreviewWindow]);
+    // For Sandpack, we can't easily open in new tab — it's in-browser
+  }, [backend, dockerService.session]);
 
   // Navigate preview to a hash route via postMessage
   const handleNavigateToRoute = useCallback((route: string) => {
@@ -802,7 +784,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           </div>
         )}
         
-        {/* Sandpack in-browser React preview; the primary rendering engine. */}
+        {/* Sandpack In-Browser React Preview — the primary rendering engine */}
         {backend === 'sandpack' && (
           <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
             <SandpackProvider

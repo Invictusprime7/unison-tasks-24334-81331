@@ -6,10 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
-import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
 import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
-
-const RATE_LIMIT_CONFIG = { maxRequests: 240, windowSeconds: 60 };
 
 interface TemplateRedirect {
   id: string;
@@ -50,21 +47,6 @@ serve(async (req) => {
 
   if (!["GET", "POST", "PUT"].includes(req.method)) {
     return errorResponse("Method not allowed", 405, publicCorsHeaders);
-  }
-
-  const limiter = checkRateLimit("template-backend", getClientIp(req), RATE_LIMIT_CONFIG);
-  const rateHeaders = rateLimitHeaders(limiter, RATE_LIMIT_CONFIG);
-  if (!limiter.allowed) {
-    return secureJsonResponse(
-      {
-        success: false,
-        error: "Too many requests. Please try again later.",
-        retryAfterSeconds: limiter.retryAfterSeconds,
-      },
-      429,
-      publicCorsHeaders,
-      rateHeaders,
-    );
   }
 
   try {

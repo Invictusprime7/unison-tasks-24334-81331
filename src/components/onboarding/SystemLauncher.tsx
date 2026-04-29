@@ -84,176 +84,25 @@ const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string
 ];
 
 // ============================================================================
-// Wizard Questions Configuration
+// Wizard Questions Configuration — Registry-derived (see src/data/wizardRegistry)
 // ============================================================================
 
-type PrimaryGoal = "collect_leads" | "book_appointments" | "sell_offers" | "showcase_work" | "drive_calls" | "grow_email_list";
-type CustomerNeed = "request_quote" | "book_service" | "buy_offer" | "fill_form" | "browse_services";
-type PageChoice = "about" | "services" | "pricing" | "gallery" | "faq" | "contact" | "booking" | "checkout" | "blog";
+import {
+  getIndustryCards,
+  getGoalCards,
+  getCustomerNeedChips,
+  getPageChoiceChips,
+  getIndustryDisplay,
+  getCategoryForIndustry,
+  type PrimaryGoalId,
+  type CustomerNeedId,
+  type PageChoiceId,
+} from "@/data/wizardRegistry";
 
-const PRIMARY_GOALS: { id: PrimaryGoal; label: string; icon: string; description: string }[] = [
-  { id: "collect_leads", label: "Collect Leads", icon: "📩", description: "Capture contact info and grow your pipeline" },
-  { id: "book_appointments", label: "Book Appointments", icon: "📅", description: "Let clients schedule sessions online" },
-  { id: "sell_offers", label: "Sell Offers", icon: "💰", description: "Sell products, packages, or services" },
-  { id: "showcase_work", label: "Showcase Work", icon: "🎨", description: "Display your portfolio and past projects" },
-  { id: "drive_calls", label: "Drive Calls", icon: "📞", description: "Get prospects to call or message you" },
-  { id: "grow_email_list", label: "Grow Email List", icon: "📧", description: "Build a subscriber list for marketing" },
-];
-
-const CUSTOMER_NEEDS: { id: CustomerNeed; label: string; icon: string }[] = [
-  { id: "request_quote", label: "Request a quote", icon: "📋" },
-  { id: "book_service", label: "Book a service", icon: "🗓️" },
-  { id: "buy_offer", label: "Buy an offer/package", icon: "🛒" },
-  { id: "fill_form", label: "Fill out a form", icon: "📝" },
-  { id: "browse_services", label: "Browse services/products", icon: "🔍" },
-];
-
-const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
-  { id: "about", label: "About", icon: "ℹ️" },
-  { id: "services", label: "Services", icon: "⚙️" },
-  { id: "pricing", label: "Pricing", icon: "💲" },
-  { id: "gallery", label: "Gallery", icon: "🖼️" },
-  { id: "faq", label: "FAQ", icon: "❓" },
-  { id: "contact", label: "Contact", icon: "✉️" },
-  { id: "booking", label: "Booking", icon: "📅" },
-  { id: "checkout", label: "Checkout", icon: "🛍️" },
-  { id: "blog", label: "Blog", icon: "📰" },
-];
-
-// ============================================================================
-// Playground Pipeline Mappings
-// ============================================================================
-
-const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
-  booking: 'appointment_service',
-  saas: 'saas_digital',
-  agency: 'quote_lead',
-  portfolio: 'portfolio_creator',
-  store: 'ecommerce',
-  content: 'general',
-};
-
-const SYSTEM_TO_INDUSTRY_OVERLAY: Record<BusinessSystemType, IndustryOverlay> = {
-  booking: 'salon',
-  saas: 'general',
-  agency: 'agency',
-  portfolio: 'photographer',
-  store: 'ecommerce',
-  content: 'general',
-};
-
-const GOAL_TO_NEEDS: Record<PrimaryGoal, { needsBooking?: boolean; sellsProducts?: boolean; wantsLeadCapture?: boolean }> = {
-  collect_leads: { wantsLeadCapture: true },
-  book_appointments: { needsBooking: true },
-  sell_offers: { sellsProducts: true },
-  showcase_work: {},
-  drive_calls: { wantsLeadCapture: true },
-  grow_email_list: { wantsLeadCapture: true },
-};
-
-const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
-  booking: ["salon", "restaurant", "fitness"],
-  saas: ["universal"],
-  agency: ["coaching", "universal"],
-  portfolio: ["photography", "universal"],
-  store: ["ecommerce", "universal"],
-  content: ["universal"],
-};
-
-// Industry display metadata — covers both IndustryTag and composition industry values
-const INDUSTRY_DISPLAY: Record<string, { label: string; icon: string }> = {
-  salon: { label: "Salon & Beauty", icon: "💇" },
-  "local-service": { label: "Local Service", icon: "🔧" },
-  coaching: { label: "Coaching & Consulting", icon: "🎯" },
-  restaurant: { label: "Restaurant & Food", icon: "🍽️" },
-  ecommerce: { label: "E-Commerce", icon: "🛍️" },
-  fitness: { label: "Fitness & Wellness", icon: "💪" },
-  legal: { label: "Legal", icon: "⚖️" },
-  realestate: { label: "Real Estate", icon: "🏠" },
-  photography: { label: "Photography", icon: "📷" },
-  universal: { label: "Universal", icon: "✦" },
-  // Composition industry values
-  saas: { label: "SaaS & Software", icon: "🚀" },
-  agency: { label: "Agency & Creative", icon: "🏢" },
-  portfolio: { label: "Portfolio & Creative", icon: "🎨" },
-  store: { label: "Store & E-Commerce", icon: "🛍️" },
-};
-
-const TEMPLATE_INDUSTRY_TO_CATEGORY: Partial<Record<string, LayoutCategory>> = {
-  salon: "salon",
-  "local-service": "contractor",
-  coaching: "coaching",
-  restaurant: "restaurant",
-  ecommerce: "store",
-  realestate: "realestate",
-  photography: "portfolio",
-  legal: "agency",
-  fitness: "coaching",
-  // Composition industry values
-  saas: "saas",
-  agency: "agency",
-  portfolio: "portfolio",
-  store: "store",
-};
-
-// Extended industry cards with richer visuals
-const INDUSTRY_CARDS: {
-  systemId: BusinessSystemType;
-  icon: string;
-  label: string;
-  tagline: string;
-  gradient: string;
-  glowColor: string;
-}[] = [
-  {
-    systemId: "booking",
-    icon: "📅",
-    label: "Booking & Services",
-    tagline: "Salons, spas, restaurants, contractors",
-    gradient: "from-pink-500/20 via-transparent to-transparent",
-    glowColor: "rgba(236,72,153,0.15)",
-  },
-  {
-    systemId: "saas",
-    icon: "🚀",
-    label: "SaaS & Software",
-    tagline: "Products, platforms, developer tools",
-    gradient: "from-blue-500/20 via-transparent to-transparent",
-    glowColor: "rgba(59,130,246,0.15)",
-  },
-  {
-    systemId: "agency",
-    icon: "🏢",
-    label: "Agency & Consulting",
-    tagline: "Creative studios, legal, real estate",
-    gradient: "from-purple-500/20 via-transparent to-transparent",
-    glowColor: "rgba(168,85,247,0.15)",
-  },
-  {
-    systemId: "portfolio",
-    icon: "🎨",
-    label: "Portfolio & Creative",
-    tagline: "Designers, photographers, artists",
-    gradient: "from-amber-500/20 via-transparent to-transparent",
-    glowColor: "rgba(245,158,11,0.15)",
-  },
-  {
-    systemId: "store",
-    icon: "🛍️",
-    label: "Store & E-Commerce",
-    tagline: "Products, retail, marketplace",
-    gradient: "from-emerald-500/20 via-transparent to-transparent",
-    glowColor: "rgba(16,185,129,0.15)",
-  },
-  {
-    systemId: "content",
-    icon: "📝",
-    label: "Content & Media",
-    tagline: "Blogs, newsletters, nonprofits",
-    gradient: "from-orange-500/20 via-transparent to-transparent",
-    glowColor: "rgba(249,115,22,0.15)",
-  },
-];
+// Backwards-compatible local aliases — values are CoreIntent / PageSpec ids
+type PrimaryGoal = PrimaryGoalId;
+type CustomerNeed = CustomerNeedId;
+type PageChoice = PageChoiceId;
 
 // ============================================================================
 // Template Preview Card — renders a mini-preview of a premium section

@@ -705,6 +705,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     return grouped;
   }, [templateCards]);
 
+  // ─── Registry-derived selection lists (deterministic, no hardcoded scaffolds) ───
+  const industryCards = useMemo(() => getIndustryCards(), []);
+  const goalCards = useMemo(() => getGoalCards(selectedSystem), [selectedSystem]);
+  const customerNeedChips = useMemo(() => getCustomerNeedChips(selectedSystem), [selectedSystem]);
+  const pageChoiceChips = useMemo(() => getPageChoiceChips(selectedSystem), [selectedSystem]);
+
   // ─── Handlers ───────────────────────────────────────────────────────────
 
   const resetState = useCallback(() => {

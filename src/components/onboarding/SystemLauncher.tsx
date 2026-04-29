@@ -84,28 +84,44 @@ const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string
 ];
 
 // ============================================================================
-// Wizard Questions Configuration — Registry-derived (see src/data/wizardRegistry)
+// Wizard Questions Configuration
 // ============================================================================
 
-import {
-  getIndustryCards,
-  getGoalCards,
-  getCustomerNeedChips,
-  getPageChoiceChips,
-  getIndustryDisplay,
-  getCategoryForIndustry,
-  type PrimaryGoalId,
-  type CustomerNeedId,
-  type PageChoiceId,
-} from "@/data/wizardRegistry";
+type PrimaryGoal = "collect_leads" | "book_appointments" | "sell_offers" | "showcase_work" | "drive_calls" | "grow_email_list";
+type CustomerNeed = "request_quote" | "book_service" | "buy_offer" | "fill_form" | "browse_services";
+type PageChoice = "about" | "services" | "pricing" | "gallery" | "faq" | "contact" | "booking" | "checkout" | "blog";
 
-// Backwards-compatible local aliases — values are CoreIntent / PageSpec ids
-type PrimaryGoal = PrimaryGoalId;
-type CustomerNeed = CustomerNeedId;
-type PageChoice = PageChoiceId;
+const PRIMARY_GOALS: { id: PrimaryGoal; label: string; icon: string; description: string }[] = [
+  { id: "collect_leads", label: "Collect Leads", icon: "📩", description: "Capture contact info and grow your pipeline" },
+  { id: "book_appointments", label: "Book Appointments", icon: "📅", description: "Let clients schedule sessions online" },
+  { id: "sell_offers", label: "Sell Offers", icon: "💰", description: "Sell products, packages, or services" },
+  { id: "showcase_work", label: "Showcase Work", icon: "🎨", description: "Display your portfolio and past projects" },
+  { id: "drive_calls", label: "Drive Calls", icon: "📞", description: "Get prospects to call or message you" },
+  { id: "grow_email_list", label: "Grow Email List", icon: "📧", description: "Build a subscriber list for marketing" },
+];
+
+const CUSTOMER_NEEDS: { id: CustomerNeed; label: string; icon: string }[] = [
+  { id: "request_quote", label: "Request a quote", icon: "📋" },
+  { id: "book_service", label: "Book a service", icon: "🗓️" },
+  { id: "buy_offer", label: "Buy an offer/package", icon: "🛒" },
+  { id: "fill_form", label: "Fill out a form", icon: "📝" },
+  { id: "browse_services", label: "Browse services/products", icon: "🔍" },
+];
+
+const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
+  { id: "about", label: "About", icon: "ℹ️" },
+  { id: "services", label: "Services", icon: "⚙️" },
+  { id: "pricing", label: "Pricing", icon: "💲" },
+  { id: "gallery", label: "Gallery", icon: "🖼️" },
+  { id: "faq", label: "FAQ", icon: "❓" },
+  { id: "contact", label: "Contact", icon: "✉️" },
+  { id: "booking", label: "Booking", icon: "📅" },
+  { id: "checkout", label: "Checkout", icon: "🛍️" },
+  { id: "blog", label: "Blog", icon: "📰" },
+];
 
 // ============================================================================
-// Playground Pipeline Mappings (system → playground enums)
+// Playground Pipeline Mappings
 // ============================================================================
 
 const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
@@ -126,6 +142,15 @@ const SYSTEM_TO_INDUSTRY_OVERLAY: Record<BusinessSystemType, IndustryOverlay> = 
   content: 'general',
 };
 
+const GOAL_TO_NEEDS: Record<PrimaryGoal, { needsBooking?: boolean; sellsProducts?: boolean; wantsLeadCapture?: boolean }> = {
+  collect_leads: { wantsLeadCapture: true },
+  book_appointments: { needsBooking: true },
+  sell_offers: { sellsProducts: true },
+  showcase_work: {},
+  drive_calls: { wantsLeadCapture: true },
+  grow_email_list: { wantsLeadCapture: true },
+};
+
 const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
   booking: ["salon", "restaurant", "fitness"],
   saas: ["universal"],
@@ -134,6 +159,101 @@ const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
   store: ["ecommerce", "universal"],
   content: ["universal"],
 };
+
+// Industry display metadata — covers both IndustryTag and composition industry values
+const INDUSTRY_DISPLAY: Record<string, { label: string; icon: string }> = {
+  salon: { label: "Salon & Beauty", icon: "💇" },
+  "local-service": { label: "Local Service", icon: "🔧" },
+  coaching: { label: "Coaching & Consulting", icon: "🎯" },
+  restaurant: { label: "Restaurant & Food", icon: "🍽️" },
+  ecommerce: { label: "E-Commerce", icon: "🛍️" },
+  fitness: { label: "Fitness & Wellness", icon: "💪" },
+  legal: { label: "Legal", icon: "⚖️" },
+  realestate: { label: "Real Estate", icon: "🏠" },
+  photography: { label: "Photography", icon: "📷" },
+  universal: { label: "Universal", icon: "✦" },
+  // Composition industry values
+  saas: { label: "SaaS & Software", icon: "🚀" },
+  agency: { label: "Agency & Creative", icon: "🏢" },
+  portfolio: { label: "Portfolio & Creative", icon: "🎨" },
+  store: { label: "Store & E-Commerce", icon: "🛍️" },
+};
+
+const TEMPLATE_INDUSTRY_TO_CATEGORY: Partial<Record<string, LayoutCategory>> = {
+  salon: "salon",
+  "local-service": "contractor",
+  coaching: "coaching",
+  restaurant: "restaurant",
+  ecommerce: "store",
+  realestate: "realestate",
+  photography: "portfolio",
+  legal: "agency",
+  fitness: "coaching",
+  // Composition industry values
+  saas: "saas",
+  agency: "agency",
+  portfolio: "portfolio",
+  store: "store",
+};
+
+// Extended industry cards with richer visuals
+const INDUSTRY_CARDS: {
+  systemId: BusinessSystemType;
+  icon: string;
+  label: string;
+  tagline: string;
+  gradient: string;
+  glowColor: string;
+}[] = [
+  {
+    systemId: "booking",
+    icon: "📅",
+    label: "Booking & Services",
+    tagline: "Salons, spas, restaurants, contractors",
+    gradient: "from-pink-500/20 via-transparent to-transparent",
+    glowColor: "rgba(236,72,153,0.15)",
+  },
+  {
+    systemId: "saas",
+    icon: "🚀",
+    label: "SaaS & Software",
+    tagline: "Products, platforms, developer tools",
+    gradient: "from-blue-500/20 via-transparent to-transparent",
+    glowColor: "rgba(59,130,246,0.15)",
+  },
+  {
+    systemId: "agency",
+    icon: "🏢",
+    label: "Agency & Consulting",
+    tagline: "Creative studios, legal, real estate",
+    gradient: "from-purple-500/20 via-transparent to-transparent",
+    glowColor: "rgba(168,85,247,0.15)",
+  },
+  {
+    systemId: "portfolio",
+    icon: "🎨",
+    label: "Portfolio & Creative",
+    tagline: "Designers, photographers, artists",
+    gradient: "from-amber-500/20 via-transparent to-transparent",
+    glowColor: "rgba(245,158,11,0.15)",
+  },
+  {
+    systemId: "store",
+    icon: "🛍️",
+    label: "Store & E-Commerce",
+    tagline: "Products, retail, marketplace",
+    gradient: "from-emerald-500/20 via-transparent to-transparent",
+    glowColor: "rgba(16,185,129,0.15)",
+  },
+  {
+    systemId: "content",
+    icon: "📝",
+    label: "Content & Media",
+    tagline: "Blogs, newsletters, nonprofits",
+    gradient: "from-orange-500/20 via-transparent to-transparent",
+    glowColor: "rgba(249,115,22,0.15)",
+  },
+];
 
 // ============================================================================
 // Template Preview Card — renders a mini-preview of a premium section
@@ -164,7 +284,7 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
     if (heroRef) {
       cards.push({
         id: `${tag}-premium`,
-        label: `${getIndustryDisplay(tag).label} Premium`,
+        label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Premium`,
         description: ctx?.toneDirective.split(".")[0] || heroRef.description,
         industry: tag,
         sectionTypes: ctx?.sectionFlow.slice(0, 6).map((s) => s) || ["hero", "services", "cta"],
@@ -179,7 +299,7 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
       if (altHero) {
         cards.push({
           id: `${tag}-alt`,
-          label: `${getIndustryDisplay(tag).label} Minimal`,
+          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Minimal`,
           description: "Clean, focused layout emphasizing clarity and conversions",
           industry: tag,
           sectionTypes: ["hero", "services", "testimonials", "cta", "contact", "footer"],
@@ -246,20 +366,64 @@ function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
 }
 
 function mapSelectedPagesToSpecs(selectedPages: PageChoice[]): PageSpec[] {
-  // Derived from PageSpec purposes (canonical registry). PageChoice is the
-  // PageSpec.purpose union — every entry maps deterministically.
-  const PURPOSE_TO_SPEC: Record<PageChoice, PageSpec> = {
-    landing:   { title: 'Home',     path: '/',         purpose: 'landing',   expectedSections: ['navbar', 'hero', 'services', 'cta', 'footer'] },
-    about:     { title: 'About',    path: '/about',    purpose: 'about',     expectedSections: ['navbar', 'about', 'team', 'footer'] },
-    services:  { title: 'Services', path: '/services', purpose: 'services',  expectedSections: ['navbar', 'services', 'pricing', 'footer'] },
-    portfolio: { title: 'Gallery',  path: '/gallery',  purpose: 'portfolio', expectedSections: ['navbar', 'gallery', 'testimonials', 'footer'] },
-    contact:   { title: 'Contact',  path: '/contact',  purpose: 'contact',   expectedSections: ['navbar', 'contact', 'footer'] },
-    booking:   { title: 'Booking',  path: '/booking',  purpose: 'booking',   expectedSections: ['navbar', 'booking', 'faq', 'footer'] },
-    shop:      { title: 'Shop',     path: '/shop',     purpose: 'shop',      expectedSections: ['navbar', 'services', 'footer'] },
-    checkout:  { title: 'Checkout', path: '/checkout', purpose: 'checkout',  expectedSections: ['navbar', 'checkout', 'footer'] },
-    blog:      { title: 'Blog',     path: '/blog',     purpose: 'blog',      expectedSections: ['navbar', 'blog', 'cta', 'footer'] },
+  const PAGE_CHOICE_TO_SPEC: Record<PageChoice, PageSpec> = {
+    about: {
+      title: 'About',
+      path: '/about',
+      purpose: 'about',
+      expectedSections: ['navbar', 'about', 'team', 'footer'],
+    },
+    services: {
+      title: 'Services',
+      path: '/services',
+      purpose: 'services',
+      expectedSections: ['navbar', 'services', 'pricing', 'footer'],
+    },
+    pricing: {
+      title: 'Pricing',
+      path: '/pricing',
+      purpose: 'services',
+      expectedSections: ['navbar', 'pricing', 'faq', 'footer'],
+    },
+    gallery: {
+      title: 'Gallery',
+      path: '/gallery',
+      purpose: 'portfolio',
+      expectedSections: ['navbar', 'gallery', 'testimonials', 'footer'],
+    },
+    faq: {
+      title: 'FAQ',
+      path: '/faq',
+      purpose: 'about',
+      expectedSections: ['navbar', 'faq', 'cta', 'footer'],
+    },
+    contact: {
+      title: 'Contact',
+      path: '/contact',
+      purpose: 'contact',
+      expectedSections: ['navbar', 'contact', 'footer'],
+    },
+    booking: {
+      title: 'Booking',
+      path: '/booking',
+      purpose: 'booking',
+      expectedSections: ['navbar', 'booking', 'faq', 'footer'],
+    },
+    checkout: {
+      title: 'Checkout',
+      path: '/checkout',
+      purpose: 'checkout',
+      expectedSections: ['navbar', 'checkout', 'footer'],
+    },
+    blog: {
+      title: 'Blog',
+      path: '/blog',
+      purpose: 'blog',
+      expectedSections: ['navbar', 'blog', 'cta', 'footer'],
+    },
   };
-  return selectedPages.map((page) => PURPOSE_TO_SPEC[page]).filter(Boolean);
+
+  return selectedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]);
 }
 
 /**
@@ -511,7 +675,7 @@ function buildTemplateGuidance(card: TemplateCardData | null): string {
   if (!card) return "";
 
   const industryContext = INDUSTRY_CONTEXTS.find((entry) => entry.industry === card.industry);
-  const displayLabel = getIndustryDisplay(card.industry).label;
+  const displayLabel = INDUSTRY_DISPLAY[card.industry]?.label || card.industry;
   const sectionFlow = card.sectionTypes.length > 0
     ? card.sectionTypes
     : industryContext?.sectionFlow || [];
@@ -536,7 +700,7 @@ function getGenerationCategory(
   template: TemplateCardData | null
 ): LayoutCategory {
   const templateCategory = template
-    ? getCategoryForIndustry(template.industry)
+    ? TEMPLATE_INDUSTRY_TO_CATEGORY[template.industry]
     : undefined;
 
   return (templateCategory || system.templateCategories[0]) as LayoutCategory;
@@ -566,7 +730,7 @@ function getFunctionErrorMessage(error: unknown): string {
 
 // Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
-  const display = getIndustryDisplay(card.industry);
+  const display = INDUSTRY_DISPLAY[card.industry];
   // Use actual composition theme colors when available
   const primaryHsl = card.themeColors?.primary ?? '217.2 91.2% 59.8%';
   const secondaryHsl = card.themeColors?.secondary ?? '279 50% 55%';
@@ -704,12 +868,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     }
     return grouped;
   }, [templateCards]);
-
-  // ─── Registry-derived selection lists (deterministic, no hardcoded scaffolds) ───
-  const industryCards = useMemo(() => getIndustryCards(), []);
-  const goalCards = useMemo(() => getGoalCards(selectedSystem), [selectedSystem]);
-  const customerNeedChips = useMemo(() => getCustomerNeedChips(selectedSystem), [selectedSystem]);
-  const pageChoiceChips = useMemo(() => getPageChoiceChips(selectedSystem), [selectedSystem]);
 
   // ─── Handlers ───────────────────────────────────────────────────────────
 
@@ -858,20 +1016,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
       // ── Step 3: Run Canonical Pipeline (single enforced pathway) ──
-      // Derive booleans deterministically from CoreIntent selections.
-      const allIntents = new Set<string>([
-        ...(primaryGoal ? [primaryGoal as string] : []),
-        ...(customerNeeds as string[]),
-      ]);
+      const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
       const wizardSelections: WizardSelections = {
         businessName: businessName.trim(),
         businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
         industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
-        primaryGoal: (primaryGoal as string) || 'contact.submit',
+        primaryGoal: primaryGoal || 'collect_leads',
         secondaryGoals: customerNeeds as string[],
-        needsBooking: allIntents.has('booking.create'),
-        sellsProducts: allIntents.has('cart.add') || allIntents.has('pay.checkout'),
-        wantsLeadCapture: allIntents.has('contact.submit') || allIntents.has('quote.request') || allIntents.has('newsletter.subscribe'),
+        needsBooking: goalNeeds.needsBooking || customerNeeds.includes('book_service'),
+        sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
+        wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
         templateId: selectedTemplate?.id,
         themeId: selectedTheme?.id,
       };
@@ -1409,7 +1563,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-[640px] mx-auto">
-                {industryCards.map((card) => (
+                {INDUSTRY_CARDS.map((card) => (
                   <motion.button
                     key={card.systemId}
                     onClick={() => handleSystemSelect(card.systemId)}
@@ -1496,7 +1650,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     What is the main goal of your site?
                   </label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {goalCards.map((goal) => {
+                    {PRIMARY_GOALS.map((goal) => {
                       const isSelected = primaryGoal === goal.id;
                       return (
                         <button
@@ -1530,7 +1684,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     What do your customers need to do? <span className="text-white/20">(select all)</span>
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    {customerNeedChips.map((need) => {
+                    {CUSTOMER_NEEDS.map((need) => {
                       const isSelected = customerNeeds.includes(need.id);
                       return (
                         <button
@@ -1559,7 +1713,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     Which pages should your site have? <span className="text-white/20">(select all)</span>
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    {pageChoiceChips.map((page) => {
+                    {PAGE_CHOICES.map((page) => {
                       const isSelected = selectedPages.includes(page.id);
                       return (
                         <button
@@ -1590,7 +1744,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     <span className="flex items-center gap-1.5">
                       <Check className="h-3 w-3 text-cyan-400" />
                       <span className="text-cyan-400/70">
-                        {goalCards.find(g => g.id === primaryGoal)?.label}
+                        {PRIMARY_GOALS.find(g => g.id === primaryGoal)?.label}
                       </span>
                       {customerNeeds.length > 0 && (
                         <span className="text-white/20">• {customerNeeds.length} needs • {selectedPages.length} pages</span>
@@ -1638,7 +1792,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   <p className="text-xs text-white/30">
                     Premium layouts for{" "}
                     <span className="text-cyan-400/70 font-medium">
-                      {industryCards.find((c) => c.systemId === selectedSystem)?.label}
+                      {INDUSTRY_CARDS.find((c) => c.systemId === selectedSystem)?.label}
                     </span>
                   </p>
                 </div>
@@ -1646,7 +1800,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
               <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
                 {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
-                  const display = getIndustryDisplay(industryKey);
+                  const display = INDUSTRY_DISPLAY[industryKey as IndustryTag];
                   return (
                     <div key={industryKey} className="mb-5 last:mb-0">
                       <div className="flex items-center gap-2 mb-3">

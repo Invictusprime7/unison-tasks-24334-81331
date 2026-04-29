@@ -37,6 +37,14 @@ export type UnisonAIOutputKind =
   | "page_graph"
   | "funnel_plan";
 
+export type AIProvider =
+  | "auto"
+  | "lovable"
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "local";
+
 export interface UnisonAIContext {
   industry?: string;
   businessName?: string;
@@ -61,8 +69,8 @@ export interface UnisonAIOptions {
   stream?: boolean;
   maxFiles?: number;
   temperature?: number;
-  /** Reserved for future provider routing; today always Lovable AI Gateway */
-  provider?: "auto" | "lovable" | "openai";
+  /** Provider preference. "auto" uses the module's configured fallback ladder. */
+  provider?: AIProvider;
   /** Override which underlying edge function to call (escape hatch) */
   overrideFunction?: string;
   /** Extra body fields merged into the underlying invoke */
@@ -103,10 +111,16 @@ export interface UnisonAIResponse {
   pageGraph?: unknown;
   funnelPlan?: unknown;
   usage?: {
-    provider: string;
+    provider: Exclude<AIProvider, "auto">;
     model?: string;
-    edgeFunction: string;
+    edgeFunction?: string;
     latencyMs: number;
+    providerAttempts?: Array<{
+      provider: Exclude<AIProvider, "auto">;
+      ok: boolean;
+      error?: string;
+      latencyMs: number;
+    }>;
   };
   error?: string;
 }

@@ -17,6 +17,25 @@ type ChartContextProps = {
   config: ChartConfig;
 };
 
+function sanitizeChartToken(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_") || "chart";
+}
+
+function sanitizeChartCssValue(value: string | undefined): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (
+    !trimmed ||
+    /[;{}<>\n\r]/.test(trimmed) ||
+    /url\s*\(|@import|expression\s*\(/i.test(trimmed)
+  ) {
+    return null;
+  }
+
+  return trimmed;
+}
+
 const ChartContext = React.createContext<ChartContextProps | null>(null);
 
 function useChart() {
@@ -37,7 +56,7 @@ const ChartContainer = React.forwardRef<
   }
 >(({ id, className, children, config, ...props }, ref) => {
   const uniqueId = React.useId();
-  const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`;
+  const chartId = `chart-${sanitizeChartToken(id || uniqueId.replace(/:/g, ""))}`;
 
   return (
     <ChartContext.Provider value={{ config }}>
@@ -75,8 +94,10 @@ ${prefix} [data-chart=${id}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
     const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
+    const safeColor = sanitizeChartCssValue(color);
+    return safeColor ? `  --color-${sanitizeChartToken(key)}: ${safeColor};` : null;
   })
+  .filter(Boolean)
   .join("\n")}
 }
 `,

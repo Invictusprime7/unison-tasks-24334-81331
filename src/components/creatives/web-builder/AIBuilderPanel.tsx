@@ -50,6 +50,7 @@ import { AIConversationMessage } from './ai-chat/AIConversationMessage';
 import { AIConversationWelcome } from './ai-chat/AIConversationWelcome';
 import { AIConversationInput } from './ai-chat/AIConversationInput';
 import { supabase } from '@/integrations/supabase/client';
+import { runUnisonAI } from '@/services/unisonAI';
 import { toast } from 'sonner';
 import type { BusinessSystemType } from '@/data/templates/types';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
@@ -910,46 +911,52 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           // Append the current user prompt as the final message
           conversationHistory.push({ role: 'user', content: promptForAI });
 
-          response = await supabase.functions.invoke('ai-code-assistant', {
-            body: {
-              messages: conversationHistory,
-              // Always use template-react for React projects (even surgical edits)
-              // to ensure the AI generates React/TSX output, not raw HTML.
-              // The surgicalEdit flag tells the edge function to apply surgical constraints.
-              // Only fall back to 'code' mode for non-React (HTML template) surgical edits.
-              mode: isSurgicalEdit && !isReactProject ? 'code' : 'template-react',
-              currentCode: truncatedCode,
-              editMode: !!currentCode,
-              debugMode: isDebugMode,
-              surgicalEdit: isSurgicalEdit,
-              behavioralEdit: isBehavioralEdit,
-              targetFile: resolvedTargetFile || undefined,
-              componentBehaviorContext: behaviorContext || undefined,
-              systemType,
-              templateName,
-              templateAction,
-              userDesignProfile: userDesignProfile ?? undefined,
-              systemsBuildContext: systemsBuildContext ?? undefined,
-              siteElementsLibraryContext,
-              attachments: _attachments.length > 0 ? _attachments : undefined,
-              // Send VFS files for edit context (all edit types, not just surgical)
+          const _unisonResp = await runUnisonAI({
+            // Always use code.patch for builder edits — site.refine requires siteBundle
+            // context (not available in-builder). surgicalEdit flag is passed via
+            // passthrough so the edge function still applies surgical-edit behaviour.
+            module: isBehavioralEdit ? 'code.patch' : isDebugMode ? 'code.debug' : 'code.patch',
+            prompt: promptForAI,
+            messages: conversationHistory.map(m => ({ role: m.role as 'user' | 'assistant' | 'system', content: String(m.content) })),
+            context: {
               vfsFiles: vfsPayload,
-              // Preview DOM snapshot for live context awareness
-              previewSnapshot,
-              // Preview diagnostics for Lane B session memory
-              previewDiagnostics: iframeErrors.length > 0
-                ? iframeErrors.slice(0, 3).map(e => `${e.type}: ${e.message}${e.file ? ` (${e.file}:${e.line})` : ''}`).join('\n')
-                : undefined,
-              // Gateway options from user config
-              gatewayOptions: gatewayConfig ? {
-                selectedModelId: gatewayConfig.selectedModelId,
-                reasoningEffort: gatewayConfig.reasoningEffort,
-                timeoutMs: gatewayConfig.timeoutMs,
-                autoModelSelection: gatewayConfig.autoModelSelection,
-                maxTokens: gatewayConfig.maxTokens,
-              } : undefined,
+              activeFile: resolvedTargetFile || undefined,
+              systemsBuildContext: systemsBuildContext ?? undefined,
+            },
+            options: {
+              passthrough: {
+                mode: isSurgicalEdit && !isReactProject ? 'code' : 'template-react',
+                currentCode: truncatedCode,
+                editMode: !!currentCode,
+                debugMode: isDebugMode,
+                surgicalEdit: isSurgicalEdit,
+                behavioralEdit: isBehavioralEdit,
+                targetFile: resolvedTargetFile || undefined,
+                componentBehaviorContext: behaviorContext || undefined,
+                systemType,
+                templateName,
+                templateAction,
+                userDesignProfile: userDesignProfile ?? undefined,
+                siteElementsLibraryContext,
+                attachments: _attachments.length > 0 ? _attachments : undefined,
+                previewSnapshot,
+                previewDiagnostics: iframeErrors.length > 0
+                  ? iframeErrors.slice(0, 3).map(e => `${e.type}: ${e.message}${e.file ? ` (${e.file}:${e.line})` : ''}`).join('\n')
+                  : undefined,
+                gatewayOptions: gatewayConfig ? {
+                  selectedModelId: gatewayConfig.selectedModelId,
+                  reasoningEffort: gatewayConfig.reasoningEffort,
+                  timeoutMs: gatewayConfig.timeoutMs,
+                  autoModelSelection: gatewayConfig.autoModelSelection,
+                  maxTokens: gatewayConfig.maxTokens,
+                } : undefined,
+              },
             },
           });
+          response = {
+            data: _unisonResp.raw as any,
+            error: _unisonResp.ok ? null : Object.assign(new Error(_unisonResp.error ?? 'AI gateway error'), { status: 503 }),
+          };
           
           // Check for retryable errors
           if (response.error) {
@@ -1279,7 +1286,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       }
 
       // SAFETY NET 2: If generatedCode is raw CSS (:root, body {, @import, etc.), wrap in React component
-      if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{\/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
+      if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
         console.warn('[AIBuilderPanel] Safety net: detected raw CSS being applied as TSX — wrapping in React component');
         const cssJsonStr = JSON.stringify(generatedCode);
         generatedCode = `import React from 'react';
@@ -1574,27 +1581,37 @@ export default function App() {
       }
       debugHistory.push({ role: 'user', content: errorPrompt });
 
-      const response = await supabase.functions.invoke('ai-code-assistant', {
-        body: {
-          messages: debugHistory,
-          mode: 'code',
-          currentCode: hasVfsContext ? undefined : currentCode,
-          editMode: true,
-          debugMode: true,
-          systemType,
-          templateName,
-          systemsBuildContext: systemsBuildContext ?? undefined,
-          previewDiagnostics: diagnostics,
+      const debugResp = await runUnisonAI({
+        module: 'code.debug',
+        prompt: errorPrompt,
+        messages: debugHistory.map(m => ({ role: m.role as 'user' | 'assistant' | 'system', content: String(m.content) })),
+        context: {
           vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
-          gatewayOptions: gatewayConfig ? {
-            selectedModelId: gatewayConfig.selectedModelId,
-            reasoningEffort: gatewayConfig.reasoningEffort,
-            timeoutMs: gatewayConfig.timeoutMs,
-            autoModelSelection: gatewayConfig.autoModelSelection,
-            maxTokens: gatewayConfig.maxTokens,
-          } : undefined,
+          systemsBuildContext: systemsBuildContext ?? undefined,
+        },
+        options: {
+          passthrough: {
+            mode: 'code',
+            currentCode: hasVfsContext ? undefined : currentCode,
+            editMode: true,
+            debugMode: true,
+            systemType,
+            templateName,
+            previewDiagnostics: diagnostics,
+            gatewayOptions: gatewayConfig ? {
+              selectedModelId: gatewayConfig.selectedModelId,
+              reasoningEffort: gatewayConfig.reasoningEffort,
+              timeoutMs: gatewayConfig.timeoutMs,
+              autoModelSelection: gatewayConfig.autoModelSelection,
+              maxTokens: gatewayConfig.maxTokens,
+            } : undefined,
+          },
         },
       });
+      const response = {
+        data: debugResp.raw as any,
+        error: debugResp.ok ? null : new Error(debugResp.error ?? 'AI debug error'),
+      };
 
       // Handle non-2xx: response.error is set by supabase-js
       if (response.error) {

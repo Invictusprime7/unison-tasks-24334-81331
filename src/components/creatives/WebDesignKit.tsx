@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Search, Sparkles, Layout, Palette, Globe, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { runUnisonAI } from "@/services/unisonAI";
 import { TemplateEditor } from "./TemplateEditor";
 
 interface WebDesignKitProps {
@@ -63,19 +63,23 @@ export const WebDesignKit = ({ open, onOpenChange, onBack, onTemplateGenerated }
       // Generate unique variation seed for diverse outputs
       const variationSeed = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       
-      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
-        body: { 
-          messages: [{ role: 'user', content: `Generate a ${templateName} template with ${aesthetic} aesthetic inspired by ${source}` }],
-          mode: 'template-html',
-          templateName,
-          aesthetic,
-          source,
-          variationSeed,
-          savePattern: true
+      const resp = await runUnisonAI({
+        module: "template.analyze",
+        prompt: `Generate a ${templateName} template with ${aesthetic} aesthetic inspired by ${source}`,
+        options: {
+          passthrough: {
+            mode: "template-html",
+            templateName,
+            aesthetic,
+            source,
+            variationSeed,
+            savePattern: true,
+          },
         },
       });
 
-      if (error) throw error;
+      if (!resp.ok) throw new Error(resp.error ?? "AI generation failed");
+      const data = resp.raw as any;
 
       if (data.error) {
         toast.error(data.error);

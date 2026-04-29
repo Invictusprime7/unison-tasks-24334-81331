@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { runUnisonAI } from '@/services/unisonAI';
 import { Canvas as FabricCanvas, Rect, Circle, IText, Textbox, FabricImage } from 'fabric';
 import { toast } from 'sonner';
 import { TemplateRenderer } from '@/utils/templateRenderer';
@@ -64,26 +65,25 @@ export const useWebBuilderAI = (
         }
       };
 
-      const { data, error } = await supabase.functions.invoke('web-builder-ai', {
-        body: { 
-          prompt,
-          canvasState,
-          action
-        }
+      const resp = await runUnisonAI({
+        module: 'template.analyze',
+        prompt,
+        options: { passthrough: { canvasState, action } },
       });
 
-      if (error) {
-        if (error.message.includes('429')) {
+      if (!resp.ok) {
+        const errMsg = resp.error ?? '';
+        if (errMsg.includes('429')) {
           toast.error('Rate limit exceeded. Please try again later.');
-        } else if (error.message.includes('402')) {
+        } else if (errMsg.includes('402')) {
           toast.error('Payment required. Please add credits to your workspace.');
         } else {
-          toast.error('Failed to generate design: ' + error.message);
+          toast.error('Failed to generate design: ' + errMsg);
         }
         return null;
       }
 
-      const aiResponse = data as AIResponse;
+      const aiResponse = resp.raw as AIResponse;
       setLastResponse(aiResponse);
 
       // Add objects to canvas
@@ -210,31 +210,36 @@ export const useWebBuilderAI = (
       const variationSeed = generateVariationSeed();
       console.log('[useWebBuilderAI] Generating template via ai-code-assistant, prompt:', prompt, 'seed:', variationSeed);
       
-      const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
-        body: { 
-          messages: [{ role: 'user', content: prompt }],
-          mode: 'template-json',
-          variationSeed,
-          savePattern: true
-        }
+      const resp = await runUnisonAI({
+        module: 'code.patch',
+        prompt,
+        options: {
+          passthrough: {
+            mode: 'template-json',
+            variationSeed,
+            savePattern: true,
+          },
+        },
       });
 
-      if (error) {
-        console.error('[useWebBuilderAI] Edge function error:', error);
-        if (error.message.includes('429')) {
+      if (!resp.ok) {
+        console.error('[useWebBuilderAI] Gateway error:', resp.error);
+        const errMsg = resp.error ?? '';
+        if (errMsg.includes('429')) {
           toast.error('Rate limit exceeded. Please try again later.');
-        } else if (error.message.includes('402')) {
+        } else if (errMsg.includes('402')) {
           toast.error('Payment required. Please add credits to your workspace.');
         } else {
-          toast.error('Failed to generate template: ' + error.message);
+          toast.error('Failed to generate template: ' + errMsg);
         }
         return null;
       }
 
-      console.log('[useWebBuilderAI] Received data:', data);
+      console.log('[useWebBuilderAI] Received data:', resp.raw);
 
       // ai-code-assistant returns { content } with raw JSON string - parse it
       let template;
+      const data = resp.raw as any;
       if (data.content) {
         // Parse JSON from content string (may have markdown code fences)
         let jsonContent = data.content;
@@ -299,30 +304,35 @@ ${prompt.keyMessages?.length ? `Key Messages: ${prompt.keyMessages.join(', ')}` 
 ${prompt.preferredStyle ? `Style: ${prompt.preferredStyle}` : ''}
 ${prompt.brandKit ? `Brand Colors: Primary ${prompt.brandKit.primaryColor}, Secondary ${prompt.brandKit.secondaryColor}` : ''}`;
 
-      const { data, error } = await supabase.functions.invoke('ai-code-assistant', {
-        body: { 
-          messages: [{ role: 'user', content: promptText }],
-          mode: 'template-json',
-          variationSeed,
-          savePattern: true
-        }
+      const resp2 = await runUnisonAI({
+        module: 'code.patch',
+        prompt: promptText,
+        options: {
+          passthrough: {
+            mode: 'template-json',
+            variationSeed,
+            savePattern: true,
+          },
+        },
       });
 
-      if (error) {
-        if (error.message.includes('429')) {
+      if (!resp2.ok) {
+        const errMsg = resp2.error ?? '';
+        if (errMsg.includes('429')) {
           toast.error('Rate limit exceeded. Please try again later.');
-        } else if (error.message.includes('402')) {
+        } else if (errMsg.includes('402')) {
           toast.error('Payment required. Please add credits to your workspace.');
         } else {
-          toast.error('Failed to generate template: ' + error.message);
+          toast.error('Failed to generate template: ' + errMsg);
         }
         return null;
       }
 
       // Parse JSON from ai-code-assistant content response
       let generatedTemplate: AIGeneratedTemplate;
-      if (data.content) {
-        let jsonContent = data.content;
+      const data2 = resp2.raw as any;
+      if (data2.content) {
+        let jsonContent = data2.content;
         jsonContent = jsonContent.replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         try {
           generatedTemplate = JSON.parse(jsonContent) as AIGeneratedTemplate;
@@ -332,7 +342,7 @@ ${prompt.brandKit ? `Brand Colors: Primary ${prompt.brandKit.primaryColor}, Seco
           return null;
         }
       } else {
-        generatedTemplate = data.template as AIGeneratedTemplate;
+        generatedTemplate = data2.template as AIGeneratedTemplate;
       }
       
       toast.success('AI template generated successfully!');

@@ -42,10 +42,15 @@ export function isNonEmptyString(value: unknown): value is string {
  * Prevents null bytes and other injection vectors.
  */
 export function sanitizeString(input: string, maxLength = 1000): string {
-  return input
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "") // Strip control chars
-    .trim()
-    .slice(0, maxLength);
+  let sanitized = "";
+  for (let index = 0; index < input.length; index += 1) {
+    const code = input.charCodeAt(index);
+    if (code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127)) {
+      sanitized += input[index];
+    }
+  }
+
+  return sanitized.trim().slice(0, maxLength);
 }
 
 /**

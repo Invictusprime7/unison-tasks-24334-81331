@@ -88,12 +88,14 @@ async function runWizardLane(
 
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   const { messages, systemsBuildContext, templateName, source, imagePlacement } = parsed;
+  const userPromptText = extractTextContent(messages[messages.length - 1]?.content);
 
   // Fast path system prompt — no research, no memory, no patterns
   const finalSystemPrompt = buildFastPathSystemPrompt({
     systemsBuildContext: systemsBuildContext as Record<string, any>,
     templateName: templateName ?? undefined,
     source: source ?? undefined,
+    multiPageTopology: userPromptText.includes('SITE_TOPOLOGY_CONTRACT'),
   });
 
   const processedMessages = compactMessages(messages);

@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Sparkles, Copy } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { runUnisonAI } from "@/services/unisonAI";
 
 interface CopyRewritePanelProps {
   selectedObject: any;
@@ -29,16 +29,15 @@ export const CopyRewritePanel = ({ selectedObject, onUpdate }: CopyRewritePanelP
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("copy-rewrite", {
-        body: { 
-          text: originalText,
-          tone,
-          purpose
-        }
+      const resp = await runUnisonAI({
+        module: "copy.rewrite",
+        prompt: originalText,
+        options: { passthrough: { tone, purpose } },
       });
 
-      if (error) throw error;
+      if (!resp.ok) throw new Error(resp.error ?? "Failed to rewrite text");
 
+      const data = resp.raw as any;
       setRewrittenText(data.rewrittenText);
       toast.success("Text rewritten successfully");
     } catch (error: any) {

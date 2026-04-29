@@ -19,6 +19,26 @@ interface DocHelperProps {
   embedded?: boolean;
 }
 
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={index} className="bg-muted px-1 py-0.5 rounded text-sm">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+
+    return <React.Fragment key={index}>{part}</React.Fragment>;
+  });
+}
+
 const DocHelper = ({ className, embedded = false }: DocHelperProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
@@ -142,16 +162,10 @@ const DocHelper = ({ className, embedded = false }: DocHelperProps) => {
         flushList();
       } else {
         flushList();
-        // Handle inline formatting
-        const formatted = trimmed
-          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-          .replace(/`([^`]+)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-sm">$1</code>');
         elements.push(
-          <p 
-            key={i} 
-            className="mb-3 text-muted-foreground leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: formatted }}
-          />
+          <p key={i} className="mb-3 text-muted-foreground leading-relaxed">
+            {renderInlineMarkdown(trimmed)}
+          </p>
         );
       }
     });

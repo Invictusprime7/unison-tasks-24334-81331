@@ -176,6 +176,7 @@ export function buildFastPathSystemPrompt(opts: {
   systemsBuildContext: Record<string, any>;
   templateName?: string;
   source?: string;
+  multiPageTopology?: boolean;
 }): string {
   const bp = opts.systemsBuildContext;
   const brandName = bp?.brand?.business_name || opts.templateName || 'My Business';
@@ -195,7 +196,23 @@ export function buildFastPathSystemPrompt(opts: {
   const backgroundHsl = toHsl(palette.background, '222.2 84% 4.9%');
   const foregroundHsl = toHsl(palette.foreground, '210 40% 98%');
 
-  return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
+  const topologyMode = opts.multiPageTopology
+    ? {
+        intro: 'Generate a COMPLETE, premium multi-page React Router website as a React application.',
+        outputRule: 'Output ONLY valid JSON: {"files": {"/src/App.tsx": "...", "/src/pages/Home.tsx": "...", "/src/index.css": "..."},"entryPoint":"/src/App.tsx"}. The user prompt contains the authoritative SITE_TOPOLOGY_CONTRACT; generate every required filePath exactly.',
+        appRule: 'App.tsx must be a router shell that imports each generated page and registers Route entries for every route in the SITE_TOPOLOGY_CONTRACT. Do not collapse pages into one file.',
+        importRule: 'Use ONLY these package imports: react, react-router-dom, lucide-react, framer-motion (optional). Relative imports are allowed ONLY for generated page files from /src/pages.',
+        navRule: 'Navigation links must use react-router-dom Link for internal routes, with data-ut-intent="nav.goto_page".',
+      }
+    : {
+        intro: 'Generate a COMPLETE, premium single-page website as a React application.',
+        outputRule: 'Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}',
+        appRule: "App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';",
+        importRule: 'Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.',
+        navRule: 'Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">',
+      };
+
+  return `You are an elite React developer. ${topologyMode.intro}
 
 BUSINESS: "${brandName}" — ${industry}
 TONE: ${tone}
@@ -220,9 +237,9 @@ BRAND COLORS — HSL values for CSS custom properties (no hsl() wrapper, just th
 --radius: 0.75rem
 
 RULES:
-1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
-2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
-3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
+1. ${topologyMode.outputRule}
+2. ${topologyMode.appRule}
+3. ${topologyMode.importRule}
 4. In App.tsx use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
 5. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
 6. Wire ALL interactive buttons with data-ut-intent attributes. EVERY button/CTA must have one:
@@ -238,7 +255,7 @@ RULES:
    - Email: <a href="mailto:..." data-ut-intent="contact.email">
    Example: <button data-ut-intent="booking.create" className="...">Book Now</button>
    Forms should use: <form data-ut-intent="contact.submit">
-7. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
+7. ${topologyMode.navRule}
 8. Images: use ONLY these VERIFIED Unsplash URLs (they are guaranteed to load):
    HERO/BACKGROUND by industry:
    - Restaurant: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80"

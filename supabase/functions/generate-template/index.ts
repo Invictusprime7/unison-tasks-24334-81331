@@ -474,7 +474,7 @@ function hardenGeneratedHTML(code: string): string {
   // Fix 4: Inject Lucide CDN if data-lucide attributes are used but CDN is missing
   if (hardened.includes('data-lucide') && !hardened.includes('lucide')) {
     if (hardened.includes('</head>')) {
-      hardened = hardened.replace('</head>', '<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"><\/script>\n</head>');
+      hardened = hardened.replace('</head>', '<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>\n</head>');
     }
   }
 

@@ -21,7 +21,7 @@ import {
   Send, X, Loader2, AlertCircle, CheckCircle2, Link2, Eye, EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { runUnisonAI } from '@/services/unisonAI';
 import { toast } from 'sonner';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import type { BusinessSystemType } from '@/data/templates/types';
@@ -155,16 +155,22 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         '5. Make ONLY the requested change — do not alter other aspects of the element.',
       ].join('\n');
 
-      const { data, error: fnError } = await supabase.functions.invoke('ai-code-assistant', {
-        body: {
-          messages: [{ role: 'user', content: surgicalPrompt }],
-          mode: 'code',
-          editMode: true,
-          templateAction: 'modify',
-          systemType: systemType ?? undefined,
-          systemsBuildContext: systemsBuildContext ?? undefined,
+      const resp = await runUnisonAI({
+        module: 'code.patch',
+        prompt: surgicalPrompt,
+        context: { systemsBuildContext: systemsBuildContext ?? undefined },
+        options: {
+          passthrough: {
+            mode: 'code',
+            editMode: true,
+            templateAction: 'modify',
+            systemType: systemType ?? undefined,
+          },
         },
       });
+
+      const data = resp.raw as any;
+      const fnError = resp.ok ? null : { message: resp.error };
 
       if (fnError) {
         // data may carry the edge function's descriptive { error: '...' } body even on failure

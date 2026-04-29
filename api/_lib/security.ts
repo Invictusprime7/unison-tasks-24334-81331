@@ -114,8 +114,11 @@ export function normalizePreviewFilePath(value: unknown): string | null {
     return null;
   }
 
-  if (/[\x00-\x1F\x7F]/.test(trimmed)) {
-    return null;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const code = trimmed.charCodeAt(index);
+    if (code <= 31 || code === 127) {
+      return null;
+    }
   }
 
   const slashNormalized = trimmed.replace(/\\/g, '/');

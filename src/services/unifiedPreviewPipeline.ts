@@ -37,6 +37,7 @@ import {
   scaffoldMissingTopologyPagesWithRouter,
   getTopologyPagesForAIGeneration,
   getMissingTopologyPages,
+  isTopologyPlaceholder,
 } from '@/utils/topologyVFSScaffolder';
 
 // ============================================================================
@@ -55,6 +56,7 @@ export {
   scaffoldMissingTopologyPagesWithRouter,
   getTopologyPagesForAIGeneration,
   getMissingTopologyPages,
+  isTopologyPlaceholder,
 };
 
 // ============================================================================

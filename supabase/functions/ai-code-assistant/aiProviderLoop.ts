@@ -144,7 +144,7 @@ export async function runProviderLoop(opts: {
 
   // ── Phase 2: Direct OpenAI API fallback ──────────────────────────────
   if (!content) {
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+    const OPENAI_API_KEY = Deno.env.get('NEW_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY');
     if (OPENAI_API_KEY) {
       const openaiModels = [
         { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },

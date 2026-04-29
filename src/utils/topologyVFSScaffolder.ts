@@ -135,12 +135,41 @@ function extractComponentName(filePath: string): string {
 }
 
 /**
- * Returns the list of non-home pages from a topology plan
- * that need AI generation (missing from VFS).
+ * Canonical placeholder markers emitted by:
+ *   - generateTopologyPlaceholder (topologyVFSScaffolder) → "Generating page content..."
+ *   - generatePlaygroundPagePlaceholder (playgroundCompiler) → "Page Ready" / "This page was scaffolded"
+ * Any file containing one of these strings has no real content and must be AI-generated.
+ */
+const PLACEHOLDER_CONTENT_MARKERS = [
+  'Generating page content...',
+  'This page was scaffolded from the canonical playground',
+  'Page Ready',
+] as const;
+
+/**
+ * Returns true when the VFS file at the given path is a canonical placeholder
+ * that must be replaced with AI-generated content.
+ */
+export function isTopologyPlaceholder(content: string | undefined): boolean {
+  if (!content) return false;
+  return PLACEHOLDER_CONTENT_MARKERS.some(marker => content.includes(marker));
+}
+
+/**
+ * Returns the list of non-home pages from a topology plan that need AI
+ * generation — either because the file is missing from the VFS entirely OR
+ * because it currently holds only a placeholder scaffold awaiting real content.
  */
 export function getTopologyPagesForAIGeneration(
   plan: GeneratedSitePlan,
   existingFiles: Record<string, string>
 ): PageRouteNode[] {
-  return plan.pages.filter(p => !existingFiles[p.filePath] && !p.isHome);
+  return plan.pages.filter(p => {
+    if (p.isHome) return false;
+    const existing = existingFiles[p.filePath];
+    // Missing file → must generate
+    if (!existing) return true;
+    // Placeholder file → must generate
+    return isTopologyPlaceholder(existing);
+  });
 }

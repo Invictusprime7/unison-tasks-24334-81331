@@ -12,6 +12,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { runUnisonAI } from "@/services/unisonAI";
 import { 
   ACTION_INTENTS, 
   AUTOMATION_INTENTS, 
@@ -117,9 +118,16 @@ export async function classifyPrompt(
       },
     };
 
-    const { data, error } = await supabase.functions.invoke<ClassifyResponse>("systems-classify", {
-      body: request,
+    const resp = await runUnisonAI({
+      module: "business.setup",
+      prompt: prompt,
+      context: {
+        industry: context?.locale,
+      },
+      options: { passthrough: { context: { locale: context?.locale ?? "en-US", region: context?.region, timezone: context?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone } } },
     });
+    const data = resp.raw as ClassifyResponse | null;
+    const error = resp.ok ? null : { message: resp.error };
 
     if (error) {
       return {
@@ -255,13 +263,14 @@ export async function buildWebsite(
   userPrompt?: string
 ): Promise<SystemsAPIResult<BuildWebsiteResponse>> {
   try {
-    const { data, error } = await supabase.functions.invoke<BuildWebsiteResponse>("systems-build", {
-      body: {
-        blueprint,
-        userPrompt,
-        enhanceWithAI: true,
-      },
+    const resp = await runUnisonAI({
+      module: "site.generate",
+      prompt: userPrompt ?? "",
+      context: { businessBlueprint: blueprint },
+      options: { passthrough: { enhanceWithAI: true } },
     });
+    const data = resp.raw as BuildWebsiteResponse | null;
+    const error = resp.ok ? null : { message: resp.error };
 
     if (error) {
       // Handle specific error cases

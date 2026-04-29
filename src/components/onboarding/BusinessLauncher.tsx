@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { runUnisonAI } from "@/services/unisonAI";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -301,23 +302,27 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
         : prompt;
 
       // Call systems-build edge function with React output
-      const { data, error } = await supabase.functions.invoke("systems-build", {
-        body: {
-          blueprint,
-          userPrompt: enhancedPrompt,
-          enhanceWithAI: true,
-          templateId: ref?.templateId,
-          templateHtml: ref?.templateHtml,
-          variantMode: true,
-          variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-          outputFormat: "react",
-          userDesignProfile: hasProfile ? {
-            projectCount: savedProjectCount,
-            dominantStyle: designProfile?.dominantStyle,
-            industryHints: designProfile?.industryHints,
-          } : undefined,
+      const resp = await runUnisonAI({
+        module: "site.generate",
+        prompt: enhancedPrompt,
+        context: { businessBlueprint: blueprint },
+        options: {
+          passthrough: {
+            templateId: ref?.templateId,
+            templateHtml: ref?.templateHtml,
+            variantMode: true,
+            variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+            outputFormat: "react",
+            userDesignProfile: hasProfile ? {
+              projectCount: savedProjectCount,
+              dominantStyle: designProfile?.dominantStyle,
+              industryHints: designProfile?.industryHints,
+            } : undefined,
+          },
         },
       });
+      const data = resp.raw as any;
+      const error = resp.ok ? null : { message: resp.error };
 
       if (error) {
         const msg = error.message || '';

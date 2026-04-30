@@ -3960,9 +3960,15 @@ export function processCode(code: string, filePath: string): string {
   if (missingIcons.length > 0) {
     // Inject lucide proxy declarations for missing icons
     const hasLucideNamespace = code.includes("import * as __LucideIcons from 'lucide-react'");
+    const hasFallbackDecl = code.includes('const __LucideFallback =');
     const injections: string[] = [];
     if (!hasLucideNamespace) {
       injections.push(`import * as __LucideIcons from 'lucide-react';`);
+    }
+    // Always ensure fallback is declared BEFORE lookup lines we emit, even if
+    // the namespace import already exists — otherwise lookups TDZ-crash on
+    // `__LucideFallback`.
+    if (!hasFallbackDecl) {
       injections.push(`const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`);
     }
     for (const name of missingIcons) {

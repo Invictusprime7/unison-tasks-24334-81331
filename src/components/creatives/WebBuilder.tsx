@@ -1658,6 +1658,27 @@ export default function App() {
     autoPersistMs: 1500,
   });
 
+  // Auto-bootstrap a profile from creatorData when none exists yet (legacy / pre-OS drafts).
+  // Runs once after autoLoad finishes; safe to re-run when businessName becomes available.
+  const bootstrapAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (businessOS.loading) return;
+    if (businessOS.profile) return;
+    if (bootstrapAttemptedRef.current) return;
+    const businessName = creatorPlayground.creatorData.businessInfo?.businessName;
+    if (!businessName) return; // wait for hydration
+    bootstrapAttemptedRef.current = true;
+    void import("@/services/businessOSBootstrap").then(({ bootstrapBusinessOSProfileFromCreatorData }) => {
+      const seeded = bootstrapBusinessOSProfileFromCreatorData({
+        draftId: businessOSDraftId,
+        businessId,
+        projectId,
+        creatorData: creatorPlayground.creatorData,
+      });
+      businessOS.setProfile(seeded);
+    });
+  }, [businessOS, businessOSDraftId, businessId, projectId, creatorPlayground.creatorData]);
+
   useEffect(() => {
     const urlId = new URLSearchParams(location.search).get('id');
     if (!projectId || urlId || routeStateHasStructuredProject || templateFiles.currentTemplateId) {

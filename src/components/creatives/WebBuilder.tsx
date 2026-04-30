@@ -1646,8 +1646,15 @@ export default function App() {
     [businessId, projectId, previewCartVersion],
   );
 
-  useEffect(() => {
-    const urlId = new URLSearchParams(location.search).get('id');
+  // Business OS profile — loaded from builder_drafts.metadata.businessOS when a draft is active.
+  const businessOSDraftId = templateFiles.currentTemplateId || null;
+  const businessOS = useBusinessOSProfile({
+    draftId: businessOSDraftId,
+    autoLoad: true,
+    autoPersistMs: 1500,
+  });
+
+
     if (!projectId || urlId || routeStateHasStructuredProject || templateFiles.currentTemplateId) {
       return;
     }

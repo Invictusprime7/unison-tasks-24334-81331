@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { BusinessOSShell } from "@/components/business-os/BusinessOSShell";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
 import { useSetupWizard, type SetupStepId } from "@/hooks/useSetupWizard";
 import type { UseCreatorPlaygroundReturn } from "@/hooks/useCreatorPlayground";

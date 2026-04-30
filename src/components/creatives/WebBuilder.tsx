@@ -3145,12 +3145,12 @@ export default function ${componentName}Page() {
 
     return draftPersistencePromiseRef.current;
   }, [
+    projectDisplayName,
     saveProjectName,
     currentTemplateName,
-    creatorPlayground.creatorData.businessInfo.businessName,
     projectNameFromState,
     effectiveRouteState?.templateName,
-    systemName,
+    projectId,
     getFinalCodeWithOverrides,
     buildSavePayload,
     saveProjectDescription,

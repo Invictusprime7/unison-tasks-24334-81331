@@ -5606,6 +5606,7 @@ ${html}
       </div>
 
       {/* Creator's Playground Modal */}
+      {(() => null)()}
       <CreatorPlaygroundModal
         open={playgroundModalOpen}
         onOpenChange={(open) => {

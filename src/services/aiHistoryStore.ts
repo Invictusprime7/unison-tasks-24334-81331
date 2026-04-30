@@ -179,7 +179,9 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
     };
     await supabase
       .from('builder_drafts')
-      .update({ metadata: nextMeta })
+      // Cast through unknown — Supabase generated Json type is structurally
+      // recursive and rejects our domain shapes even though they're JSON-safe.
+      .update({ metadata: nextMeta as unknown as never })
       .eq('id', row.id);
   } catch {
     // best-effort only

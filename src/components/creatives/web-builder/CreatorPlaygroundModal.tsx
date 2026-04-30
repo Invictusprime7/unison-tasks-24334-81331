@@ -361,6 +361,38 @@ export function CreatorPlaygroundModal({
           <div className="flex-1 min-w-0 flex flex-col">
             <ScrollArea className="flex-1">
               <div className="p-5">
+                {activeSection === "business_os" && (
+                  businessOSProfile ? (
+                    <BusinessOSShell
+                      profile={businessOSProfile}
+                      onOpenModule={(moduleId) => {
+                        const map: Partial<Record<typeof moduleId, Section>> = {
+                          website: "overview",
+                          pages: "pages",
+                          funnels: "funnels",
+                          offers: "products",
+                          forms: "forms",
+                          crm: "intent_registry",
+                          pipeline: "intent_registry",
+                          bookings: "calendars",
+                          payments: "business",
+                          automations: "intent_registry",
+                          inbox: "intent_registry",
+                          reviews: "readiness",
+                          analytics: "readiness",
+                          ai_operator: "intent_registry",
+                          settings: "business",
+                        };
+                        setActiveSection(map[moduleId] || "overview");
+                      }}
+                    />
+                  ) : (
+                    <div className="text-xs text-muted-foreground p-4 border border-dashed border-border/40 rounded-lg">
+                      No Business OS profile yet. Launch a new business through the Wizard
+                      to install one — or open an existing draft.
+                    </div>
+                  )
+                )}
                 {activeSection === "launch" && <SetupWizardPanel wizard={setupWizard} businessId={businessId} />}
                 {activeSection === "overview" && (
                   <OverviewSection

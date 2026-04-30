@@ -4,23 +4,30 @@
  * Usage inside WebBuilder:
  *   const os = useBusinessOSProfile({ draftId, initialProfile });
  *   os.profile, os.updateProfile, os.setModuleStatus, os.persist()
+ *   os.setupTasks, os.updateSetupTaskStatus, os.regenerateSetupTasks()
  *
  * Persistence is opt-in: caller passes a draftId, then `persist()` flushes the
  * current profile into builder_drafts.metadata.businessOS via the service.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   computeBusinessOSReadiness,
   type BusinessOSModuleId,
   type BusinessOSModuleState,
   type BusinessOSProfile,
   type BusinessOSReadiness,
+  type BusinessOSSetupTask,
+  type SetupTaskStatus,
 } from "@/types/businessOS";
 import {
   loadBusinessOSProfileFromDraft,
   saveBusinessOSProfileToDraft,
 } from "@/services/businessOSProfileService";
+import {
+  computeSetupTasks,
+  setSetupTaskStatus,
+} from "@/services/businessOSSetupAutopilot";
 
 export interface UseBusinessOSProfileOptions {
   /** When provided, the hook can load + persist to that draft. */

@@ -4640,6 +4640,7 @@ ${html}
     templateFiles.setCurrentTemplateId(template.id);
     setCurrentTemplateName(template.name);
     setSaveProjectName(template.name);
+    setProjectDisplayName(template.name);
     setSaveProjectDescription(template.description || '');
     
     // Switch to preview mode to show the loaded template

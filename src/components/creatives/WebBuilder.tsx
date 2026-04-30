@@ -5939,6 +5939,7 @@ export default function ${componentName}() {
                 previewRef={livePreviewRef}
                 onApplyToVFS={(files) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
+                  const beforeFiles = virtualFS.getSandpackFiles();
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
                   if (result.success) {
@@ -5946,8 +5947,19 @@ export default function ${componentName}() {
                     const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
                     console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
                     setViewMode('canvas');
-                    console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,', 
+                    console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,',
                       Object.keys(result.dependencies.dependencies).length, 'deps');
+                    // Capture an edit snapshot so users can revert/reapply.
+                    const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
+                    if (changedPaths.length > 0) {
+                      pushAISnapshot(projectId ?? null, {
+                        label: `AI edit · ${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`,
+                        source: 'ai',
+                        before: beforeFiles,
+                        after: mergedFiles,
+                        changedPaths,
+                      });
+                    }
                   } else {
                     console.error('[WebBuilder] aiVFS.applyCode failed:', result.errors);
                   }

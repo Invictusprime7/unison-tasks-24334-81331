@@ -179,11 +179,15 @@ interface CreatorPlaygroundModalProps {
   businessOSProfile?: import("@/types/businessOS").BusinessOSProfile | null;
   /** Setup Autopilot tasks derived from the profile. */
   businessOSSetupTasks?: import("@/types/businessOS").BusinessOSSetupTask[];
+  /** Live count badges keyed by Business OS module id. */
+  businessOSModuleCounts?: Partial<Record<import("@/types/businessOS").BusinessOSModuleId, number>>;
   /** Mark a setup task done/skipped/pending. */
   onUpdateBusinessOSSetupTask?: (
     taskId: string,
     status: import("@/types/businessOS").SetupTaskStatus,
   ) => void;
+  /** Optional callback to bootstrap a profile when none exists. */
+  onCreateBusinessOSProfile?: () => void;
 }
 
 function formatIntentPackLabel(wizardSelections?: WizardSelections | null): string | null {

@@ -3089,13 +3089,12 @@ export default function ${componentName}Page() {
     reason: 'launcher_import' | 'interval_autosave',
   ): Promise<string | null> => {
     const effectiveName = (
+      projectDisplayName.trim() ||
       saveProjectName.trim() ||
       currentTemplateName ||
-      creatorPlayground.creatorData.businessInfo.businessName ||
       projectNameFromState ||
       effectiveRouteState?.templateName ||
-      systemName ||
-      'Untitled Project'
+      `Project ${(projectId || '').slice(0, 8) || Date.now().toString(36)}`
     ).trim();
 
     if (!effectiveName) {

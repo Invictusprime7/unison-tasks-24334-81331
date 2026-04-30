@@ -384,6 +384,12 @@ export function CreatorPlaygroundModal({
                       setupTasks={businessOSSetupTasks}
                       moduleCounts={businessOSModuleCounts}
                       onUpdateSetupTaskStatus={onUpdateBusinessOSSetupTask}
+                      pageRegistry={playground.pageRegistry}
+                      pageStatus={derivePageStatusMap(playground.pageRegistry, readinessReport)}
+                      onSelectPage={(pageId) => onPageSelect?.(pageId)}
+                      onSelectFunnel={() => setActiveSection("funnels")}
+                      onAddPage={() => setActiveSection("pages")}
+                      onAddFunnel={() => setActiveSection("funnels")}
                       onOpenModule={(moduleId) => {
                         const map: Partial<Record<typeof moduleId, Section>> = {
                           website: "overview",

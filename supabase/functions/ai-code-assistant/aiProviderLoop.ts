@@ -33,6 +33,12 @@ export async function runProviderLoop(opts: {
   let reasoning = '';
   let modelUsed: string | undefined;
 
+  // Global wall-clock budget so we don't exceed the client's timeout window.
+  // Client global abort fires at 150s; reserve ~15s for response packaging/network.
+  const TOTAL_BUDGET_MS = 135_000;
+  const startedAt = Date.now();
+  const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
+
   // ── Phase 1: Lovable AI Gateway ──────────────────────────────────────
   if (lovableApiKey) {
     // Log total prompt size for debugging
@@ -40,10 +46,18 @@ export async function runProviderLoop(opts: {
     console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
     
     for (const model of providerPlan.gatewayModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) {
+        console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining gateway models`);
+        lastError = lastError || 'budget exhausted before all models tried';
+        break;
+      }
+      // Per-model timeout = min(configured, remaining budget - 2s safety)
+      const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, remaining - 2000));
       try {
-        console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${providerPlan.perModelTimeoutMs / 1000}s)...`);
+        console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), providerPlan.perModelTimeoutMs);
+        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
         const reqBody: Record<string, unknown> = {
           model: model.id,
@@ -151,10 +165,16 @@ export async function runProviderLoop(opts: {
         { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
       ];
       for (const model of openaiModels) {
+        const remaining = budgetRemaining();
+        if (remaining < 8000) {
+          console.warn(`[AI-Hybrid] Budget exhausted before direct OpenAI fallback (${remaining}ms left)`);
+          break;
+        }
+        const perModelMs = Math.min(25000, Math.max(8000, remaining - 2000));
         try {
-          console.log(`[AI-Hybrid] Trying direct ${model.label}...`);
+          console.log(`[AI-Hybrid] Trying direct ${model.label} (timeout: ${perModelMs / 1000}s)...`);
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 25000);
+          const timeoutId = setTimeout(() => controller.abort(), perModelMs);
           const resp = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {

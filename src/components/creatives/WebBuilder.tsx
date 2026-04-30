@@ -3028,12 +3028,8 @@ export default function ${componentName}Page() {
       canonicalPlayground: launchArtifacts.canonicalPlayground,
       siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
       metadata: {
-        // Project name MUST be the project's own name. Never fall back to the
-        // business name — drafts must be saved under the user-provided project
-        // identity. The Save dialog passes the canonical name as the first arg
-        // to saveTemplate(), which always wins downstream.
-        name: projectNameFromState || currentTemplateName || null,
-        projectName: projectNameFromState || currentTemplateName || null,
+        name: currentTemplateName || effectiveBusinessName,
+        projectName: projectNameFromState || currentTemplateName || effectiveBusinessName,
         businessName: effectiveBusinessName,
         systemType: activeSystemType || systemType || null,
         templateCategory: currentTemplateCategory || null,
@@ -3212,24 +3208,8 @@ export default function ${componentName}Page() {
       effectiveRouteState?.returnToCloudTab === 'projects' || effectiveRouteState?.from === 'Workspace Settings';
 
     const navigateBack = () => {
-      // Prefer the actual browser/router history to preserve the previous page's loaded state.
-      if (location.key !== 'default' && window.history.length > 1) {
-        navigate(-1);
-        return;
-      }
-
-      if (shouldReturnToCloudWorkspace) {
-        navigate('/cloud', {
-          state: {
-            tab: 'projects',
-            workspaceSection: effectiveRouteState?.returnWorkspaceSection || 'settings',
-            businessId: effectiveRouteState?.returnBusinessId || effectiveRouteState?.businessId,
-            projectId: effectiveRouteState?.returnProjectId || effectiveRouteState?.projectId,
-          },
-        });
-        return;
-      }
-
+      // Always route to the home page from the web builder so users get a clean
+      // entry point instead of reverting to a stale preview/history state.
       navigate('/home');
     };
 

@@ -269,6 +269,17 @@ export function useTemplateFiles() {
         .maybeSingle();
 
       const prevMeta = (existing?.metadata || {}) as Record<string, any>;
+      const incomingMeta = (payload?.metadata || {}) as Record<string, unknown>;
+      // Resolve canonical project name. Prefer incoming metadata.name (the
+      // user-visible title), else preserve previous, else fallback.
+      const resolvedName = (
+        (typeof incomingMeta.name === 'string' && incomingMeta.name.trim()) ||
+        (typeof incomingMeta.projectName === 'string' && incomingMeta.projectName.trim()) ||
+        (typeof prevMeta.name === 'string' && prevMeta.name.trim()) ||
+        (typeof prevMeta.projectName === 'string' && prevMeta.projectName.trim()) ||
+        ''
+      ).trim();
+
       const nextMeta = {
         ...prevMeta,
         ...(payload?.entryPoint ? { entryPoint: payload.entryPoint } : {}),
@@ -276,7 +287,8 @@ export function useTemplateFiles() {
         ...(payload?.projectId !== undefined ? { projectId: payload.projectId } : {}),
         ...(payload?.canonicalPlayground !== undefined ? { canonicalPlayground: payload.canonicalPlayground } : {}),
         ...(payload?.siteBundleSnapshot !== undefined ? { siteBundleSnapshot: payload.siteBundleSnapshot } : {}),
-        ...(payload?.metadata || {}),
+        ...incomingMeta,
+        ...(resolvedName ? { name: resolvedName, projectName: resolvedName } : {}),
       } as unknown as Json;
 
       const updatePatch: Record<string, unknown> = {
@@ -285,6 +297,9 @@ export function useTemplateFiles() {
         metadata: nextMeta,
         updated_at: new Date().toISOString(),
       };
+      if (resolvedName) {
+        updatePatch.name = resolvedName;
+      }
       if (payload?.vfsFiles !== undefined) {
         updatePatch.vfs_files = payload.vfsFiles as unknown as Json;
       }

@@ -1593,6 +1593,7 @@ export default function App() {
     setPreviewCode(code);
     setCurrentTemplateName(template.name);
     setSaveProjectName(template.name);
+    setProjectDisplayName(template.name);
     setSaveProjectDescription(template.description || '');
     return true;
   // importBuilderFiles is declared after this hook in the file; removing it from deps

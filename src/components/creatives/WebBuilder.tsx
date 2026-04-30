@@ -3255,11 +3255,20 @@ export default function ${componentName}Page() {
   // debounce a save so changes survive Preview refresh + builder navigation.
   useEffect(() => {
     const t = window.setTimeout(() => {
+      // First-ever VFS observation after mount/load: seed the baseline signature
+      // instead of saving — the files came from the loaded draft, not the user.
+      if (lastSavedVfsSignatureRef.current === '') {
+        const files = virtualFSRef.current.getSandpackFiles();
+        if (Object.keys(files).length > 0) {
+          lastSavedVfsSignatureRef.current = computeVfsSignature(files);
+        }
+        return;
+      }
       void saveDraftRef.current();
     }, 1500);
     return () => window.clearTimeout(t);
     // virtualFS.nodes is the canonical change signal exposed by useVFS.
-  }, [virtualFS.nodes]);
+  }, [virtualFS.nodes, computeVfsSignature]);
 
   // Flush on tab close, refresh, or visibility change so AI edits aren't lost.
   useEffect(() => {

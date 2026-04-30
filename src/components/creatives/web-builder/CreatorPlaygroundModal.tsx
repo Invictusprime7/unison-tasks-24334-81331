@@ -211,6 +211,30 @@ function getReadinessBadgeClass(status?: PlaygroundBinding["previewStatus"]) {
   }
 }
 
+/**
+ * Derive { pageId → status } from the live page registry + readiness report.
+ * Aggregates binding previewStatus by source page; blocked > preview > ready.
+ */
+function derivePageStatusMap(
+  registry: PageRegistry,
+  readinessReport: { bindings: Record<string, { sourcePageId?: string; previewStatus?: string }> },
+): Record<string, import("@/components/business-os/BusinessOSPagesGraph").PagePreviewStatus> {
+  const out: Record<string, { status: "ready" | "preview" | "blocked" | "missing"; reason?: string }> = {};
+  for (const pageId of Object.keys(registry.pages)) {
+    out[pageId] = { status: "ready" };
+  }
+  for (const binding of Object.values(readinessReport.bindings || {})) {
+    const pageId = binding.sourcePageId;
+    if (!pageId || !out[pageId]) continue;
+    if (binding.previewStatus === "blocked" && out[pageId].status !== "blocked") {
+      out[pageId] = { status: "blocked", reason: "Has blocked intents" };
+    } else if (binding.previewStatus === "partial" && out[pageId].status === "ready") {
+      out[pageId] = { status: "preview" };
+    }
+  }
+  return out;
+}
+
 function getPageTitle(registry: PageRegistry, pageId: string) {
   return registry.pages[pageId]?.title || pageId;
 }
@@ -384,6 +408,12 @@ export function CreatorPlaygroundModal({
                       setupTasks={businessOSSetupTasks}
                       moduleCounts={businessOSModuleCounts}
                       onUpdateSetupTaskStatus={onUpdateBusinessOSSetupTask}
+                      pageRegistry={playground.pageRegistry}
+                      pageStatus={derivePageStatusMap(playground.pageRegistry, readinessReport)}
+                      onSelectPage={(pageId) => onPageSelect?.(pageId)}
+                      onSelectFunnel={() => setActiveSection("funnels")}
+                      onAddPage={() => setActiveSection("pages")}
+                      onAddFunnel={() => setActiveSection("funnels")}
                       onOpenModule={(moduleId) => {
                         const map: Partial<Record<typeof moduleId, Section>> = {
                           website: "overview",

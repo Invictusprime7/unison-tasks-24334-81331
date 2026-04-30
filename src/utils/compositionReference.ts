@@ -29,15 +29,38 @@ const CATEGORY_TO_INDUSTRY: Record<string, string> = {
  * Returns the first (premium/dark) composition's serialized React code,
  * or null if no composition exists for this category.
  */
+/**
+ * Fallback industry chain: if an industry has no compositions, try these in order.
+ */
+const INDUSTRY_FALLBACK: Record<string, string> = {
+  'local-service': 'agency',
+  'real-estate': 'portfolio',
+  'nonprofit': 'coaching',
+  'fitness': 'coaching',
+  'medical': 'coaching',
+  'saas': 'agency',
+};
+
 export function getCompositionReactCode(category: LayoutCategory | string): string | null {
   const industry = CATEGORY_TO_INDUSTRY[category];
   if (!industry) return null;
 
   const compositions = getCompositionsByIndustry(industry);
-  if (!compositions.length) return null;
+  if (compositions.length) {
+    // First composition is the premium/dark variant
+    return compositionToReactCode(compositions[0]);
+  }
 
-  // First composition is the premium/dark variant
-  return compositionToReactCode(compositions[0]);
+  // Fallback to nearest matching industry
+  const fallbackIndustry = INDUSTRY_FALLBACK[industry];
+  if (fallbackIndustry) {
+    const fallbackCompositions = getCompositionsByIndustry(fallbackIndustry);
+    if (fallbackCompositions.length) {
+      return compositionToReactCode(fallbackCompositions[0]);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -49,7 +72,13 @@ export function getCompositionMeta(category: LayoutCategory | string) {
   const industry = CATEGORY_TO_INDUSTRY[category];
   if (!industry) return null;
 
-  const compositions = getCompositionsByIndustry(industry);
+  let compositions = getCompositionsByIndustry(industry);
+  if (!compositions.length) {
+    const fallbackIndustry = INDUSTRY_FALLBACK[industry];
+    if (fallbackIndustry) {
+      compositions = getCompositionsByIndustry(fallbackIndustry);
+    }
+  }
   if (!compositions.length) return null;
 
   const comp = compositions[0];

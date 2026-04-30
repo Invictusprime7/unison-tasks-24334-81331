@@ -36,6 +36,8 @@ import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { resolveLauncherEntryPoint } from "@/utils/launcherPayload";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
+import { executeCanonicalPipeline } from "@/services/canonicalPipeline";
+import type { WizardSelections, BusinessModel, IndustryOverlay } from "@/types/playground";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -81,6 +83,59 @@ function getSystemTypeForChip(chipId: string): BusinessSystemType {
   const industry = getCanonicalIndustry(chipId);
   const profile = getIndustryProfile(industry);
   return profile?.systemType || 'agency';
+}
+
+const SYSTEM_TO_BUSINESS_MODEL: Record<string, BusinessModel> = {
+  booking: 'appointment_service',
+  saas: 'saas_digital',
+  agency: 'quote_lead',
+  portfolio: 'portfolio_creator',
+  store: 'ecommerce',
+  content: 'general',
+};
+
+const CANONICAL_TO_INDUSTRY_OVERLAY: Record<string, IndustryOverlay> = {
+  'local-service': 'contractor',
+  salon: 'salon',
+  restaurant: 'restaurant',
+  ecommerce: 'ecommerce',
+  portfolio: 'creator',
+  coaching: 'coaching',
+  'real-estate': 'real_estate',
+  nonprofit: 'nonprofit',
+};
+
+function buildWizardSelectionsForChip(chipId: string, prompt: string, businessName: string): WizardSelections {
+  const systemType = getSystemTypeForChip(chipId);
+  const normalizedPrompt = prompt.toLowerCase();
+  const needsBooking = systemType === 'booking' || /book|booking|appointment|reservation/.test(normalizedPrompt);
+  const sellsProducts = systemType === 'store' || /shop|product|checkout|cart|order/.test(normalizedPrompt);
+  const wantsLeadCapture =
+    systemType === 'agency' ||
+    systemType === 'content' ||
+    /lead|quote|contact|consult|form|call/.test(normalizedPrompt);
+  const secondaryGoals: string[] = [];
+  if (needsBooking) secondaryGoals.push('book_service');
+  if (sellsProducts) secondaryGoals.push('buy_offer');
+  if (wantsLeadCapture) secondaryGoals.push('request_quote');
+  if (/newsletter|email list|subscribe/.test(normalizedPrompt)) secondaryGoals.push('fill_form');
+
+  return {
+    businessName,
+    businessModel: (SYSTEM_TO_BUSINESS_MODEL[systemType] ?? 'general') as BusinessModel,
+    industryOverlay: (CANONICAL_TO_INDUSTRY_OVERLAY[getCanonicalIndustry(chipId)] ?? 'general') as IndustryOverlay,
+    primaryGoal: (() => {
+      if (sellsProducts) return 'sell_offers';
+      if (needsBooking) return 'book_appointments';
+      if (systemType === 'portfolio' || /portfolio|gallery|showcase/.test(normalizedPrompt)) return 'showcase_work';
+      if (/newsletter|email list|subscribe/.test(normalizedPrompt)) return 'grow_email_list';
+      return 'collect_leads';
+    })(),
+    secondaryGoals,
+    needsBooking,
+    sellsProducts,
+    wantsLeadCapture,
+  };
 }
 
 /**
@@ -413,6 +468,12 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       primaryIntent: industryProfile?.primaryIntent,
     });
     console.log(`[BusinessLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, ${sitePlan.funnels.length} funnels`);
+    const wizardSelections = selectedChip
+      ? buildWizardSelectionsForChip(selectedChip, prompt, businessName || "AI Generated")
+      : undefined;
+    const pipelineResult = wizardSelections
+      ? executeCanonicalPipeline(wizardSelections, generatedVfsFiles)
+      : null;
     const launchArtifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: generatedVfsFiles,
       preferredEntryPoint: generatedEntryPoint || '/src/App.tsx',
@@ -424,6 +485,8 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       industry: selectedChip ? getCanonicalIndustry(selectedChip) : 'general',
       aesthetic: 'modern',
       backendRequired: false,
+      wizardSelections,
+      siteBundleSnapshot: pipelineResult?.siteBundleSnapshot ?? undefined,
     });
     const runtimeManifest = launchArtifacts.runtimeManifest;
 
@@ -442,6 +505,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       runtimeManifest,
       sitePlan,
       systemsBuildContext: generatedSystemsBuildContext ?? undefined,
+      wizardSelections,
     }));
 
     navigate("/web-builder", {
@@ -455,6 +519,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
         systemType: selectedChip ? getSystemTypeForChip(selectedChip) : undefined,
         systemsBuildContext: generatedSystemsBuildContext ?? undefined,
         sitePlan,
+        wizardSelections,
       },
     });
     handleClose();

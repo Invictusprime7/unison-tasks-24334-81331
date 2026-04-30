@@ -51,9 +51,13 @@ export interface UseBusinessOSProfileReturn {
   error: string | null;
   readiness: BusinessOSReadiness | null;
   setupTasks: BusinessOSSetupTask[];
+  /** Live count badges for each module (pages, funnels, forms, …). */
+  moduleCounts: Partial<Record<BusinessOSModuleId, number>>;
   setProfile: (p: BusinessOSProfile | null) => void;
   updateProfile: (patch: Partial<BusinessOSProfile>) => void;
   setModuleStatus: (id: BusinessOSModuleId, patch: Partial<BusinessOSModuleState>) => void;
+  /** Project a live snapshot from playground/readiness onto the profile. */
+  applyLiveSnapshot: (snapshot: LiveModuleSnapshot) => void;
   updateSetupTaskStatus: (taskId: string, status: SetupTaskStatus) => void;
   regenerateSetupTasks: () => void;
   persist: () => Promise<{ ok: boolean; error?: string }>;

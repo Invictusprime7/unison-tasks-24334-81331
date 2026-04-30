@@ -174,6 +174,8 @@ interface CreatorPlaygroundModalProps {
   vfsFiles?: Record<string, string>;
   setupSnapshot?: PlaygroundSetupSnapshot;
   wizardSelections?: WizardSelections | null;
+  /** Optional Business OS profile — when present, the Business OS shell is shown. */
+  businessOSProfile?: import("@/types/businessOS").BusinessOSProfile | null;
 }
 
 function formatIntentPackLabel(wizardSelections?: WizardSelections | null): string | null {

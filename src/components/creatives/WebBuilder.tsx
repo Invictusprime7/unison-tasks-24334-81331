@@ -1648,8 +1648,12 @@ export default function App() {
 
   // Business OS profile — loaded from builder_drafts.metadata.businessOS when a draft is active.
   const businessOSDraftId = templateFiles.currentTemplateId || null;
+  const initialBusinessOSProfile =
+    (effectiveRouteState as { businessOSProfile?: import("@/types/businessOS").BusinessOSProfile } | null)
+      ?.businessOSProfile ?? null;
   const businessOS = useBusinessOSProfile({
     draftId: businessOSDraftId,
+    initialProfile: initialBusinessOSProfile,
     autoLoad: true,
     autoPersistMs: 1500,
   });

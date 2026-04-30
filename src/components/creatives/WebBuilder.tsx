@@ -2416,6 +2416,24 @@ export default function ${componentName}Page() {
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedCodeRef = useRef<string>('');
+  // Track VFS file map signature so we persist multi-file AI edits even when
+  // the legacy single-file `previewCode` blob did not change.
+  const lastSavedVfsSignatureRef = useRef<string>('');
+  const computeVfsSignature = useCallback((files: Record<string, string>): string => {
+    const keys = Object.keys(files).sort();
+    if (keys.length === 0) return '';
+    let hash = 0;
+    for (const k of keys) {
+      const v = files[k] ?? '';
+      // Cheap stable signature: path + length + last-32-char tail.
+      const tail = v.length > 32 ? v.slice(-32) : v;
+      const seg = `${k}:${v.length}:${tail}|`;
+      for (let i = 0; i < seg.length; i++) {
+        hash = ((hash << 5) - hash + seg.charCodeAt(i)) | 0;
+      }
+    }
+    return `${keys.length}:${hash}`;
+  }, []);
   // Keep the current template id in a ref so callbacks always read the
   // latest value without stale-closure issues (avoids re-creating intervals).
   const currentTemplateIdRef = useRef<string | null>(templateFiles.currentTemplateId);
@@ -2964,12 +2982,15 @@ export default function ${componentName}Page() {
   });
   
   
-  // Track changes to code
+  // Track changes to code OR VFS file map (multi-file AI edits update VFS, not previewCode).
   useEffect(() => {
-    const hasChanges = previewCode !== initialCodeRef.current && 
+    const codeChanged = previewCode !== initialCodeRef.current &&
                       !previewCode.includes('AI-generated code will appear here');
-    setHasUnsavedChanges(hasChanges);
-  }, [previewCode]);
+    const currentFiles = virtualFSRef.current.getSandpackFiles();
+    const vfsChanged = computeVfsSignature(currentFiles) !== lastSavedVfsSignatureRef.current
+      && Object.keys(currentFiles).length > 0;
+    setHasUnsavedChanges(codeChanged || vfsChanged);
+  }, [previewCode, virtualFS.nodes, computeVfsSignature]);
   
   // Helper to get final TSX with customizer overrides baked in
   const getFinalCodeWithOverrides = useCallback(() => {
@@ -3144,50 +3165,71 @@ export default function ${componentName}Page() {
     templateFiles,
   ]);
 
-  // Auto-save draft to localStorage
+  // Auto-save draft to localStorage + Supabase. Triggers on EITHER:
+  //  - Legacy single-file `previewCode` change (template/inline edits), OR
+  //  - VFS file map change (multi-file AI edits, importBuilderFiles, etc.)
+  // Without the VFS-signature check, AI multi-file edits never persisted.
   const saveDraft = useCallback(async () => {
-    if (previewCode && previewCode !== lastSavedCodeRef.current) {
-      setAutoSaveStatus('saving');
-      try {
-        const saveKey = getAutoSaveKey();
-        const draft = {
-          code: previewCode,
-          editorCode: editorCode,
-          savedAt: new Date().toISOString(),
-          templateId: currentTemplateIdRef.current || null,
-        };
-        localStorage.setItem(saveKey, JSON.stringify(draft));
-        lastSavedCodeRef.current = previewCode;
-        setLastSavedAt(new Date());
+    const currentVfsFiles = virtualFSRef.current.getSandpackFiles();
+    const vfsSignature = computeVfsSignature(currentVfsFiles);
+    const previewCodeChanged = !!previewCode && previewCode !== lastSavedCodeRef.current;
+    const vfsChanged = vfsSignature !== '' && vfsSignature !== lastSavedVfsSignatureRef.current;
 
-        const existingDraftId = currentTemplateIdRef.current;
-        if (existingDraftId) {
-          await templateFiles.autoSave(previewCode, {
-            ...buildSavePayload(),
-            metadata: {
-              autoSaved: true,
-              autoSaveReason: 'interval_autosave',
-              autoSavedAt: new Date().toISOString(),
-            },
-          });
-        } else if (routeStateHasStructuredProject) {
-          await ensureLauncherDraftSaved('interval_autosave');
-        }
+    if (!previewCodeChanged && !vfsChanged) return;
 
-        setAutoSaveStatus('saved');
-        setTimeout(() => setAutoSaveStatus('idle'), 2000);
-      } catch (error) {
-        console.error('[AutoSave] Error saving draft:', error);
-        setAutoSaveStatus('idle');
+    setAutoSaveStatus('saving');
+    try {
+      const saveKey = getAutoSaveKey();
+      const draft = {
+        code: previewCode,
+        editorCode: editorCode,
+        savedAt: new Date().toISOString(),
+        templateId: currentTemplateIdRef.current || null,
+        vfsSignature,
+      };
+      try { localStorage.setItem(saveKey, JSON.stringify(draft)); } catch { /* quota — ignore */ }
+      lastSavedCodeRef.current = previewCode;
+      lastSavedVfsSignatureRef.current = vfsSignature;
+      setLastSavedAt(new Date());
+
+      const existingDraftId = currentTemplateIdRef.current;
+      const reason: 'interval_autosave' = 'interval_autosave';
+      if (existingDraftId) {
+        // buildSavePayload() snapshots the FULL VFS file map into payload.vfsFiles,
+        // which useTemplateFiles.autoSave persists into builder_drafts.vfs_files.
+        await templateFiles.autoSave(previewCode || '', {
+          ...buildSavePayload(),
+          metadata: {
+            autoSaved: true,
+            autoSaveReason: reason,
+            autoSavedAt: new Date().toISOString(),
+            vfsFileCount: Object.keys(currentVfsFiles).length,
+          },
+        });
+      } else if (routeStateHasStructuredProject || vfsChanged) {
+        // Create a draft on first VFS write so subsequent saves can target it.
+        await ensureLauncherDraftSaved(reason);
       }
+
+      setAutoSaveStatus('saved');
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
+    } catch (error) {
+      console.error('[AutoSave] Error saving draft:', error);
+      setAutoSaveStatus('idle');
     }
-  }, [previewCode, editorCode, getAutoSaveKey, templateFiles, buildSavePayload, routeStateHasStructuredProject, ensureLauncherDraftSaved]);
-  
+  }, [previewCode, editorCode, getAutoSaveKey, templateFiles, buildSavePayload, routeStateHasStructuredProject, ensureLauncherDraftSaved, computeVfsSignature]);
+
+  // Keep latest saveDraft in a ref so unload/visibility handlers always call the freshest version.
+  const saveDraftRef = useRef(saveDraft);
+  saveDraftRef.current = saveDraft;
+
   // Handle back navigation - go to home/launcher
   const handleBackNavigation = useCallback(() => {
     const codeChanged = previewCode !== initialCodeRef.current;
-    
-    if (codeChanged && hasUnsavedChanges) {
+    const currentVfsFiles = virtualFSRef.current.getSandpackFiles();
+    const vfsDirty = computeVfsSignature(currentVfsFiles) !== lastSavedVfsSignatureRef.current;
+
+    if ((codeChanged || vfsDirty) && hasUnsavedChanges) {
       const confirmLeave = window.confirm(
         'You have unsaved changes. Are you sure you want to leave? Your draft will be auto-saved.'
       );
@@ -3198,7 +3240,7 @@ export default function ${componentName}Page() {
     } else {
       navigate('/home');
     }
-  }, [previewCode, hasUnsavedChanges, navigate, saveDraft]);
+  }, [previewCode, hasUnsavedChanges, navigate, saveDraft, computeVfsSignature]);
 
   useEffect(() => {
     autoSaveTimerRef.current = setInterval(saveDraft, AUTO_SAVE_INTERVAL);
@@ -3208,6 +3250,84 @@ export default function ${componentName}Page() {
       }
     };
   }, [saveDraft]);
+
+  // Reactive save: when VFS file map changes (AI multi-file edits, imports, etc.),
+  // debounce a save so changes survive Preview refresh + builder navigation.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      // First-ever VFS observation after mount/load: seed the baseline signature
+      // instead of saving — the files came from the loaded draft, not the user.
+      if (lastSavedVfsSignatureRef.current === '') {
+        const files = virtualFSRef.current.getSandpackFiles();
+        if (Object.keys(files).length > 0) {
+          lastSavedVfsSignatureRef.current = computeVfsSignature(files);
+        }
+        return;
+      }
+      void saveDraftRef.current();
+    }, 1500);
+    return () => window.clearTimeout(t);
+    // virtualFS.nodes is the canonical change signal exposed by useVFS.
+  }, [virtualFS.nodes, computeVfsSignature]);
+
+  // Flush on tab close, refresh, or visibility change so AI edits aren't lost.
+  useEffect(() => {
+    const flush = () => {
+      try {
+        const currentVfsFiles = virtualFSRef.current.getSandpackFiles();
+        const sig = computeVfsSignature(currentVfsFiles);
+        const previewDirty = !!previewCode && previewCode !== lastSavedCodeRef.current;
+        const vfsDirty = sig !== '' && sig !== lastSavedVfsSignatureRef.current;
+        if (!previewDirty && !vfsDirty) return;
+
+        // Best-effort localStorage snapshot — runs synchronously before unload.
+        const saveKey = getAutoSaveKey();
+        try {
+          localStorage.setItem(saveKey, JSON.stringify({
+            code: previewCode,
+            editorCode,
+            savedAt: new Date().toISOString(),
+            templateId: currentTemplateIdRef.current || null,
+            vfsSignature: sig,
+            vfsFiles: currentVfsFiles,
+          }));
+        } catch { /* quota */ }
+
+        // Best-effort async DB save (may not complete before unload — that's why
+        // the localStorage snapshot above is the durable safety net).
+        void saveDraftRef.current();
+      } catch (e) {
+        console.warn('[AutoSave] flush failed:', e);
+      }
+    };
+
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      const currentVfsFiles = virtualFSRef.current.getSandpackFiles();
+      const sig = computeVfsSignature(currentVfsFiles);
+      const previewDirty = !!previewCode && previewCode !== lastSavedCodeRef.current;
+      const vfsDirty = sig !== '' && sig !== lastSavedVfsSignatureRef.current;
+      if (previewDirty || vfsDirty) {
+        flush();
+        // Native browser prompt — preserves data even if the user cancels nav.
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [computeVfsSignature, getAutoSaveKey, previewCode, editorCode]);
+
   
   // Restore draft on mount — ONLY when NOT loading a specific saved project by URL.
   // If ?id= is present the Supabase load is the authoritative source; restoring a

@@ -26,7 +26,7 @@ import { CanvasDragDropService } from "@/services/canvasDragDropService";
 import { CodePreviewDialog } from "./web-builder/CodePreviewDialog";
 import { AIBuilderPanel, type VFSEdit, type IframeError } from "./web-builder/AIBuilderPanel";
 import { AIEditHistoryMenu } from "./web-builder/AIEditHistoryMenu";
-import { pushSnapshot as pushAISnapshot, diffChangedPaths, type EditSnapshot } from "@/services/aiHistoryStore";
+import { pushSnapshot as pushAISnapshot, diffChangedPaths } from "@/services/aiHistoryStore";
 import { IntegrationsPanel } from "./design-studio/IntegrationsPanel";
 import { ExportDialog } from "./design-studio/ExportDialog";
 import { PerformancePanel } from "./web-builder/PerformancePanel";

@@ -3028,8 +3028,12 @@ export default function ${componentName}Page() {
       canonicalPlayground: launchArtifacts.canonicalPlayground,
       siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
       metadata: {
-        name: currentTemplateName || effectiveBusinessName,
-        projectName: projectNameFromState || currentTemplateName || effectiveBusinessName,
+        // Project name MUST be the project's own name. Never fall back to the
+        // business name — drafts must be saved under the user-provided project
+        // identity. The Save dialog passes the canonical name as the first arg
+        // to saveTemplate(), which always wins downstream.
+        name: projectNameFromState || currentTemplateName || null,
+        projectName: projectNameFromState || currentTemplateName || null,
         businessName: effectiveBusinessName,
         systemType: activeSystemType || systemType || null,
         templateCategory: currentTemplateCategory || null,

@@ -6249,13 +6249,25 @@ export default function ${componentName}() {
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
+              projectId={projectId ?? null}
               onApplyToVFS={(files) => {
+                const beforeFiles = virtualFS.getSandpackFiles();
                 const result = aiVFS.applyCode(files);
                 if (result.success) {
                   const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                   syncBuilderFromFiles(mergedFiles, activePagePath);
                   setViewMode('canvas');
                   setAiPanelOpen(false);
+                  const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
+                  if (changedPaths.length > 0) {
+                    pushAISnapshot(projectId ?? null, {
+                      label: `AI edit · ${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`,
+                      source: 'ai',
+                      before: beforeFiles,
+                      after: mergedFiles,
+                      changedPaths,
+                    });
+                  }
                 }
               }}
               onViewEdits={() => { setViewMode('split'); setAiPanelOpen(false); }}

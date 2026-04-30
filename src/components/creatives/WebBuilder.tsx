@@ -1628,6 +1628,47 @@ export default function App() {
   const projectNameFromState = effectiveRouteState?.projectName;
   const publishStatusFromState = effectiveRouteState?.publishStatus;
   const customDomainFromState = effectiveRouteState?.customDomain;
+
+  // Local editable project name. Seeded from route state, kept in sync if the
+  // user (or another tab) renames the project via CloudProjects.
+  const [projectDisplayName, setProjectDisplayName] = useState<string>(projectNameFromState || '');
+  const [renamingProject, setRenamingProject] = useState(false);
+  useEffect(() => {
+    if (projectNameFromState) setProjectDisplayName(projectNameFromState);
+  }, [projectNameFromState]);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { projectId?: string; name?: string } | undefined;
+      if (!detail?.projectId || !detail.name) return;
+      if (projectId && detail.projectId === projectId) {
+        setProjectDisplayName(detail.name);
+      }
+    };
+    window.addEventListener('project:renamed', handler);
+    return () => window.removeEventListener('project:renamed', handler);
+  }, [projectId]);
+
+  const handleRenameProject = useCallback(async (nextName: string) => {
+    const trimmed = nextName.trim();
+    if (!projectId || !trimmed || trimmed === projectDisplayName) return;
+    setRenamingProject(true);
+    try {
+      const { renameProjectCompat } = await import('@/services/projectSchemaCompat');
+      const { error } = await renameProjectCompat(projectId, trimmed);
+      if (error) throw error;
+      setProjectDisplayName(trimmed);
+      try {
+        window.dispatchEvent(new CustomEvent('project:renamed', {
+          detail: { projectId, name: trimmed },
+        }));
+      } catch { /* noop */ }
+    } catch (err) {
+      console.warn('[WebBuilder] rename failed:', err);
+    } finally {
+      setRenamingProject(false);
+    }
+  }, [projectId, projectDisplayName]);
+
   const [previewCartVersion, setPreviewCartVersion] = useState(0);
   const previewCartManager = useMemo(
     () =>

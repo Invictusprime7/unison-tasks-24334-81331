@@ -149,20 +149,66 @@ export function useTemplateFiles() {
         ...(payload?.metadata || {}),
       } as unknown as Json;
 
-      const { data, error } = await supabase
-        .from("builder_drafts")
-        .insert({
-          user_id: user.id,
-          business_id: payload?.businessId ?? null,
-          code,
-          editor_code: code,
-          vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
-          metadata,
-        })
-        .select()
-        .single();
+      // If a draft already exists for this (user, business, project), update it instead of inserting.
+      // This prevents `uq_builder_drafts_user_business*` collisions when users save multiple times
+      // or rename a project — saving must always succeed and never lose state.
+      let existingDraftId: string | null = null;
+      {
+        let lookup = supabase
+          .from("builder_drafts")
+          .select("id")
+          .eq("user_id", user.id)
+          .order("updated_at", { ascending: false })
+          .limit(1);
 
-      if (error) throw error;
+        if (payload?.projectId) {
+          lookup = lookup.eq("project_id", payload.projectId);
+        } else if (payload?.businessId) {
+          lookup = lookup.eq("business_id", payload.businessId).is("project_id", null);
+        } else {
+          lookup = lookup.is("business_id", null).is("project_id", null);
+        }
+
+        const { data: existingRow } = await lookup.maybeSingle();
+        existingDraftId = existingRow?.id ?? null;
+      }
+
+      let data: { id: string } | null = null;
+
+      if (existingDraftId) {
+        const { data: updated, error: updateError } = await supabase
+          .from("builder_drafts")
+          .update({
+            business_id: payload?.businessId ?? null,
+            code,
+            editor_code: code,
+            vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+            metadata,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingDraftId)
+          .select("id")
+          .single();
+        if (updateError) throw updateError;
+        data = updated;
+      } else {
+        const { data: inserted, error: insertError } = await supabase
+          .from("builder_drafts")
+          .insert({
+            user_id: user.id,
+            business_id: payload?.businessId ?? null,
+            code,
+            editor_code: code,
+            vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+            metadata,
+          })
+          .select("id")
+          .single();
+        if (insertError) throw insertError;
+        data = inserted;
+      }
+
+      if (!data) throw new Error("Failed to persist draft");
 
       await syncCanonicalComponentGraph({
         projectId: payload?.projectId ?? null,

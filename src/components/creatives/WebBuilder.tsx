@@ -3028,8 +3028,23 @@ export default function ${componentName}Page() {
       canonicalPlayground: launchArtifacts.canonicalPlayground,
       siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
       metadata: {
-        name: currentTemplateName || effectiveBusinessName,
-        projectName: projectNameFromState || currentTemplateName || effectiveBusinessName,
+        // Project identity is strictly the project's own name. Never fall
+        // back to a business/wizard name here — that's how legacy drafts
+        // ended up titled "My Business".
+        name: (
+          projectDisplayName.trim() ||
+          saveProjectName.trim() ||
+          projectNameFromState ||
+          currentTemplateName ||
+          ''
+        ).trim() || `Project ${(projectId || '').slice(0, 8) || 'untitled'}`,
+        projectName: (
+          projectDisplayName.trim() ||
+          saveProjectName.trim() ||
+          projectNameFromState ||
+          currentTemplateName ||
+          ''
+        ).trim() || `Project ${(projectId || '').slice(0, 8) || 'untitled'}`,
         businessName: effectiveBusinessName,
         systemType: activeSystemType || systemType || null,
         templateCategory: currentTemplateCategory || null,

@@ -160,6 +160,9 @@ export interface BusinessOSProfile {
 
   aiMemory: BusinessOSAIMemory;
 
+  /** Setup Autopilot tasks (Stage 4). Persisted with the profile. */
+  setupTasks?: BusinessOSSetupTask[];
+
   createdAt: string;
   updatedAt: string;
 }

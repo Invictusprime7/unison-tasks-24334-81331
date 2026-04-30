@@ -64,6 +64,11 @@ import { DebugAgentPanel } from './DebugAgentPanel';
 import { interpretPrompt, type TaskPlan } from '@/unison';
 import type { PlanStepStatus } from '@/unison/nlTypes';
 import { TaskPlanSteps } from './TaskPlanSteps';
+import {
+  loadAIHistory,
+  setMessages as persistMessages,
+  type PersistedMessage,
+} from '@/services/aiHistoryStore';
 
 // ============================================================================
 /**

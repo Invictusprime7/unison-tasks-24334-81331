@@ -3208,24 +3208,8 @@ export default function ${componentName}Page() {
       effectiveRouteState?.returnToCloudTab === 'projects' || effectiveRouteState?.from === 'Workspace Settings';
 
     const navigateBack = () => {
-      // Prefer the actual browser/router history to preserve the previous page's loaded state.
-      if (location.key !== 'default' && window.history.length > 1) {
-        navigate(-1);
-        return;
-      }
-
-      if (shouldReturnToCloudWorkspace) {
-        navigate('/cloud', {
-          state: {
-            tab: 'projects',
-            workspaceSection: effectiveRouteState?.returnWorkspaceSection || 'settings',
-            businessId: effectiveRouteState?.returnBusinessId || effectiveRouteState?.businessId,
-            projectId: effectiveRouteState?.returnProjectId || effectiveRouteState?.projectId,
-          },
-        });
-        return;
-      }
-
+      // Always route to the home page from the web builder so users get a clean
+      // entry point instead of reverting to a stale preview/history state.
       navigate('/home');
     };
 

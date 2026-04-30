@@ -85,6 +85,7 @@ const PAGE_TYPE_OPTIONS: { value: BuilderPageType; label: string }[] = [
 ];
 
 type Section =
+  | "business_os"
   | "launch"
   | "overview"
   | "pages"
@@ -101,6 +102,7 @@ type Section =
   | "business";
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highlight?: boolean }[] = [
+  { id: "business_os", label: "Business OS", icon: Zap, highlight: true },
   { id: "launch", label: "Launch Wizard", icon: Rocket, highlight: true },
   { id: "overview", label: "Overview", icon: Gauge },
   { id: "pages", label: "Pages", icon: FileText },

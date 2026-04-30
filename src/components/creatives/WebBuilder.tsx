@@ -2640,6 +2640,8 @@ export default function ${componentName}Page() {
     cloudState.project.publishStatus,
     virtualFS.nodes,
   ]);
+
+  const selectedPlaygroundComponent = useMemo(() => {
     const attributes = (selectedHTMLElement?.attributes || {}) as Record<string, string>;
     const explicitInstanceId = attributes['data-ut-component-instance-id'];
     if (explicitInstanceId && creatorPlayground.creatorData.componentInstances[explicitInstanceId]) {

@@ -2982,12 +2982,15 @@ export default function ${componentName}Page() {
   });
   
   
-  // Track changes to code
+  // Track changes to code OR VFS file map (multi-file AI edits update VFS, not previewCode).
   useEffect(() => {
-    const hasChanges = previewCode !== initialCodeRef.current && 
+    const codeChanged = previewCode !== initialCodeRef.current &&
                       !previewCode.includes('AI-generated code will appear here');
-    setHasUnsavedChanges(hasChanges);
-  }, [previewCode]);
+    const currentFiles = virtualFSRef.current.getSandpackFiles();
+    const vfsChanged = computeVfsSignature(currentFiles) !== lastSavedVfsSignatureRef.current
+      && Object.keys(currentFiles).length > 0;
+    setHasUnsavedChanges(codeChanged || vfsChanged);
+  }, [previewCode, virtualFS.nodes, computeVfsSignature]);
   
   // Helper to get final TSX with customizer overrides baked in
   const getFinalCodeWithOverrides = useCallback(() => {

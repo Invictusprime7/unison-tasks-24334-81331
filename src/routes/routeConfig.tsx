@@ -64,7 +64,7 @@ export interface AppRouteConfig {
   meta: AppRouteMeta;
 }
 
-const PageLoader = () => (
+const pageLoaderElement = (
   <div className="flex h-screen w-full items-center justify-center">
     <div className="text-center">
       <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
@@ -74,7 +74,7 @@ const PageLoader = () => (
 );
 
 const withAsyncBoundary = (element: ReactElement) => (
-  <AsyncBoundary loading={<PageLoader />}>{element}</AsyncBoundary>
+  <AsyncBoundary loading={pageLoaderElement}>{element}</AsyncBoundary>
 );
 
 export const appRoutes: AppRouteConfig[] = [

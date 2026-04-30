@@ -318,6 +318,8 @@ function getBindingAttrs(binding: PlaygroundBinding, snapshot: SiteBundleSnapsho
 }
 
 function upsertAttrs(tag: string, attrs: Record<string, string>): string {
+  // Never modify a closing tag — it has no attributes.
+  if (/^<\//.test(tag.trimStart())) return tag;
   let next = tag;
   for (const [attr, value] of Object.entries(attrs)) {
     const attrPattern = new RegExp(`\\s${escapeRegex(attr)}=(["']).*?\\1`, 'i');
@@ -391,7 +393,12 @@ function applyBindingByLabel(
     }
 
     matchCount += 1;
-    return upsertAttrs(match, attrs);
+    // Only rewrite the opening tag — NOT the full element. Passing the full
+    // element to upsertAttrs causes attributes to be appended to the closing
+    // tag (</button attr="val">) which is invalid JSX and breaks JSON parsing.
+    const openTag = `<${tagName}${attrChunk ?? ''}>`;
+    const rewrittenOpenTag = upsertAttrs(openTag, attrs);
+    return `${rewrittenOpenTag}${innerContent}</${tagName}>`;
   });
 
   return { content: next, applied: matchCount > 0 };

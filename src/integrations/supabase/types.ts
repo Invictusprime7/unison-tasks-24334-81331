@@ -487,7 +487,7 @@ export type Database = {
           industry: string
           is_published?: boolean | null
           name: string
-          pack_id?: string
+          pack_id: string
           recipes?: Json | null
           tier?: string | null
           updated_at?: string | null

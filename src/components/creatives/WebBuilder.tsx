@@ -5607,7 +5607,27 @@ ${html}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          
+
+          {/* Inline project rename — invisible until a project is loaded. */}
+          {projectId && (
+            <input
+              value={projectDisplayName}
+              onChange={(e) => setProjectDisplayName(e.target.value)}
+              onBlur={(e) => handleRenameProject(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                if (e.key === 'Escape') {
+                  setProjectDisplayName(projectNameFromState || '');
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              disabled={renamingProject}
+              placeholder="Untitled project"
+              aria-label="Project name"
+              className="hidden md:block bg-transparent border border-transparent hover:border-cyan-500/30 focus:border-cyan-500/60 focus:bg-[#0d0d18] outline-none text-sm text-cyan-100 px-2 py-1 rounded-md max-w-[220px] truncate"
+            />
+          )}
+
           <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Device + Mode + Tools — hidden on small screens (use bottom nav on mobile) */}

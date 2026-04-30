@@ -3071,6 +3071,8 @@ export default function ${componentName}Page() {
     playgroundCalendars,
     playgroundPopups,
     currentTemplateName,
+    projectDisplayName,
+    saveProjectName,
     projectNameFromState,
     systemName,
     effectiveRouteState,

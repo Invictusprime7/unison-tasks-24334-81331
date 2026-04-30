@@ -2604,7 +2604,42 @@ export default function ${componentName}Page() {
     playgroundSetupSnapshot,
   ]);
 
-  const selectedPlaygroundComponent = useMemo(() => {
+  // ── Business OS live sync — project playground/readiness onto profile.modules ──
+  useEffect(() => {
+    if (!businessOS.profile) return;
+    void import("@/services/businessOSLiveSync").then(({ computeLiveModuleSnapshot }) => {
+      const snapshot = computeLiveModuleSnapshot({
+        playground: {
+          creatorData: creatorPlayground.creatorData,
+          pageRegistry: creatorPlayground.pageRegistry,
+          bindings: playgroundBindings,
+          calendars: playgroundCalendars,
+          popups: playgroundPopups,
+        },
+        readiness: { summary: playgroundReadinessReport.summary },
+        paymentsConnected: !!cloudState.business.notificationEmail && !!creatorPlayground.creatorData.businessInfo?.paymentProvider,
+        notificationsConfigured: !!cloudState.business.notificationEmail,
+        domainConnected: !!cloudState.project.customDomain,
+        seoConfigured: !!creatorPlayground.creatorData.businessInfo?.businessName,
+        analyticsConfigured: false,
+        previewExists: Object.keys(virtualFS.nodes || {}).length > 0,
+        hasPublished: cloudState.project.publishStatus === "published",
+      });
+      businessOS.applyLiveSnapshot(snapshot);
+    });
+  }, [
+    businessOS,
+    creatorPlayground.creatorData,
+    creatorPlayground.pageRegistry,
+    playgroundBindings,
+    playgroundCalendars,
+    playgroundPopups,
+    playgroundReadinessReport.summary,
+    cloudState.business.notificationEmail,
+    cloudState.project.customDomain,
+    cloudState.project.publishStatus,
+    virtualFS.nodes,
+  ]);
     const attributes = (selectedHTMLElement?.attributes || {}) as Record<string, string>;
     const explicitInstanceId = attributes['data-ut-component-instance-id'];
     if (explicitInstanceId && creatorPlayground.creatorData.componentInstances[explicitInstanceId]) {

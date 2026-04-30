@@ -5937,6 +5937,7 @@ export default function ${componentName}() {
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
+                projectId={projectId ?? null}
                 onApplyToVFS={(files) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
                   const beforeFiles = virtualFS.getSandpackFiles();

@@ -4,23 +4,30 @@
  * Usage inside WebBuilder:
  *   const os = useBusinessOSProfile({ draftId, initialProfile });
  *   os.profile, os.updateProfile, os.setModuleStatus, os.persist()
+ *   os.setupTasks, os.updateSetupTaskStatus, os.regenerateSetupTasks()
  *
  * Persistence is opt-in: caller passes a draftId, then `persist()` flushes the
  * current profile into builder_drafts.metadata.businessOS via the service.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   computeBusinessOSReadiness,
   type BusinessOSModuleId,
   type BusinessOSModuleState,
   type BusinessOSProfile,
   type BusinessOSReadiness,
+  type BusinessOSSetupTask,
+  type SetupTaskStatus,
 } from "@/types/businessOS";
 import {
   loadBusinessOSProfileFromDraft,
   saveBusinessOSProfileToDraft,
 } from "@/services/businessOSProfileService";
+import {
+  computeSetupTasks,
+  setSetupTaskStatus,
+} from "@/services/businessOSSetupAutopilot";
 
 export interface UseBusinessOSProfileOptions {
   /** When provided, the hook can load + persist to that draft. */
@@ -38,9 +45,12 @@ export interface UseBusinessOSProfileReturn {
   loading: boolean;
   error: string | null;
   readiness: BusinessOSReadiness | null;
+  setupTasks: BusinessOSSetupTask[];
   setProfile: (p: BusinessOSProfile | null) => void;
   updateProfile: (patch: Partial<BusinessOSProfile>) => void;
   setModuleStatus: (id: BusinessOSModuleId, patch: Partial<BusinessOSModuleState>) => void;
+  updateSetupTaskStatus: (taskId: string, status: SetupTaskStatus) => void;
+  regenerateSetupTasks: () => void;
   persist: () => Promise<{ ok: boolean; error?: string }>;
   reload: () => Promise<void>;
 }
@@ -129,5 +139,43 @@ export function useBusinessOSProfile(
 
   const readiness = profile ? computeBusinessOSReadiness(profile) : null;
 
-  return { profile, loading, error, readiness, setProfile, updateProfile, setModuleStatus, persist, reload };
+  // Setup Autopilot — derive tasks from profile + pack, merging stored tasks.
+  const setupTasks = useMemo<BusinessOSSetupTask[]>(() => {
+    if (!profile) return [];
+    return computeSetupTasks(profile, { existing: profile.setupTasks });
+  }, [profile]);
+
+  const updateSetupTaskStatus = useCallback((taskId: string, status: SetupTaskStatus) => {
+    setProfileState((prev) => {
+      if (!prev) return prev;
+      const current = prev.setupTasks?.length ? prev.setupTasks : computeSetupTasks(prev);
+      const nextTasks = setSetupTaskStatus(current, taskId, status);
+      dirtyRef.current = true;
+      return { ...prev, setupTasks: nextTasks, updatedAt: new Date().toISOString() };
+    });
+  }, []);
+
+  const regenerateSetupTasks = useCallback(() => {
+    setProfileState((prev) => {
+      if (!prev) return prev;
+      const fresh = computeSetupTasks(prev, { existing: prev.setupTasks });
+      dirtyRef.current = true;
+      return { ...prev, setupTasks: fresh, updatedAt: new Date().toISOString() };
+    });
+  }, []);
+
+  return {
+    profile,
+    loading,
+    error,
+    readiness,
+    setupTasks,
+    setProfile,
+    updateProfile,
+    setModuleStatus,
+    updateSetupTaskStatus,
+    regenerateSetupTasks,
+    persist,
+    reload,
+  };
 }

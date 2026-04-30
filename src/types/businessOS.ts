@@ -91,6 +91,28 @@ export interface BusinessOSAIMemory {
   recommendedNextActions: string[];
 }
 
+// ============================================================================
+// Setup tasks (Autopilot)
+// ============================================================================
+
+export type SetupTaskStatus = "pending" | "in_progress" | "done" | "skipped";
+export type SetupTaskSource = "pack" | "blocker" | "module" | "ai" | "user";
+
+export interface BusinessOSSetupTask {
+  id: string;
+  label: string;
+  description?: string;
+  module: BusinessOSModuleId;
+  required: boolean;
+  status: SetupTaskStatus;
+  source: SetupTaskSource;
+  /** Resolver hint — which playground section/module to open */
+  resolver?: { section?: string; field?: string };
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
 export interface BusinessOSProfile {
   /** Schema version for safe migrations */
   version: typeof BUSINESS_OS_PROFILE_VERSION;
@@ -137,6 +159,9 @@ export interface BusinessOSProfile {
   compiled?: BusinessOSCompiledRefs;
 
   aiMemory: BusinessOSAIMemory;
+
+  /** Setup Autopilot tasks (Stage 4). Persisted with the profile. */
+  setupTasks?: BusinessOSSetupTask[];
 
   createdAt: string;
   updatedAt: string;

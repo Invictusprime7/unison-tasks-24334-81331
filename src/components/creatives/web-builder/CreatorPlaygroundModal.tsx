@@ -177,6 +177,13 @@ interface CreatorPlaygroundModalProps {
   wizardSelections?: WizardSelections | null;
   /** Optional Business OS profile — when present, the Business OS shell is shown. */
   businessOSProfile?: import("@/types/businessOS").BusinessOSProfile | null;
+  /** Setup Autopilot tasks derived from the profile. */
+  businessOSSetupTasks?: import("@/types/businessOS").BusinessOSSetupTask[];
+  /** Mark a setup task done/skipped/pending. */
+  onUpdateBusinessOSSetupTask?: (
+    taskId: string,
+    status: import("@/types/businessOS").SetupTaskStatus,
+  ) => void;
 }
 
 function formatIntentPackLabel(wizardSelections?: WizardSelections | null): string | null {
@@ -223,6 +230,8 @@ export function CreatorPlaygroundModal({
   setupSnapshot,
   wizardSelections = null,
   businessOSProfile = null,
+  businessOSSetupTasks,
+  onUpdateBusinessOSSetupTask,
 }: CreatorPlaygroundModalProps) {
   const [activeSection, setActiveSection] = useState<Section>(
     initialSection || (businessOSProfile ? "business_os" : "overview"),
@@ -366,6 +375,8 @@ export function CreatorPlaygroundModal({
                   businessOSProfile ? (
                     <BusinessOSShell
                       profile={businessOSProfile}
+                      setupTasks={businessOSSetupTasks}
+                      onUpdateSetupTaskStatus={onUpdateBusinessOSSetupTask}
                       onOpenModule={(moduleId) => {
                         const map: Partial<Record<typeof moduleId, Section>> = {
                           website: "overview",

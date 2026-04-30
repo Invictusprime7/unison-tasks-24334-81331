@@ -173,15 +173,30 @@ export function useBusinessOSProfile(
     });
   }, []);
 
+  const [moduleCounts, setModuleCounts] = useState<Partial<Record<BusinessOSModuleId, number>>>({});
+
+  const applyLiveSnapshot = useCallback((snapshot: LiveModuleSnapshot) => {
+    setModuleCounts(snapshot.counts);
+    setProfileState((prev) => {
+      if (!prev) return prev;
+      const next = applyLiveSnapshotToProfile(prev, snapshot);
+      if (!next) return prev;
+      dirtyRef.current = true;
+      return next;
+    });
+  }, []);
+
   return {
     profile,
     loading,
     error,
     readiness,
     setupTasks,
+    moduleCounts,
     setProfile,
     updateProfile,
     setModuleStatus,
+    applyLiveSnapshot,
     updateSetupTaskStatus,
     regenerateSetupTasks,
     persist,

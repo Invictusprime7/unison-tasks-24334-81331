@@ -1561,6 +1561,7 @@ export default function App() {
       }
       setCurrentTemplateName(template.name);
       setSaveProjectName(template.name);
+      setProjectDisplayName(template.name);
       setSaveProjectDescription(template.description || '');
       setBuilderMode('preview');
       return true;

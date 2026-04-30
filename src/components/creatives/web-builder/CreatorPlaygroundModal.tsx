@@ -221,8 +221,11 @@ export function CreatorPlaygroundModal({
   vfsFiles = {},
   setupSnapshot,
   wizardSelections = null,
+  businessOSProfile = null,
 }: CreatorPlaygroundModalProps) {
-  const [activeSection, setActiveSection] = useState<Section>(initialSection || "overview");
+  const [activeSection, setActiveSection] = useState<Section>(
+    initialSection || (businessOSProfile ? "business_os" : "overview"),
+  );
   const [selectedBindingId, setSelectedBindingId] = useState<string | null>(initialBindingId || null);
   const [businessFocusField, setBusinessFocusField] = useState<PlaygroundSetupField | null>(initialSetupField || null);
   const setupWizard = useSetupWizard(businessId);

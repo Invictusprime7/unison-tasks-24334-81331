@@ -1130,6 +1130,13 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                                     Duplicate
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onSelect={() => {
+                                    const next = window.prompt('Rename project', project.name);
+                                    if (next != null) renameProject(project, next);
+                                  }}>
+                                    <Edit3 className="h-4 w-4 mr-2" />
+                                    Rename
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => {
                                     openProjectSettings(project);
                                   }}>
                                     <Settings className="h-4 w-4 mr-2" />

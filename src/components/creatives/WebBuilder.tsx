@@ -5554,7 +5554,37 @@ ${html}
           >
             <span className="text-sm">⚡ AI</span>
           </Button>
-          
+
+          <AIEditHistoryMenu
+            projectId={projectId ?? null}
+            onRevert={(snap) => {
+              const beforeFiles = virtualFS.getSandpackFiles();
+              virtualFS.importFiles(snap.before);
+              syncBuilderFromFiles(snap.before, activePagePath);
+              pushAISnapshot(projectId ?? null, {
+                label: `Revert · ${snap.label}`,
+                source: 'manual',
+                before: beforeFiles,
+                after: snap.before,
+                changedPaths: diffChangedPaths(beforeFiles, snap.before),
+              });
+              toast.success('Reverted to previous state');
+            }}
+            onReapply={(snap) => {
+              const beforeFiles = virtualFS.getSandpackFiles();
+              virtualFS.importFiles(snap.after);
+              syncBuilderFromFiles(snap.after, activePagePath);
+              pushAISnapshot(projectId ?? null, {
+                label: `Reapply · ${snap.label}`,
+                source: 'manual',
+                before: beforeFiles,
+                after: snap.after,
+                changedPaths: diffChangedPaths(beforeFiles, snap.after),
+              });
+              toast.success('Reapplied AI edit');
+            }}
+          />
+
           <div className="h-5 w-px bg-fuchsia-500/50" />
           
           <Button

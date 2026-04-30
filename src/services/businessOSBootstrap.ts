@@ -41,6 +41,7 @@ export function bootstrapBusinessOSProfileFromCreatorData(
     pages: [],
     brand: {},
     crm: { pipelineName: "Leads", stages: ["new", "contacted", "won"], defaultStage: "new" },
+    automationPack: "general",
   };
 
   return {

@@ -138,15 +138,21 @@ export function useTemplateFiles() {
         return newTemplate.id;
       }
 
+      // Project name is the canonical identity. The user-supplied `name`
+      // argument always wins over any stale metadata fallback (e.g. a wizard
+      // "My Business" placeholder). Never fall back to a business name here.
+      const trimmedName = (name || '').trim() || 'Untitled project';
+      const incomingMeta = (payload?.metadata || {}) as Record<string, unknown>;
       const metadata = {
-        name,
+        ...incomingMeta,
+        name: trimmedName,
+        projectName: trimmedName,
         description: description || null,
         entryPoint: payload?.entryPoint,
         activePagePath: payload?.activePagePath,
         projectId: payload?.projectId ?? null,
         canonicalPlayground: payload?.canonicalPlayground ?? null,
         siteBundleSnapshot: payload?.siteBundleSnapshot ?? null,
-        ...(payload?.metadata || {}),
       } as unknown as Json;
 
       // If a draft already exists for this (user, business, project), update it instead of inserting.
@@ -179,6 +185,7 @@ export function useTemplateFiles() {
         const { data: updated, error: updateError } = await supabase
           .from("builder_drafts")
           .update({
+            name: trimmedName,
             business_id: payload?.businessId ?? null,
             code,
             editor_code: code,
@@ -195,6 +202,7 @@ export function useTemplateFiles() {
         const { data: inserted, error: insertError } = await supabase
           .from("builder_drafts")
           .insert({
+            name: trimmedName,
             user_id: user.id,
             business_id: payload?.businessId ?? null,
             code,
@@ -261,6 +269,17 @@ export function useTemplateFiles() {
         .maybeSingle();
 
       const prevMeta = (existing?.metadata || {}) as Record<string, any>;
+      const incomingMeta = (payload?.metadata || {}) as Record<string, unknown>;
+      // Resolve canonical project name. Prefer incoming metadata.name (the
+      // user-visible title), else preserve previous, else fallback.
+      const resolvedName = (
+        (typeof incomingMeta.name === 'string' && incomingMeta.name.trim()) ||
+        (typeof incomingMeta.projectName === 'string' && incomingMeta.projectName.trim()) ||
+        (typeof prevMeta.name === 'string' && prevMeta.name.trim()) ||
+        (typeof prevMeta.projectName === 'string' && prevMeta.projectName.trim()) ||
+        ''
+      ).trim();
+
       const nextMeta = {
         ...prevMeta,
         ...(payload?.entryPoint ? { entryPoint: payload.entryPoint } : {}),
@@ -268,7 +287,8 @@ export function useTemplateFiles() {
         ...(payload?.projectId !== undefined ? { projectId: payload.projectId } : {}),
         ...(payload?.canonicalPlayground !== undefined ? { canonicalPlayground: payload.canonicalPlayground } : {}),
         ...(payload?.siteBundleSnapshot !== undefined ? { siteBundleSnapshot: payload.siteBundleSnapshot } : {}),
-        ...(payload?.metadata || {}),
+        ...incomingMeta,
+        ...(resolvedName ? { name: resolvedName, projectName: resolvedName } : {}),
       } as unknown as Json;
 
       const updatePatch: Record<string, unknown> = {
@@ -277,6 +297,9 @@ export function useTemplateFiles() {
         metadata: nextMeta,
         updated_at: new Date().toISOString(),
       };
+      if (resolvedName) {
+        updatePatch.name = resolvedName;
+      }
       if (payload?.vfsFiles !== undefined) {
         updatePatch.vfs_files = payload.vfsFiles as unknown as Json;
       }

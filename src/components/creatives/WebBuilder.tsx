@@ -1561,6 +1561,7 @@ export default function App() {
       }
       setCurrentTemplateName(template.name);
       setSaveProjectName(template.name);
+      setProjectDisplayName(template.name);
       setSaveProjectDescription(template.description || '');
       setBuilderMode('preview');
       return true;
@@ -1592,6 +1593,7 @@ export default function App() {
     setPreviewCode(code);
     setCurrentTemplateName(template.name);
     setSaveProjectName(template.name);
+    setProjectDisplayName(template.name);
     setSaveProjectDescription(template.description || '');
     return true;
   // importBuilderFiles is declared after this hook in the file; removing it from deps
@@ -3028,8 +3030,23 @@ export default function ${componentName}Page() {
       canonicalPlayground: launchArtifacts.canonicalPlayground,
       siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
       metadata: {
-        name: currentTemplateName || effectiveBusinessName,
-        projectName: projectNameFromState || currentTemplateName || effectiveBusinessName,
+        // Project identity is strictly the project's own name. Never fall
+        // back to a business/wizard name here — that's how legacy drafts
+        // ended up titled "My Business".
+        name: (
+          projectDisplayName.trim() ||
+          saveProjectName.trim() ||
+          projectNameFromState ||
+          currentTemplateName ||
+          ''
+        ).trim() || `Project ${(projectId || '').slice(0, 8) || 'untitled'}`,
+        projectName: (
+          projectDisplayName.trim() ||
+          saveProjectName.trim() ||
+          projectNameFromState ||
+          currentTemplateName ||
+          ''
+        ).trim() || `Project ${(projectId || '').slice(0, 8) || 'untitled'}`,
         businessName: effectiveBusinessName,
         systemType: activeSystemType || systemType || null,
         templateCategory: currentTemplateCategory || null,
@@ -3056,6 +3073,8 @@ export default function ${componentName}Page() {
     playgroundCalendars,
     playgroundPopups,
     currentTemplateName,
+    projectDisplayName,
+    saveProjectName,
     projectNameFromState,
     systemName,
     effectiveRouteState,
@@ -3072,13 +3091,12 @@ export default function ${componentName}Page() {
     reason: 'launcher_import' | 'interval_autosave',
   ): Promise<string | null> => {
     const effectiveName = (
+      projectDisplayName.trim() ||
       saveProjectName.trim() ||
       currentTemplateName ||
-      creatorPlayground.creatorData.businessInfo.businessName ||
       projectNameFromState ||
       effectiveRouteState?.templateName ||
-      systemName ||
-      'Untitled Project'
+      `Project ${(projectId || '').slice(0, 8) || Date.now().toString(36)}`
     ).trim();
 
     if (!effectiveName) {
@@ -3129,12 +3147,12 @@ export default function ${componentName}Page() {
 
     return draftPersistencePromiseRef.current;
   }, [
+    projectDisplayName,
     saveProjectName,
     currentTemplateName,
-    creatorPlayground.creatorData.businessInfo.businessName,
     projectNameFromState,
     effectiveRouteState?.templateName,
-    systemName,
+    projectId,
     getFinalCodeWithOverrides,
     buildSavePayload,
     saveProjectDescription,
@@ -4622,6 +4640,7 @@ ${html}
     templateFiles.setCurrentTemplateId(template.id);
     setCurrentTemplateName(template.name);
     setSaveProjectName(template.name);
+    setProjectDisplayName(template.name);
     setSaveProjectDescription(template.description || '');
     
     // Switch to preview mode to show the loaded template

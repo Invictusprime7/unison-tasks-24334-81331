@@ -235,7 +235,9 @@ export function CreatorPlaygroundModal({
   wizardSelections = null,
   businessOSProfile = null,
   businessOSSetupTasks,
+  businessOSModuleCounts,
   onUpdateBusinessOSSetupTask,
+  onCreateBusinessOSProfile,
 }: CreatorPlaygroundModalProps) {
   const [activeSection, setActiveSection] = useState<Section>(
     initialSection || (businessOSProfile ? "business_os" : "overview"),

@@ -3974,13 +3974,22 @@ export function processCode(code: string, filePath: string): string {
     for (const name of missingIcons) {
       injections.push(`const ${name} = __LucideIcons['${name}'] || __LucideFallback;`);
     }
-    // Insert after last import statement
-    const lastImportIdx = code.lastIndexOf('\nimport ');
-    if (lastImportIdx !== -1) {
-      const lineEnd = code.indexOf('\n', lastImportIdx + 1);
-      code = code.slice(0, lineEnd + 1) + injections.join('\n') + '\n' + code.slice(lineEnd + 1);
+    // Insert after the fallback declaration when it already exists; otherwise
+    // insert after the last import. This preserves the invariant that every
+    // `const Icon = ... || __LucideFallback` line appears below the fallback.
+    const fallbackDeclMatch = code.match(/^const __LucideFallback\s*=.*$/m);
+    if (fallbackDeclMatch?.index !== undefined) {
+      const fallbackLineEnd = code.indexOf('\n', fallbackDeclMatch.index);
+      const insertAt = fallbackLineEnd === -1 ? code.length : fallbackLineEnd + 1;
+      code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
     } else {
-      code = injections.join('\n') + '\n' + code;
+      const lastImportIdx = code.lastIndexOf('\nimport ');
+      if (lastImportIdx !== -1) {
+        const lineEnd = code.indexOf('\n', lastImportIdx + 1);
+        code = code.slice(0, lineEnd + 1) + injections.join('\n') + '\n' + code.slice(lineEnd + 1);
+      } else {
+        code = injections.join('\n') + '\n' + code;
+      }
     }
   }
 

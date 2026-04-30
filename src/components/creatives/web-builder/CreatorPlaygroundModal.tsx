@@ -382,6 +382,7 @@ export function CreatorPlaygroundModal({
                     <BusinessOSShell
                       profile={businessOSProfile}
                       setupTasks={businessOSSetupTasks}
+                      moduleCounts={businessOSModuleCounts}
                       onUpdateSetupTaskStatus={onUpdateBusinessOSSetupTask}
                       onOpenModule={(moduleId) => {
                         const map: Partial<Record<typeof moduleId, Section>> = {
@@ -398,16 +399,29 @@ export function CreatorPlaygroundModal({
                           inbox: "intent_registry",
                           reviews: "readiness",
                           analytics: "readiness",
-                          ai_operator: "intent_registry",
+                          ai_operator: "components",
                           settings: "business",
                         };
                         setActiveSection(map[moduleId] || "overview");
                       }}
                     />
                   ) : (
-                    <div className="text-xs text-muted-foreground p-4 border border-dashed border-border/40 rounded-lg">
-                      No Business OS profile yet. Launch a new business through the Wizard
-                      to install one — or open an existing draft.
+                    <div className="space-y-3 p-4 border border-dashed border-border/40 rounded-lg">
+                      <p className="text-xs text-muted-foreground">
+                        No Business OS profile yet for this draft. Bootstrap one from the
+                        current project state to unlock readiness, setup autopilot, and
+                        per-module configuration.
+                      </p>
+                      {onCreateBusinessOSProfile && (
+                        <button
+                          type="button"
+                          onClick={onCreateBusinessOSProfile}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/25 transition"
+                        >
+                          <Zap className="h-3.5 w-3.5" />
+                          Bootstrap Business OS profile
+                        </button>
+                      )}
                     </div>
                   )
                 )}

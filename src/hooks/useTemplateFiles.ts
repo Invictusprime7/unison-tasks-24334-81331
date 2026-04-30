@@ -138,15 +138,21 @@ export function useTemplateFiles() {
         return newTemplate.id;
       }
 
+      // Project name is the canonical identity. The user-supplied `name`
+      // argument always wins over any stale metadata fallback (e.g. a wizard
+      // "My Business" placeholder). Never fall back to a business name here.
+      const trimmedName = (name || '').trim() || 'Untitled project';
+      const incomingMeta = (payload?.metadata || {}) as Record<string, unknown>;
       const metadata = {
-        name,
+        ...incomingMeta,
+        name: trimmedName,
+        projectName: trimmedName,
         description: description || null,
         entryPoint: payload?.entryPoint,
         activePagePath: payload?.activePagePath,
         projectId: payload?.projectId ?? null,
         canonicalPlayground: payload?.canonicalPlayground ?? null,
         siteBundleSnapshot: payload?.siteBundleSnapshot ?? null,
-        ...(payload?.metadata || {}),
       } as unknown as Json;
 
       // If a draft already exists for this (user, business, project), update it instead of inserting.

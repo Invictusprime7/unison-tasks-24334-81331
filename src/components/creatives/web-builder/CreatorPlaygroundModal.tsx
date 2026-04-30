@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { BusinessOSShell } from "@/components/business-os/BusinessOSShell";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
 import { useSetupWizard, type SetupStepId } from "@/hooks/useSetupWizard";
 import type { UseCreatorPlaygroundReturn } from "@/hooks/useCreatorPlayground";
@@ -85,6 +86,7 @@ const PAGE_TYPE_OPTIONS: { value: BuilderPageType; label: string }[] = [
 ];
 
 type Section =
+  | "business_os"
   | "launch"
   | "overview"
   | "pages"
@@ -101,6 +103,7 @@ type Section =
   | "business";
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highlight?: boolean }[] = [
+  { id: "business_os", label: "Business OS", icon: Zap, highlight: true },
   { id: "launch", label: "Launch Wizard", icon: Rocket, highlight: true },
   { id: "overview", label: "Overview", icon: Gauge },
   { id: "pages", label: "Pages", icon: FileText },
@@ -172,6 +175,8 @@ interface CreatorPlaygroundModalProps {
   vfsFiles?: Record<string, string>;
   setupSnapshot?: PlaygroundSetupSnapshot;
   wizardSelections?: WizardSelections | null;
+  /** Optional Business OS profile — when present, the Business OS shell is shown. */
+  businessOSProfile?: import("@/types/businessOS").BusinessOSProfile | null;
 }
 
 function formatIntentPackLabel(wizardSelections?: WizardSelections | null): string | null {
@@ -217,8 +222,11 @@ export function CreatorPlaygroundModal({
   vfsFiles = {},
   setupSnapshot,
   wizardSelections = null,
+  businessOSProfile = null,
 }: CreatorPlaygroundModalProps) {
-  const [activeSection, setActiveSection] = useState<Section>(initialSection || "overview");
+  const [activeSection, setActiveSection] = useState<Section>(
+    initialSection || (businessOSProfile ? "business_os" : "overview"),
+  );
   const [selectedBindingId, setSelectedBindingId] = useState<string | null>(initialBindingId || null);
   const [businessFocusField, setBusinessFocusField] = useState<PlaygroundSetupField | null>(initialSetupField || null);
   const setupWizard = useSetupWizard(businessId);
@@ -354,6 +362,38 @@ export function CreatorPlaygroundModal({
           <div className="flex-1 min-w-0 flex flex-col">
             <ScrollArea className="flex-1">
               <div className="p-5">
+                {activeSection === "business_os" && (
+                  businessOSProfile ? (
+                    <BusinessOSShell
+                      profile={businessOSProfile}
+                      onOpenModule={(moduleId) => {
+                        const map: Partial<Record<typeof moduleId, Section>> = {
+                          website: "overview",
+                          pages: "pages",
+                          funnels: "funnels",
+                          offers: "products",
+                          forms: "forms",
+                          crm: "intent_registry",
+                          pipeline: "intent_registry",
+                          bookings: "calendars",
+                          payments: "business",
+                          automations: "intent_registry",
+                          inbox: "intent_registry",
+                          reviews: "readiness",
+                          analytics: "readiness",
+                          ai_operator: "intent_registry",
+                          settings: "business",
+                        };
+                        setActiveSection(map[moduleId] || "overview");
+                      }}
+                    />
+                  ) : (
+                    <div className="text-xs text-muted-foreground p-4 border border-dashed border-border/40 rounded-lg">
+                      No Business OS profile yet. Launch a new business through the Wizard
+                      to install one — or open an existing draft.
+                    </div>
+                  )
+                )}
                 {activeSection === "launch" && <SetupWizardPanel wizard={setupWizard} businessId={businessId} />}
                 {activeSection === "overview" && (
                   <OverviewSection

@@ -122,6 +122,7 @@ import {
 } from '@/services/unifiedPreviewPipeline';
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
+import { useBusinessOSProfile } from '@/hooks/useBusinessOSProfile';
 import { buildIntentReadinessReport } from '@/services/intentReadinessService';
 import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistence';
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
@@ -1644,6 +1645,18 @@ export default function App() {
       }),
     [businessId, projectId, previewCartVersion],
   );
+
+  // Business OS profile — loaded from builder_drafts.metadata.businessOS when a draft is active.
+  const businessOSDraftId = templateFiles.currentTemplateId || null;
+  const initialBusinessOSProfile =
+    (effectiveRouteState as { businessOSProfile?: import("@/types/businessOS").BusinessOSProfile } | null)
+      ?.businessOSProfile ?? null;
+  const businessOS = useBusinessOSProfile({
+    draftId: businessOSDraftId,
+    initialProfile: initialBusinessOSProfile,
+    autoLoad: true,
+    autoPersistMs: 1500,
+  });
 
   useEffect(() => {
     const urlId = new URLSearchParams(location.search).get('id');
@@ -5624,6 +5637,7 @@ ${html}
         vfsFiles={virtualFS.getSandpackFiles()}
         setupSnapshot={playgroundSetupSnapshot}
         wizardSelections={effectiveRouteState?.wizardSelections || null}
+        businessOSProfile={businessOS.profile}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;

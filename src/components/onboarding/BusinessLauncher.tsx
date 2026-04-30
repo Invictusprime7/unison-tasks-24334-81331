@@ -43,6 +43,7 @@ import {
   planSiteTopology,
   type BusinessBlueprint,
 } from "@/contracts";
+import { installBusinessOSPack } from "@/business-os/installBusinessOSPack";
 
 // Industry chip configurations
 const industryChips = [
@@ -444,6 +445,17 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       systemsBuildContext: generatedSystemsBuildContext ?? undefined,
     }));
 
+    // Install Business OS profile from blueprint + industry pack (no draftId yet —
+    // persists later when WebBuilder saves the draft).
+    let businessOSProfile: import("@/types/businessOS").BusinessOSProfile | undefined;
+    try {
+      const blueprint = createBlueprintFromIndustry(industryKey, businessName || "My Business", { prompt });
+      const installed = await installBusinessOSPack({ blueprint });
+      businessOSProfile = installed.profile;
+    } catch (e) {
+      console.warn("[BusinessLauncher] installBusinessOSPack failed:", e);
+    }
+
     navigate("/web-builder", {
       state: {
         vfsFiles: launchArtifacts.files,
@@ -455,6 +467,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
         systemType: selectedChip ? getSystemTypeForChip(selectedChip) : undefined,
         systemsBuildContext: generatedSystemsBuildContext ?? undefined,
         sitePlan,
+        businessOSProfile,
       },
     });
     handleClose();

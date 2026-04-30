@@ -23,6 +23,7 @@ interface Props {
   onOpenModule?: (id: BusinessOSModuleId) => void;
   setupTasks?: BusinessOSSetupTask[];
   onUpdateSetupTaskStatus?: (taskId: string, status: SetupTaskStatus) => void;
+  moduleCounts?: Partial<Record<BusinessOSModuleId, number>>;
   className?: string;
 }
 
@@ -31,11 +32,12 @@ export const BusinessOSShell: React.FC<Props> = ({
   onOpenModule,
   setupTasks,
   onUpdateSetupTaskStatus,
+  moduleCounts,
   className,
 }) => {
   return (
     <div className={cn("space-y-4", className)}>
-      <BusinessOSOverview profile={profile} onOpenModule={onOpenModule} />
+      <BusinessOSOverview profile={profile} onOpenModule={onOpenModule} moduleCounts={moduleCounts} />
       {setupTasks && onUpdateSetupTaskStatus && (
         <BusinessOSSetupAutopilot
           tasks={setupTasks}

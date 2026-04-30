@@ -52,10 +52,11 @@ const MODULE_META: Record<BusinessOSModuleId, { label: string; icon: LucideIcon 
 interface Props {
   profile: BusinessOSProfile;
   onOpenModule?: (id: BusinessOSModuleId) => void;
+  moduleCounts?: Partial<Record<BusinessOSModuleId, number>>;
   className?: string;
 }
 
-export const BusinessOSOverview: React.FC<Props> = ({ profile, onOpenModule, className }) => {
+export const BusinessOSOverview: React.FC<Props> = ({ profile, onOpenModule, moduleCounts, className }) => {
   const readiness = React.useMemo(() => computeBusinessOSReadiness(profile), [profile]);
   const enabledModules = BUSINESS_OS_MODULE_ORDER.filter((id) => profile.modules[id]?.enabled);
 
@@ -102,6 +103,7 @@ export const BusinessOSOverview: React.FC<Props> = ({ profile, onOpenModule, cla
                 label={meta.label}
                 icon={meta.icon}
                 state={profile.modules[id]}
+                count={moduleCounts?.[id]}
                 onClick={onOpenModule ? () => onOpenModule(id) : undefined}
               />
             );

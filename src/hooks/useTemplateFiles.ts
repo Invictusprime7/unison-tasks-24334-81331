@@ -138,20 +138,27 @@ export function useTemplateFiles() {
         return newTemplate.id;
       }
 
+      // The user-provided `name` is the canonical project name. It must always win
+      // over any fallback (e.g. business name) the caller may have placed in
+      // payload.metadata. So we spread payload.metadata FIRST then overwrite the
+      // name fields — guaranteeing what the user typed is what's persisted on
+      // both the draft row and the linked project.
+      const trimmedName = (name || '').trim() || 'Untitled project';
       const metadata = {
-        name,
-        description: description || null,
+        ...(payload?.metadata || {}),
         entryPoint: payload?.entryPoint,
         activePagePath: payload?.activePagePath,
         projectId: payload?.projectId ?? null,
         canonicalPlayground: payload?.canonicalPlayground ?? null,
         siteBundleSnapshot: payload?.siteBundleSnapshot ?? null,
-        ...(payload?.metadata || {}),
+        name: trimmedName,
+        projectName: trimmedName,
+        description: description || null,
       } as unknown as Json;
 
-      // If a draft already exists for this (user, business, project), update it instead of inserting.
-      // This prevents `uq_builder_drafts_user_business*` collisions when users save multiple times
-      // or rename a project — saving must always succeed and never lose state.
+      // Find an existing draft for this (user, business, project) and update it
+      // instead of inserting. Prevents unique-constraint collisions and keeps
+      // multiple-projects-per-business working.
       let existingDraftId: string | null = null;
       {
         let lookup = supabase
@@ -179,6 +186,7 @@ export function useTemplateFiles() {
         const { data: updated, error: updateError } = await supabase
           .from("builder_drafts")
           .update({
+            name: trimmedName,
             business_id: payload?.businessId ?? null,
             code,
             editor_code: code,
@@ -196,6 +204,7 @@ export function useTemplateFiles() {
           .from("builder_drafts")
           .insert({
             user_id: user.id,
+            name: trimmedName,
             business_id: payload?.businessId ?? null,
             code,
             editor_code: code,

@@ -1654,7 +1654,8 @@ export default function App() {
     autoPersistMs: 1500,
   });
 
-
+  useEffect(() => {
+    const urlId = new URLSearchParams(location.search).get('id');
     if (!projectId || urlId || routeStateHasStructuredProject || templateFiles.currentTemplateId) {
       return;
     }

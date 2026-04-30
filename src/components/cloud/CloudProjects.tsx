@@ -1207,6 +1207,18 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                                     size="sm"
                                     variant="ghost"
                                     className="h-7"
+                                    title="Rename project"
+                                    onClick={() => {
+                                      const next = window.prompt('Rename project', project.name);
+                                      if (next != null) renameProject(project, next);
+                                    }}
+                                  >
+                                    <FileText className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7"
                                     onClick={() => openProjectSettings(project)}
                                   >
                                     <Settings className="h-3.5 w-3.5" />

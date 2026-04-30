@@ -29,7 +29,7 @@ export function bootstrapBusinessOSProfileFromCreatorData(
 ): BusinessOSProfile {
   const now = new Date().toISOString();
   const businessName = input.creatorData.businessInfo?.businessName || "My Business";
-  const industry = input.industry || input.creatorData.businessInfo?.industry || "general";
+  const industry = input.industry || "general";
   const systemType = (input.systemType || "general") as BusinessBlueprint["identity"]["systemType"];
 
   const blueprint: BusinessBlueprint = {
@@ -37,7 +37,7 @@ export function bootstrapBusinessOSProfileFromCreatorData(
     origin: { mode: "manual", createdAt: now },
     identity: { businessName, industry, systemType },
     capabilities: { enabled: ["contact"], primaryGoal: "leads" },
-    intents: { allowed: [], primaryCta: "form.submit_contact" },
+    intents: { allowed: [], primaryCta: "contact.submit" },
     pages: [],
     brand: {},
     crm: { pipelineName: "Leads", stages: ["new", "contacted", "won"], defaultStage: "new" },

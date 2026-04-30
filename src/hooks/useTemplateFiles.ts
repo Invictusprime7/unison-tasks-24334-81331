@@ -185,6 +185,7 @@ export function useTemplateFiles() {
         const { data: updated, error: updateError } = await supabase
           .from("builder_drafts")
           .update({
+            name: trimmedName,
             business_id: payload?.businessId ?? null,
             code,
             editor_code: code,
@@ -201,6 +202,7 @@ export function useTemplateFiles() {
         const { data: inserted, error: insertError } = await supabase
           .from("builder_drafts")
           .insert({
+            name: trimmedName,
             user_id: user.id,
             business_id: payload?.businessId ?? null,
             code,

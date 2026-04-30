@@ -28,6 +28,11 @@ import {
   computeSetupTasks,
   setSetupTaskStatus,
 } from "@/services/businessOSSetupAutopilot";
+import {
+  applyLiveSnapshotToProfile,
+  computeLiveModuleSnapshot,
+  type LiveModuleSnapshot,
+} from "@/services/businessOSLiveSync";
 
 export interface UseBusinessOSProfileOptions {
   /** When provided, the hook can load + persist to that draft. */

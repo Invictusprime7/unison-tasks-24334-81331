@@ -5697,7 +5697,19 @@ ${html}
         wizardSelections={effectiveRouteState?.wizardSelections || null}
         businessOSProfile={businessOS.profile}
         businessOSSetupTasks={businessOS.setupTasks}
+        businessOSModuleCounts={businessOS.moduleCounts}
         onUpdateBusinessOSSetupTask={businessOS.updateSetupTaskStatus}
+        onCreateBusinessOSProfile={async () => {
+          const { bootstrapBusinessOSProfileFromCreatorData } = await import("@/services/businessOSBootstrap");
+          businessOS.setProfile(
+            bootstrapBusinessOSProfileFromCreatorData({
+              draftId: businessOSDraftId,
+              businessId,
+              projectId,
+              creatorData: creatorPlayground.creatorData,
+            }),
+          );
+        }}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;

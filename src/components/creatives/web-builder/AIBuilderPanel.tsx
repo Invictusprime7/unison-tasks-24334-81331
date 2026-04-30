@@ -289,6 +289,8 @@ interface AIBuilderPanelProps {
   onApplyToVFS?: (files: Record<string, string>) => void;
   /** Preview handle ref for building component behavior maps (DOM inspection) */
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
+  /** Active project id — used to scope persisted prompt + edit history. */
+  projectId?: string | null;
 }
 
 // ============================================================================

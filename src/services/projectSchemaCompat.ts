@@ -208,6 +208,59 @@ export async function createProjectCompat(input: ProjectMutationInput) {
   return runProjectMutation(input);
 }
 
+/**
+ * Update an existing project (rename, change settings, status, …).
+ * Mirrors the silent-drop behaviour of insert so unknown columns don't break the call.
+ */
+export async function updateProjectCompat(
+  projectId: string,
+  patch: Partial<Omit<ProjectMutationInput, 'owner_id'>>,
+) {
+  const attemptedColumns = new Set<string>();
+
+  while (true) {
+    const payload = Object.fromEntries(
+      Object.entries(patch).filter(
+        ([key, value]) => value !== undefined && !unsupportedProjectColumns.has(key),
+      ),
+    );
+
+    if (Object.keys(payload).length === 0) {
+      return { data: null, error: null };
+    }
+
+    const result = await (supabase as any)
+      .from('projects')
+      .update({ ...payload, updated_at: new Date().toISOString() })
+      .eq('id', projectId)
+      .select(buildProjectSelectColumns())
+      .single();
+
+    if (!result.error) {
+      return {
+        data: normalizeProjectRecord(result.data as Record<string, unknown>),
+        error: null,
+      };
+    }
+
+    const missingColumn = rememberMissingProjectColumn(result.error);
+    if (!missingColumn || attemptedColumns.has(missingColumn)) {
+      return { data: null, error: result.error };
+    }
+    attemptedColumns.add(missingColumn);
+  }
+}
+
+/**
+ * Rename helper. Updates `projects.name` (the DB trigger mirrors the change into
+ * builder_drafts.name + metadata.projectName so the WebBuilder header / lists stay in sync).
+ */
+export async function renameProjectCompat(projectId: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return { data: null, error: new Error('Name cannot be empty') as any };
+  return updateProjectCompat(projectId, { name: trimmed });
+}
+
 export async function listProjectsCompat(options: ProjectListOptions) {
   const {
     ownerId,

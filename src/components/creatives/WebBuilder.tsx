@@ -1628,6 +1628,47 @@ export default function App() {
   const projectNameFromState = effectiveRouteState?.projectName;
   const publishStatusFromState = effectiveRouteState?.publishStatus;
   const customDomainFromState = effectiveRouteState?.customDomain;
+
+  // Local editable project name. Seeded from route state, kept in sync if the
+  // user (or another tab) renames the project via CloudProjects.
+  const [projectDisplayName, setProjectDisplayName] = useState<string>(projectNameFromState || '');
+  const [renamingProject, setRenamingProject] = useState(false);
+  useEffect(() => {
+    if (projectNameFromState) setProjectDisplayName(projectNameFromState);
+  }, [projectNameFromState]);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { projectId?: string; name?: string } | undefined;
+      if (!detail?.projectId || !detail.name) return;
+      if (projectId && detail.projectId === projectId) {
+        setProjectDisplayName(detail.name);
+      }
+    };
+    window.addEventListener('project:renamed', handler);
+    return () => window.removeEventListener('project:renamed', handler);
+  }, [projectId]);
+
+  const handleRenameProject = useCallback(async (nextName: string) => {
+    const trimmed = nextName.trim();
+    if (!projectId || !trimmed || trimmed === projectDisplayName) return;
+    setRenamingProject(true);
+    try {
+      const { renameProjectCompat } = await import('@/services/projectSchemaCompat');
+      const { error } = await renameProjectCompat(projectId, trimmed);
+      if (error) throw error;
+      setProjectDisplayName(trimmed);
+      try {
+        window.dispatchEvent(new CustomEvent('project:renamed', {
+          detail: { projectId, name: trimmed },
+        }));
+      } catch { /* noop */ }
+    } catch (err) {
+      console.warn('[WebBuilder] rename failed:', err);
+    } finally {
+      setRenamingProject(false);
+    }
+  }, [projectId, projectDisplayName]);
+
   const [previewCartVersion, setPreviewCartVersion] = useState(0);
   const previewCartManager = useMemo(
     () =>
@@ -5566,7 +5607,27 @@ ${html}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          
+
+          {/* Inline project rename — invisible until a project is loaded. */}
+          {projectId && (
+            <input
+              value={projectDisplayName}
+              onChange={(e) => setProjectDisplayName(e.target.value)}
+              onBlur={(e) => handleRenameProject(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                if (e.key === 'Escape') {
+                  setProjectDisplayName(projectNameFromState || '');
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              disabled={renamingProject}
+              placeholder="Untitled project"
+              aria-label="Project name"
+              className="hidden md:block bg-transparent border border-transparent hover:border-cyan-500/30 focus:border-cyan-500/60 focus:bg-[#0d0d18] outline-none text-sm text-cyan-100 px-2 py-1 rounded-md max-w-[220px] truncate"
+            />
+          )}
+
           <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Device + Mode + Tools — hidden on small screens (use bottom nav on mobile) */}

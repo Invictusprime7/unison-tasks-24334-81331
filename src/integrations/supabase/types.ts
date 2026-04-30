@@ -667,6 +667,8 @@ export type Database = {
           editor_code: string | null
           id: string
           metadata: Json | null
+          name: string | null
+          project_id: string | null
           template_id: string | null
           updated_at: string
           user_id: string
@@ -679,6 +681,8 @@ export type Database = {
           editor_code?: string | null
           id?: string
           metadata?: Json | null
+          name?: string | null
+          project_id?: string | null
           template_id?: string | null
           updated_at?: string
           user_id: string
@@ -691,6 +695,8 @@ export type Database = {
           editor_code?: string | null
           id?: string
           metadata?: Json | null
+          name?: string | null
+          project_id?: string | null
           template_id?: string | null
           updated_at?: string
           user_id?: string
@@ -702,6 +708,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "builder_drafts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -2610,30 +2623,61 @@ export type Database = {
       }
       projects: {
         Row: {
+          business_id: string | null
           created_at: string | null
+          custom_domain: string | null
           description: string | null
           id: string
           name: string
           owner_id: string
+          publish_status: string
+          published_at: string | null
+          settings: Json
+          slug: string | null
+          status: string
+          template_type: string | null
           updated_at: string | null
         }
         Insert: {
+          business_id?: string | null
           created_at?: string | null
+          custom_domain?: string | null
           description?: string | null
           id?: string
           name: string
           owner_id: string
+          publish_status?: string
+          published_at?: string | null
+          settings?: Json
+          slug?: string | null
+          status?: string
+          template_type?: string | null
           updated_at?: string | null
         }
         Update: {
+          business_id?: string | null
           created_at?: string | null
+          custom_domain?: string | null
           description?: string | null
           id?: string
           name?: string
           owner_id?: string
+          publish_status?: string
+          published_at?: string | null
+          settings?: Json
+          slug?: string | null
+          status?: string
+          template_type?: string | null
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "projects_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "projects_owner_id_fkey"
             columns: ["owner_id"]

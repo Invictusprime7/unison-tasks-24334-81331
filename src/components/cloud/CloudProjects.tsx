@@ -543,16 +543,58 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
     }
   };
 
-  const openInBuilder = (project: Project) => {
-    navigate('/web-builder', {
+  const openInBuilder = async (project: Project) => {
+    // Resolve the matching builder_draft (if any) so the editor opens directly
+    // on the user's last saved VFS state instead of a blank canvas.
+    let draftId: string | null = null;
+    try {
+      const { data } = await supabase
+        .from('builder_drafts')
+        .select('id, updated_at')
+        .eq('project_id', project.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      draftId = data?.id || null;
+    } catch (err) {
+      console.warn('[CloudProjects] failed to resolve draft for project', project.id, err);
+    }
+
+    const url = draftId ? `/web-builder?id=${draftId}` : '/web-builder';
+    navigate(url, {
       state: {
         projectId: project.id,
+        draftId,
         businessId: project.business_id || selectedBusiness?.id,
         projectName: project.name,
         projectSlug: project.slug,
         publishStatus: project.publish_status || project.status,
       }
     });
+  };
+
+  // Inline-rename helper for project cards. Updates `projects.name`; the DB
+  // trigger mirrors the change into builder_drafts so headers / lists stay in sync.
+  const renameProject = async (project: Project, nextName: string) => {
+    const trimmed = nextName.trim();
+    if (!trimmed || trimmed === project.name) return;
+    try {
+      const { renameProjectCompat } = await import('@/services/projectSchemaCompat');
+      const { data, error } = await renameProjectCompat(project.id, trimmed);
+      if (error) throw error;
+      setProjects((current) =>
+        current.map((p) => (p.id === project.id ? { ...p, name: data?.name || trimmed } : p)),
+      );
+      // Broadcast so any open WebBuilder header / BusinessOS shell can refresh.
+      try {
+        window.dispatchEvent(new CustomEvent('project:renamed', {
+          detail: { projectId: project.id, name: trimmed },
+        }));
+      } catch { /* SSR no-op */ }
+      toast({ title: 'Renamed', description: `Project renamed to "${trimmed}".` });
+    } catch (error: any) {
+      toast({ title: 'Rename failed', description: error.message || 'Could not rename project.', variant: 'destructive' });
+    }
   };
 
   const updateBusinessSetting = (field: keyof typeof businessSettingsForm, value: string) => {
@@ -1088,6 +1130,13 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                                     Duplicate
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onSelect={() => {
+                                    const next = window.prompt('Rename project', project.name);
+                                    if (next != null) renameProject(project, next);
+                                  }}>
+                                    <Edit3 className="h-4 w-4 mr-2" />
+                                    Rename
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => {
                                     openProjectSettings(project);
                                   }}>
                                     <Settings className="h-4 w-4 mr-2" />
@@ -1153,6 +1202,18 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                                 <div className="flex items-center justify-end gap-1">
                                   <Button size="sm" variant="ghost" className="h-7" onClick={() => openInBuilder(project)}>
                                     <Edit3 className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7"
+                                    title="Rename project"
+                                    onClick={() => {
+                                      const next = window.prompt('Rename project', project.name);
+                                      if (next != null) renameProject(project, next);
+                                    }}
+                                  >
+                                    <FileText className="h-3.5 w-3.5" />
                                   </Button>
                                   <Button
                                     size="sm"

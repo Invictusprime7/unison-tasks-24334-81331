@@ -165,10 +165,16 @@ export async function runProviderLoop(opts: {
         { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
       ];
       for (const model of openaiModels) {
+        const remaining = budgetRemaining();
+        if (remaining < 8000) {
+          console.warn(`[AI-Hybrid] Budget exhausted before direct OpenAI fallback (${remaining}ms left)`);
+          break;
+        }
+        const perModelMs = Math.min(25000, Math.max(8000, remaining - 2000));
         try {
-          console.log(`[AI-Hybrid] Trying direct ${model.label}...`);
+          console.log(`[AI-Hybrid] Trying direct ${model.label} (timeout: ${perModelMs / 1000}s)...`);
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 25000);
+          const timeoutId = setTimeout(() => controller.abort(), perModelMs);
           const resp = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {

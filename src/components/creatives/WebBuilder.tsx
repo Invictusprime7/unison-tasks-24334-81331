@@ -5633,6 +5633,7 @@ ${html}
         vfsFiles={virtualFS.getSandpackFiles()}
         setupSnapshot={playgroundSetupSnapshot}
         wizardSelections={effectiveRouteState?.wizardSelections || null}
+        businessOSProfile={businessOS.profile}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;

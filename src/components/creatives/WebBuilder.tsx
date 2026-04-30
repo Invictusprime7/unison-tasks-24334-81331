@@ -25,6 +25,8 @@ import { CollapsiblePropertiesPanel } from "./web-builder/CollapsiblePropertiesP
 import { CanvasDragDropService } from "@/services/canvasDragDropService";
 import { CodePreviewDialog } from "./web-builder/CodePreviewDialog";
 import { AIBuilderPanel, type VFSEdit, type IframeError } from "./web-builder/AIBuilderPanel";
+import { AIEditHistoryMenu } from "./web-builder/AIEditHistoryMenu";
+import { pushSnapshot as pushAISnapshot, diffChangedPaths } from "@/services/aiHistoryStore";
 import { IntegrationsPanel } from "./design-studio/IntegrationsPanel";
 import { ExportDialog } from "./design-studio/ExportDialog";
 import { PerformancePanel } from "./web-builder/PerformancePanel";
@@ -5552,7 +5554,37 @@ ${html}
           >
             <span className="text-sm">⚡ AI</span>
           </Button>
-          
+
+          <AIEditHistoryMenu
+            projectId={projectId ?? null}
+            onRevert={(snap) => {
+              const beforeFiles = virtualFS.getSandpackFiles();
+              virtualFS.importFiles(snap.before);
+              syncBuilderFromFiles(snap.before, activePagePath);
+              pushAISnapshot(projectId ?? null, {
+                label: `Revert · ${snap.label}`,
+                source: 'manual',
+                before: beforeFiles,
+                after: snap.before,
+                changedPaths: diffChangedPaths(beforeFiles, snap.before),
+              });
+              toast.success('Reverted to previous state');
+            }}
+            onReapply={(snap) => {
+              const beforeFiles = virtualFS.getSandpackFiles();
+              virtualFS.importFiles(snap.after);
+              syncBuilderFromFiles(snap.after, activePagePath);
+              pushAISnapshot(projectId ?? null, {
+                label: `Reapply · ${snap.label}`,
+                source: 'manual',
+                before: beforeFiles,
+                after: snap.after,
+                changedPaths: diffChangedPaths(beforeFiles, snap.after),
+              });
+              toast.success('Reapplied AI edit');
+            }}
+          />
+
           <div className="h-5 w-px bg-fuchsia-500/50" />
           
           <Button
@@ -5935,8 +5967,10 @@ export default function ${componentName}() {
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
+                projectId={projectId ?? null}
                 onApplyToVFS={(files) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
+                  const beforeFiles = virtualFS.getSandpackFiles();
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
                   if (result.success) {
@@ -5944,8 +5978,19 @@ export default function ${componentName}() {
                     const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
                     console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
                     setViewMode('canvas');
-                    console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,', 
+                    console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,',
                       Object.keys(result.dependencies.dependencies).length, 'deps');
+                    // Capture an edit snapshot so users can revert/reapply.
+                    const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
+                    if (changedPaths.length > 0) {
+                      pushAISnapshot(projectId ?? null, {
+                        label: `AI edit · ${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`,
+                        source: 'ai',
+                        before: beforeFiles,
+                        after: mergedFiles,
+                        changedPaths,
+                      });
+                    }
                   } else {
                     console.error('[WebBuilder] aiVFS.applyCode failed:', result.errors);
                   }
@@ -6234,13 +6279,25 @@ export default function ${componentName}() {
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
+              projectId={projectId ?? null}
               onApplyToVFS={(files) => {
+                const beforeFiles = virtualFS.getSandpackFiles();
                 const result = aiVFS.applyCode(files);
                 if (result.success) {
                   const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                   syncBuilderFromFiles(mergedFiles, activePagePath);
                   setViewMode('canvas');
                   setAiPanelOpen(false);
+                  const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
+                  if (changedPaths.length > 0) {
+                    pushAISnapshot(projectId ?? null, {
+                      label: `AI edit · ${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`,
+                      source: 'ai',
+                      before: beforeFiles,
+                      after: mergedFiles,
+                      changedPaths,
+                    });
+                  }
                 }
               }}
               onViewEdits={() => { setViewMode('split'); setAiPanelOpen(false); }}

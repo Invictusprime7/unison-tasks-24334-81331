@@ -64,6 +64,11 @@ import { DebugAgentPanel } from './DebugAgentPanel';
 import { interpretPrompt, type TaskPlan } from '@/unison';
 import type { PlanStepStatus } from '@/unison/nlTypes';
 import { TaskPlanSteps } from './TaskPlanSteps';
+import {
+  loadAIHistory,
+  setMessages as persistMessages,
+  type PersistedMessage,
+} from '@/services/aiHistoryStore';
 
 // ============================================================================
 /**
@@ -289,6 +294,8 @@ interface AIBuilderPanelProps {
   onApplyToVFS?: (files: Record<string, string>) => void;
   /** Preview handle ref for building component behavior maps (DOM inspection) */
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
+  /** Active project id — used to scope persisted prompt + edit history. */
+  projectId?: string | null;
 }
 
 // ============================================================================
@@ -346,8 +353,24 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   vfsFiles,
   onApplyToVFS,
   previewRef,
+  projectId,
 }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Hydrate persisted messages synchronously so a refresh never wipes history.
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const persisted = loadAIHistory(projectId).messages;
+    return persisted.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: new Date(m.timestamp),
+      thinking: (m.thinking as ThinkingStep[] | undefined) || undefined,
+      claudeReasoning: m.claudeReasoning,
+      code: m.code,
+      edits: (m.edits as VFSEdit[] | undefined) || undefined,
+      taskPlan: (m.taskPlan as TaskPlan | undefined) || undefined,
+      meta: (m.meta as MessageMeta | undefined) || undefined,
+    }));
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
@@ -441,6 +464,47 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Persist messages so a Preview / page refresh never loses prompt history.
+  // Skip while a streaming assistant turn is in progress to avoid thrash —
+  // we'll save on the next stable update.
+  useEffect(() => {
+    const isStreaming = messages.some((m) => m.isStreaming);
+    if (isStreaming) return;
+    const persisted: PersistedMessage[] = messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: (m.timestamp instanceof Date ? m.timestamp : new Date()).toISOString(),
+      thinking: m.thinking as unknown,
+      claudeReasoning: m.claudeReasoning,
+      code: m.code,
+      edits: m.edits as unknown,
+      taskPlan: m.taskPlan as unknown,
+      meta: m.meta as unknown,
+    }));
+    persistMessages(projectId, persisted);
+  }, [messages, projectId]);
+
+  // Re-hydrate when projectId changes (e.g. switching projects in builder).
+  const lastProjectRef = useRef<string | null | undefined>(projectId);
+  useEffect(() => {
+    if (lastProjectRef.current === projectId) return;
+    lastProjectRef.current = projectId;
+    const persisted = loadAIHistory(projectId).messages;
+    setMessages(persisted.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: new Date(m.timestamp),
+      thinking: (m.thinking as ThinkingStep[] | undefined) || undefined,
+      claudeReasoning: m.claudeReasoning,
+      code: m.code,
+      edits: (m.edits as VFSEdit[] | undefined) || undefined,
+      taskPlan: (m.taskPlan as TaskPlan | undefined) || undefined,
+      meta: (m.meta as MessageMeta | undefined) || undefined,
+    })));
+  }, [projectId]);
 
   // No initial welcome message — AIConversationWelcome handles the empty state
 

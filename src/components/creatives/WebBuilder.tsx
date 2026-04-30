@@ -5643,41 +5643,12 @@ ${html}
             </Button>
           </div>
           
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleBackNavigation}
-            className="text-cyan-400 hover:text-cyan-300 h-8 px-2.5 rounded-lg hover:bg-cyan-500/20 hover:shadow-[0_0_10px_rgba(0,255,255,0.3)] transition-all duration-200"
-            title={`Go back to ${referrerPageName}${hasUnsavedChanges ? ' (unsaved changes will be auto-saved)' : ''} - Alt+←`}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-
-          {/* Inline project rename — empty when no project is loaded yet. */}
-          {projectId && (
-            <input
-              value={projectDisplayName}
-              onChange={(e) => setProjectDisplayName(e.target.value)}
-              onBlur={(e) => handleRenameProject(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                if (e.key === 'Escape') {
-                  setProjectDisplayName(projectNameFromState || '');
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              disabled={renamingProject}
-              placeholder="Untitled project"
-              aria-label="Project name"
-              className="hidden md:block bg-transparent border border-transparent hover:border-cyan-500/30 focus:border-cyan-500/60 focus:bg-[#0d0d18] outline-none text-sm text-cyan-100 px-2 py-1 rounded-md max-w-[220px] truncate"
-            />
-          )}
-
-          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
-
-          {/* Device + Mode + Tools — hidden on small screens (use bottom nav on mobile) */}
-          <div className="hidden sm:flex items-center gap-2">
-          {/* Device Breakpoints */}
+          <div className="h-5 w-px bg-fuchsia-500/50" />
+          
+          {/* Mode Toggle */}
+          <SimpleModeToggle
+            currentMode={builderMode === 'preview' ? 'preview' : 'select'}
+            onModeChange={(mode) => {
               setBuilderMode(mode);
               setIsInteractiveMode(mode === 'preview');
               if (mode === 'preview') {

@@ -5638,6 +5638,8 @@ ${html}
         setupSnapshot={playgroundSetupSnapshot}
         wizardSelections={effectiveRouteState?.wizardSelections || null}
         businessOSProfile={businessOS.profile}
+        businessOSSetupTasks={businessOS.setupTasks}
+        onUpdateBusinessOSSetupTask={businessOS.updateSetupTaskStatus}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;

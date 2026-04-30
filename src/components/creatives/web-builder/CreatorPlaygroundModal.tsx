@@ -375,6 +375,8 @@ export function CreatorPlaygroundModal({
                   businessOSProfile ? (
                     <BusinessOSShell
                       profile={businessOSProfile}
+                      setupTasks={businessOSSetupTasks}
+                      onUpdateSetupTaskStatus={onUpdateBusinessOSSetupTask}
                       onOpenModule={(moduleId) => {
                         const map: Partial<Record<typeof moduleId, Section>> = {
                           website: "overview",

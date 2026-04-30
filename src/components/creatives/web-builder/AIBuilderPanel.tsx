@@ -353,8 +353,24 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   vfsFiles,
   onApplyToVFS,
   previewRef,
+  projectId,
 }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Hydrate persisted messages synchronously so a refresh never wipes history.
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const persisted = loadAIHistory(projectId).messages;
+    return persisted.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: new Date(m.timestamp),
+      thinking: (m.thinking as ThinkingStep[] | undefined) || undefined,
+      claudeReasoning: m.claudeReasoning,
+      code: m.code,
+      edits: (m.edits as VFSEdit[] | undefined) || undefined,
+      taskPlan: (m.taskPlan as TaskPlan | undefined) || undefined,
+      meta: (m.meta as MessageMeta | undefined) || undefined,
+    }));
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isFixing, setIsFixing] = useState(false);

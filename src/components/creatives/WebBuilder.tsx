@@ -122,6 +122,7 @@ import {
 } from '@/services/unifiedPreviewPipeline';
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
+import { useBusinessOSProfile } from '@/hooks/useBusinessOSProfile';
 import { buildIntentReadinessReport } from '@/services/intentReadinessService';
 import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistence';
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';

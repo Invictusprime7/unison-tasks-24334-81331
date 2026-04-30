@@ -12,7 +12,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { BusinessOSShell } from "@/components/business-os/BusinessOSShell";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
 import { useSetupWizard, type SetupStepId } from "@/hooks/useSetupWizard";
 import type { UseCreatorPlaygroundReturn } from "@/hooks/useCreatorPlayground";
@@ -86,7 +85,6 @@ const PAGE_TYPE_OPTIONS: { value: BuilderPageType; label: string }[] = [
 ];
 
 type Section =
-  | "business_os"
   | "launch"
   | "overview"
   | "pages"
@@ -103,7 +101,6 @@ type Section =
   | "business";
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; highlight?: boolean }[] = [
-  { id: "business_os", label: "Business OS", icon: Zap, highlight: true },
   { id: "launch", label: "Launch Wizard", icon: Rocket, highlight: true },
   { id: "overview", label: "Overview", icon: Gauge },
   { id: "pages", label: "Pages", icon: FileText },
@@ -175,19 +172,6 @@ interface CreatorPlaygroundModalProps {
   vfsFiles?: Record<string, string>;
   setupSnapshot?: PlaygroundSetupSnapshot;
   wizardSelections?: WizardSelections | null;
-  /** Optional Business OS profile — when present, the Business OS shell is shown. */
-  businessOSProfile?: import("@/types/businessOS").BusinessOSProfile | null;
-  /** Setup Autopilot tasks derived from the profile. */
-  businessOSSetupTasks?: import("@/types/businessOS").BusinessOSSetupTask[];
-  /** Live count badges keyed by Business OS module id. */
-  businessOSModuleCounts?: Partial<Record<import("@/types/businessOS").BusinessOSModuleId, number>>;
-  /** Mark a setup task done/skipped/pending. */
-  onUpdateBusinessOSSetupTask?: (
-    taskId: string,
-    status: import("@/types/businessOS").SetupTaskStatus,
-  ) => void;
-  /** Optional callback to bootstrap a profile when none exists. */
-  onCreateBusinessOSProfile?: () => void;
 }
 
 function formatIntentPackLabel(wizardSelections?: WizardSelections | null): string | null {
@@ -215,26 +199,6 @@ function getReadinessBadgeClass(status?: PlaygroundBinding["previewStatus"]) {
  * Derive { pageId → status } from the live page registry + readiness report.
  * Aggregates binding previewStatus by source page; blocked > preview > ready.
  */
-function derivePageStatusMap(
-  registry: PageRegistry,
-  readinessReport: { bindings: Record<string, { sourcePageId?: string; previewStatus?: string }> },
-): Record<string, import("@/components/business-os/BusinessOSPagesGraph").PagePreviewStatus> {
-  const out: Record<string, { status: "ready" | "preview" | "blocked" | "missing"; reason?: string }> = {};
-  for (const pageId of Object.keys(registry.pages)) {
-    out[pageId] = { status: "ready" };
-  }
-  for (const binding of Object.values(readinessReport.bindings || {})) {
-    const pageId = binding.sourcePageId;
-    if (!pageId || !out[pageId]) continue;
-    if (binding.previewStatus === "blocked" && out[pageId].status !== "blocked") {
-      out[pageId] = { status: "blocked", reason: "Has blocked intents" };
-    } else if (binding.previewStatus === "partial" && out[pageId].status === "ready") {
-      out[pageId] = { status: "preview" };
-    }
-  }
-  return out;
-}
-
 function getPageTitle(registry: PageRegistry, pageId: string) {
   return registry.pages[pageId]?.title || pageId;
 }
@@ -257,14 +221,9 @@ export function CreatorPlaygroundModal({
   vfsFiles = {},
   setupSnapshot,
   wizardSelections = null,
-  businessOSProfile = null,
-  businessOSSetupTasks,
-  businessOSModuleCounts,
-  onUpdateBusinessOSSetupTask,
-  onCreateBusinessOSProfile,
 }: CreatorPlaygroundModalProps) {
   const [activeSection, setActiveSection] = useState<Section>(
-    initialSection || (businessOSProfile ? "business_os" : "overview"),
+    initialSection || "overview",
   );
   const [selectedBindingId, setSelectedBindingId] = useState<string | null>(initialBindingId || null);
   const [businessFocusField, setBusinessFocusField] = useState<PlaygroundSetupField | null>(initialSetupField || null);
@@ -331,6 +290,10 @@ export function CreatorPlaygroundModal({
     if (dependency.resolverSection) setActiveSection(dependency.resolverSection);
   };
 
+  const openPlaygroundSection = (section: Section) => {
+    setActiveSection(section);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl w-[92vw] h-[82vh] flex flex-col p-0 gap-0 bg-[#09090f] border border-emerald-500/30 shadow-[0_0_60px_rgba(0,200,100,0.12)] overflow-hidden [&>button]:text-emerald-400 [&>button]:hover:text-white">
@@ -362,7 +325,7 @@ export function CreatorPlaygroundModal({
             {NAV_ITEMS.map(({ id, label, icon: Icon, highlight }) => (
               <button
                 key={id}
-                onClick={() => setActiveSection(id)}
+                onClick={() => openPlaygroundSection(id)}
                 className={cn(
                   "w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all duration-150",
                   activeSection === id
@@ -401,67 +364,13 @@ export function CreatorPlaygroundModal({
           <div className="flex-1 min-w-0 flex flex-col">
             <ScrollArea className="flex-1">
               <div className="p-5">
-                {activeSection === "business_os" && (
-                  businessOSProfile ? (
-                    <BusinessOSShell
-                      profile={businessOSProfile}
-                      setupTasks={businessOSSetupTasks}
-                      moduleCounts={businessOSModuleCounts}
-                      onUpdateSetupTaskStatus={onUpdateBusinessOSSetupTask}
-                      pageRegistry={playground.pageRegistry}
-                      pageStatus={derivePageStatusMap(playground.pageRegistry, readinessReport)}
-                      onSelectPage={(pageId) => onPageSelect?.(pageId)}
-                      onSelectFunnel={() => setActiveSection("funnels")}
-                      onAddPage={() => setActiveSection("pages")}
-                      onAddFunnel={() => setActiveSection("funnels")}
-                      onOpenModule={(moduleId) => {
-                        const map: Partial<Record<typeof moduleId, Section>> = {
-                          website: "overview",
-                          pages: "pages",
-                          funnels: "funnels",
-                          offers: "products",
-                          forms: "forms",
-                          crm: "intent_registry",
-                          pipeline: "intent_registry",
-                          bookings: "calendars",
-                          payments: "business",
-                          automations: "intent_registry",
-                          inbox: "intent_registry",
-                          reviews: "readiness",
-                          analytics: "readiness",
-                          ai_operator: "components",
-                          settings: "business",
-                        };
-                        setActiveSection(map[moduleId] || "overview");
-                      }}
-                    />
-                  ) : (
-                    <div className="space-y-3 p-4 border border-dashed border-border/40 rounded-lg">
-                      <p className="text-xs text-muted-foreground">
-                        No Business OS profile yet for this draft. Bootstrap one from the
-                        current project state to unlock readiness, setup autopilot, and
-                        per-module configuration.
-                      </p>
-                      {onCreateBusinessOSProfile && (
-                        <button
-                          type="button"
-                          onClick={onCreateBusinessOSProfile}
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/25 transition"
-                        >
-                          <Zap className="h-3.5 w-3.5" />
-                          Bootstrap Business OS profile
-                        </button>
-                      )}
-                    </div>
-                  )
-                )}
                 {activeSection === "launch" && <SetupWizardPanel wizard={setupWizard} businessId={businessId} />}
                 {activeSection === "overview" && (
                   <OverviewSection
                     playground={playground}
                     controlPlane={controlPlane}
                     wizardSelections={wizardSelections}
-                    onNavigate={setActiveSection}
+                    onNavigate={openPlaygroundSection}
                   />
                 )}
                 {activeSection === "pages" && <PagesSection playground={playground} controlPlane={controlPlane} onPageSelect={onPageSelect} onPageAdd={onPageAdd} onPageRemove={onPageRemove} />}
@@ -497,10 +406,10 @@ export function CreatorPlaygroundModal({
                     registry={playground.pageRegistry}
                     onInspectBinding={(bindingId) => {
                       setSelectedBindingId(bindingId);
-                      setActiveSection("intent_registry");
+                      openPlaygroundSection("intent_registry");
                     }}
                     onInspectComponent={() => {
-                      setActiveSection("components");
+                      openPlaygroundSection("components");
                     }}
                     onResolveDependency={handleResolveDependency}
                   />

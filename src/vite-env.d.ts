@@ -12,6 +12,8 @@ interface ImportMetaEnv {
   readonly VITE_GEMINI_API_KEY?: string;
   readonly VITE_GOOGLE_API_KEY?: string;
   readonly VITE_OLLAMA_BASE_URL?: string;
+  readonly VITE_ENABLE_ROUTE_SHELLS?: string;
+  readonly VITE_ROUTE_SHELLS?: string;
 }
 
 interface ImportMeta {

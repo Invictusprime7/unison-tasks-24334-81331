@@ -1,7 +1,7 @@
 /**
  * Intent Directory Panel
  * 
- * GoHighLevel-style "Business OS" panel for the WebBuilder.
+ * GoHighLevel-style intent directory panel for the WebBuilder.
  * Shows all detected intents on the page with their:
  * - Element labels (button text)
  * - Bound intent (explicit or inferred)

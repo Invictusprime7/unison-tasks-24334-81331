@@ -51,7 +51,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { downloadMultiPageSite } from '@/utils/multiPageExporter';
 import {
@@ -72,6 +72,27 @@ import { BusinessAutomationSettings } from '@/components/crm/BusinessAutomationS
 import { ProjectSettingsPanel } from '@/components/project/ProjectSettingsPanel';
 
 import type { Json } from '@/integrations/supabase/types';
+
+const BUSINESS_CACHE_KEY_PREFIX = 'cloud-projects:businesses';
+const PROJECT_CACHE_KEY_PREFIX = 'cloud-projects:projects';
+
+function readSessionCache<T>(key: string): T | null {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCache<T>(key: string, value: T) {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore cache write failures.
+  }
+}
 
 interface CloudProjectsProps {
   userId: string;
@@ -127,6 +148,13 @@ type ViewMode = 'grid' | 'list';
 type BusinessSection = 'projects' | 'crm' | 'automations' | 'team' | 'settings';
 type CRMSubTab = 'overview' | 'contacts' | 'leads' | 'pipeline' | 'workflows' | 'forms';
 
+interface CloudProjectsLocationState {
+  tab?: 'overview' | 'projects' | 'assets' | 'email' | 'integrations' | 'security' | 'profile';
+  workspaceSection?: BusinessSection;
+  businessId?: string;
+  projectId?: string;
+}
+
 export function CloudProjects({ userId, businessId: propBusinessId, onProjectSelect }: CloudProjectsProps) {
   // Core state
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -167,16 +195,66 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
 
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const businessCacheKey = `${BUSINESS_CACHE_KEY_PREFIX}:${userId}`;
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const cachedBusinesses = readSessionCache<Business[]>(businessCacheKey);
+    if (!cachedBusinesses || cachedBusinesses.length === 0) {
+      return;
+    }
+
+    setBusinesses((current) => (current.length > 0 ? current : cachedBusinesses));
+    setSelectedBusiness((current) => {
+      if (current) return current;
+
+      const state = (location.state as CloudProjectsLocationState | null) ?? null;
+      const preferredBusinessId = state?.businessId || propBusinessId;
+      if (preferredBusinessId) {
+        return cachedBusinesses.find((business) => business.id === preferredBusinessId) || cachedBusinesses[0] || null;
+      }
+
+      return cachedBusinesses[0] || null;
+    });
+    setLoading(false);
+  }, [businessCacheKey, location.state, propBusinessId, userId]);
 
   // Load businesses on mount
   useEffect(() => {
     if (userId) loadBusinesses();
   }, [userId]);
 
+  useEffect(() => {
+    const state = (location.state as CloudProjectsLocationState | null) ?? null;
+    if (!state) return;
+
+    if (state.workspaceSection) {
+      setActiveSection(state.workspaceSection);
+    }
+
+    if (state.businessId) {
+      const match = businesses.find((business) => business.id === state.businessId);
+      if (match && selectedBusiness?.id !== match.id) {
+        setSelectedBusiness(match);
+      }
+    }
+  }, [location.state, businesses, selectedBusiness?.id]);
+
   // Load projects when business selected
   useEffect(() => {
     if (selectedBusiness) loadProjects(selectedBusiness.id);
   }, [selectedBusiness]);
+
+  useEffect(() => {
+    const state = (location.state as CloudProjectsLocationState | null) ?? null;
+    if (!state?.projectId || projects.length === 0) return;
+    const projectExists = projects.some((project) => project.id === state.projectId);
+    if (projectExists) {
+      setSelectedProjectScopeId(state.projectId);
+    }
+  }, [location.state, projects]);
 
   useEffect(() => {
     if (!selectedBusiness) {
@@ -231,6 +309,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
         });
         
         setBusinesses(allBusinesses);
+        writeSessionCache(businessCacheKey, allBusinesses);
         
         // Auto-select first or provided business
         if (propBusinessId) {
@@ -257,11 +336,13 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
       if (error) {
         throw error;
       } else {
-        setProjects(data || []);
+        const nextProjects = data || [];
+        setProjects(nextProjects);
+        writeSessionCache(`${PROJECT_CACHE_KEY_PREFIX}:${userId}:${businessId}`, nextProjects);
         setSelectedProjectScopeId((current) =>
-          current && (data || []).some((project) => project.id === current)
+          current && nextProjects.some((project) => project.id === current)
             ? current
-            : (data || [])[0]?.id || null
+            : nextProjects[0]?.id || null
         );
       }
     } catch (error) {
@@ -270,6 +351,29 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
       setSelectedProjectScopeId(null);
     }
   };
+
+  useEffect(() => {
+    if (!selectedBusiness?.id) return;
+
+    const cachedProjects = readSessionCache<Project[]>(`${PROJECT_CACHE_KEY_PREFIX}:${userId}:${selectedBusiness.id}`);
+    if (!cachedProjects) {
+      return;
+    }
+
+    setProjects((current) => (current.length > 0 ? current : cachedProjects));
+    setSelectedProjectScopeId((current) => {
+      if (current && cachedProjects.some((project) => project.id === current)) {
+        return current;
+      }
+
+      const state = (location.state as CloudProjectsLocationState | null) ?? null;
+      if (state?.projectId && cachedProjects.some((project) => project.id === state.projectId)) {
+        return state.projectId;
+      }
+
+      return cachedProjects[0]?.id || null;
+    });
+  }, [location.state, selectedBusiness?.id, userId]);
 
   const createBusiness = async () => {
     if (!newBusinessName.trim()) return;
@@ -569,6 +673,11 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
         projectName: project.name,
         projectSlug: project.slug,
         publishStatus: project.publish_status || project.status,
+        from: 'Workspace Settings',
+        returnToCloudTab: 'projects',
+        returnWorkspaceSection: 'settings',
+        returnBusinessId: project.business_id || selectedBusiness?.id,
+        returnProjectId: project.id,
       }
     });
   };
@@ -963,7 +1072,16 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate('/web-builder', { state: { businessId: selectedBusiness.id } })}
+                onClick={() => navigate('/web-builder', {
+                  state: {
+                    businessId: selectedBusiness.id,
+                    from: 'Workspace Settings',
+                    returnToCloudTab: 'projects',
+                    returnWorkspaceSection: 'settings',
+                    returnBusinessId: selectedBusiness.id,
+                    returnProjectId: selectedProjectScopeId || undefined,
+                  },
+                })}
               >
                 <Paintbrush className="h-4 w-4 mr-2" />
                 Open Builder

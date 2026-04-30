@@ -122,7 +122,6 @@ import {
 } from '@/services/unifiedPreviewPipeline';
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
-import { useBusinessOSProfile } from '@/hooks/useBusinessOSProfile';
 import { buildIntentReadinessReport } from '@/services/intentReadinessService';
 import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistence';
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
@@ -934,6 +933,10 @@ interface WebBuilderRouteState {
   publishStatus?: string;
   customDomain?: string;
   from?: string;
+  returnToCloudTab?: 'overview' | 'projects' | 'assets' | 'email' | 'integrations' | 'security' | 'profile';
+  returnWorkspaceSection?: 'projects' | 'crm' | 'automations' | 'team' | 'settings';
+  returnBusinessId?: string;
+  returnProjectId?: string;
   entryPoint?: string;
   runtimeManifest?: RuntimeManifest;
   siteBundle?: LauncherHandoff['siteBundle'];
@@ -1686,39 +1689,6 @@ export default function App() {
       }),
     [businessId, projectId, previewCartVersion],
   );
-
-  // Business OS profile — loaded from builder_drafts.metadata.businessOS when a draft is active.
-  const businessOSDraftId = templateFiles.currentTemplateId || null;
-  const initialBusinessOSProfile =
-    (effectiveRouteState as { businessOSProfile?: import("@/types/businessOS").BusinessOSProfile } | null)
-      ?.businessOSProfile ?? null;
-  const businessOS = useBusinessOSProfile({
-    draftId: businessOSDraftId,
-    initialProfile: initialBusinessOSProfile,
-    autoLoad: true,
-    autoPersistMs: 1500,
-  });
-
-  // Auto-bootstrap a profile from creatorData when none exists yet (legacy / pre-OS drafts).
-  // Runs once after autoLoad finishes; safe to re-run when businessName becomes available.
-  const bootstrapAttemptedRef = useRef(false);
-  useEffect(() => {
-    if (businessOS.loading) return;
-    if (businessOS.profile) return;
-    if (bootstrapAttemptedRef.current) return;
-    const businessName = creatorPlayground.creatorData.businessInfo?.businessName;
-    if (!businessName) return; // wait for hydration
-    bootstrapAttemptedRef.current = true;
-    void import("@/services/businessOSBootstrap").then(({ bootstrapBusinessOSProfileFromCreatorData }) => {
-      const seeded = bootstrapBusinessOSProfileFromCreatorData({
-        draftId: businessOSDraftId,
-        businessId,
-        projectId,
-        creatorData: creatorPlayground.creatorData,
-      });
-      businessOS.setProfile(seeded);
-    });
-  }, [businessOS, businessOSDraftId, businessId, projectId, creatorPlayground.creatorData]);
 
   useEffect(() => {
     const urlId = new URLSearchParams(location.search).get('id');
@@ -2663,43 +2633,6 @@ export default function ${componentName}Page() {
     playgroundSetupSnapshot,
   ]);
 
-  // ── Business OS live sync — project playground/readiness onto profile.modules ──
-  useEffect(() => {
-    if (!businessOS.profile) return;
-    void import("@/services/businessOSLiveSync").then(({ computeLiveModuleSnapshot }) => {
-      const snapshot = computeLiveModuleSnapshot({
-        playground: {
-          creatorData: creatorPlayground.creatorData,
-          pageRegistry: creatorPlayground.pageRegistry,
-          bindings: playgroundBindings,
-          calendars: playgroundCalendars,
-          popups: playgroundPopups,
-        },
-        readiness: { summary: playgroundReadinessReport.summary },
-        paymentsConnected: !!cloudState.business.notificationEmail && !!creatorPlayground.creatorData.businessInfo?.paymentProvider,
-        notificationsConfigured: !!cloudState.business.notificationEmail,
-        domainConnected: !!cloudState.project.customDomain,
-        seoConfigured: !!creatorPlayground.creatorData.businessInfo?.businessName,
-        analyticsConfigured: false,
-        previewExists: Object.keys(virtualFS.nodes || {}).length > 0,
-        hasPublished: cloudState.project.publishStatus === "published",
-      });
-      businessOS.applyLiveSnapshot(snapshot);
-    });
-  }, [
-    businessOS,
-    creatorPlayground.creatorData,
-    creatorPlayground.pageRegistry,
-    playgroundBindings,
-    playgroundCalendars,
-    playgroundPopups,
-    playgroundReadinessReport.summary,
-    cloudState.business.notificationEmail,
-    cloudState.project.customDomain,
-    cloudState.project.publishStatus,
-    virtualFS.nodes,
-  ]);
-
   const selectedPlaygroundComponent = useMemo(() => {
     const attributes = (selectedHTMLElement?.attributes || {}) as Record<string, string>;
     const explicitInstanceId = attributes['data-ut-component-instance-id'];
@@ -3264,11 +3197,35 @@ export default function ${componentName}Page() {
   const saveDraftRef = useRef(saveDraft);
   saveDraftRef.current = saveDraft;
 
-  // Handle back navigation - go to home/launcher
+  // Handle back navigation with source-aware routing.
   const handleBackNavigation = useCallback(() => {
     const codeChanged = previewCode !== initialCodeRef.current;
     const currentVfsFiles = virtualFSRef.current.getSandpackFiles();
     const vfsDirty = computeVfsSignature(currentVfsFiles) !== lastSavedVfsSignatureRef.current;
+    const shouldReturnToCloudWorkspace =
+      effectiveRouteState?.returnToCloudTab === 'projects' || effectiveRouteState?.from === 'Workspace Settings';
+
+    const navigateBack = () => {
+      // Prefer the actual browser/router history to preserve the previous page's loaded state.
+      if (location.key !== 'default' && window.history.length > 1) {
+        navigate(-1);
+        return;
+      }
+
+      if (shouldReturnToCloudWorkspace) {
+        navigate('/cloud', {
+          state: {
+            tab: 'projects',
+            workspaceSection: effectiveRouteState?.returnWorkspaceSection || 'settings',
+            businessId: effectiveRouteState?.returnBusinessId || effectiveRouteState?.businessId,
+            projectId: effectiveRouteState?.returnProjectId || effectiveRouteState?.projectId,
+          },
+        });
+        return;
+      }
+
+      navigate('/home');
+    };
 
     if ((codeChanged || vfsDirty) && hasUnsavedChanges) {
       const confirmLeave = window.confirm(
@@ -3276,12 +3233,12 @@ export default function ${componentName}Page() {
       );
       if (confirmLeave) {
         saveDraft();
-        navigate('/home');
+        navigateBack();
       }
     } else {
-      navigate('/home');
+      navigateBack();
     }
-  }, [previewCode, hasUnsavedChanges, navigate, saveDraft, computeVfsSignature]);
+  }, [previewCode, hasUnsavedChanges, navigate, saveDraft, computeVfsSignature, effectiveRouteState, location.key]);
 
   useEffect(() => {
     autoSaveTimerRef.current = setInterval(saveDraft, AUTO_SAVE_INTERVAL);
@@ -5876,21 +5833,6 @@ ${html}
         vfsFiles={virtualFS.getSandpackFiles()}
         setupSnapshot={playgroundSetupSnapshot}
         wizardSelections={effectiveRouteState?.wizardSelections || null}
-        businessOSProfile={businessOS.profile}
-        businessOSSetupTasks={businessOS.setupTasks}
-        businessOSModuleCounts={businessOS.moduleCounts}
-        onUpdateBusinessOSSetupTask={businessOS.updateSetupTaskStatus}
-        onCreateBusinessOSProfile={async () => {
-          const { bootstrapBusinessOSProfileFromCreatorData } = await import("@/services/businessOSBootstrap");
-          businessOS.setProfile(
-            bootstrapBusinessOSProfileFromCreatorData({
-              draftId: businessOSDraftId,
-              businessId,
-              projectId,
-              creatorData: creatorPlayground.creatorData,
-            }),
-          );
-        }}
         onPageSelect={(pageId) => {
           const page = creatorPlayground.pageRegistry.pages[pageId];
           if (!page?.path) return;

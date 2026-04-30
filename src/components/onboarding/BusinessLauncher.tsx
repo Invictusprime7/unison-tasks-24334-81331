@@ -43,6 +43,7 @@ import {
   planSiteTopology,
   type BusinessBlueprint,
 } from "@/contracts";
+import { installBusinessOSPack } from "@/business-os/installBusinessOSPack";
 
 // Industry chip configurations
 const industryChips = [

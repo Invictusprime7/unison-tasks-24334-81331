@@ -239,10 +239,15 @@ export function resolvePreviewAction(
   // Form intents without an on-page section still should NOT generate pages —
   // they scroll to a section that simply doesn't exist yet, so we acknowledge
   // and let the existing booking/contact flow handle it through the backend.
+  // Form / commerce / auth intents must NOT auto-generate pages or open
+  // overlays anymore. Wiring is AI-driven: if the user wants a button to
+  // do something, they ask the assistant which writes an explicit binding.
+  // Until then these intents are inert (acknowledged silently).
   const formOnlyIntents = ['contact.submit', 'newsletter.subscribe', 'quote.request',
                            'lead.capture', 'booking.create', 'auth.login', 'auth.register',
-                           'cart.add', 'cart.view', 'cart.checkout', 'checkout.start', 'form.submit'];
-  if (formOnlyIntents.includes(intent) && !pageType) {
+                           'cart.add', 'cart.view', 'cart.checkout', 'checkout.start',
+                           'pay.checkout', 'form.submit'];
+  if (formOnlyIntents.includes(intent)) {
     return { action: 'acknowledge' };
   }
 

@@ -391,6 +391,7 @@ function planFromProfile(
     funnels,
     redirects,
     generatedAt: new Date().toISOString(),
+    selectedTemplateId: options?.selectedTemplateId,
   };
 
   // 4. Validate the plan

@@ -483,7 +483,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     const industryKey = selectedChip ? getCanonicalIndustry(selectedChip) : 'general';
     const businessName = extractBusinessName(prompt);
     const industryProfile = getIndustryProfile(industryKey);
-    const chipTemplateRef = selectedChip ? getTemplateReference(selectedChip) : null;
+    const chipTemplateRef = selectedChip ? getTemplateReference(selectedChip, selectedTemplateId) : null;
     const sitePlan = planSiteTopology(industryKey, businessName, {
       primaryIntent: industryProfile?.primaryIntent,
       selectedTemplateId: chipTemplateRef?.templateId,

@@ -306,3 +306,90 @@ export function mutateJSXText(
   const safe = text.replace(/[{}<>]/g, (c) => `{'${c}'}`);
   return source.substring(0, childStart) + safe + source.substring(childEnd);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// className mutation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Add/remove Tailwind tokens in the className attribute of a JSX element.
+ * Removal patterns can be exact tokens or `prefix-*` wildcards.
+ *
+ * Supports:
+ *   • className="static string"
+ *   • className={'literal'} / className={"literal"} / className={`tpl`}
+ *   • className={cn('a', 'b')} — appends a trailing string arg with the deltas
+ *
+ * Returns the updated source, or null if the element/className couldn't be
+ * mutated safely (we never silently drop dynamic expressions).
+ */
+export function mutateJSXClassName(
+  source: string,
+  selector: string,
+  add: string[],
+  remove: string[],
+  findBounds: BoundsFinder,
+): string | null {
+  const bounds = findBounds(source, selector);
+  if (!bounds) return null;
+  const tag = findOpenTag(source, bounds.start);
+  if (!tag) return null;
+
+  const applyTokens = (existing: string): string => {
+    const tokens = new Set(existing.split(/\s+/).filter(Boolean));
+    for (const r of remove) {
+      if (r.endsWith('*')) {
+        const prefix = r.slice(0, -1);
+        for (const t of Array.from(tokens)) if (t.startsWith(prefix)) tokens.delete(t);
+      } else {
+        tokens.delete(r);
+      }
+    }
+    for (const a of add) if (a) tokens.add(a);
+    return Array.from(tokens).join(' ');
+  };
+
+  const existing = findAttribute(source, tag, 'className');
+  if (!existing) {
+    // No className attribute — insert a new one.
+    const next = applyTokens('');
+    if (!next) return source;
+    return setAttribute(source, tag, 'className', `"${next}"`);
+  }
+
+  // Static string: className="..."
+  if (existing.delimiter === '"' || existing.delimiter === "'") {
+    const current = source.substring(existing.valueStart, existing.valueEnd);
+    const next = applyTokens(current);
+    return setAttribute(source, tag, 'className', `"${next.replace(/"/g, '&quot;')}"`);
+  }
+
+  // Expression: className={ ... }
+  const inner = source.substring(existing.valueStart, existing.valueEnd).trim();
+
+  // Plain string literal in braces: {'foo bar'} or {"foo bar"} or {`foo bar`}
+  const literalMatch = inner.match(/^(['"`])([\s\S]*)\1$/);
+  if (literalMatch) {
+    const current = literalMatch[2];
+    const next = applyTokens(current);
+    return setAttribute(source, tag, 'className', `"${next.replace(/"/g, '&quot;')}"`);
+  }
+
+  // cn(...) / clsx(...) / classnames(...) call — append a trailing string arg
+  // containing the additions, and a comment for removals (we can't rewrite
+  // arbitrary JS expressions safely).
+  const callMatch = inner.match(/^(cn|clsx|classnames|twMerge)\s*\(([\s\S]*)\)$/);
+  if (callMatch) {
+    const fnName = callMatch[1];
+    const args = callMatch[2].trim();
+    const additions = add.filter(Boolean).join(' ');
+    if (!additions && remove.length === 0) return source;
+    const trailing = additions ? `, '${additions.replace(/'/g, "\\'")}'` : '';
+    const newInner = `${fnName}(${args}${trailing})`;
+    return setAttribute(source, tag, 'className', `{${newInner}}`);
+  }
+
+  // Unrecognised dynamic expression — refuse to mutate (avoid breaking the build).
+  return null;
+}
+

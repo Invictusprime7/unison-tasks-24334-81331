@@ -326,7 +326,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     }
 
     const businessName = extractBusinessName(prompt);
-    const ref = getTemplateReference(chipId);
+    const ref = getTemplateReference(chipId, selectedTemplateId);
     if (!ref) {
       toast({
         title: "Industry template unavailable",

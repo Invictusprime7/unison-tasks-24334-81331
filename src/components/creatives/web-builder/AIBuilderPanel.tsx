@@ -69,6 +69,9 @@ import {
   setMessages as persistMessages,
   type PersistedMessage,
 } from '@/services/aiHistoryStore';
+import { parseLayoutIntent } from '@/utils/layoutIntentEngine';
+import { executeLayoutIntent } from '@/utils/layoutIntentExecutor';
+import { detectSections } from '@/utils/sectionSwapper';
 
 // ============================================================================
 /**

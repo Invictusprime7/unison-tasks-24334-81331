@@ -203,6 +203,9 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
       timestamp: s.timestamp,
       source: s.source,
       changedPaths: s.changedPaths,
+      fileStats: s.fileStats,
+      totals: s.totals,
+      meta: s.meta,
     }));
     const nextMeta = {
       ...meta,

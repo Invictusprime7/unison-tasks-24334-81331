@@ -39,6 +39,36 @@ export interface PersistedMessage {
   // streaming flag intentionally dropped on persist
 }
 
+export type FileChangeKind = 'created' | 'modified' | 'deleted';
+
+export interface FileChangeStat {
+  path: string;
+  kind: FileChangeKind;
+  /** Lines added (after - common) */
+  added: number;
+  /** Lines removed (before - common) */
+  removed: number;
+  /** Total line count after the change (0 if deleted) */
+  afterLines: number;
+}
+
+export interface EditSnapshotMeta {
+  /** Original user prompt that triggered the edit */
+  prompt?: string;
+  /** AI model that produced the change (e.g. "google/gemini-2.5-flash") */
+  model?: string;
+  /** Short human summary written by AI (review summary, action type, etc.) */
+  summary?: string;
+  /** Action type reported by the gateway, e.g. 'surgical-edit' | 'multi-file' */
+  actionType?: string;
+  /** Origin sub-channel within source — e.g. 'multi-file', 'single-file', 'debug-fix' */
+  origin?: string;
+  /** Whether the gateway flagged this change for review */
+  requiresApproval?: boolean;
+  /** Warnings reported by the gateway / review pass */
+  warnings?: Array<{ severity?: string; message?: string }>;
+}
+
 export interface EditSnapshot {
   id: string;
   /** Short label e.g. "AI: add hero CTA" or first 60 chars of the prompt */
@@ -53,6 +83,12 @@ export interface EditSnapshot {
   after: Record<string, string>;
   /** Optional list of changed paths for compact UI display */
   changedPaths?: string[];
+  /** Per-file diff stats for richer history UI */
+  fileStats?: FileChangeStat[];
+  /** Aggregate line additions/removals across all changed files */
+  totals?: { added: number; removed: number; created: number; modified: number; deleted: number };
+  /** Rich metadata from the AI invocation */
+  meta?: EditSnapshotMeta;
 }
 
 export interface AIHistoryRecord {
@@ -167,6 +203,9 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
       timestamp: s.timestamp,
       source: s.source,
       changedPaths: s.changedPaths,
+      fileStats: s.fileStats,
+      totals: s.totals,
+      meta: s.meta,
     }));
     const nextMeta = {
       ...meta,
@@ -224,9 +263,16 @@ export function setMessages(
 
 export function pushSnapshot(
   projectId: string | null | undefined,
-  snapshot: Omit<EditSnapshot, 'id' | 'timestamp'> & { timestamp?: string; id?: string },
+  snapshot: Omit<EditSnapshot, 'id' | 'timestamp' | 'fileStats' | 'totals'> & {
+    timestamp?: string;
+    id?: string;
+    fileStats?: FileChangeStat[];
+    totals?: EditSnapshot['totals'];
+  },
 ): EditSnapshot {
   const current = readLocal(projectId);
+  const fileStats = snapshot.fileStats ?? computeFileStats(snapshot.before, snapshot.after);
+  const totals = snapshot.totals ?? aggregateTotals(fileStats);
   const full: EditSnapshot = {
     id: snapshot.id || `snap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     timestamp: snapshot.timestamp || new Date().toISOString(),
@@ -234,7 +280,10 @@ export function pushSnapshot(
     source: snapshot.source,
     before: snapshot.before,
     after: snapshot.after,
-    changedPaths: snapshot.changedPaths,
+    changedPaths: snapshot.changedPaths ?? fileStats.map((f) => f.path),
+    fileStats,
+    totals,
+    meta: snapshot.meta,
   };
   const next: AIHistoryRecord = {
     ...current,
@@ -274,4 +323,53 @@ export function diffChangedPaths(
     if (before[p] !== after[p]) changed.push(p);
   }
   return changed.sort();
+}
+
+/**
+ * Compute per-file change kind + line-level add/remove counts.
+ * Uses a lightweight LCS-free heuristic: counts unique lines on each side
+ * that don't appear in a Set of the other side. Good enough for UI stats
+ * without pulling in a diff library.
+ */
+export function computeFileStats(
+  before: Record<string, string>,
+  after: Record<string, string>,
+): FileChangeStat[] {
+  const paths = new Set<string>([...Object.keys(before), ...Object.keys(after)]);
+  const stats: FileChangeStat[] = [];
+  for (const path of paths) {
+    const a = before[path];
+    const b = after[path];
+    if (a === b) continue;
+    let kind: FileChangeKind;
+    if (a == null) kind = 'created';
+    else if (b == null) kind = 'deleted';
+    else kind = 'modified';
+    const beforeLines = a ? a.split('\n') : [];
+    const afterLines = b ? b.split('\n') : [];
+    let added = 0;
+    let removed = 0;
+    if (kind === 'created') {
+      added = afterLines.length;
+    } else if (kind === 'deleted') {
+      removed = beforeLines.length;
+    } else {
+      const beforeSet = new Set(beforeLines);
+      const afterSet = new Set(afterLines);
+      for (const line of afterLines) if (!beforeSet.has(line)) added++;
+      for (const line of beforeLines) if (!afterSet.has(line)) removed++;
+    }
+    stats.push({ path, kind, added, removed, afterLines: afterLines.length });
+  }
+  return stats.sort((x, y) => x.path.localeCompare(y.path));
+}
+
+function aggregateTotals(stats: FileChangeStat[]): EditSnapshot['totals'] {
+  const totals = { added: 0, removed: 0, created: 0, modified: 0, deleted: 0 };
+  for (const s of stats) {
+    totals.added += s.added;
+    totals.removed += s.removed;
+    totals[s.kind]++;
+  }
+  return totals;
 }

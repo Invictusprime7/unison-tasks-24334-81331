@@ -291,7 +291,18 @@ interface AIBuilderPanelProps {
   /** Full VFS file map for component-level site analysis */
   vfsFiles?: Record<string, string> | null;
   /** Direct VFS apply callback — bypasses legacy onCodeGenerated pipeline, uses AI→VFS orchestrator */
-  onApplyToVFS?: (files: Record<string, string>) => void;
+  onApplyToVFS?: (
+    files: Record<string, string>,
+    meta?: {
+      prompt?: string;
+      model?: string;
+      summary?: string;
+      actionType?: string;
+      origin?: string;
+      requiresApproval?: boolean;
+      warnings?: Array<{ severity?: string; message?: string }>;
+    },
+  ) => void;
   /** Preview handle ref for building component behavior maps (DOM inspection) */
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   /** Active project id — used to scope persisted prompt + edit history. */
@@ -1323,7 +1334,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
-            onApplyToVFS(normalizedFiles);
+            onApplyToVFS(normalizedFiles, {
+              prompt: userContent,
+              model: modelUsed,
+              summary: responseMeta?.reviewSummary,
+              actionType: responseMeta?.actionType,
+              origin: 'multi-file',
+              requiresApproval: responseMeta?.requiresApproval,
+              warnings: responseMeta?.warnings,
+            });
             liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
             vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
@@ -1466,7 +1485,15 @@ export default function App() {
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
-            onApplyToVFS({ [singleFilePath]: generatedCode });
+            onApplyToVFS({ [singleFilePath]: generatedCode }, {
+              prompt: userContent,
+              model: modelUsed,
+              summary: responseMeta?.reviewSummary,
+              actionType: responseMeta?.actionType,
+              origin: 'single-file',
+              requiresApproval: responseMeta?.requiresApproval,
+              warnings: responseMeta?.warnings,
+            });
             advancePlanStep(taskPlan, 'refresh_preview', 'done');
             advancePlanStep(taskPlan, 'validate', 'done');
             advancePlanStep(taskPlan, 'report', 'done');
@@ -1748,7 +1775,11 @@ export default function App() {
             normalized[p.startsWith('/') ? p : `/${p}`] = c;
           }
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
-          onApplyToVFS(normalized);
+          onApplyToVFS(normalized, {
+            prompt: `Auto-fix: ${error.message || 'runtime error'}`,
+            origin: 'debug-fix',
+            summary: fixExplanation,
+          });
           vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
           toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
         } else if (fixCode) {
@@ -1756,7 +1787,11 @@ export default function App() {
             ? (error.file.startsWith('/') ? error.file : `/${error.file}`)
             : (defaultTargetFile || '/src/App.tsx');
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
-          onApplyToVFS({ [targetPath]: fixCode });
+          onApplyToVFS({ [targetPath]: fixCode }, {
+            prompt: `Auto-fix: ${error.message || 'runtime error'}`,
+            origin: 'debug-fix',
+            summary: fixExplanation,
+          });
           vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
           toast.success('✅ Debug fix applied');
         }

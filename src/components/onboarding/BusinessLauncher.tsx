@@ -600,11 +600,16 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
           if (options.length < 2) return null;
           const activeId = selectedTemplateId ?? options[0].id;
           return (
-            <div className="space-y-2 pt-2">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground text-center">
-                Choose a style
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="space-y-2 pt-3 border-t border-border/60">
+              <div className="flex items-center justify-between px-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">
+                  Choose a style
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {options.length} variants
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {options.map((opt) => {
                   const isActive = activeId === opt.id;
                   return (
@@ -613,14 +618,14 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
                       type="button"
                       onClick={() => setSelectedTemplateId(opt.id)}
                       className={cn(
-                        "text-left p-3 rounded-lg border transition-all",
+                        "text-left p-3 rounded-lg border transition-all h-full",
                         isActive
                           ? "bg-primary/5 border-primary ring-1 ring-primary"
                           : "bg-background hover:bg-muted border-border hover:border-primary/50"
                       )}
                     >
-                      <div className="text-sm font-semibold">{opt.name}</div>
-                      <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                      <div className="text-sm font-semibold leading-tight">{opt.name}</div>
+                      <div className="text-xs text-muted-foreground line-clamp-3 mt-1">
                         {opt.description}
                       </div>
                     </button>

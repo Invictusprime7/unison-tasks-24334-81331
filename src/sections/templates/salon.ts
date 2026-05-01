@@ -461,4 +461,146 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
       },
     ],
   },
+  // ──────────────────────────────────────────────
+  // VARIANT 3: Salon Organic — soft, botanical wellness
+  // ──────────────────────────────────────────────
+  {
+    id: 'salon-organic',
+    name: 'Salon Organic',
+    category: 'salon',
+    industry: 'salon',
+    systemType: 'booking',
+    description: 'Earthy, botanical aesthetic for wellness-forward salons & spas.',
+    tags: ['salon', 'spa', 'organic', 'wellness', 'botanical'],
+    theme: {
+      colors: {
+        primary: '95 25% 35%',
+        primaryForeground: '60 30% 96%',
+        secondary: '40 35% 90%',
+        secondaryForeground: '95 25% 25%',
+        accent: '25 55% 60%',
+        accentForeground: '0 0% 100%',
+        background: '40 30% 96%',
+        foreground: '95 20% 18%',
+        muted: '40 25% 92%',
+        mutedForeground: '95 12% 40%',
+        card: '0 0% 100%',
+        cardForeground: '95 20% 18%',
+        border: '40 20% 85%',
+      },
+      typography: {
+        headingFont: "'Fraunces', serif",
+        bodyFont: "'Nunito Sans', sans-serif",
+        headingWeight: '500',
+        bodyWeight: '400',
+      },
+      radius: '1rem',
+      sectionPadding: '5rem 1.5rem',
+      containerWidth: '1120px',
+    },
+    sections: [
+      {
+        id: 'salon-organic-nav',
+        type: 'navbar',
+        props: {
+          brand: 'Verdant Beauty',
+          sticky: true,
+          links: [
+            { label: 'Treatments', href: '#services' },
+            { label: 'Our Story', href: '#about' },
+            { label: 'Visit', href: '#contact' },
+          ],
+          cta: { label: 'Reserve', href: '#booking', intent: 'booking.create', variant: 'primary' },
+        },
+      },
+      {
+        id: 'salon-organic-hero',
+        type: 'hero',
+        props: {
+          layout: 'split',
+          badge: 'Organic & Sustainable',
+          headline: 'Beauty in Bloom.',
+          subheadline: 'Plant-based treatments rooted in calm.',
+          description: 'Every product is non-toxic, every ritual intentional. Step into a sanctuary made for slowing down.',
+          ctas: [
+            { label: 'Book a Ritual', intent: 'booking.create', variant: 'primary' },
+            { label: 'Our Philosophy', href: '#about', variant: 'outline' },
+          ],
+        },
+      },
+      {
+        id: 'salon-organic-about',
+        type: 'about',
+        props: {
+          headline: 'Rooted in nature, grounded in care',
+          description: 'Verdant Beauty was founded on the belief that what touches your skin should nourish, not harm. We hand-select every product, support small growers, and give every guest the unhurried time they deserve.',
+          layout: 'text-left',
+        },
+      },
+      {
+        id: 'salon-organic-services',
+        type: 'services',
+        props: {
+          headline: 'Signature Rituals',
+          columns: 3,
+          layout: 'grid',
+          items: [
+            { title: 'Botanical Facial', description: 'Cold-pressed serums + lymphatic massage.', price: '$120', duration: '75 min', cta: { label: 'Reserve', intent: 'booking.create', variant: 'primary' } },
+            { title: 'Henna & Herbs Color', description: 'Plant-based color, no ammonia.', price: '$160', duration: '2 hrs', badge: 'New', cta: { label: 'Reserve', intent: 'booking.create', variant: 'primary' } },
+            { title: 'Forest Scalp Therapy', description: 'Aromatherapy massage + nourishing mask.', price: '$95', duration: '60 min', cta: { label: 'Reserve', intent: 'booking.create', variant: 'primary' } },
+          ],
+        },
+      },
+      {
+        id: 'salon-organic-testimonials',
+        type: 'testimonials',
+        props: {
+          headline: 'Stories from our guests',
+          layout: 'grid',
+          items: [
+            { quote: 'It feels less like a salon and more like a retreat. I leave glowing every single time.', author: 'Mira S.', rating: 5 },
+            { quote: 'My skin has never been calmer. The products they use are unreal.', author: 'Jordan T.', role: 'Member', rating: 5 },
+            { quote: 'The henna color is the most beautiful auburn I\'ve ever had — and zero damage.', author: 'Priya N.', rating: 5 },
+          ],
+        },
+      },
+      {
+        id: 'salon-organic-cta',
+        type: 'cta',
+        props: {
+          layout: 'centered',
+          headline: 'Find your calm.',
+          description: 'Reserve a treatment and we\'ll take care of the rest.',
+          ctas: [{ label: 'Book Your Visit', intent: 'booking.create', variant: 'primary' }],
+        },
+      },
+      {
+        id: 'salon-organic-contact',
+        type: 'contact',
+        props: {
+          headline: 'Visit the studio',
+          description: 'Walk-ins welcome, but reservations are recommended.',
+          submitLabel: 'Send Message',
+          submitIntent: 'contact.submit',
+          address: '218 Linden Ave, Studio C',
+          phone: '(555) 014-2200',
+          email: 'hello@verdantbeauty.co',
+        },
+      },
+      {
+        id: 'salon-organic-footer',
+        type: 'footer',
+        props: {
+          brand: 'Verdant Beauty',
+          copyright: '© 2024 Verdant Beauty. Made with care.',
+          newsletter: true,
+          columns: [
+            { title: 'Studio', links: [{ label: 'Treatments', href: '#services' }, { label: 'About', href: '#about' }] },
+            { title: 'Visit', links: [{ label: 'Hours', href: '#contact' }, { label: 'Book', href: '#booking' }] },
+          ],
+          socials: [{ platform: 'instagram', url: '#' }],
+        },
+      },
+    ],
+  },
 ];

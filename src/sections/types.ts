@@ -301,6 +301,26 @@ export interface SectionRegistryEntry {
 // Template Composition
 // ============================================================================
 
+/**
+ * Page role identifiers used by the topology planner & scaffolder.
+ * Mirrors `PageRole` in src/contracts/siteTopologyPlanner.ts to keep
+ * the type contract local to the section registry.
+ */
+export type TemplatePageRole =
+  | 'home'
+  | 'about'
+  | 'services'
+  | 'contact'
+  | 'pricing'
+  | 'gallery'
+  | 'faq'
+  | 'booking'
+  | 'checkout'
+  | 'thank_you'
+  | 'blog'
+  | 'shop'
+  | 'custom';
+
 /** A complete template definition — just data, no JSX */
 export interface TemplateComposition {
   id: string;
@@ -309,9 +329,21 @@ export interface TemplateComposition {
   industry: string;
   description: string;
   theme?: ThemeTokens | null;
+  /** Sections rendered on the home page (canonical full composition). */
   sections: SectionEntry[];
   /** Optional global CSS for advanced effects (keyframes, scroll-reveal) */
   globalStyles?: string;
   tags?: string[];
   systemType?: string;
+  /**
+   * Optional list of sub-page roles this template can scaffold.
+   * If omitted, the topology planner falls back to the industry profile defaults.
+   */
+  pageRoles?: TemplatePageRole[];
+  /**
+   * Optional shared section pool: per-role ordered list of SectionType identifiers.
+   * The scaffolder builds each sub-page by filtering `sections` to these types in order.
+   * If omitted, a sensible default per role is used (see scaffolder).
+   */
+  sectionPool?: Partial<Record<TemplatePageRole, SectionType[]>>;
 }

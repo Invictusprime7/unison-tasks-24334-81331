@@ -460,14 +460,19 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
       return;
     }
 
-    // Generate site topology for the builder
+    // Generate site topology for the builder.
+    // The chip selection drives which TemplateComposition scaffolds every
+    // page (home + sub-pages), so the wizard chip is the single source of
+    // truth for layout, navigation structure, and CSS theme.
     const industryKey = selectedChip ? getCanonicalIndustry(selectedChip) : 'general';
     const businessName = extractBusinessName(prompt);
     const industryProfile = getIndustryProfile(industryKey);
+    const chipTemplateRef = selectedChip ? getTemplateReference(selectedChip) : null;
     const sitePlan = planSiteTopology(industryKey, businessName, {
       primaryIntent: industryProfile?.primaryIntent,
+      selectedTemplateId: chipTemplateRef?.templateId,
     });
-    console.log(`[BusinessLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, ${sitePlan.funnels.length} funnels`);
+    console.log(`[BusinessLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, ${sitePlan.funnels.length} funnels, template=${chipTemplateRef?.templateId ?? 'industry-fallback'}`);
     const wizardSelections = selectedChip
       ? buildWizardSelectionsForChip(selectedChip, prompt, businessName || "AI Generated")
       : undefined;

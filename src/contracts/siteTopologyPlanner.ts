@@ -98,7 +98,12 @@ export interface GeneratedSitePlan {
   generatedAt: string;
   /** Validation errors detected during planning */
   validationErrors?: string[];
-
+  /**
+   * Optional template composition id (from src/sections/templates) selected via
+   * the Wizard Launcher chip. The VFS scaffolder uses this to drive sub-page
+   * layouts as role-filtered subsets of the chosen template.
+   */
+  selectedTemplateId?: string;
 }
 
 // ============================================================================
@@ -173,12 +178,16 @@ export function planSiteTopology(
   options?: {
     additionalPages?: PageSpec[];
     primaryIntent?: string;
+    /** Template composition id selected by the wizard chip — drives sub-page scaffolding. */
+    selectedTemplateId?: string;
   }
 ): GeneratedSitePlan {
   const profile = getIndustryProfile(industryKey);
   if (!profile) {
     // Fallback: generic site with home + contact
-    return planGenericTopology(businessName);
+    const generic = planGenericTopology(businessName);
+    if (options?.selectedTemplateId) generic.selectedTemplateId = options.selectedTemplateId;
+    return generic;
   }
 
   return planFromProfile(profile, businessName, options);
@@ -190,6 +199,7 @@ function planFromProfile(
   options?: {
     additionalPages?: PageSpec[];
     primaryIntent?: string;
+    selectedTemplateId?: string;
   }
 ): GeneratedSitePlan {
   const siteId = generateUUID();
@@ -381,6 +391,7 @@ function planFromProfile(
     funnels,
     redirects,
     generatedAt: new Date().toISOString(),
+    selectedTemplateId: options?.selectedTemplateId,
   };
 
   // 4. Validate the plan

@@ -287,7 +287,9 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   }, [resetFlow, onOpenChange]);
 
   const handleChipClick = (chipId: string) => {
+    const isSame = selectedChip === chipId;
     setSelectedChip(chipId);
+    if (!isSame) setSelectedTemplateId(null);
     const chip = industryChips.find(c => c.id === chipId);
     if (chip) {
       setPrompt(prev => prev ? `${prev} (${chip.label})` : `I need a website for my ${chip.label.toLowerCase()} business`);

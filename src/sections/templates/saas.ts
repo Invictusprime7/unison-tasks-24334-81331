@@ -370,4 +370,164 @@ export const SAAS_COMPOSITIONS: TemplateComposition[] = [
       },
     ],
   },
+  // ──────────────────────────────────────────────
+  // VARIANT 3: SaaS Developer — terminal-inspired, technical
+  // ──────────────────────────────────────────────
+  {
+    id: 'saas-developer',
+    name: 'SaaS Developer',
+    category: 'saas',
+    industry: 'saas',
+    systemType: 'saas',
+    description: 'Terminal-inspired layout for developer-first APIs and infrastructure tools.',
+    tags: ['saas', 'developer', 'api', 'technical', 'mono'],
+    theme: {
+      colors: {
+        primary: '142 70% 45%',
+        primaryForeground: '220 30% 8%',
+        secondary: '220 25% 14%',
+        secondaryForeground: '142 30% 85%',
+        accent: '210 80% 60%',
+        accentForeground: '0 0% 100%',
+        background: '220 30% 8%',
+        foreground: '210 25% 92%',
+        muted: '220 25% 14%',
+        mutedForeground: '210 15% 62%',
+        card: '220 28% 12%',
+        cardForeground: '210 25% 92%',
+        border: '220 20% 20%',
+      },
+      typography: {
+        headingFont: "'JetBrains Mono', monospace",
+        bodyFont: "'Inter', sans-serif",
+        headingWeight: '600',
+        bodyWeight: '400',
+      },
+      radius: '0.375rem',
+      sectionPadding: '5rem 1.5rem',
+      containerWidth: '1180px',
+    },
+    sections: [
+      {
+        id: 'saas-developer-nav',
+        type: 'navbar',
+        props: {
+          brand: 'edgequeue.dev',
+          sticky: true,
+          links: [
+            { label: 'Docs', href: '#features' },
+            { label: 'Pricing', href: '#pricing' },
+            { label: 'Changelog', href: '#about' },
+          ],
+          cta: { label: '$ npm i edgequeue', intent: 'newsletter.subscribe', variant: 'primary' },
+        },
+      },
+      {
+        id: 'saas-developer-hero',
+        type: 'hero',
+        props: {
+          layout: 'split',
+          badge: 'v2.4 — now with WebSocket transport',
+          headline: 'Queues, jobs, and crons. One primitive.',
+          subheadline: 'A serverless message queue you can talk to over HTTP, WebSocket, or your favorite SDK.',
+          ctas: [
+            { label: 'Read the Docs', href: '#features', variant: 'primary' },
+            { label: 'Get an API Key', intent: 'newsletter.subscribe', variant: 'outline' },
+          ],
+        },
+      },
+      {
+        id: 'saas-developer-features',
+        type: 'features',
+        props: {
+          headline: 'Built for engineers who ship.',
+          columns: 3,
+          layout: 'grid',
+          items: [
+            { title: 'p99 < 12ms', description: 'Globally distributed across 24 regions, no cold starts.' },
+            { title: 'Exactly-once delivery', description: 'Idempotency keys + dead letter queues out of the box.' },
+            { title: 'OpenTelemetry-native', description: 'Trace every job through your entire stack.' },
+            { title: 'Strong typing', description: 'Generated TS/Go/Rust clients from your schema.' },
+            { title: 'Replay any job', description: 'Time-travel debugging from the dashboard.' },
+            { title: 'Self-host or cloud', description: 'Same binary. Same API. Your choice.' },
+          ],
+        },
+      },
+      {
+        id: 'saas-developer-pricing',
+        type: 'pricing',
+        props: {
+          headline: 'Simple, usage-based pricing.',
+          subheadline: 'No seat fees. No surprise invoices.',
+          tiers: [
+            {
+              name: 'Hacker',
+              price: '$0',
+              period: '/mo',
+              description: 'For side projects',
+              features: ['100k jobs/mo', '7-day retention', 'Community support'],
+              cta: { label: 'Start Free', intent: 'newsletter.subscribe', variant: 'outline' },
+            },
+            {
+              name: 'Team',
+              price: '$49',
+              period: '/mo',
+              description: 'For production workloads',
+              features: ['10M jobs/mo', '30-day retention', 'Slack support', 'Audit logs'],
+              cta: { label: 'Start Trial', intent: 'newsletter.subscribe', variant: 'primary' },
+              highlighted: true,
+              badge: 'Most Popular',
+            },
+            {
+              name: 'Enterprise',
+              price: 'Custom',
+              description: 'For regulated workloads',
+              features: ['Unlimited jobs', 'BYO cloud', 'SAML SSO', 'SOC 2 + HIPAA', 'Dedicated support'],
+              cta: { label: 'Contact Sales', intent: 'contact.submit', variant: 'outline' },
+            },
+          ],
+        },
+      },
+      {
+        id: 'saas-developer-faq',
+        type: 'faq',
+        props: {
+          headline: 'Frequent questions',
+          layout: 'accordion',
+          items: [
+            { question: 'How is this different from SQS or BullMQ?', answer: 'No infrastructure to provision, sub-12ms p99 latency, and first-class observability. You write a function — we handle the rest.' },
+            { question: 'Can I self-host?', answer: 'Yes. The same Go binary that powers our cloud is open-source under the AGPL.' },
+            { question: 'Do you support exactly-once delivery?', answer: 'Yes — via idempotency keys + dedupe windows. We document the consistency guarantees in detail.' },
+          ],
+        },
+      },
+      {
+        id: 'saas-developer-cta',
+        type: 'cta',
+        props: {
+          layout: 'banner',
+          headline: 'Ready to ship?',
+          description: 'Free tier, no credit card required. 5 minutes to your first job.',
+          ctas: [
+            { label: 'Get an API Key', intent: 'newsletter.subscribe', variant: 'primary' },
+            { label: 'Read the Docs', href: '#features', variant: 'outline' },
+          ],
+        },
+      },
+      {
+        id: 'saas-developer-footer',
+        type: 'footer',
+        props: {
+          brand: 'edgequeue.dev',
+          copyright: '© 2024 EdgeQueue, Inc.',
+          newsletter: true,
+          columns: [
+            { title: 'Product', links: [{ label: 'Features', href: '#features' }, { label: 'Pricing', href: '#pricing' }, { label: 'Changelog', href: '#about' }] },
+            { title: 'Developers', links: [{ label: 'Docs', href: '#' }, { label: 'API Reference', href: '#' }, { label: 'GitHub', href: '#' }] },
+          ],
+          socials: [{ platform: 'github', url: '#' }, { platform: 'twitter', url: '#' }],
+        },
+      },
+    ],
+  },
 ];

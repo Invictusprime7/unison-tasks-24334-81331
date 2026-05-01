@@ -39,6 +39,36 @@ export interface PersistedMessage {
   // streaming flag intentionally dropped on persist
 }
 
+export type FileChangeKind = 'created' | 'modified' | 'deleted';
+
+export interface FileChangeStat {
+  path: string;
+  kind: FileChangeKind;
+  /** Lines added (after - common) */
+  added: number;
+  /** Lines removed (before - common) */
+  removed: number;
+  /** Total line count after the change (0 if deleted) */
+  afterLines: number;
+}
+
+export interface EditSnapshotMeta {
+  /** Original user prompt that triggered the edit */
+  prompt?: string;
+  /** AI model that produced the change (e.g. "google/gemini-2.5-flash") */
+  model?: string;
+  /** Short human summary written by AI (review summary, action type, etc.) */
+  summary?: string;
+  /** Action type reported by the gateway, e.g. 'surgical-edit' | 'multi-file' */
+  actionType?: string;
+  /** Origin sub-channel within source — e.g. 'multi-file', 'single-file', 'debug-fix' */
+  origin?: string;
+  /** Whether the gateway flagged this change for review */
+  requiresApproval?: boolean;
+  /** Warnings reported by the gateway / review pass */
+  warnings?: Array<{ severity?: string; message?: string }>;
+}
+
 export interface EditSnapshot {
   id: string;
   /** Short label e.g. "AI: add hero CTA" or first 60 chars of the prompt */
@@ -53,6 +83,12 @@ export interface EditSnapshot {
   after: Record<string, string>;
   /** Optional list of changed paths for compact UI display */
   changedPaths?: string[];
+  /** Per-file diff stats for richer history UI */
+  fileStats?: FileChangeStat[];
+  /** Aggregate line additions/removals across all changed files */
+  totals?: { added: number; removed: number; created: number; modified: number; deleted: number };
+  /** Rich metadata from the AI invocation */
+  meta?: EditSnapshotMeta;
 }
 
 export interface AIHistoryRecord {

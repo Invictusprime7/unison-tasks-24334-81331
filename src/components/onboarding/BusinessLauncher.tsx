@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types";
-import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
+import { getCompositionReactCode, getCompositionMeta, getCompositionOptionsForCategory, getCompositionMetaById, getCompositionReactCodeById } from "@/utils/compositionReference";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
 import { createLaunchState } from "@/types/launchState";
@@ -142,11 +142,23 @@ function buildWizardSelectionsForChip(chipId: string, prompt: string, businessNa
  * Get template reference for systems-build from chip selection.
  * Launcher generation is composition-only and must stay on the industry theme pipeline.
  */
-function getTemplateReference(chipId: string): { templateId: string; templateHtml: string; systemType: BusinessSystemType } | null {
+function getTemplateReference(
+  chipId: string,
+  explicitTemplateId?: string | null,
+): { templateId: string; templateHtml: string; systemType: BusinessSystemType } | null {
   const systemType = getSystemTypeForChip(chipId);
   const category = getCategoryForChip(chipId);
 
-  // Prefer composition-based React code
+  // Honor an explicit composition id (from the wizard's style picker) first.
+  if (explicitTemplateId) {
+    const codeById = getCompositionReactCodeById(explicitTemplateId);
+    const metaById = getCompositionMetaById(explicitTemplateId);
+    if (codeById && metaById) {
+      return { templateId: metaById.compositionId, templateHtml: codeById, systemType };
+    }
+  }
+
+  // Fallback: industry-default composition for the chip.
   const compositionCode = getCompositionReactCode(category);
   const compositionMeta = getCompositionMeta(category);
   if (compositionCode && compositionMeta) {
@@ -245,6 +257,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   const [step, setStep] = useState<FlowStep>("prompt");
   const [prompt, setPrompt] = useState("");
   const [selectedChip, setSelectedChip] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
   // Building progress
@@ -259,6 +272,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     setStep("prompt");
     setPrompt("");
     setSelectedChip(null);
+    setSelectedTemplateId(null);
     setBuildProgress(0);
     setBuildStatus("");
     setGeneratedCode(null);
@@ -273,7 +287,9 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   }, [resetFlow, onOpenChange]);
 
   const handleChipClick = (chipId: string) => {
+    const isSame = selectedChip === chipId;
     setSelectedChip(chipId);
+    if (!isSame) setSelectedTemplateId(null);
     const chip = industryChips.find(c => c.id === chipId);
     if (chip) {
       setPrompt(prev => prev ? `${prev} (${chip.label})` : `I need a website for my ${chip.label.toLowerCase()} business`);
@@ -310,7 +326,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     }
 
     const businessName = extractBusinessName(prompt);
-    const ref = getTemplateReference(chipId);
+    const ref = getTemplateReference(chipId, selectedTemplateId);
     if (!ref) {
       toast({
         title: "Industry template unavailable",
@@ -467,7 +483,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     const industryKey = selectedChip ? getCanonicalIndustry(selectedChip) : 'general';
     const businessName = extractBusinessName(prompt);
     const industryProfile = getIndustryProfile(industryKey);
-    const chipTemplateRef = selectedChip ? getTemplateReference(selectedChip) : null;
+    const chipTemplateRef = selectedChip ? getTemplateReference(selectedChip, selectedTemplateId) : null;
     const sitePlan = planSiteTopology(industryKey, businessName, {
       primaryIntent: industryProfile?.primaryIntent,
       selectedTemplateId: chipTemplateRef?.templateId,
@@ -578,6 +594,42 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
             );
           })}
         </div>
+
+        {selectedChip && (() => {
+          const options = getCompositionOptionsForCategory(getCategoryForChip(selectedChip));
+          if (options.length < 2) return null;
+          const activeId = selectedTemplateId ?? options[0].id;
+          return (
+            <div className="space-y-2 pt-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground text-center">
+                Choose a style
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {options.map((opt) => {
+                  const isActive = activeId === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setSelectedTemplateId(opt.id)}
+                      className={cn(
+                        "text-left p-3 rounded-lg border transition-all",
+                        isActive
+                          ? "bg-primary/5 border-primary ring-1 ring-primary"
+                          : "bg-background hover:bg-muted border-border hover:border-primary/50"
+                      )}
+                    >
+                      <div className="text-sm font-semibold">{opt.name}</div>
+                      <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                        {opt.description}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

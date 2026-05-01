@@ -6,9 +6,10 @@
  * Falls back to legacy HTML templates when no composition exists.
  */
 
-import { getCompositionsByIndustry } from '@/sections/templates';
+import { getCompositionsByIndustry, getCompositionById } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
 import type { LayoutCategory } from '@/data/templates/types';
+import type { TemplateComposition } from '@/sections/types';
 
 /**
  * Maps LayoutCategory to the composition industry key used in templates/index.ts
@@ -18,10 +19,14 @@ const CATEGORY_TO_INDUSTRY: Record<string, string> = {
   restaurant: 'restaurant',
   contractor: 'local-service',
   store: 'ecommerce',
-  portfolio: 'portfolio',
+  // portfolio compositions live under industry 'photography'
+  portfolio: 'photography',
   coaching: 'coaching',
   realestate: 'real-estate',
   nonprofit: 'nonprofit',
+  // direct-industry chip categories
+  agency: 'agency',
+  saas: 'saas',
 };
 
 /**
@@ -169,3 +174,89 @@ export function getCompositionContentContext(category: LayoutCategory | string):
 
   return lines.join('\n');
 }
+
+/**
+ * Resolve the list of compositions a chip/category can offer in the wizard's
+ * style picker. Includes fallback-industry compositions when the primary
+ * industry has none. Each entry exposes id + display metadata.
+ */
+export interface CompositionOption {
+  id: string;
+  name: string;
+  description: string;
+  industry: string;
+  tags?: string[];
+}
+
+export function getCompositionOptionsForCategory(
+  category: LayoutCategory | string,
+): CompositionOption[] {
+  const industry = CATEGORY_TO_INDUSTRY[category];
+  if (!industry) return [];
+
+  const collect = (key: string) =>
+    getCompositionsByIndustry(key).map<CompositionOption>(c => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      industry: c.industry,
+      tags: c.tags,
+    }));
+
+  let options = collect(industry);
+  if (!options.length) {
+    const fallbackIndustry = INDUSTRY_FALLBACK[industry];
+    if (fallbackIndustry) options = collect(fallbackIndustry);
+  }
+  return options;
+}
+
+/**
+ * Resolve a specific composition by its id (e.g. 'salon-minimal') and return
+ * the same shape as getCompositionMeta. Used when the user explicitly picks a
+ * variant in the wizard's style picker.
+ */
+export function getCompositionMetaById(compositionId: string) {
+  const comp = getCompositionById(compositionId);
+  if (!comp) return null;
+  return buildMetaFromComposition(comp);
+}
+
+export function getCompositionReactCodeById(compositionId: string): string | null {
+  const comp = getCompositionById(compositionId);
+  if (!comp) return null;
+  return compositionToReactCode(comp);
+}
+
+function buildMetaFromComposition(comp: TemplateComposition) {
+  const sections = comp.sections.map(s => s.type);
+  const intents = comp.sections
+    .flatMap(s => {
+      const props = s.props as Record<string, unknown>;
+      const collected: string[] = [];
+      const ctas = (props.ctas || props.cta) as
+        | Array<{ intent?: string }>
+        | { intent?: string }
+        | undefined;
+      if (Array.isArray(ctas)) {
+        ctas.forEach(c => { if (c.intent) collected.push(c.intent); });
+      } else if (ctas && typeof ctas === 'object' && 'intent' in ctas && ctas.intent) {
+        collected.push(ctas.intent as string);
+      }
+      const items = props.items as Array<{ cta?: { intent?: string } }> | undefined;
+      if (Array.isArray(items)) {
+        items.forEach(item => { if (item.cta?.intent) collected.push(item.cta.intent); });
+      }
+      return collected;
+    })
+    .filter((v, i, a) => a.indexOf(v) === i);
+
+  return {
+    compositionId: comp.id,
+    name: comp.name,
+    sections,
+    intents,
+    theme: comp.theme,
+  };
+}
+

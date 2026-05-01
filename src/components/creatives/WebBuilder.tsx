@@ -5971,7 +5971,7 @@ export default function ${componentName}() {
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
                 projectId={projectId ?? null}
-                onApplyToVFS={(files) => {
+                onApplyToVFS={(files, applyMeta) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
                   const beforeFiles = virtualFS.getSandpackFiles();
                   const result = aiVFS.applyCode(files);
@@ -5986,12 +5986,16 @@ export default function ${componentName}() {
                     // Capture an edit snapshot so users can revert/reapply.
                     const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                     if (changedPaths.length > 0) {
+                      const promptPreview = applyMeta?.prompt
+                        ? applyMeta.prompt.length > 60 ? `${applyMeta.prompt.slice(0, 57)}…` : applyMeta.prompt
+                        : `${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`;
                       pushAISnapshot(projectId ?? null, {
-                        label: `AI edit · ${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`,
-                        source: 'ai',
+                        label: `AI · ${promptPreview}`,
+                        source: applyMeta?.origin === 'debug-fix' ? 'debug' : 'ai',
                         before: beforeFiles,
                         after: mergedFiles,
                         changedPaths,
+                        meta: applyMeta,
                       });
                     }
                   } else {
@@ -6283,7 +6287,7 @@ export default function ${componentName}() {
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
               projectId={projectId ?? null}
-              onApplyToVFS={(files) => {
+              onApplyToVFS={(files, applyMeta) => {
                 const beforeFiles = virtualFS.getSandpackFiles();
                 const result = aiVFS.applyCode(files);
                 if (result.success) {
@@ -6293,12 +6297,16 @@ export default function ${componentName}() {
                   setAiPanelOpen(false);
                   const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                   if (changedPaths.length > 0) {
+                    const promptPreview = applyMeta?.prompt
+                      ? applyMeta.prompt.length > 60 ? `${applyMeta.prompt.slice(0, 57)}…` : applyMeta.prompt
+                      : `${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`;
                     pushAISnapshot(projectId ?? null, {
-                      label: `AI edit · ${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`,
-                      source: 'ai',
+                      label: `AI · ${promptPreview}`,
+                      source: applyMeta?.origin === 'debug-fix' ? 'debug' : 'ai',
                       before: beforeFiles,
                       after: mergedFiles,
                       changedPaths,
+                      meta: applyMeta,
                     });
                   }
                 }

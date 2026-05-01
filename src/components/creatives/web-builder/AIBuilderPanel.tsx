@@ -1775,7 +1775,11 @@ export default function App() {
             normalized[p.startsWith('/') ? p : `/${p}`] = c;
           }
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
-          onApplyToVFS(normalized);
+          onApplyToVFS(normalized, {
+            prompt: `Auto-fix: ${error.message || 'runtime error'}`,
+            origin: 'debug-fix',
+            summary: fixExplanation,
+          });
           vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
           toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
         } else if (fixCode) {
@@ -1783,7 +1787,11 @@ export default function App() {
             ? (error.file.startsWith('/') ? error.file : `/${error.file}`)
             : (defaultTargetFile || '/src/App.tsx');
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
-          onApplyToVFS({ [targetPath]: fixCode });
+          onApplyToVFS({ [targetPath]: fixCode }, {
+            prompt: `Auto-fix: ${error.message || 'runtime error'}`,
+            origin: 'debug-fix',
+            summary: fixExplanation,
+          });
           vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
           toast.success('✅ Debug fix applied');
         }

@@ -27,33 +27,20 @@ describe('deterministicIntentUi', () => {
     expect(resolveDeterministicIntentSurface('contact.submit', {}, inventory)).toEqual({ kind: 'inline' });
   });
 
-  it('falls back to canonical overlays for form-driven intents without inline targets', () => {
-    expect(resolveDeterministicIntentSurface('quote.request', {}, emptyInventory)).toEqual({
-      kind: 'overlay',
-      overlayId: 'quote',
-    });
-    expect(resolveDeterministicIntentSurface('newsletter.subscribe', {}, emptyInventory)).toEqual({
-      kind: 'overlay',
-      overlayId: 'newsletter',
-    });
+  it('returns "none" for form-driven intents without inline targets (no preset overlay)', () => {
+    expect(resolveDeterministicIntentSurface('quote.request', {}, emptyInventory)).toEqual({ kind: 'none' });
+    expect(resolveDeterministicIntentSurface('newsletter.subscribe', {}, emptyInventory)).toEqual({ kind: 'none' });
   });
 
-  it('routes generic checkout buttons through the cart drawer', () => {
-    expect(resolveDeterministicIntentSurface('checkout.start', {}, emptyInventory)).toEqual({
-      kind: 'cart',
-      step: 'checkout',
-    });
-    expect(resolveDeterministicIntentSurface('pay.checkout', {}, emptyInventory)).toEqual({
-      kind: 'cart',
-      step: 'checkout',
-    });
+  it('no longer auto-opens the cart drawer for generic checkout buttons', () => {
+    expect(resolveDeterministicIntentSurface('checkout.start', {}, emptyInventory)).toEqual({ kind: 'none' });
+    expect(resolveDeterministicIntentSurface('pay.checkout', {}, emptyInventory)).toEqual({ kind: 'none' });
   });
 
-  it('keeps explicit subscription or plan checkout on the canonical checkout surface', () => {
-    expect(resolveDeterministicIntentSurface('pay.checkout', { plan: 'starter' }, emptyInventory)).toEqual({
-      kind: 'overlay',
-      overlayId: 'checkout',
-    });
+  it('returns "none" even for explicit plan checkout — wiring is AI-driven now', () => {
+    expect(
+      resolveDeterministicIntentSurface('pay.checkout', { plan: 'starter' }, emptyInventory),
+    ).toEqual({ kind: 'none' });
   });
 });
 
@@ -63,7 +50,7 @@ describe('resolvePreviewAction', () => {
     suggestedPageType: null,
   } as const;
 
-  it('scrolls to existing inline targets before opening overlays', () => {
+  it('still scrolls to existing inline targets (passive UX, not a wired action)', () => {
     const inventory: PreviewIntentInventory = {
       ...emptyInventory,
       formIntents: ['contact.submit'],
@@ -84,7 +71,7 @@ describe('resolvePreviewAction', () => {
     });
   });
 
-  it('opens canonical overlay fallback when no inline target exists', () => {
+  it('acknowledges (no overlay/cart) when intent has no inline target and no AI-wired binding', () => {
     expect(resolvePreviewAction(
       'contact.submit',
       'Contact Us',
@@ -93,13 +80,8 @@ describe('resolvePreviewAction', () => {
       neutralClassification as never,
       false,
       {},
-    )).toEqual({
-      action: 'overlay',
-      overlayId: 'contact',
-    });
-  });
+    )).toEqual({ action: 'acknowledge' });
 
-  it('uses the cart drawer for checkout-intent fallbacks', () => {
     expect(resolvePreviewAction(
       'pay.checkout',
       'Checkout',
@@ -108,10 +90,7 @@ describe('resolvePreviewAction', () => {
       neutralClassification as never,
       false,
       {},
-    )).toEqual({
-      action: 'cart',
-      step: 'checkout',
-    });
+    )).toEqual({ action: 'acknowledge' });
   });
 });
 

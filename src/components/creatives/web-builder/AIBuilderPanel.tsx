@@ -291,7 +291,18 @@ interface AIBuilderPanelProps {
   /** Full VFS file map for component-level site analysis */
   vfsFiles?: Record<string, string> | null;
   /** Direct VFS apply callback — bypasses legacy onCodeGenerated pipeline, uses AI→VFS orchestrator */
-  onApplyToVFS?: (files: Record<string, string>) => void;
+  onApplyToVFS?: (
+    files: Record<string, string>,
+    meta?: {
+      prompt?: string;
+      model?: string;
+      summary?: string;
+      actionType?: string;
+      origin?: string;
+      requiresApproval?: boolean;
+      warnings?: Array<{ severity?: string; message?: string }>;
+    },
+  ) => void;
   /** Preview handle ref for building component behavior maps (DOM inspection) */
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   /** Active project id — used to scope persisted prompt + edit history. */

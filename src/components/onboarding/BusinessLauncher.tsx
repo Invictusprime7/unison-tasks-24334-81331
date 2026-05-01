@@ -142,11 +142,23 @@ function buildWizardSelectionsForChip(chipId: string, prompt: string, businessNa
  * Get template reference for systems-build from chip selection.
  * Launcher generation is composition-only and must stay on the industry theme pipeline.
  */
-function getTemplateReference(chipId: string): { templateId: string; templateHtml: string; systemType: BusinessSystemType } | null {
+function getTemplateReference(
+  chipId: string,
+  explicitTemplateId?: string | null,
+): { templateId: string; templateHtml: string; systemType: BusinessSystemType } | null {
   const systemType = getSystemTypeForChip(chipId);
   const category = getCategoryForChip(chipId);
 
-  // Prefer composition-based React code
+  // Honor an explicit composition id (from the wizard's style picker) first.
+  if (explicitTemplateId) {
+    const codeById = getCompositionReactCodeById(explicitTemplateId);
+    const metaById = getCompositionMetaById(explicitTemplateId);
+    if (codeById && metaById) {
+      return { templateId: metaById.compositionId, templateHtml: codeById, systemType };
+    }
+  }
+
+  // Fallback: industry-default composition for the chip.
   const compositionCode = getCompositionReactCode(category);
   const compositionMeta = getCompositionMeta(category);
   if (compositionCode && compositionMeta) {

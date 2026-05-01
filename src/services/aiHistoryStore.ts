@@ -260,9 +260,16 @@ export function setMessages(
 
 export function pushSnapshot(
   projectId: string | null | undefined,
-  snapshot: Omit<EditSnapshot, 'id' | 'timestamp'> & { timestamp?: string; id?: string },
+  snapshot: Omit<EditSnapshot, 'id' | 'timestamp' | 'fileStats' | 'totals'> & {
+    timestamp?: string;
+    id?: string;
+    fileStats?: FileChangeStat[];
+    totals?: EditSnapshot['totals'];
+  },
 ): EditSnapshot {
   const current = readLocal(projectId);
+  const fileStats = snapshot.fileStats ?? computeFileStats(snapshot.before, snapshot.after);
+  const totals = snapshot.totals ?? aggregateTotals(fileStats);
   const full: EditSnapshot = {
     id: snapshot.id || `snap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     timestamp: snapshot.timestamp || new Date().toISOString(),
@@ -270,7 +277,10 @@ export function pushSnapshot(
     source: snapshot.source,
     before: snapshot.before,
     after: snapshot.after,
-    changedPaths: snapshot.changedPaths,
+    changedPaths: snapshot.changedPaths ?? fileStats.map((f) => f.path),
+    fileStats,
+    totals,
+    meta: snapshot.meta,
   };
   const next: AIHistoryRecord = {
     ...current,
@@ -310,4 +320,53 @@ export function diffChangedPaths(
     if (before[p] !== after[p]) changed.push(p);
   }
   return changed.sort();
+}
+
+/**
+ * Compute per-file change kind + line-level add/remove counts.
+ * Uses a lightweight LCS-free heuristic: counts unique lines on each side
+ * that don't appear in a Set of the other side. Good enough for UI stats
+ * without pulling in a diff library.
+ */
+export function computeFileStats(
+  before: Record<string, string>,
+  after: Record<string, string>,
+): FileChangeStat[] {
+  const paths = new Set<string>([...Object.keys(before), ...Object.keys(after)]);
+  const stats: FileChangeStat[] = [];
+  for (const path of paths) {
+    const a = before[path];
+    const b = after[path];
+    if (a === b) continue;
+    let kind: FileChangeKind;
+    if (a == null) kind = 'created';
+    else if (b == null) kind = 'deleted';
+    else kind = 'modified';
+    const beforeLines = a ? a.split('\n') : [];
+    const afterLines = b ? b.split('\n') : [];
+    let added = 0;
+    let removed = 0;
+    if (kind === 'created') {
+      added = afterLines.length;
+    } else if (kind === 'deleted') {
+      removed = beforeLines.length;
+    } else {
+      const beforeSet = new Set(beforeLines);
+      const afterSet = new Set(afterLines);
+      for (const line of afterLines) if (!beforeSet.has(line)) added++;
+      for (const line of beforeLines) if (!afterSet.has(line)) removed++;
+    }
+    stats.push({ path, kind, added, removed, afterLines: afterLines.length });
+  }
+  return stats.sort((x, y) => x.path.localeCompare(y.path));
+}
+
+function aggregateTotals(stats: FileChangeStat[]): EditSnapshot['totals'] {
+  const totals = { added: 0, removed: 0, created: 0, modified: 0, deleted: 0 };
+  for (const s of stats) {
+    totals.added += s.added;
+    totals.removed += s.removed;
+    totals[s.kind]++;
+  }
+  return totals;
 }

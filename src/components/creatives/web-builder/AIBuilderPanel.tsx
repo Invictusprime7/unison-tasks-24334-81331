@@ -1334,7 +1334,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
-            onApplyToVFS(normalizedFiles);
+            onApplyToVFS(normalizedFiles, {
+              prompt: userContent,
+              model: modelUsed,
+              summary: responseMeta?.reviewSummary,
+              actionType: responseMeta?.actionType,
+              origin: 'multi-file',
+              requiresApproval: responseMeta?.requiresApproval,
+              warnings: responseMeta?.warnings,
+            });
             liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
             vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
@@ -1477,7 +1485,15 @@ export default function App() {
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
-            onApplyToVFS({ [singleFilePath]: generatedCode });
+            onApplyToVFS({ [singleFilePath]: generatedCode }, {
+              prompt: userContent,
+              model: modelUsed,
+              summary: responseMeta?.reviewSummary,
+              actionType: responseMeta?.actionType,
+              origin: 'single-file',
+              requiresApproval: responseMeta?.requiresApproval,
+              warnings: responseMeta?.warnings,
+            });
             advancePlanStep(taskPlan, 'refresh_preview', 'done');
             advancePlanStep(taskPlan, 'validate', 'done');
             advancePlanStep(taskPlan, 'report', 'done');

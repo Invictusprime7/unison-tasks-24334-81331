@@ -594,6 +594,42 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
             );
           })}
         </div>
+
+        {selectedChip && (() => {
+          const options = getCompositionOptionsForCategory(getCategoryForChip(selectedChip));
+          if (options.length < 2) return null;
+          const activeId = selectedTemplateId ?? options[0].id;
+          return (
+            <div className="space-y-2 pt-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground text-center">
+                Choose a style
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {options.map((opt) => {
+                  const isActive = activeId === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setSelectedTemplateId(opt.id)}
+                      className={cn(
+                        "text-left p-3 rounded-lg border transition-all",
+                        isActive
+                          ? "bg-primary/5 border-primary ring-1 ring-primary"
+                          : "bg-background hover:bg-muted border-border hover:border-primary/50"
+                      )}
+                    >
+                      <div className="text-sm font-semibold">{opt.name}</div>
+                      <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                        {opt.description}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

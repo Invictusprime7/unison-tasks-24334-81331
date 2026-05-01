@@ -346,4 +346,141 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
       },
     ],
   },
+  // ──────────────────────────────────────────────
+  // VARIANT 3: Agency Editorial — typographic, magazine-style
+  // ──────────────────────────────────────────────
+  {
+    id: 'agency-editorial',
+    name: 'Agency Editorial',
+    category: 'agency',
+    industry: 'agency',
+    systemType: 'agency',
+    description: 'Typography-led, magazine-style layout for brand & content studios.',
+    tags: ['agency', 'editorial', 'brand', 'typography', 'studio'],
+    theme: {
+      colors: {
+        primary: '0 0% 8%',
+        primaryForeground: '45 30% 96%',
+        secondary: '45 25% 92%',
+        secondaryForeground: '0 0% 8%',
+        accent: '8 75% 55%',
+        accentForeground: '0 0% 100%',
+        background: '45 30% 96%',
+        foreground: '0 0% 12%',
+        muted: '45 20% 90%',
+        mutedForeground: '0 0% 35%',
+        card: '0 0% 100%',
+        cardForeground: '0 0% 12%',
+        border: '45 15% 82%',
+      },
+      typography: {
+        headingFont: "'Tiempos Headline', 'Cormorant Garamond', serif",
+        bodyFont: "'GT America', 'Inter', sans-serif",
+        headingWeight: '500',
+        bodyWeight: '400',
+      },
+      radius: '0rem',
+      sectionPadding: '6rem 1.5rem',
+      containerWidth: '1200px',
+    },
+    sections: [
+      {
+        id: 'agency-editorial-nav',
+        type: 'navbar',
+        props: {
+          brand: 'Field & Form',
+          sticky: true,
+          links: [
+            { label: 'Index', href: '#services' },
+            { label: 'Studio', href: '#about' },
+            { label: 'Journal', href: '#testimonials' },
+          ],
+          cta: { label: 'Inquire', intent: 'quote.request', variant: 'primary' },
+        },
+      },
+      {
+        id: 'agency-editorial-hero',
+        type: 'hero',
+        props: {
+          layout: 'centered',
+          badge: 'Issue 04',
+          headline: 'Brand systems for companies with something to say.',
+          subheadline: 'A small studio for ambitious founders.',
+          ctas: [
+            { label: 'Start a Project', intent: 'quote.request', variant: 'primary' },
+            { label: 'See the Index', href: '#services', variant: 'ghost' },
+          ],
+        },
+      },
+      {
+        id: 'agency-editorial-services',
+        type: 'services',
+        props: {
+          headline: 'Practice',
+          columns: 2,
+          layout: 'alternating',
+          items: [
+            { title: '01 — Brand Identity', description: 'Naming, marks, type systems, full guidelines, and the launch toolkit.', cta: { label: 'Inquire', intent: 'quote.request', variant: 'outline' } },
+            { title: '02 — Editorial Design', description: 'Annual reports, books, magazines, and long-form digital experiences.', cta: { label: 'Inquire', intent: 'quote.request', variant: 'outline' } },
+            { title: '03 — Digital Product', description: 'Marketing sites and product UI for early-stage and Series A teams.', cta: { label: 'Inquire', intent: 'quote.request', variant: 'outline' } },
+          ],
+        },
+      },
+      {
+        id: 'agency-editorial-about',
+        type: 'about',
+        props: {
+          headline: 'A studio of seven, working in long arcs.',
+          description: 'We take three new engagements a year. We work directly with founders, no juniors, no account managers. We finish what we start.',
+          layout: 'text-left',
+        },
+      },
+      {
+        id: 'agency-editorial-testimonials',
+        type: 'testimonials',
+        props: {
+          headline: 'In their words',
+          layout: 'single',
+          items: [
+            { quote: 'They didn\'t just design our brand. They argued with us about what we were actually building. Worth it.', author: 'Sasha Vora', role: 'CEO, Northwind' },
+            { quote: 'Patient, sharp, and uncompromising on the work. Our launch landed because of them.', author: 'Marcus Hale', role: 'Founder, Halewood' },
+          ],
+        },
+      },
+      {
+        id: 'agency-editorial-cta',
+        type: 'cta',
+        props: {
+          layout: 'centered',
+          headline: 'Have a project?',
+          description: 'We open three engagements per year. Tell us about yours.',
+          ctas: [{ label: 'Start a Conversation', intent: 'quote.request', variant: 'primary' }],
+        },
+      },
+      {
+        id: 'agency-editorial-contact',
+        type: 'contact',
+        props: {
+          headline: 'Inquiries',
+          submitLabel: 'Send Inquiry',
+          submitIntent: 'quote.request',
+          email: 'studio@fieldandform.co',
+        },
+      },
+      {
+        id: 'agency-editorial-footer',
+        type: 'footer',
+        props: {
+          brand: 'Field & Form',
+          copyright: '© 2024 Field & Form Studio.',
+          newsletter: true,
+          columns: [
+            { title: 'Studio', links: [{ label: 'Practice', href: '#services' }, { label: 'About', href: '#about' }] },
+            { title: 'Connect', links: [{ label: 'Inquiries', href: '#contact' }, { label: 'Journal', href: '#testimonials' }] },
+          ],
+          socials: [{ platform: 'instagram', url: '#' }, { platform: 'linkedin', url: '#' }],
+        },
+      },
+    ],
+  },
 ];

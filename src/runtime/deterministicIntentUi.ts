@@ -107,25 +107,19 @@ export function resolveDeterministicIntentSurface(
   payload?: Record<string, unknown>,
   inventory?: PreviewIntentInventory | null,
 ): DeterministicIntentSurface {
-  if (intent === 'cart.add' || intent === 'cart.view') {
-    return { kind: 'cart', step: 'cart' };
-  }
-
-  if (intent === 'checkout.start' || intent === 'cart.checkout') {
-    return { kind: 'cart', step: 'checkout' };
-  }
-
-  if (intent === 'pay.checkout' && !hasExplicitCheckoutConfig(payload)) {
-    return { kind: 'cart', step: 'checkout' };
-  }
-
+  // NOTE: Preset overlay + cart-checkout auto-wiring has been intentionally
+  // removed. Wizard-generated sites no longer auto-open overlays or the cart
+  // sheet on button click. Wiring is now AI-driven: the user must ask the
+  // assistant to bind a button → intent/handler, which writes an explicit
+  // record into `site_intent_bindings` and is executed by the runtime
+  // intent router (see runtime/intentRouter.ts + TemplateRuntimeProvider).
+  //
+  // We keep inline-scroll behavior for buttons whose target form/section
+  // already exists on the page — that's a passive UX nicety, not a wired
+  // action. Everything else falls through to "none" so the button stays
+  // inert until AI wires it.
   if (hasInlineIntentTarget(intent, inventory)) {
     return { kind: 'inline' };
-  }
-
-  const overlayId = resolveDeterministicOverlayId(intent);
-  if (overlayId) {
-    return { kind: 'overlay', overlayId };
   }
 
   return { kind: 'none' };

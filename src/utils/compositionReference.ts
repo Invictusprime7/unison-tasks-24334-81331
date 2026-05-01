@@ -6,9 +6,10 @@
  * Falls back to legacy HTML templates when no composition exists.
  */
 
-import { getCompositionsByIndustry } from '@/sections/templates';
+import { getCompositionsByIndustry, getCompositionById } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
 import type { LayoutCategory } from '@/data/templates/types';
+import type { TemplateComposition } from '@/sections/types';
 
 /**
  * Maps LayoutCategory to the composition industry key used in templates/index.ts
@@ -18,10 +19,14 @@ const CATEGORY_TO_INDUSTRY: Record<string, string> = {
   restaurant: 'restaurant',
   contractor: 'local-service',
   store: 'ecommerce',
-  portfolio: 'portfolio',
+  // portfolio compositions live under industry 'photography'
+  portfolio: 'photography',
   coaching: 'coaching',
   realestate: 'real-estate',
   nonprofit: 'nonprofit',
+  // direct-industry chip categories
+  agency: 'agency',
+  saas: 'saas',
 };
 
 /**

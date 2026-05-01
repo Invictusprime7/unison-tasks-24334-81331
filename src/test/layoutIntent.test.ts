@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { parseLayoutIntent, applyClassEdit } from '@/utils/layoutIntentEngine';
 import { executeLayoutIntent } from '@/utils/layoutIntentExecutor';

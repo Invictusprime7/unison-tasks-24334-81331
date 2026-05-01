@@ -6003,6 +6003,7 @@ export default function ${componentName}() {
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
                 projectId={projectId ?? null}
+                layoutOps={layoutOpsForAI}
                 onApplyToVFS={(files, applyMeta) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
                   const beforeFiles = virtualFS.getSandpackFiles();
@@ -6319,6 +6320,7 @@ export default function ${componentName}() {
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
               projectId={projectId ?? null}
+              layoutOps={layoutOpsForAI}
               onApplyToVFS={(files, applyMeta) => {
                 const beforeFiles = virtualFS.getSandpackFiles();
                 const result = aiVFS.applyCode(files);

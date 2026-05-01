@@ -299,4 +299,134 @@ export const STORE_COMPOSITIONS: TemplateComposition[] = [
       },
     ],
   },
+  // ──────────────────────────────────────────────
+  // VARIANT 3: Store Boutique — soft pastel, lifestyle
+  // ──────────────────────────────────────────────
+  {
+    id: 'store-boutique',
+    name: 'Store Boutique',
+    category: 'store',
+    industry: 'ecommerce',
+    systemType: 'store',
+    description: 'Soft, lifestyle-led layout for small-batch boutique e-commerce brands.',
+    tags: ['store', 'boutique', 'lifestyle', 'pastel', 'small-batch'],
+    theme: {
+      colors: {
+        primary: '350 60% 50%',
+        primaryForeground: '0 0% 100%',
+        secondary: '20 50% 94%',
+        secondaryForeground: '350 50% 25%',
+        accent: '170 40% 45%',
+        accentForeground: '0 0% 100%',
+        background: '20 50% 97%',
+        foreground: '350 30% 18%',
+        muted: '20 35% 93%',
+        mutedForeground: '350 15% 45%',
+        card: '0 0% 100%',
+        cardForeground: '350 30% 18%',
+        border: '20 30% 88%',
+      },
+      typography: {
+        headingFont: "'DM Serif Display', serif",
+        bodyFont: "'Inter', sans-serif",
+        headingWeight: '400',
+        bodyWeight: '400',
+      },
+      radius: '1rem',
+      sectionPadding: '5rem 1.5rem',
+      containerWidth: '1140px',
+    },
+    sections: [
+      {
+        id: 'store-boutique-nav',
+        type: 'navbar',
+        props: {
+          brand: 'Petal & Stone',
+          sticky: true,
+          links: [
+            { label: 'Shop', href: '#services' },
+            { label: 'Our Story', href: '#about' },
+            { label: 'Journal', href: '#testimonials' },
+          ],
+          cta: { label: 'Shop Now', href: '#services', intent: 'newsletter.subscribe', variant: 'primary' },
+        },
+      },
+      {
+        id: 'store-boutique-hero',
+        type: 'hero',
+        props: {
+          layout: 'split',
+          badge: 'New: Spring Edition',
+          headline: 'Small things, made beautifully.',
+          subheadline: 'A boutique of objects for the home and table.',
+          description: 'Hand-thrown ceramics, linen textiles, and apothecary essentials — all from independent makers we love.',
+          ctas: [
+            { label: 'Shop the Collection', href: '#services', variant: 'primary' },
+            { label: 'Read Our Story', href: '#about', variant: 'ghost' },
+          ],
+        },
+      },
+      {
+        id: 'store-boutique-services',
+        type: 'services',
+        props: {
+          headline: 'New Arrivals',
+          columns: 4,
+          layout: 'grid',
+          items: [
+            { title: 'Stone Vase, Ochre', description: 'Hand-thrown stoneware', price: '$84' },
+            { title: 'Linen Tea Towels', description: 'Set of two, washed linen', price: '$36' },
+            { title: 'Beeswax Tapers', description: 'Set of six, locally poured', price: '$28', badge: 'New' },
+            { title: 'Apothecary Soap', description: 'Cold-process, lavender', price: '$18' },
+          ],
+        },
+      },
+      {
+        id: 'store-boutique-about',
+        type: 'about',
+        props: {
+          headline: 'Things that last, made by hand.',
+          description: 'We started Petal & Stone because we wanted a single, calm place to find the things we kept hunting for: pieces with weight, made by people whose names we know. Every object in the shop is here for a reason.',
+          layout: 'text-right',
+        },
+      },
+      {
+        id: 'store-boutique-testimonials',
+        type: 'testimonials',
+        props: {
+          headline: 'From the journal',
+          layout: 'grid',
+          items: [
+            { quote: 'Every piece I\'ve bought has lived with me for years. That\'s the highest compliment I can give a shop.', author: 'Hannah W.', rating: 5 },
+            { quote: 'I bought a vase as a gift, then immediately ordered three more for myself.', author: 'Samuel K.', rating: 5 },
+            { quote: 'The packaging alone made me cry. The objects inside were even better.', author: 'Lila P.', rating: 5 },
+          ],
+        },
+      },
+      {
+        id: 'store-boutique-cta',
+        type: 'cta',
+        props: {
+          layout: 'banner',
+          headline: 'Join the list',
+          description: 'New collections launch the first Tuesday of every month.',
+          ctas: [{ label: 'Sign Up', intent: 'newsletter.subscribe', variant: 'primary' }],
+        },
+      },
+      {
+        id: 'store-boutique-footer',
+        type: 'footer',
+        props: {
+          brand: 'Petal & Stone',
+          copyright: '© 2024 Petal & Stone Goods.',
+          newsletter: true,
+          columns: [
+            { title: 'Shop', links: [{ label: 'New', href: '#services' }, { label: 'All Goods', href: '#' }] },
+            { title: 'Studio', links: [{ label: 'About', href: '#about' }, { label: 'Journal', href: '#testimonials' }] },
+          ],
+          socials: [{ platform: 'instagram', url: '#' }, { platform: 'pinterest', url: '#' }],
+        },
+      },
+    ],
+  },
 ];

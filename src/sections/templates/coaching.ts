@@ -323,4 +323,144 @@ export const COACHING_COMPOSITIONS: TemplateComposition[] = [
       },
     ],
   },
+  // ──────────────────────────────────────────────
+  // VARIANT 3: Coaching Mindful — calm, conversational
+  // ──────────────────────────────────────────────
+  {
+    id: 'coaching-mindful',
+    name: 'Coaching Mindful',
+    category: 'coaching',
+    industry: 'coaching',
+    systemType: 'booking',
+    description: 'Calm, conversational layout for therapists, life coaches, and wellness practitioners.',
+    tags: ['coaching', 'mindful', 'therapy', 'wellness', 'calm'],
+    theme: {
+      colors: {
+        primary: '210 35% 35%',
+        primaryForeground: '40 30% 96%',
+        secondary: '180 25% 92%',
+        secondaryForeground: '210 35% 25%',
+        accent: '155 30% 50%',
+        accentForeground: '0 0% 100%',
+        background: '40 30% 96%',
+        foreground: '210 25% 18%',
+        muted: '40 20% 92%',
+        mutedForeground: '210 12% 42%',
+        card: '0 0% 100%',
+        cardForeground: '210 25% 18%',
+        border: '40 18% 86%',
+      },
+      typography: {
+        headingFont: "'Lora', serif",
+        bodyFont: "'Inter', sans-serif",
+        headingWeight: '500',
+        bodyWeight: '400',
+      },
+      radius: '1.25rem',
+      sectionPadding: '5rem 1.5rem',
+      containerWidth: '1080px',
+    },
+    sections: [
+      {
+        id: 'coaching-mindful-nav',
+        type: 'navbar',
+        props: {
+          brand: 'Quiet Practice',
+          sticky: true,
+          links: [
+            { label: 'Approach', href: '#about' },
+            { label: 'Sessions', href: '#services' },
+            { label: 'FAQ', href: '#faq' },
+          ],
+          cta: { label: 'Book a Consult', intent: 'booking.create', variant: 'primary' },
+        },
+      },
+      {
+        id: 'coaching-mindful-hero',
+        type: 'hero',
+        props: {
+          layout: 'centered',
+          badge: 'Now accepting new clients',
+          headline: 'A space to think slowly.',
+          subheadline: 'One-on-one coaching for the questions you keep returning to.',
+          description: 'Six- and twelve-week engagements designed for clarity, not productivity. Sessions over secure video, no apps to install.',
+          ctas: [
+            { label: 'Book a Free Consult', intent: 'booking.create', variant: 'primary' },
+            { label: 'About the Approach', href: '#about', variant: 'ghost' },
+          ],
+        },
+      },
+      {
+        id: 'coaching-mindful-about',
+        type: 'about',
+        props: {
+          headline: 'A practice grounded in patience.',
+          description: 'I trained as a therapist and have spent the past decade working with founders, artists, and people in the middle of large transitions. My work is private, slow, and confidential.',
+          layout: 'text-left',
+        },
+      },
+      {
+        id: 'coaching-mindful-services',
+        type: 'services',
+        props: {
+          headline: 'Sessions',
+          columns: 3,
+          layout: 'grid',
+          items: [
+            { title: 'Single Session', description: 'A 90-minute deep-focus conversation.', price: '$220', duration: '90 min', cta: { label: 'Book', intent: 'booking.create', variant: 'primary' } },
+            { title: '6-Week Arc', description: 'Weekly sessions + voice-note support.', price: '$1,200', duration: '6 weeks', badge: 'Most chosen', cta: { label: 'Book', intent: 'booking.create', variant: 'primary' } },
+            { title: '12-Week Arc', description: 'Long-form work for major transitions.', price: '$2,200', duration: '12 weeks', cta: { label: 'Book', intent: 'booking.create', variant: 'primary' } },
+          ],
+        },
+      },
+      {
+        id: 'coaching-mindful-testimonials',
+        type: 'testimonials',
+        props: {
+          headline: 'From past clients',
+          layout: 'single',
+          items: [
+            { quote: 'The first place I\'ve ever felt allowed to think out loud without performing.', author: 'A.M.', role: 'Founder' },
+            { quote: 'I left every session lighter. Twelve weeks changed the shape of my year.', author: 'J.K.', role: 'Writer' },
+          ],
+        },
+      },
+      {
+        id: 'coaching-mindful-faq',
+        type: 'faq',
+        props: {
+          headline: 'Common questions',
+          layout: 'accordion',
+          items: [
+            { question: 'Is this therapy?', answer: 'No. I draw on therapeutic training, but coaching is forward-looking and non-clinical. If you need clinical care, I will help you find it.' },
+            { question: 'How does the consult work?', answer: 'A free 30-minute video call to see if we\'re a fit. No pressure, no pitch.' },
+            { question: 'Do you take insurance?', answer: 'I don\'t bill insurance directly, but I can provide a superbill for some plans on request.' },
+          ],
+        },
+      },
+      {
+        id: 'coaching-mindful-cta',
+        type: 'cta',
+        props: {
+          layout: 'centered',
+          headline: 'Curious if it\'s a fit?',
+          description: 'Book a free 30-minute consult — no commitment.',
+          ctas: [{ label: 'Book a Free Consult', intent: 'booking.create', variant: 'primary' }],
+        },
+      },
+      {
+        id: 'coaching-mindful-footer',
+        type: 'footer',
+        props: {
+          brand: 'Quiet Practice',
+          copyright: '© 2024 Quiet Practice.',
+          newsletter: false,
+          columns: [
+            { title: 'Practice', links: [{ label: 'Approach', href: '#about' }, { label: 'Sessions', href: '#services' }, { label: 'FAQ', href: '#faq' }] },
+          ],
+          socials: [{ platform: 'instagram', url: '#' }],
+        },
+      },
+    ],
+  },
 ];

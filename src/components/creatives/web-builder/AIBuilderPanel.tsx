@@ -390,6 +390,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   onApplyToVFS,
   previewRef,
   projectId,
+  layoutOps,
 }) => {
   // Hydrate persisted messages synchronously so a refresh never wipes history.
   const [messages, setMessages] = useState<Message[]>(() => {

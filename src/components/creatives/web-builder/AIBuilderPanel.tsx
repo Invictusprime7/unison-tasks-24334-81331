@@ -307,6 +307,28 @@ interface AIBuilderPanelProps {
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   /** Active project id — used to scope persisted prompt + edit history. */
   projectId?: string | null;
+  /**
+   * Layout-intent fast path. When provided, the panel will pre-flight every
+   * prompt through the deterministic layout intent engine (center / move /
+   * align / reorder section / etc). Matched intents skip the LLM round-trip
+   * entirely and apply via these callbacks.
+   */
+  layoutOps?: {
+    /** Currently selected element selector from the floating toolbar (if any). */
+    selectionSelector?: string | null;
+    /** Section name guess for the current selection (e.g. "hero"). */
+    selectionSection?: string | null;
+    /** Apply a class-edit / section-reorder result. Returns true on success. */
+    applyLayoutCode: (nextCode: string, summary: string) => boolean;
+    /** Move the currently-selected element up among its siblings. */
+    moveElementUp: () => void;
+    /** Move the currently-selected element down among its siblings. */
+    moveElementDown: () => void;
+    /** Resolve a CSS-ish selector to JSX bounds in the current preview source. */
+    findBounds: (jsx: string, selector: string) => { start: number; end: number } | null;
+    /** Live preview source — required for deterministic mutations. */
+    getPreviewCode: () => string;
+  };
 }
 
 // ============================================================================

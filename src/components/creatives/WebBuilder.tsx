@@ -1497,6 +1497,38 @@ export default function App() {
     toast.success('Moved down');
   }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement]);
 
+  // ── Layout-Intent Fast Path bridge for AIBuilderPanel ────────────────────
+  // Bundles the deterministic layout-op handlers (selection-aware class edits,
+  // section reorders, element move) into a single prop. The panel uses this to
+  // short-circuit common "center / move / align" prompts without an LLM call.
+  const layoutOpsForAI = useMemo(() => ({
+    selectionSelector: selectedHTMLElement?.selector ?? null,
+    selectionSection: selectedHTMLElement?.section ?? null,
+    findBounds: findElementBoundsInJSX,
+    getPreviewCode: () => previewCode,
+    applyLayoutCode: (nextCode: string, summary: string) => {
+      if (!nextCode || nextCode === previewCode) return false;
+      setPreviewCode(nextCode);
+      setEditorCode(nextCode);
+      toast.success(summary);
+      return true;
+    },
+    moveElementUp: () => {
+      if (!selectedHTMLElement?.selector) {
+        toast.info('Select an element first');
+        return;
+      }
+      handleFloatingMoveUp(selectedHTMLElement.selector);
+    },
+    moveElementDown: () => {
+      if (!selectedHTMLElement?.selector) {
+        toast.info('Select an element first');
+        return;
+      }
+      handleFloatingMoveDown(selectedHTMLElement.selector);
+    },
+  }), [previewCode, selectedHTMLElement, handleFloatingMoveUp, handleFloatingMoveDown]);
+
   // Template file management
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const templateFiles = useTemplateFiles();
@@ -5971,6 +6003,7 @@ export default function ${componentName}() {
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
                 projectId={projectId ?? null}
+                layoutOps={layoutOpsForAI}
                 onApplyToVFS={(files, applyMeta) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
                   const beforeFiles = virtualFS.getSandpackFiles();
@@ -6287,6 +6320,7 @@ export default function ${componentName}() {
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
               projectId={projectId ?? null}
+              layoutOps={layoutOpsForAI}
               onApplyToVFS={(files, applyMeta) => {
                 const beforeFiles = virtualFS.getSandpackFiles();
                 const result = aiVFS.applyCode(files);

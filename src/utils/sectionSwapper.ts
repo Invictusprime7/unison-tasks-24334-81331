@@ -239,3 +239,71 @@ export function getSwappableOptions(code: string) {
       variants: VARIANT_REGISTRY[s.type] || [],
     }));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section reorder (mutates the SECTIONS = [...] JSON array)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ReorderSpec =
+  | { kind: 'direction'; direction: 'up' | 'down' }
+  | { kind: 'anchor'; anchor: SectionType; position: 'before' | 'after' };
+
+/**
+ * Reorder sections inside the SECTIONS = [...] array.
+ *
+ * Returns the new code on success, or null if the section couldn't be located
+ * or the move is a no-op (e.g. trying to move the first section up).
+ */
+export function reorderSection(
+  code: string,
+  targetType: SectionType,
+  spec: ReorderSpec,
+): string | null {
+  const startMatch = code.match(/const\s+SECTIONS\s*=\s*\[/);
+  if (!startMatch || startMatch.index === undefined) return null;
+
+  const startIdx = startMatch.index + startMatch[0].length - 1;
+  let depth = 0;
+  let endIdx = -1;
+  for (let i = startIdx; i < code.length; i++) {
+    if (code[i] === '[') depth++;
+    else if (code[i] === ']') {
+      depth--;
+      if (depth === 0) { endIdx = i; break; }
+    }
+  }
+  if (endIdx === -1) return null;
+
+  const sectionsStr = code.slice(startIdx, endIdx + 1);
+  let sections: Array<{ type: SectionType; [k: string]: unknown }>;
+  try {
+    sections = JSON.parse(sectionsStr);
+    if (!Array.isArray(sections)) return null;
+  } catch {
+    return null;
+  }
+
+  const fromIdx = sections.findIndex((s) => s?.type === targetType);
+  if (fromIdx === -1) return null;
+
+  let toIdx = fromIdx;
+  if (spec.kind === 'direction') {
+    toIdx = spec.direction === 'up' ? fromIdx - 1 : fromIdx + 1;
+    if (toIdx < 0 || toIdx >= sections.length) return null;
+  } else {
+    const anchorIdx = sections.findIndex((s) => s?.type === spec.anchor);
+    if (anchorIdx === -1) return null;
+    toIdx = spec.position === 'before' ? anchorIdx : anchorIdx + 1;
+    // Adjust when removing fromIdx shifts the anchor leftward.
+    if (fromIdx < toIdx) toIdx -= 1;
+    if (toIdx === fromIdx) return null;
+  }
+
+  const next = sections.slice();
+  const [moved] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, moved);
+
+  // Pretty-print at 2 spaces to match conventional formatting.
+  const serialized = JSON.stringify(next, null, 2);
+  return code.slice(0, startIdx) + serialized + code.slice(endIdx + 1);
+}

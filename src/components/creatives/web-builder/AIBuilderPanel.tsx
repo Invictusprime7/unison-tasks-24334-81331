@@ -69,6 +69,9 @@ import {
   setMessages as persistMessages,
   type PersistedMessage,
 } from '@/services/aiHistoryStore';
+import { parseLayoutIntent } from '@/utils/layoutIntentEngine';
+import { executeLayoutIntent } from '@/utils/layoutIntentExecutor';
+import { detectSections } from '@/utils/sectionSwapper';
 
 // ============================================================================
 /**
@@ -307,6 +310,28 @@ interface AIBuilderPanelProps {
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   /** Active project id — used to scope persisted prompt + edit history. */
   projectId?: string | null;
+  /**
+   * Layout-intent fast path. When provided, the panel will pre-flight every
+   * prompt through the deterministic layout intent engine (center / move /
+   * align / reorder section / etc). Matched intents skip the LLM round-trip
+   * entirely and apply via these callbacks.
+   */
+  layoutOps?: {
+    /** Currently selected element selector from the floating toolbar (if any). */
+    selectionSelector?: string | null;
+    /** Section name guess for the current selection (e.g. "hero"). */
+    selectionSection?: string | null;
+    /** Apply a class-edit / section-reorder result. Returns true on success. */
+    applyLayoutCode: (nextCode: string, summary: string) => boolean;
+    /** Move the currently-selected element up among its siblings. */
+    moveElementUp: () => void;
+    /** Move the currently-selected element down among its siblings. */
+    moveElementDown: () => void;
+    /** Resolve a CSS-ish selector to JSX bounds in the current preview source. */
+    findBounds: (jsx: string, selector: string) => { start: number; end: number } | null;
+    /** Live preview source — required for deterministic mutations. */
+    getPreviewCode: () => string;
+  };
 }
 
 // ============================================================================
@@ -365,6 +390,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   onApplyToVFS,
   previewRef,
   projectId,
+  layoutOps,
 }) => {
   // Hydrate persisted messages synchronously so a refresh never wipes history.
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -567,6 +593,66 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     setInput('');
     setDroppedFiles([]);
     setIsLoading(true);
+
+    // ── Layout-Intent Fast Path ──────────────────────────────────────────
+    // Deterministic NL → layout-op (center / move / align / reorder).
+    // Skips the LLM round-trip entirely on a confident match.
+    if (layoutOps && droppedFiles.length === 0) {
+      try {
+        const previewSrc = layoutOps.getPreviewCode();
+        const detected = previewSrc ? detectSections(previewSrc) : [];
+        const intent = parseLayoutIntent({
+          prompt: userContent,
+          selectionSelector: layoutOps.selectionSelector,
+          selectionSection: layoutOps.selectionSection,
+          detectedSections: detected,
+        });
+
+        // Auto-apply class edits (high confidence). Structural reorders also
+        // execute (the user already chose to send), but we surface a richer
+        // summary so they can revert from history.
+        if (intent && intent.confidence >= 0.75) {
+          let summary = intent.operation.describe;
+          let success = false;
+
+          if (intent.operation.kind === 'element-move') {
+            if (intent.operation.direction === 'up') layoutOps.moveElementUp();
+            else layoutOps.moveElementDown();
+            success = true;
+          } else {
+            const result = executeLayoutIntent(intent, {
+              previewCode: previewSrc,
+              findBounds: layoutOps.findBounds,
+              selectionSelector: layoutOps.selectionSelector,
+            });
+            if (result.ok && result.nextCode) {
+              success = layoutOps.applyLayoutCode(result.nextCode, result.summary);
+              summary = result.summary;
+            } else if (!result.ok) {
+              console.warn('[AIBuilderPanel] Layout intent matched but executor failed:', result.reason);
+            }
+          }
+
+          if (success) {
+            const assistantMsg: Message = {
+              id: generateId(),
+              role: 'assistant',
+              content: `✓ ${summary}\n\n_Applied instantly via the layout engine — no model call. Revert anytime from the edit history._`,
+              timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, assistantMsg]);
+            setIsLoading(false);
+            return;
+          }
+          // If we matched but couldn't execute, fall through to the LLM with
+          // a hint added to the prompt for better targeting.
+        }
+      } catch (err) {
+        console.error('[AIBuilderPanel] Layout intent fast path error:', err);
+        // Non-fatal — fall through to the LLM.
+      }
+    }
+
 
     // Keep fileContext & attachments in closure for the rest of handleSend
     const _fileContext = fileContext;

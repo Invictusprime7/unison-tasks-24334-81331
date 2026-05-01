@@ -690,10 +690,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       });
 
       // ── Step 2: Generate site topology BEFORE file generation ──
+      // Pass selectedTemplate.id so the VFS scaffolder uses this template
+      // composition for every page (home + sub-pages) — chip is the layout authority.
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
+        selectedTemplateId: selectedTemplate?.id,
       });
-      console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects`);
+      console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, template=${selectedTemplate?.id ?? 'industry-fallback'}`);
 
       // ── Step 3: Run Canonical Pipeline (single enforced pathway) ──
       const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};

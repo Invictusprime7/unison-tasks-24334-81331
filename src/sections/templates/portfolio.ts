@@ -383,4 +383,144 @@ export const PORTFOLIO_COMPOSITIONS: TemplateComposition[] = [
       },
     ],
   },
+  // ──────────────────────────────────────────────
+  // VARIANT 3: Portfolio Architect — structured grid, monochrome
+  // ──────────────────────────────────────────────
+  {
+    id: 'portfolio-architect',
+    name: 'Portfolio Architect',
+    category: 'portfolio',
+    industry: 'photography',
+    systemType: 'portfolio',
+    description: 'Strict grid, monochrome palette for architects, industrial designers, and product designers.',
+    tags: ['portfolio', 'architect', 'monochrome', 'grid', 'minimal'],
+    theme: {
+      colors: {
+        primary: '0 0% 12%',
+        primaryForeground: '0 0% 98%',
+        secondary: '0 0% 95%',
+        secondaryForeground: '0 0% 12%',
+        accent: '0 0% 25%',
+        accentForeground: '0 0% 98%',
+        background: '0 0% 98%',
+        foreground: '0 0% 12%',
+        muted: '0 0% 93%',
+        mutedForeground: '0 0% 40%',
+        card: '0 0% 100%',
+        cardForeground: '0 0% 12%',
+        border: '0 0% 88%',
+      },
+      typography: {
+        headingFont: "'Söhne', 'Inter', sans-serif",
+        bodyFont: "'Söhne', 'Inter', sans-serif",
+        headingWeight: '500',
+        bodyWeight: '400',
+      },
+      radius: '0rem',
+      sectionPadding: '5rem 1.5rem',
+      containerWidth: '1280px',
+    },
+    sections: [
+      {
+        id: 'portfolio-architect-nav',
+        type: 'navbar',
+        props: {
+          brand: 'Studio K—M',
+          sticky: true,
+          links: [
+            { label: 'Work', href: '#gallery' },
+            { label: 'Practice', href: '#services' },
+            { label: 'Contact', href: '#contact' },
+          ],
+          cta: { label: 'Inquire', intent: 'contact.submit', variant: 'outline' },
+        },
+      },
+      {
+        id: 'portfolio-architect-hero',
+        type: 'hero',
+        props: {
+          layout: 'centered',
+          headline: 'Buildings that hold their light.',
+          subheadline: 'A residential and small-civic architecture practice.',
+          ctas: [
+            { label: 'Selected Work', href: '#gallery', variant: 'primary' },
+            { label: 'About the Studio', href: '#about', variant: 'ghost' },
+          ],
+        },
+      },
+      {
+        id: 'portfolio-architect-gallery',
+        type: 'gallery',
+        props: {
+          headline: 'Selected Projects, 2018 — 2024',
+          columns: 3,
+          filterable: true,
+          items: [
+            { src: '', alt: 'Hillside House', caption: 'Hillside House — 2024', category: 'Residential' },
+            { src: '', alt: 'Lakehouse', caption: 'Lakehouse — 2023', category: 'Residential' },
+            { src: '', alt: 'Public Library', caption: 'Branch Library — 2023', category: 'Civic' },
+            { src: '', alt: 'Artists\' Studio', caption: 'Artists\' Studio — 2022', category: 'Workspace' },
+            { src: '', alt: 'Coastal Cabin', caption: 'Coastal Cabin — 2021', category: 'Residential' },
+            { src: '', alt: 'Chapel', caption: 'Hill Chapel — 2020', category: 'Civic' },
+          ],
+        },
+      },
+      {
+        id: 'portfolio-architect-services',
+        type: 'services',
+        props: {
+          headline: 'Practice',
+          columns: 3,
+          layout: 'list',
+          items: [
+            { title: 'Architecture', description: 'Single-family, multi-family, civic, and adaptive reuse.' },
+            { title: 'Interiors', description: 'Furniture, joinery, and material specification.' },
+            { title: 'Master Planning', description: 'Site studies, urban plans, and feasibility work.' },
+          ],
+        },
+      },
+      {
+        id: 'portfolio-architect-about',
+        type: 'about',
+        props: {
+          headline: 'A small studio on the north coast.',
+          description: 'Founded in 2014, Studio K—M is a six-person practice working between residential and civic architecture. We design slowly, build carefully, and finish every project ourselves.',
+          layout: 'text-left',
+        },
+      },
+      {
+        id: 'portfolio-architect-cta',
+        type: 'cta',
+        props: {
+          layout: 'centered',
+          headline: 'Discuss a project',
+          ctas: [{ label: 'Send an Inquiry', intent: 'contact.submit', variant: 'primary' }],
+        },
+      },
+      {
+        id: 'portfolio-architect-contact',
+        type: 'contact',
+        props: {
+          headline: 'Contact',
+          submitLabel: 'Send',
+          submitIntent: 'contact.submit',
+          address: '14 Harbor Lane',
+          email: 'studio@km-architects.com',
+        },
+      },
+      {
+        id: 'portfolio-architect-footer',
+        type: 'footer',
+        props: {
+          brand: 'Studio K—M',
+          copyright: '© 2024 Studio K—M Architects.',
+          newsletter: false,
+          columns: [
+            { title: 'Studio', links: [{ label: 'Work', href: '#gallery' }, { label: 'Practice', href: '#services' }, { label: 'About', href: '#about' }] },
+          ],
+          socials: [{ platform: 'instagram', url: '#' }],
+        },
+      },
+    ],
+  },
 ];

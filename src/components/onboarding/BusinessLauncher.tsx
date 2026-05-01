@@ -257,6 +257,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
   const [step, setStep] = useState<FlowStep>("prompt");
   const [prompt, setPrompt] = useState("");
   const [selectedChip, setSelectedChip] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
   // Building progress

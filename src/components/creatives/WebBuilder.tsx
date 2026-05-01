@@ -1497,6 +1497,38 @@ export default function App() {
     toast.success('Moved down');
   }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement]);
 
+  // ── Layout-Intent Fast Path bridge for AIBuilderPanel ────────────────────
+  // Bundles the deterministic layout-op handlers (selection-aware class edits,
+  // section reorders, element move) into a single prop. The panel uses this to
+  // short-circuit common "center / move / align" prompts without an LLM call.
+  const layoutOpsForAI = useMemo(() => ({
+    selectionSelector: selectedHTMLElement?.selector ?? null,
+    selectionSection: selectedHTMLElement?.section ?? null,
+    findBounds: findElementBoundsInJSX,
+    getPreviewCode: () => previewCode,
+    applyLayoutCode: (nextCode: string, summary: string) => {
+      if (!nextCode || nextCode === previewCode) return false;
+      setPreviewCode(nextCode);
+      setEditorCode(nextCode);
+      toast.success(summary);
+      return true;
+    },
+    moveElementUp: () => {
+      if (!selectedHTMLElement?.selector) {
+        toast.info('Select an element first');
+        return;
+      }
+      handleFloatingMoveUp(selectedHTMLElement.selector);
+    },
+    moveElementDown: () => {
+      if (!selectedHTMLElement?.selector) {
+        toast.info('Select an element first');
+        return;
+      }
+      handleFloatingMoveDown(selectedHTMLElement.selector);
+    },
+  }), [previewCode, selectedHTMLElement, handleFloatingMoveUp, handleFloatingMoveDown]);
+
   // Template file management
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const templateFiles = useTemplateFiles();

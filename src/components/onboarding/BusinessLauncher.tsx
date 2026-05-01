@@ -272,6 +272,7 @@ export function BusinessLauncher({ open, onOpenChange }: BusinessLauncherProps) 
     setStep("prompt");
     setPrompt("");
     setSelectedChip(null);
+    setSelectedTemplateId(null);
     setBuildProgress(0);
     setBuildStatus("");
     setGeneratedCode(null);

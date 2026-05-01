@@ -316,4 +316,146 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
       },
     ],
   },
+  // ──────────────────────────────────────────────
+  // VARIANT 3: Restaurant Fine Dining — moody, reservation-led
+  // ──────────────────────────────────────────────
+  {
+    id: 'restaurant-fine-dining',
+    name: 'Restaurant Fine Dining',
+    category: 'restaurant',
+    industry: 'restaurant',
+    systemType: 'booking',
+    description: 'Moody, editorial layout for chef-driven restaurants with reservation-first flow.',
+    tags: ['restaurant', 'fine-dining', 'reservations', 'editorial', 'dark'],
+    theme: {
+      colors: {
+        primary: '38 50% 60%',
+        primaryForeground: '20 30% 8%',
+        secondary: '20 15% 18%',
+        secondaryForeground: '38 30% 88%',
+        accent: '12 65% 55%',
+        accentForeground: '0 0% 100%',
+        background: '20 20% 10%',
+        foreground: '38 30% 92%',
+        muted: '20 15% 16%',
+        mutedForeground: '38 12% 65%',
+        card: '20 18% 14%',
+        cardForeground: '38 30% 92%',
+        border: '20 15% 22%',
+      },
+      typography: {
+        headingFont: "'Cormorant Garamond', serif",
+        bodyFont: "'Inter', sans-serif",
+        headingWeight: '500',
+        bodyWeight: '400',
+      },
+      radius: '0.25rem',
+      sectionPadding: '6rem 1.5rem',
+      containerWidth: '1100px',
+    },
+    sections: [
+      {
+        id: 'restaurant-fine-dining-nav',
+        type: 'navbar',
+        props: {
+          brand: 'Maison Atelier',
+          sticky: true,
+          transparent: true,
+          links: [
+            { label: 'Menu', href: '#services' },
+            { label: 'The Chef', href: '#about' },
+            { label: 'Visit', href: '#contact' },
+          ],
+          cta: { label: 'Reserve a Table', intent: 'booking.create', variant: 'primary' },
+        },
+      },
+      {
+        id: 'restaurant-fine-dining-hero',
+        type: 'hero',
+        props: {
+          layout: 'full-bleed',
+          badge: 'Tasting Menu Only',
+          headline: 'A seven-course conversation.',
+          subheadline: 'Hyperseasonal cuisine from a single open kitchen.',
+          ctas: [
+            { label: 'Reserve', intent: 'booking.create', variant: 'primary' },
+            { label: 'See the Menu', href: '#services', variant: 'outline' },
+          ],
+        },
+      },
+      {
+        id: 'restaurant-fine-dining-about',
+        type: 'about',
+        props: {
+          headline: 'A single kitchen. A single seating. Every night.',
+          description: 'Chef Léa Marchand sources within 80 miles, builds the menu the morning of service, and serves only 22 guests per evening. There is no à la carte. There is only the meal we are cooking tonight.',
+          layout: 'text-right',
+        },
+      },
+      {
+        id: 'restaurant-fine-dining-services',
+        type: 'services',
+        props: {
+          headline: 'This Week\'s Menu',
+          subheadline: 'Updated every Monday based on what the farms send us.',
+          columns: 2,
+          layout: 'list',
+          items: [
+            { title: 'First — Smoked Trout', description: 'Cured trout, buttermilk, sorrel oil.', cta: { label: 'Reserve', intent: 'booking.create', variant: 'outline' } },
+            { title: 'Second — Bone Marrow', description: 'Roasted marrow, fermented pepper, charred bread.', cta: { label: 'Reserve', intent: 'booking.create', variant: 'outline' } },
+            { title: 'Main — Black Cod', description: 'Miso-glazed cod, dashi, baby leeks.', cta: { label: 'Reserve', intent: 'booking.create', variant: 'outline' } },
+            { title: 'Dessert — Honey & Olive', description: 'Olive oil cake, raw honey, lavender ice.', cta: { label: 'Reserve', intent: 'booking.create', variant: 'outline' } },
+          ],
+        },
+      },
+      {
+        id: 'restaurant-fine-dining-testimonials',
+        type: 'testimonials',
+        props: {
+          headline: 'Press',
+          layout: 'single',
+          items: [
+            { quote: 'The most quietly confident cooking in the city right now.', author: 'The Standard Review', rating: 5 },
+            { quote: 'Each dish lands like a sentence in a perfect short story.', author: 'Eater', rating: 5 },
+          ],
+        },
+      },
+      {
+        id: 'restaurant-fine-dining-cta',
+        type: 'cta',
+        props: {
+          layout: 'centered',
+          headline: 'Reservations open 30 days in advance.',
+          description: 'Tuesday – Saturday, single seating at 7:30pm.',
+          ctas: [{ label: 'Reserve a Table', intent: 'booking.create', variant: 'primary' }],
+        },
+      },
+      {
+        id: 'restaurant-fine-dining-contact',
+        type: 'contact',
+        props: {
+          headline: 'Visit',
+          submitLabel: 'Send Inquiry',
+          submitIntent: 'contact.submit',
+          address: '14 Rue Marchand',
+          phone: '(555) 080-1822',
+          email: 'reservations@maisonatelier.com',
+        },
+      },
+      {
+        id: 'restaurant-fine-dining-footer',
+        type: 'footer',
+        props: {
+          brand: 'Maison Atelier',
+          copyright: '© 2024 Maison Atelier.',
+          newsletter: false,
+          columns: [
+            { title: 'Restaurant', links: [{ label: 'Menu', href: '#services' }, { label: 'About', href: '#about' }] },
+            { title: 'Visit', links: [{ label: 'Hours', href: '#contact' }, { label: 'Reserve', href: '#booking' }] },
+          ],
+          socials: [{ platform: 'instagram', url: '#' }],
+        },
+      },
+    ],
+  },
 ];

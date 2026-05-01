@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types";
-import { getCompositionReactCode, getCompositionMeta } from "@/utils/compositionReference";
+import { getCompositionReactCode, getCompositionMeta, getCompositionOptionsForCategory, getCompositionMetaById, getCompositionReactCodeById } from "@/utils/compositionReference";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
 import { createLaunchState } from "@/types/launchState";

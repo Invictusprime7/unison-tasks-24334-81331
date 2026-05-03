@@ -1929,6 +1929,78 @@ export type Database = {
         }
         Relationships: []
       }
+      ghl_event_reactions: {
+        Row: {
+          action_config: Json
+          action_type: string
+          business_id: string
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          event_type: string
+          id: string
+          last_triggered_at: string | null
+          name: string
+          pipeline_filter: string | null
+          project_id: string | null
+          stage_filter: string | null
+          trigger_count: number
+          updated_at: string
+          workflow_filter: string | null
+        }
+        Insert: {
+          action_config?: Json
+          action_type: string
+          business_id: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          event_type: string
+          id?: string
+          last_triggered_at?: string | null
+          name: string
+          pipeline_filter?: string | null
+          project_id?: string | null
+          stage_filter?: string | null
+          trigger_count?: number
+          updated_at?: string
+          workflow_filter?: string | null
+        }
+        Update: {
+          action_config?: Json
+          action_type?: string
+          business_id?: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          event_type?: string
+          id?: string
+          last_triggered_at?: string | null
+          name?: string
+          pipeline_filter?: string | null
+          project_id?: string | null
+          stage_filter?: string | null
+          trigger_count?: number
+          updated_at?: string
+          workflow_filter?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ghl_event_reactions_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ghl_event_reactions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ghl_webhook_events: {
         Row: {
           business_id: string | null

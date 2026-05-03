@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Sparkles, Code2, Bug, Paintbrush, Zap, LayoutGrid, Globe } from 'lucide-react';
+import { Sparkles, Code2, Bug, Paintbrush, Zap, LayoutGrid, Globe, Workflow } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -21,6 +21,24 @@ const SUGGESTION_GROUPS = [
       'Add a hero section with a CTA button',
       'Create a pricing table with 3 tiers',
       'Build a testimonials carousel',
+    ],
+  },
+  {
+    label: 'Layout (fast)',
+    icon: LayoutGrid,
+    items: [
+      'Center the hero section',
+      'Move features above pricing',
+      'Align the CTA buttons to the right',
+    ],
+  },
+  {
+    label: 'GoHighLevel',
+    icon: Workflow,
+    items: [
+      'Wire this button to a GHL workflow',
+      'Send form submissions to GHL contact',
+      'Create an opportunity when this CTA is clicked',
     ],
   },
   {

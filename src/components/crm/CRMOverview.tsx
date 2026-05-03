@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Target, Workflow, FileText, TrendingUp, Clock, Kanban } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { WorkflowActivityFeed } from "./WorkflowActivityFeed";
+import { GhlReactionsManager } from "./GhlReactionsManager";
 
 interface OverviewStats {
   contacts: number;
@@ -199,6 +200,9 @@ export function CRMOverview({ onNavigate, businessId, projectId }: CRMOverviewPr
 
       {/* Live GHL workflow activity */}
       <WorkflowActivityFeed businessId={businessId} />
+
+      {/* Event-to-action rules */}
+      <GhlReactionsManager businessId={businessId} />
     </div>
   );
 }

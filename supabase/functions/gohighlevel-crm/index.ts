@@ -79,6 +79,30 @@ async function fetchGhlJson(
   return await response.json() as Record<string, unknown>;
 }
 
+async function postGhlJson(
+  path: string,
+  apiKey: string,
+  body: Record<string, unknown>,
+  method: "POST" | "PUT" = "POST",
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${GHL_API_BASE}${path}`, {
+    method,
+    headers: buildGhlHeaders(apiKey),
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text().catch(() => "");
+  if (!response.ok) {
+    console.error("[gohighlevel-crm] GHL API error:", response.status, text);
+    throw new Error(`GoHighLevel ${method} ${path} failed with status ${response.status}: ${text}`);
+  }
+  try {
+    return text ? JSON.parse(text) as Record<string, unknown> : {};
+  } catch {
+    return { raw: text };
+  }
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   const preflight = handleCorsPreflightRequest(req, corsHeaders);

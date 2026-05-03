@@ -72,6 +72,7 @@ import {
 import { parseLayoutIntent } from '@/utils/layoutIntentEngine';
 import { executeLayoutIntent } from '@/utils/layoutIntentExecutor';
 import { parseGhlWireIntent } from '@/utils/ghlWireIntent';
+// Side-effect import: registers GHL skill pack with global registry
 import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
 

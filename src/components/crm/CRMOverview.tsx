@@ -196,6 +196,9 @@ export function CRMOverview({ onNavigate, businessId, projectId }: CRMOverviewPr
           </CardContent>
         </Card>
       </div>
+
+      {/* Live GHL workflow activity */}
+      <WorkflowActivityFeed businessId={businessId} />
     </div>
   );
 }

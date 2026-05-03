@@ -238,6 +238,59 @@ Deno.serve(async (req) => {
         break;
       }
 
+      case "getWorkflows": {
+        if (!locationId) return errorResponse("locationId is required", 400, corsHeaders);
+        result = await fetchGhlJson(`/workflows/?locationId=${encodeURIComponent(locationId)}`, apiKey);
+        break;
+      }
+
+      case "triggerWorkflow": {
+        if (!workflowId) return errorResponse("workflowId is required", 400, corsHeaders);
+        if (!contactId) return errorResponse("contactId is required to trigger a workflow", 400, corsHeaders);
+        result = await postGhlJson(
+          `/contacts/${encodeURIComponent(contactId)}/workflow/${encodeURIComponent(workflowId)}`,
+          apiKey,
+          { eventStartTime: new Date().toISOString(), ...extraPayload },
+        );
+        break;
+      }
+
+      case "upsertContact": {
+        if (!locationId) return errorResponse("locationId is required", 400, corsHeaders);
+        if (!contactPayload || (!contactPayload.email && !contactPayload.phone)) {
+          return errorResponse("contact.email or contact.phone is required", 400, corsHeaders);
+        }
+        result = await postGhlJson(`/contacts/upsert`, apiKey, {
+          locationId,
+          ...contactPayload,
+        });
+        break;
+      }
+
+      case "createOpportunity": {
+        if (!pipelineId) return errorResponse("pipelineId is required", 400, corsHeaders);
+        if (!stageId) return errorResponse("stageId is required", 400, corsHeaders);
+        if (!locationId) return errorResponse("locationId is required", 400, corsHeaders);
+        result = await postGhlJson(`/opportunities/`, apiKey, {
+          locationId,
+          pipelineId,
+          pipelineStageId: stageId,
+          contactId: contactId || undefined,
+          name: opportunityPayload?.name || "New opportunity",
+          monetaryValue: opportunityPayload?.monetaryValue,
+          status: opportunityPayload?.status || "open",
+        });
+        break;
+      }
+
+      case "addContactTag": {
+        if (!contactId) return errorResponse("contactId is required", 400, corsHeaders);
+        const tags = Array.isArray(body.tags) ? body.tags.filter(t => typeof t === "string") : [];
+        if (tags.length === 0) return errorResponse("tags array is required", 400, corsHeaders);
+        result = await postGhlJson(`/contacts/${encodeURIComponent(contactId)}/tags`, apiKey, { tags });
+        break;
+      }
+
       default:
         return errorResponse("Invalid action", 400, corsHeaders);
     }

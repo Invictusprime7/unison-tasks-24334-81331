@@ -27,6 +27,7 @@ import { normalizeIntent } from './intentAliases';
 import { classifyIntent } from './intentClassifier';
 import { logIntentExecution, createLogEntryFromResult } from '@/services/intentExecutionLogger';
 import { lookupIntentBinding, recordBindingTriggered } from '@/services/intentBindingService';
+import { extractGhlDirective, executeGhlDirective } from '@/services/ghlIntentBridge';
 import { dispatchAutomation } from '@/services/automationOrchestrator';
 import { logProjectGraphEvents } from '@/services/componentGraphPersistence';
 import { resolveDeterministicOverlayId } from './deterministicIntentUi';
@@ -774,6 +775,7 @@ export async function executeIntent(
 
   // Step 3: Look up intent binding if we have project context
   let bindingId: string | undefined;
+  let bindingPayloadSchema: Record<string, unknown> | undefined;
   if (ctx.siteId && ctx.payload?.elementKey) {
     try {
       const bindingResult = await lookupIntentBinding(
@@ -783,6 +785,7 @@ export async function executeIntent(
       );
       if (bindingResult.binding) {
         bindingId = bindingResult.binding.id;
+        bindingPayloadSchema = bindingResult.binding.payloadSchema;
         if (bindingResult.workflow) {
           workflowsTriggered.push(bindingResult.workflow.id);
         }

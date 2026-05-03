@@ -1929,6 +1929,84 @@ export type Database = {
         }
         Relationships: []
       }
+      ghl_webhook_events: {
+        Row: {
+          business_id: string | null
+          contact_id: string | null
+          created_at: string
+          event_type: string
+          headers: Json
+          id: string
+          location_id: string | null
+          opportunity_id: string | null
+          payload: Json
+          pipeline_id: string | null
+          previous_stage_id: string | null
+          process_error: string | null
+          processed: boolean
+          processed_at: string | null
+          project_id: string | null
+          signature: string | null
+          stage_id: string | null
+          workflow_id: string | null
+        }
+        Insert: {
+          business_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          event_type: string
+          headers?: Json
+          id?: string
+          location_id?: string | null
+          opportunity_id?: string | null
+          payload?: Json
+          pipeline_id?: string | null
+          previous_stage_id?: string | null
+          process_error?: string | null
+          processed?: boolean
+          processed_at?: string | null
+          project_id?: string | null
+          signature?: string | null
+          stage_id?: string | null
+          workflow_id?: string | null
+        }
+        Update: {
+          business_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          event_type?: string
+          headers?: Json
+          id?: string
+          location_id?: string | null
+          opportunity_id?: string | null
+          payload?: Json
+          pipeline_id?: string | null
+          previous_stage_id?: string | null
+          process_error?: string | null
+          processed?: boolean
+          processed_at?: string | null
+          project_id?: string | null
+          signature?: string | null
+          stage_id?: string | null
+          workflow_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ghl_webhook_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ghl_webhook_events_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       image_slot_events: {
         Row: {
           business_id: string | null

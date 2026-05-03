@@ -7069,6 +7069,8 @@ export default function ${componentName}() {
             )}
           </>
         )}
+          </div>
+        </ResizablePanel>
       </ResizablePanelGroup>
 
       {/* Mobile Bottom Navigation Bar — fixed at bottom, only visible on small screens */}

@@ -310,6 +310,8 @@ interface AIBuilderPanelProps {
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   /** Active project id — used to scope persisted prompt + edit history. */
   projectId?: string | null;
+  /** Active business id — required for GHL fast-path bindings. */
+  businessId?: string | null;
   /**
    * Layout-intent fast path. When provided, the panel will pre-flight every
    * prompt through the deterministic layout intent engine (center / move /
@@ -390,6 +392,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   onApplyToVFS,
   previewRef,
   projectId,
+  businessId,
   layoutOps,
 }) => {
   // Hydrate persisted messages synchronously so a refresh never wipes history.

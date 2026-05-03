@@ -27,6 +27,7 @@ import { normalizeIntent } from './intentAliases';
 import { classifyIntent } from './intentClassifier';
 import { logIntentExecution, createLogEntryFromResult } from '@/services/intentExecutionLogger';
 import { lookupIntentBinding, recordBindingTriggered } from '@/services/intentBindingService';
+import { extractGhlDirective, executeGhlDirective } from '@/services/ghlIntentBridge';
 import { dispatchAutomation } from '@/services/automationOrchestrator';
 import { logProjectGraphEvents } from '@/services/componentGraphPersistence';
 import { resolveDeterministicOverlayId } from './deterministicIntentUi';
@@ -774,6 +775,7 @@ export async function executeIntent(
 
   // Step 3: Look up intent binding if we have project context
   let bindingId: string | undefined;
+  let bindingPayloadSchema: Record<string, unknown> | undefined;
   if (ctx.siteId && ctx.payload?.elementKey) {
     try {
       const bindingResult = await lookupIntentBinding(
@@ -783,6 +785,7 @@ export async function executeIntent(
       );
       if (bindingResult.binding) {
         bindingId = bindingResult.binding.id;
+        bindingPayloadSchema = bindingResult.binding.payloadSchema;
         if (bindingResult.workflow) {
           workflowsTriggered.push(bindingResult.workflow.id);
         }
@@ -884,6 +887,27 @@ export async function executeIntent(
     // Step 10: Record binding trigger
     if (bindingId) {
       recordBindingTriggered(bindingId).catch(() => {});
+
+      // Step 10b: GHL bridge — fire any GoHighLevel directive declared on the binding.
+      // Non-blocking: failures are logged but never fail the intent.
+      if (result.ok && bindingPayloadSchema) {
+        const directive = extractGhlDirective(
+          bindingPayloadSchema,
+          (ctx.payload ?? {}) as Record<string, unknown>,
+        );
+        if (directive) {
+          executeGhlDirective(directive)
+            .then((r) => {
+              if (r.ok) {
+                console.log(`[IntentExecutor] GHL ${r.action} fired for binding ${bindingId}`);
+                workflowsTriggered.push(`ghl:${r.action}`);
+              } else {
+                console.warn(`[IntentExecutor] GHL ${r.action} failed:`, r.error);
+              }
+            })
+            .catch(() => {});
+        }
+      }
     }
 
     // Step 11: Log execution

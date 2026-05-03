@@ -71,6 +71,9 @@ import {
 } from '@/services/aiHistoryStore';
 import { parseLayoutIntent } from '@/utils/layoutIntentEngine';
 import { executeLayoutIntent } from '@/utils/layoutIntentExecutor';
+import { parseGhlWireIntent } from '@/utils/ghlWireIntent';
+// Side-effect import: registers GHL skill pack with global registry
+import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
 
 // ============================================================================
@@ -310,6 +313,8 @@ interface AIBuilderPanelProps {
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   /** Active project id — used to scope persisted prompt + edit history. */
   projectId?: string | null;
+  /** Active business id — required for GHL fast-path bindings. */
+  businessId?: string | null;
   /**
    * Layout-intent fast path. When provided, the panel will pre-flight every
    * prompt through the deterministic layout intent engine (center / move /
@@ -390,6 +395,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   onApplyToVFS,
   previewRef,
   projectId,
+  businessId,
   layoutOps,
 }) => {
   // Hydrate persisted messages synchronously so a refresh never wipes history.
@@ -593,6 +599,46 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     setInput('');
     setDroppedFiles([]);
     setIsLoading(true);
+
+    // ── GHL Wire Fast Path ───────────────────────────────────────────────
+    // Deterministic NL → site_intent_bindings write for GoHighLevel workflows.
+    if (droppedFiles.length === 0 && projectId && businessId) {
+      try {
+        const wire = parseGhlWireIntent(userContent);
+        if (wire && wire.confidence >= 0.75) {
+          const elementKey =
+            (layoutOps?.selectionSelector as string | undefined) ||
+            (wire.elementHint ? `hint:${wire.elementHint}` : null);
+          if (elementKey) {
+            const binding = await wireGhlBinding({
+              businessId,
+              projectId,
+              pagePath: '/',
+              elementKey,
+              elementLabel: wire.elementHint ?? layoutOps?.selectionSection ?? null,
+              intent: 'button.click',
+              workflowId: wire.workflowRef,
+            });
+            const summary = binding
+              ? `✓ Wired **${wire.elementHint ?? 'selected element'}** to GHL workflow \`${wire.workflowRef}\`. It will fire on click via the runtime intent executor.`
+              : `⚠ Could not persist GHL binding — check business membership and try again.`;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: generateId(),
+                role: 'assistant',
+                content: `${summary}\n\n_Applied instantly — no model call. Manage from the Intent Inspector._`,
+                timestamp: new Date(),
+              },
+            ]);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('[AIBuilderPanel] GHL wire fast-path error:', err);
+      }
+    }
 
     // ── Layout-Intent Fast Path ──────────────────────────────────────────
     // Deterministic NL → layout-op (center / move / align / reorder).

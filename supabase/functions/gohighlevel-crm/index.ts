@@ -12,6 +12,11 @@ const ALLOWED_ACTIONS = new Set([
   "getCustomFields",
   "getLocation",
   "getTemplateData",
+  "getWorkflows",
+  "triggerWorkflow",
+  "upsertContact",
+  "createOpportunity",
+  "addContactTag",
 ]);
 
 interface GhlRequestBody {
@@ -19,7 +24,27 @@ interface GhlRequestBody {
   businessId?: string;
   contactId?: string;
   locationId?: string;
+  workflowId?: string;
+  pipelineId?: string;
+  stageId?: string;
+  tags?: string[];
   customFields?: unknown;
+  contact?: {
+    email?: string;
+    phone?: string;
+    firstName?: string;
+    lastName?: string;
+    name?: string;
+    source?: string;
+    tags?: string[];
+    customFields?: unknown;
+  };
+  opportunity?: {
+    name?: string;
+    monetaryValue?: number;
+    status?: string;
+  };
+  payload?: Record<string, unknown>;
 }
 
 function isAuthorizedInternalRequest(req: Request): boolean {
@@ -52,6 +77,30 @@ async function fetchGhlJson(
   }
 
   return await response.json() as Record<string, unknown>;
+}
+
+async function postGhlJson(
+  path: string,
+  apiKey: string,
+  body: Record<string, unknown>,
+  method: "POST" | "PUT" = "POST",
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${GHL_API_BASE}${path}`, {
+    method,
+    headers: buildGhlHeaders(apiKey),
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text().catch(() => "");
+  if (!response.ok) {
+    console.error("[gohighlevel-crm] GHL API error:", response.status, text);
+    throw new Error(`GoHighLevel ${method} ${path} failed with status ${response.status}: ${text}`);
+  }
+  try {
+    return text ? JSON.parse(text) as Record<string, unknown> : {};
+  } catch {
+    return { raw: text };
+  }
 }
 
 Deno.serve(async (req) => {
@@ -90,6 +139,12 @@ Deno.serve(async (req) => {
     const contactId = sanitizeString(body.contactId || "", 120);
     const locationId = sanitizeString(body.locationId || "", 120);
     const businessId = sanitizeString(body.businessId || "", 100);
+    const workflowId = sanitizeString(body.workflowId || "", 120);
+    const pipelineId = sanitizeString(body.pipelineId || "", 120);
+    const stageId = sanitizeString(body.stageId || "", 120);
+    const contactPayload = body.contact && typeof body.contact === "object" ? body.contact : null;
+    const opportunityPayload = body.opportunity && typeof body.opportunity === "object" ? body.opportunity : null;
+    const extraPayload = body.payload && typeof body.payload === "object" ? body.payload : {};
 
     if (!action || !ALLOWED_ACTIONS.has(action)) {
       return errorResponse("Invalid action", 400, corsHeaders);
@@ -180,6 +235,59 @@ Deno.serve(async (req) => {
         }
 
         result = templateData;
+        break;
+      }
+
+      case "getWorkflows": {
+        if (!locationId) return errorResponse("locationId is required", 400, corsHeaders);
+        result = await fetchGhlJson(`/workflows/?locationId=${encodeURIComponent(locationId)}`, apiKey);
+        break;
+      }
+
+      case "triggerWorkflow": {
+        if (!workflowId) return errorResponse("workflowId is required", 400, corsHeaders);
+        if (!contactId) return errorResponse("contactId is required to trigger a workflow", 400, corsHeaders);
+        result = await postGhlJson(
+          `/contacts/${encodeURIComponent(contactId)}/workflow/${encodeURIComponent(workflowId)}`,
+          apiKey,
+          { eventStartTime: new Date().toISOString(), ...extraPayload },
+        );
+        break;
+      }
+
+      case "upsertContact": {
+        if (!locationId) return errorResponse("locationId is required", 400, corsHeaders);
+        if (!contactPayload || (!contactPayload.email && !contactPayload.phone)) {
+          return errorResponse("contact.email or contact.phone is required", 400, corsHeaders);
+        }
+        result = await postGhlJson(`/contacts/upsert`, apiKey, {
+          locationId,
+          ...contactPayload,
+        });
+        break;
+      }
+
+      case "createOpportunity": {
+        if (!pipelineId) return errorResponse("pipelineId is required", 400, corsHeaders);
+        if (!stageId) return errorResponse("stageId is required", 400, corsHeaders);
+        if (!locationId) return errorResponse("locationId is required", 400, corsHeaders);
+        result = await postGhlJson(`/opportunities/`, apiKey, {
+          locationId,
+          pipelineId,
+          pipelineStageId: stageId,
+          contactId: contactId || undefined,
+          name: opportunityPayload?.name || "New opportunity",
+          monetaryValue: opportunityPayload?.monetaryValue,
+          status: opportunityPayload?.status || "open",
+        });
+        break;
+      }
+
+      case "addContactTag": {
+        if (!contactId) return errorResponse("contactId is required", 400, corsHeaders);
+        const tags = Array.isArray(body.tags) ? body.tags.filter(t => typeof t === "string") : [];
+        if (tags.length === 0) return errorResponse("tags array is required", 400, corsHeaders);
+        result = await postGhlJson(`/contacts/${encodeURIComponent(contactId)}/tags`, apiKey, { tags });
         break;
       }
 

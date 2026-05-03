@@ -139,6 +139,12 @@ Deno.serve(async (req) => {
     const contactId = sanitizeString(body.contactId || "", 120);
     const locationId = sanitizeString(body.locationId || "", 120);
     const businessId = sanitizeString(body.businessId || "", 100);
+    const workflowId = sanitizeString(body.workflowId || "", 120);
+    const pipelineId = sanitizeString(body.pipelineId || "", 120);
+    const stageId = sanitizeString(body.stageId || "", 120);
+    const contactPayload = body.contact && typeof body.contact === "object" ? body.contact : null;
+    const opportunityPayload = body.opportunity && typeof body.opportunity === "object" ? body.opportunity : null;
+    const extraPayload = body.payload && typeof body.payload === "object" ? body.payload : {};
 
     if (!action || !ALLOWED_ACTIONS.has(action)) {
       return errorResponse("Invalid action", 400, corsHeaders);

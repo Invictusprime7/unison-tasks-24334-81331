@@ -7031,8 +7031,44 @@ export default function ${componentName}() {
             />
           </div>
         )}
-          </div>
-        </ResizablePanel>
+
+        {/* Element Intent Inspector — toggle button + floating panel */}
+        {selectedHTMLElement && viewMode === 'canvas' && builderMode === 'select' && (
+          <>
+            <button
+              onClick={() => setInspectorOpen((v) => !v)}
+              className={cn(
+                "fixed top-20 right-4 z-50 px-3 py-1.5 rounded-md border text-xs font-medium transition-all",
+                inspectorOpen
+                  ? "bg-cyan-500 text-black border-cyan-400 shadow-[0_0_15px_rgba(0,255,255,0.4)]"
+                  : "bg-[#0d0d18] text-cyan-400 border-cyan-500/40 hover:bg-cyan-500/10"
+              )}
+              title="Element Intent Inspector"
+            >
+              ⚡ Intent {inspectorOpen ? '▾' : '▸'}
+            </button>
+            {inspectorOpen && (
+              <div className="fixed top-32 right-4 z-50">
+                <ElementIntentInspector
+                  selection={{
+                    elementKey: selectedHTMLElement.selector || `el:${selectedHTMLElement.tagName}`,
+                    elementLabel: (selectedHTMLElement.textContent || '').slice(0, 40) || selectedHTMLElement.tagName || 'Element',
+                    selector: selectedHTMLElement.selector,
+                    tagName: selectedHTMLElement.tagName,
+                    intent: (selectedHTMLElement.attributes as Record<string, string> | undefined)?.['data-ut-intent'],
+                  }}
+                  businessId={businessId || undefined}
+                  projectId={projectId || undefined}
+                  pagePath={activePagePath}
+                  onClose={() => setInspectorOpen(false)}
+                  onTestIntent={(intent, payload) => {
+                    handleIntent(intent, { ...payload, businessId, projectId });
+                  }}
+                />
+              </div>
+            )}
+          </>
+        )}
       </ResizablePanelGroup>
 
       {/* Mobile Bottom Navigation Bar — fixed at bottom, only visible on small screens */}

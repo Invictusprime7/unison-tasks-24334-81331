@@ -12,6 +12,11 @@ const ALLOWED_ACTIONS = new Set([
   "getCustomFields",
   "getLocation",
   "getTemplateData",
+  "getWorkflows",
+  "triggerWorkflow",
+  "upsertContact",
+  "createOpportunity",
+  "addContactTag",
 ]);
 
 interface GhlRequestBody {
@@ -19,7 +24,27 @@ interface GhlRequestBody {
   businessId?: string;
   contactId?: string;
   locationId?: string;
+  workflowId?: string;
+  pipelineId?: string;
+  stageId?: string;
+  tags?: string[];
   customFields?: unknown;
+  contact?: {
+    email?: string;
+    phone?: string;
+    firstName?: string;
+    lastName?: string;
+    name?: string;
+    source?: string;
+    tags?: string[];
+    customFields?: unknown;
+  };
+  opportunity?: {
+    name?: string;
+    monetaryValue?: number;
+    status?: string;
+  };
+  payload?: Record<string, unknown>;
 }
 
 function isAuthorizedInternalRequest(req: Request): boolean {

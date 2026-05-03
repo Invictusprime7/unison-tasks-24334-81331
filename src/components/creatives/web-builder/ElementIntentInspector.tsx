@@ -411,10 +411,59 @@ export function ElementIntentInspector({
             </div>
           </div>
         )}
+
+        {/* Recent execution log */}
+        <div>
+          <Label className="text-xs text-gray-400 mb-1 block">Recent Executions</Label>
+          {executionLog.length === 0 ? (
+            <p className="text-[10px] text-gray-500">No executions yet</p>
+          ) : (
+            <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+              {executionLog.map((log) => (
+                <div key={log.id} className="flex items-center justify-between text-[10px] bg-[#0a0a14] px-2 py-1 rounded">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {log.result_status === 'success' ? (
+                      <CheckCircle2 className="h-2.5 w-2.5 text-green-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-2.5 w-2.5 text-red-400 shrink-0" />
+                    )}
+                    <span className="text-gray-300 truncate" title={log.error_message || log.intent}>
+                      {log.intent}
+                    </span>
+                  </div>
+                  <span className="text-gray-500 shrink-0 ml-2">
+                    {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Latest GHL events (workflow context) */}
+        {ghlEvents.length > 0 && (
+          <div>
+            <Label className="text-xs text-gray-400 mb-1 block flex items-center gap-1">
+              <Workflow className="h-3 w-3" /> Latest GHL Events
+            </Label>
+            <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
+              {ghlEvents.map((evt) => (
+                <div key={evt.id} className="flex items-center justify-between text-[10px] bg-purple-500/5 border border-purple-500/20 px-2 py-1 rounded">
+                  <span className="text-purple-300 truncate" title={evt.contact_id || ''}>
+                    {evt.event_type}
+                  </span>
+                  <span className="text-gray-500 shrink-0 ml-2">
+                    {new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Actions */}
-      <div className="p-3 border-t border-cyan-500/20 flex gap-2">
+      <div className="p-3 border-t border-cyan-500/20 flex gap-2 flex-wrap">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -434,6 +483,27 @@ export function ElementIntentInspector({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
+        {bindingId && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+            onClick={async () => {
+              if (!bindingId) return;
+              const { error } = await supabase
+                .from("site_intent_bindings")
+                .delete()
+                .eq("id", bindingId);
+              if (error) { toast.error("Failed to unwire"); return; }
+              setBindingId(null);
+              setSelectedWorkflowId(null);
+              toast.success("Unwired");
+            }}
+          >
+            Unwire
+          </Button>
+        )}
 
         <Button
           size="sm"

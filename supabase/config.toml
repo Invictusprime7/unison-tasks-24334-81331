@@ -139,3 +139,6 @@ verify_jwt = false
 
 [functions.ghl-webhook]
 verify_jwt = false
+
+[functions.ghl-reactions-runner]
+verify_jwt = false

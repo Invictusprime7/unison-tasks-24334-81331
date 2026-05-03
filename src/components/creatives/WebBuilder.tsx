@@ -215,13 +215,39 @@ function findElementBoundsInJSX(
   source: string,
   selector: string
 ): { start: number; end: number } | null {
-  // Parse the selector into segments: "body > section:nth-of-type(2) > div > h1" 
-  // → [{tag: 'section', index: 1}, {tag: 'div', index: 0}, {tag: 'h1', index: 0}]
-  const parts = selector
+  // Parse the selector into segments: "body > section:nth-of-type(2) > div > h1"
+  const allParts = selector
     .split(/\s*>\s*/)
     .map(s => s.trim())
     .filter(s => s && s !== 'body' && s !== 'html');
 
+  if (allParts.length === 0) return null;
+
+  // Try the full path first; if no match, progressively drop leading segments.
+  // The runtime selector often includes outer wrappers (e.g. `div > div > main`)
+  // that don't appear in the TSX source root. By retrying with shorter
+  // suffixes we can still locate the target element when its inner path is
+  // unique within the source.
+  for (let drop = 0; drop < allParts.length; drop++) {
+    const result = findBoundsForParts(source, allParts.slice(drop));
+    if (result) return result;
+  }
+  // Final fallback: try just the leaf segment with index 0 (best-effort)
+  const leaf = allParts[allParts.length - 1];
+  if (leaf) {
+    const stripped = leaf.replace(/:nth-of-type\(\d+\)/, '');
+    if (stripped !== leaf) {
+      const result = findBoundsForParts(source, [stripped]);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
+function findBoundsForParts(
+  source: string,
+  parts: string[]
+): { start: number; end: number } | null {
   if (parts.length === 0) return null;
 
   let searchSource = source;

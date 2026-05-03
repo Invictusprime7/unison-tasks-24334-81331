@@ -84,6 +84,7 @@ import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from 
 import { swapSectionVariant } from '@/utils/sectionSwapper';
 import type { VariantId } from '@/sections/variants/types';
 import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
+import { ElementIntentInspector } from "./web-builder/ElementIntentInspector";
 import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
@@ -1035,6 +1036,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const creatorPlayground = useCreatorPlayground();
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(true);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
   const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | "intent_registry" | "readiness" | "business" | "components" | undefined>(undefined);
   const [playgroundInitialBindingId, setPlaygroundInitialBindingId] = useState<string | undefined>(undefined);
@@ -7028,6 +7030,44 @@ export default function ${componentName}() {
               }}
             />
           </div>
+        )}
+
+        {/* Element Intent Inspector — toggle button + floating panel */}
+        {selectedHTMLElement && viewMode === 'canvas' && builderMode === 'select' && (
+          <>
+            <button
+              onClick={() => setInspectorOpen((v) => !v)}
+              className={cn(
+                "fixed top-20 right-4 z-50 px-3 py-1.5 rounded-md border text-xs font-medium transition-all",
+                inspectorOpen
+                  ? "bg-cyan-500 text-black border-cyan-400 shadow-[0_0_15px_rgba(0,255,255,0.4)]"
+                  : "bg-[#0d0d18] text-cyan-400 border-cyan-500/40 hover:bg-cyan-500/10"
+              )}
+              title="Element Intent Inspector"
+            >
+              ⚡ Intent {inspectorOpen ? '▾' : '▸'}
+            </button>
+            {inspectorOpen && (
+              <div className="fixed top-32 right-4 z-50">
+                <ElementIntentInspector
+                  selection={{
+                    elementKey: selectedHTMLElement.selector || `el:${selectedHTMLElement.tagName}`,
+                    elementLabel: (selectedHTMLElement.textContent || '').slice(0, 40) || selectedHTMLElement.tagName || 'Element',
+                    selector: selectedHTMLElement.selector,
+                    tagName: selectedHTMLElement.tagName,
+                    intent: (selectedHTMLElement.attributes as Record<string, string> | undefined)?.['data-ut-intent'],
+                  }}
+                  businessId={businessId || undefined}
+                  projectId={projectId || undefined}
+                  pagePath={activePagePath}
+                  onClose={() => setInspectorOpen(false)}
+                  onTestIntent={(intent, payload) => {
+                    handleIntent(intent, { ...payload, businessId, projectId });
+                  }}
+                />
+              </div>
+            )}
+          </>
         )}
           </div>
         </ResizablePanel>

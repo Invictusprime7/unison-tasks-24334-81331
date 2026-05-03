@@ -48,6 +48,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { handleIntent } from "@/runtime/intentRouter";
 import { AUTOMATION_INTENTS, ACTION_INTENTS, isAutomationIntent, isActionIntent } from "@/coreIntents";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ElementSelection {
   elementKey: string;
@@ -93,6 +94,9 @@ export function ElementIntentInspector({
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bindingId, setBindingId] = useState<string | null>(null);
+  const [executionLog, setExecutionLog] = useState<Array<{ id: string; intent: string; result_status: string; created_at: string; error_message: string | null; execution_time_ms: number | null }>>([]);
+  const [ghlEvents, setGhlEvents] = useState<Array<{ id: string; event_type: string; created_at: string; contact_id: string | null }>>([]);
 
   // Fetch available workflows
   useEffect(() => {
@@ -124,18 +128,20 @@ export function ElementIntentInspector({
       try {
         const { data } = await supabase
           .from("site_intent_bindings")
-          .select("workflow_id, intent, enabled")
+          .select("id, workflow_id, intent, enabled")
           .eq("project_id", projectId)
           .eq("page_path", pagePath)
           .eq("element_key", selection.elementKey)
           .maybeSingle();
 
         if (data) {
+          setBindingId(data.id);
           setSelectedWorkflowId(data.workflow_id);
           setIntentOverride(data.intent || "");
           setEnabled(data.enabled);
         } else {
           // Reset for new element
+          setBindingId(null);
           setSelectedWorkflowId(null);
           setIntentOverride(selection.intent || "");
           setEnabled(true);
@@ -149,6 +155,49 @@ export function ElementIntentInspector({
     
     loadBinding();
   }, [selection?.elementKey, projectId, pagePath]);
+
+  // Load recent execution log entries for this binding/intent
+  useEffect(() => {
+    async function loadLog() {
+      if (!businessId) return;
+      const intentForQuery = intentOverride || selection?.intent;
+      if (!intentForQuery && !bindingId) { setExecutionLog([]); return; }
+      try {
+        let q = supabase
+          .from("intent_execution_log")
+          .select("id, intent, result_status, created_at, error_message, execution_time_ms")
+          .eq("business_id", businessId)
+          .order("created_at", { ascending: false })
+          .limit(8);
+        if (bindingId) q = q.eq("binding_id", bindingId);
+        else if (intentForQuery) q = q.eq("intent", intentForQuery);
+        const { data } = await q;
+        setExecutionLog((data || []) as typeof executionLog);
+      } catch (e) {
+        console.error("Error loading execution log:", e);
+      }
+    }
+    loadLog();
+  }, [businessId, bindingId, intentOverride, selection?.intent]);
+
+  // Load latest GHL webhook events for context
+  useEffect(() => {
+    async function loadGhl() {
+      if (!businessId) return;
+      try {
+        const { data } = await supabase
+          .from("ghl_webhook_events")
+          .select("id, event_type, created_at, contact_id")
+          .eq("business_id", businessId)
+          .order("created_at", { ascending: false })
+          .limit(5);
+        setGhlEvents((data || []) as typeof ghlEvents);
+      } catch (e) {
+        console.error("Error loading GHL events:", e);
+      }
+    }
+    loadGhl();
+  }, [businessId, selection?.elementKey]);
 
   if (!selection) return null;
 
@@ -362,10 +411,59 @@ export function ElementIntentInspector({
             </div>
           </div>
         )}
+
+        {/* Recent execution log */}
+        <div>
+          <Label className="text-xs text-gray-400 mb-1 block">Recent Executions</Label>
+          {executionLog.length === 0 ? (
+            <p className="text-[10px] text-gray-500">No executions yet</p>
+          ) : (
+            <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+              {executionLog.map((log) => (
+                <div key={log.id} className="flex items-center justify-between text-[10px] bg-[#0a0a14] px-2 py-1 rounded">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {log.result_status === 'success' ? (
+                      <CheckCircle2 className="h-2.5 w-2.5 text-green-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-2.5 w-2.5 text-red-400 shrink-0" />
+                    )}
+                    <span className="text-gray-300 truncate" title={log.error_message || log.intent}>
+                      {log.intent}
+                    </span>
+                  </div>
+                  <span className="text-gray-500 shrink-0 ml-2">
+                    {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Latest GHL events (workflow context) */}
+        {ghlEvents.length > 0 && (
+          <div>
+            <Label className="text-xs text-gray-400 mb-1 block flex items-center gap-1">
+              <Workflow className="h-3 w-3" /> Latest GHL Events
+            </Label>
+            <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
+              {ghlEvents.map((evt) => (
+                <div key={evt.id} className="flex items-center justify-between text-[10px] bg-purple-500/5 border border-purple-500/20 px-2 py-1 rounded">
+                  <span className="text-purple-300 truncate" title={evt.contact_id || ''}>
+                    {evt.event_type}
+                  </span>
+                  <span className="text-gray-500 shrink-0 ml-2">
+                    {new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Actions */}
-      <div className="p-3 border-t border-cyan-500/20 flex gap-2">
+      <div className="p-3 border-t border-cyan-500/20 flex gap-2 flex-wrap">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -385,6 +483,27 @@ export function ElementIntentInspector({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
+        {bindingId && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+            onClick={async () => {
+              if (!bindingId) return;
+              const { error } = await supabase
+                .from("site_intent_bindings")
+                .delete()
+                .eq("id", bindingId);
+              if (error) { toast.error("Failed to unwire"); return; }
+              setBindingId(null);
+              setSelectedWorkflowId(null);
+              toast.success("Unwired");
+            }}
+          >
+            Unwire
+          </Button>
+        )}
 
         <Button
           size="sm"

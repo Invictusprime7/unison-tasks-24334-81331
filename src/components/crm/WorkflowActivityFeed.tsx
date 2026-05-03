@@ -71,7 +71,18 @@ const FILTER_OPTIONS: { id: Filter; label: string; icon: typeof User }[] = [
 
 export function WorkflowActivityFeed({ businessId, limit = 25 }: WorkflowActivityFeedProps) {
   const [filter, setFilter] = useState<Filter>("all");
-  const { events, loading, refresh } = useGhlWebhookEvents({ businessId, limit });
+  const { events, loading, refresh } = useGhlWebhookEvents({
+    businessId,
+    limit,
+    onEvent: (evt) => {
+      // Fire reactions runner asynchronously; failures are non-fatal.
+      import("@/integrations/supabase/client").then(({ supabase }) => {
+        supabase.functions.invoke("ghl-reactions-runner", {
+          body: { eventId: evt.id },
+        }).catch(() => {});
+      });
+    },
+  });
 
   const visible = useMemo(() => {
     if (filter === "all") return events;

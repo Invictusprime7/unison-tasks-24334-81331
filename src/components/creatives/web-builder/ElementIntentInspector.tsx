@@ -128,18 +128,20 @@ export function ElementIntentInspector({
       try {
         const { data } = await supabase
           .from("site_intent_bindings")
-          .select("workflow_id, intent, enabled")
+          .select("id, workflow_id, intent, enabled")
           .eq("project_id", projectId)
           .eq("page_path", pagePath)
           .eq("element_key", selection.elementKey)
           .maybeSingle();
 
         if (data) {
+          setBindingId(data.id);
           setSelectedWorkflowId(data.workflow_id);
           setIntentOverride(data.intent || "");
           setEnabled(data.enabled);
         } else {
           // Reset for new element
+          setBindingId(null);
           setSelectedWorkflowId(null);
           setIntentOverride(selection.intent || "");
           setEnabled(true);
@@ -153,6 +155,49 @@ export function ElementIntentInspector({
     
     loadBinding();
   }, [selection?.elementKey, projectId, pagePath]);
+
+  // Load recent execution log entries for this binding/intent
+  useEffect(() => {
+    async function loadLog() {
+      if (!businessId) return;
+      const intentForQuery = intentOverride || selection?.intent;
+      if (!intentForQuery && !bindingId) { setExecutionLog([]); return; }
+      try {
+        let q = supabase
+          .from("intent_execution_log")
+          .select("id, intent, result_status, created_at, error_message, execution_time_ms")
+          .eq("business_id", businessId)
+          .order("created_at", { ascending: false })
+          .limit(8);
+        if (bindingId) q = q.eq("binding_id", bindingId);
+        else if (intentForQuery) q = q.eq("intent", intentForQuery);
+        const { data } = await q;
+        setExecutionLog((data || []) as typeof executionLog);
+      } catch (e) {
+        console.error("Error loading execution log:", e);
+      }
+    }
+    loadLog();
+  }, [businessId, bindingId, intentOverride, selection?.intent]);
+
+  // Load latest GHL webhook events for context
+  useEffect(() => {
+    async function loadGhl() {
+      if (!businessId) return;
+      try {
+        const { data } = await supabase
+          .from("ghl_webhook_events")
+          .select("id, event_type, created_at, contact_id")
+          .eq("business_id", businessId)
+          .order("created_at", { ascending: false })
+          .limit(5);
+        setGhlEvents((data || []) as typeof ghlEvents);
+      } catch (e) {
+        console.error("Error loading GHL events:", e);
+      }
+    }
+    loadGhl();
+  }, [businessId, selection?.elementKey]);
 
   if (!selection) return null;
 

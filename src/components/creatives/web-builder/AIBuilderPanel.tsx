@@ -71,6 +71,8 @@ import {
 } from '@/services/aiHistoryStore';
 import { parseLayoutIntent } from '@/utils/layoutIntentEngine';
 import { executeLayoutIntent } from '@/utils/layoutIntentExecutor';
+import { parseGhlWireIntent } from '@/utils/ghlWireIntent';
+import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
 
 // ============================================================================

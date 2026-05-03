@@ -80,14 +80,14 @@ export function GhlReactionsManager({ businessId }: { businessId?: string | null
       draft.action_type === 'update_lead' ? { stage: draft.action_value || 'qualified' } :
       { title: draft.action_value || `GHL ${draft.event_type}` };
 
-    const { error } = await supabase.from('ghl_event_reactions').insert({
+    const { error } = await supabase.from('ghl_event_reactions').insert([{
       business_id: businessId,
       name: draft.name,
       event_type: draft.event_type,
       stage_filter: draft.stage_filter || null,
       action_type: draft.action_type,
-      action_config,
-    });
+      action_config: action_config as never,
+    }]);
     if (error) toast.error(error.message);
     else {
       toast.success('Rule created');

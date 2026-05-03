@@ -94,6 +94,9 @@ export function ElementIntentInspector({
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bindingId, setBindingId] = useState<string | null>(null);
+  const [executionLog, setExecutionLog] = useState<Array<{ id: string; intent: string; result_status: string; created_at: string; error_message: string | null; execution_time_ms: number | null }>>([]);
+  const [ghlEvents, setGhlEvents] = useState<Array<{ id: string; event_type: string; created_at: string; contact_id: string | null }>>([]);
 
   // Fetch available workflows
   useEffect(() => {

@@ -887,6 +887,27 @@ export async function executeIntent(
     // Step 10: Record binding trigger
     if (bindingId) {
       recordBindingTriggered(bindingId).catch(() => {});
+
+      // Step 10b: GHL bridge — fire any GoHighLevel directive declared on the binding.
+      // Non-blocking: failures are logged but never fail the intent.
+      if (result.ok && bindingPayloadSchema) {
+        const directive = extractGhlDirective(
+          bindingPayloadSchema,
+          (ctx.payload ?? {}) as Record<string, unknown>,
+        );
+        if (directive) {
+          executeGhlDirective(directive)
+            .then((r) => {
+              if (r.ok) {
+                console.log(`[IntentExecutor] GHL ${r.action} fired for binding ${bindingId}`);
+                workflowsTriggered.push(`ghl:${r.action}`);
+              } else {
+                console.warn(`[IntentExecutor] GHL ${r.action} failed:`, r.error);
+              }
+            })
+            .catch(() => {});
+        }
+      }
     }
 
     // Step 11: Log execution

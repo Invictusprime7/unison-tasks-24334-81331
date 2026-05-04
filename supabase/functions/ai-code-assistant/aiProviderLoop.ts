@@ -52,8 +52,10 @@ export async function runProviderLoop(opts: {
         lastError = lastError || 'budget exhausted before all models tried';
         break;
       }
-      // Per-model timeout = min(configured, remaining budget - 2s safety)
-      const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, remaining - 2000));
+      // Per-model timeout = min(configured, half of remaining budget) so that a
+      // single slow model can't burn the entire budget and starve fallbacks.
+      const halfBudget = Math.max(15000, Math.floor(remaining / 2));
+      const perModelMs = Math.min(providerPlan.perModelTimeoutMs, halfBudget, Math.max(8000, remaining - 2000));
       try {
         console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
         const controller = new AbortController();

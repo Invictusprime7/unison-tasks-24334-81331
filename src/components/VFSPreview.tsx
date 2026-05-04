@@ -623,12 +623,30 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   const handleOpenInNewTab = useCallback(() => {
     if (backend === 'docker' && dockerService.session?.iframeUrl) {
-      window.open(dockerService.session.iframeUrl, '_blank');
-    } else if (backend === 'local' && LOCAL_PREVIEW_URL) {
-      window.open(LOCAL_PREVIEW_URL, '_blank');
+      window.open(dockerService.session.iframeUrl, '_blank', 'noopener,noreferrer');
+      return;
     }
-    // For Sandpack, we can't easily open in new tab — it's in-browser
-  }, [backend, dockerService.session]);
+    if (backend === 'local' && LOCAL_PREVIEW_URL) {
+      window.open(LOCAL_PREVIEW_URL, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    // Sandpack: locate the preview iframe rendered by SandpackPreview and reuse its src
+    try {
+      const root = (iframeRef.current?.closest?.('.sp-wrapper') as HTMLElement | null)
+        || document.querySelector('.sp-wrapper')
+        || document;
+      const spIframe = root.querySelector('iframe.sp-preview-iframe, iframe[title*="Sandpack"], iframe[src*="csb.app"], iframe[src*="codesandbox"]') as HTMLIFrameElement | null;
+      const src = spIframe?.src;
+      if (src) {
+        window.open(src, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      onError?.('Preview is still starting — try again in a moment.');
+    } catch (err) {
+      console.error('[VFSPreview] openInNewTab failed:', err);
+      onError?.('Failed to open preview in new tab.');
+    }
+  }, [backend, dockerService.session, onError]);
 
   // Navigate preview to a hash route via postMessage
   const handleNavigateToRoute = useCallback((route: string) => {
@@ -732,11 +750,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
               </Button>
             )}
             
-            {(backend === 'docker' || backend === 'local') && (
-              <Button size="sm" variant="ghost" onClick={handleOpenInNewTab} className="h-7 w-7 p-0" title="Open in new tab">
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-            )}
+            <Button size="sm" variant="ghost" onClick={handleOpenInNewTab} className="h-7 w-7 p-0" title="Open preview in new tab">
+              <ExternalLink className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       )}

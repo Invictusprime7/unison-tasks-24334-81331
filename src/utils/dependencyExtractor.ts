@@ -221,6 +221,9 @@ export function extractDependencies(files: Record<string, string>): ExtractedDep
   const dependencies: Record<string, string> = {};
   
   for (const pkg of detected) {
+    // Skip build-tooling packages — they break in-browser bundlers
+    if (SANDPACK_EXCLUDED_PACKAGES.has(pkg)) continue;
+
     // Priority: package.json > known versions > 'latest'
     if (packageJsonDeps[pkg]) {
       dependencies[pkg] = packageJsonDeps[pkg];

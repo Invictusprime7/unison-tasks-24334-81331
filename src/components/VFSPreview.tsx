@@ -750,11 +750,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
               </Button>
             )}
             
-            {(backend === 'docker' || backend === 'local') && (
-              <Button size="sm" variant="ghost" onClick={handleOpenInNewTab} className="h-7 w-7 p-0" title="Open in new tab">
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-            )}
+            <Button size="sm" variant="ghost" onClick={handleOpenInNewTab} className="h-7 w-7 p-0" title="Open preview in new tab">
+              <ExternalLink className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       )}

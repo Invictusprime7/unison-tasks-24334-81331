@@ -62,25 +62,26 @@ function applyComplexityUpgrade(
   }
 
   if (complexity === "advanced") {
-    // Advanced: lead with Gemini 3.1 Pro or GPT-5, bump tokens
+    // Advanced: lead with FAST models so we always get a response within budget,
+    // then escalate to Pro tiers as fallback. Previously Pro models were first
+    // and consumed the entire 135s budget on long prompts before fast models ran.
     const advancedTokens = Math.min(baseMaxTokens + 8000, 48000);
     const advancedModels: ModelSpec[] = [
-      m(MODELS.gemini31Pro, advancedTokens),
+      m(MODELS.gemini3Flash, advancedTokens),
+      m(MODELS.gemini25Flash, advancedTokens),
       m(MODELS.gemini25Pro, advancedTokens),
-      m(MODELS.gpt5, advancedTokens),
-      // Keep one fast fallback
-      m(MODELS.gemini3Flash, baseMaxTokens),
+      m(MODELS.gpt5Mini, advancedTokens),
     ];
-    return { models: advancedModels, timeoutBoostMs: 15000 };
+    return { models: advancedModels, timeoutBoostMs: 5000 };
   }
 
-  // Complex: prepend Pro-tier if not already leading
-  const leadsWithPro = models[0]?.id.includes("pro") || models[0]?.id === "openai/gpt-5";
-  if (!leadsWithPro) {
+  // Complex: append Pro-tier as fallback (don't prepend — fast models first)
+  const hasPro = models.some(mm => mm.id.includes("pro"));
+  if (!hasPro) {
     const complexTokens = Math.min(baseMaxTokens + 4000, 40000);
     const upgraded: ModelSpec[] = [
-      m(MODELS.gemini25Pro, complexTokens),
       ...models,
+      m(MODELS.gemini25Pro, complexTokens),
     ];
     return { models: upgraded, timeoutBoostMs: 5000 };
   }

@@ -739,11 +739,22 @@ class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { ha
   }
 }
 
+// Wrap App in HashRouter only when no Router is already present, so that
+// pages using useLocation/Link/useNavigate render in the preview.
+import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';
+const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
+  let inRouter = false;
+  try { inRouter = __useInRouterContext(); } catch { inRouter = false; }
+  return inRouter ? <>{children}</> : <__PreviewHashRouter>{children}</__PreviewHashRouter>;
+};
+
 if (App) {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <PreviewErrorBoundary>
-        <App />
+        <__RouterGuard>
+          <App />
+        </__RouterGuard>
       </PreviewErrorBoundary>
     </React.StrictMode>
   );

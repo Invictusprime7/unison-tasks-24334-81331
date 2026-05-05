@@ -1551,7 +1551,11 @@ export default function App() {
     }, React.createElement('h2', { style: { fontSize: 18, marginBottom: 8 } }, 'No renderable component found'), React.createElement('p', { style: { color: '#888', fontSize: 14 } }, 'The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.'), React.createElement('p', { style: { color: '#aaa', fontSize: 12, marginTop: 12 } }, 'Source: ${targetPath}')));
   }
 
-  return React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry));
+  return React.createElement(
+    HashRouter,
+    null,
+    React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry))
+  );
 }
 `;
 }

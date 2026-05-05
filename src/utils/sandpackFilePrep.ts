@@ -640,9 +640,31 @@ const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
 // component references with a visible placeholder instead of a hard crash.
 const _origCreateElement = React.createElement;
 const _undefinedComponents = new Set<string>();
-(React as any).createElement = function SafeCreateElement(type: any, ...args: any[]) {
+const _badChildLogged = new Set<string>();
+function _sanitizeChild(child: any): any {
+  if (child == null || typeof child === 'string' || typeof child === 'number' || typeof child === 'boolean') return child;
+  if (Array.isArray(child)) return child.map(_sanitizeChild);
+  if (typeof child === 'object') {
+    // Valid React element
+    if ((child as any).$$typeof) return child;
+    // Plain object accidentally rendered as child — unwrap common shapes
+    const keys = Object.keys(child);
+    const sig = keys.sort().join(',');
+    if (!_badChildLogged.has(sig)) {
+      _badChildLogged.add(sig);
+      console.error('[Preview] Non-renderable object child intercepted. Keys:', keys);
+    }
+    if ('children' in child) return _sanitizeChild((child as any).children);
+    if ('text' in child || 'label' in child || 'title' in child) {
+      return String((child as any).text ?? (child as any).label ?? (child as any).title ?? '');
+    }
+    // Last resort: stringify so React doesn't crash
+    try { return JSON.stringify(child); } catch { return ''; }
+  }
+  return child;
+}
+(React as any).createElement = function SafeCreateElement(type: any, props: any, ...children: any[]) {
   if (type === undefined || type === null) {
-    // Collect info for debugging
     const caller = new Error().stack?.split('\\n')[2]?.trim() || 'unknown';
     const id = caller.slice(0, 80);
     if (!_undefinedComponents.has(id)) {
@@ -654,7 +676,16 @@ const _undefinedComponents = new Set<string>();
       title: 'This component resolved to undefined — check imports',
     }, '⚠ missing component');
   }
-  return _origCreateElement(type, ...args);
+  // Sanitize children to prevent "Objects are not valid as a React child" crashes
+  const safeChildren = children.map(_sanitizeChild);
+  // Also sanitize props.children if no explicit children passed
+  if (safeChildren.length === 0 && props && typeof props === 'object' && 'children' in props) {
+    const sanitized = _sanitizeChild((props as any).children);
+    if (sanitized !== (props as any).children) {
+      props = { ...props, children: sanitized };
+    }
+  }
+  return _origCreateElement(type, props, ...safeChildren);
 };
 
 // ── Robust App resolution: handle default + named exports gracefully ──

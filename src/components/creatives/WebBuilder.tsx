@@ -1500,10 +1500,9 @@ export default function App() {
     }
     setEditorCode(res.code);
     setPreviewCode(res.code);
-    setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Moved up');
-  }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement]);
+  }, [previewCode, clearLivePreviewSelection]);
 
   // Handle move down - swap element with its next sibling in TSX source
   const handleFloatingMoveDown = useCallback((selector: string) => {
@@ -1530,10 +1529,9 @@ export default function App() {
     }
     setEditorCode(res.code);
     setPreviewCode(res.code);
-    setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Moved down');
-  }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement]);
+  }, [previewCode, clearLivePreviewSelection]);
 
   // ── Layout-Intent Fast Path bridge for AIBuilderPanel ────────────────────
   // Bundles the deterministic layout-op handlers (selection-aware class edits,

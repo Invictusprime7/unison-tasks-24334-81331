@@ -812,7 +812,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                 externalResources: [
                   'https://cdn.tailwindcss.com',
                 ],
-                bundlerURL: 'https://sandpack-bundler.pages.dev',
                 activeFile: sandpackEntryFile,
                 visibleFiles: [sandpackEntryFile],
                 autorun: true,

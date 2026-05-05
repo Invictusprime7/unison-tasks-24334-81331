@@ -19,26 +19,6 @@ const BUILTIN_MODULES = new Set([
   'module', 'process', 'console', 'timers', 'string_decoder'
 ]);
 
-// Build-tooling packages that must NOT be sent to Sandpack as runtime deps.
-// They reference Node built-ins (path, fs, glob-parent → path) and crash the
-// in-browser bundler. Tailwind is injected via CDN in the preview iframe.
-const SANDPACK_EXCLUDED_PACKAGES = new Set([
-  'tailwindcss',
-  'autoprefixer',
-  'postcss',
-  'vite',
-  '@vitejs/plugin-react',
-  '@vitejs/plugin-react-swc',
-  'typescript',
-  '@types/react',
-  '@types/react-dom',
-  '@types/node',
-  'esbuild',
-  'rollup',
-  'glob-parent',
-  'chokidar',
-]);
-
 // Common dependencies with known stable versions
 const KNOWN_VERSIONS: Record<string, string> = {
   'react': '^18.2.0',
@@ -221,9 +201,6 @@ export function extractDependencies(files: Record<string, string>): ExtractedDep
   const dependencies: Record<string, string> = {};
   
   for (const pkg of detected) {
-    // Skip build-tooling packages — they break in-browser bundlers
-    if (SANDPACK_EXCLUDED_PACKAGES.has(pkg)) continue;
-
     // Priority: package.json > known versions > 'latest'
     if (packageJsonDeps[pkg]) {
       dependencies[pkg] = packageJsonDeps[pkg];

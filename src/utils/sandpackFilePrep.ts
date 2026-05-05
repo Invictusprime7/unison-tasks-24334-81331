@@ -1493,6 +1493,7 @@ function createProxyApp(targetPath: string): string {
   const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
 
   return `import React from 'react';
+import { HashRouter } from 'react-router-dom';
 import * as PreviewEntryModule from '${importPath}';
 
 // Robust component discovery: prefer default export, then find first PascalCase function/class component

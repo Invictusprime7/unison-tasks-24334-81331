@@ -627,6 +627,13 @@ const DEFAULT_INDEX = `import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
 import * as AppModule from './App';
 import './index.css';
+import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';
+const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
+  let inRouter = false;
+  try { inRouter = __useInRouterContext(); } catch { inRouter = false; }
+  return inRouter ? <>{children}</> : <__PreviewHashRouter>{children}</__PreviewHashRouter>;
+};
+
 
 // ── Runtime guard: intercept undefined components BEFORE they crash React ──
 // This prevents "Element type is invalid" errors by replacing undefined/null
@@ -738,15 +745,6 @@ class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { ha
     return this.props.children;
   }
 }
-
-// Wrap App in HashRouter only when no Router is already present, so that
-// pages using useLocation/Link/useNavigate render in the preview.
-import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';
-const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
-  let inRouter = false;
-  try { inRouter = __useInRouterContext(); } catch { inRouter = false; }
-  return inRouter ? <>{children}</> : <__PreviewHashRouter>{children}</__PreviewHashRouter>;
-};
 
 if (App) {
   ReactDOM.createRoot(document.getElementById('root')!).render(

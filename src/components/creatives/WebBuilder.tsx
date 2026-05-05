@@ -1332,21 +1332,33 @@ export default function App() {
   // We *also* keep the templateCustomizer state in sync so the manual customizer
   // panel reflects the latest values and so legacy CSS-injection still applies
   // when the docker/local backend is active.
+  // NOTE: We intentionally do NOT call templateCustomizer.setElementOverride
+  // from the floating-toolbar handlers below. The TSX mutation IS the source
+  // of truth for Sandpack — calling setElementOverride bumps `overrideVersion`,
+  // which fires the customizer override useEffect; on Sandpack (no getIframe)
+  // that effect re-runs `applyOverrides(getOriginalSource())` and overwrites
+  // our just-baked edit with the un-mutated original template. The customizer
+  // remains authoritative for global theme/typography/image-replacement state.
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);
-    templateCustomizer.setElementOverride(selector, { styles });
     const next = mutateJSXStyles(previewCode, selector, styles, findElementBoundsInJSX);
     if (next && next !== previewCode) {
       setPreviewCode(next);
       setEditorCode(next);
+      if (selectedHTMLElement?.selector === selector) {
+        setSelectedHTMLElement({
+          ...selectedHTMLElement,
+          styles: { ...(selectedHTMLElement.styles || {}), ...styles },
+        });
+      }
     } else if (!next) {
       console.warn('[WebBuilder] mutateJSXStyles failed for selector', selector);
+      toast.error('Could not update styles — element uses a dynamic className. Try the AI edit instead.');
     }
-  }, [templateCustomizer, previewCode]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
 
   const handleFloatingTextUpdate = useCallback((selector: string, text: string) => {
     console.log('[WebBuilder] handleFloatingTextUpdate called:', selector, text);
-    templateCustomizer.setElementOverride(selector, { textContent: text });
     const next = mutateJSXText(previewCode, selector, text, findElementBoundsInJSX);
     if (next && next !== previewCode) {
       setPreviewCode(next);
@@ -1357,11 +1369,10 @@ export default function App() {
     } else if (!next) {
       toast.error('Could not update text — element contains nested markup. Try the AI edit instead.');
     }
-  }, [templateCustomizer, previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
 
   const handleFloatingImageReplace = useCallback((selector: string, src: string) => {
     console.log('[WebBuilder] handleFloatingImageReplace called:', selector, src.substring(0, 50));
-    templateCustomizer.setElementOverride(selector, { imageSrc: src });
     const next = mutateJSXImageSrc(previewCode, selector, src, findElementBoundsInJSX);
     if (next && next !== previewCode) {
       setPreviewCode(next);
@@ -1375,28 +1386,27 @@ export default function App() {
     } else if (!next) {
       toast.error('Could not replace image. Try selecting the <img> directly.');
     }
-  }, [templateCustomizer, previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
 
   const handleFloatingAttributeUpdate = useCallback((selector: string, attributes: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingAttributeUpdate called:', selector, attributes);
-    templateCustomizer.setElementOverride(selector, { attributes });
     const next = mutateJSXAttributes(previewCode, selector, attributes, findElementBoundsInJSX);
     if (next && next !== previewCode) {
       setPreviewCode(next);
       setEditorCode(next);
+      if (selectedHTMLElement?.selector === selector) {
+        setSelectedHTMLElement({
+          ...selectedHTMLElement,
+          attributes: {
+            ...(selectedHTMLElement.attributes || {}),
+            ...attributes,
+          },
+        });
+      }
     } else if (!next) {
       toast.error('Could not update attributes for the selected element.');
     }
-    if (selectedHTMLElement?.selector === selector) {
-      setSelectedHTMLElement({
-        ...selectedHTMLElement,
-        attributes: {
-          ...(selectedHTMLElement.attributes || {}),
-          ...attributes,
-        },
-      });
-    }
-  }, [selectedHTMLElement, setSelectedHTMLElement, templateCustomizer, previewCode]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
 
 
   const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {
@@ -1490,10 +1500,9 @@ export default function App() {
     }
     setEditorCode(res.code);
     setPreviewCode(res.code);
-    setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Moved up');
-  }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement]);
+  }, [previewCode, clearLivePreviewSelection]);
 
   // Handle move down - swap element with its next sibling in TSX source
   const handleFloatingMoveDown = useCallback((selector: string) => {
@@ -1520,10 +1529,9 @@ export default function App() {
     }
     setEditorCode(res.code);
     setPreviewCode(res.code);
-    setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Moved down');
-  }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement]);
+  }, [previewCode, clearLivePreviewSelection]);
 
   // ── Layout-Intent Fast Path bridge for AIBuilderPanel ────────────────────
   // Bundles the deterministic layout-op handlers (selection-aware class edits,

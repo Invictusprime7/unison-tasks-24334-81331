@@ -627,6 +627,13 @@ const DEFAULT_INDEX = `import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
 import * as AppModule from './App';
 import './index.css';
+import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';
+const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
+  let inRouter = false;
+  try { inRouter = __useInRouterContext(); } catch { inRouter = false; }
+  return inRouter ? <>{children}</> : <__PreviewHashRouter>{children}</__PreviewHashRouter>;
+};
+
 
 // ── Runtime guard: intercept undefined components BEFORE they crash React ──
 // This prevents "Element type is invalid" errors by replacing undefined/null
@@ -743,7 +750,9 @@ if (App) {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <PreviewErrorBoundary>
-        <App />
+        <__RouterGuard>
+          <App />
+        </__RouterGuard>
       </PreviewErrorBoundary>
     </React.StrictMode>
   );

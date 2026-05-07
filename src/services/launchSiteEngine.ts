@@ -232,7 +232,7 @@ export async function launchSiteEngine(
       return null;
     });
 
-  onProgress({ stage: "extracting", label: "Planning site topology" });
+  onProgress({ stage: "extracting", label: "Planning pages", progress: 0.2 });
   const sitePlan: GeneratedSitePlan = planSiteTopology(resolvedIndustry, brand, {
     primaryIntent: industryProfile?.primaryIntent,
     selectedTemplateId: input.selectedTemplateId,

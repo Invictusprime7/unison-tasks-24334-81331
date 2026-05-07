@@ -1,5 +1,5 @@
 /**
- * Left rail: Setup categories.
+ * Left rail: Setup categories. Renders blocker counts per category.
  */
 
 import {
@@ -22,7 +22,6 @@ const ITEMS: {
   id: PlaygroundV2Category;
   label: string;
   icon: React.ElementType;
-  comingSoon?: boolean;
 }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "cta", label: "CTA", icon: MousePointerClick },
@@ -37,17 +36,30 @@ const ITEMS: {
   { id: "seo", label: "SEO / Tracking", icon: Search },
 ];
 
+export interface CategoryCounts {
+  block: number;
+  warn: number;
+}
+
 interface PlaygroundCategoryRailProps {
   category: PlaygroundV2Category;
   onCategoryChange: (c: PlaygroundV2Category) => void;
+  counts?: Partial<Record<PlaygroundV2Category, CategoryCounts>>;
 }
 
-export function PlaygroundCategoryRail({ category, onCategoryChange }: PlaygroundCategoryRailProps) {
+export function PlaygroundCategoryRail({
+  category,
+  onCategoryChange,
+  counts = {},
+}: PlaygroundCategoryRailProps) {
   return (
     <nav className="flex w-56 flex-col gap-0.5 border-r bg-muted/20 p-2">
       {ITEMS.map((item) => {
         const Icon = item.icon;
         const active = category === item.id;
+        const c = counts[item.id];
+        const blockCount = c?.block ?? 0;
+        const warnCount = c?.warn ?? 0;
         return (
           <button
             key={item.id}
@@ -64,11 +76,18 @@ export function PlaygroundCategoryRail({ category, onCategoryChange }: Playgroun
               <Icon className="h-4 w-4 shrink-0" />
               <span className="truncate">{item.label}</span>
             </span>
-            {item.comingSoon && (
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
-                soon
-              </span>
-            )}
+            <span className="flex items-center gap-1">
+              {blockCount > 0 && (
+                <span className="rounded-full bg-destructive/15 px-1.5 text-[10px] font-medium text-destructive">
+                  {blockCount}
+                </span>
+              )}
+              {warnCount > 0 && blockCount === 0 && (
+                <span className="rounded-full bg-amber-500/15 px-1.5 text-[10px] font-medium text-amber-500">
+                  {warnCount}
+                </span>
+              )}
+            </span>
           </button>
         );
       })}

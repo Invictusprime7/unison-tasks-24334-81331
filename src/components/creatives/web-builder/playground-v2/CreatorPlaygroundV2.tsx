@@ -62,6 +62,28 @@ export function CreatorPlaygroundV2(props: CreatorPlaygroundV2Props) {
 
   const view = derivePageView(config, selectedPageId);
 
+  // Aggregate site readiness + per-category counts (for the active page).
+  const { siteScore, siteBlockers, categoryCounts } = useMemo(() => {
+    const allReadiness = Object.values(config.readiness);
+    const totalScore = allReadiness.reduce((sum, r) => sum + r.score, 0);
+    const avgScore = allReadiness.length
+      ? Math.round(totalScore / allReadiness.length)
+      : 0;
+    const blockers = allReadiness.reduce(
+      (sum, r) => sum + r.items.filter((i) => i.severity === "block").length,
+      0,
+    );
+    const counts: Partial<Record<PlaygroundV2Category, { block: number; warn: number }>> = {};
+    if (view) {
+      for (const item of view.readiness.items) {
+        const slot = (counts[item.category] = counts[item.category] || { block: 0, warn: 0 });
+        if (item.severity === "block") slot.block += 1;
+        else if (item.severity === "warn") slot.warn += 1;
+      }
+    }
+    return { siteScore: avgScore, siteBlockers: blockers, categoryCounts: counts };
+  }, [config.readiness, view]);
+
   const handlePageSelect = (pageId: string) => {
     setSelectedPageId(pageId);
     setMode("page-setup");
@@ -74,6 +96,8 @@ export function CreatorPlaygroundV2(props: CreatorPlaygroundV2Props) {
         businessName={props.businessName}
         page={view?.page ?? null}
         readinessScore={view?.readiness.score ?? 0}
+        siteScore={siteScore}
+        siteBlockers={siteBlockers}
         onPreview={() => view && props.onPreviewPage?.(view.page.pageId)}
         onRunReadiness={() => setCategory("readiness")}
         onPublishChecklist={() => setCategory("readiness")}
@@ -99,11 +123,21 @@ export function CreatorPlaygroundV2(props: CreatorPlaygroundV2Props) {
       <div className="flex flex-1 min-h-0">
         {mode === "page-setup" && (
           <>
-            <PlaygroundCategoryRail category={category} onCategoryChange={setCategory} />
+            <PlaygroundCategoryRail
+              category={category}
+              onCategoryChange={setCategory}
+              counts={categoryCounts}
+            />
             <PlaygroundWorkspace category={category} view={view} config={config} />
             <PlaygroundAssistantRail
               pageTitle={view?.page.title}
               items={view?.readiness.items ?? []}
+              onJumpToBlocker={(item) => {
+                if (item.pageId && item.pageId !== selectedPageId) {
+                  setSelectedPageId(item.pageId);
+                }
+                setCategory(item.category);
+              }}
             />
           </>
         )}

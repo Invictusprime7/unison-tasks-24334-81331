@@ -11,6 +11,8 @@ interface PlaygroundHeaderProps {
   businessName?: string;
   page: BuilderPage | null;
   readinessScore: number;
+  siteScore?: number;
+  siteBlockers?: number;
   onPreview?: () => void;
   onRunReadiness?: () => void;
   onPublishChecklist?: () => void;
@@ -26,6 +28,8 @@ export function PlaygroundHeader({
   businessName,
   page,
   readinessScore,
+  siteScore,
+  siteBlockers,
   onPreview,
   onRunReadiness,
   onPublishChecklist,
@@ -54,9 +58,20 @@ export function PlaygroundHeader({
       </div>
 
       <div className="flex items-center gap-2">
+        {typeof siteScore === "number" && (
+          <Badge variant={scoreVariant(siteScore)} className="gap-1" title="Whole-site readiness">
+            <ListChecks className="h-3 w-3" />
+            Site {siteScore}%
+            {typeof siteBlockers === "number" && siteBlockers > 0 && (
+              <span className="ml-1 rounded bg-background/20 px-1 text-[10px]">
+                {siteBlockers} blocking
+              </span>
+            )}
+          </Badge>
+        )}
         <Badge variant={scoreVariant(readinessScore)} className="gap-1">
           <ListChecks className="h-3 w-3" />
-          Readiness {readinessScore}%
+          Page {readinessScore}%
         </Badge>
         <Button variant="outline" size="sm" onClick={onPreview}>
           <Eye className="mr-1.5 h-3.5 w-3.5" />

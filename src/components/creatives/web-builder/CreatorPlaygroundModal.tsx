@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
+import { CreatorPlaygroundV2 } from "./playground-v2";
 import { useSetupWizard, type SetupStepId } from "@/hooks/useSetupWizard";
 import type { UseCreatorPlaygroundReturn } from "@/hooks/useCreatorPlayground";
 import type { BuilderPageType, FunnelRole, PageRegistry } from "@/types/pageRegistry";

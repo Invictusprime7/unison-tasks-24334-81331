@@ -63,7 +63,7 @@ import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
-import { extractLauncherPayload } from "@/utils/launcherPayload";
+// extractLauncherPayload removed — wizard launch is deterministic-only (no AI).
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================

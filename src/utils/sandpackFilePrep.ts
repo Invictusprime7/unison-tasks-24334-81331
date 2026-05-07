@@ -733,7 +733,7 @@ try {
         props = { ...props, children: sanitized };
       }
     }
-    return orig(type, props, key);
+    return orig(_wrapComponent(type), props, key);
   };
   if (__jsxRT) {
     if (typeof __jsxRT.jsx === 'function') __jsxRT.jsx = __wrapJsx(__jsxRT.jsx);

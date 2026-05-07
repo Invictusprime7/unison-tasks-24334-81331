@@ -669,10 +669,27 @@ function _sanitizeChild(child: any): any {
 // Catches "Objects are not valid as a React child" thrown at mount when a
 // component returns a plain object (e.g. { children: ... }) instead of JSX.
 const _wrappedComponentCache = new WeakMap<any, any>();
+// React Router (and similar libs) rely on REFERENCE EQUALITY of child.type
+// (e.g. <Routes> validates each child is the literal `Route` export).
+// Wrapping these would break that check with errors like:
+//   "[_SafeFC] is not a <Route> component"
+// Skip wrapping for known router/library components AND for anything whose
+// displayName/name starts with an uppercase letter and is in our skip list.
+const _SKIP_WRAP_NAMES = new Set([
+  'Route','Routes','Router','BrowserRouter','HashRouter','MemoryRouter',
+  'Outlet','Navigate','Switch','Link','NavLink','RouterProvider',
+  'Suspense','Fragment','Profiler','StrictMode',
+  'AnimatePresence','MotionConfig','LazyMotion','Reorder',
+]);
 function _wrapComponent(type: any): any {
   if (typeof type !== 'function') return type;
   // Skip class components (they have a prototype with isReactComponent)
   if (type.prototype && type.prototype.isReactComponent) return type;
+  // Skip components requiring reference identity (router, framer, etc.)
+  const name = (type as any).displayName || (type as any).name;
+  if (name && _SKIP_WRAP_NAMES.has(name)) return type;
+  // Skip forwardRef / memo / context objects (already non-function or special)
+  if ((type as any).$$typeof) return type;
   const cached = _wrappedComponentCache.get(type);
   if (cached) return cached;
   const Wrapped = function _SafeFC(props: any, ref: any) {

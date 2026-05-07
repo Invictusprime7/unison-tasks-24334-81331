@@ -41,7 +41,7 @@ import {
   generateDesignVariation,
   randomFontPairing,
 } from "@/utils/designVariation";
-import { extractCleanCode, looksLikeCode } from "@/utils/aiCodeCleaner";
+// (aiCodeCleaner imports removed alongside the wizard fast-path enrichment)
 import { type LauncherHandoff } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,

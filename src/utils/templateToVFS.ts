@@ -7,6 +7,7 @@
 
 import { fixJsxVoidElements, fixJsxStyleStrings } from './aiCodeCleaner';
 import { htmlDocToReactComponentWithCSS } from './htmlToJsx';
+import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 
 // ============================================================================
 // Embedded CSS Extraction

@@ -332,7 +332,9 @@ const Index = () => {
       <FooterSection />
 
       {/* System Launcher Wizard — direct entry, no pre-dialog step */}
-      <SystemLauncher open={launcherOpen} onOpenChange={setLauncherOpen} />
+      {SHOW_LEGACY_WIZARD && (
+        <SystemLauncher open={launcherOpen} onOpenChange={setLauncherOpen} />
+      )}
     </div>
   );
 };

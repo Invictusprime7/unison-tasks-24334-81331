@@ -36,6 +36,7 @@ export interface ClassifiedTask {
  */
 export function classifyTask(opts: {
   mode?: string;
+  launchMode?: "wizard" | "builder";
   systemsBuildContext?: unknown;
   currentCode?: string;
   editMode: boolean;
@@ -48,6 +49,7 @@ export function classifyTask(opts: {
 }): ClassifiedTask {
   const {
     mode,
+    launchMode,
     systemsBuildContext,
     currentCode,
     editMode,
@@ -60,12 +62,22 @@ export function classifyTask(opts: {
   } = opts;
 
   // ── Wizard fast path ──────────────────────────────────────────────────
-  const fastTemplateReact =
+  // Explicit launchMode === "wizard" wins: it forces the protected lane even
+  // when currentCode is present (homepage AI launch may seed the AI with a
+  // deterministic App.tsx anchor). Otherwise fall back to legacy auto-detect.
+  const explicitWizard =
+    launchMode === "wizard" &&
     mode === "template-react" &&
     Boolean(systemsBuildContext) &&
-    !currentCode &&
-    !editMode &&
-    !templateAction;
+    !editMode;
+
+  const fastTemplateReact =
+    explicitWizard ||
+    (mode === "template-react" &&
+      Boolean(systemsBuildContext) &&
+      !currentCode &&
+      !editMode &&
+      !templateAction);
 
   if (fastTemplateReact) {
     return {

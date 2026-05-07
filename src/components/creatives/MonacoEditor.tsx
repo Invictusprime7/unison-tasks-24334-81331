@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { sanitizeTsxFile } from '@/utils/tsxSanitizer';
 
 // Enhanced Monaco Editor with React/TypeScript support and AI assistance
 const MonacoEditor: React.FC<React.ComponentProps<typeof Editor>> = (props) => {

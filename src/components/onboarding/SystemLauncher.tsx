@@ -24,6 +24,7 @@ import {
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
+import { resolveThemePreset } from "./industryThemePresetMap";
 
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -742,11 +743,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      // ── Apply selected aesthetic preset → ThemeTokens (HSL + typography) ──
-      if (selectedTheme) {
-        const themedTokens = themePresetToThemeTokens(selectedTheme);
-        composition = { ...composition, theme: themedTokens };
-      }
+      // ── Resolve canonical aesthetic preset and apply to composition.theme ──
+      // SiteBundle's composition.theme is the single source of truth for HSL +
+      // typography tokens. We ALWAYS resolve to a real ThemePreset (explicit
+      // user selection > industry mapping) so the wizard never falls through
+      // to ad-hoc default CSS.
+      const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
+      const themedTokens = themePresetToThemeTokens(resolvedPreset);
+      composition = { ...composition, theme: themedTokens };
 
       // Personalize the brand label across navbar/footer/cta sections
       const brand = businessName.trim();
@@ -790,7 +794,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           mode: 'template-react' as const,
           source: resolvedIndustry,
           templateName: selectedTemplate?.label || system.name,
-          aesthetic: selectedTheme?.id,
+          aesthetic: resolvedPreset.id,
           systemsBuildContext: {
             version: '1.0',
             identity: {
@@ -801,22 +805,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             brand: {
               business_name: brand,
               tagline: blueprint.brand.tagline,
-              tone: selectedTheme?.styleDirective || blueprint.brand.tone,
-              palette: selectedTheme
-                ? {
-                    primary: selectedTheme.palette.accent,
-                    secondary: selectedTheme.palette.accent2 || selectedTheme.palette.accent,
-                    accent: selectedTheme.palette.accent2 || selectedTheme.palette.accent,
-                    background: selectedTheme.palette.bg,
-                    foreground: selectedTheme.palette.fg,
-                  }
-                : undefined,
-              typography: selectedTheme
-                ? {
-                    heading: selectedTheme.typography.headingFont,
-                    body: selectedTheme.typography.bodyFont,
-                  }
-                : undefined,
+              tone: resolvedPreset.styleDirective,
+              palette: {
+                primary: resolvedPreset.palette.accent,
+                secondary: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+                accent: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+                background: resolvedPreset.palette.bg,
+                foreground: resolvedPreset.palette.fg,
+              },
+              typography: {
+                heading: resolvedPreset.typography.headingFont,
+                body: resolvedPreset.typography.bodyFont,
+              },
             },
             intents: canonicalIntents.map((i) => ({ intent: i })),
             template_sections: aiSections,
@@ -825,7 +825,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           messages: [
             {
               role: 'user' as const,
-              content: `Generate a premium, industry-aware single-page React site for "${brand}" — a ${resolvedIndustry} business. Primary goal: ${primaryGoal || 'collect_leads'}. Aesthetic: ${selectedTheme?.label || 'modern'} (${selectedTheme?.styleDirective || ''}). Sections: ${(aiSections || []).join(' → ')}. Wire all CTAs with data-ut-intent attributes.`,
+              content: `Generate a premium, industry-aware single-page React site for "${brand}" — a ${resolvedIndustry} business. Primary goal: ${primaryGoal || 'collect_leads'}. Aesthetic: ${resolvedPreset.label} (${resolvedPreset.styleDirective}). Sections: ${(aiSections || []).join(' → ')}. Wire all CTAs with data-ut-intent attributes.`,
             },
           ],
         };
@@ -898,7 +898,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         templateCategory: generationCategory,
         businessName: brand,
         industry: generationCategory,
-        aesthetic: selectedTheme?.id,
+        aesthetic: resolvedPreset.id,
         backendRequired: false,
         wizardSelections,
       });
@@ -914,7 +914,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       const navState = {
         templateName: `${brand} Site`,
-        aesthetic: selectedTheme?.id,
+        aesthetic: resolvedPreset.id,
         templateCategory: generationCategory,
         systemType: selectedSystem,
         systemName: system.name,
@@ -937,7 +937,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         templateCategory: generationCategory as any,
         blueprint: blueprint as any,
         vfsFiles: wiredVfsFiles,
-        aesthetic: selectedTheme?.id,
+        aesthetic: resolvedPreset.id,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         intentRuntime: true,

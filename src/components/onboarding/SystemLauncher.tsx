@@ -23,6 +23,7 @@ import {
   type LayoutCategory,
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
+import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -645,9 +646,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
 
-      // ── Step 1b: Provision backend (business, membership, intent bindings, demo data) ──
-      // Maps selectedSystem (BusinessSystemType) to install-system's SystemType
-      const installSystemType = selectedSystem as string; // both use same keys: booking, store, agency, portfolio, content, saas
+      // ── Provision backend in background (non-blocking) ──
+      const installSystemType = selectedSystem as string;
       const installPromise = supabase.functions.invoke('install-system', {
         body: {
           systemType: installSystemType,
@@ -658,47 +658,22 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
       }).then(({ data, error }) => {
         if (error) {
-          const context = (error as { context?: Response }).context;
-          if (context) {
-            context.clone().text().then((body) => {
-              console.warn('[SystemLauncher] install-system failed (non-fatal):', {
-                message: error.message,
-                status: context.status,
-                body,
-              });
-            }).catch(() => {
-              console.warn('[SystemLauncher] install-system failed (non-fatal):', {
-                message: error.message,
-                status: context.status,
-              });
-            });
-          } else {
-            console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
-          }
+          console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
           return null;
         }
-        const warnings: string[] = Array.isArray(data?.data?.warnings) ? data.data.warnings : [];
-        if (warnings.length > 0) {
-          console.warn('[SystemLauncher] Backend provisioned with warnings:', warnings);
-        } else {
-          console.log('[SystemLauncher] Backend provisioned:', data);
-        }
         return data?.data?.businessId as string | null;
-      }).catch(err => {
+      }).catch((err) => {
         console.warn('[SystemLauncher] install-system error (non-fatal):', err);
         return null;
       });
 
-      // ── Step 2: Generate site topology BEFORE file generation ──
-      // Pass selectedTemplate.id so the VFS scaffolder uses this template
-      // composition for every page (home + sub-pages) — chip is the layout authority.
+      // ── Plan topology (drives multi-page scaffolding) ──
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: selectedTemplate?.id,
       });
-      console.log(`[SystemLauncher] Site topology planned: ${sitePlan.pages.length} pages, ${sitePlan.redirects.length} redirects, template=${selectedTemplate?.id ?? 'industry-fallback'}`);
 
-      // ── Step 3: Run Canonical Pipeline (single enforced pathway) ──
+      // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
       const wizardSelections: WizardSelections = {
         businessName: businessName.trim(),
@@ -713,10 +688,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         themeId: selectedTheme?.id,
       };
 
-      // Execute the canonical pipeline — single source of truth
       const pipelineResult = executeCanonicalPipeline(wizardSelections);
-      const { playground: materializedPlayground, compileResult: compiledPlayground, siteBundleSnapshot, runtimeManifest: pipelineManifest } = pipelineResult;
-      const bindingGuide = buildWizardBindingGuide(siteBundleSnapshot);
+      const {
+        playground: materializedPlayground,
+        compileResult: compiledPlayground,
+        siteBundleSnapshot,
+        runtimeManifest: pipelineManifest,
+      } = pipelineResult;
 
       if (pipelineResult.warnings.length > 0) {
         console.warn('[SystemLauncher] Pipeline warnings:', pipelineResult.warnings);
@@ -724,7 +702,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       if (pipelineResult.errors.length > 0) {
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
       }
-      console.log(`[SystemLauncher] Canonical pipeline complete: ${Object.keys(materializedPlayground.bindings).length} bindings, ${Object.keys(materializedPlayground.calendars).length} calendars, ${Object.keys(materializedPlayground.popups).length} popups`);
 
       const blueprint = {
         version: "1.0",
@@ -751,96 +728,76 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         template_intents: compositionMeta?.intents,
       };
 
-      const themeInstruction = selectedTheme
-        ? `\n\n🎨 VISUAL AESTHETIC: ${selectedTheme.label}\n${selectedTheme.styleDirective}\nPalette: bg=${selectedTheme.palette.bg}, fg=${selectedTheme.palette.fg}, accent=${selectedTheme.palette.accent}${selectedTheme.palette.accent2 ? `, accent2=${selectedTheme.palette.accent2}` : ""}\nTypography: heading=${selectedTheme.typography.headingFont}, body=${selectedTheme.typography.bodyFont}, weight=${selectedTheme.typography.headingWeight}\n`
-        : "";
-      const customInstruction = customPrompt.trim()
-        ? `\n\nADDITIONAL INSTRUCTIONS: ${clampPromptText(customPrompt.trim(), CUSTOM_INSTRUCTION_CHAR_LIMIT)}\n`
-        : "";
+      // ── Resolve composition deterministically from Section Registry ──
+      let composition =
+        (selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null) ||
+        getCompositionsBySystemType(selectedSystem)[0] ||
+        null;
 
-      const contentContext = clampPromptText(
-        getCompositionContentContext(generationCategory) || "",
-        INDUSTRY_CONTEXT_CHAR_LIMIT
-      );
-      const industryContextBlock = contentContext
-        ? `\n\n📋 INDUSTRY CONTENT CONTEXT:\n${contentContext}\n`
-        : "";
+      if (!composition) {
+        toast.error(
+          `No template composition available for ${system.name}. Please pick a template.`,
+        );
+        return;
+      }
 
-      const templateGuidance = buildTemplateGuidance(selectedTemplate);
-      const templateContext = templateGuidance
-        ? `\n\n--- TEMPLATE GUIDANCE ---\n${templateGuidance}\n`
-        : "";
+      // ── Apply selected aesthetic preset → ThemeTokens (HSL + typography) ──
+      if (selectedTheme) {
+        const themedTokens = themePresetToThemeTokens(selectedTheme);
+        composition = { ...composition, theme: themedTokens };
+      }
 
-      const userPrompt = clampPromptText(
-        `Create a premium ${resolvedIndustry} website for "${businessName.trim()}".${templateContext}${industryContextBlock}${themeInstruction}${customInstruction}${bindingGuide ? `\n\n${bindingGuide}\n` : ''}`,
-        AI_MESSAGE_CHAR_LIMIT
-      );
+      // Personalize the brand label across navbar/footer/cta sections
+      const brand = businessName.trim();
+      composition = {
+        ...composition,
+        sections: composition.sections.map((sec) => {
+          if (sec.type === 'navbar' || sec.type === 'footer') {
+            return { ...sec, props: { ...(sec.props as any), brand } } as typeof sec;
+          }
+          return sec;
+        }),
+      };
 
-      toast("Generating your site…", { description: "This takes ~15 seconds" });
+      const compositionCode = compositionToReactCode(composition);
 
-      // NOTE: We intentionally do NOT send compositionCode as currentCode here.
-      // Sending it disables the fast-path in the edge function and causes timeouts.
-      // The blueprint + template guidance in the user prompt provide enough context.
-      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
-        body: {
-          messages: [{ role: "user", content: userPrompt }],
-          mode: "template-react",
-          variationSeed: `v${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-          templateName: businessName.trim() || system.name,
-          aesthetic: selectedTheme?.id || "modern professional",
-          source: resolvedIndustry,
-          savePattern: false,
-          systemsBuildContext: blueprint,
-          systemType: selectedSystem,
-        },
+      const generatedFiles: Record<string, string> = {
+        '/src/App.tsx': compositionCode,
+      };
+
+      toast("Composing your site…", { description: "Applying theme & layout" });
+
+      const provisionedBusinessId = await installPromise;
+
+      const launchArtifacts = buildCanonicalLaunchArtifacts({
+        generatedFiles,
+        preferredEntryPoint: '/src/App.tsx',
+        siteBundleSnapshot,
+        compiledPlayground,
+        canonicalPlayground: materializedPlayground,
+        businessId: provisionedBusinessId || undefined,
+        systemType: selectedSystem,
+        systemName: system.name,
+        templateName: `${brand} Site`,
+        templateCategory: generationCategory,
+        businessName: brand,
+        industry: generationCategory,
+        aesthetic: selectedTheme?.id,
+        backendRequired: false,
+        wizardSelections,
       });
 
-      if (error) {
-        if (error.message?.includes("429")) {
-          toast.error("Rate limit exceeded. Please try again shortly.");
-          return;
-        }
-        if (error.message?.includes("402")) {
-          toast.error("Credits required. Please add credits to continue.");
-          return;
-        }
-        throw error;
-      }
+      const wiredVfsFiles = launchArtifacts.files;
+      const runtimeManifest = launchArtifacts.runtimeManifest;
 
-      let rawContent = (data?.content || data?.code || "")
-        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-        .trim()
-        .replace(/^```json?\s*\n?/i, "")
-        .replace(/\n?```\s*$/i, "")
-        .trim();
-
-      // Strip leading non-JSON prose before the opening brace (AI sometimes prepends text)
-      if (!rawContent.startsWith('{') && rawContent.includes('{"files"')) {
-        rawContent = rawContent.slice(rawContent.indexOf('{"files"'));
-      }
-
-      const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
-
-      let vfsFiles: Record<string, string> | null = null;
-      let parsedEntryPoint: string | undefined;
-      let parsedSiteBundle: LauncherHandoff["siteBundle"] | undefined;
-      const structuredPayload = extractLauncherPayload(rawContent);
-      if (structuredPayload) {
-        parsedEntryPoint = structuredPayload.entryPoint;
-        if (structuredPayload.siteBundle && typeof structuredPayload.siteBundle === "object") {
-          parsedSiteBundle = structuredPayload.siteBundle as LauncherHandoff["siteBundle"];
-        }
-        vfsFiles = structuredPayload.files;
-      }
-
-      // ── Await backend provisioning (runs in parallel with AI generation) ──
-      const provisionedBusinessId = await installPromise;
-      if (provisionedBusinessId) {
-        console.log('[SystemLauncher] Using provisioned businessId:', provisionedBusinessId);
+      if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
+        console.log(
+          `[SystemLauncher] Applied ${launchArtifacts.bindingApplication?.appliedBindings} wizard bindings to deterministic VFS`,
+        );
       }
 
       const navState = {
-        templateName: `${businessName.trim()} Site`,
+        templateName: `${brand} Site`,
         aesthetic: selectedTheme?.id,
         templateCategory: generationCategory,
         systemType: selectedSystem,
@@ -849,224 +806,49 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         startInPreview: true,
         sitePlan,
         businessId: provisionedBusinessId || undefined,
-        // Canonical pipeline output — single source of truth
         materializedPlayground,
         compiledPlayground,
-        siteBundleSnapshot,
+        siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
         pipelineManifest,
         wizardSelections,
       };
-      
-      // Multiple generation attempted - now prepare launch state
-      if (!rawContent || rawContent.length === 0) {
-        toast.error("AI generation produced no output. Try again.");
-        return;
-      }
 
-      const structuredFiles = vfsFiles ?? structuredPayload?.files ?? null;
+      const launchState = createLaunchState({
+        systemType: selectedSystem as any,
+        systemName: system.name,
+        businessName: brand,
+        templateName: `${brand} Site`,
+        templateCategory: generationCategory as any,
+        blueprint: blueprint as any,
+        vfsFiles: wiredVfsFiles,
+        aesthetic: selectedTheme?.id,
+        preloadedIntents: canonicalIntents,
+        startInPreview: true,
+        intentRuntime: true,
+        businessId: provisionedBusinessId || undefined,
+        runtimeManifest,
+        entryPoint: launchArtifacts.entryPoint,
+        sitePlan,
+        siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+        materializedPlayground,
+        compiledPlayground,
+        pipelineManifest,
+        wizardSelections,
+      });
+      setLaunch(launchState);
 
-      if (structuredFiles) {
-        const launchArtifacts = buildCanonicalLaunchArtifacts({
-          generatedFiles: vfsFiles ?? structuredFiles,
-          preferredEntryPoint: parsedEntryPoint || '/src/App.tsx',
-          siteBundleSnapshot,
-          compiledPlayground,
-          canonicalPlayground: materializedPlayground,
-          businessId: provisionedBusinessId || undefined,
-          systemType: selectedSystem,
-          systemName: system.name,
-          templateName: `${businessName.trim()} Site`,
-          templateCategory: generationCategory,
-          businessName: businessName.trim(),
-          industry: generationCategory,
-          aesthetic: selectedTheme?.id,
-          backendRequired: false,
-          wizardSelections,
-        });
-        const wiredVfsFiles = launchArtifacts.files;
-        const runtimeManifest = launchArtifacts.runtimeManifest;
-        if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
-          console.log(`[SystemLauncher] Applied ${launchArtifacts.bindingApplication?.appliedBindings} wizard bindings to generated VFS`);
-        }
-        if ((launchArtifacts.bindingApplication?.missingBindings.length || 0) > 0) {
-          console.warn('[SystemLauncher] Wizard bindings missing source markers:', launchArtifacts.bindingApplication?.missingBindings);
-        }
-
-        // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
-        const launchState = createLaunchState({
-          systemType: selectedSystem as any,
-          systemName: system.name,
-          businessName: businessName.trim(),
-          templateName: `${businessName.trim()} Site`,
-          templateCategory: generationCategory as any,
-          blueprint: blueprint as any,
+      navigate("/web-builder", {
+        state: {
           vfsFiles: wiredVfsFiles,
-          aesthetic: selectedTheme?.id,
-          preloadedIntents: canonicalIntents,
-          startInPreview: true,
-          intentRuntime: true,
-          businessId: provisionedBusinessId || undefined,
           runtimeManifest,
           entryPoint: launchArtifacts.entryPoint,
-          siteBundle: parsedSiteBundle,
-          sitePlan,
-          siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-          materializedPlayground,
-          compiledPlayground,
-          pipelineManifest,
-          wizardSelections,
-        });
-        setLaunch(launchState);
-
-        navigate("/web-builder", {
-          state: {
-            vfsFiles: wiredVfsFiles,
-            runtimeManifest,
-            entryPoint: launchArtifacts.entryPoint,
-            siteBundle: parsedSiteBundle,
-            ...navState,
-            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-          },
-        });
-      } else if (rawContent.length >= 100 && looksLikeCode(rawContent)) {
-        const cleaned = extractCleanCode(rawContent);
-        if (!cleaned || !looksLikeCode(cleaned)) {
-          toast.error("AI generation produced invalid output. Try again.");
-          return;
-        }
-        
-        const baseCSS = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  --background: 222.2 84% 4.9%;\n  --foreground: 210 40% 98%;\n  --card: 222.2 84% 4.9%;\n  --card-foreground: 210 40% 98%;\n  --primary: 217.2 91.2% 59.8%;\n  --primary-foreground: 222.2 47.4% 11.2%;\n  --secondary: 217.2 32.6% 17.5%;\n  --secondary-foreground: 210 40% 98%;\n  --muted: 217.2 32.6% 17.5%;\n  --muted-foreground: 215 20.2% 65.1%;\n  --accent: 217.2 32.6% 17.5%;\n  --accent-foreground: 210 40% 98%;\n  --border: 217.2 32.6% 17.5%;\n  --radius: 0.75rem;\n}\n\n* { border-color: hsl(var(--border)); }\nbody { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: hsl(var(--background)); color: hsl(var(--foreground)); }\n`;
-        
-        const singleFileVfs = {
-          "/src/App.tsx": cleaned,
-          "/src/main.tsx": `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
-          "/src/index.css": baseCSS,
-        };
-        const launchArtifacts = buildCanonicalLaunchArtifacts({
-          generatedFiles: singleFileVfs,
-          preferredEntryPoint: '/src/App.tsx',
-          siteBundleSnapshot,
-          compiledPlayground,
-          canonicalPlayground: materializedPlayground,
-          businessId: provisionedBusinessId || undefined,
-          systemType: selectedSystem,
-          systemName: system.name,
-          templateName: `${businessName.trim()} Site`,
-          templateCategory: generationCategory,
-          businessName: businessName.trim(),
-          industry: generationCategory,
-          aesthetic: selectedTheme?.id,
-          backendRequired: false,
-          wizardSelections,
-        });
-        const wiredSingleFileVfs = launchArtifacts.files;
-        if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
-          console.log(`[SystemLauncher] Applied ${launchArtifacts.bindingApplication?.appliedBindings} wizard bindings to single-file VFS`);
-        }
-        if ((launchArtifacts.bindingApplication?.missingBindings.length || 0) > 0) {
-          console.warn('[SystemLauncher] Wizard bindings missing source markers:', launchArtifacts.bindingApplication?.missingBindings);
-        }
-        const runtimeManifest = launchArtifacts.runtimeManifest;
-
-        // Persist launch state to context for access by WebBuilder, VFSPreview, and AI panels
-        const launchState = createLaunchState({
-          systemType: selectedSystem as any,
-          systemName: system.name,
-          businessName: businessName.trim(),
-          templateName: `${businessName.trim()} Site`,
-          templateCategory: generationCategory as any,
-          blueprint: blueprint as any,
-          vfsFiles: wiredSingleFileVfs,
-          aesthetic: selectedTheme?.id,
-          preloadedIntents: canonicalIntents,
-          startInPreview: true,
-          intentRuntime: true,
-          businessId: provisionedBusinessId || undefined,
-          runtimeManifest,
-          entryPoint: launchArtifacts.entryPoint,
-          sitePlan,
-          siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-          materializedPlayground,
-          compiledPlayground,
-          pipelineManifest,
-          wizardSelections,
-        });
-        setLaunch(launchState);
-
-        navigate("/web-builder", {
-          state: {
-            vfsFiles: wiredSingleFileVfs,
-            runtimeManifest,
-            entryPoint: launchArtifacts.entryPoint,
-            ...navState,
-            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-          },
-        });
-      } else {
-        // Last resort: if a real composition was selected, use it directly
-        const comp = selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null;
-        if (comp) {
-          const compositionCode = compositionToReactCode(comp);
-          const launchArtifacts = buildCanonicalLaunchArtifacts({
-            generatedFiles: { '/src/App.tsx': compositionCode },
-            preferredEntryPoint: '/src/App.tsx',
-            siteBundleSnapshot,
-            compiledPlayground,
-            canonicalPlayground: materializedPlayground,
-            businessId: provisionedBusinessId || undefined,
-            systemType: selectedSystem,
-            systemName: system.name,
-            templateName: `${businessName.trim()} Site`,
-            templateCategory: generationCategory,
-            businessName: businessName.trim(),
-            industry: generationCategory,
-            aesthetic: selectedTheme?.id,
-            backendRequired: false,
-            wizardSelections,
-          });
-          const wiredCompositionVfs = launchArtifacts.files;
-          const runtimeManifest = launchArtifacts.runtimeManifest;
-          const launchState = createLaunchState({
-            systemType: selectedSystem as any,
-            systemName: system.name,
-            businessName: businessName.trim(),
-            templateName: `${businessName.trim()} Site`,
-            templateCategory: generationCategory as any,
-            blueprint: blueprint as any,
-            vfsFiles: wiredCompositionVfs,
-            aesthetic: selectedTheme?.id,
-            preloadedIntents: canonicalIntents,
-            startInPreview: true,
-            intentRuntime: true,
-            businessId: provisionedBusinessId || undefined,
-            runtimeManifest,
-            entryPoint: launchArtifacts.entryPoint,
-            sitePlan,
-            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-            materializedPlayground,
-            compiledPlayground,
-            pipelineManifest,
-            wizardSelections,
-          });
-          setLaunch(launchState);
-          navigate("/web-builder", {
-            state: {
-              vfsFiles: wiredCompositionVfs,
-              runtimeManifest,
-              entryPoint: launchArtifacts.entryPoint,
-              ...navState,
-              siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-            },
-          });
-        } else {
-          toast.error("AI generation produced no output. Try again.");
-          return;
-        }
-      }
+          ...navState,
+        },
+      });
 
       onOpenChange(false);
       resetState();
-      toast.success("Site generated! Opening builder…");
+      toast.success("Site ready! Opening builder…");
     } catch (e) {
       const msg = getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);

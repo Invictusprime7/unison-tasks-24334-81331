@@ -202,7 +202,6 @@ ${currentCode.length > 30000 ? `\n[Template continues for ${currentCode.length} 
 ` : '';
 
   const premiumCssBlock = buildPremiumCssBlock(variation);
-  const aestheticPolishBlock = buildAestheticPolishBlock();
 
   return `You are an ELITE React fullstack developer producing PREMIUM, PRODUCTION-READY React applications. Your output must rival top-tier applications built with Next.js, Remix, and modern React patterns.
 ${referenceTemplateBlock}
@@ -324,8 +323,6 @@ ${variation.industry.unsplashIds.map(id => `https://images.unsplash.com/${id}?w=
 Use Lucide React icons: \`import { IconName } from "lucide-react";\`
 
 ${premiumCssBlock}
-
-${aestheticPolishBlock}
 
 ## ⚠️ CRITICAL REACT/TSX RULES:
 1. **NO <style> TAGS** — All CSS goes in index.css, referenced via className
@@ -518,70 +515,4 @@ function buildPremiumCssBlock(variation: Variation): string {
 .container-wide { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
 @media (min-width: 768px) { .section-spacing { padding: 7rem 2rem; } }
 \`\`\``;
-}
-
-// ── Aesthetic Polish Block ───────────────────────────────────────────────────
-// Instructs the AI to ACTUALLY USE the utility classes shipped by
-// themePresetToIndexCss.ts (gradients, motion, glass, orbs, duotone, noise).
-
-function buildAestheticPolishBlock(): string {
-  return `## ✨ AESTHETIC POLISH LAYER (MANDATORY USAGE)
-
-The platform ALREADY ships these utility classes in index.css via the wizard's
-themePresetToIndexCss layer. You MUST use them — do not redefine them, just
-apply them as className. Sites without these classes look "AI-generated and flat".
-
-### Backgrounds & Depth (use on Hero + alternating sections)
-- \`bg-gradient-hero\`     — primary→secondary diagonal gradient (use on Hero)
-- \`bg-gradient-subtle\`   — soft tonal gradient (use on About / Features)
-- \`bg-gradient-mesh\`     — radial mesh blobs (use on CTA section)
-- \`noise-overlay\`        — adds film-grain texture via ::after pseudo
-- \`glass\`                — frosted glassmorphism (use on floating cards / nav)
-
-### Typography Accents
-- \`text-gradient\`        — gradient-clipped text (apply to ONE word inside H1)
-- \`shadow-elegant\` / \`shadow-soft\` / \`shadow-glow\` / \`shadow-card\`
-
-### Motion (CSS-only, no framer-motion needed)
-- \`animate-fade-up\`      — slide+fade in from below
-- \`animate-fade-in\`      — opacity fade
-- \`animate-blur-in\`      — blur-out → focus
-- \`animate-float\`        — gentle infinite float (use on orbs / hero image)
-- \`delay-100|200|300|500|700\` — stagger sibling elements
-
-### Decorative Orbs (place absolutely-positioned inside Hero / Features)
-- \`<div className="orb orb-primary animate-float" style={{top:'10%',left:'-10%'}}/>\`
-- \`<div className="orb orb-accent animate-float delay-300" style={{bottom:'0',right:'-5%'}}/>\`
-
-### Image Treatments
-- \`duotone\`              — applies brand-tinted duotone filter to <img>
-- \`hover-lift\`           — lifts on hover (use on cards, image tiles)
-
-### MANDATORY APPLICATION RULES
-1. **Hero section** MUST include:
-   - \`bg-gradient-hero\` OR \`bg-gradient-mesh\` background
-   - At least 1 decorative \`orb\` element with \`animate-float\`
-   - \`noise-overlay\` for texture
-   - Headline with \`animate-fade-up\` + ONE word wrapped in \`text-gradient\`
-   - Subheadline with \`animate-fade-up delay-200\`
-   - CTAs with \`animate-fade-up delay-300\`
-2. **Feature / Service / Pricing cards** MUST include:
-   - \`hover-lift\` + \`shadow-card\`
-   - Optional \`glass\` for premium tiers
-   - Stagger reveal: each card gets \`animate-fade-up delay-{100*index}\`
-3. **Image gallery / portfolio**: apply \`duotone\` on hover OR by default for editorial themes.
-4. **CTA section**: use \`bg-gradient-mesh\` + \`noise-overlay\` + centered headline with \`text-gradient\`.
-5. **Alternate section backgrounds**: even sections plain, odd sections \`bg-gradient-subtle\`, hero/CTA use \`bg-gradient-hero\` / \`bg-gradient-mesh\`.
-
-### Typography Scale (already injected — DO NOT override)
-The wizard injects fluid clamp() H1/H2/H3 sizes. Use semantic <h1>/<h2>/<h3>
-tags directly — do NOT add text-5xl/text-6xl Tailwind classes that override the
-fluid scale. Only add \`text-gradient\` or color utilities.
-
-### Forbidden anti-patterns
-- ❌ All-white card sections with no background variation
-- ❌ Centered hero with no orbs, no gradient, no motion
-- ❌ Same py-20 spacing on every section (vary: py-16, py-24, py-32 for hero)
-- ❌ Plain <img> tags with no hover-lift or duotone treatment
-- ❌ Buttons without transition / hover effect`;
 }

@@ -13,7 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
-import { CreatorPlaygroundV2 } from "./playground-v2";
 import { useSetupWizard, type SetupStepId } from "@/hooks/useSetupWizard";
 import type { UseCreatorPlaygroundReturn } from "@/hooks/useCreatorPlayground";
 import type { BuilderPageType, FunnelRole, PageRegistry } from "@/types/pageRegistry";
@@ -228,7 +227,6 @@ export function CreatorPlaygroundModal({
   );
   const [selectedBindingId, setSelectedBindingId] = useState<string | null>(initialBindingId || null);
   const [businessFocusField, setBusinessFocusField] = useState<PlaygroundSetupField | null>(initialSetupField || null);
-  const [useV2, setUseV2] = useState<boolean>(true);
   const setupWizard = useSetupWizard(businessId);
 
   const playgroundState: PlaygroundState = useMemo(() => ({
@@ -319,32 +317,9 @@ export function CreatorPlaygroundModal({
                 Unsaved Changes
               </Badge>
             )}
-            <button
-              type="button"
-              onClick={() => setUseV2((v) => !v)}
-              className="text-[10px] h-5 px-2 rounded border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-            >
-              {useV2 ? "Legacy view" : "Launch Control (V2)"}
-            </button>
           </div>
         </DialogHeader>
 
-        {useV2 ? (
-          <div className="flex-1 min-h-0 bg-background text-foreground">
-            <CreatorPlaygroundV2
-              businessId={businessId}
-              projectId={null}
-              businessName={playground.creatorData.businessInfo?.businessName}
-              pageRegistry={playground.pageRegistry}
-              creatorData={playground.creatorData}
-              bindings={bindings}
-              popups={popups}
-              calendars={calendars}
-              initialPageId={null}
-              onPageSelect={(pageId) => onPageSelect?.(pageId)}
-            />
-          </div>
-        ) : (
         <div className="flex flex-1 min-h-0">
           <nav className="w-48 flex-shrink-0 border-r border-emerald-500/15 bg-[#0a0a12] py-2">
             {NAV_ITEMS.map(({ id, label, icon: Icon, highlight }) => (
@@ -451,7 +426,6 @@ export function CreatorPlaygroundModal({
             </ScrollArea>
           </div>
         </div>
-        )}
       </DialogContent>
     </Dialog>
   );

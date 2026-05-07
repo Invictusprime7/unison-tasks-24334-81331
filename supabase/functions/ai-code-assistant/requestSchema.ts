@@ -19,11 +19,6 @@ export const AIRequestSchema = z.object({
     .min(1)
     .max(50),
   mode: z.string().max(30).optional(),
-  /**
-   * Explicit lane selector. "wizard" forces the protected wizard_template_react
-   * fast path even when other context (currentCode, etc.) is present.
-   */
-  launchMode: z.enum(["wizard", "builder"]).optional(),
   savePattern: z.boolean().optional(),
   generateImage: z.boolean().optional(),
   imagePlacement: z.string().max(40).optional(),

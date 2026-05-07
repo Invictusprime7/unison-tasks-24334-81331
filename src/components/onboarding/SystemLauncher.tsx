@@ -64,7 +64,6 @@ import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
 import { extractLauncherPayload } from "@/utils/launcherPayload";
-import { launchSiteEngine } from "@/services/launchSiteEngine";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
@@ -635,49 +634,356 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
     setIsLaunching(true);
     try {
-      const resolvedPreset = resolveThemePreset(selectedTheme, getGenerationCategory(system, selectedTemplate));
-      setThemeDebug({
-        resolvedPresetId: resolvedPreset.id,
-        industryCategory: String(getGenerationCategory(system, selectedTemplate)),
-        userExplicit: !!selectedTheme,
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        toast.error("Please sign in to continue");
+        navigate("/auth");
+        return;
+      }
+
+      const generationCategory = getGenerationCategory(system, selectedTemplate);
+      const industryProfile = getIndustryForCategory(generationCategory);
+      const compositionMeta = getCompositionMeta(generationCategory);
+      const canonicalIntents = Array.from(new Set([
+        ...(industryProfile
+          ? getAllowedIntents(industryProfile.defaultCapabilities)
+          : system.intents),
+        ...(compositionMeta?.intents || []),
+      ]));
+
+      const fonts = randomFontPairing();
+      const design = generateDesignVariation();
+      const resolvedIndustry = industryProfile?.industry || generationCategory;
+
+      // ── Provision backend in background (non-blocking) ──
+      const installSystemType = selectedSystem as string;
+      const installPromise = supabase.functions.invoke('install-system', {
+        body: {
+          systemType: installSystemType,
+          businessName: businessName.trim(),
+          templateName: selectedTemplate?.label || system.name,
+          templateCategory: generationCategory,
+          designPreset: selectedTheme?.id || undefined,
+        },
+      }).then(({ data, error }) => {
+        if (error) {
+          console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
+          return null;
+        }
+        return data?.data?.businessId as string | null;
+      }).catch((err) => {
+        console.warn('[SystemLauncher] install-system error (non-fatal):', err);
+        return null;
       });
+
+      // ── Plan topology (drives multi-page scaffolding) ──
+      const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
+        primaryIntent: industryProfile?.primaryIntent,
+        selectedTemplateId: selectedTemplate?.id,
+      });
+
+      // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
+      const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
+      const wizardSelections: WizardSelections = {
+        businessName: businessName.trim(),
+        businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
+        industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
+        primaryGoal: primaryGoal || 'collect_leads',
+        secondaryGoals: customerNeeds as string[],
+        needsBooking: goalNeeds.needsBooking || customerNeeds.includes('book_service'),
+        sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
+        wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
+        templateId: selectedTemplate?.id,
+        themeId: selectedTheme?.id,
+      };
+
+      const pipelineResult = executeCanonicalPipeline(wizardSelections);
+      const {
+        playground: materializedPlayground,
+        compileResult: compiledPlayground,
+        siteBundleSnapshot,
+        runtimeManifest: pipelineManifest,
+      } = pipelineResult;
+
+      if (pipelineResult.warnings.length > 0) {
+        console.warn('[SystemLauncher] Pipeline warnings:', pipelineResult.warnings);
+      }
+      if (pipelineResult.errors.length > 0) {
+        console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
+      }
+
+      // ── Resolve composition deterministically from Section Registry ──
+      // The picked Template card is the structural contract — its sections
+      // (order + types) MUST be honored by the AI. We resolve it FIRST so we
+      // can pass section composition into the AI seed.
+      let composition =
+        (selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null) ||
+        getCompositionsBySystemType(selectedSystem)[0] ||
+        null;
+
+      if (!composition) {
+        toast.error(
+          `No template composition available for ${system.name}. Please pick a template.`,
+        );
+        return;
+      }
+
+      // ── Resolve canonical aesthetic preset (Style card → ThemePreset) ──
+      // Explicit user selection > industry mapping. Never falls through.
+      const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
+      const themedTokens = themePresetToThemeTokens(resolvedPreset);
+      composition = { ...composition, theme: themedTokens };
+
+      const themeTrace = {
+        resolvedPresetId: resolvedPreset.id,
+        industryCategory: String(generationCategory),
+        userExplicit: !!selectedTheme,
+      };
+      setThemeDebug(themeTrace);
+      console.info('[WizardLaunch] Theme resolution', themeTrace);
+
+      // Personalize brand label across navbar/footer sections (deterministic seed)
+      const brand = businessName.trim();
+      composition = {
+        ...composition,
+        sections: composition.sections.map((sec) => {
+          if (sec.type === 'navbar' || sec.type === 'footer') {
+            return { ...sec, props: { ...(sec.props as any), brand } } as typeof sec;
+          }
+          return sec;
+        }),
+      };
+
+      // Themed CSS — LOCKED by Style card; force-applied over any AI output
+      const themedIndexCss = buildThemedIndexCss(resolvedPreset);
+
+      // Deterministic seed App.tsx — used as `currentCode` context to anchor
+      // the AI to the picked template's section structure.
+      const seedAppCode = compositionToReactCode(composition);
+
+      // ── Blueprint enriched with Style card palette + custom instructions ──
+      const blueprint = {
+        version: "1.0",
+        identity: {
+          industry: resolvedIndustry,
+          business_model: system.id,
+          primary_goal: industryProfile
+            ? industryProfile.defaultCapabilities.includes("booking")
+              ? "bookings"
+              : "leads"
+            : "Generate leads and grow the business",
+        },
+        brand: {
+          business_name: brand,
+          tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
+          tone: "professional and friendly",
+          typography: {
+            heading: resolvedPreset.typography.headingFont,
+            body: resolvedPreset.typography.bodyFont,
+          },
+          // Hex palette from the picked Style preset — fast-path prompt
+          // converts these to the HSL --primary/--background CSS vars.
+          palette: {
+            primary: resolvedPreset.palette.accent,
+            secondary: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+            accent: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+            background: resolvedPreset.palette.bg,
+            foreground: resolvedPreset.palette.fg,
+          },
+        },
+        design,
+        intents: canonicalIntents.map((i: string) => ({ intent: i })),
+        // The Template card's section order — passed to the AI as a hard contract
+        template_sections: composition.sections.map((s) => s.type),
+        template_intents: compositionMeta?.intents,
+      };
 
       toast("Generating your site with AI…", {
-        description: `${system.name} • ${selectedTemplate?.label || system.name} • ${resolvedPreset.label}`,
+        description: `${resolvedIndustry} • ${selectedTemplate?.label || system.name} • ${resolvedPreset.label}`,
       });
 
-      const { launchState, navigationState } = await launchSiteEngine({
-        businessName: businessName.trim(),
+      // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
+      const customNote = customPrompt.trim();
+      const aiUserPrompt = [
+        `Generate a complete, production-ready website for "${brand}" — a ${resolvedIndustry} business.`,
+        ``,
+        `BUSINESS INPUTS (from wizard, all binding):`,
+        `1. Industry / System: ${system.name} (${resolvedIndustry})`,
+        `2. Primary Goal: ${primaryGoal || 'collect_leads'}`,
+        `3. Template (LOCKED layout): ${selectedTemplate?.label || system.name}`,
+        `   Required section order — render in this exact sequence: ${composition.sections.map((s) => s.type).join(' → ')}`,
+        `4. Business Name: ${brand}`,
+        `5. Visual Style preset (LOCKED aesthetic): ${resolvedPreset.label} — ${resolvedPreset.styleDirective}`,
+        `   Headings: ${resolvedPreset.typography.headingFont} (${resolvedPreset.typography.headingWeight}). Body: ${resolvedPreset.typography.bodyFont}.`,
+        customNote ? `6. Custom instructions from user (HIGHEST priority for copy/tone): ${customNote}` : `6. Custom instructions: (none)`,
+        ``,
+        `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
+        `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
+        `CONTENT CONTRACT: Copy must be specific to the ${resolvedIndustry} industry and reflect the primary goal "${primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
+        `Wire interactive elements with data-ut-intent attributes from this set: ${canonicalIntents.join(', ')}.`,
+      ].join('\n');
+
+      // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
+      let aiData: Record<string, unknown> | null = null;
+      let aiError: { message?: string } | null = null;
+      const MAX_RETRIES = 2;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 1200 * attempt));
+        }
+        const result = await supabase.functions.invoke('ai-code-assistant', {
+          body: {
+            messages: [{ role: 'user', content: aiUserPrompt }],
+            mode: 'template-react',
+            templateName: selectedTemplate?.label || system.name,
+            aesthetic: resolvedPreset.id,
+            source: resolvedIndustry,
+            systemType: selectedSystem,
+            currentCode: seedAppCode,
+            systemsBuildContext: blueprint,
+          },
+        });
+        aiError = result.error as { message?: string } | null;
+        aiData = result.data as Record<string, unknown> | null;
+        if (!aiError) break;
+        console.warn(`[SystemLauncher] AI attempt ${attempt + 1} failed:`, aiError?.message);
+      }
+
+      if (aiError) {
+        const msg = aiError.message || '';
+        if (msg.includes('429')) {
+          toast.error('AI is rate-limited. Please wait a moment and try again.');
+        } else if (msg.includes('402')) {
+          toast.error('AI credits required. Please add credits to continue.');
+        } else {
+          toast.error(`AI generation failed: ${msg || 'unknown error'}`);
+        }
+        return;
+      }
+
+      const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
+      const structured = extractLauncherPayload(aiContent);
+
+      if (!structured?.files || Object.keys(structured.files).length === 0) {
+        toast.error('AI returned no usable files. Please try again.');
+        console.error('[SystemLauncher] AI payload missing files:', aiContent.slice(0, 300));
+        return;
+      }
+
+      // ── Sanitize AI output (strip prose leaks, fix JSX, validate balance) ──
+      const sanitized = sanitizeGeneratedFiles(structured.files);
+      if (sanitized.invalidFiles.length > 0) {
+        console.warn(
+          "[SystemLauncher] AI returned malformed files; falling back to seed for:",
+          sanitized.invalidFiles,
+        );
+      }
+
+      // ── Merge AI output with LOCKED themed CSS ──
+      // The Style card is authoritative for color + typography. Any
+      // /src/index.css the AI returns is overwritten by the resolved preset.
+      const generatedFiles: Record<string, string> = {
+        ...sanitized.files,
+        '/src/index.css': themedIndexCss,
+      };
+      // If the AI's App.tsx is missing OR was flagged invalid, use the
+      // deterministic seed so we never push a broken module to preview.
+      const aiAppKey = generatedFiles['/src/App.tsx'] ? '/src/App.tsx'
+        : generatedFiles['src/App.tsx'] ? 'src/App.tsx'
+        : null;
+      const aiAppInvalid = aiAppKey
+        ? sanitized.invalidFiles.includes(aiAppKey)
+        : true;
+      if (!aiAppKey || aiAppInvalid) {
+        generatedFiles['/src/App.tsx'] = seedAppCode;
+      }
+
+      const provisionedBusinessId = await installPromise;
+
+      const launchArtifacts = buildCanonicalLaunchArtifacts({
+        generatedFiles,
+        preferredEntryPoint: '/src/App.tsx',
+        siteBundleSnapshot,
+        compiledPlayground,
+        canonicalPlayground: materializedPlayground,
+        businessId: provisionedBusinessId || undefined,
         systemType: selectedSystem,
-        primaryGoal: (primaryGoal || "collect_leads") as any,
-        customerNeeds: customerNeeds as string[],
-        selectedPages: selectedPages as string[],
-        selectedTemplateId: selectedTemplate?.id,
-        selectedThemeId: selectedTheme?.id,
-        customPrompt,
-        industry: selectedTemplate?.industry,
-        source: "wizard",
+        systemName: system.name,
+        templateName: `${brand} Site`,
+        templateCategory: generationCategory,
+        businessName: brand,
+        industry: generationCategory,
+        aesthetic: resolvedPreset.id,
+        backendRequired: false,
+        wizardSelections,
       });
 
+      const wiredVfsFiles = launchArtifacts.files;
+      const runtimeManifest = launchArtifacts.runtimeManifest;
+
+      if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
+        console.log(
+          `[SystemLauncher] Applied ${launchArtifacts.bindingApplication?.appliedBindings} wizard bindings to deterministic VFS`,
+        );
+      }
+
+      const navState = {
+        templateName: `${brand} Site`,
+        aesthetic: resolvedPreset.id,
+        templateCategory: generationCategory,
+        systemType: selectedSystem,
+        systemName: system.name,
+        preloadedIntents: canonicalIntents,
+        startInPreview: true,
+        sitePlan,
+        businessId: provisionedBusinessId || undefined,
+        materializedPlayground,
+        compiledPlayground,
+        siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+        pipelineManifest,
+        wizardSelections,
+      };
+
+      const launchState = createLaunchState({
+        systemType: selectedSystem as any,
+        systemName: system.name,
+        businessName: brand,
+        templateName: `${brand} Site`,
+        templateCategory: generationCategory as any,
+        blueprint: blueprint as any,
+        vfsFiles: wiredVfsFiles,
+        aesthetic: resolvedPreset.id,
+        preloadedIntents: canonicalIntents,
+        startInPreview: true,
+        intentRuntime: true,
+        businessId: provisionedBusinessId || undefined,
+        runtimeManifest,
+        entryPoint: launchArtifacts.entryPoint,
+        sitePlan,
+        siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+        materializedPlayground,
+        compiledPlayground,
+        pipelineManifest,
+        wizardSelections,
+      });
       setLaunch(launchState);
-      navigate("/web-builder", { state: navigationState });
+
+      navigate("/web-builder", {
+        state: {
+          vfsFiles: wiredVfsFiles,
+          runtimeManifest,
+          entryPoint: launchArtifacts.entryPoint,
+          ...navState,
+        },
+      });
+
       onOpenChange(false);
       resetState();
       toast.success("Site ready! Opening builder…");
     } catch (e) {
-      const code = (e as Error & { code?: string })?.code;
-      if (code === "AUTH_REQUIRED") {
-        toast.error("Please sign in to continue");
-        navigate("/auth");
-      } else if (code === "RATE_LIMITED") {
-        toast.error("AI is rate-limited. Please wait a moment and try again.");
-      } else if (code === "PAYMENT_REQUIRED") {
-        toast.error("AI credits required. Please add credits to continue.");
-      } else {
-        const msg = getFunctionErrorMessage(e);
-        console.error("[SystemLauncher] error", e);
-        toast.error(msg);
-      }
+      const msg = getFunctionErrorMessage(e);
+      console.error("[SystemLauncher] error", e);
+      toast.error(msg);
     } finally {
       setIsLaunching(false);
     }

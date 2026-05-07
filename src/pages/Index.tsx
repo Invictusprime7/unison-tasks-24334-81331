@@ -5,10 +5,6 @@ import { AlertCircle, Zap } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/use-toast";
 import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
-import { AIHomeLaunchChat } from "@/components/home/AIHomeLaunchChat";
-
-// Feature flag — wizard modal is hidden behind this; AI chat is the front door.
-const SHOW_LEGACY_WIZARD = (import.meta.env.VITE_SHOW_LEGACY_WIZARD || "") === "1";
 import { 
   NavigationBar,
   HeroSection, 
@@ -146,20 +142,11 @@ const Index = () => {
       navigate('/auth');
       return;
     }
-    if (SHOW_LEGACY_WIZARD) {
-      setLauncherOpen(true);
-    } else {
-      // Default: scroll to AI chat which now owns the launch flow
-      document.getElementById("ai-launch-chat")?.scrollIntoView({ behavior: "smooth" });
-    }
+    setLauncherOpen(true);
   };
 
   const handleStartLauncher = () => {
-    if (SHOW_LEGACY_WIZARD) {
-      setLauncherOpen(true);
-    } else {
-      document.getElementById("ai-launch-chat")?.scrollIntoView({ behavior: "smooth" });
-    }
+    setLauncherOpen(true);
   };
 
   const handleConnectIntegration = async (integrationId: string, apiKey: string) => {
@@ -295,11 +282,6 @@ const Index = () => {
         onAuthRequired={() => navigate("/auth")}
       />
 
-      {/* AI Launch Chat — primary launch surface */}
-      <div id="ai-launch-chat">
-        <AIHomeLaunchChat user={user} onAuthRequired={() => navigate("/auth")} />
-      </div>
-
       {/* Recent Projects Section - Only visible for authenticated users */}
       {user && (
         <RecentProjectsSection
@@ -332,9 +314,7 @@ const Index = () => {
       <FooterSection />
 
       {/* System Launcher Wizard — direct entry, no pre-dialog step */}
-      {SHOW_LEGACY_WIZARD && (
-        <SystemLauncher open={launcherOpen} onOpenChange={setLauncherOpen} />
-      )}
+      <SystemLauncher open={launcherOpen} onOpenChange={setLauncherOpen} />
     </div>
   );
 };

@@ -749,7 +749,7 @@ try {
           props = { ...props, children: sanitized };
         }
       }
-      return origDev(type, props, key, isStatic, source, self);
+      return origDev(_wrapComponent(type), props, key, isStatic, source, self);
     };
   }
 } catch (e) {

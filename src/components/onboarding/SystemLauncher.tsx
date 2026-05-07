@@ -64,6 +64,7 @@ import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
 import { extractLauncherPayload } from "@/utils/launcherPayload";
+import { launchSiteEngine } from "@/services/launchSiteEngine";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================

@@ -766,6 +766,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         '/src/App.tsx': compositionCode,
       };
 
+      // Apply the wizard's selected aesthetic card directly to the global
+      // stylesheet so EVERY scaffolded page (home + multi-page placeholders
+      // + router header) inherits the theme — no AI required.
+      if (selectedTheme) {
+        generatedFiles['/src/index.css'] = buildThemedIndexCss(selectedTheme);
+      }
+
       toast("Composing your site…", { description: "Applying theme & layout" });
 
       const provisionedBusinessId = await installPromise;

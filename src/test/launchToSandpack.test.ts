@@ -258,7 +258,6 @@ describe("launchStateToSandpackFiles", () => {
       aesthetic: "modern",
       backendRequired: false,
       wizardSelections,
-      sitePlan,
     });
 
     const servicesPage = artifacts.files["/src/pages/Services.tsx"] || "";

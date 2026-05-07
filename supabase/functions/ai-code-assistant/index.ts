@@ -52,6 +52,7 @@ serve(async (req: Request) => {
 
     const task = classifyTask({
       mode: parsed.data.mode ?? undefined,
+      launchMode: parsed.data.launchMode ?? undefined,
       systemsBuildContext: parsed.data.systemsBuildContext,
       currentCode: parsed.data.currentCode ?? undefined,
       editMode: parsed.data.editMode ?? false,

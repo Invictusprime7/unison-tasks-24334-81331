@@ -77,39 +77,6 @@ function getIndustryLabels(industry: string): string {
   return `Primary CTAs: ${labels.primary.join(', ')} | Secondary: ${labels.secondary.join(', ')}`;
 }
 
-// ---- Minimal HTML→JSX helpers ----
-
-const JSX_ATTR_MAP: Record<string, string> = {
-  class: 'className', for: 'htmlFor', tabindex: 'tabIndex',
-  colspan: 'colSpan', rowspan: 'rowSpan', readonly: 'readOnly',
-  onclick: 'onClick', onchange: 'onChange', onsubmit: 'onSubmit',
-};
-
-const VOID_ELEMENTS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
-
-function rawHtmlToJsx(html: string): string {
-  let jsx = html;
-  jsx = jsx.replace(/<!--([\s\S]*?)-->/g, '{/* $1 */}');
-  for (const [h, j] of Object.entries(JSX_ATTR_MAP)) {
-    jsx = jsx.replace(new RegExp(`\\b${h}=`, 'g'), `${j}=`);
-  }
-  jsx = jsx.replace(/\bstyle="([^"]*)"/g, (_: string, s: string) => {
-    const pairs = s.split(';').filter(Boolean).map(p => {
-      const ci = p.indexOf(':');
-      if (ci < 0) return null;
-      const prop = p.slice(0, ci).trim().replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
-      const val = p.slice(ci + 1).trim();
-      return `${prop}: ${/^\d+(\.\d+)?$/.test(val) ? val : JSON.stringify(val)}`;
-    }).filter(Boolean);
-    return `style={{ ${pairs.join(', ')} }}`;
-  });
-  for (const ve of VOID_ELEMENTS) {
-    jsx = jsx.replace(new RegExp(`<${ve}(\\b[^>]*?)(?<!/)>`, 'gi'), `<${ve}$1 />`);
-    jsx = jsx.replace(new RegExp(`</${ve}>`, 'gi'), '');
-  }
-  return jsx;
-}
-
 function sanitizeReactFiles(files: Record<string, string>): Record<string, string> {
   const result: Record<string, string> = {};
   const BLOCKED = /(tailwind\.config|postcss\.config|vite\.config|tsconfig|package\.json)/i;
@@ -215,7 +182,7 @@ ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
     }
 
     const aiData = await aiResponse.json();
-    let filesJson = (aiData.content || aiData.code || "")
+    const filesJson = (aiData.content || aiData.code || "")
       .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
       .trim()
       .replace(/^```json?\s*\n?/i, "")

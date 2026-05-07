@@ -246,55 +246,48 @@ export function CloudOrganization({ userId, organizationId }: CloudOrganizationP
   const loadOrganizationData = async () => {
     setLoading(true);
     try {
-      // Mock data - would come from organizations/businesses table
-      const mockOrg: Organization = {
-        id: organizationId || 'org-1',
-        name: 'Acme Corporation',
-        slug: 'acme-corp',
-        logoUrl: null,
-        website: 'https://acme.com',
-        industry: 'Technology',
-        size: '50-100',
-        createdAt: new Date('2024-01-15'),
-        plan: 'team',
-      };
+      const query = supabase
+        .from('organizations')
+        .select('id, name, slug, logo, website, industry, size, project_count, member_count, storage_used, owner_id, created_at')
+        .limit(1);
 
-      const mockUsage: UsageStats = {
-        members: { current: 12, limit: 25 },
-        projects: { current: 45, limit: 100 },
-        storage: { current: 4.2, limit: 10 },
-        apiCalls: { current: 8500, limit: 10000 },
-      };
+      if (organizationId) {
+        query.eq('id', organizationId);
+      } else {
+        query.eq('owner_id', userId);
+      }
 
-      const mockInvoices: Invoice[] = [
-        {
-          id: 'inv-1',
-          date: new Date('2026-02-01'),
-          amount: 99.00,
-          status: 'paid',
-          downloadUrl: '#',
-        },
-        {
-          id: 'inv-2',
-          date: new Date('2026-01-01'),
-          amount: 99.00,
-          status: 'paid',
-          downloadUrl: '#',
-        },
-        {
-          id: 'inv-3',
-          date: new Date('2025-12-01'),
-          amount: 99.00,
-          status: 'paid',
-          downloadUrl: '#',
-        },
-      ];
+      const { data, error } = await query.maybeSingle();
 
-      setOrganization(mockOrg);
-      setUsage(mockUsage);
-      setInvoices(mockInvoices);
-      setEditName(mockOrg.name);
-      setEditWebsite(mockOrg.website || '');
+      if (error) throw error;
+
+      if (data) {
+        const org: Organization = {
+          id: data.id,
+          name: data.name,
+          slug: data.slug,
+          logoUrl: data.logo ?? null,
+          website: data.website ?? null,
+          industry: data.industry ?? null,
+          size: data.size ?? null,
+          createdAt: new Date(data.created_at),
+          plan: 'free',
+        };
+
+        const PLAN_LIMITS = { free: { members: 5, projects: 10, storage: 2 }, pro: { members: 25, projects: 50, storage: 20 }, team: { members: 100, projects: 200, storage: 50 }, enterprise: { members: 1000, projects: 1000, storage: 500 } };
+        const limits = PLAN_LIMITS[org.plan];
+
+        setOrganization(org);
+        setEditName(org.name);
+        setEditWebsite(org.website ?? '');
+        setUsage({
+          members: { current: data.member_count ?? 0, limit: limits.members },
+          projects: { current: data.project_count ?? 0, limit: limits.projects },
+          storage: { current: Math.round((data.storage_used ?? 0) / 1024 / 1024 / 1024 * 10) / 10, limit: limits.storage },
+          apiCalls: { current: 0, limit: 10000 },
+        });
+      }
+      setInvoices([]);
     } catch (error) {
       console.error('Error loading organization:', error);
     } finally {
@@ -307,8 +300,12 @@ export function CloudOrganization({ userId, organizationId }: CloudOrganizationP
 
     setSaving(true);
     try {
-      // Would call update organization API
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const { error } = await supabase
+        .from('organizations')
+        .update({ name: editName, website: editWebsite || null, updated_at: new Date().toISOString() })
+        .eq('id', organization.id);
+
+      if (error) throw error;
 
       setOrganization({
         ...organization,

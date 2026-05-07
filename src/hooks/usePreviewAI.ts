@@ -17,6 +17,50 @@ import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { globalAIBridge } from '@/services/aiExecutionBridge';
 import type { AICommandRequest, AIRuntimeRequest } from '@/types/aiTerminalIntegration';
 
+interface ParsedFileWrite {
+  path: string;
+  content: string;
+}
+
+function encodeUtf8Base64(content: string): string {
+  const bytes = new TextEncoder().encode(content);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function extractFileWritesFromAI(content: string): ParsedFileWrite[] {
+  const writes: ParsedFileWrite[] = [];
+
+  // Format: FILE: /path/to/file followed by fenced code block.
+  const labeledBlockRegex = /FILE:\s*(\/[\w./-]+)\s*\n```[\w-]*\n([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = labeledBlockRegex.exec(content)) !== null) {
+    writes.push({ path: match[1], content: match[2] });
+  }
+
+  // Format: ```tsx /path/to/file
+  // <content>
+  // ```
+  const inlinePathRegex = /```[\w-]*\s+(\/[\w./-]+)\n([\s\S]*?)```/gi;
+  while ((match = inlinePathRegex.exec(content)) !== null) {
+    writes.push({ path: match[1], content: match[2] });
+  }
+
+  // Deduplicate by keeping the last suggested content for each path.
+  const merged = new Map<string, string>();
+  writes.forEach((write) => {
+    merged.set(write.path, write.content);
+  });
+
+  return Array.from(merged.entries()).map(([path, fileContent]) => ({
+    path,
+    content: fileContent,
+  }));
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -195,6 +239,7 @@ export function usePreviewAI(): UsePreviewAIReturn {
         }
       });
       
+      setDiagnostics(diags);
       recordEvent('analysis_complete', { issueCount: diags.length });
       return diags.length > 0 ? diags : null;
     } catch (error) {
@@ -214,23 +259,87 @@ export function usePreviewAI(): UsePreviewAIReturn {
       setIsExecuting(true);
       recordEvent('fix_issues', { issueCount: issues.length });
       
-      // Use AI execution bridge to intelligently fix issues
+      const bridge = getGlobalAITerminalBridge();
       const session = globalAIBridge.createSession();
-      
-      for (const diagnostic of issues) {
-        for (const issue of diagnostic.issues) {
-          if (issue.suggestedFix) {
-            // Apply the fix (would need file write capability)
-            recordEvent('issue_fixed', {
-              file: diagnostic.fileId,
-              issue: issue.message,
-            });
-          }
+      const vfsSnapshot = bridge.getVFSSnapshot();
+      const summarizedIssues = issues
+        .flatMap((diagnostic) =>
+          diagnostic.issues.map((issue) => {
+            const loc = issue.line ? `:${issue.line}${issue.column ? `:${issue.column}` : ''}` : '';
+            return `- ${diagnostic.fileId}${loc} [${issue.type}] ${issue.message}`;
+          })
+        )
+        .join('\n');
+
+      const aiResponse = await globalAIBridge.executeRequest(
+        session.id,
+        [
+          'Analyze and fix these preview issues.',
+          'If code changes are needed, return file updates using one of these formats:',
+          '1) FILE: /src/File.tsx then a fenced code block with full file content',
+          '2) fenced code block with path on the opening line, like ```tsx /src/File.tsx',
+          'You can also return shell-style commands (one per line) using this command set:',
+          'diagnose, deps, tree, find <pattern>, cat <path>, install <pkg>, uninstall <pkg>, writeb64 <path> <base64>.',
+          '',
+          'Issues:',
+          summarizedIssues,
+          '',
+          `VFS files: ${Object.keys(vfsSnapshot).slice(0, 120).join(', ')}`,
+        ].join('\n')
+      );
+
+      const parsedWrites = extractFileWritesFromAI(aiResponse.content);
+      if (parsedWrites.length > 0) {
+        for (const write of parsedWrites) {
+          const payload = encodeUtf8Base64(write.content);
+          const writeResult = await bridge.executeCommand({
+            id: `preview-fix:write:${Date.now()}:${Math.random().toString(36).slice(2, 6)}`,
+            command: `writeb64 ${write.path} ${payload}`,
+            reason: 'Preview AI fix apply file update',
+            structured: false,
+          });
+
+          recordEvent(writeResult.success ? 'fix_file_write_succeeded' : 'fix_file_write_failed', {
+            path: write.path,
+            duration: writeResult.duration,
+            requestId: writeResult.requestId,
+          });
         }
       }
-      
-      recordEvent('all_issues_fixed');
-      return true;
+
+      const candidateCommands = aiResponse.content
+        .split('\n')
+        .map((line) => line.trim())
+        .map((line) => line.replace(/^[-*\d.)\s]+/, ''))
+        .filter((line) => /^(diagnose|deps|tree|find\s+|cat\s+|install\s+|uninstall\s+|writeb64\s+)/i.test(line));
+
+      const commandsToRun = candidateCommands.length > 0
+        ? candidateCommands.slice(0, 3)
+        : ['diagnose'];
+
+      let succeeded = false;
+      for (const command of commandsToRun) {
+        const result = await bridge.executeCommand({
+          id: `preview-fix:${Date.now()}:${Math.random().toString(36).slice(2, 6)}`,
+          command,
+          reason: 'Preview AI fix workflow',
+          structured: false,
+        });
+
+        const commandFailed = !result.success;
+        recordEvent(commandFailed ? 'fix_command_failed' : 'fix_command_succeeded', {
+          command,
+          duration: result.duration,
+          requestId: result.requestId,
+        });
+
+        if (!commandFailed) {
+          succeeded = true;
+        }
+      }
+
+      recordEvent('all_issues_fixed', { succeeded, commandsExecuted: commandsToRun.length });
+      return succeeded;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       recordEvent('fix_error', { error: errorMsg });
@@ -247,7 +356,7 @@ export function usePreviewAI(): UsePreviewAIReturn {
   }, []);
 
   // Search VFS for code patterns
-  const searchCode = useCallback((pattern: string, content: string): Array<{ path: string; matches: string[] }> => {
+  const searchCode = useCallback((pattern: string, _content: string): Array<{ path: string; matches: string[] }> => {
     const bridge = getGlobalAITerminalBridge();
     const snapshot = bridge.getVFSSnapshot();
     const results: Array<{ path: string; matches: string[] }> = [];

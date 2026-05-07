@@ -16,6 +16,31 @@
  * - Deploy & DevOps
  */
 
+import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
+
+function extractModuleImports(code: string): string[] {
+  const imports = new Set<string>();
+  const importRegex = /from\s+['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = importRegex.exec(code)) !== null) {
+    const specifier = match[1] || match[2];
+    if (specifier) imports.add(specifier);
+  }
+  return Array.from(imports);
+}
+
+function toTopLevelPackage(specifier: string): string {
+  if (specifier.startsWith('@')) {
+    const [scope, name] = specifier.split('/');
+    return name ? `${scope}/${name}` : specifier;
+  }
+  return specifier.split('/')[0] || specifier;
+}
+
+function isExternalImport(specifier: string): boolean {
+  return !specifier.startsWith('.') && !specifier.startsWith('/') && !specifier.startsWith('@/');
+}
+
 /**
  * A single AI skill (capability)
  */
@@ -99,8 +124,21 @@ export const SKILL_CODE_ANALYSIS: AISkill = {
         required: ['filePath'],
       },
       execute: async (input) => {
-        // Placeholder: actual implementation would analyze imports
-        return { imports: [], missing: [], unused: [] };
+        const code = typeof input.code === 'string' ? input.code : '';
+        const imports = extractModuleImports(code);
+        const externalImports = imports.filter(isExternalImport);
+        const topLevelImports = Array.from(new Set(externalImports.map(toTopLevelPackage)));
+        const bridge = getGlobalAITerminalBridge();
+        const dependencies = bridge.getCurrentDependencies();
+        const missing = topLevelImports.filter((pkg) => !dependencies[pkg]);
+
+        return {
+          filePath: typeof input.filePath === 'string' ? input.filePath : undefined,
+          imports,
+          externalImports: topLevelImports,
+          missing,
+          unused: [],
+        };
       },
     },
     {
@@ -116,7 +154,20 @@ export const SKILL_CODE_ANALYSIS: AISkill = {
         required: ['imports', 'dependencies'],
       },
       execute: async (input) => {
-        return { missing: [], unused: [] };
+        const imports = Array.isArray(input.imports)
+          ? input.imports.filter((item): item is string => typeof item === 'string')
+          : [];
+        const rawDependencies =
+          input.dependencies && typeof input.dependencies === 'object'
+            ? (input.dependencies as Record<string, unknown>)
+            : {};
+
+        const dependencyNames = Object.keys(rawDependencies);
+        const normalizedImports = Array.from(new Set(imports.filter(isExternalImport).map(toTopLevelPackage)));
+        const missing = normalizedImports.filter((pkg) => !dependencyNames.includes(pkg));
+        const unused = dependencyNames.filter((pkg) => !normalizedImports.includes(pkg));
+
+        return { missing, unused };
       },
     },
   ],
@@ -141,7 +192,27 @@ export const SKILL_VFSTROUBLESHOOTING: AISkill = {
       description: 'Run full VFS diagnostics',
       inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => {
-        return { issues: [], files: [] };
+        const bridge = getGlobalAITerminalBridge();
+        const snapshot = bridge.getVFSSnapshot();
+        const dependencies = bridge.getCurrentDependencies();
+        const filePaths = Object.keys(snapshot);
+
+        const importIssues: string[] = [];
+        for (const [path, content] of Object.entries(snapshot)) {
+          if (!/\.(ts|tsx|js|jsx)$/.test(path)) continue;
+          const imports = extractModuleImports(content).filter(isExternalImport).map(toTopLevelPackage);
+          for (const pkg of imports) {
+            if (!dependencies[pkg]) {
+              importIssues.push(`${path}: missing dependency ${pkg}`);
+            }
+          }
+        }
+
+        return {
+          issues: importIssues,
+          files: filePaths,
+          dependencyCount: Object.keys(dependencies).length,
+        };
       },
     },
   ],
@@ -170,8 +241,24 @@ export const SKILL_TESTING: AISkill = {
         },
         required: ['command'],
       },
-      execute: async () => {
-        return { passed: 0, failed: 0, duration: 0 };
+      execute: async (input) => {
+        const bridge = getGlobalAITerminalBridge();
+        const command = typeof input.command === 'string'
+          ? String(input.command)
+          : 'npm test';
+        const result = await bridge.executeRuntime({
+          id: `skill-test-${Date.now()}`,
+          command,
+        });
+
+        return {
+          passed: result.success ? 1 : 0,
+          failed: result.success ? 0 : 1,
+          duration: result.duration,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        };
       },
     },
   ],
@@ -189,6 +276,13 @@ export class AISkillRegistry implements SkillSet {
     this.registerSkill(SKILL_CODE_ANALYSIS);
     this.registerSkill(SKILL_VFSTROUBLESHOOTING);
     this.registerSkill(SKILL_TESTING);
+
+    // Enable default skills immediately for runtime bridge sessions.
+    this.skills.forEach((skill) => {
+      if (skill.enabled) {
+        this.loaded.add(skill.id);
+      }
+    });
   }
 
   registerSkill(skill: AISkill): void {

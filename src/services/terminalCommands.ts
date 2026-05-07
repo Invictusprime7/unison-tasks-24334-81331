@@ -138,6 +138,8 @@ function cmdHelp(): CommandResult {
       mkLine('output', '│  ls [path]              List files at path'),
       mkLine('output', '│  tree                   Show full file tree'),
       mkLine('output', '│  cat <file>             Show file contents'),
+      mkLine('output', '│  write <path> <text>    Write raw text content to file'),
+      mkLine('output', '│  writeb64 <path> <b64>  Write base64-decoded content to file'),
       mkLine('output', '│  find <pattern>         Search files by name'),
       mkLine('output', '│  diagnose               Run VFS diagnostics'),
       mkLine('output', '│  whoami                 Show business system type'),
@@ -146,6 +148,64 @@ function cmdHelp(): CommandResult {
       mkLine('system', '└───────────────────────────────────────────────────────'),
     ],
   };
+}
+
+function normalizeWritablePath(rawPath: string): string | null {
+  if (!rawPath || /\s/.test(rawPath)) return null;
+  const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+
+  // Block path traversal and suspicious segments.
+  if (normalized.includes('..') || normalized.includes('\\')) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function cmdWrite(args: string[], ctx: CommandContext): CommandResult {
+  if (args.length < 2) {
+    return { lines: [mkLine('error', 'Usage: write <filepath> <content>')] };
+  }
+
+  const normalizedPath = normalizeWritablePath(args[0]);
+  if (!normalizedPath) {
+    return { lines: [mkLine('error', `Invalid filepath: ${args[0]}`)] };
+  }
+
+  const content = args.slice(1).join(' ');
+  ctx.onWriteFile?.(normalizedPath, content);
+
+  return {
+    lines: [
+      mkLine('success', `✓ Wrote ${content.length} bytes to ${normalizedPath}`),
+    ],
+    mutated: true,
+  };
+}
+
+function cmdWriteB64(args: string[], ctx: CommandContext): CommandResult {
+  if (args.length < 2) {
+    return { lines: [mkLine('error', 'Usage: writeb64 <filepath> <base64_content>')] };
+  }
+
+  const normalizedPath = normalizeWritablePath(args[0]);
+  if (!normalizedPath) {
+    return { lines: [mkLine('error', `Invalid filepath: ${args[0]}`)] };
+  }
+
+  const payload = args.slice(1).join('');
+  try {
+    const content = decodeURIComponent(escape(atob(payload)));
+    ctx.onWriteFile?.(normalizedPath, content);
+    return {
+      lines: [
+        mkLine('success', `✓ Wrote ${content.length} bytes to ${normalizedPath} (base64)`),
+      ],
+      mutated: true,
+    };
+  } catch {
+    return { lines: [mkLine('error', 'Invalid base64 payload for writeb64')] };
+  }
 }
 
 function cmdInstall(args: string[], ctx: CommandContext): CommandResult {
@@ -510,6 +570,11 @@ export function processCommand(input: string, ctx: CommandContext): CommandResul
     case 'type':
     case 'show':
       return cmdCat(args, ctx);
+    case 'write':
+      return cmdWrite(args, ctx);
+    case 'writeb64':
+    case 'apply':
+      return cmdWriteB64(args, ctx);
     case 'find':
     case 'search':
     case 'grep':

@@ -247,6 +247,90 @@ export function loadAIHistory(projectId: string | null | undefined): AIHistoryRe
   return readLocal(projectId);
 }
 
+/**
+ * Hydrate local AI history from Supabase mirror for cross-device continuity.
+ * Keeps local snapshots (which include before/after blobs) and only merges
+ * message history from remote metadata.aiHistory.
+ */
+export async function hydrateAIHistoryFromSupabase(
+  projectId: string | null | undefined,
+): Promise<AIHistoryRecord> {
+  const local = readLocal(projectId);
+  if (!projectId) {
+    return local;
+  }
+
+  try {
+    const { data: drafts, error } = await supabase
+      .from('builder_drafts')
+      .select('metadata')
+      .eq('project_id', projectId)
+      .limit(1);
+
+    if (error || !drafts?.length) {
+      return local;
+    }
+
+    const metadata = drafts[0]?.metadata;
+    const aiHistory =
+      metadata && typeof metadata === 'object'
+        ? (metadata as Record<string, unknown>).aiHistory
+        : null;
+    const remoteMessagesRaw =
+      aiHistory && typeof aiHistory === 'object'
+        ? (aiHistory as Record<string, unknown>).messages
+        : null;
+
+    if (!Array.isArray(remoteMessagesRaw)) {
+      return local;
+    }
+
+    const remoteMessages = remoteMessagesRaw
+      .filter((item): item is PersistedMessage => {
+        if (!item || typeof item !== 'object') return false;
+        const rec = item as Record<string, unknown>;
+        return (
+          typeof rec.id === 'string' &&
+          (rec.role === 'user' || rec.role === 'assistant' || rec.role === 'system') &&
+          typeof rec.content === 'string' &&
+          typeof rec.timestamp === 'string'
+        );
+      })
+      .slice(-MAX_MESSAGES);
+
+    const mergedById = new Map<string, PersistedMessage>();
+    for (const msg of local.messages) mergedById.set(msg.id, msg);
+    for (const msg of remoteMessages) {
+      const existing = mergedById.get(msg.id);
+      if (!existing) {
+        mergedById.set(msg.id, msg);
+        continue;
+      }
+
+      const existingTs = Date.parse(existing.timestamp || '') || 0;
+      const nextTs = Date.parse(msg.timestamp || '') || 0;
+      if (nextTs > existingTs) {
+        mergedById.set(msg.id, msg);
+      }
+    }
+
+    const mergedMessages = Array.from(mergedById.values())
+      .sort((a, b) => (Date.parse(a.timestamp || '') || 0) - (Date.parse(b.timestamp || '') || 0))
+      .slice(-MAX_MESSAGES);
+
+    const next: AIHistoryRecord = {
+      ...local,
+      messages: mergedMessages,
+    };
+
+    writeLocal(projectId, next);
+    emit(projectId, next);
+    return next;
+  } catch {
+    return local;
+  }
+}
+
 export function setMessages(
   projectId: string | null | undefined,
   messages: PersistedMessage[],

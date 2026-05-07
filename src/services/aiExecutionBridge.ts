@@ -11,6 +11,7 @@
 
 import { globalProviderRouter } from '@/services/aiProviderRouter';
 import { globalSkillRegistry } from '@/services/aiSkillRegistry';
+import { supabase } from '@/integrations/supabase/client';
 import type { ProviderType } from '@/services/aiProviderRouter';
 
 /**
@@ -26,11 +27,20 @@ export interface AIMessage {
  */
 export interface AIBridgeRequest {
   messages: AIMessage[];
+  mode?: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;
   streaming?: boolean;
   tools?: unknown[];
+}
+
+interface AssistantInvokeResponse {
+  content?: string;
+  code?: string;
+  reasoning?: string;
+  modelUsed?: string;
+  error?: string;
 }
 
 /**
@@ -127,25 +137,61 @@ export class AIExecutionBridge {
     const messages: AIMessage[] = [systemMessage, ...session.messages];
     messages.push({ role: 'user', content: userMessage });
 
+    const req: AIBridgeRequest = {
+      messages,
+      mode: options?.mode,
+      model: options?.model,
+      temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+      streaming: options?.streaming,
+      tools: options?.tools,
+    };
+
+    const gatewayOptions = {
+      selectedModelId: req.model,
+      maxTokens: req.maxTokens,
+      autoModelSelection: req.model ? false : true,
+    };
+
+    const hasGatewayOverrides = Boolean(gatewayOptions.selectedModelId || gatewayOptions.maxTokens);
+
     try {
-      // For now, return a mock response
-      // In production, this would call the actual provider API
-      const response: AIBridgeResponse = {
-        content: `[Mock response to: ${userMessage}]`,
-        provider: session.provider,
-        tokensUsed: {
-          input: Math.ceil(((systemMessage.content.length + userMessage.length) / 4)),
-          output: 100,
-          total: Math.ceil(((systemMessage.content.length + userMessage.length) / 4)) + 100,
+      const { data, error } = await supabase.functions.invoke<AssistantInvokeResponse>('ai-code-assistant', {
+        body: {
+          messages: req.messages,
+          mode: req.mode || 'code',
+          ...(hasGatewayOverrides ? { gatewayOptions } : {}),
+          debugMode: req.mode === 'debug',
+          editMode: req.mode === 'edit',
         },
-        cost: 0.001,
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to invoke ai-code-assistant');
+      }
+
+      const responseText = data?.content || data?.code || data?.reasoning || '[No content returned]';
+      const inputTokens = Math.ceil(messages.reduce((acc, msg) => acc + msg.content.length, 0) / 4);
+      const outputTokens = Math.ceil(responseText.length / 4);
+      const selectedProvider = this.resolveProviderFromModel(data?.modelUsed, session.provider);
+
+      const response: AIBridgeResponse = {
+        content: responseText,
+        provider: selectedProvider,
+        tokensUsed: {
+          input: inputTokens,
+          output: outputTokens,
+          total: inputTokens + outputTokens,
+        },
+        cost: this.estimateCost(selectedProvider, inputTokens, outputTokens),
         latency: Date.now() - startTime,
       };
 
       // Record metrics
-      globalProviderRouter.recordRequest(session.provider, response.latency, true);
+      globalProviderRouter.recordRequest(selectedProvider, response.latency, true);
 
       // Update session
+      session.provider = selectedProvider;
       session.messages.push({ role: 'user', content: userMessage });
       session.messages.push({ role: 'assistant', content: response.content });
       session.messageCount++;
@@ -166,7 +212,8 @@ export class AIExecutionBridge {
         break;
       }
 
-      throw error;
+      // Last-resort local fallback to avoid blank UX.
+      return this.buildFallbackResponse(session, userMessage, startTime);
     }
   }
 
@@ -195,6 +242,55 @@ export class AIExecutionBridge {
    */
   getProviderStatus(): Record<string, unknown> {
     return globalProviderRouter.getHealthStatus();
+  }
+
+  private resolveProviderFromModel(modelUsed: string | undefined, fallback: ProviderType): ProviderType {
+    if (!modelUsed) return fallback;
+    const normalized = modelUsed.toLowerCase();
+    if (normalized.includes('gpt') || normalized.includes('openai')) return 'openai';
+    if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
+    if (normalized.includes('claude') || normalized.includes('anthropic')) return 'claude';
+    if (normalized.includes('ollama')) return 'ollama';
+    return fallback;
+  }
+
+  private estimateCost(provider: ProviderType, inputTokens: number, outputTokens: number): number {
+    const estimated1kCost: Record<ProviderType, number> = {
+      claude: 0.003,
+      openai: 0.002,
+      gemini: 0.0005,
+      local: 0,
+      ollama: 0,
+    };
+    const totalTokens = inputTokens + outputTokens;
+    return Number(((totalTokens / 1000) * estimated1kCost[provider]).toFixed(6));
+  }
+
+  private buildFallbackResponse(session: AIBridgeSession, userMessage: string, startTime: number): AIBridgeResponse {
+    const content = `I could not reach the remote AI provider, but I can still help. Start with this command sequence:\n1) diagnose\n2) tree\n3) cat /src/App.tsx\n\nOriginal request: ${userMessage}`;
+    const inputTokens = Math.ceil(userMessage.length / 4);
+    const outputTokens = Math.ceil(content.length / 4);
+
+    const response: AIBridgeResponse = {
+      content,
+      provider: 'local',
+      tokensUsed: {
+        input: inputTokens,
+        output: outputTokens,
+        total: inputTokens + outputTokens,
+      },
+      cost: 0,
+      latency: Date.now() - startTime,
+    };
+
+    session.provider = 'local';
+    session.messages.push({ role: 'user', content: userMessage });
+    session.messages.push({ role: 'assistant', content: response.content });
+    session.messageCount++;
+    session.totalTokens += response.tokensUsed.total;
+    session.updatedAt = Date.now();
+
+    return response;
   }
 }
 

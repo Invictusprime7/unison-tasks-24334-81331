@@ -97,8 +97,19 @@ export function useWizardAI(options: WizardAIOptions): UseWizardAIReturn {
           status: (step.status || 'pending') as TaskStep['status'],
         }));
 
-        // Execute task through executor
-        const resultPromise = executor.executeTask(taskId);
+        // Create task first, then execute by returned task id.
+        const created = await executor.executeToolCall('create_task', {
+          name: taskName,
+          description: `Wizard AI task for ${options.businessName} (${options.systemType})`,
+          steps: stepsWithMeta.map((step) => ({
+            name: step.name,
+            type: step.type,
+            input: step.input,
+          })),
+        }) as { taskId?: string };
+
+        const runnableTaskId = created?.taskId || taskId;
+        const resultPromise = executor.executeTask(runnableTaskId);
 
         // Wrap with timeout
         const timeoutPromise = new Promise<TaskResult>((_, reject) => {
@@ -134,7 +145,7 @@ export function useWizardAI(options: WizardAIOptions): UseWizardAIReturn {
         };
       }
     },
-    [getExecutor]
+    [getExecutor, options.businessName, options.systemType]
   );
 
   // Generate design variations based on aesthetic preferences

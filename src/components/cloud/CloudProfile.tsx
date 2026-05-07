@@ -303,20 +303,39 @@ export function CloudProfile({ user }: CloudProfileProps) {
   };
 
   const loadBillingData = async () => {
-    // Mock billing data - would come from subscription/billing tables
-    const mockUsage: UsageStats = {
-      members: { current: 1, limit: 5 },
-      projects: { current: 3, limit: 10 },
-      storage: { current: 0.5, limit: 2 },
-      apiCalls: { current: 150, limit: 1000 },
-    };
+    try {
+      // Fetch real project count for this user
+      const { count: projectCount } = await supabase
+        .from('projects')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_id', user.id);
 
-    const mockInvoices: Invoice[] = [
-      // Empty for free plan
-    ];
+      // Fetch number of distinct projects the user is a member of
+      const { count: memberCount } = await supabase
+        .from('project_members')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id);
 
-    setUsage(mockUsage);
-    setInvoices(mockInvoices);
+      // Plan-based limits (free tier defaults; no billing table yet)
+      const PLAN_LIMITS = {
+        free: { members: 5, projects: 10, storage: 2, apiCalls: 1000 },
+        pro: { members: 25, projects: 50, storage: 20, apiCalls: 10000 },
+        team: { members: 100, projects: 200, storage: 50, apiCalls: 50000 },
+        enterprise: { members: 1000, projects: 1000, storage: 500, apiCalls: 500000 },
+      };
+      const limits = PLAN_LIMITS[currentPlan] ?? PLAN_LIMITS.free;
+
+      setUsage({
+        members: { current: memberCount ?? 0, limit: limits.members },
+        projects: { current: projectCount ?? 0, limit: limits.projects },
+        storage: { current: 0, limit: limits.storage },
+        apiCalls: { current: 0, limit: limits.apiCalls },
+      });
+
+      setInvoices([]);
+    } catch (err) {
+      console.error('[CloudProfile] loadBillingData error:', err);
+    }
   };
 
   const saveProfile = async () => {

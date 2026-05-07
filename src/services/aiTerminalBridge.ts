@@ -9,7 +9,8 @@
  * - Both maintain conversation context and history
  */
 
-import type { VirtualNode } from '@/hooks/useVirtualFileSystem';
+import type { VirtualFile, VirtualNode } from '@/hooks/useVirtualFileSystem';
+import { vfsToFileMap } from '@/hooks/useVirtualFileSystem';
 import { executeTerminalCommand } from '@/services/terminalCommands';
 import { AITerminalConversationManager } from '@/services/aiTerminalConversation';
 import type {
@@ -124,8 +125,6 @@ export class AITerminalBridge {
     const startTime = Date.now();
 
     try {
-      // For now, return a mock implementation
-      // In production, this would execute actual Node.js commands
       this.conversation.addMessage(
         'ai',
         `Executing runtime: ${request.command}`,
@@ -133,12 +132,47 @@ export class AITerminalBridge {
         { commandId: request.id }
       );
 
+      const mappedCommands = this.mapRuntimeToTerminalCommands(request.command);
+      let stdout = '';
+      let stderr = '';
+      const lines: AIRuntimeResult['lines'] = [];
+      let success = true;
+
+      for (const command of mappedCommands) {
+        const commandResult = await executeTerminalCommand(command, {
+          nodes: this.vfsNodes,
+          currentDeps: this.currentDeps,
+          onAddDep: (pkg, version) => this.handleDepAdded(pkg, version),
+          onRemoveDep: (pkg) => this.handleDepRemoved(pkg),
+          onWriteFile: (path, content) => this.handleFileWritten(path, content),
+        });
+
+        const commandFailed = commandResult.lines.some((line) => line.type === 'error');
+        if (commandFailed) {
+          success = false;
+        }
+
+        commandResult.lines.forEach((line) => {
+          lines?.push(line);
+          if (line.type === 'error') {
+            stderr += `${line.text}\n`;
+          } else {
+            stdout += `${line.text}\n`;
+          }
+        });
+
+        if (commandFailed) {
+          break;
+        }
+      }
+
       const result: AIRuntimeResult = {
         requestId: request.id,
-        success: true,
-        stdout: `[Mock] ${request.command} executed successfully\n`,
-        stderr: '',
-        exitCode: 0,
+        success,
+        stdout,
+        stderr,
+        exitCode: success ? 0 : 1,
+        lines,
         duration: Date.now() - startTime,
       };
 
@@ -177,24 +211,7 @@ export class AITerminalBridge {
    * Get current VFS snapshot
    */
   getVFSSnapshot(): Record<string, string> {
-    const snapshot: Record<string, string> = {};
-
-    const traverse = (node: VirtualNode, path: string = '') => {
-      const nodePath = path ? `${path}/${node.name}` : node.name;
-      if ('children' in node) {
-        // Folder
-        const children = (node as any).children;
-        if (Array.isArray(children)) {
-          children.forEach(child => traverse(child, nodePath));
-        }
-      } else {
-        // File
-        snapshot[nodePath] = (node as any).content || '';
-      }
-    };
-
-    this.vfsNodes.forEach(node => traverse(node));
-    return snapshot;
+    return vfsToFileMap(this.vfsNodes);
   }
 
   /**
@@ -219,13 +236,14 @@ export class AITerminalBridge {
       'help-request'
     );
 
-    // For now, return a structured response
-    // In production, this would call the AI service (systemsAI.ts or Claude API)
+    const suggestions = this.buildHelpSuggestions(request);
+    const suggestionText = this.formatHelpSuggestion(request, suggestions);
+
     const response: TerminalAIHelpResponse = {
       requestId: 'help_' + Date.now(),
-      suggestion: `Analyzing ${request.type}: ${request.problem}\n\nRecommendation pending AI service integration.`,
-      suggestedCommands: ['diagnose', 'tree'],
-      confidence: 0.5,
+      suggestion: suggestionText,
+      suggestedCommands: suggestions,
+      confidence: suggestions.length > 0 ? 0.82 : 0.55,
     };
 
     // Record AI's help response
@@ -326,8 +344,34 @@ export class AITerminalBridge {
     );
   }
 
-  private handleFileWritten(path: string, _content: string): void {
-    this.notifyVFSWatchers([path]);
+  private handleFileWritten(path: string, content: string): void {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const existingIndex = this.vfsNodes.findIndex(
+      (node) => node.type === 'file' && (node as VirtualFile).path === normalizedPath
+    );
+
+    if (existingIndex >= 0) {
+      const existing = this.vfsNodes[existingIndex] as VirtualFile;
+      this.vfsNodes = this.vfsNodes.map((node, idx) =>
+        idx === existingIndex ? { ...existing, content } : node
+      );
+    } else {
+      const segments = normalizedPath.split('/').filter(Boolean);
+      const fileName = segments.pop() || 'untitled.tsx';
+      const newFile: VirtualFile = {
+        id: `bridge-file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: fileName,
+        content,
+        type: 'file',
+        language: 'plaintext',
+        parentId: null,
+        path: normalizedPath,
+      };
+      this.vfsNodes = [...this.vfsNodes, newFile];
+    }
+
+    this.conversation.setVFSSnapshot(this.getVFSSnapshot());
+    this.notifyVFSWatchers([normalizedPath]);
   }
 
   private notifyVFSWatchers(changes: string[]): void {
@@ -364,6 +408,78 @@ export class AITerminalBridge {
       }
     });
     return files;
+  }
+
+  private mapRuntimeToTerminalCommands(rawCommand: string): string[] {
+    const normalized = rawCommand.trim().toLowerCase();
+    if (!normalized) {
+      return ['diagnose'];
+    }
+
+    const installMatch = normalized.match(/^(npm|pnpm|yarn|bun)\s+(install|add)\s+(.+)$/);
+    if (installMatch) {
+      const packages = installMatch[3].split(/\s+/).filter(Boolean);
+      return packages.length > 0 ? [`install ${packages.join(' ')}`] : ['deps'];
+    }
+
+    const uninstallMatch = normalized.match(/^(npm|pnpm|yarn|bun)\s+(remove|uninstall)\s+(.+)$/);
+    if (uninstallMatch) {
+      const packages = uninstallMatch[3].split(/\s+/).filter(Boolean);
+      return packages.length > 0 ? [`uninstall ${packages.join(' ')}`] : ['deps'];
+    }
+
+    if (/(npm|pnpm|yarn|bun)\s+(run\s+)?(test|lint|build|typecheck|tsc)/.test(normalized)) {
+      return ['diagnose'];
+    }
+
+    if (normalized === 'npm ls' || normalized === 'pnpm list' || normalized === 'yarn list' || normalized === 'bun pm ls') {
+      return ['deps'];
+    }
+
+    return [rawCommand];
+  }
+
+  private buildHelpSuggestions(request: TerminalAIHelpRequest): string[] {
+    const lowerProblem = request.problem.toLowerCase();
+    const suggestions: string[] = ['diagnose'];
+
+    if (request.type === 'resolve-deps' || request.type === 'analyze-imports') {
+      suggestions.push('deps', 'find import');
+      return suggestions;
+    }
+
+    if (lowerProblem.includes('cannot find module') || lowerProblem.includes('module not found')) {
+      suggestions.push('deps', 'find package', 'tree');
+      return suggestions;
+    }
+
+    if (lowerProblem.includes('import') || lowerProblem.includes('export')) {
+      suggestions.push('find import', 'tree', 'cat /src/App.tsx');
+      return suggestions;
+    }
+
+    if (lowerProblem.includes('syntax') || lowerProblem.includes('unexpected token')) {
+      suggestions.push('cat /src/App.tsx', 'cat /src/main.tsx');
+      return suggestions;
+    }
+
+    if (lowerProblem.includes('runtime') || lowerProblem.includes('crash')) {
+      suggestions.push('tree', 'cat /src/App.tsx');
+      return suggestions;
+    }
+
+    suggestions.push('tree');
+    return suggestions;
+  }
+
+  private formatHelpSuggestion(request: TerminalAIHelpRequest, commands: string[]): string {
+    const heading = `Analyzing ${request.type}: ${request.problem}`;
+    if (commands.length === 0) {
+      return `${heading}\n\nNo deterministic command suggestions were found. Start with a full diagnostic pass.`;
+    }
+
+    const commandList = commands.map((cmd) => `- ${cmd}`).join('\n');
+    return `${heading}\n\nRecommended next commands:\n${commandList}\n\nRun them in order and share the first error line for a targeted fix.`;
   }
 }
 

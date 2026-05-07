@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button';
 import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
+import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
@@ -284,6 +285,34 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       launchState: launch,
     });
   }, [files, launch]);
+
+  // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
+  useEffect(() => {
+    const bridge = getGlobalAITerminalBridge(nodes, sandpackDeps);
+    bridge.updateVFSNodes(nodes);
+    bridge.updateDependencies(sandpackDeps);
+  }, [nodes, sandpackDeps]);
+
+  useEffect(() => {
+    if (!canUseContextPreview || !vfsContext) return;
+
+    const bridge = getGlobalAITerminalBridge();
+    return bridge.watchVFS((changes) => {
+      if (!changes || changes.length === 0) return;
+
+      const snapshot = bridge.getVFSSnapshot();
+      const changedFiles: Record<string, string> = {};
+      changes.forEach((path) => {
+        if (snapshot[path] !== undefined) {
+          changedFiles[path] = snapshot[path];
+        }
+      });
+
+      if (Object.keys(changedFiles).length > 0) {
+        vfsContext.importFiles(changedFiles);
+      }
+    });
+  }, [canUseContextPreview, vfsContext]);
 
   const normalizedActiveFile = useMemo(() => {
     if (!activeFile) return null;

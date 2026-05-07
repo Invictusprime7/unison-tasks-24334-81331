@@ -15,10 +15,7 @@
  */
 
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
-import { getDiagnosticsForAI } from '@/services/terminalCommands';
 import type {
-  AICommandRequest,
-  AIRuntimeRequest,
   TerminalAIHelpRequest,
 } from '@/types/aiTerminalIntegration';
 
@@ -80,6 +77,7 @@ export interface ClaudeToolDefinition {
  */
 export class AITaskExecutor {
   private tasks: Map<string, AITask> = new Map();
+  private toolDefinitions: Map<string, ClaudeToolDefinition> = new Map();
   private tools: Map<string, (input: Record<string, unknown>) => Promise<unknown>> = new Map();
 
   constructor() {
@@ -263,6 +261,7 @@ export class AITaskExecutor {
     definition: ClaudeToolDefinition,
     handler: (input: Record<string, unknown>) => Promise<unknown>
   ): void {
+    this.toolDefinitions.set(name, definition);
     this.tools.set(name, handler);
   }
 
@@ -270,11 +269,7 @@ export class AITaskExecutor {
    * Get all available tool definitions (for Claude function calling)
    */
   getAvailableTools(): ClaudeToolDefinition[] {
-    return Array.from(this.tools.entries()).map(([name, handler]) => ({
-      name,
-      description: '',
-      input_schema: { type: 'object', properties: {}, required: [] },
-    }));
+    return Array.from(this.toolDefinitions.values());
   }
 
   /**

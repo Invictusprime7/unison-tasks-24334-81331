@@ -35,7 +35,7 @@ const PROVIDER_ENV_CHECKS: Record<ProviderType, boolean> = {
   claude: Boolean(import.meta.env.VITE_CLAUDE_API_KEY || import.meta.env.VITE_LOVABLE_API_KEY),
   openai: Boolean(import.meta.env.VITE_OPENAI_API_KEY),
   gemini: Boolean(import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GOOGLE_API_KEY),
-  local: false,
+  local: true,
   ollama: Boolean(import.meta.env.VITE_OLLAMA_BASE_URL),
 };
 
@@ -74,7 +74,13 @@ export class AIProviderRouter {
    */
   selectProvider(): ProviderType {
     const scores = this.scoreAllProviders();
+    if (scores.length === 0) {
+      return 'local';
+    }
     const best = scores[0];
+    if (!Number.isFinite(best.score)) {
+      return 'local';
+    }
     return best.provider;
   }
 

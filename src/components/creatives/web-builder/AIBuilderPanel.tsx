@@ -65,6 +65,7 @@ import { interpretPrompt, type TaskPlan } from '@/unison';
 import type { PlanStepStatus } from '@/unison/nlTypes';
 import { TaskPlanSteps } from './TaskPlanSteps';
 import {
+  hydrateAIHistoryFromSupabase,
   loadAIHistory,
   setMessages as persistMessages,
   type PersistedMessage,
@@ -547,6 +548,28 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       taskPlan: (m.taskPlan as TaskPlan | undefined) || undefined,
       meta: (m.meta as MessageMeta | undefined) || undefined,
     })));
+  }, [projectId]);
+
+  // Best-effort remote hydrate for cross-device continuity.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const hydrated = await hydrateAIHistoryFromSupabase(projectId);
+      if (cancelled) return;
+      setMessages(hydrated.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: new Date(m.timestamp),
+        thinking: (m.thinking as ThinkingStep[] | undefined) || undefined,
+        claudeReasoning: m.claudeReasoning,
+        code: m.code,
+        edits: (m.edits as VFSEdit[] | undefined) || undefined,
+        taskPlan: (m.taskPlan as TaskPlan | undefined) || undefined,
+        meta: (m.meta as MessageMeta | undefined) || undefined,
+      })));
+    })();
+    return () => { cancelled = true; };
   }, [projectId]);
 
   // No initial welcome message — AIConversationWelcome handles the empty state

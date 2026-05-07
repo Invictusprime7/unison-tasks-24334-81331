@@ -102,7 +102,7 @@ export function usePlaygroundV2Config(inputs: PlaygroundV2Inputs): PlaygroundV2C
     const allPages = Object.values(inputs.pageRegistry.pages || {}) as BuilderPage[];
     const readiness: Record<string, PageReadiness> = {};
     for (const p of allPages) {
-      readiness[p.pageId] = computePageReadiness(p, bindingsArr, forms);
+      readiness[p.pageId] = computePageReadiness(p, bindingsArr);
     }
 
     return {

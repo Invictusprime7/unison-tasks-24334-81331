@@ -321,7 +321,7 @@ export async function launchSiteEngine(
   };
 
   // ── AI generation ────────────────────────────────────────────────────────
-  onProgress({ stage: "generating", label: "Generating your site with AI" });
+  onProgress({ stage: "generating", label: "Wiring backend & generating site", progress: 0.5 });
 
   const customNote = (input.customPrompt || "").trim();
   const aiUserPrompt = [

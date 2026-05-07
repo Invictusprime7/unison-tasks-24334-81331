@@ -44,6 +44,7 @@ const VALID_PAGES = [
   "checkout",
   "blog",
 ];
+const VALID_THEMES = ["bold", "modern", "organic", "futuristic", "editorial", "minimalist"];
 
 interface IntakeRequest {
   prompt: string;

@@ -9,7 +9,7 @@ import { Zap, ArrowRight, CheckSquare } from "lucide-react";
 /**
  * Full-screen onboarding page.
  * Shown to new users after signup, or to returning users with no completed projects.
- * Opens the BusinessLauncher wizard immediately so the user can build their first site.
+ * Opens the SystemLauncher wizard immediately so the user can build their first site.
  */
 const Onboarding = () => {
   const navigate = useNavigate();

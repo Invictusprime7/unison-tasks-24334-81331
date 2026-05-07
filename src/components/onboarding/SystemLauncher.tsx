@@ -63,7 +63,7 @@ import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
-// extractLauncherPayload removed — wizard launch is deterministic-only (no AI).
+import { extractLauncherPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
@@ -798,49 +798,119 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         template_intents: compositionMeta?.intents,
       };
 
-      toast("Preparing your site…", {
+      toast("Generating your site with AI…", {
         description: `${resolvedIndustry} • ${selectedTemplate?.label || system.name} • ${resolvedPreset.label}`,
       });
 
-      // ── DETERMINISTIC LAUNCH (no AI during onboarding) ──
-      // The wizard launch path produces the site purely from:
-      //   • Template card → section composition → seedAppCode
-      //   • Style preset  → themedIndexCss (LOCKED)
-      //   • Business name → personalized navbar/footer brand
-      //   • Custom instructions → carried in blueprint for later AI edits
-      //     inside the Web Builder, NOT used during launch.
-      // The AI assistant (ai-code-assistant) is intentionally NOT invoked
-      // here — it is reserved for explicit user-driven edits in the builder.
+      // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
       const customNote = customPrompt.trim();
-      if (customNote) {
-        console.info(
-          '[SystemLauncher] Custom instructions captured for builder (not applied at launch):',
-          customNote.slice(0, 200),
-        );
+      const aiUserPrompt = [
+        `Generate a complete, production-ready website for "${brand}" — a ${resolvedIndustry} business.`,
+        ``,
+        `BUSINESS INPUTS (from wizard, all binding):`,
+        `1. Industry / System: ${system.name} (${resolvedIndustry})`,
+        `2. Primary Goal: ${primaryGoal || 'collect_leads'}`,
+        `3. Template (LOCKED layout): ${selectedTemplate?.label || system.name}`,
+        `   Required section order — render in this exact sequence: ${composition.sections.map((s) => s.type).join(' → ')}`,
+        `4. Business Name: ${brand}`,
+        `5. Visual Style preset (LOCKED aesthetic): ${resolvedPreset.label} — ${resolvedPreset.styleDirective}`,
+        `   Headings: ${resolvedPreset.typography.headingFont} (${resolvedPreset.typography.headingWeight}). Body: ${resolvedPreset.typography.bodyFont}.`,
+        customNote ? `6. Custom instructions from user (HIGHEST priority for copy/tone): ${customNote}` : `6. Custom instructions: (none)`,
+        ``,
+        `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
+        `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
+        `CONTENT CONTRACT: Copy must be specific to the ${resolvedIndustry} industry and reflect the primary goal "${primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
+        `Wire interactive elements with data-ut-intent attributes from this set: ${canonicalIntents.join(', ')}.`,
+      ].join('\n');
+
+      // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
+      let aiData: Record<string, unknown> | null = null;
+      let aiError: { message?: string } | null = null;
+      const MAX_RETRIES = 2;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 1200 * attempt));
+        }
+        const result = await supabase.functions.invoke('ai-code-assistant', {
+          body: {
+            messages: [{ role: 'user', content: aiUserPrompt }],
+            mode: 'template-react',
+            templateName: selectedTemplate?.label || system.name,
+            aesthetic: resolvedPreset.id,
+            source: resolvedIndustry,
+            systemType: selectedSystem,
+            currentCode: seedAppCode,
+            systemsBuildContext: blueprint,
+          },
+        });
+        aiError = result.error as { message?: string } | null;
+        aiData = result.data as Record<string, unknown> | null;
+        if (!aiError) break;
+        console.warn(`[SystemLauncher] AI attempt ${attempt + 1} failed:`, aiError?.message);
       }
 
-      // Sanitize the deterministic seed so the preview never receives
-      // malformed TSX (defensive — compositionToReactCode is already clean,
-      // but this guarantees the same hardening contract as AI output).
-      const seedFiles: Record<string, string> = {
-        '/src/App.tsx': seedAppCode,
-        '/src/index.css': themedIndexCss,
-      };
-      const sanitized = sanitizeGeneratedFiles(seedFiles);
-      if (sanitized.invalidFiles.length > 0) {
-        console.error(
-          '[SystemLauncher] Deterministic seed failed sanitization:',
-          sanitized.invalidFiles,
-        );
-        toast.error('Failed to prepare site scaffold. Please try a different template.');
+      if (aiError) {
+        const msg = aiError.message || '';
+        if (msg.includes('429')) {
+          toast.error('AI is rate-limited. Please wait a moment and try again.');
+        } else if (msg.includes('402')) {
+          toast.error('AI credits required. Please add credits to continue.');
+        } else {
+          toast.error(`AI generation failed: ${msg || 'unknown error'}`);
+        }
         return;
       }
 
+      const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
+      const structured = extractLauncherPayload(aiContent);
+
+      if (!structured?.files || Object.keys(structured.files).length === 0) {
+        toast.error('AI returned no usable files. Please try again.');
+        console.error('[SystemLauncher] AI payload missing files:', aiContent.slice(0, 300));
+        return;
+      }
+
+      // ── Sanitize AI output (strip prose leaks, fix JSX, validate balance) ──
+      const sanitized = sanitizeGeneratedFiles(structured.files);
+      if (sanitized.invalidFiles.length > 0) {
+        console.warn(
+          "[SystemLauncher] AI returned malformed files; falling back to seed for:",
+          sanitized.invalidFiles,
+        );
+      }
+
+      // ── Merge AI output with LOCKED themed CSS ──
+      // The Style card is authoritative for color + typography. Any
+      // /src/index.css the AI returns is force-overwritten by the resolved preset.
+      // Everything else (App.tsx, sections, components) is owned by the AI —
+      // there is NO deterministic fallback. If the AI fails to produce a valid
+      // App.tsx we abort the launch so the user can retry.
       const generatedFiles: Record<string, string> = {
         ...sanitized.files,
-        // Style card is authoritative — re-apply themed CSS after sanitize.
         '/src/index.css': themedIndexCss,
       };
+      // Normalize App.tsx key (AI may emit with or without leading slash).
+      if (!generatedFiles['/src/App.tsx'] && generatedFiles['src/App.tsx']) {
+        generatedFiles['/src/App.tsx'] = generatedFiles['src/App.tsx'];
+        delete generatedFiles['src/App.tsx'];
+      }
+      const aiAppMissing = !generatedFiles['/src/App.tsx'];
+      const aiAppInvalid =
+        sanitized.invalidFiles.includes('/src/App.tsx') ||
+        sanitized.invalidFiles.includes('src/App.tsx');
+      if (aiAppMissing || aiAppInvalid) {
+        toast.error(
+          aiAppMissing
+            ? 'AI did not return App.tsx. Please try again.'
+            : 'AI returned malformed App.tsx. Please try again.',
+        );
+        console.error('[SystemLauncher] Aborting launch — AI App.tsx unusable', {
+          aiAppMissing,
+          aiAppInvalid,
+          invalidFiles: sanitized.invalidFiles,
+        });
+        return;
+      }
 
       const provisionedBusinessId = await installPromise;
 

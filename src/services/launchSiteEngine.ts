@@ -415,7 +415,7 @@ export async function launchSiteEngine(
     generatedFiles["/src/App.tsx"] = seedAppCode;
   }
 
-  onProgress({ stage: "opening_builder", label: "Wiring intents & opening builder" });
+  onProgress({ stage: "opening_builder", label: "Opening builder", progress: 0.95 });
 
   const provisionedBusinessId = await installPromise;
 

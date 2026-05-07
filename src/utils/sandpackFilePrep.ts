@@ -670,9 +670,9 @@ function _sanitizeChild(child: any): any {
 // component returns a plain object (e.g. { children: ... }) instead of JSX.
 const _wrappedComponentCache = new WeakMap<any, any>();
 // React Router (and similar libs) rely on REFERENCE EQUALITY of child.type
-// (e.g. <Routes> validates each child is the literal `Route` export).
+// (e.g. Routes validates each child is the literal Route export).
 // Wrapping these would break that check with errors like:
-//   "[_SafeFC] is not a <Route> component"
+//   "[_SafeFC] is not a Route component"
 // Skip wrapping for known router/library components AND for anything whose
 // displayName/name starts with an uppercase letter and is in our skip list.
 const _SKIP_WRAP_NAMES = new Set([

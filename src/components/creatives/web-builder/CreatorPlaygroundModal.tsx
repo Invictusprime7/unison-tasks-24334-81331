@@ -334,7 +334,7 @@ export function CreatorPlaygroundModal({
             <CreatorPlaygroundV2
               businessId={businessId}
               projectId={null}
-              businessName={playground.creatorData.business?.name}
+              businessName={playground.creatorData.businessInfo?.businessName}
               pageRegistry={playground.pageRegistry}
               creatorData={playground.creatorData}
               bindings={bindings}

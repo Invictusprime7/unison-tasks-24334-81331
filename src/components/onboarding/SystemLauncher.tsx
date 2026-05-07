@@ -762,17 +762,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       const compositionCode = compositionToReactCode(composition);
 
+      // SiteBundleSnapshot + composition.theme (themePresetToThemeTokens) is the
+      // single source of truth for the selected aesthetic. compositionToReactCode
+      // serializes those tokens inline and PageRenderer applies them via themeToCSS,
+      // so we do NOT inject a parallel /src/index.css here. Downstream scaffolders
+      // (multiPageScaffolder, sandpackFilePrep, previewSession) provide a shared
+      // base index.css when one is missing.
       const generatedFiles: Record<string, string> = {
         '/src/App.tsx': compositionCode,
       };
-
-      // Apply the wizard's selected aesthetic card directly to the global
-      // stylesheet so EVERY scaffolded page (home + multi-page placeholders
-      // + router header) inherits the theme.
-      const themedCss = selectedTheme ? buildThemedIndexCss(selectedTheme) : null;
-      if (themedCss) {
-        generatedFiles['/src/index.css'] = themedCss;
-      }
 
       toast("Composing your site…", {
         description: "AI tailoring copy & layout to your industry",

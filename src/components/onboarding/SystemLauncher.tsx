@@ -863,8 +863,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             for (const [path, content] of Object.entries(parsedFiles)) {
               if (typeof content !== 'string' || !content.trim()) continue;
               const norm = normalize(path);
-              // Preserve themed index.css from wizard token system
-              if (norm.endsWith('/index.css') && themedCss) continue;
+              // SiteBundle.theme is the single source of truth for tokens — never
+              // accept an AI-emitted index.css that would override the canonical theme.
+              if (norm.endsWith('/index.css')) continue;
               generatedFiles[norm] = content;
             }
             console.log('[SystemLauncher] AI enrichment applied:', Object.keys(parsedFiles));

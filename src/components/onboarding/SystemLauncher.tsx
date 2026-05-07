@@ -24,6 +24,7 @@ import {
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
+import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -764,6 +765,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const generatedFiles: Record<string, string> = {
         '/src/App.tsx': compositionCode,
       };
+
+      // Apply the wizard's selected aesthetic card directly to the global
+      // stylesheet so EVERY scaffolded page (home + multi-page placeholders
+      // + router header) inherits the theme — no AI required.
+      if (selectedTheme) {
+        generatedFiles['/src/index.css'] = buildThemedIndexCss(selectedTheme);
+      }
 
       toast("Composing your site…", { description: "Applying theme & layout" });
 

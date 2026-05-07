@@ -742,11 +742,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      // ── Apply selected aesthetic preset → ThemeTokens (HSL + typography) ──
-      if (selectedTheme) {
-        const themedTokens = themePresetToThemeTokens(selectedTheme);
-        composition = { ...composition, theme: themedTokens };
-      }
+      // ── Resolve canonical aesthetic preset and apply to composition.theme ──
+      // SiteBundle's composition.theme is the single source of truth for HSL +
+      // typography tokens. We ALWAYS resolve to a real ThemePreset (explicit
+      // user selection > industry mapping) so the wizard never falls through
+      // to ad-hoc default CSS.
+      const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
+      const themedTokens = themePresetToThemeTokens(resolvedPreset);
+      composition = { ...composition, theme: themedTokens };
 
       // Personalize the brand label across navbar/footer/cta sections
       const brand = businessName.trim();

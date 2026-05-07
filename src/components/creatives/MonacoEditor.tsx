@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { sanitizeTsxFile } from '@/utils/tsxSanitizer';
 
 // Enhanced Monaco Editor with React/TypeScript support and AI assistance
 const MonacoEditor: React.FC<React.ComponentProps<typeof Editor>> = (props) => {
@@ -229,7 +230,42 @@ const MonacoEditor: React.FC<React.ComponentProps<typeof Editor>> = (props) => {
       },
     });
 
-    // Call original onMount if provided
+    // Quick-fix: run TSX sanitizer on the current buffer (Ctrl/Cmd+Shift+F)
+    editor.addAction({
+      id: 'tsx-auto-fix',
+      label: 'Auto-fix TSX (sanitize JSX, imports, fences)',
+      keybindings: [
+        monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF,
+      ],
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 1.5,
+      run: (ed) => {
+        const model = ed.getModel();
+        if (!model) return;
+        const path = model.uri?.path || 'file.tsx';
+        const before = model.getValue();
+        const result = sanitizeTsxFile(path, before);
+        if (!result.code || result.code === before) {
+          toast.message('Nothing to fix', {
+            description: result.issues.length
+              ? `Issues: ${result.issues.join(', ')}`
+              : 'Code already clean.',
+          });
+          return;
+        }
+        ed.executeEdits('tsx-auto-fix', [
+          {
+            range: model.getFullModelRange(),
+            text: result.code,
+          },
+        ]);
+        toast.success(
+          result.applied.length
+            ? `Auto-fix applied: ${result.applied.join(', ')}`
+            : 'Auto-fix applied',
+        );
+      },
+    });
     if (props.onMount) {
       props.onMount(editor, monaco);
     }

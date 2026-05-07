@@ -43,6 +43,7 @@ import {
   randomFontPairing,
 } from "@/utils/designVariation";
 // (aiCodeCleaner imports removed alongside the wizard fast-path enrichment)
+import { sanitizeGeneratedFiles } from "@/utils/tsxSanitizer";
 import { type LauncherHandoff } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,
@@ -869,15 +870,31 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
+      // ── Sanitize AI output (strip prose leaks, fix JSX, validate balance) ──
+      const sanitized = sanitizeGeneratedFiles(structured.files);
+      if (sanitized.invalidFiles.length > 0) {
+        console.warn(
+          "[SystemLauncher] AI returned malformed files; falling back to seed for:",
+          sanitized.invalidFiles,
+        );
+      }
+
       // ── Merge AI output with LOCKED themed CSS ──
       // The Style card is authoritative for color + typography. Any
       // /src/index.css the AI returns is overwritten by the resolved preset.
       const generatedFiles: Record<string, string> = {
-        ...structured.files,
+        ...sanitized.files,
         '/src/index.css': themedIndexCss,
       };
-      // Guarantee an App entry point exists.
-      if (!generatedFiles['/src/App.tsx'] && !generatedFiles['src/App.tsx']) {
+      // If the AI's App.tsx is missing OR was flagged invalid, use the
+      // deterministic seed so we never push a broken module to preview.
+      const aiAppKey = generatedFiles['/src/App.tsx'] ? '/src/App.tsx'
+        : generatedFiles['src/App.tsx'] ? 'src/App.tsx'
+        : null;
+      const aiAppInvalid = aiAppKey
+        ? sanitized.invalidFiles.includes(aiAppKey)
+        : true;
+      if (!aiAppKey || aiAppInvalid) {
         generatedFiles['/src/App.tsx'] = seedAppCode;
       }
 

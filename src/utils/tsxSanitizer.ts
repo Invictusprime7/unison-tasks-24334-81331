@@ -1,0 +1,256 @@
+/**
+ * tsxSanitizer.ts
+ *
+ * Hardening pipeline for AI-generated TSX/JSX files before they are written
+ * into the VFS or rendered in the preview.
+ *
+ * Goals:
+ *  - Strip prose / markdown leaks ("Here is your code…" + ```tsx fences).
+ *  - Normalize JSX (void elements, style strings, hallucinated SVG namespaces).
+ *  - Ensure required React imports for files that use hooks.
+ *  - Detect grossly malformed files (unbalanced braces / parens / JSX tags)
+ *    so the launcher can fall back to its deterministic seed instead of
+ *    pushing a broken module into Sandpack.
+ *
+ * This module is intentionally dependency-free and safe to call from the
+ * client (SystemLauncher, Monaco quick-fix action) and from the preview
+ * compiler.
+ */
+
+import {
+  extractCleanCode,
+  ensureReactImports,
+  fixJsxVoidElements,
+  fixJsxStyleStrings,
+  sanitizeSvgElements,
+} from "@/utils/aiCodeCleaner";
+
+export interface SanitizeResult {
+  /** Normalized file content. Always a string. */
+  code: string;
+  /** True when the cleaned code passes structural balance checks. */
+  valid: boolean;
+  /** Human-readable issues encountered during sanitization. */
+  issues: string[];
+  /** Names of transforms that were applied. */
+  applied: string[];
+}
+
+/** Files we never try to "fix" — they are not React modules. */
+const NON_TSX_RE = /\.(css|json|md|svg|png|jpe?g|gif|webp|ico|txt)$/i;
+
+/**
+ * Lightweight structural validation. We do NOT run a real parser here —
+ * Sandpack/esbuild will do that — but we catch the most common failure
+ * shapes (unclosed braces / parens / fragments) cheaply so the launcher
+ * can decide to fall back to its deterministic seed.
+ */
+export function validateTsxStructure(code: string): {
+  valid: boolean;
+  issues: string[];
+} {
+  const issues: string[] = [];
+  if (!code || code.trim().length === 0) {
+    return { valid: false, issues: ["empty file"] };
+  }
+
+  let brace = 0;
+  let paren = 0;
+  let bracket = 0;
+  let inString: '"' | "'" | "`" | null = null;
+  let inLine = false;
+  let inBlock = false;
+
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    const prev = code[i - 1];
+
+    if (inLine) {
+      if (c === "\n") inLine = false;
+      continue;
+    }
+    if (inBlock) {
+      if (c === "/" && prev === "*") inBlock = false;
+      continue;
+    }
+    if (inString) {
+      if (c === inString && prev !== "\\") inString = null;
+      continue;
+    }
+
+    if (c === "/" && code[i + 1] === "/") {
+      inLine = true;
+      continue;
+    }
+    if (c === "/" && code[i + 1] === "*") {
+      inBlock = true;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      inString = c as '"' | "'" | "`";
+      continue;
+    }
+
+    if (c === "{") brace++;
+    else if (c === "}") brace--;
+    else if (c === "(") paren++;
+    else if (c === ")") paren--;
+    else if (c === "[") bracket++;
+    else if (c === "]") bracket--;
+
+    if (brace < 0) {
+      issues.push("extra '}'");
+      break;
+    }
+    if (paren < 0) {
+      issues.push("extra ')'");
+      break;
+    }
+    if (bracket < 0) {
+      issues.push("extra ']'");
+      break;
+    }
+  }
+
+  if (brace !== 0) issues.push(`unbalanced braces (${brace})`);
+  if (paren !== 0) issues.push(`unbalanced parens (${paren})`);
+  if (bracket !== 0) issues.push(`unbalanced brackets (${bracket})`);
+
+  // Fragment balance: <> ... </>
+  const openFrag = (code.match(/<>/g) || []).length;
+  const closeFrag = (code.match(/<\/>/g) || []).length;
+  if (openFrag !== closeFrag) {
+    issues.push(`unbalanced fragments (<>:${openFrag} </>:${closeFrag})`);
+  }
+
+  // Component must export something renderable
+  if (!/export\s+(default|const|function)/.test(code)) {
+    issues.push("no export statement");
+  }
+
+  return { valid: issues.length === 0, issues };
+}
+
+/**
+ * Run the full hardening pipeline on a single file.
+ *
+ * Safe defaults:
+ *  - non-TSX/JSX files pass through untouched.
+ *  - if any transform throws, we return the original code with valid=false.
+ */
+export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
+  const applied: string[] = [];
+  const issues: string[] = [];
+
+  if (typeof raw !== "string") {
+    return { code: "", valid: false, issues: ["non-string content"], applied };
+  }
+
+  // Pass-through for non-React files
+  if (NON_TSX_RE.test(path)) {
+    return { code: raw, valid: true, issues, applied };
+  }
+
+  let code = raw;
+
+  try {
+    const cleaned = extractCleanCode(code);
+    if (cleaned && cleaned !== code) {
+      code = cleaned;
+      applied.push("extractCleanCode");
+    } else if (!cleaned) {
+      issues.push("AI returned prose-only content");
+      return { code: "", valid: false, issues, applied };
+    }
+  } catch (e) {
+    issues.push(`extractCleanCode failed: ${(e as Error).message}`);
+  }
+
+  try {
+    const next = sanitizeSvgElements(code);
+    if (next !== code) {
+      code = next;
+      applied.push("sanitizeSvgElements");
+    }
+  } catch (e) {
+    issues.push(`sanitizeSvgElements failed: ${(e as Error).message}`);
+  }
+
+  try {
+    const next = fixJsxVoidElements(code);
+    if (next !== code) {
+      code = next;
+      applied.push("fixJsxVoidElements");
+    }
+  } catch (e) {
+    issues.push(`fixJsxVoidElements failed: ${(e as Error).message}`);
+  }
+
+  try {
+    const next = fixJsxStyleStrings(code);
+    if (next !== code) {
+      code = next;
+      applied.push("fixJsxStyleStrings");
+    }
+  } catch (e) {
+    issues.push(`fixJsxStyleStrings failed: ${(e as Error).message}`);
+  }
+
+  // Strip stray module.exports leaks
+  if (/\bmodule\.exports\b/.test(code)) {
+    code = code.replace(/\bmodule\.exports\s*=\s*\{[\s\S]*?\n\};?\s*/g, "");
+    applied.push("stripModuleExports");
+  }
+
+  // Strip leading "Here's…" prose lines that survived extractCleanCode
+  code = code.replace(/^(?:\s*\/\/[^\n]*\n)*\s*(?:Here(?:'s| is)|Sure|Below|This is)\b[^\n]*\n/i, "");
+
+  // Force React + hook imports last so we don't lose them to other transforms
+  try {
+    const next = ensureReactImports(code);
+    if (next !== code) {
+      code = next;
+      applied.push("ensureReactImports");
+    }
+  } catch (e) {
+    issues.push(`ensureReactImports failed: ${(e as Error).message}`);
+  }
+
+  const validation = validateTsxStructure(code);
+  return {
+    code,
+    valid: validation.valid,
+    issues: [...issues, ...validation.issues],
+    applied,
+  };
+}
+
+/**
+ * Sanitize a multi-file map (path → contents). Files that fail validation are
+ * reported in `invalidFiles`; the launcher should treat those as candidates
+ * for fallback to its deterministic seed.
+ */
+export function sanitizeGeneratedFiles(
+  files: Record<string, string>
+): {
+  files: Record<string, string>;
+  invalidFiles: string[];
+  report: Record<string, SanitizeResult>;
+} {
+  const out: Record<string, string> = {};
+  const report: Record<string, SanitizeResult> = {};
+  const invalidFiles: string[] = [];
+
+  for (const [path, raw] of Object.entries(files || {})) {
+    const result = sanitizeTsxFile(path, raw);
+    report[path] = result;
+    if (!result.valid && /\.(t|j)sx?$/.test(path)) {
+      invalidFiles.push(path);
+      // Still write the cleaned code — preview compiler will surface the
+      // syntax error in the editor; the launcher can override entry files.
+    }
+    out[path] = result.code || raw;
+  }
+
+  return { files: out, invalidFiles, report };
+}

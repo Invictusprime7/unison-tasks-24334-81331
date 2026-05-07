@@ -3975,17 +3975,16 @@ export default function ${componentName}Page() {
     
     window.addEventListener('message', handleIntentMessage);
     
-    // Listen for VFS-based external navigation events. Auto-generation of
-    // missing pages is DISABLED — wizard-launched sites must surface only
-    // the pages emitted by the launcher. We log and acknowledge instead.
+    // Listen for VFS-based external navigation events (emitted by intent router, action catalog, etc.)
     const handleExternalNavEvent = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       const url = detail?.url || detail?.target;
       if (!url) return;
-      console.info(
-        '[WebBuilder] External nav intent ignored — auto page-gen disabled',
-        { url, label: detail?.buttonLabel || detail?.text },
-      );
+      
+      console.log('[WebBuilder] External navigation event (VFS):', url);
+      const pageName = url.replace(/^https?:\/\/[^/]+\/?/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'external';
+      const label = detail?.buttonLabel || detail?.text || url;
+      triggerPageGenRef.current(pageName, label, null, undefined);
     };
     window.addEventListener('intent:nav.external', handleExternalNavEvent);
     

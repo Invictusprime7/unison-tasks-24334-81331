@@ -229,16 +229,33 @@ export function resolvePreviewAction(
     if (labelVfsPath) return { action: 'navigate', route: `/${normLabel}`, vfsPath: labelVfsPath };
   }
 
-  // ── 4. No match — DO NOT auto-generate pages from intent ──────────────────
-  // Wizard-launched sites must show ONLY the pages the launcher emitted.
-  // Any "create a missing page" work must be explicit (user asks the AI
-  // assistant in the builder, or adds a page via the Creator Playground).
-  // We acknowledge silently and log so the dev console still shows the gap.
-  if (typeof console !== 'undefined') {
-    console.info(
-      '[previewActionResolver] No existing page for intent — auto-generation disabled',
-      { intent, buttonLabel, classification: classification.category },
-    );
+  // ── 4. Generate — nothing found, last resort ──────────────────────────────
+  // Determine the best page type to generate
+  const pageType =
+    (affinityCandidates[0]) ||
+    classification.suggestedPageType ||
+    (classification.category === 'redirect' ? 'details' : null);
+
+  // Form intents without an on-page section still should NOT generate pages —
+  // they scroll to a section that simply doesn't exist yet, so we acknowledge
+  // and let the existing booking/contact flow handle it through the backend.
+  // Form / commerce / auth intents must NOT auto-generate pages or open
+  // overlays anymore. Wiring is AI-driven: if the user wants a button to
+  // do something, they ask the assistant which writes an explicit binding.
+  // Until then these intents are inert (acknowledged silently).
+  const formOnlyIntents = ['contact.submit', 'newsletter.subscribe', 'quote.request',
+                           'lead.capture', 'booking.create', 'auth.login', 'auth.register',
+                           'cart.add', 'cart.view', 'cart.checkout', 'checkout.start',
+                           'pay.checkout', 'form.submit'];
+  if (formOnlyIntents.includes(intent)) {
+    return { action: 'acknowledge' };
   }
+
+  // nav.external and button.click(redirect) with no existing page → generate
+  if (pageType) {
+    return { action: 'generate', pageType, label: buttonLabel };
+  }
+
+  // Absolute fallback — acknowledge rather than generate noise
   return { action: 'acknowledge' };
 }

@@ -768,12 +768,121 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // Apply the wizard's selected aesthetic card directly to the global
       // stylesheet so EVERY scaffolded page (home + multi-page placeholders
-      // + router header) inherits the theme — no AI required.
-      if (selectedTheme) {
-        generatedFiles['/src/index.css'] = buildThemedIndexCss(selectedTheme);
+      // + router header) inherits the theme.
+      const themedCss = selectedTheme ? buildThemedIndexCss(selectedTheme) : null;
+      if (themedCss) {
+        generatedFiles['/src/index.css'] = themedCss;
       }
 
-      toast("Composing your site…", { description: "Applying theme & layout" });
+      toast("Composing your site…", {
+        description: "AI tailoring copy & layout to your industry",
+      });
+
+      // ── AI enrichment via ai-code-assistant (Lane A wizard fast path) ──
+      // Sends the full wizard context (industry, brand, palette, sections,
+      // intents, aesthetic) so the AI generates an industry-aware,
+      // theme-faithful single-file React site. Falls back to the
+      // deterministic composition on any failure or timeout.
+      try {
+        const aiSections =
+          (selectedTemplate?.sectionTypes && selectedTemplate.sectionTypes.length
+            ? selectedTemplate.sectionTypes
+            : compositionMeta?.sections) || [];
+        const aiPayload = {
+          mode: 'template-react' as const,
+          source: resolvedIndustry,
+          templateName: selectedTemplate?.label || system.name,
+          aesthetic: selectedTheme?.id,
+          systemsBuildContext: {
+            version: '1.0',
+            identity: {
+              industry: resolvedIndustry,
+              business_model: system.id,
+              primary_goal: primaryGoal || 'collect_leads',
+            },
+            brand: {
+              business_name: brand,
+              tagline: blueprint.brand.tagline,
+              tone: selectedTheme?.styleDirective || blueprint.brand.tone,
+              palette: selectedTheme
+                ? {
+                    primary: selectedTheme.palette.accent,
+                    secondary: selectedTheme.palette.accent2 || selectedTheme.palette.accent,
+                    accent: selectedTheme.palette.accent2 || selectedTheme.palette.accent,
+                    background: selectedTheme.palette.bg,
+                    foreground: selectedTheme.palette.fg,
+                  }
+                : undefined,
+              typography: selectedTheme
+                ? {
+                    heading: selectedTheme.typography.headingFont,
+                    body: selectedTheme.typography.bodyFont,
+                  }
+                : undefined,
+            },
+            intents: canonicalIntents.map((i) => ({ intent: i })),
+            template_sections: aiSections,
+            template_intents: canonicalIntents,
+          },
+          messages: [
+            {
+              role: 'user' as const,
+              content: `Generate a premium, industry-aware single-page React site for "${brand}" — a ${resolvedIndustry} business. Primary goal: ${primaryGoal || 'collect_leads'}. Aesthetic: ${selectedTheme?.label || 'modern'} (${selectedTheme?.styleDirective || ''}). Sections: ${(aiSections || []).join(' → ')}. Wire all CTAs with data-ut-intent attributes.`,
+            },
+          ],
+        };
+
+        const aiAbort = new AbortController();
+        const aiTimer = setTimeout(() => aiAbort.abort(), 55_000);
+        const aiCall = supabase.functions.invoke<{ generatedCode?: string; content?: string }>(
+          'ai-code-assistant',
+          { body: aiPayload },
+        );
+        const { data: aiData, error: aiError } = await aiCall;
+        clearTimeout(aiTimer);
+
+        if (aiError) {
+          console.warn('[SystemLauncher] AI enrichment failed (non-fatal):', aiError.message);
+        } else {
+          const raw = aiData?.generatedCode || aiData?.content || '';
+          // Try JSON {files:{...}} first
+          let parsedFiles: Record<string, string> | null = null;
+          try {
+            const jsonStart = raw.indexOf('{');
+            const jsonEnd = raw.lastIndexOf('}');
+            if (jsonStart >= 0 && jsonEnd > jsonStart) {
+              const obj = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+              if (obj && obj.files && typeof obj.files === 'object') {
+                parsedFiles = obj.files;
+              }
+            }
+          } catch {
+            // fall through
+          }
+
+          if (parsedFiles) {
+            const normalize = (p: string) => (p.startsWith('/') ? p : `/${p}`);
+            for (const [path, content] of Object.entries(parsedFiles)) {
+              if (typeof content !== 'string' || !content.trim()) continue;
+              const norm = normalize(path);
+              // Preserve themed index.css from wizard token system
+              if (norm.endsWith('/index.css') && themedCss) continue;
+              generatedFiles[norm] = content;
+            }
+            console.log('[SystemLauncher] AI enrichment applied:', Object.keys(parsedFiles));
+          } else if (looksLikeCode(raw)) {
+            const cleaned = extractCleanCode(raw);
+            if (cleaned && cleaned.length > 200) {
+              generatedFiles['/src/App.tsx'] = cleaned;
+              console.log('[SystemLauncher] AI enrichment applied (raw code)');
+            }
+          } else {
+            console.warn('[SystemLauncher] AI enrichment returned no usable code');
+          }
+        }
+      } catch (aiErr) {
+        console.warn('[SystemLauncher] AI enrichment threw (non-fatal):', aiErr);
+      }
 
       const provisionedBusinessId = await installPromise;
 

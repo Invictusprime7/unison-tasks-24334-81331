@@ -4,6 +4,7 @@ import { Zap, ArrowRight, Sparkles } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { BubbleBackground } from "./BubbleBackground";
 
 
 interface HeroSectionProps {

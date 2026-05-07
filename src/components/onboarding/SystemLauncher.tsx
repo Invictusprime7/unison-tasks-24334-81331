@@ -794,7 +794,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           mode: 'template-react' as const,
           source: resolvedIndustry,
           templateName: selectedTemplate?.label || system.name,
-          aesthetic: selectedTheme?.id,
+          aesthetic: resolvedPreset.id,
           systemsBuildContext: {
             version: '1.0',
             identity: {
@@ -805,22 +805,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             brand: {
               business_name: brand,
               tagline: blueprint.brand.tagline,
-              tone: selectedTheme?.styleDirective || blueprint.brand.tone,
-              palette: selectedTheme
-                ? {
-                    primary: selectedTheme.palette.accent,
-                    secondary: selectedTheme.palette.accent2 || selectedTheme.palette.accent,
-                    accent: selectedTheme.palette.accent2 || selectedTheme.palette.accent,
-                    background: selectedTheme.palette.bg,
-                    foreground: selectedTheme.palette.fg,
-                  }
-                : undefined,
-              typography: selectedTheme
-                ? {
-                    heading: selectedTheme.typography.headingFont,
-                    body: selectedTheme.typography.bodyFont,
-                  }
-                : undefined,
+              tone: resolvedPreset.styleDirective,
+              palette: {
+                primary: resolvedPreset.palette.accent,
+                secondary: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+                accent: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+                background: resolvedPreset.palette.bg,
+                foreground: resolvedPreset.palette.fg,
+              },
+              typography: {
+                heading: resolvedPreset.typography.headingFont,
+                body: resolvedPreset.typography.bodyFont,
+              },
             },
             intents: canonicalIntents.map((i) => ({ intent: i })),
             template_sections: aiSections,
@@ -829,7 +825,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           messages: [
             {
               role: 'user' as const,
-              content: `Generate a premium, industry-aware single-page React site for "${brand}" — a ${resolvedIndustry} business. Primary goal: ${primaryGoal || 'collect_leads'}. Aesthetic: ${selectedTheme?.label || 'modern'} (${selectedTheme?.styleDirective || ''}). Sections: ${(aiSections || []).join(' → ')}. Wire all CTAs with data-ut-intent attributes.`,
+              content: `Generate a premium, industry-aware single-page React site for "${brand}" — a ${resolvedIndustry} business. Primary goal: ${primaryGoal || 'collect_leads'}. Aesthetic: ${resolvedPreset.label} (${resolvedPreset.styleDirective}). Sections: ${(aiSections || []).join(' → ')}. Wire all CTAs with data-ut-intent attributes.`,
             },
           ],
         };

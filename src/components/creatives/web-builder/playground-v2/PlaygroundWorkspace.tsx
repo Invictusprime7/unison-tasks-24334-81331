@@ -8,23 +8,21 @@ import { CTASetupTab } from "./tabs/CTASetupTab";
 import { BindingsSetupTab } from "./tabs/BindingsSetupTab";
 import { FormsSetupTab } from "./tabs/FormsSetupTab";
 import { ReadinessSetupTab } from "./tabs/ReadinessSetupTab";
-import type { PlaygroundV2Category, PlaygroundV2DerivedPageView } from "./types";
+import { ProductsSetupTab } from "./tabs/ProductsSetupTab";
+import { PopupsSetupTab } from "./tabs/PopupsSetupTab";
+import { WorkflowsSetupTab } from "./tabs/WorkflowsSetupTab";
+import { CRMSetupTab } from "./tabs/CRMSetupTab";
+import { WebhooksSetupTab } from "./tabs/WebhooksSetupTab";
+import { SEOSetupTab } from "./tabs/SEOSetupTab";
+import type { PlaygroundV2Category, PlaygroundV2Config, PlaygroundV2DerivedPageView } from "./types";
 
 interface PlaygroundWorkspaceProps {
   category: PlaygroundV2Category;
   view: PlaygroundV2DerivedPageView | null;
+  config: PlaygroundV2Config;
 }
 
-const COMING_SOON: Partial<Record<PlaygroundV2Category, string>> = {
-  products: "Products & Services library",
-  popups: "Popup configuration",
-  workflows: "Automation workflows",
-  crm: "CRM routing",
-  webhooks: "Webhook connections",
-  seo: "SEO & tracking",
-};
-
-export function PlaygroundWorkspace({ category, view }: PlaygroundWorkspaceProps) {
+export function PlaygroundWorkspace({ category, view, config }: PlaygroundWorkspaceProps) {
   if (!view) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
@@ -32,8 +30,6 @@ export function PlaygroundWorkspace({ category, view }: PlaygroundWorkspaceProps
       </div>
     );
   }
-
-  const comingSoon = COMING_SOON[category];
 
   return (
     <ScrollArea className="flex-1">
@@ -43,15 +39,12 @@ export function PlaygroundWorkspace({ category, view }: PlaygroundWorkspaceProps
         {category === "bindings" && <BindingsSetupTab view={view} />}
         {category === "forms" && <FormsSetupTab view={view} />}
         {category === "readiness" && <ReadinessSetupTab view={view} />}
-        {comingSoon && (
-          <div className="space-y-3">
-            <h2 className="text-xl font-semibold">{comingSoon}</h2>
-            <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-sm text-muted-foreground">
-              {comingSoon} arrives in the next Launch Control milestone. The
-              underlying data is already wired — only the editor UI is pending.
-            </div>
-          </div>
-        )}
+        {category === "products" && <ProductsSetupTab view={view} config={config} />}
+        {category === "popups" && <PopupsSetupTab view={view} />}
+        {category === "workflows" && <WorkflowsSetupTab view={view} />}
+        {category === "crm" && <CRMSetupTab view={view} config={config} />}
+        {category === "webhooks" && <WebhooksSetupTab view={view} />}
+        {category === "seo" && <SEOSetupTab view={view} />}
       </div>
     </ScrollArea>
   );

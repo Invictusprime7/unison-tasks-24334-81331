@@ -29,12 +29,12 @@ const ITEMS: {
   { id: "bindings", label: "Bindings", icon: Link2 },
   { id: "forms", label: "Forms", icon: FormInput },
   { id: "readiness", label: "Readiness", icon: ListChecks },
-  { id: "products", label: "Products / Services", icon: Package, comingSoon: true },
-  { id: "popups", label: "Popups", icon: MessageSquare, comingSoon: true },
-  { id: "workflows", label: "Workflows", icon: Workflow, comingSoon: true },
-  { id: "crm", label: "CRM", icon: Users, comingSoon: true },
-  { id: "webhooks", label: "Webhooks", icon: Webhook, comingSoon: true },
-  { id: "seo", label: "SEO / Tracking", icon: Search, comingSoon: true },
+  { id: "products", label: "Products / Services", icon: Package },
+  { id: "popups", label: "Popups", icon: MessageSquare },
+  { id: "workflows", label: "Workflows", icon: Workflow },
+  { id: "crm", label: "CRM", icon: Users },
+  { id: "webhooks", label: "Webhooks", icon: Webhook },
+  { id: "seo", label: "SEO / Tracking", icon: Search },
 ];
 
 interface PlaygroundCategoryRailProps {

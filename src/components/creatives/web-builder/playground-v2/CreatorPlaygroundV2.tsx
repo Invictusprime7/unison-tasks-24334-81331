@@ -100,7 +100,7 @@ export function CreatorPlaygroundV2(props: CreatorPlaygroundV2Props) {
         {mode === "page-setup" && (
           <>
             <PlaygroundCategoryRail category={category} onCategoryChange={setCategory} />
-            <PlaygroundWorkspace category={category} view={view} />
+            <PlaygroundWorkspace category={category} view={view} config={config} />
             <PlaygroundAssistantRail
               pageTitle={view?.page.title}
               items={view?.readiness.items ?? []}

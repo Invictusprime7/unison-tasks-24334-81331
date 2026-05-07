@@ -45,17 +45,33 @@ export function postProcessContent(content: string): string {
       for (const [key, val] of Object.entries(parsed.files)) {
         if (
           (key.endsWith(".tsx") || key.endsWith(".jsx")) &&
-          typeof val === "string" &&
-          (val as string).includes("module.exports")
+          typeof val === "string"
         ) {
-          parsed.files[key] = (val as string)
-            .replace(
-              /\/\/\s*tailwind\.config[^\n]*\n(?:\/\/[^\n]*\n)*\s*module\.exports\s*=\s*\{[\s\S]*?\n\};\s*/gi,
-              ""
-            )
-            .replace(/\bmodule\.exports\s*=\s*\{[\s\S]*?\n\};\s*/g, "");
-          changed = true;
-          console.log(`[ai-code-assistant] Stripped module.exports from: ${key}`);
+          let cleaned = val as string;
+          // Strip leading prose like "Here's your component:\n```tsx"
+          cleaned = cleaned.replace(/^\s*(?:Here(?:'s| is)|Sure|Below|This is)[^\n]*\n+/i, "");
+          // Strip surrounding markdown code fences
+          cleaned = cleaned.replace(/^\s*```(?:tsx|jsx|ts|js|typescript|javascript)?\s*\n?/i, "");
+          cleaned = cleaned.replace(/\n?```\s*$/i, "");
+          // Strip module.exports leaks (Tailwind/PostCSS config bleed-through)
+          if (/\bmodule\.exports\b/.test(cleaned)) {
+            cleaned = cleaned
+              .replace(
+                /\/\/\s*tailwind\.config[^\n]*\n(?:\/\/[^\n]*\n)*\s*module\.exports\s*=\s*\{[\s\S]*?\n\};\s*/gi,
+                "",
+              )
+              .replace(/\bmodule\.exports\s*=\s*\{[\s\S]*?\n\};\s*/g, "");
+          }
+          // Self-close common void elements (br, hr, img, input)
+          cleaned = cleaned.replace(
+            /<(br|hr|img|input|meta|link|source|track|wbr)(\b[^>]*?)(?<!\/)>/gi,
+            "<$1$2 />",
+          );
+          if (cleaned !== val) {
+            parsed.files[key] = cleaned;
+            changed = true;
+            console.log(`[ai-code-assistant] Sanitized TSX file: ${key}`);
+          }
         }
       }
       if (changed) {

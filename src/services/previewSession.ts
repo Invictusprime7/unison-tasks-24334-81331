@@ -195,8 +195,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );`;
 
-import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
-
 const DEFAULT_INDEX_CSS = buildDefaultThemedIndexCss();
 
 const DEFAULT_APP_TSX = `export default function App() {

@@ -125,8 +125,8 @@ const Onboarding = () => {
         </div>
       </main>
 
-      {/* BusinessLauncher dialog */}
-      <BusinessLauncher open={launcherOpen} onOpenChange={handleLauncherClose} />
+      {/* SystemLauncher dialog (default path with theme aesthetic cards) */}
+      <SystemLauncher open={launcherOpen} onOpenChange={handleLauncherClose} />
     </div>
   );
 };

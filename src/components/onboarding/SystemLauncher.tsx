@@ -898,7 +898,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         templateCategory: generationCategory,
         businessName: brand,
         industry: generationCategory,
-        aesthetic: selectedTheme?.id,
+        aesthetic: resolvedPreset.id,
         backendRequired: false,
         wizardSelections,
       });
@@ -914,7 +914,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       const navState = {
         templateName: `${brand} Site`,
-        aesthetic: selectedTheme?.id,
+        aesthetic: resolvedPreset.id,
         templateCategory: generationCategory,
         systemType: selectedSystem,
         systemName: system.name,
@@ -937,7 +937,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         templateCategory: generationCategory as any,
         blueprint: blueprint as any,
         vfsFiles: wiredVfsFiles,
-        aesthetic: selectedTheme?.id,
+        aesthetic: resolvedPreset.id,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         intentRuntime: true,

@@ -9,6 +9,7 @@
 
 import { classifyLabel, type ElementContext } from '@/utils/redirectLabelClassifier';
 import { suggestRedirectPages } from '@/utils/redirectPageGenerator';
+import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 
 // ============================================================================
 // Types

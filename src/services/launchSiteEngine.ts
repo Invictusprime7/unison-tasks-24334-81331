@@ -181,7 +181,7 @@ export async function launchSiteEngine(
     throw err;
   }
 
-  onProgress({ stage: "extracting", label: "Resolving industry & template" });
+  onProgress({ stage: "extracting", label: "Understanding business", progress: 0.05 });
 
   const composition = pickComposition(input.systemType, input.selectedTemplateId);
   if (!composition) {
@@ -232,7 +232,7 @@ export async function launchSiteEngine(
       return null;
     });
 
-  onProgress({ stage: "extracting", label: "Planning site topology" });
+  onProgress({ stage: "extracting", label: "Planning pages", progress: 0.2 });
   const sitePlan: GeneratedSitePlan = planSiteTopology(resolvedIndustry, brand, {
     primaryIntent: industryProfile?.primaryIntent,
     selectedTemplateId: input.selectedTemplateId,
@@ -321,7 +321,7 @@ export async function launchSiteEngine(
   };
 
   // ── AI generation ────────────────────────────────────────────────────────
-  onProgress({ stage: "generating", label: "Generating your site with AI" });
+  onProgress({ stage: "generating", label: "Wiring backend & generating site", progress: 0.5 });
 
   const customNote = (input.customPrompt || "").trim();
   const aiUserPrompt = [
@@ -415,7 +415,7 @@ export async function launchSiteEngine(
     generatedFiles["/src/App.tsx"] = seedAppCode;
   }
 
-  onProgress({ stage: "opening_builder", label: "Wiring intents & opening builder" });
+  onProgress({ stage: "opening_builder", label: "Opening builder", progress: 0.95 });
 
   const provisionedBusinessId = await installPromise;
 

@@ -665,6 +665,30 @@ function _sanitizeChild(child: any): any {
   }
   return child;
 }
+// Wrap function components so their RETURN value is sanitized too.
+// Catches "Objects are not valid as a React child" thrown at mount when a
+// component returns a plain object (e.g. { children: ... }) instead of JSX.
+const _wrappedComponentCache = new WeakMap<any, any>();
+function _wrapComponent(type: any): any {
+  if (typeof type !== 'function') return type;
+  // Skip class components (they have a prototype with isReactComponent)
+  if (type.prototype && type.prototype.isReactComponent) return type;
+  const cached = _wrappedComponentCache.get(type);
+  if (cached) return cached;
+  const Wrapped = function _SafeFC(props: any, ref: any) {
+    let result;
+    try { result = (type as any)(props, ref); } catch (e) { throw e; }
+    if (result == null || typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean') return result;
+    if (typeof result === 'object' && (result as any).$$typeof) return result;
+    if (Array.isArray(result)) return result.map(_sanitizeChild);
+    // Plain object returned — sanitize it like a child
+    return _sanitizeChild(result);
+  };
+  try { (Wrapped as any).displayName = (type as any).displayName || (type as any).name || 'SafeFC'; } catch {}
+  _wrappedComponentCache.set(type, Wrapped);
+  return Wrapped;
+}
+
 (React as any).createElement = function SafeCreateElement(type: any, props: any, ...children: any[]) {
   if (type === undefined || type === null) {
     const caller = new Error().stack?.split('\\n')[2]?.trim() || 'unknown';
@@ -687,7 +711,7 @@ function _sanitizeChild(child: any): any {
       props = { ...props, children: sanitized };
     }
   }
-  return _origCreateElement(type, props, ...safeChildren);
+  return _origCreateElement(_wrapComponent(type), props, ...safeChildren);
 };
 
 // ── Patch react/jsx-runtime so the modern JSX transform also gets sanitized ──
@@ -709,7 +733,7 @@ try {
         props = { ...props, children: sanitized };
       }
     }
-    return orig(type, props, key);
+    return orig(_wrapComponent(type), props, key);
   };
   if (__jsxRT) {
     if (typeof __jsxRT.jsx === 'function') __jsxRT.jsx = __wrapJsx(__jsxRT.jsx);
@@ -725,7 +749,7 @@ try {
           props = { ...props, children: sanitized };
         }
       }
-      return origDev(type, props, key, isStatic, source, self);
+      return origDev(_wrapComponent(type), props, key, isStatic, source, self);
     };
   }
 } catch (e) {

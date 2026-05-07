@@ -711,7 +711,7 @@ function _wrapComponent(type: any): any {
       props = { ...props, children: sanitized };
     }
   }
-  return _origCreateElement(type, props, ...safeChildren);
+  return _origCreateElement(_wrapComponent(type), props, ...safeChildren);
 };
 
 // ── Patch react/jsx-runtime so the modern JSX transform also gets sanitized ──

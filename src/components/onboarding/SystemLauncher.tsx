@@ -24,7 +24,7 @@ import {
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
-import { buildThemedIndexCss } from "./themePresetToIndexCss";
+
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -762,17 +762,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       const compositionCode = compositionToReactCode(composition);
 
+      // SiteBundleSnapshot + composition.theme (themePresetToThemeTokens) is the
+      // single source of truth for the selected aesthetic. compositionToReactCode
+      // serializes those tokens inline and PageRenderer applies them via themeToCSS,
+      // so we do NOT inject a parallel /src/index.css here. Downstream scaffolders
+      // (multiPageScaffolder, sandpackFilePrep, previewSession) provide a shared
+      // base index.css when one is missing.
       const generatedFiles: Record<string, string> = {
         '/src/App.tsx': compositionCode,
       };
-
-      // Apply the wizard's selected aesthetic card directly to the global
-      // stylesheet so EVERY scaffolded page (home + multi-page placeholders
-      // + router header) inherits the theme.
-      const themedCss = selectedTheme ? buildThemedIndexCss(selectedTheme) : null;
-      if (themedCss) {
-        generatedFiles['/src/index.css'] = themedCss;
-      }
 
       toast("Composing your site…", {
         description: "AI tailoring copy & layout to your industry",
@@ -865,8 +863,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             for (const [path, content] of Object.entries(parsedFiles)) {
               if (typeof content !== 'string' || !content.trim()) continue;
               const norm = normalize(path);
-              // Preserve themed index.css from wizard token system
-              if (norm.endsWith('/index.css') && themedCss) continue;
+              // SiteBundle.theme is the single source of truth for tokens — never
+              // accept an AI-emitted index.css that would override the canonical theme.
+              if (norm.endsWith('/index.css')) continue;
               generatedFiles[norm] = content;
             }
             console.log('[SystemLauncher] AI enrichment applied:', Object.keys(parsedFiles));

@@ -534,6 +534,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const [selectedSystem, setSelectedSystem] = useState<BusinessSystemType | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateCardData | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<ThemePreset | null>(null);
+  const [themeDebug, setThemeDebug] = useState<{
+    resolvedPresetId: string;
+    industryCategory: string;
+    userExplicit: boolean;
+  } | null>(null);
   const [businessName, setBusinessName] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
@@ -751,6 +756,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
       const themedTokens = themePresetToThemeTokens(resolvedPreset);
       composition = { ...composition, theme: themedTokens };
+
+      // Debug trace: surface theme resolution decision
+      const themeTrace = {
+        resolvedPresetId: resolvedPreset.id,
+        industryCategory: String(generationCategory),
+        userExplicit: !!selectedTheme,
+      };
+      setThemeDebug(themeTrace);
+      // eslint-disable-next-line no-console
+      console.info('[WizardLaunch] Theme resolution', themeTrace);
 
       // Personalize the brand label across navbar/footer/cta sections
       const brand = businessName.trim();
@@ -1514,6 +1529,22 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                       <span className="flex items-center gap-1">
                         <span className="text-white/50">Style:</span>
                         <span className="text-cyan-400/70">{selectedTheme.label}</span>
+                      </span>
+                    )}
+                    {themeDebug && (
+                      <span
+                        className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.04] border border-white/10 font-mono"
+                        title="Resolved theme preset for last launch"
+                      >
+                        <span className="text-white/40">resolved:</span>
+                        <span className="text-fuchsia-400/80">{themeDebug.resolvedPresetId}</span>
+                        <span className="text-white/30">·</span>
+                        <span className="text-white/40">industry:</span>
+                        <span className="text-cyan-400/70">{themeDebug.industryCategory}</span>
+                        <span className="text-white/30">·</span>
+                        <span className={themeDebug.userExplicit ? "text-emerald-400/80" : "text-amber-400/70"}>
+                          {themeDebug.userExplicit ? "user-picked" : "industry-mapped"}
+                        </span>
                       </span>
                     )}
                   </div>

@@ -325,6 +325,8 @@ Use Lucide React icons: \`import { IconName } from "lucide-react";\`
 
 ${premiumCssBlock}
 
+${aestheticPolishBlock}
+
 ## ⚠️ CRITICAL REACT/TSX RULES:
 1. **NO <style> TAGS** — All CSS goes in index.css, referenced via className
 2. **NO <script> TAGS** — All logic uses React hooks and event handlers

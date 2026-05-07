@@ -24,6 +24,7 @@ import {
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
+import { resolveThemePreset } from "./industryThemePresetMap";
 
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";

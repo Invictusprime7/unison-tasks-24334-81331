@@ -10,8 +10,22 @@
  * placeholder pages (bg-background, text-foreground, border-border/40, etc.)
  * and Tailwind's shadcn token convention.
  */
-import type { ThemePreset } from './themePresets';
+import { THEME_PRESETS, type ThemePreset } from './themePresets';
 import { themePresetToThemeTokens } from './themePresetToTokens';
+
+/**
+ * Default ThemePreset used whenever a caller has not selected one in the
+ * wizard. We pick "modern" so that EVERY scaffold path (multi-page, sandpack
+ * fallback, template VFS, preview session defaults) shares the SAME token
+ * injection system instead of hand-rolled hex/HSL strings.
+ */
+export const DEFAULT_PREVIEW_THEME_PRESET: ThemePreset =
+  THEME_PRESETS.find((p) => p.id === 'modern') ?? THEME_PRESETS[0];
+
+/** Themed index.css using the default preset — single source of truth for fallbacks. */
+export function buildDefaultThemedIndexCss(): string {
+  return buildThemedIndexCss(DEFAULT_PREVIEW_THEME_PRESET);
+}
 
 export function buildThemedIndexCss(preset: ThemePreset): string {
   const tokens = themePresetToThemeTokens(preset);

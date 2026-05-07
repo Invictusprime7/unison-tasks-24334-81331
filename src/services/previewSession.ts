@@ -13,6 +13,7 @@
  */
 
 import { extractDependencies } from '@/utils/dependencyExtractor';
+import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
 
 // ============================================
@@ -194,40 +195,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );`;
 
-const DEFAULT_INDEX_CSS = `@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 221.2 83.2% 53.3%;
-  --radius: 0.75rem;
-}
-
-* {
-  border-color: hsl(var(--border));
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  margin: 0;
-  min-height: 100vh;
-}`;
+const DEFAULT_INDEX_CSS = buildDefaultThemedIndexCss();
 
 const DEFAULT_APP_TSX = `export default function App() {
   return null;

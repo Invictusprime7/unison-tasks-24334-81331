@@ -7,6 +7,7 @@
 
 import { fixJsxVoidElements, fixJsxStyleStrings } from './aiCodeCleaner';
 import { htmlDocToReactComponentWithCSS } from './htmlToJsx';
+import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 
 // ============================================================================
 // Embedded CSS Extraction
@@ -83,36 +84,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 `;
 
-  const baseCSS = `:root {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 224.3 76.3% 48%;
-  --radius: 0.75rem;
-}
-
-* { border-color: hsl(var(--border)); }
-
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
-}
-`;
+  // Single source of truth: the wizard's token injection system.
+  const baseCSS = buildDefaultThemedIndexCss();
 
   // Legacy HTML documents — auto-migrate to React/TSX component
   if (code.includes('<!DOCTYPE') || code.includes('<html')) {

@@ -95,6 +95,7 @@ Return ONLY valid JSON (no prose, no markdown fences) matching this exact shape:
     "needsBooking": boolean,
     "sellsProducts": boolean,
     "wantsLeadCapture": boolean,
+    "themeId": "one of: bold | modern | organic | futuristic | editorial | minimalist — infer from any aesthetic words the user used (e.g. 'bold', 'edgy', 'punchy' → bold; 'clean', 'sleek' → modern; 'natural', 'warm', 'earthy' → organic; 'futuristic', 'tech', 'neon' → futuristic; 'editorial', 'magazine', 'elegant' → editorial; 'minimal', 'simple' → minimalist). Set to null if user gave no aesthetic hint.",
     "location": "string or null",
     "services": ["string"] or null,
     "offers": ["string"] or null,
@@ -108,6 +109,7 @@ Return ONLY valid JSON (no prose, no markdown fences) matching this exact shape:
 REQUIRED FIELDS for readyToLaunch=true: businessName, industry, systemType, primaryGoal.
 If businessName is missing, ask for it.
 Pick sensible default selectedPages for the industry (typically: home/about/services/contact + booking or gallery).
+ALWAYS honor explicit aesthetic words from the user (bold, modern, minimal, etc.) by setting themeId — never silently drop them.
 Set confidence based on how clearly the user described their business.`;
 
 function sanitizeBrief(parsed: any, rawPrompt: string): AILaunchBriefShape {

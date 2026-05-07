@@ -31,7 +31,6 @@ const NAV_INTENTS = new Set(["nav.goto", "nav.external", "nav.anchor"]);
 function computePageReadiness(
   page: BuilderPage,
   bindings: PlaygroundBinding[],
-  forms: { formId: string; attachedToPageIds?: string[] }[],
 ): PageReadiness {
   const items: ReadinessItem[] = [];
   const pageBindings = bindings.filter((b) => b.sourcePageId === page.pageId);
@@ -133,7 +132,9 @@ export function derivePageView(
   const pageBindings = config.bindings.filter((b) => b.sourcePageId === pageId);
   const ctas = pageBindings.filter((b) => !NAV_INTENTS.has(b.intent));
   const popups = config.popups.filter((p) => p.activeOnPageIds?.includes(pageId));
-  const forms = config.forms.filter((f) => f.attachedToPageIds?.includes(pageId));
+    const forms = config.forms.filter(
+      (f) => f.redirectPageId === pageId || pageBindings.some((b) => b.targetType === "form" && b.targetId === f.formId),
+    );
   const readiness = config.readiness[pageId] || { pageId, score: 0, items: [] };
 
   return { page, ctas, bindings: pageBindings, forms, popups, readiness };

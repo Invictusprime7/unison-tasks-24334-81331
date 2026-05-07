@@ -787,8 +787,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // so we do NOT inject a parallel /src/index.css here. Downstream scaffolders
       // (multiPageScaffolder, sandpackFilePrep, previewSession) provide a shared
       // base index.css when one is missing.
+      // Wire the resolved ThemePreset into BOTH the inline composition tokens
+      // AND the global /src/index.css. Without this, downstream scaffolders
+      // (multiPageScaffolder, sandpackFilePrep, previewSession) inject a
+      // default "modern" themed CSS, which is why every industry rendered the
+      // same look regardless of the wizard card selection.
+      const themedIndexCss = buildThemedIndexCss(resolvedPreset);
       const generatedFiles: Record<string, string> = {
         '/src/App.tsx': compositionCode,
+        '/src/index.css': themedIndexCss,
       };
 
       toast("Composing your site…", {

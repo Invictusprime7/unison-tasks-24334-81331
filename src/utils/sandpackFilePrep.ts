@@ -625,6 +625,8 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
  */
 const DEFAULT_INDEX = `import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
+import * as __JsxRuntime from 'react/jsx-runtime';
+import * as __JsxDevRuntime from 'react/jsx-dev-runtime';
 import * as AppModule from './App';
 import './index.css';
 import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';

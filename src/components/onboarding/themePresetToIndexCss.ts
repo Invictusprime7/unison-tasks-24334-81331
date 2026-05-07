@@ -40,6 +40,7 @@ export function buildThemedIndexCss(preset: ThemePreset): string {
   const fontsImport = `@import url('https://fonts.googleapis.com/css2?${fontFamilies}&display=swap');`;
 
   return `${fontsImport}
+/* AESTHETIC: ${preset.label} (wizard token injection — single source of truth) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

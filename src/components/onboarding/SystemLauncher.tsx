@@ -881,21 +881,35 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // ── Merge AI output with LOCKED themed CSS ──
       // The Style card is authoritative for color + typography. Any
-      // /src/index.css the AI returns is overwritten by the resolved preset.
+      // /src/index.css the AI returns is force-overwritten by the resolved preset.
+      // Everything else (App.tsx, sections, components) is owned by the AI —
+      // there is NO deterministic fallback. If the AI fails to produce a valid
+      // App.tsx we abort the launch so the user can retry.
       const generatedFiles: Record<string, string> = {
         ...sanitized.files,
         '/src/index.css': themedIndexCss,
       };
-      // If the AI's App.tsx is missing OR was flagged invalid, use the
-      // deterministic seed so we never push a broken module to preview.
-      const aiAppKey = generatedFiles['/src/App.tsx'] ? '/src/App.tsx'
-        : generatedFiles['src/App.tsx'] ? 'src/App.tsx'
-        : null;
-      const aiAppInvalid = aiAppKey
-        ? sanitized.invalidFiles.includes(aiAppKey)
-        : true;
-      if (!aiAppKey || aiAppInvalid) {
-        generatedFiles['/src/App.tsx'] = seedAppCode;
+      // Normalize App.tsx key (AI may emit with or without leading slash).
+      if (!generatedFiles['/src/App.tsx'] && generatedFiles['src/App.tsx']) {
+        generatedFiles['/src/App.tsx'] = generatedFiles['src/App.tsx'];
+        delete generatedFiles['src/App.tsx'];
+      }
+      const aiAppMissing = !generatedFiles['/src/App.tsx'];
+      const aiAppInvalid =
+        sanitized.invalidFiles.includes('/src/App.tsx') ||
+        sanitized.invalidFiles.includes('src/App.tsx');
+      if (aiAppMissing || aiAppInvalid) {
+        toast.error(
+          aiAppMissing
+            ? 'AI did not return App.tsx. Please try again.'
+            : 'AI returned malformed App.tsx. Please try again.',
+        );
+        console.error('[SystemLauncher] Aborting launch — AI App.tsx unusable', {
+          aiAppMissing,
+          aiAppInvalid,
+          invalidFiles: sanitized.invalidFiles,
+        });
+        return;
       }
 
       const provisionedBusinessId = await installPromise;

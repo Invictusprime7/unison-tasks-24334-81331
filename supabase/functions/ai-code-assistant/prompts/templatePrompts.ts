@@ -202,6 +202,7 @@ ${currentCode.length > 30000 ? `\n[Template continues for ${currentCode.length} 
 ` : '';
 
   const premiumCssBlock = buildPremiumCssBlock(variation);
+  const aestheticPolishBlock = buildAestheticPolishBlock();
 
   return `You are an ELITE React fullstack developer producing PREMIUM, PRODUCTION-READY React applications. Your output must rival top-tier applications built with Next.js, Remix, and modern React patterns.
 ${referenceTemplateBlock}

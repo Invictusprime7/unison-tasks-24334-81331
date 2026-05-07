@@ -11,6 +11,8 @@ interface PlaygroundHeaderProps {
   businessName?: string;
   page: BuilderPage | null;
   readinessScore: number;
+  siteScore?: number;
+  siteBlockers?: number;
   onPreview?: () => void;
   onRunReadiness?: () => void;
   onPublishChecklist?: () => void;

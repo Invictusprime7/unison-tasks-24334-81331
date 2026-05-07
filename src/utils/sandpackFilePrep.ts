@@ -688,6 +688,55 @@ function _sanitizeChild(child: any): any {
   return _origCreateElement(type, props, ...safeChildren);
 };
 
+// ── Patch react/jsx-runtime so the modern JSX transform also gets sanitized ──
+// Vite/SWC/Babel "automatic" JSX compiles to jsx()/jsxs()/jsxDEV() which
+// bypass React.createElement entirely. Without this, our sanitizer is dead
+// weight against the "Objects are not valid as a React child" crash.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const __jsxRT: any = require('react/jsx-runtime');
+  const __jsxDEVRT: any = (() => { try { return require('react/jsx-dev-runtime'); } catch { return null; } })();
+  const __wrapJsx = (orig: any) => function PatchedJsx(type: any, props: any, key: any) {
+    if (type === undefined || type === null) {
+      return _origCreateElement('div', {
+        style: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', margin: 2, borderRadius: 6, border: '1px dashed hsl(0 60% 50%)', background: 'hsl(0 60% 97%)', color: 'hsl(0 60% 40%)', fontSize: 11, fontFamily: 'monospace' },
+        title: 'This component resolved to undefined — check imports',
+      }, '⚠ missing component');
+    }
+    if (props && typeof props === 'object' && 'children' in props) {
+      const sanitized = _sanitizeChild((props as any).children);
+      if (sanitized !== (props as any).children) {
+        props = { ...props, children: sanitized };
+      }
+    }
+    return orig(type, props, key);
+  };
+  if (__jsxRT) {
+    if (typeof __jsxRT.jsx === 'function') __jsxRT.jsx = __wrapJsx(__jsxRT.jsx);
+    if (typeof __jsxRT.jsxs === 'function') __jsxRT.jsxs = __wrapJsx(__jsxRT.jsxs);
+  }
+  if (__jsxDEVRT && typeof __jsxDEVRT.jsxDEV === 'function') {
+    const origDev = __jsxDEVRT.jsxDEV;
+    __jsxDEVRT.jsxDEV = function PatchedJsxDEV(type: any, props: any, key: any, isStatic: any, source: any, self: any) {
+      if (type === undefined || type === null) {
+        return _origCreateElement('div', {
+          style: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', margin: 2, borderRadius: 6, border: '1px dashed hsl(0 60% 50%)', background: 'hsl(0 60% 97%)', color: 'hsl(0 60% 40%)', fontSize: 11, fontFamily: 'monospace' },
+          title: 'This component resolved to undefined — check imports',
+        }, '⚠ missing component');
+      }
+      if (props && typeof props === 'object' && 'children' in props) {
+        const sanitized = _sanitizeChild((props as any).children);
+        if (sanitized !== (props as any).children) {
+          props = { ...props, children: sanitized };
+        }
+      }
+      return origDev(type, props, key, isStatic, source, self);
+    };
+  }
+} catch (e) {
+  console.warn('[Preview] Failed to patch jsx-runtime:', e);
+}
+
 // ── Robust App resolution: handle default + named exports gracefully ──
 const App = (() => {
   if (AppModule.default && (typeof AppModule.default === 'function' || (typeof AppModule.default === 'object' && (AppModule.default as any).$$typeof))) {

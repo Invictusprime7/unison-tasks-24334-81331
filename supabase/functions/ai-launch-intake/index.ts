@@ -145,6 +145,7 @@ function sanitizeBrief(parsed: any, rawPrompt: string): AILaunchBriefShape {
     services: Array.isArray(parsed?.brief?.services) ? parsed.brief.services : undefined,
     offers: Array.isArray(parsed?.brief?.offers) ? parsed.brief.offers : undefined,
     targetAudience: parsed?.brief?.targetAudience || undefined,
+    themeId: VALID_THEMES.includes(parsed?.brief?.themeId) ? parsed.brief.themeId : undefined,
     confidence: Math.min(Math.max(Number(parsed?.brief?.confidence) || 0.5, 0), 1),
     missingFields,
   };

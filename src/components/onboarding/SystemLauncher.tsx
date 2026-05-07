@@ -757,6 +757,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const themedTokens = themePresetToThemeTokens(resolvedPreset);
       composition = { ...composition, theme: themedTokens };
 
+      // Debug trace: surface theme resolution decision
+      const themeTrace = {
+        resolvedPresetId: resolvedPreset.id,
+        industryCategory: String(generationCategory),
+        userExplicit: !!selectedTheme,
+      };
+      setThemeDebug(themeTrace);
+      // eslint-disable-next-line no-console
+      console.info('[WizardLaunch] Theme resolution', themeTrace);
+
       // Personalize the brand label across navbar/footer/cta sections
       const brand = businessName.trim();
       composition = {

@@ -43,6 +43,7 @@ import {
   randomFontPairing,
 } from "@/utils/designVariation";
 // (aiCodeCleaner imports removed alongside the wizard fast-path enrichment)
+import { sanitizeGeneratedFiles } from "@/utils/tsxSanitizer";
 import { type LauncherHandoff } from "@/types/runtimeManifest";
 import {
   getCompositionContentContext,

@@ -711,32 +711,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
       }
 
-      const blueprint = {
-        version: "1.0",
-        identity: {
-          industry: resolvedIndustry,
-          business_model: system.id,
-          primary_goal: industryProfile
-            ? industryProfile.defaultCapabilities.includes("booking")
-              ? "bookings"
-              : "leads"
-            : "Generate leads and grow the business",
-        },
-        brand: {
-          business_name: businessName.trim(),
-          tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
-          tone: "professional and friendly",
-          typography: fonts,
-        },
-        design,
-        intents: canonicalIntents.map((i: string) => ({ intent: i })),
-        template_sections: selectedTemplate?.sectionTypes?.length
-          ? selectedTemplate.sectionTypes
-          : compositionMeta?.sections,
-        template_intents: compositionMeta?.intents,
-      };
-
       // ── Resolve composition deterministically from Section Registry ──
+      // The picked Template card is the structural contract — its sections
+      // (order + types) MUST be honored by the AI. We resolve it FIRST so we
+      // can pass section composition into the AI seed.
       let composition =
         (selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null) ||
         getCompositionsBySystemType(selectedSystem)[0] ||
@@ -749,26 +727,21 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      // ── Resolve canonical aesthetic preset and apply to composition.theme ──
-      // SiteBundle's composition.theme is the single source of truth for HSL +
-      // typography tokens. We ALWAYS resolve to a real ThemePreset (explicit
-      // user selection > industry mapping) so the wizard never falls through
-      // to ad-hoc default CSS.
+      // ── Resolve canonical aesthetic preset (Style card → ThemePreset) ──
+      // Explicit user selection > industry mapping. Never falls through.
       const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
       const themedTokens = themePresetToThemeTokens(resolvedPreset);
       composition = { ...composition, theme: themedTokens };
 
-      // Debug trace: surface theme resolution decision
       const themeTrace = {
         resolvedPresetId: resolvedPreset.id,
         industryCategory: String(generationCategory),
         userExplicit: !!selectedTheme,
       };
       setThemeDebug(themeTrace);
-      // eslint-disable-next-line no-console
       console.info('[WizardLaunch] Theme resolution', themeTrace);
 
-      // Personalize the brand label across navbar/footer/cta sections
+      // Personalize brand label across navbar/footer sections (deterministic seed)
       const brand = businessName.trim();
       composition = {
         ...composition,
@@ -780,37 +753,133 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         }),
       };
 
-      const compositionCode = compositionToReactCode(composition);
-
-      // SiteBundleSnapshot + composition.theme (themePresetToThemeTokens) is the
-      // single source of truth for the selected aesthetic. compositionToReactCode
-      // serializes those tokens inline and PageRenderer applies them via themeToCSS,
-      // so we do NOT inject a parallel /src/index.css here. Downstream scaffolders
-      // (multiPageScaffolder, sandpackFilePrep, previewSession) provide a shared
-      // base index.css when one is missing.
-      // Wire the resolved ThemePreset into BOTH the inline composition tokens
-      // AND the global /src/index.css. Without this, downstream scaffolders
-      // (multiPageScaffolder, sandpackFilePrep, previewSession) inject a
-      // default "modern" themed CSS, which is why every industry rendered the
-      // same look regardless of the wizard card selection.
+      // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);
-      const generatedFiles: Record<string, string> = {
-        '/src/App.tsx': compositionCode,
-        '/src/index.css': themedIndexCss,
+
+      // Deterministic seed App.tsx — used as `currentCode` context to anchor
+      // the AI to the picked template's section structure.
+      const seedAppCode = compositionToReactCode(composition);
+
+      // ── Blueprint enriched with Style card palette + custom instructions ──
+      const blueprint = {
+        version: "1.0",
+        identity: {
+          industry: resolvedIndustry,
+          business_model: system.id,
+          primary_goal: industryProfile
+            ? industryProfile.defaultCapabilities.includes("booking")
+              ? "bookings"
+              : "leads"
+            : "Generate leads and grow the business",
+        },
+        brand: {
+          business_name: brand,
+          tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
+          tone: "professional and friendly",
+          typography: {
+            heading: resolvedPreset.typography.headingFont,
+            body: resolvedPreset.typography.bodyFont,
+          },
+          // Hex palette from the picked Style preset — fast-path prompt
+          // converts these to the HSL --primary/--background CSS vars.
+          palette: {
+            primary: resolvedPreset.palette.accent,
+            secondary: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+            accent: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+            background: resolvedPreset.palette.bg,
+            foreground: resolvedPreset.palette.fg,
+          },
+        },
+        design,
+        intents: canonicalIntents.map((i: string) => ({ intent: i })),
+        // The Template card's section order — passed to the AI as a hard contract
+        template_sections: composition.sections.map((s) => s.type),
+        template_intents: compositionMeta?.intents,
       };
 
-      toast("Composing your site…", {
-        description: `Applying ${resolvedPreset.label} aesthetic to ${resolvedIndustry}`,
+      toast("Generating your site with AI…", {
+        description: `${resolvedIndustry} • ${selectedTemplate?.label || system.name} • ${resolvedPreset.label}`,
       });
 
-      // ── Fast-path AI enrichment REMOVED ──
-      // Previously a Lane A "template-react" call to ai-code-assistant ran here
-      // and overwrote /src/App.tsx with a generic single-file React template,
-      // which is why every industry rendered the same minimalist look regardless
-      // of the resolved ThemePreset. The deterministic SiteBundle pipeline
-      // (composition + themedTokens via compositionToReactCode) is now the
-      // single source of truth for the launched site. Further enrichment is
-      // handled by the regular AI assistant (Builder Lane B) on demand.
+      // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
+      const customNote = customPrompt.trim();
+      const aiUserPrompt = [
+        `Generate a complete, production-ready website for "${brand}" — a ${resolvedIndustry} business.`,
+        ``,
+        `BUSINESS INPUTS (from wizard, all binding):`,
+        `1. Industry / System: ${system.name} (${resolvedIndustry})`,
+        `2. Primary Goal: ${primaryGoal || 'collect_leads'}`,
+        `3. Template (LOCKED layout): ${selectedTemplate?.label || system.name}`,
+        `   Required section order — render in this exact sequence: ${composition.sections.map((s) => s.type).join(' → ')}`,
+        `4. Business Name: ${brand}`,
+        `5. Visual Style preset (LOCKED aesthetic): ${resolvedPreset.label} — ${resolvedPreset.styleDirective}`,
+        `   Headings: ${resolvedPreset.typography.headingFont} (${resolvedPreset.typography.headingWeight}). Body: ${resolvedPreset.typography.bodyFont}.`,
+        customNote ? `6. Custom instructions from user (HIGHEST priority for copy/tone): ${customNote}` : `6. Custom instructions: (none)`,
+        ``,
+        `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
+        `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
+        `CONTENT CONTRACT: Copy must be specific to the ${resolvedIndustry} industry and reflect the primary goal "${primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
+        `Wire interactive elements with data-ut-intent attributes from this set: ${canonicalIntents.join(', ')}.`,
+      ].join('\n');
+
+      // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
+      let aiData: Record<string, unknown> | null = null;
+      let aiError: { message?: string } | null = null;
+      const MAX_RETRIES = 2;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 1200 * attempt));
+        }
+        const result = await supabase.functions.invoke('ai-code-assistant', {
+          body: {
+            messages: [{ role: 'user', content: aiUserPrompt }],
+            mode: 'template-react',
+            templateName: selectedTemplate?.label || system.name,
+            aesthetic: resolvedPreset.id,
+            source: resolvedIndustry,
+            systemType: selectedSystem,
+            currentCode: seedAppCode,
+            systemsBuildContext: blueprint,
+          },
+        });
+        aiError = result.error as { message?: string } | null;
+        aiData = result.data as Record<string, unknown> | null;
+        if (!aiError) break;
+        console.warn(`[SystemLauncher] AI attempt ${attempt + 1} failed:`, aiError?.message);
+      }
+
+      if (aiError) {
+        const msg = aiError.message || '';
+        if (msg.includes('429')) {
+          toast.error('AI is rate-limited. Please wait a moment and try again.');
+        } else if (msg.includes('402')) {
+          toast.error('AI credits required. Please add credits to continue.');
+        } else {
+          toast.error(`AI generation failed: ${msg || 'unknown error'}`);
+        }
+        return;
+      }
+
+      const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
+      const structured = extractLauncherPayload(aiContent);
+
+      if (!structured?.files || Object.keys(structured.files).length === 0) {
+        toast.error('AI returned no usable files. Please try again.');
+        console.error('[SystemLauncher] AI payload missing files:', aiContent.slice(0, 300));
+        return;
+      }
+
+      // ── Merge AI output with LOCKED themed CSS ──
+      // The Style card is authoritative for color + typography. Any
+      // /src/index.css the AI returns is overwritten by the resolved preset.
+      const generatedFiles: Record<string, string> = {
+        ...structured.files,
+        '/src/index.css': themedIndexCss,
+      };
+      // Guarantee an App entry point exists.
+      if (!generatedFiles['/src/App.tsx'] && !generatedFiles['src/App.tsx']) {
+        generatedFiles['/src/App.tsx'] = seedAppCode;
+      }
 
       const provisionedBusinessId = await installPromise;
 

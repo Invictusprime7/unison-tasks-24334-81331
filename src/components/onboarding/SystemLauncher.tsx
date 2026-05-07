@@ -24,6 +24,7 @@ import {
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
+import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";

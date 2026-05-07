@@ -13,6 +13,7 @@
  */
 
 import { extractDependencies } from '@/utils/dependencyExtractor';
+import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
 
 // ============================================

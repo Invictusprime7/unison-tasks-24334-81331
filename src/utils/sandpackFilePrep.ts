@@ -695,16 +695,14 @@ function _sanitizeChild(child: any): any {
 // bypass React.createElement entirely. Without this, our sanitizer is dead
 // weight against the "Objects are not valid as a React child" crash.
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const __jsxRT: any = require('react/jsx-runtime');
-  const __jsxDEVRT: any = (() => { try { return require('react/jsx-dev-runtime'); } catch { return null; } })();
+  const __jsxRT: any = __JsxRuntime;
+  const __jsxDEVRT: any = __JsxDevRuntime;
+  const __makePlaceholder = () => _origCreateElement('div', {
+    style: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', margin: 2, borderRadius: 6, border: '1px dashed hsl(0 60% 50%)', background: 'hsl(0 60% 97%)', color: 'hsl(0 60% 40%)', fontSize: 11, fontFamily: 'monospace' },
+    title: 'This component resolved to undefined — check imports',
+  }, '⚠ missing component');
   const __wrapJsx = (orig: any) => function PatchedJsx(type: any, props: any, key: any) {
-    if (type === undefined || type === null) {
-      return _origCreateElement('div', {
-        style: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', margin: 2, borderRadius: 6, border: '1px dashed hsl(0 60% 50%)', background: 'hsl(0 60% 97%)', color: 'hsl(0 60% 40%)', fontSize: 11, fontFamily: 'monospace' },
-        title: 'This component resolved to undefined — check imports',
-      }, '⚠ missing component');
-    }
+    if (type === undefined || type === null) return __makePlaceholder();
     if (props && typeof props === 'object' && 'children' in props) {
       const sanitized = _sanitizeChild((props as any).children);
       if (sanitized !== (props as any).children) {
@@ -720,12 +718,7 @@ try {
   if (__jsxDEVRT && typeof __jsxDEVRT.jsxDEV === 'function') {
     const origDev = __jsxDEVRT.jsxDEV;
     __jsxDEVRT.jsxDEV = function PatchedJsxDEV(type: any, props: any, key: any, isStatic: any, source: any, self: any) {
-      if (type === undefined || type === null) {
-        return _origCreateElement('div', {
-          style: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', margin: 2, borderRadius: 6, border: '1px dashed hsl(0 60% 50%)', background: 'hsl(0 60% 97%)', color: 'hsl(0 60% 40%)', fontSize: 11, fontFamily: 'monospace' },
-          title: 'This component resolved to undefined — check imports',
-        }, '⚠ missing component');
-      }
+      if (type === undefined || type === null) return __makePlaceholder();
       if (props && typeof props === 'object' && 'children' in props) {
         const sanitized = _sanitizeChild((props as any).children);
         if (sanitized !== (props as any).children) {

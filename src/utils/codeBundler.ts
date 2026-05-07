@@ -338,8 +338,17 @@ if (typeof window !== 'undefined' && document.getElementById('root')) {
       css,
     };
   } catch (error) {
-    console.error('Babel transpilation error:', error);
-    throw error;
+    // Babel/standalone occasionally throws SyntaxError instances whose
+    // `message` is non-writable. Re-wrap as a plain Error so any downstream
+    // code that mutates `.message` (Sandpack, error-boundaries, our own
+    // diagnostics) doesn't crash the host with
+    //   "Cannot assign to read only property 'message'".
+    const safe = new Error(
+      error instanceof Error ? error.message : String(error ?? 'Babel transpilation failed'),
+    );
+    (safe as any).originalName = error instanceof Error ? error.name : 'Error';
+    console.error('Babel transpilation error:', safe.message);
+    throw safe;
   }
 }
 

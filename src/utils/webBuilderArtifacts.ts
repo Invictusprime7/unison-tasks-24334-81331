@@ -29,7 +29,17 @@ export function buildCanonicalArtifacts(
     || compiled['/index.jsx']
     || '';
 
-  const bundle = entryCode ? bundleCode(entryCode) : { html: '', css: '', javascript: '' };
+  let bundle: { html: string; css: string; javascript: string } = { html: '', css: '', javascript: '' };
+  if (entryCode) {
+    try {
+      bundle = bundleCode(entryCode);
+    } catch (err) {
+      // Re-wrap any read-only SyntaxError so it doesn't crash the WebBuilder.
+      // Sandpack will surface the real syntax error in-preview.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[webBuilderArtifacts] bundleCode failed, returning empty deploy bundle:', msg);
+    }
+  }
   const cssParts = [compiled['/index.css'], compiled['/template.css'], bundle.css]
     .filter((part): part is string => typeof part === 'string' && part.trim().length > 0);
   const mergedCss = cssParts.join('\n\n');

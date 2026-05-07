@@ -898,13 +898,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const aiAppInvalid =
         sanitized.invalidFiles.includes('/src/App.tsx') ||
         sanitized.invalidFiles.includes('src/App.tsx');
-      if (aiAppMissing || aiAppInvalid) {
-        toast.error(
-          aiAppMissing
-            ? 'AI did not return App.tsx. Please try again.'
-            : 'AI returned malformed App.tsx. Please try again.',
-        );
-        console.error('[SystemLauncher] Aborting launch — AI App.tsx unusable', {
+      // Any other malformed TSX/JSX file (e.g. Navbar.tsx, Hero.tsx) will crash
+      // Sandpack/Babel at preview time. Abort instead of pushing broken modules.
+      const otherInvalid = sanitized.invalidFiles.filter(
+        (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
+      );
+      if (aiAppMissing || aiAppInvalid || otherInvalid.length > 0) {
+        const reason = aiAppMissing
+          ? 'AI did not return App.tsx. Please try again.'
+          : aiAppInvalid
+            ? 'AI returned malformed App.tsx. Please try again.'
+            : `AI returned malformed file(s): ${otherInvalid.join(', ')}. Please try again.`;
+        toast.error(reason);
+        console.error('[SystemLauncher] Aborting launch — AI output unusable', {
           aiAppMissing,
           aiAppInvalid,
           invalidFiles: sanitized.invalidFiles,

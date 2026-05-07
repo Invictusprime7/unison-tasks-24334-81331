@@ -181,7 +181,7 @@ export async function launchSiteEngine(
     throw err;
   }
 
-  onProgress({ stage: "extracting", label: "Resolving industry & template" });
+  onProgress({ stage: "extracting", label: "Understanding business", progress: 0.05 });
 
   const composition = pickComposition(input.systemType, input.selectedTemplateId);
   if (!composition) {

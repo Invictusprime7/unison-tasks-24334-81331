@@ -71,6 +71,9 @@ verify_jwt = true
 [functions.systems-classify]
 verify_jwt = true
 
+[functions.ai-launch-intake]
+verify_jwt = true
+
 [functions.systems-compile]
 verify_jwt = true
 

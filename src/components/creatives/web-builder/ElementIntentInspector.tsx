@@ -328,11 +328,11 @@ export function ElementIntentInspector({
                   {selection.intent} (detected)
                 </SelectItem>
               )}
-              <SelectItem value="" disabled>-- Automation Intents --</SelectItem>
+              <SelectItem value="__automation_header__" disabled>-- Automation Intents --</SelectItem>
               {AUTOMATION_INTENTS.map((intent) => (
                 <SelectItem key={intent} value={intent}>{intent}</SelectItem>
               ))}
-              <SelectItem value="" disabled>-- Action Intents --</SelectItem>
+              <SelectItem value="__action_header__" disabled>-- Action Intents --</SelectItem>
               {ACTION_INTENTS.map((intent) => (
                 <SelectItem key={intent} value={intent}>{intent}</SelectItem>
               ))}

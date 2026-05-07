@@ -61,15 +61,18 @@ export function launchStateToSandpackFiles(
   // ========================================================================
   // 2. Ensure theme CSS variables are available
   // ========================================================================
-  const cssKey = 
-    normalizedFiles['/src/index.css'] 
-    || normalizedFiles['src/index.css'] 
-    || normalizedFiles['/index.css']
-    || '/src/index.css';  // fallback
+  const cssKey =
+    '/src/index.css' in normalizedFiles
+      ? '/src/index.css'
+      : 'src/index.css' in normalizedFiles
+        ? 'src/index.css'
+        : '/index.css' in normalizedFiles
+          ? '/index.css'
+          : '/src/index.css'; // fallback path
 
   const themeCss = generateThemeCss(launchState);
   const existingCss = files[cssKey] || '';
-  
+
   // Only prepend if existing CSS doesn't already have theme vars
   if (!existingCss.includes('--primary:') && !existingCss.includes('--primary ')) {
     files[cssKey] = themeCss + '\n\n' + existingCss;

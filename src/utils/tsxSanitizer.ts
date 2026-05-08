@@ -228,6 +228,52 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
   // Strip leading "Here's…" prose lines that survived extractCleanCode
   code = code.replace(/^(?:\s*\/\/[^\n]*\n)*\s*(?:Here(?:'s| is)|Sure|Below|This is)\b[^\n]*\n/i, "");
 
+  // Replace FontAwesome <i class="fab fa-…"> stubs with lucide-react components.
+  // Preview ships only lucide-react; FA classes render as blank squares.
+  try {
+    const FA_MAP: Record<string, string> = {
+      "fa-instagram": "Instagram", "fa-facebook": "Facebook", "fa-facebook-f": "Facebook",
+      "fa-twitter": "Twitter", "fa-x-twitter": "Twitter", "fa-linkedin": "Linkedin",
+      "fa-linkedin-in": "Linkedin", "fa-youtube": "Youtube", "fa-tiktok": "Music",
+      "fa-github": "Github", "fa-pinterest": "Bookmark", "fa-whatsapp": "MessageCircle",
+      "fa-envelope": "Mail", "fa-phone": "Phone", "fa-map-marker": "MapPin",
+      "fa-map-marker-alt": "MapPin", "fa-location-dot": "MapPin",
+      "fa-star": "Star", "fa-heart": "Heart", "fa-check": "Check", "fa-arrow-right": "ArrowRight",
+    };
+    const replacedIcons = new Set<string>();
+    const replacer = (_full: string, cls: string) => {
+      const m = cls.match(/fa-[\w-]+/);
+      const Icon = (m && FA_MAP[m[0]]) || "Circle";
+      replacedIcons.add(Icon);
+      return `<${Icon} className="w-5 h-5" aria-hidden="true" />`;
+    };
+    let next = code.replace(
+      /<i\s+className=(?:"|')([^"']*\bfa[brs]?\s+fa-[\w-]+[^"']*)(?:"|')[^>]*\/?>(?:\s*<\/i>)?/g,
+      replacer,
+    );
+    next = next.replace(
+      /<i\s+class=(?:"|')([^"']*\bfa[brs]?\s+fa-[\w-]+[^"']*)(?:"|')[^>]*\/?>(?:\s*<\/i>)?/g,
+      replacer,
+    );
+    if (replacedIcons.size > 0 && next !== code) {
+      const needed = Array.from(replacedIcons);
+      const importRe = /import\s+\{([^}]*)\}\s+from\s+['"]lucide-react['"]\s*;?/;
+      if (importRe.test(next)) {
+        next = next.replace(importRe, (_m, group: string) => {
+          const existing = group.split(",").map((s) => s.trim()).filter(Boolean);
+          const merged = Array.from(new Set([...existing, ...needed])).sort();
+          return `import { ${merged.join(", ")} } from "lucide-react";`;
+        });
+      } else {
+        next = `import { ${needed.sort().join(", ")} } from "lucide-react";\n` + next;
+      }
+      code = next;
+      applied.push(`replaceFontAwesomeIcons(${needed.length})`);
+    }
+  } catch (e) {
+    issues.push(`replaceFontAwesomeIcons failed: ${(e as Error).message}`);
+  }
+
   // Repair an `export default Foo;` that landed inside a JSX block / function body
   // (the exact failure shape we saw with Navbar.tsx). Pull the orphan export
   // out and drop it onto its own top-level line at EOF.

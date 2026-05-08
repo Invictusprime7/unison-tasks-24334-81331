@@ -362,19 +362,31 @@ Return a JSON object with ALL files:
 
 ## QUALITY REQUIREMENTS (NON-NEGOTIABLE):
 - **MINIMUM 10 section components** - Header, Hero, Services, About, Team, Testimonials, Gallery, FAQ, CTA, Contact, Footer
-- **MINIMUM 6 service/feature items** with icons, titles, descriptions, pricing  
+- **MINIMUM 6 service/feature items** with icons, titles, descriptions, pricing
 - **MINIMUM 3 team members** with photos, names, titles, bios
 - **MINIMUM 3 testimonials** with quotes, names, companies, avatars
 - **MINIMUM 6 gallery images** with proper aspect ratios
 - **MINIMUM 5 FAQ items** with expandable answers
 - Premium, award-winning visual design rivaling Webflow/Framer
 - Smooth scroll animations and micro-interactions
-- Professional typography hierarchy (eyebrow → headline → body)
+- Professional typography hierarchy (eyebrow → headline → body) using `font-heading` and `font-body` Tailwind classes
 - Consistent spacing (8px grid system)
 - Glass morphism and gradient effects WHERE SHOWN IN CSS ABOVE
 - Dark/light mode ready with CSS variables
 - SEO-friendly semantic HTML structure
 - All images from Unsplash with proper alt text
+
+## 🎨 ICON RULES (NON-NEGOTIABLE — preview ships ONLY lucide-react):
+- **ONLY use \`lucide-react\` icons.** Import named exports: \`import { Instagram, Facebook, Twitter, Linkedin, Youtube, Mail, Phone, MapPin } from "lucide-react";\` then render as JSX components: \`<Instagram className="w-5 h-5" />\`.
+- **NEVER use FontAwesome** (\`<i class="fab fa-…">\`, \`<i class="fas …">\`), Material Icons, Heroicons, Bootstrap Icons, or any external icon CDN — none are loaded in preview and they will render blank.
+- **NEVER use emoji as a substitute for icons** (✉, 📞, 🐦, 📷). Use the matching lucide-react component.
+- **Footer MUST include a social icon row** with at least 4 lucide-react icons (Instagram, Facebook, Twitter or X, Linkedin) wrapped in styled \`<a>\` tags (\`href="#"\`, \`aria-label="…"\`), arranged in a horizontal flex row.
+- **Service / feature cards** must each render a lucide-react icon at the top (24-32px), themed via \`text-primary\` or \`text-accent\`.
+
+## 🔤 TYPOGRAPHY RULES:
+- Headings (\`h1\`-\`h6\`) automatically inherit the Google Font from index.css. Apply \`className="font-heading"\` on display elements that aren't a heading tag.
+- Body copy uses \`className="font-body"\` (default). Never hard-code \`font-family\` strings in style props.
+- Eyebrow labels: \`text-xs uppercase tracking-[0.2em] font-semibold text-primary\`.
 
 ## 🎯 PREMIUM COMPONENT EXAMPLES (FOLLOW THIS QUALITY LEVEL):
 

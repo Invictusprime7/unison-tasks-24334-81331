@@ -50,6 +50,8 @@ const PREVIEW_INDEX_HTML = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -96,8 +98,10 @@ const PREVIEW_INDEX_HTML = `<!DOCTYPE html>
             sm: 'calc(var(--radius) - 4px)',
           },
           fontFamily: {
-            heading: 'var(--font-heading, ui-sans-serif, system-ui, sans-serif)',
-            body: 'var(--font-body, ui-sans-serif, system-ui, sans-serif)',
+            heading: ['var(--font-heading)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            body: ['var(--font-body)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            sans: ['var(--font-body)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            serif: ['var(--font-heading)', 'ui-serif', 'Georgia', 'serif'],
           },
         },
       },

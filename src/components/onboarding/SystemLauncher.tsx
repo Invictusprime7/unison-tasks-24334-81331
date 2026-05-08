@@ -716,9 +716,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // The picked Template card is the structural contract — its sections
       // (order + types) MUST be honored by the AI. We resolve it FIRST so we
       // can pass section composition into the AI seed.
+      // Resolution order:
+      //   1. Exact match by selectedTemplate.id
+      //   2. First composition registered for this system
+      //   3. Universal fallback — any SAAS / AGENCY composition (generic layout)
+      // We never abort: the composition is a structural seed; AI rewrites content.
       let composition =
         (selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null) ||
         getCompositionsBySystemType(selectedSystem)[0] ||
+        getCompositionsBySystemType('saas')[0] ||
+        getCompositionsBySystemType('agency')[0] ||
         null;
 
       if (!composition) {
@@ -726,6 +733,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           `No template composition available for ${system.name}. Please pick a template.`,
         );
         return;
+      }
+      if (!getCompositionById(selectedTemplate?.id ?? '') && selectedTemplate) {
+        console.info(
+          `[SystemLauncher] Using universal composition fallback "${composition.id}" for system "${selectedSystem}" (template "${selectedTemplate.id}" has no registered composition).`,
+        );
       }
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) ──

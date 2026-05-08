@@ -918,16 +918,21 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
       );
       if (aiAppMissing || aiAppInvalid) {
-        const reason = aiAppMissing
-          ? 'AI did not return App.tsx. Please try again.'
-          : 'AI returned malformed App.tsx. Please try again.';
-        toast.error(reason);
-        console.error('[SystemLauncher] Aborting launch — AI App.tsx unusable', {
+        // Graceful fallback: use the deterministic composition-derived seed as
+        // App.tsx so the user always lands in the builder with a usable site
+        // instead of an opaque "try again" error. They can regenerate from
+        // inside the builder where it's faster to iterate.
+        console.warn('[SystemLauncher] AI App.tsx unusable — using composition seed fallback', {
           aiAppMissing,
           aiAppInvalid,
           invalidFiles: sanitized.invalidFiles,
         });
-        return;
+        generatedFiles['/src/App.tsx'] = seedAppCode;
+        toast.warning(
+          aiAppMissing
+            ? 'AI did not return a page. Loaded the base template — you can regenerate inside the builder.'
+            : 'AI returned a malformed page. Loaded the base template — you can regenerate inside the builder.',
+        );
       }
       if (otherInvalid.length > 0) {
         for (const path of otherInvalid) {

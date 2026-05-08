@@ -898,24 +898,33 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const aiAppInvalid =
         sanitized.invalidFiles.includes('/src/App.tsx') ||
         sanitized.invalidFiles.includes('src/App.tsx');
-      // Any other malformed TSX/JSX file (e.g. Navbar.tsx, Hero.tsx) will crash
-      // Sandpack/Babel at preview time. Abort instead of pushing broken modules.
+      // Only App.tsx is fatal — it's the entry point. For other malformed
+      // sub-component files (Hero, Services, CTA, …) we substitute a safe
+      // placeholder stub so the site still launches and the user can iterate
+      // in the builder instead of being blocked by an opaque "try again" toast.
       const otherInvalid = sanitized.invalidFiles.filter(
         (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
       );
-      if (aiAppMissing || aiAppInvalid || otherInvalid.length > 0) {
+      if (aiAppMissing || aiAppInvalid) {
         const reason = aiAppMissing
           ? 'AI did not return App.tsx. Please try again.'
-          : aiAppInvalid
-            ? 'AI returned malformed App.tsx. Please try again.'
-            : `AI returned malformed file(s): ${otherInvalid.join(', ')}. Please try again.`;
+          : 'AI returned malformed App.tsx. Please try again.';
         toast.error(reason);
-        console.error('[SystemLauncher] Aborting launch — AI output unusable', {
+        console.error('[SystemLauncher] Aborting launch — AI App.tsx unusable', {
           aiAppMissing,
           aiAppInvalid,
           invalidFiles: sanitized.invalidFiles,
         });
         return;
+      }
+      if (otherInvalid.length > 0) {
+        for (const path of otherInvalid) {
+          const compName = (path.split('/').pop() || 'Section').replace(/\.(t|j)sx?$/, '');
+          const safe = compName.replace(/[^A-Za-z0-9_]/g, '') || 'Section';
+          generatedFiles[path] = `import React from "react";\n\nexport default function ${safe}() {\n  return (\n    <section className="py-16 px-6 text-center">\n      <div className="max-w-2xl mx-auto rounded-2xl border border-dashed border-white/20 p-8">\n        <h2 className="text-xl font-semibold mb-2">${safe}</h2>\n        <p className="text-sm opacity-60">This section will be regenerated. Edit it in the builder to customize.</p>\n      </div>\n    </section>\n  );\n}\n`;
+        }
+        console.warn('[SystemLauncher] Substituted placeholder for malformed AI files', otherInvalid);
+        toast.warning(`${otherInvalid.length} section(s) returned malformed — placeholder inserted. You can regenerate them in the builder.`);
       }
 
       const provisionedBusinessId = await installPromise;

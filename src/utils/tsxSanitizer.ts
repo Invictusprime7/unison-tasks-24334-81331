@@ -132,6 +132,29 @@ export function validateTsxStructure(code: string): {
 }
 
 /**
+ * Cheap brace balance counter (string/comment aware). Positive = missing closes.
+ */
+export function countBraceBalance(code: string): number {
+  let brace = 0;
+  let inString: '"' | "'" | "`" | null = null;
+  let inLine = false;
+  let inBlock = false;
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    const prev = code[i - 1];
+    if (inLine) { if (c === "\n") inLine = false; continue; }
+    if (inBlock) { if (c === "/" && prev === "*") inBlock = false; continue; }
+    if (inString) { if (c === inString && prev !== "\\") inString = null; continue; }
+    if (c === "/" && code[i + 1] === "/") { inLine = true; continue; }
+    if (c === "/" && code[i + 1] === "*") { inBlock = true; continue; }
+    if (c === '"' || c === "'" || c === "`") { inString = c as '"' | "'" | "`"; continue; }
+    if (c === "{") brace++;
+    else if (c === "}") brace--;
+  }
+  return brace;
+}
+
+/**
  * Run the full hardening pipeline on a single file.
  *
  * Safe defaults:

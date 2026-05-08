@@ -1,10 +1,12 @@
 /**
  * CodeMirror Editor Component
- * Lightweight code editor wrapper with syntax highlighting
+ * Lightweight code editor wrapper with syntax highlighting + TSX auto-fix.
  */
 
 import React, { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { sanitizeTsxFile } from '@/utils/tsxSanitizer';
+import { toast } from 'sonner';
 
 interface CodeMirrorEditorProps {
   value: string;

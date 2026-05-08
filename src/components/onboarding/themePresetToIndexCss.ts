@@ -66,6 +66,9 @@ export function buildThemedIndexCss(preset: ThemePreset): string {
   --input: ${c.border};
   --ring: ${c.primary};
   --radius: ${tokens.radius};
+  /* Tailwind CDN reads these via theme.fontFamily.heading / body */
+  --font-heading: ${tokens.typography.headingFont}, ui-sans-serif, system-ui, sans-serif;
+  --font-body: ${tokens.typography.bodyFont}, ui-sans-serif, system-ui, sans-serif;
 }
 
 * { border-color: hsl(var(--border)); }
@@ -73,17 +76,24 @@ export function buildThemedIndexCss(preset: ThemePreset): string {
 html, body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: ${tokens.typography.bodyFont};
+  font-family: var(--font-body);
   font-weight: ${tokens.typography.bodyWeight};
   margin: 0;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: ${tokens.typography.headingFont};
+  font-family: var(--font-heading);
   font-weight: ${tokens.typography.headingWeight};
   color: hsl(var(--foreground));
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
+
+/* Tailwind utility shortcuts that often appear in AI output */
+.font-heading { font-family: var(--font-heading); }
+.font-body    { font-family: var(--font-body); }
 `;
 }

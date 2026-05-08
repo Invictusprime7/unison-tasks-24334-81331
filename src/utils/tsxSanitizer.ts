@@ -289,6 +289,30 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
     issues.push(`liftOrphanDefaultExport failed: ${(e as Error).message}`);
   }
 
+  // Strip self-referential re-exports the AI sometimes hallucinates after a
+  // default-exported component, e.g. `export const Services = Services;` which
+  // crashes Babel with "Identifier 'X' has already been declared".
+  try {
+    const selfExportRe = /^[ \t]*export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\1\s*;?\s*$/gm;
+    if (selfExportRe.test(code)) {
+      code = code.replace(selfExportRe, "");
+      applied.push("stripSelfReferentialExport");
+    }
+    // Also handle duplicate `export default X` after another `export default X`
+    const defaultMatches = [...code.matchAll(/^[ \t]*export\s+default\s+([A-Za-z_$][\w$]*)\s*;?\s*$/gm)];
+    if (defaultMatches.length > 1) {
+      const seen = new Set<string>();
+      code = code.replace(/^[ \t]*export\s+default\s+([A-Za-z_$][\w$]*)\s*;?\s*$/gm, (m, name) => {
+        if (seen.has(name)) return "";
+        seen.add(name);
+        return m;
+      });
+      applied.push("dedupeDefaultExport");
+    }
+  } catch (e) {
+    issues.push(`stripSelfReferentialExport failed: ${(e as Error).message}`);
+  }
+
   // Append missing closing braces if balance is off by a small positive amount.
   // This avoids Babel crashing with read-only SyntaxError on `e.message =` assignment
   // and lets the in-editor parser surface a real diagnostic instead.

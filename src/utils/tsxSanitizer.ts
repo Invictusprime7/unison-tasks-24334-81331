@@ -132,6 +132,29 @@ export function validateTsxStructure(code: string): {
 }
 
 /**
+ * Cheap brace balance counter (string/comment aware). Positive = missing closes.
+ */
+export function countBraceBalance(code: string): number {
+  let brace = 0;
+  let inString: '"' | "'" | "`" | null = null;
+  let inLine = false;
+  let inBlock = false;
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    const prev = code[i - 1];
+    if (inLine) { if (c === "\n") inLine = false; continue; }
+    if (inBlock) { if (c === "/" && prev === "*") inBlock = false; continue; }
+    if (inString) { if (c === inString && prev !== "\\") inString = null; continue; }
+    if (c === "/" && code[i + 1] === "/") { inLine = true; continue; }
+    if (c === "/" && code[i + 1] === "*") { inBlock = true; continue; }
+    if (c === '"' || c === "'" || c === "`") { inString = c as '"' | "'" | "`"; continue; }
+    if (c === "{") brace++;
+    else if (c === "}") brace--;
+  }
+  return brace;
+}
+
+/**
  * Run the full hardening pipeline on a single file.
  *
  * Safe defaults:
@@ -204,6 +227,34 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
 
   // Strip leading "Here's…" prose lines that survived extractCleanCode
   code = code.replace(/^(?:\s*\/\/[^\n]*\n)*\s*(?:Here(?:'s| is)|Sure|Below|This is)\b[^\n]*\n/i, "");
+
+  // Repair an `export default Foo;` that landed inside a JSX block / function body
+  // (the exact failure shape we saw with Navbar.tsx). Pull the orphan export
+  // out and drop it onto its own top-level line at EOF.
+  try {
+    const exportMatch = code.match(/^([ \t]+)(export\s+default\s+([A-Za-z_$][\w$]*)\s*;?)\s*$/m);
+    if (exportMatch) {
+      const [full, , , name] = exportMatch;
+      code = code.replace(full, "");
+      code = code.replace(/\s*$/, "") + `\n\nexport default ${name};\n`;
+      applied.push("liftOrphanDefaultExport");
+    }
+  } catch (e) {
+    issues.push(`liftOrphanDefaultExport failed: ${(e as Error).message}`);
+  }
+
+  // Append missing closing braces if balance is off by a small positive amount.
+  // This avoids Babel crashing with read-only SyntaxError on `e.message =` assignment
+  // and lets the in-editor parser surface a real diagnostic instead.
+  try {
+    const balance = countBraceBalance(code);
+    if (balance > 0 && balance <= 3) {
+      code = code.replace(/\s*$/, "") + "\n" + "}".repeat(balance) + "\n";
+      applied.push(`appendMissingBraces(${balance})`);
+    }
+  } catch (e) {
+    issues.push(`braceRepair failed: ${(e as Error).message}`);
+  }
 
   // Force React + hook imports last so we don't lose them to other transforms
   try {

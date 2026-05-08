@@ -1,10 +1,12 @@
 /**
  * CodeMirror Editor Component
- * Lightweight code editor wrapper with syntax highlighting
+ * Lightweight code editor wrapper with syntax highlighting + TSX auto-fix.
  */
 
 import React, { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { sanitizeTsxFile } from '@/utils/tsxSanitizer';
+import { toast } from 'sonner';
 
 interface CodeMirrorEditorProps {
   value: string;
@@ -58,23 +60,46 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Handle tab key for indentation
+    // Tab → 2-space indent
     if (e.key === 'Tab') {
       e.preventDefault();
       const start = e.currentTarget.selectionStart;
       const end = e.currentTarget.selectionEnd;
       const newValue = value.substring(0, start) + '  ' + value.substring(end);
-      
+
       if (onChange) {
         onChange(newValue);
       }
-      
-      // Set cursor position after the inserted tab
+
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 2;
         }
       }, 0);
+      return;
+    }
+
+    // Cmd/Ctrl + Shift + F → run TSX auto-fix on the buffer
+    const isAutoFix =
+      (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'F' || e.key === 'f');
+    if (isAutoFix && (language === 'typescript' || language === 'javascript')) {
+      e.preventDefault();
+      if (readOnly || !onChange) return;
+      const result = sanitizeTsxFile('buffer.tsx', value);
+      if (!result.code || result.code === value) {
+        toast.message('Nothing to fix', {
+          description: result.issues.length
+            ? `Issues: ${result.issues.join(', ')}`
+            : 'Code already clean.',
+        });
+        return;
+      }
+      onChange(result.code);
+      toast.success(
+        result.applied.length
+          ? `Auto-fix applied: ${result.applied.join(', ')}`
+          : 'Auto-fix applied',
+      );
     }
   };
 

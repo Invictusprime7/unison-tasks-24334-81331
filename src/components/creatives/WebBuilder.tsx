@@ -6525,22 +6525,7 @@ export default function ${componentName}() {
                         });
                       }}
                     />
-                  {/* Inline loading overlay for AI page generation */}
-                  {isGeneratingPage && (
-                    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/40 backdrop-blur-md">
-                      <div className="flex flex-col items-center gap-4 p-8 rounded-2xl backdrop-blur-xl bg-white/[0.08] border border-white/[0.12] shadow-2xl shadow-black/30">
-                        <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5">
-                          <Sparkles className="h-8 w-8 text-primary animate-pulse" />
-                        </div>
-                        <p className="text-sm font-medium text-white">Generating {currentNavPage}…</p>
-                        <div className="w-52 h-1.5 bg-white/[0.1] rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-primary to-primary/60 rounded-full animate-[loading_2s_ease-in-out_infinite]" 
-                               style={{ width: '60%', animation: 'loading 2s ease-in-out infinite' }} />
-                        </div>
-                        <p className="text-xs text-white/60">AI is building a matching page with full design context</p>
-                      </div>
-                    </div>
-                  )}
+                  {/* Auto AI page generation overlay removed. */}
                 </div>
               </div>
             )}

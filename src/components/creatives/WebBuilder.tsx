@@ -2122,6 +2122,38 @@ export default function App() {
 
     diagnosticsAggregator.ingestUnisonDiagnostics(items);
   }, [routeConflicts, creatorPlayground.pageRegistry, virtualFS.nodes]);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Canonical Router Sync — single source of truth for /src/App.tsx
+  //
+  // The Creator Playground PageRegistry is authoritative. Every structural
+  // mutation (add / remove / rename / reorder / setHome / showInNav) bumps
+  // pageRegistry.version. This effect re-emits the deterministic router from
+  // topologyRouterGenerator into the VFS so navigation, intent bindings, and
+  // the preview stay perfectly in sync. No AI, no fallback — pure derivation.
+  // ──────────────────────────────────────────────────────────────────────────
+  const lastSyncedRegistryVersionRef = useRef<number>(-1);
+  useEffect(() => {
+    const registry = creatorPlayground.pageRegistry;
+    if (!registry || Object.keys(registry.pages).length === 0) return;
+    if (lastSyncedRegistryVersionRef.current === registry.version) return;
+    try {
+      const result = syncRouterAndValidate(
+        registry,
+        virtualFS.getSandpackFiles(),
+      );
+      if (result.routerCode) {
+        virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
+      }
+      lastSyncedRegistryVersionRef.current = registry.version;
+      if (result.validation && !result.validation.valid) {
+        console.warn('[WebBuilder] Topology validation issues after registry sync:', result.validation.issues);
+      }
+    } catch (err) {
+      console.error('[WebBuilder] Canonical router sync failed:', err);
+    }
+  }, [creatorPlayground.pageRegistry, launchEntryPoint, virtualFS]);
+
   // Page manifest for async multi-page navigation (all HTML pages from VFS)
   const pageManifest = useMemo(() => {
     const vfsFiles = virtualFS.getSandpackFiles();
@@ -6004,6 +6036,16 @@ ${html}
             .replace(/^(.)/, (_, c: string) => c.toUpperCase());
           const vfsPath = `/src/pages/${componentName}.tsx`;
           handleRemovePage(vfsPath);
+          // Regen canonical router so the deleted route is dropped from App.tsx
+          // immediately (the registry-version effect would also catch this, but
+          // doing it inline keeps file removal + router update atomic).
+          const result = syncRouterAndValidate(
+            creatorPlayground.pageRegistry,
+            virtualFS.getSandpackFiles(),
+          );
+          if (result.routerCode) {
+            virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
+          }
         }}
         onFunnelCreate={(funnelId, stepPages) => {
           // Auto-scaffold all funnel step pages in VFS

@@ -2299,8 +2299,122 @@ export default function App() {
     }
   }, [creatorPlayground.pageRegistry, virtualFS, handleSelectPage, launchEntryPoint]);
 
-  
-  const handleAddPage = useCallback(() => {
+  // ──────────────────────────────────────────────────────────────────────
+  // Page tabs (PageNavigationBar) — derived from canonical PageRegistry.
+  // Tab `path` field carries pageId so selection can route through
+  // navigateToBuilderPage (registry-first, single source of truth).
+  // ──────────────────────────────────────────────────────────────────────
+  const pageTabs = useMemo<PageTab[]>(() => {
+    const pages = Object.values(creatorPlayground.pageRegistry.pages);
+    return pages
+      .slice()
+      .sort((a, b) => {
+        if (a.isHome) return -1;
+        if (b.isHome) return 1;
+        return (a.navOrder ?? 0) - (b.navOrder ?? 0);
+      })
+      .map((p) => ({
+        path: p.pageId,
+        label: p.title || p.path.replace(/^\//, '') || 'Home',
+        isMain: !!p.isHome,
+      }));
+  }, [creatorPlayground.pageRegistry]);
+
+  const activePageTabId = useMemo(() => {
+    if (activePageId && creatorPlayground.pageRegistry.pages[activePageId]) {
+      return activePageId;
+    }
+    // Fallback: match active editor file → registry page
+    const match = Object.values(creatorPlayground.pageRegistry.pages).find(
+      (p) => p.filePath && p.filePath === activePagePath,
+    );
+    return match?.pageId ?? (creatorPlayground.pageRegistry.homePageId || '');
+  }, [activePageId, activePagePath, creatorPlayground.pageRegistry]);
+
+  const handlePageTabSelect = useCallback((pageId: string) => {
+    navigateToBuilderPage(pageId);
+  }, [navigateToBuilderPage]);
+
+  const handlePageTabAdd = useCallback(() => {
+    // Open Creator Playground (Pages section) for canonical add flow
+    setPlaygroundModalOpen(true);
+  }, []);
+
+  const handlePageTabRemove = useCallback((pageId: string) => {
+    const page = creatorPlayground.pageRegistry.pages[pageId];
+    if (!page) return;
+    if (page.isHome) {
+      toast.error('Cannot remove the home page');
+      return;
+    }
+    if (!confirm(`Delete page "${page.title}"?`)) return;
+
+    // Remove VFS file (if any), then drop from registry, then resync router.
+    const vfsFiles = virtualFS.getSandpackFiles();
+    if (page.filePath && vfsFiles[page.filePath]) {
+      const next = { ...vfsFiles };
+      delete next[page.filePath];
+      virtualFS.importFiles(next);
+    }
+    creatorPlayground.removePage(pageId);
+
+    // The registry-version effect regenerates the router automatically,
+    // but doing it inline keeps file removal + router update atomic.
+    const result = syncRouterAndValidate(
+      { ...creatorPlayground.pageRegistry, pages: Object.fromEntries(
+        Object.entries(creatorPlayground.pageRegistry.pages).filter(([id]) => id !== pageId)
+      ) },
+      virtualFS.getSandpackFiles(),
+    );
+    if (result.routerCode) {
+      virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
+    }
+
+    if (activePagePath === page.filePath) {
+      handleSelectPage(launchEntryPoint);
+    }
+    toast.success(`Removed "${page.title}"`);
+  }, [creatorPlayground, virtualFS, launchEntryPoint, activePagePath, handleSelectPage]);
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Auto-register VFS pages into PageRegistry.
+  // When the in-builder AI (or any code path) writes a new
+  // /src/pages/*.tsx file that has no corresponding registry entry,
+  // register it so it appears in the PageNavigationBar and routing.
+  // ──────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const files = virtualFS.getSandpackFiles();
+    const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
+    const knownFilePaths = new Set(
+      registryPages.map((p) => p.filePath).filter(Boolean) as string[],
+    );
+
+    const orphans = Object.keys(files).filter((p) => {
+      if (!/^\/src\/pages\/[^/]+\.tsx$/.test(p)) return false;
+      // Skip funnels (handled separately) and known files
+      if (p.includes('/pages/funnels/')) return false;
+      if (knownFilePaths.has(p)) return false;
+      // Skip files whose component name matches an existing page title
+      const base = p.split('/').pop()!.replace(/\.tsx$/, '');
+      const slug = base.replace(/Page$/, '').toLowerCase();
+      const hasMatchingTitle = registryPages.some(
+        (rp) => rp.title.toLowerCase().replace(/\s+/g, '') === slug,
+      );
+      return !hasMatchingTitle;
+    });
+
+    if (orphans.length === 0) return;
+
+    for (const filePath of orphans) {
+      const base = filePath.split('/').pop()!.replace(/\.tsx$/, '').replace(/Page$/, '');
+      const title = base.replace(/([A-Z])/g, ' $1').trim().replace(/\b\w/g, (c) => c.toUpperCase()) || 'Page';
+      const route = '/' + base.replace(/([A-Z])/g, '-$1').replace(/^-/, '').toLowerCase();
+      console.log(`[WebBuilder] Auto-registering AI page: ${filePath} → ${route}`);
+      creatorPlayground.addPage(title, route, 'standalone', { filePath, showInNav: true });
+    }
+  }, [virtualFS.nodes, creatorPlayground]);
+
+
     const name = prompt('Enter page name (e.g. "about", "contact"):');
     if (!name) return;
     const sanitized = name.toLowerCase().replace(/[^a-z0-9-]/g, '-');

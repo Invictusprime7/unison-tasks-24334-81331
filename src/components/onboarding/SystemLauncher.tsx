@@ -1032,19 +1032,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
         }
 
-        // App.tsx is OWNED by the deterministic canonical router (compiledPlayground).
-        // We discard any AI-authored App.tsx that looks like a router; if AI authored
-        // a single-page composition (no router), the launch-artifacts merge will move
-        // it into the home-page file path. App.tsx is no longer a launch gate.
-        const aiAppContent =
-          sanitized.files['/src/App.tsx'] || sanitized.files['src/App.tsx'] || '';
-        const aiAppLooksLikeRouter = /react-router-dom|<Routes\b|<Route\b|HashRouter|BrowserRouter|createBrowserRouter/.test(
-          aiAppContent,
-        );
+        // App.tsx is OWNED by the deterministic canonical router. The AI Lane A
+        // contract returns a single-page composition under /src/App.tsx (sections
+        // inlined, NO router) — that content is the home page body. We KEEP the
+        // AI App.tsx so the canonical merge can rebase it into the home page file
+        // (mergeGeneratedVfsWithCanonicalSnapshot does this when the AI file
+        // doesn't look like a router). After merge we force-overwrite App.tsx
+        // with the canonical router from compiledPlayground.
+        // Only drop AI App.tsx if the sanitizer flagged it as syntactically invalid.
         const aiAppInvalidFlag =
           sanitized.invalidFiles.includes('/src/App.tsx') ||
           sanitized.invalidFiles.includes('src/App.tsx');
-        if (aiAppLooksLikeRouter || aiAppInvalidFlag) {
+        if (aiAppInvalidFlag) {
           delete sanitized.files['/src/App.tsx'];
           delete sanitized.files['src/App.tsx'];
           delete normalizedFiles['/src/App.tsx'];
@@ -1149,7 +1148,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         wizardSelections,
       });
 
-      const wiredVfsFiles = launchArtifacts.files;
+      // Force-overwrite /src/App.tsx with the canonical router. The merge step
+      // may have written AI's App.tsx into '/src/App.tsx'; we want only the
+      // deterministic router to live there. The AI App.tsx body has already been
+      // rebased into the home page file by mergeGeneratedVfsWithCanonicalSnapshot.
+      const canonicalRouterCode =
+        compiledPlayground?.vfsFiles?.['/src/App.tsx'] ||
+        siteBundleSnapshot?.vfsFiles?.['/src/App.tsx'];
+      const wiredVfsFiles = canonicalRouterCode
+        ? { ...launchArtifacts.files, '/src/App.tsx': canonicalRouterCode }
+        : launchArtifacts.files;
       const runtimeManifest = launchArtifacts.runtimeManifest;
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {

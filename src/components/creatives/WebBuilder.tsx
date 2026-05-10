@@ -6569,8 +6569,6 @@ export default function ${componentName}() {
                   </div>
                 </div>
                 {/* Page tabs — synced with PageRegistry (Creator Playground + AI-generated pages) */}
-                {/* TEMPORARILY DISABLED — PageNavigationBar removed per user request */}
-                {/*
                 <PageNavigationBar
                   pages={pageTabs}
                   activePage={activePageTabId}
@@ -6578,7 +6576,6 @@ export default function ${componentName}() {
                   onAddPage={handlePageTabAdd}
                   onRemovePage={handlePageTabRemove}
                 />
-                */}
                 <div 
                   ref={scrollContainerRef}
                   data-drop-zone="true"
@@ -6785,8 +6782,6 @@ export default function ${componentName}() {
                     </div>
                   </div>
                   {/* Page tabs — synced with PageRegistry (Creator Playground + AI-generated pages) */}
-                  {/* TEMPORARILY DISABLED — PageNavigationBar removed per user request */}
-                  {/*
                   <PageNavigationBar
                     pages={pageTabs}
                     activePage={activePageTabId}
@@ -6794,7 +6789,6 @@ export default function ${componentName}() {
                     onAddPage={handlePageTabAdd}
                     onRemovePage={handlePageTabRemove}
                   />
-                  */}
                   <div 
                     ref={splitViewDropZoneRef}
                     data-drop-zone="true"

@@ -4116,6 +4116,20 @@ export default function ${componentName}Page() {
     };
   }, [importBuilderFiles]);
 
+  // No-op stub for the removed auto AI page generation feature.
+  // Many call sites still reference triggerPageGenRef.current(...). All become no-ops.
+  const triggerPageGenRef = useRef((
+    _pageName: string,
+    _navLabel?: string,
+    _source?: Window | null,
+    _requestId?: string | undefined,
+  ) => {
+    if (import.meta.env.DEV) {
+      console.debug('[WebBuilder] auto-page generation disabled; ignoring', _pageName);
+    }
+  });
+
+
   // Clear draft when template is saved
   const clearDraft = useCallback(() => {
     localStorage.removeItem(getAutoSaveKey());

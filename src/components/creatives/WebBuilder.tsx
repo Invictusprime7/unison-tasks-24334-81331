@@ -2138,12 +2138,27 @@ export default function App() {
     if (!registry || Object.keys(registry.pages).length === 0) return;
     if (lastSyncedRegistryVersionRef.current === registry.version) return;
     try {
-      const result = syncRouterAndValidate(
-        registry,
-        virtualFS.getSandpackFiles(),
-      );
+      const currentFiles = virtualFS.getSandpackFiles();
+      const filesToImport: Record<string, string> = {};
+
+      // Scaffold a minimal placeholder for any registry page whose file is
+      // missing from the VFS. Without this, the canonical router imports
+      // unresolved modules and the preview renders blank.
+      for (const page of Object.values(registry.pages)) {
+        const filePath = page.filePath || `/src/pages/${page.title.replace(/[^a-zA-Z0-9]/g, '') || 'Page'}.tsx`;
+        if (!currentFiles[filePath]) {
+          const componentName = (filePath.split('/').pop() || 'Page').replace(/\.(tsx|jsx|ts|js)$/, '');
+          filesToImport[filePath] = `import React from 'react';\n\nexport default function ${componentName}() {\n  return (\n    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">\n      <div className="text-center">\n        <h1 className="text-3xl font-semibold mb-2">${page.title}</h1>\n        <p className="text-muted-foreground">This page is ready to be edited.</p>\n      </div>\n    </div>\n  );\n}\n`;
+        }
+      }
+
+      const mergedForRouter = { ...currentFiles, ...filesToImport };
+      const result = syncRouterAndValidate(registry, mergedForRouter);
       if (result.routerCode) {
-        virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
+        filesToImport[launchEntryPoint] = result.routerCode;
+      }
+      if (Object.keys(filesToImport).length > 0) {
+        virtualFS.importFiles(filesToImport);
       }
       lastSyncedRegistryVersionRef.current = registry.version;
       if (result.validation && !result.validation.valid) {

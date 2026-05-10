@@ -111,7 +111,7 @@ import {
   mutateJSXImageSrc,
   mutateJSXAttributes,
 } from "@/utils/jsxElementMutation";
-import { PageRouteBar, detectRouteConflicts } from "./web-builder/PageRouteBar";
+import { detectRouteConflicts } from "./web-builder/PageRouteBar";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { BusinessSetupSuggestions } from "@/components/onboarding/BusinessSetupSuggestions";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
@@ -6415,34 +6415,6 @@ export default function ${componentName}() {
 
         {/* Center Canvas Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-transparent relative">
-          {/* Page Route Bar — registry-driven page info & switching */}
-          <PageRouteBar
-            activePagePath={activePagePath}
-            activePageId={activePageId}
-            activePreviewRoute={activePreviewRoute}
-            pageRegistry={creatorPlayground.pageRegistry}
-            routeConflicts={routeConflicts}
-            onNavigateToPage={(pageId) => navigateToBuilderPage(pageId)}
-            onToggleNavVisibility={(pageId, visible) => {
-              creatorPlayground.updatePage(pageId, { showInNav: visible });
-            }}
-            onSetHomePage={(pageId) => {
-              creatorPlayground.setHomePage(pageId);
-              // Regenerate router after homepage change
-              const result = syncRouterAndValidate(
-                creatorPlayground.pageRegistry,
-                virtualFS.getSandpackFiles(),
-              );
-              if (result.routerCode) {
-                virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
-              }
-              toast.success('Homepage updated');
-            }}
-            onOpenPlayground={(section) => {
-              setPlaygroundInitialSection(section);
-              setPlaygroundModalOpen(true);
-            }}
-          />
           {/* Main Content Area - Canvas/Code/Split View */}
           <div 
             ref={canvasContainerRef}

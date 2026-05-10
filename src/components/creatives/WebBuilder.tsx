@@ -2415,6 +2415,7 @@ export default function App() {
   }, [virtualFS.nodes, creatorPlayground]);
 
 
+  const handleAddPage = useCallback(() => {
     const name = prompt('Enter page name (e.g. "about", "contact"):');
     if (!name) return;
     const sanitized = name.toLowerCase().replace(/[^a-z0-9-]/g, '-');

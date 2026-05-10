@@ -4061,10 +4061,6 @@ export default function ${componentName}Page() {
     };
   }, []);
 
-  // Dynamic page generation state
-  const [isGeneratingPage, setIsGeneratingPage] = useState(false);
-  const [currentNavPage, setCurrentNavPage] = useState<string | null>(null);
-
   const replaceProjectFiles = useCallback((
     files: Record<string, string>,
     options?: { activePath?: string; entryContent?: string }
@@ -4076,219 +4072,33 @@ export default function ${componentName}Page() {
     vfsImportFiles(files);
   }, [launchEntryPoint, openBuilderFile, vfsImportFiles, vfsResetToEmpty]);
 
-  /**
-   * Trigger AI page generation with full context injection (React/TSX only).
-   * Called by the label classifier when a redirect-worthy button is clicked
-   * and the target page doesn't exist in VFS.
-   */
-   const triggerPageGeneration = useCallback(async (
-    pageName: string,
-    navLabel: string,
-    source: Window | null,
-    requestId?: string,
-  ) => {
-    const componentName = pageName
-      .replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase())
-      .replace(/^\w/, c => c.toUpperCase());
-    const vfsPath = `/src/pages/${componentName}.tsx`;
-    const vfsFiles = getSandpackFiles();
-
-    // Check VFS cache first
-    const existingContent = vfsFiles[vfsPath];
-    if (existingContent) {
-      // Page exists — navigate via React Router
-      openBuilderFile(vfsPath, existingContent);
-      // Tell preview to navigate via hash router
-      if (source && requestId) {
-        source.postMessage({ type: 'NAV_ROUTE', requestId, route: `/${pageName}` }, '*');
-      }
-      toast(`Navigated to ${navLabel || pageName}`);
-      return;
-    }
-
-    setIsGeneratingPage(true);
-    setCurrentNavPage(navLabel || pageName);
-
-    try {
-      const pagePrompt = buildDynamicPagePrompt(pageName, '', navLabel, previewCode, {
-        businessContext: businessDataContext,
-        designProfile: userDesignProfile ? {
-          dominantStyle: userDesignProfile.dominantStyle,
-          industryHints: userDesignProfile.industryHints,
-        } : undefined,
-      });
-      
-      const { data, error } = await supabase.functions.invoke("ai-code-assistant", {
-        body: {
-          messages: [{ role: "user", content: pagePrompt }],
-          mode: "template-react",
-          templateAction: "full-control",
-          editMode: false,
-          navPageGen: true,
-          systemType: activeSystemType ?? undefined,
-          navPageName: pageName,
-          navLabel: navLabel,
-          userDesignProfile: userDesignProfile ? {
-            projectCount: userDesignProfile.projectCount,
-            dominantStyle: userDesignProfile.dominantStyle,
-            industryHints: userDesignProfile.industryHints,
-          } : undefined,
-        },
-      });
-
-      if (error) throw error;
-
-      const content = data?.content || "";
-      
-      // Extract React component code from AI response
-      let pageCode = '';
-      
-      // Handle JSON multi-file output
-      const jsonFenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/i);
-      const jsonCandidate = jsonFenceMatch ? jsonFenceMatch[1].trim() : content.trim();
-      
-      if (jsonCandidate.startsWith('{') && jsonCandidate.includes('"files"')) {
-        try {
-          const parsed = JSON.parse(jsonCandidate);
-          if (parsed.files && typeof parsed.files === 'object') {
-            vfsImportFiles(parsed.files);
-            const parsedEntryPath = resolveLauncherEntryPoint(parsed.files, vfsPath || launchEntryPoint);
-            pageCode = parsed.files[vfsPath] || parsed.files[`/src/pages/${componentName}.tsx`] ||
-                       parsed.files[parsedEntryPath] || Object.values(parsed.files)[0] as string || '';
-            console.log('[WebBuilder] Nav page multi-file output:', Object.keys(parsed.files));
-          }
-        } catch { /* not valid JSON, continue with fence extraction */ }
-      }
-      
-      // Fall back to fence extraction
-      if (!pageCode) {
-        let codeMatch = content.match(/```(?:tsx|jsx|typescript|ts)\n([\s\S]*?)```/);
-        if (!codeMatch) codeMatch = content.match(/```\n([\s\S]*?)```/);
-        
-        pageCode = codeMatch ? codeMatch[1].trim() : content.trim();
-        pageCode = pageCode
-          .replace(/^#{1,6}\s+.*$/gm, '')
-          .replace(/```[\w]*\n?/g, '')
-          .replace(/<<<|>>>|---/g, '')
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-      }
-
-      // Strip any leaked HTML document wrapper (AI sometimes wraps in <!DOCTYPE>)
-      if (pageCode.includes('<!DOCTYPE') || pageCode.includes('<html')) {
-        console.warn('[WebBuilder] AI returned HTML document instead of React component, extracting body');
-        const bodyMatch = pageCode.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-        if (bodyMatch) {
-          // Wrap extracted body in a React component
-          pageCode = `import { Link } from 'react-router-dom';
-
-export default function ${componentName}Page() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      ${bodyMatch[1].replace(/ class="/g, ' className="').replace(/<br>/gi, '<br />').replace(/<hr>/gi, '<hr />').replace(/<img([^>]*?)(?<!\/)>/gi, '<img$1 />')}
-    </div>
-  );
-}`;
-        }
-      }
-
-      // Ensure the code has a default export
-      if (pageCode && !pageCode.includes('export default')) {
-        pageCode = `import { Link } from 'react-router-dom';
-
-${pageCode}
-
-export default ${componentName}Page;`;
-      }
-
-      // Ensure React import
-      if (pageCode && !pageCode.includes("from 'react'") && !pageCode.includes('from "react"')) {
-        pageCode = `import React from 'react';\n${pageCode}`;
-      }
-
-      if (pageCode) {
-        // Save to VFS as .tsx page component
-        vfsImportFiles({ [vfsPath]: pageCode });
-        
-        // Regenerate canonical topology router so the new page is routable
-        const allFiles = getSandpackFiles();
-        allFiles[vfsPath] = pageCode;
-        
-        // Use topology router (preserves .tsx extensions for Sandpack)
-        const activePlan = activeSitePlanRef.current;
-        if (activePlan) {
-          const routerPatched = patchVFS(allFiles, creatorPlayground.pageRegistry, activePlan.businessName);
-          const routerEntryPath = resolveLauncherEntryPoint(routerPatched, launchEntryPoint);
-          if (routerPatched[routerEntryPath] && routerPatched[routerEntryPath] !== allFiles[routerEntryPath]) {
-            vfsImportFiles({ [routerEntryPath]: routerPatched[routerEntryPath] });
-            lastSyncedCodeRef.current = routerPatched[routerEntryPath];
-            setPreviewCode(routerPatched[routerEntryPath]);
-          }
-        } else {
-          // Fallback: use old scaffolder if no topology plan exists
-          const scaffolded = scaffoldMultiPageVFS(allFiles[launchEntryPoint] || previewCode, allFiles);
-          const scaffoldedEntryPath = resolveLauncherEntryPoint(scaffolded.files, launchEntryPoint);
-          if (scaffolded.scaffoldedPages.length > 0 || scaffolded.files[scaffoldedEntryPath] !== allFiles[scaffoldedEntryPath]) {
-            vfsImportFiles(scaffolded.files);
-            const newAppCode = scaffolded.files[scaffoldedEntryPath] || previewCode;
-            lastSyncedCodeRef.current = newAppCode;
-            setPreviewCode(newAppCode);
-          }
-        }
-        
-        // Set editor to the new page file
-        openBuilderFile(vfsPath, pageCode);
-
-        // Tell preview to navigate to the new route
-        if (source && requestId) {
-          source.postMessage({ type: 'NAV_ROUTE', requestId, route: `/${pageName}` }, '*');
-        }
-
-        toast.success(`${navLabel || pageName} page created!`);
-        
-        // Re-hydrate playground
-        setTimeout(() => {
-          const updatedFiles = getSandpackFiles();
-          if (Object.keys(updatedFiles).length > 0) {
-            creatorPlayground.hydrateFromVFS(virtualFS.nodes, updatedFiles);
-          }
-        }, 200);
-      } else {
-        throw new Error('No page content generated');
-      }
-    } catch (err) {
-      console.error('[WebBuilder] Page generation failed:', err);
-      toast.error(`Failed to generate ${navLabel || pageName} page`);
-      if (source && requestId) {
-        source.postMessage({ type: 'NAV_PAGE_ERROR', requestId, error: 'Generation failed' }, '*');
-      }
-    } finally {
-      setIsGeneratingPage(false);
-      setCurrentNavPage(null);
-    }
-  }, [getSandpackFiles, openBuilderFile, vfsImportFiles, previewCode, businessDataContext, userDesignProfile, activeSystemType, creatorPlayground.pageRegistry, launchEntryPoint]);
-
-  // Ref to always hold the latest triggerPageGeneration (avoids stale closure in INTENT_TRIGGER handler)
-  const triggerPageGenRef = useRef(triggerPageGeneration);
-  useEffect(() => { triggerPageGenRef.current = triggerPageGeneration; }, [triggerPageGeneration]);
-
+  // Auto AI page generation on button click is REMOVED.
+  // Missing routes are handled by the deterministic canonical router + scaffolded
+  // placeholder pages. We still respond to NAV_PAGE_GENERATE so the preview iframe
+  // doesn't hang waiting for a reply, and we keep NAV_PAGE_RELOAD_REQUIRED.
   useEffect(() => {
-    const handleNavPageGenerate = async (event: MessageEvent) => {
+    const handleNavPageGenerate = (event: MessageEvent) => {
       if (event.data?.type !== 'NAV_PAGE_GENERATE') return;
-      const { pageName, navLabel, requestId } = event.data;
       const source = (event.source && typeof (event.source as any).postMessage === 'function')
         ? (event.source as Window) : null;
-      await triggerPageGeneration(pageName, navLabel || pageName, source, requestId);
+      const requestId = event.data.requestId;
+      if (source && requestId) {
+        source.postMessage({
+          type: 'NAV_PAGE_ERROR',
+          requestId,
+          error: 'Auto-page generation disabled. Add the page in Creator Playground.',
+        }, '*');
+      }
     };
-    
+
     // Handle fallback reload request when in-iframe navigation fails
     const handleNavPageReload = (event: MessageEvent) => {
       if (event.data?.type !== 'NAV_PAGE_RELOAD_REQUIRED') return;
       const { pageName, pageContent } = event.data;
       console.log('[WebBuilder] Navigation reload required for:', pageName);
-      
+
       if (pageContent) {
-        const componentName = pageName.replace(/[-_\s]+(.)/g, (_, c) => c.toUpperCase()).replace(/^\w/, c => c.toUpperCase());
+        const componentName = pageName.replace(/[-_\s]+(.)/g, (_: string, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase());
         const vfsPath = `/src/pages/${componentName}.tsx`;
 
         importBuilderFiles(templateToVFSFiles(pageContent, componentName), {
@@ -4297,15 +4107,29 @@ export default ${componentName}Page;`;
         });
       }
     };
-    
+
     window.addEventListener('message', handleNavPageGenerate);
     window.addEventListener('message', handleNavPageReload);
     return () => {
       window.removeEventListener('message', handleNavPageGenerate);
       window.removeEventListener('message', handleNavPageReload);
     };
-  }, [triggerPageGeneration, importBuilderFiles]);
-  
+  }, [importBuilderFiles]);
+
+  // No-op stub for the removed auto AI page generation feature.
+  // Many call sites still reference triggerPageGenRef.current(...). All become no-ops.
+  const triggerPageGenRef = useRef((
+    _pageName: string,
+    _navLabel?: string,
+    _source?: Window | null,
+    _requestId?: string | undefined,
+  ) => {
+    if (import.meta.env.DEV) {
+      console.debug('[WebBuilder] auto-page generation disabled; ignoring', _pageName);
+    }
+  });
+
+
   // Clear draft when template is saved
   const clearDraft = useCallback(() => {
     localStorage.removeItem(getAutoSaveKey());
@@ -6715,22 +6539,7 @@ export default function ${componentName}() {
                         });
                       }}
                     />
-                  {/* Inline loading overlay for AI page generation */}
-                  {isGeneratingPage && (
-                    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/40 backdrop-blur-md">
-                      <div className="flex flex-col items-center gap-4 p-8 rounded-2xl backdrop-blur-xl bg-white/[0.08] border border-white/[0.12] shadow-2xl shadow-black/30">
-                        <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5">
-                          <Sparkles className="h-8 w-8 text-primary animate-pulse" />
-                        </div>
-                        <p className="text-sm font-medium text-white">Generating {currentNavPage}…</p>
-                        <div className="w-52 h-1.5 bg-white/[0.1] rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-primary to-primary/60 rounded-full animate-[loading_2s_ease-in-out_infinite]" 
-                               style={{ width: '60%', animation: 'loading 2s ease-in-out infinite' }} />
-                        </div>
-                        <p className="text-xs text-white/60">AI is building a matching page with full design context</p>
-                      </div>
-                    </div>
-                  )}
+                  {/* Auto AI page generation overlay removed. */}
                 </div>
               </div>
             )}

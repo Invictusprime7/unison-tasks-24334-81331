@@ -33,6 +33,26 @@ interface UseAIActivityMonitorReturn {
   clearEvents: () => void;
 }
 
+function isMissingAiRunsError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+    hint?: string;
+  } | null;
+  const combined = [candidate?.message, candidate?.details, candidate?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return (
+    candidate?.code === '42P01' ||
+    candidate?.code === 'PGRST205' ||
+    candidate?.status === 404 ||
+    combined.includes('ai_runs')
+  );
+}
+
 // Map agent slugs to human-readable names and status labels
 const AGENT_DISPLAY: Record<string, { name: string; statusLabel: (status: string) => string }> = {
   spam_guard: {
@@ -101,9 +121,10 @@ export function useAIActivityMonitor({
   const [events, setEvents] = useState<AIActivityEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [monitorDisabled, setMonitorDisabled] = useState(false);
 
   const fetchEvents = useCallback(async () => {
-    if (!businessId) {
+    if (!businessId || monitorDisabled) {
       setEvents([]);
       return;
     }
@@ -128,7 +149,15 @@ export function useAIActivityMonitor({
         .order('created_at', { ascending: false })
         .limit(maxEvents);
 
-      if (runsError) throw runsError;
+      if (runsError) {
+        if (isMissingAiRunsError(runsError)) {
+          setMonitorDisabled(true);
+          setEvents([]);
+          setError(null);
+          return;
+        }
+        throw runsError;
+      }
 
       // For runs without plugin instances, determine agent from intent
       const mappedEvents: AIActivityEvent[] = (runsWithPlugins || []).map((run) => {
@@ -164,17 +193,29 @@ export function useAIActivityMonitor({
 
       setEvents(mappedEvents);
     } catch (err) {
+      if (isMissingAiRunsError(err)) {
+        setMonitorDisabled(true);
+        setEvents([]);
+        setError(null);
+        return;
+      }
       console.error('[useAIActivityMonitor] Fetch error:', err);
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setIsLoading(false);
     }
-  }, [businessId, maxEvents]);
+  }, [businessId, maxEvents, monitorDisabled]);
+
+  useEffect(() => {
+    if (!businessId) {
+      setMonitorDisabled(false);
+    }
+  }, [businessId]);
 
   useEffect(() => {
     fetchEvents();
 
-    if (!businessId) return;
+    if (!businessId || monitorDisabled) return;
 
     // Subscribe to ai_runs table for real-time updates
     const channel: RealtimeChannel = supabase
@@ -194,13 +235,22 @@ export function useAIActivityMonitor({
         }
       )
       .subscribe((status) => {
-        console.log('[useAIActivityMonitor] Subscription status:', status);
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setMonitorDisabled(true);
+          setEvents([]);
+          setError(null);
+          supabase.removeChannel(channel);
+          return;
+        }
+        if (status !== 'SUBSCRIBED') {
+          console.log('[useAIActivityMonitor] Subscription status:', status);
+        }
       });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [businessId, fetchEvents]);
+  }, [businessId, fetchEvents, monitorDisabled]);
 
   // Calculate activity state
   const activityState = (() => {

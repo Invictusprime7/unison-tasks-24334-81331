@@ -30,6 +30,7 @@ export interface BuildCanonicalLaunchArtifactsInput {
   siteBundleSnapshot?: SiteBundleSnapshot;
   compiledPlayground?: Pick<PlaygroundCompileResult, 'vfsFiles'> | null;
   canonicalPlayground?: PlaygroundState | Record<string, unknown> | null;
+  mergeWithCanonicalSnapshot?: boolean;
   businessId?: string | null;
   projectId?: string | null;
   manifestId?: string | null;
@@ -203,6 +204,7 @@ export function upsertCanonicalMetadataFiles(
 export function buildCanonicalLaunchArtifacts(
   input: BuildCanonicalLaunchArtifactsInput,
 ): CanonicalLaunchArtifacts {
+  const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
   const normalizedFiles = normalizeLauncherFiles(input.generatedFiles, {
     entryPoint: input.preferredEntryPoint,
   });
@@ -213,7 +215,7 @@ export function buildCanonicalLaunchArtifacts(
 
   const canonicalFiles = input.compiledPlayground?.vfsFiles || input.siteBundleSnapshot?.vfsFiles || {};
   const boundFiles = bindingApplication?.files || normalizedFiles;
-  const mergedFiles = input.siteBundleSnapshot
+  const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(boundFiles, canonicalFiles, input.siteBundleSnapshot)
     : { ...boundFiles };
 

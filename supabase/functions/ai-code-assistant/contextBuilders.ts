@@ -172,8 +172,21 @@ export function buildVfsFilesContext(surgicalEdit: boolean, vfsFiles?: Record<st
 
 // ── Fast-path wizard prompt ──────────────────────────────────────────────────
 
+type FastPathBuildContext = {
+  brand?: {
+    business_name?: string;
+    tone?: string;
+    palette?: Record<string, string | undefined>;
+  };
+  identity?: {
+    industry?: string;
+  };
+  template_sections?: string[];
+  intents?: Array<{ intent?: string }>;
+};
+
 export function buildFastPathSystemPrompt(opts: {
-  systemsBuildContext: Record<string, any>;
+  systemsBuildContext: FastPathBuildContext;
   templateName?: string;
   source?: string;
 }): string {
@@ -183,7 +196,7 @@ export function buildFastPathSystemPrompt(opts: {
   const tone = bp?.brand?.tone || 'professional and friendly';
   const palette = bp?.brand?.palette || {};
   const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
-  const intents = (bp?.intents || []).map((i: any) => i.intent).join(', ') || 'contact.submit, booking.create';
+  const intents = (bp?.intents || []).map((i) => i.intent).filter(Boolean).join(', ') || 'contact.submit, booking.create';
 
   const toHsl = (hex: string | undefined, fallback: string): string => {
     if (!hex) return fallback;

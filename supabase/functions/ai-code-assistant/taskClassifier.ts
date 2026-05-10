@@ -12,7 +12,8 @@ export type AssistantTaskType =
   | "multi_file_edit"
   | "single_file_edit"
   | "debug_fix"
-  | "general_code_assist";
+  | "general_code_assist"
+  | "launch_desk";
 
 export interface ClassifiedTask {
   type: AssistantTaskType;
@@ -45,6 +46,7 @@ export function classifyTask(opts: {
   behavioralEdit: boolean;
   debugMode: boolean;
   vfsFiles?: Record<string, string>;
+  launchBrief?: unknown;
 }): ClassifiedTask {
   const {
     mode,
@@ -57,9 +59,23 @@ export function classifyTask(opts: {
     behavioralEdit,
     debugMode,
     vfsFiles,
+    launchBrief,
   } = opts;
 
   // ── Wizard fast path ──────────────────────────────────────────────────
+  // ── Launch Desk ───────────────────────────────────────────────────────
+  if (mode === "launch-desk" || Boolean(launchBrief)) {
+    return {
+      type: "launch_desk",
+      fastPath: false,
+      shouldUseMemory: false,
+      shouldUseCompactContext: false,
+      prefersJsonOutput: true,
+      skipResearch: true,
+      skipThinking: false,
+    };
+  }
+
   const fastTemplateReact =
     mode === "template-react" &&
     Boolean(systemsBuildContext) &&

@@ -73,4 +73,31 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.siteBundleSnapshot]).toContain("\"vfsFilePaths\"");
   });
+
+  it("can preserve generated wizard output without merging canonical snapshot files", () => {
+    const snapshot = createSnapshot();
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        "/src/App.tsx": "export default function App(){ return <main>Wizard First</main>; }",
+      },
+      preferredEntryPoint: "/src/App.tsx",
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      mergeWithCanonicalSnapshot: false,
+      businessId: "biz_456",
+      projectId: "project_456",
+      systemType: "agency",
+      systemName: "Acme Co",
+      templateName: "Acme Launch",
+      templateCategory: "landing",
+      businessName: "Acme Co",
+      industry: "agency",
+      aesthetic: "modern",
+      backendRequired: false,
+    });
+
+    expect(artifacts.files["/src/App.tsx"]).toContain("Wizard First");
+    expect(artifacts.files["/src/pages/Home.tsx"]).toBeUndefined();
+    expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
+  });
 });

@@ -66,7 +66,7 @@ export function RecentProjectCard({
               transform: "scale(0.22)",
               transformOrigin: "top left",
             }}
-            sandbox="allow-same-origin"
+            sandbox="allow-scripts"
             loading="lazy"
             tabIndex={-1}
           />

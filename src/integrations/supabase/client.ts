@@ -8,10 +8,20 @@ const SUPABASE_PUBLISHABLE_KEY =
 	import.meta.env.VITE_SUPABASE_ANON_KEY ||
 	"";
 
+function sanitizeEnvValue(value: string): string {
+	// Removes hidden CR/LF or accidental whitespace in copied keys/URLs.
+	return String(value || "").trim().replace(/[\r\n]+/g, "");
+}
+
+const SANITIZED_SUPABASE_URL = sanitizeEnvValue(SUPABASE_URL);
+const SANITIZED_SUPABASE_PUBLISHABLE_KEY = sanitizeEnvValue(SUPABASE_PUBLISHABLE_KEY);
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+export const supabase = createClient<Database>(SANITIZED_SUPABASE_URL, SANITIZED_SUPABASE_PUBLISHABLE_KEY);
 
 // Export configuration status flag
-export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
+export const isSupabaseConfigured = Boolean(
+	SANITIZED_SUPABASE_URL && SANITIZED_SUPABASE_PUBLISHABLE_KEY,
+);

@@ -43,8 +43,9 @@ import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext, 
 import { buildSessionMemory, formatSessionMemoryBlock } from "./sessionMemory.ts";
 import { reviewPatch } from "./reviewPass.ts";
 import { checkEditScope } from "./reviewScope.ts";
-import { buildApplyState, formatApplyStateBlock, type ApplyState } from "./applyState.ts";
-import { preprocessPrompt, type PreprocessedPrompt } from "./promptPreprocessor.ts";
+import { buildApplyState, type ApplyState } from "./applyState.ts";
+import { preprocessPrompt } from "./promptPreprocessor.ts";
+import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ export interface OrchestratorResult {
 
 // ── Main Orchestrator Entry ─────────────────────────────────────────────────
 
-export async function runAssistantOrchestrator(
+export function runAssistantOrchestrator(
   parsed: AIRequest,
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
@@ -71,6 +72,9 @@ export async function runAssistantOrchestrator(
 ): Promise<Response> {
   if (task.type === "wizard_template_react") {
     return runWizardLane(parsed, task, corsHeaders);
+  }
+  if (task.type === "launch_desk") {
+    return runLaunchDeskLane(parsed, task, corsHeaders);
   }
   return runBuilderLane(parsed, task, corsHeaders, userId);
 }
@@ -91,7 +95,7 @@ async function runWizardLane(
 
   // Fast path system prompt — no research, no memory, no patterns
   const finalSystemPrompt = buildFastPathSystemPrompt({
-    systemsBuildContext: systemsBuildContext as Record<string, any>,
+    systemsBuildContext: systemsBuildContext ?? {},
     templateName: templateName ?? undefined,
     source: source ?? undefined,
   });
@@ -145,6 +149,72 @@ async function runWizardLane(
 // LANE B — Builder Orchestration (memory, compaction, research, rich response)
 // ============================================================================
 
+// ============================================================================
+// LANE C — Launch Desk (structured JSON plan, no memory, no research)
+// ============================================================================
+
+async function runLaunchDeskLane(
+  parsed: AIRequest,
+  task: ClassifiedTask,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
+  console.log('[orchestrator] LANE C: launch_desk');
+
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  const { messages, launchBrief } = parsed;
+
+  const systemPrompt = buildLaunchDeskSystemPrompt();
+
+  // Build the user turn — synthesise the brief from launchBrief fields,
+  // falling back to the last user message if no launchBrief was supplied.
+  let userContent: string;
+  if (launchBrief) {
+    userContent = buildLaunchDeskUserMessage(launchBrief);
+  } else {
+    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    userContent = typeof lastUser?.content === 'string' ? lastUser.content : 'No brief provided.';
+  }
+
+  const aiMessages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userContent },
+  ];
+
+  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY));
+  const providerResult = await runProviderLoop({
+    aiMessages,
+    providerPlan,
+    navPageGen: false,
+    lovableApiKey: LOVABLE_API_KEY ?? undefined,
+  });
+
+  if (providerResult.earlyError) {
+    return new Response(
+      JSON.stringify({ error: providerResult.earlyError.error }),
+      {
+        status: providerResult.earlyError.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    );
+  }
+
+  // Attempt to parse as structured JSON plan; fall back to raw text.
+  const rawContent = providerResult.content;
+  let plan: unknown = null;
+  try {
+    const stripped = rawContent.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
+    plan = JSON.parse(stripped);
+  } catch {
+    // Model returned prose — wrap it so the frontend can still display something.
+    plan = { summary: rawContent, tasks: [], riskRegister: [], ownerChecklist: {}, launchCopy: {}, followUpQuestions: [] };
+  }
+
+  return new Response(
+    JSON.stringify({ content: JSON.stringify(plan), plan, modelUsed: providerResult.modelUsed, mode: 'launch-desk' }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
+}
+
 async function runBuilderLane(
   parsed: AIRequest,
   task: ClassifiedTask,
@@ -163,7 +233,7 @@ async function runBuilderLane(
     currentCode, editMode = false, debugMode: _debugMode = false,
     templateAction, systemType, variationSeed, templateName, aesthetic, source,
     userDesignProfile, systemsBuildContext, navPageGen = false, navPageName, navLabel,
-    siteElementsLibraryContext, surgicalEdit = false, behavioralEdit = false,
+    siteElementsLibraryContext, surgicalEdit = false,
     componentBehaviorContext, vfsFiles, gatewayOptions,
     previewDiagnostics, previewSnapshot, recentChangedFiles,
   } = parsed;
@@ -249,7 +319,7 @@ async function runBuilderLane(
     generateImage,
     imagePlacement: imagePlacement ?? undefined,
     fastTemplateReact: false,
-    lovableApiKey: LOVABLE_API_KEY ?? undefined,
+    lovableApiKey: Deno.env.get('OPENAI_API_KEY') ?? undefined,
   });
 
   const [research, industryPageContext, imageResult] = await Promise.all([

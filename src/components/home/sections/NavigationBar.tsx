@@ -10,7 +10,7 @@ import {
   Zap,
   Users,
   Cloud,
-  X
+  X,
 } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { useNavigate } from "react-router-dom";

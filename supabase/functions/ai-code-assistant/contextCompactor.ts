@@ -177,7 +177,7 @@ export function buildCompactBuilderContext(opts: {
   issueHint?: CompactionIssueHint;
   goalCategory?: string;
 }): BuilderCompactContext {
-  const { vfsFiles, changedFiles, currentCode, previewDiagnostics, maxChars = 80_000 } = opts;
+  const { vfsFiles, changedFiles, previewDiagnostics, maxChars = 80_000 } = opts;
   const issueHint = opts.issueHint || detectIssueHint(previewDiagnostics, opts.goalCategory);
   const errorFiles = extractErrorFiles(previewDiagnostics);
 

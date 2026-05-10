@@ -6,7 +6,7 @@
  * duplicate components, package.json churn, intent drift.
  */
 
-import { safetyCheck, type SafetyVerdict } from "./safetyRules.ts";
+import { safetyCheck } from "./safetyRules.ts";
 
 export interface ReviewResult {
   /** Whether the patch passed review */
@@ -33,7 +33,7 @@ export function reviewPatch(opts: {
   taskType?: string;
   goalCategory?: string;
 }): ReviewResult {
-  const { files, existingFiles = [], taskType, goalCategory } = opts;
+  const { files, existingFiles = [], taskType } = opts;
   const warnings: ReviewResult["warnings"] = [];
   const removedFiles: string[] = [];
   let requiresApproval = false;

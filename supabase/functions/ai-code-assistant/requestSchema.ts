@@ -126,6 +126,13 @@ export const AIRequestSchema = z.object({
     autoModelSelection: z.boolean().optional(),
     maxTokens: z.number().min(1000).max(128000).optional(),
   }).optional(),
+  launchBrief: z.object({
+    productBrief: z.string().max(5000).optional(),
+    audience: z.string().max(1000).optional(),
+    launchDate: z.string().max(100).optional(),
+    constraints: z.string().max(2000).optional(),
+    availableAssets: z.string().max(2000).optional(),
+  }).optional(),
 });
 
 export type AIRequest = z.infer<typeof AIRequestSchema>;

@@ -61,6 +61,7 @@ serve(async (req: Request) => {
       behavioralEdit: parsed.data.behavioralEdit ?? false,
       debugMode: parsed.data.debugMode ?? false,
       vfsFiles: parsed.data.vfsFiles,
+      launchBrief: parsed.data.launchBrief,
     });
 
     console.log(
@@ -87,8 +88,23 @@ serve(async (req: Request) => {
     let errorType = "unknown";
 
     if (message.includes("All AI providers failed") || message.includes("All AI models failed")) {
-      userMessage = "AI service temporarily unavailable. All models are busy or experiencing issues. Please try again in a moment.";
-      errorType = "ai_unavailable";
+      const configuredNone = message.includes("Configured providers: none");
+      const hasAuthFailure = /401|403|invalid[_\s-]?api[_\s-]?key|unauthorized|authentication/i.test(message);
+      const detailsMatch = message.match(/Last errors:\s*(.+)$/i);
+      const details = detailsMatch?.[1]?.slice(0, 220);
+
+      if (configuredNone) {
+        userMessage = "AI providers are not configured on the edge function. Please set LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in Supabase secrets.";
+        errorType = "provider_not_configured";
+      } else if (hasAuthFailure) {
+        userMessage = "AI provider authentication failed. Please verify gateway/provider API keys in Supabase secrets.";
+        errorType = "provider_auth";
+      } else {
+        userMessage = details
+          ? `AI providers failed to produce a response. ${details}`
+          : "AI providers failed to produce a response. Please retry in a moment.";
+        errorType = "ai_unavailable";
+      }
     } else if (message.includes("network") || message.includes("fetch")) {
       userMessage = "Network error connecting to AI service. Please check your connection and try again.";
       errorType = "network";

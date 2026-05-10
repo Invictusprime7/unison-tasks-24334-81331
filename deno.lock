@@ -103,7 +103,7 @@
         "npm:globals@^16.4.0",
         "npm:html2canvas@^1.4.1",
         "npm:html2pdf.js@0.14",
-        "npm:inngest@^3.52.0",
+        "npm:inngest@^3.54.2",
         "npm:input-otp@^1.4.2",
         "npm:jsdom@^20.0.3",
         "npm:jszip@^3.10.1",
@@ -134,18 +134,7 @@
         "npm:vitest@^4.1.4",
         "npm:ws@^8.18.3",
         "npm:zod@^4.1.12"
-      ],
-      "overrides": {
-        "prismjs": "^1.30.0",
-        "monaco-editor": {
-          "dompurify": "^3.3.0"
-        },
-        "tar": "^7.5.11",
-        "systeminformation": "^5.31.0",
-        "cookie": "^0.7.0",
-        "undici": "^7.10.0",
-        "esbuild": "^0.25.0"
-      }
+      ]
     }
   }
 }

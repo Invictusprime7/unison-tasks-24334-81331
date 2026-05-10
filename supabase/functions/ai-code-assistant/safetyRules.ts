@@ -142,7 +142,7 @@ function stripModuleExports(code: string): string {
   return result.trim();
 }
 
-function detectNewPackages(content: string, existingFiles: string[]): string[] {
+function detectNewPackages(content: string, _existingFiles: string[]): string[] {
   const imports = content.matchAll(/import\s+.*?\s+from\s+['"]([^'"./][^'"]*)['"]/g);
   const packages = new Set<string>();
   for (const m of imports) {

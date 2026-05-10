@@ -740,11 +740,23 @@ function resolveBindingTarget(
   formIdMap: Record<string, string>,
   calendarIdMap: Record<string, string>,
 ): { targetId: string; targetType: PlaygroundBinding['targetType'] } {
+  const uiAnchorTargetMap: Record<string, string> = {
+    search: '#search',
+    auth: '#auth',
+    'mobile-nav': '#mobile-nav',
+    filter: '#filter',
+    sort: '#sort',
+    favorites: '#favorites',
+  };
+
   switch (intent) {
     case 'nav.goto_page':
     case 'funnel.goto_step': {
       // targetRef can be a page role or a route like '/checkout'
       const pageId = roleToPageId[targetRef] || resolveByRoute(targetRef, roleToPageId);
+      if (!pageId && uiAnchorTargetMap[targetRef]) {
+        return { targetId: uiAnchorTargetMap[targetRef], targetType: 'url' };
+      }
       return { targetId: pageId || '', targetType: 'page' };
     }
     case 'form.open': {

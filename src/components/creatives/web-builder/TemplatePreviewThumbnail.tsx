@@ -78,7 +78,7 @@ export const TemplatePreviewThumbnail: React.FC<TemplatePreviewThumbnailProps> =
           transformOrigin: 'top left',
           border: 'none',
         }}
-        sandbox="allow-same-origin"
+        sandbox="allow-scripts"
       />
       
       {/* Device indicator */}

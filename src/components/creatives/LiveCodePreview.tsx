@@ -206,7 +206,7 @@ export const LiveCodePreview: React.FC<LiveCodePreviewProps> = ({
               src={previewUrl}
               onLoad={handleIframeLoad}
               className="w-full h-full rounded-lg border-2 border-border"
-              sandbox="allow-scripts allow-same-origin"
+              sandbox="allow-scripts"
               title="Live Code Preview"
             />
           </div>

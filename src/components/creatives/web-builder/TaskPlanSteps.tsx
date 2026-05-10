@@ -51,26 +51,26 @@ const STEP_ICONS: Record<PlanStepType, React.ReactNode> = {
 };
 
 const STEP_COLORS: Record<PlanStepType, string> = {
-  locate: 'text-sky-400',
-  analyze: 'text-violet-400',
-  generate: 'text-blue-400',
-  patch: 'text-amber-400',
-  bind_intent: 'text-emerald-400',
-  create_route: 'text-cyan-400',
-  install_workflow: 'text-orange-400',
-  enable_capability: 'text-rose-400',
-  update_registry: 'text-blue-300',
-  refresh_preview: 'text-sky-300',
-  validate: 'text-green-400',
-  report: 'text-blue-400/60',
+  locate: 'text-foreground/70',
+  analyze: 'text-foreground/70',
+  generate: 'text-foreground/70',
+  patch: 'text-foreground/70',
+  bind_intent: 'text-foreground/70',
+  create_route: 'text-foreground/70',
+  install_workflow: 'text-foreground/70',
+  enable_capability: 'text-foreground/70',
+  update_registry: 'text-foreground/70',
+  refresh_preview: 'text-foreground/70',
+  validate: 'text-foreground/70',
+  report: 'text-muted-foreground',
 };
 
 const STATUS_STYLES: Record<PlanStepStatus, { border: string; bg: string; text: string }> = {
-  pending: { border: 'border-blue-500/10', bg: 'bg-black/30', text: 'text-blue-100/40' },
-  running: { border: 'border-blue-400/50', bg: 'bg-blue-500/15', text: 'text-blue-100/90' },
-  done: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-300/80' },
-  failed: { border: 'border-red-500/30', bg: 'bg-red-500/10', text: 'text-red-300/80' },
-  skipped: { border: 'border-blue-500/5', bg: 'bg-black/20', text: 'text-blue-100/25' },
+  pending: { border: 'border-border/70', bg: 'bg-muted/30', text: 'text-muted-foreground' },
+  running: { border: 'border-primary/40', bg: 'bg-primary/10', text: 'text-foreground' },
+  done: { border: 'border-emerald-500/40', bg: 'bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300' },
+  failed: { border: 'border-red-500/40', bg: 'bg-red-500/10', text: 'text-red-700 dark:text-red-300' },
+  skipped: { border: 'border-border/60', bg: 'bg-muted/20', text: 'text-muted-foreground/70' },
 };
 
 const ROUTE_LABELS: Partial<Record<NLRoute, string>> = {
@@ -122,34 +122,34 @@ export const TaskPlanSteps: React.FC<TaskPlanStepsProps> = ({ plan, className })
 
   return (
     <div className={cn(
-      'rounded-lg border overflow-hidden mb-2 transition-colors duration-300',
+      'rounded-xl border overflow-hidden mb-2 transition-colors duration-300',
       allDone
-        ? 'border-emerald-500/25 bg-emerald-950/15'
+        ? 'border-emerald-500/25 bg-emerald-500/5'
         : hasFailed
-          ? 'border-red-500/25 bg-red-950/15'
+          ? 'border-red-500/25 bg-red-500/5'
           : needsConfirm
-            ? 'border-amber-500/30 bg-amber-950/20'
-            : 'border-blue-500/20 bg-blue-950/20',
+            ? 'border-amber-500/30 bg-amber-500/5'
+            : 'border-border/80 bg-muted/20',
       className,
     )}>
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs font-mono hover:bg-white/5 transition-colors"
+        className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-muted/40 transition-colors"
       >
         {hasRunning ? (
-          <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />
+          <Loader2 className="w-3 h-3 text-primary animate-spin" />
         ) : allDone ? (
-          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
         ) : hasFailed ? (
-          <XCircle className="w-3 h-3 text-red-400" />
+          <XCircle className="w-3 h-3 text-red-500" />
         ) : (
-          <Target className={cn('w-3 h-3', needsConfirm ? 'text-amber-400' : 'text-blue-400')} />
+          <Target className={cn('w-3 h-3', needsConfirm ? 'text-amber-500' : 'text-muted-foreground')} />
         )}
 
         <span className={cn(
           'font-semibold',
-          allDone ? 'text-emerald-300' : hasFailed ? 'text-red-300' : needsConfirm ? 'text-amber-300' : 'text-blue-300',
+          allDone ? 'text-emerald-700 dark:text-emerald-300' : hasFailed ? 'text-red-700 dark:text-red-300' : needsConfirm ? 'text-amber-700 dark:text-amber-300' : 'text-foreground',
         )}>
           Task Plan
         </span>
@@ -159,35 +159,35 @@ export const TaskPlanSteps: React.FC<TaskPlanStepsProps> = ({ plan, className })
           className={cn(
             'text-[9px] px-1.5 py-0',
             allDone
-              ? 'border-emerald-500/30 text-emerald-400'
+              ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
               : needsConfirm
-                ? 'border-amber-500/40 text-amber-400'
-                : 'border-blue-500/30 text-blue-400',
+                ? 'border-amber-500/40 text-amber-600 dark:text-amber-400'
+                : 'border-border/80 text-muted-foreground',
           )}
         >
           {routeLabel}
         </Badge>
 
         {/* Progress indicator */}
-        <span className="text-[10px] text-blue-400/40 ml-auto mr-1">
+        <span className="text-[10px] text-muted-foreground ml-auto mr-1">
           {doneCount}/{plan.steps.length} steps
           {hasRunning && ' · running'}
           {allDone && ' · done'}
         </span>
 
         {expanded
-          ? <ChevronDown className="w-3 h-3 text-blue-400/40" />
-          : <ChevronRight className="w-3 h-3 text-blue-400/40" />
+          ? <ChevronDown className="w-3 h-3 text-muted-foreground" />
+          : <ChevronRight className="w-3 h-3 text-muted-foreground" />
         }
       </button>
 
       {/* Progress bar */}
       {(hasRunning || allDone) && (
-        <div className="h-[2px] bg-blue-500/10 mx-3">
+        <div className="h-[2px] bg-border/70 mx-3">
           <div
             className={cn(
               'h-full transition-all duration-500 ease-out rounded-full',
-              allDone ? 'bg-emerald-400/60' : 'bg-blue-400/50',
+              allDone ? 'bg-emerald-500/70' : 'bg-primary/60',
             )}
             style={{ width: `${progressPct}%` }}
           />
@@ -199,23 +199,23 @@ export const TaskPlanSteps: React.FC<TaskPlanStepsProps> = ({ plan, className })
         <div className="px-3 pb-2 pt-1">
           {/* Confirmation warning */}
           {needsConfirm && plan.confirmationReason && (
-            <div className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 mb-1.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div className="flex items-center gap-1.5 text-[10px] px-2 py-1 mb-1.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30">
               <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
               <span>{plan.confirmationReason}</span>
             </div>
           )}
 
           {/* Intent summary */}
-          <div className="flex items-center gap-1.5 text-[10px] text-blue-400/50 font-mono mb-1.5 px-1">
-            <Zap className="w-2.5 h-2.5 text-blue-400/40" />
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1.5 px-1">
+            <Zap className="w-2.5 h-2.5 text-muted-foreground" />
             <span className="truncate">{plan.intent.requestedOutcome}</span>
-            <span className="text-blue-400/25 ml-auto">
+            <span className="text-muted-foreground ml-auto">
               {Math.round(plan.intent.confidence * 100)}%
             </span>
           </div>
 
           {/* Step list */}
-          <div className="ml-1 pl-2 border-l border-blue-500/15 space-y-0.5">
+          <div className="ml-1 pl-2 border-l border-border/80 space-y-0.5">
             {plan.steps.map((step, i) => (
               <PlanStepRow key={step.id} step={step} isLast={i === plan.steps.length - 1} />
             ))}
@@ -253,14 +253,14 @@ const PlanStepRow: React.FC<{ step: PlanStep; isLast: boolean }> = ({ step, isLa
   return (
     <div className={cn(
       'flex items-center gap-2 py-0.5 group transition-all duration-300',
-      step.status === 'running' && 'bg-blue-500/5 rounded px-1 -mx-1',
+      step.status === 'running' && 'bg-primary/5 rounded px-1 -mx-1',
     )}>
       {/* Step type icon */}
       <div className={cn(
         'w-4 h-4 rounded flex items-center justify-center border transition-colors duration-300',
         statusStyle.bg,
         statusStyle.border,
-        step.status === 'done' ? 'text-emerald-400' : step.status === 'failed' ? 'text-red-400' : color,
+        step.status === 'done' ? 'text-emerald-600 dark:text-emerald-400' : step.status === 'failed' ? 'text-red-600 dark:text-red-400' : color,
       )}>
         {step.status === 'running' ? <Loader2 className="w-3 h-3 animate-spin" /> : icon}
       </div>
@@ -276,7 +276,7 @@ const PlanStepRow: React.FC<{ step: PlanStep; isLast: boolean }> = ({ step, isLa
 
       {/* Targets */}
       {step.targets.length > 0 && step.status !== 'skipped' && (
-        <span className="text-[9px] text-blue-400/25 font-mono flex-shrink-0">
+        <span className="text-[9px] text-muted-foreground font-mono flex-shrink-0">
           {step.targets.join(',')}
         </span>
       )}

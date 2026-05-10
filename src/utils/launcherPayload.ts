@@ -16,6 +16,83 @@ export function sanitizeLauncherResponseText(rawContent: unknown): string {
   return sanitized.trim();
 }
 
+function extractBalancedJsonObject(input: string, preferredKey?: string): string | null {
+  if (!input) return null;
+
+  const seedIndex = preferredKey ? input.indexOf(preferredKey) : 0;
+  const searchStart = seedIndex >= 0 ? seedIndex : 0;
+  const openAt = input.lastIndexOf('{', searchStart);
+  const startIndex = openAt >= 0 ? openAt : input.indexOf('{');
+  if (startIndex < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIndex; i < input.length; i++) {
+    const ch = input[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return input.slice(startIndex, i + 1).trim();
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseLauncherJsonObject(sanitized: string): {
+  files?: Record<string, unknown>;
+  entryPoint?: unknown;
+  siteBundle?: Record<string, unknown>;
+} | null {
+  const candidates = [
+    sanitized,
+    extractBalancedJsonObject(sanitized, '"files"'),
+    extractBalancedJsonObject(sanitized),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as {
+        files?: Record<string, unknown>;
+        entryPoint?: unknown;
+        siteBundle?: Record<string, unknown>;
+      };
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+}
+
 export interface LauncherStructuredPayload {
   files: Record<string, string>;
   entryPoint?: string;
@@ -52,30 +129,22 @@ export function resolveLauncherEntryPoint(
 
 export function extractLauncherPayload(rawContent: unknown): LauncherStructuredPayload | null {
   const sanitized = sanitizeLauncherResponseText(rawContent);
-  if (!sanitized || !sanitized.startsWith('{')) return null;
+  if (!sanitized) return null;
 
-  try {
-    const parsed = JSON.parse(sanitized) as {
-      files?: Record<string, unknown>;
-      entryPoint?: unknown;
-      siteBundle?: Record<string, unknown>;
-    };
-    if (!parsed?.files || typeof parsed.files !== 'object') return null;
+  const parsed = parseLauncherJsonObject(sanitized);
+  if (!parsed?.files || typeof parsed.files !== 'object') return null;
 
-    const files = Object.fromEntries(
-      Object.entries(parsed.files)
-        .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
-        .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content])
-    );
+  const files = Object.fromEntries(
+    Object.entries(parsed.files)
+      .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
+      .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content])
+  );
 
-    return {
-      files,
-      entryPoint: normalizeLauncherEntryPoint(parsed.entryPoint),
-      siteBundle: parsed.siteBundle,
-    };
-  } catch {
-    return null;
-  }
+  return {
+    files,
+    entryPoint: normalizeLauncherEntryPoint(parsed.entryPoint),
+    siteBundle: parsed.siteBundle,
+  };
 }
 
 export function extractLauncherFilesPayload(rawContent: unknown): Record<string, string> | null {

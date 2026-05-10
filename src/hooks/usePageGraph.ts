@@ -67,6 +67,42 @@ function generateId(): string {
   return `pg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function createEmptyGraph(projectId: string, businessId: string): PageGraph {
+  return {
+    projectId,
+    businessId,
+    pages: [],
+    navIndex: {},
+    version: 1,
+  };
+}
+
+function isMissingPageGraphsError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+    status?: number;
+  } | null;
+  const combined = [candidate?.message, candidate?.details, candidate?.hint].filter(Boolean).join(" ").toLowerCase();
+  return (
+    candidate?.code === "42P01" ||
+    candidate?.code === "PGRST205" ||
+    candidate?.status === 404 ||
+    combined.includes("page_graphs")
+  );
+}
+
+function isForbiddenPageGraphsError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+  } | null;
+  return candidate?.status === 401 || candidate?.status === 403 || candidate?.code === "42501";
+}
+
 /**
  * Generate a PageNode from a recipe
  */
@@ -141,6 +177,7 @@ function generatePageFromRecipe(
 
 export function usePageGraph(options: UsePageGraphOptions): UsePageGraphReturn {
   const { projectId, businessId, industry, onPageGenerated, onError } = options;
+  const isPreviewProject = projectId === "preview";
   
   const [pageGraph, setPageGraph] = useState<PageGraph | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -152,11 +189,32 @@ export function usePageGraph(options: UsePageGraphOptions): UsePageGraphReturn {
   onErrorRef.current = onError;
   const onPageGeneratedRef = useRef(onPageGenerated);
   onPageGeneratedRef.current = onPageGenerated;
+  const persistenceDisabledReasonRef = useRef<string | null>(isPreviewProject ? "preview_project" : null);
   
   // Cache for in-flight generation requests
   const generationQueue = useRef<Map<string, Promise<PageNode | null>>>(new Map());
   
   const navItems = getNavItemsForIndustry(industry);
+
+  const ensureLocalGraph = useCallback((): PageGraph => {
+    if (pageGraph) return pageGraph;
+    const emptyGraph = createEmptyGraph(projectId, businessId);
+    setPageGraph(emptyGraph);
+    return emptyGraph;
+  }, [pageGraph, projectId, businessId]);
+
+  const disablePersistence = useCallback((reason: string, error?: unknown) => {
+    if (persistenceDisabledReasonRef.current) {
+      return;
+    }
+    persistenceDisabledReasonRef.current = reason;
+    console.warn("[usePageGraph] Disabling Supabase page graph persistence", {
+      reason,
+      error,
+      projectId,
+      businessId,
+    });
+  }, [projectId, businessId]);
   
   /**
    * Load the page graph from database
@@ -164,42 +222,41 @@ export function usePageGraph(options: UsePageGraphOptions): UsePageGraphReturn {
   const loadPageGraph = useCallback(async (): Promise<PageGraph | null> => {
     try {
       setIsLoading(true);
+
+      if (persistenceDisabledReasonRef.current) {
+        return ensureLocalGraph();
+      }
       
       // Try to load from Supabase (page_graphs table)
       const { data, error } = await (supabase
         .from("page_graphs") as any)
         .select("*")
         .eq("project_id", projectId)
-        .single();
+        .limit(1);
       
-      if (error && error.code !== "PGRST116") {
-        // PGRST116 = no rows found, which is fine
+      if (error) {
+        if (isMissingPageGraphsError(error) || isForbiddenPageGraphsError(error)) {
+          disablePersistence(isMissingPageGraphsError(error) ? "page_graphs_unavailable" : "page_graphs_forbidden", error);
+          return ensureLocalGraph();
+        }
         console.error("[usePageGraph] Error loading page graph:", error);
       }
       
-      if (data) {
+      const row = data?.[0];
+      if (row) {
         const graph: PageGraph = {
-          projectId: data.project_id,
-          businessId: data.business_id,
-          pages: (data.pages as PageNode[]) || [],
-          navIndex: (data.nav_index as Record<string, string>) || {},
-          version: data.version || 1,
-          updatedAt: data.updated_at,
+          projectId: row.project_id,
+          businessId: row.business_id,
+          pages: (row.pages as PageNode[]) || [],
+          navIndex: (row.nav_index as Record<string, string>) || {},
+          version: row.version || 1,
+          updatedAt: row.updated_at,
         };
         setPageGraph(graph);
         return graph;
       }
       
-      // Create empty graph if none exists
-      const emptyGraph: PageGraph = {
-        projectId,
-        businessId,
-        pages: [],
-        navIndex: {},
-        version: 1,
-      };
-      setPageGraph(emptyGraph);
-      return emptyGraph;
+      return ensureLocalGraph();
       
     } catch (err) {
       console.error("[usePageGraph] Failed to load page graph:", err);
@@ -208,13 +265,17 @@ export function usePageGraph(options: UsePageGraphOptions): UsePageGraphReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, businessId]);
+  }, [projectId, ensureLocalGraph, disablePersistence]);
   
   /**
    * Save the page graph to database
    */
   const savePageGraph = useCallback(async (graph: PageGraph): Promise<void> => {
     try {
+      if (persistenceDisabledReasonRef.current) {
+        return;
+      }
+
       const { error } = await (supabase
         .from("page_graphs") as any)
         .upsert({
@@ -229,12 +290,16 @@ export function usePageGraph(options: UsePageGraphOptions): UsePageGraphReturn {
         });
       
       if (error) {
+        if (isMissingPageGraphsError(error) || isForbiddenPageGraphsError(error)) {
+          disablePersistence(isMissingPageGraphsError(error) ? "page_graphs_unavailable" : "page_graphs_forbidden", error);
+          return;
+        }
         console.error("[usePageGraph] Error saving page graph:", error);
       }
     } catch (err) {
       console.error("[usePageGraph] Failed to save page graph:", err);
     }
-  }, []);
+  }, [disablePersistence]);
   
   /**
    * Check if a page exists

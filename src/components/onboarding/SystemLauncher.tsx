@@ -77,6 +77,9 @@ interface SystemLauncherProps {
   onOpenChange: (open: boolean) => void;
 }
 
+type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
+type LauncherPayload = NonNullable<ReturnType<typeof extractLauncherPayload>>;
+
 const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [
   { key: "industry", num: 1, label: "Industry", sublabel: "What you do" },
   { key: "questions", num: 2, label: "Goals", sublabel: "Your needs" },
@@ -360,10 +363,54 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
 const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
+const WIZARD_AI_TIMEOUT_MS = 75_000;
+const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 
 function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
   if (value.length <= max) return value;
   return `${value.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
+function buildWizardAiSeedPrompt(opts: {
+  industrySystemName: string;
+  resolvedIndustry: string;
+  primaryGoal: string;
+  templateLabel: string;
+  sectionOrder: string[];
+  businessName: string;
+  visualStyleLabel: string;
+  visualStyleDirective: string;
+  headingFont: string;
+  headingWeight: string;
+  bodyFont: string;
+  canonicalIntents: string[];
+  customInstructionsRaw: string;
+}): string {
+  const customInstructionsPresent = opts.customInstructionsRaw.trim().length > 0;
+
+  return [
+    `Generate a complete, production-ready website for "${opts.businessName}" — a ${opts.resolvedIndustry} business.`,
+    ``,
+    `BUSINESS INPUTS (from wizard, all binding):`,
+    `1. Industry / System: ${opts.industrySystemName} (${opts.resolvedIndustry})`,
+    `2. Primary Goal: ${opts.primaryGoal || 'collect_leads'}`,
+    `3. Template (LOCKED layout): ${opts.templateLabel}`,
+    `   Required section order — render in this exact sequence: ${opts.sectionOrder.join(' → ')}`,
+    `4. Business Name: ${opts.businessName}`,
+    `5. Visual Style preset (LOCKED aesthetic): ${opts.visualStyleLabel} — ${opts.visualStyleDirective}`,
+    `   Headings: ${opts.headingFont} (${opts.headingWeight}). Body: ${opts.bodyFont}.`,
+    customInstructionsPresent
+      ? `6. Custom instructions from user (HIGHEST priority for copy/tone): included verbatim below`
+      : `6. Custom instructions: (none)`,
+    customInstructionsPresent ? `--- BEGIN VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
+    customInstructionsPresent ? opts.customInstructionsRaw : ``,
+    customInstructionsPresent ? `--- END VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
+    ``,
+    `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
+    `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
+    `CONTENT CONTRACT: Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
+    `Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
+  ].filter(Boolean).join('\n');
 }
 
 function buildTemplateGuidance(card: TemplateCardData | null): string {
@@ -401,18 +448,73 @@ function getGenerationCategory(
   return (templateCategory || system.templateCategories[0]) as LayoutCategory;
 }
 
-function getFunctionErrorMessage(error: unknown): string {
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
+async function getFunctionErrorMessage(error: unknown): Promise<string> {
   if (error instanceof Error) {
-    const withContext = error as Error & { context?: { body?: string } };
-    const body = withContext.context?.body;
+    const withContext = error as Error & {
+      context?: { body?: string; response?: Response } | Response;
+      status?: number;
+    };
+    const context = withContext.context;
+    const body = typeof context === "object" && context !== null && "body" in context
+      ? (context as { body?: string }).body
+      : undefined;
 
     if (typeof body === "string" && body) {
       try {
-        const parsed = JSON.parse(body) as { error?: string; details?: unknown };
+        const parsed = JSON.parse(body) as { error?: string; message?: string; details?: unknown };
         if (parsed.error) return parsed.error;
+        if (parsed.message) return parsed.message;
       } catch {
         return body;
       }
+    }
+
+    const response = context instanceof Response
+      ? context
+      : (typeof context === "object" && context !== null && "response" in context
+        ? (context as { response?: Response }).response
+        : undefined);
+
+    if (response) {
+      try {
+        const responseText = await response.clone().text();
+        if (responseText) {
+          try {
+            const parsed = JSON.parse(responseText) as {
+              error?: string;
+              message?: string;
+              details?: unknown;
+            };
+            if (parsed.error) return parsed.error;
+            if (parsed.message) return parsed.message;
+          } catch {
+            return responseText;
+          }
+        }
+      } catch {
+        // Ignore response-body parsing errors and fall back to status/message.
+      }
+
+      if (response.status) {
+        return `Edge function failed (${response.status}${response.statusText ? ` ${response.statusText}` : ""}).`;
+      }
+    }
+
+    if (withContext.status) {
+      return `Edge function failed (${withContext.status}).`;
     }
 
     return error.message;
@@ -634,11 +736,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
     setIsLaunching(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
+      let { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
         toast.error("Please sign in to continue");
         navigate("/auth");
         return;
+      }
+
+      // Refresh proactively when session is about to expire to avoid 401 loops
+      const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;
+      if (expiresAtMs > 0 && expiresAtMs <= Date.now() + 60_000) {
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError || !refreshed.session) {
+          toast.error("Session expired. Please sign in again.");
+          navigate("/auth");
+          return;
+        }
+        sessionData = refreshed as typeof sessionData;
       }
 
       const generationCategory = getGenerationCategory(system, selectedTemplate);
@@ -712,32 +826,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
       }
 
-      // ── Resolve composition deterministically from Section Registry ──
-      // The picked Template card is the structural contract — its sections
-      // (order + types) MUST be honored by the AI. We resolve it FIRST so we
-      // can pass section composition into the AI seed.
-      // Resolution order:
-      //   1. Exact match by selectedTemplate.id
-      //   2. First composition registered for this system
-      //   3. Universal fallback — any SAAS / AGENCY composition (generic layout)
-      // We never abort: the composition is a structural seed; AI rewrites content.
-      let composition =
-        (selectedTemplate?.id ? getCompositionById(selectedTemplate.id) : null) ||
-        getCompositionsBySystemType(selectedSystem)[0] ||
-        getCompositionsBySystemType('saas')[0] ||
-        getCompositionsBySystemType('agency')[0] ||
-        null;
-
-      if (!composition) {
-        toast.error(
-          `No template composition available for ${system.name}. Please pick a template.`,
-        );
+      // ── Resolve composition from selected Template card only ──
+      // Template selection is a hard structural contract for AI generation.
+      if (!selectedTemplate?.id) {
+        toast.error("Please select a template before launching.");
         return;
       }
-      if (!getCompositionById(selectedTemplate?.id ?? '') && selectedTemplate) {
-        console.info(
-          `[SystemLauncher] Using universal composition fallback "${composition.id}" for system "${selectedSystem}" (template "${selectedTemplate.id}" has no registered composition).`,
+      let composition = getCompositionById(selectedTemplate.id);
+      if (!composition) {
+        toast.error(
+          `Selected template "${selectedTemplate.label}" has no registered composition. Please choose another template.`,
         );
+        return;
       }
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) ──
@@ -776,6 +876,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // ── Blueprint enriched with Style card palette + custom instructions ──
       const blueprint = {
         version: "1.0",
+        launcherPolicy: {
+          implementationModel: WIZARD_IMPLEMENTATION_MODEL,
+          generationMode: "ai-tsx",
+          enforceTemplateComposition: true,
+          enforceThemeCssOverride: true,
+          deterministicFallbackAllowed: false,
+        },
         identity: {
           industry: resolvedIndustry,
           business_model: system.id,
@@ -815,80 +922,202 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       });
 
       // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
-      const customNote = customPrompt.trim();
-      const aiUserPrompt = [
-        `Generate a complete, production-ready website for "${brand}" — a ${resolvedIndustry} business.`,
-        ``,
-        `BUSINESS INPUTS (from wizard, all binding):`,
-        `1. Industry / System: ${system.name} (${resolvedIndustry})`,
-        `2. Primary Goal: ${primaryGoal || 'collect_leads'}`,
-        `3. Template (LOCKED layout): ${selectedTemplate?.label || system.name}`,
-        `   Required section order — render in this exact sequence: ${composition.sections.map((s) => s.type).join(' → ')}`,
-        `4. Business Name: ${brand}`,
-        `5. Visual Style preset (LOCKED aesthetic): ${resolvedPreset.label} — ${resolvedPreset.styleDirective}`,
-        `   Headings: ${resolvedPreset.typography.headingFont} (${resolvedPreset.typography.headingWeight}). Body: ${resolvedPreset.typography.bodyFont}.`,
-        customNote ? `6. Custom instructions from user (HIGHEST priority for copy/tone): ${customNote}` : `6. Custom instructions: (none)`,
-        ``,
-        `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
-        `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
-        `CONTENT CONTRACT: Copy must be specific to the ${resolvedIndustry} industry and reflect the primary goal "${primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
-        `Wire interactive elements with data-ut-intent attributes from this set: ${canonicalIntents.join(', ')}.`,
-      ].join('\n');
+      const aiUserPrompt = buildWizardAiSeedPrompt({
+        industrySystemName: system.name,
+        resolvedIndustry,
+        primaryGoal: primaryGoal || 'collect_leads',
+        templateLabel: selectedTemplate?.label || system.name,
+        sectionOrder: composition.sections.map((s) => s.type),
+        businessName: brand,
+        visualStyleLabel: resolvedPreset.label,
+        visualStyleDirective: resolvedPreset.styleDirective,
+        headingFont: resolvedPreset.typography.headingFont,
+        headingWeight: resolvedPreset.typography.headingWeight,
+        bodyFont: resolvedPreset.typography.bodyFont,
+        canonicalIntents,
+        customInstructionsRaw: customPrompt,
+      });
+
+      console.info('[WizardLaunch] Implementation model', {
+        policy: WIZARD_IMPLEMENTATION_MODEL,
+        sectionCount: composition.sections.length,
+        hasCustomInstructions: customPrompt.trim().length > 0,
+      });
 
       // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
-      let aiData: Record<string, unknown> | null = null;
-      let aiError: { message?: string } | null = null;
+      let generationResult: {
+        structured: LauncherPayload;
+        sanitized: SanitizedGeneratedFiles;
+      } | null = null;
+      let aiError: unknown = null;
+      let lastPayloadIssue: {
+        kind: 'empty' | 'app' | 'section';
+        aiContentPreview?: string;
+        invalidFiles?: string[];
+        allInvalidFiles?: string[];
+        aiAppMissing?: boolean;
+        aiAppInvalid?: boolean;
+      } | null = null;
       const MAX_RETRIES = 2;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
-          await new Promise((r) => setTimeout(r, 1200 * attempt));
+          const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
+          await new Promise((r) => setTimeout(r, retryDelayMs));
         }
-        const result = await supabase.functions.invoke('ai-code-assistant', {
-          body: {
-            messages: [{ role: 'user', content: aiUserPrompt }],
-            mode: 'template-react',
-            templateName: selectedTemplate?.label || system.name,
-            aesthetic: resolvedPreset.id,
-            source: resolvedIndustry,
-            systemType: selectedSystem,
-            currentCode: seedAppCode,
-            systemsBuildContext: blueprint,
-          },
-        });
-        aiError = result.error as { message?: string } | null;
-        aiData = result.data as Record<string, unknown> | null;
-        if (!aiError) break;
-        console.warn(`[SystemLauncher] AI attempt ${attempt + 1} failed:`, aiError?.message);
+        const result = await withTimeout(
+          supabase.functions.invoke('ai-code-assistant', {
+            body: {
+              messages: [{ role: 'user', content: aiUserPrompt }],
+              mode: 'template-react',
+              templateName: selectedTemplate?.label || system.name,
+              aesthetic: resolvedPreset.id,
+              source: resolvedIndustry,
+              systemType: selectedSystem,
+              currentCode: seedAppCode,
+              systemsBuildContext: blueprint,
+            },
+          }),
+          WIZARD_AI_TIMEOUT_MS,
+          `AI generation timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+        );
+        aiError = result.error;
+        if (aiError) {
+          const retryMsg = await getFunctionErrorMessage(aiError);
+          const normalizedRetryMsg = retryMsg.toLowerCase();
+          const shouldStopRetry =
+            retryMsg.includes('402') ||
+            normalizedRetryMsg.includes('payment required') ||
+            normalizedRetryMsg.includes('credits required') ||
+            normalizedRetryMsg.includes('invalid request body') ||
+            normalizedRetryMsg.includes('timed out') ||
+            normalizedRetryMsg.includes('timeout') ||
+            normalizedRetryMsg.includes('invalid or expired token') ||
+            normalizedRetryMsg.includes('unauthorized') ||
+            normalizedRetryMsg.includes('authentication');
+
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} failed:`, retryMsg);
+          if (shouldStopRetry) break;
+          continue;
+        }
+
+        const aiData = result.data as Record<string, unknown> | null;
+        const aiDataError = typeof aiData?.error === 'string' ? aiData.error : '';
+        if (aiDataError) {
+          aiError = new Error(aiDataError);
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned explicit error payload:`, aiDataError);
+          break;
+        }
+        const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
+        const structured = extractLauncherPayload(aiContent);
+
+        if (!structured?.files || Object.keys(structured.files).length === 0) {
+          lastPayloadIssue = {
+            kind: 'empty',
+            aiContentPreview: aiContent.slice(0, 300),
+          };
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned no usable files`, {
+            aiContentPreview: lastPayloadIssue.aiContentPreview,
+          });
+          continue;
+        }
+
+        // Sanitize AI output inside the retry loop so malformed code gets a
+        // fresh generation attempt instead of immediately blocking the launch.
+        const sanitized = sanitizeGeneratedFiles(structured.files);
+        const normalizedFiles: Record<string, string> = {
+          ...sanitized.files,
+          '/src/index.css': themedIndexCss,
+        };
+        if (!normalizedFiles['/src/App.tsx'] && normalizedFiles['src/App.tsx']) {
+          normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
+        }
+
+        const aiAppMissing = !normalizedFiles['/src/App.tsx'];
+        const aiAppInvalid =
+          sanitized.invalidFiles.includes('/src/App.tsx') ||
+          sanitized.invalidFiles.includes('src/App.tsx');
+        const otherInvalid = sanitized.invalidFiles.filter(
+          (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
+        );
+
+        if (aiAppMissing || aiAppInvalid) {
+          lastPayloadIssue = {
+            kind: 'app',
+            invalidFiles: otherInvalid,
+            allInvalidFiles: sanitized.invalidFiles,
+            aiAppMissing,
+            aiAppInvalid,
+          };
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned malformed files`, {
+            aiAppMissing,
+            aiAppInvalid,
+            invalidFiles: sanitized.invalidFiles,
+            report: sanitized.report,
+          });
+          continue;
+        }
+
+        if (otherInvalid.length > 0) {
+          // Non-entry malformed files are tolerated for launch so users can still
+          // enter the builder and iterate. App.tsx remains the hard validity gate.
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} has malformed non-entry files; continuing launch`, {
+            invalidFiles: sanitized.invalidFiles,
+            report: sanitized.report,
+          });
+        }
+
+        generationResult = { structured, sanitized };
+        break;
       }
 
       if (aiError) {
-        const msg = aiError.message || '';
+        const msg = await getFunctionErrorMessage(aiError);
+        const normalizedMsg = msg.toLowerCase();
+        if (
+          normalizedMsg.includes('invalid or expired token') ||
+          normalizedMsg.includes('unauthorized') ||
+          normalizedMsg.includes('authentication') ||
+          msg.includes('401')
+        ) {
+          toast.error('Session expired. Please sign in again.');
+          navigate('/auth');
+          return;
+        }
         if (msg.includes('429')) {
           toast.error('AI is rate-limited. Please wait a moment and try again.');
+          return;
         } else if (msg.includes('402')) {
           toast.error('AI credits required. Please add credits to continue.');
+          return;
         } else {
           toast.error(`AI generation failed: ${msg || 'unknown error'}`);
+          return;
         }
-        return;
       }
 
-      const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
-      const structured = extractLauncherPayload(aiContent);
+      if (!generationResult) {
+        if (lastPayloadIssue?.kind === 'empty') {
+          toast.error('AI returned no usable files after retrying. Please try again.');
+          console.error('[SystemLauncher] AI payload missing files:', lastPayloadIssue.aiContentPreview);
+          return;
+        }
+        if (lastPayloadIssue?.kind === 'app') {
+          const reason = lastPayloadIssue.aiAppMissing
+            ? 'AI did not return App.tsx after retrying. Please try again.'
+            : 'AI returned malformed App.tsx after retrying. Please try again.';
+          toast.error(reason);
+          console.error('[SystemLauncher] Aborting launch — AI App.tsx unusable after retries', lastPayloadIssue);
+          return;
+        }
+        if (lastPayloadIssue?.kind === 'section') {
+          toast.error('AI returned malformed section files after retrying. Please try again.');
+          console.error('[SystemLauncher] Aborting launch — malformed AI section files after retries', lastPayloadIssue);
+          return;
+        }
 
-      if (!structured?.files || Object.keys(structured.files).length === 0) {
-        toast.error('AI returned no usable files. Please try again.');
-        console.error('[SystemLauncher] AI payload missing files:', aiContent.slice(0, 300));
+        toast.error('AI generation failed. Please try again.');
+        console.error('[SystemLauncher] AI generation produced no launchable result.');
         return;
-      }
-
-      // ── Sanitize AI output (strip prose leaks, fix JSX, validate balance) ──
-      const sanitized = sanitizeGeneratedFiles(structured.files);
-      if (sanitized.invalidFiles.length > 0) {
-        console.warn(
-          "[SystemLauncher] AI returned malformed files; falling back to seed for:",
-          sanitized.invalidFiles,
-        );
       }
 
       // ── Merge AI output with LOCKED themed CSS ──
@@ -898,45 +1127,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // there is NO deterministic fallback. If the AI fails to produce a valid
       // App.tsx we abort the launch so the user can retry.
       const generatedFiles: Record<string, string> = {
-        ...sanitized.files,
+        ...generationResult.sanitized.files,
         '/src/index.css': themedIndexCss,
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).
       if (!generatedFiles['/src/App.tsx'] && generatedFiles['src/App.tsx']) {
         generatedFiles['/src/App.tsx'] = generatedFiles['src/App.tsx'];
         delete generatedFiles['src/App.tsx'];
-      }
-      const aiAppMissing = !generatedFiles['/src/App.tsx'];
-      const aiAppInvalid =
-        sanitized.invalidFiles.includes('/src/App.tsx') ||
-        sanitized.invalidFiles.includes('src/App.tsx');
-      // Only App.tsx is fatal — it's the entry point. For other malformed
-      // sub-component files (Hero, Services, CTA, …) we substitute a safe
-      // placeholder stub so the site still launches and the user can iterate
-      // in the builder instead of being blocked by an opaque "try again" toast.
-      const otherInvalid = sanitized.invalidFiles.filter(
-        (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
-      );
-      if (aiAppMissing || aiAppInvalid) {
-        const reason = aiAppMissing
-          ? 'AI did not return App.tsx. Please try again.'
-          : 'AI returned malformed App.tsx. Please try again.';
-        toast.error(reason);
-        console.error('[SystemLauncher] Aborting launch — AI App.tsx unusable', {
-          aiAppMissing,
-          aiAppInvalid,
-          invalidFiles: sanitized.invalidFiles,
-        });
-        return;
-      }
-      if (otherInvalid.length > 0) {
-        for (const path of otherInvalid) {
-          const compName = (path.split('/').pop() || 'Section').replace(/\.(t|j)sx?$/, '');
-          const safe = compName.replace(/[^A-Za-z0-9_]/g, '') || 'Section';
-          generatedFiles[path] = `import React from "react";\n\nexport default function ${safe}() {\n  return (\n    <section className="py-16 px-6 text-center">\n      <div className="max-w-2xl mx-auto rounded-2xl border border-dashed border-white/20 p-8">\n        <h2 className="text-xl font-semibold mb-2">${safe}</h2>\n        <p className="text-sm opacity-60">This section will be regenerated. Edit it in the builder to customize.</p>\n      </div>\n    </section>\n  );\n}\n`;
-        }
-        console.warn('[SystemLauncher] Substituted placeholder for malformed AI files', otherInvalid);
-        toast.warning(`${otherInvalid.length} section(s) returned malformed — placeholder inserted. You can regenerate them in the builder.`);
       }
 
       const provisionedBusinessId = await installPromise;
@@ -947,6 +1144,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         siteBundleSnapshot,
         compiledPlayground,
         canonicalPlayground: materializedPlayground,
+        mergeWithCanonicalSnapshot: false,
         businessId: provisionedBusinessId || undefined,
         systemType: selectedSystem,
         systemName: system.name,
@@ -1022,7 +1220,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       resetState();
       toast.success("Site ready! Opening builder…");
     } catch (e) {
-      const msg = getFunctionErrorMessage(e);
+      const msg = await getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);
       toast.error(msg);
     } finally {

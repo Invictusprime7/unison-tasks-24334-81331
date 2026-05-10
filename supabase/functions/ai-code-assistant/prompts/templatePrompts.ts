@@ -329,16 +329,16 @@ ${premiumCssBlock}
 2. **NO <script> TAGS** — All logic uses React hooks and event handlers
 3. **NO document.getElementById** — Use React refs (useRef)
 4. **NO vanilla DOM manipulation** — Use React state and JSX
-5. **PROPER IMPORTS** — Every .tsx file that uses hooks MUST start with `import React, { useState, useEffect, useRef } from 'react';` (only the hooks actually used)
-6. **DEFAULT EXPORT** — Every component file MUST end with `export default ComponentName;` on its own top-level line. NEVER place `export default` inside a JSX block, function body, or after a `return` statement.
+5. **PROPER IMPORTS** — Every .tsx file that uses hooks MUST start with \`import React, { useState, useEffect, useRef } from 'react';\` (only the hooks actually used)
+6. **DEFAULT EXPORT** — Every component file MUST end with \`export default ComponentName;\` on its own top-level line. NEVER place \`export default\` inside a JSX block, function body, or after a \`return\` statement.
 7. **TypeScript** — Use interfaces for all data structures
-8. **BALANCED BRACES** — Every `{`, `(`, `[`, `<>` MUST have a matching close. Count them before emitting.
-9. **SELF-CLOSE VOID ELEMENTS** — `<br />`, `<hr />`, `<img />`, `<input />`, `<meta />`, `<link />` (JSX, not HTML).
-10. **JSX STYLE OBJECTS** — Use `style={{ backgroundColor: 'red' }}` NOT `style="background-color: red"`.
-11. **NO HALLUCINATED NAMESPACES** — Use `<path>`, `<circle>`, `<rect>`, never `<dc.path>`, `<svg.path>`, `<lucide.icon>`.
-12. **NO PROSE LEAKS** — Output is parsed as JSON. NEVER write "Here's the file:", "```tsx", or any markdown around file contents. File values are raw TSX strings only.
+8. **BALANCED BRACES** — Every curly brace, parenthesis, bracket, and angle bracket MUST have a matching close. Count them before emitting.
+9. **SELF-CLOSE VOID ELEMENTS** — br, hr, img, input, meta, link (JSX, not HTML).
+10. **JSX STYLE OBJECTS** — Use style object NOT style string.
+11. **NO HALLUCINATED NAMESPACES** — Use path, circle, rect, never dc.path, svg.path, lucide.icon.
+12. **NO PROSE LEAKS** — Output is parsed as JSON. NEVER write "Here's the file:", "\`\`\`tsx", or any markdown around file contents. File values are raw TSX strings only.
 13. **NO module.exports / require()** — ESM only.
-14. **CLOSE EVERY JSX TAG** — `<div>` requires `</div>`, fragments `<>` require `</>`.
+14. **CLOSE EVERY JSX TAG** — div requires /div, fragments require closed tags.
 15. **ONE TOP-LEVEL DEFAULT EXPORT PER FILE** — and it must appear at the very top level (column 0), never nested.
 
 ## OUTPUT FORMAT (MANDATORY):
@@ -369,7 +369,7 @@ Return a JSON object with ALL files:
 - **MINIMUM 5 FAQ items** with expandable answers
 - Premium, award-winning visual design rivaling Webflow/Framer
 - Smooth scroll animations and micro-interactions
-- Professional typography hierarchy (eyebrow → headline → body) using `font-heading` and `font-body` Tailwind classes
+- Professional typography hierarchy (eyebrow → headline → body) using \`font-heading\` and \`font-body\` Tailwind classes
 - Consistent spacing (8px grid system)
 - Glass morphism and gradient effects WHERE SHOWN IN CSS ABOVE
 - Dark/light mode ready with CSS variables
@@ -432,7 +432,7 @@ OUTPUT: Return ONLY the JSON object with the files. No markdown code fences, no 
 
 // ── Premium CSS block for template-react ─────────────────────────────────────
 
-function buildPremiumCssBlock(variation: Variation): string {
+function buildPremiumCssBlock(_variation: Variation): string {
   return `## 🎨 PREMIUM CSS PATTERNS (MANDATORY - COPY THESE EXACTLY INTO index.css):
 
 \`\`\`css
@@ -536,3 +536,7 @@ function buildPremiumCssBlock(variation: Variation): string {
 @media (min-width: 768px) { .section-spacing { padding: 7rem 2rem; } }
 \`\`\``;
 }
+
+
+
+

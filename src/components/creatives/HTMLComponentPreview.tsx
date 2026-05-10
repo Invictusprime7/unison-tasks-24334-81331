@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,27 +14,12 @@ export const HTMLComponentPreview: React.FC<HTMLComponentPreviewProps> = ({
   css,
   className,
 }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [srcDoc, setSrcDoc] = useState('');
 
-  const renderContent = () => {
-    if (!iframeRef.current) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const iframe = iframeRef.current;
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-
-      if (!iframeDoc) {
-        setError('Unable to access iframe document');
-        setLoading(false);
-        return;
-      }
-
-      const fullHTML = `<!DOCTYPE html>
+  const buildPreviewDocument = () => {
+    const fullHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -74,26 +59,31 @@ export const HTMLComponentPreview: React.FC<HTMLComponentPreviewProps> = ({
 </body>
 </html>`;
 
-      iframeDoc.open();
-      iframeDoc.write(fullHTML);
-      iframeDoc.close();
+    return fullHTML;
+  };
 
-      setLoading(false);
+  useEffect(() => {
+    try {
+      setLoading(true);
+      setError(null);
+      setSrcDoc(buildPreviewDocument());
     } catch (err) {
       console.error('Preview render error:', err);
       setError(err instanceof Error ? err.message : 'Failed to render preview');
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    // Add a small delay to ensure iframe is ready
-    const timer = setTimeout(renderContent, 100);
-    return () => clearTimeout(timer);
   }, [html, css]);
 
   const handleRefresh = () => {
-    renderContent();
+    try {
+      setLoading(true);
+      setError(null);
+      setSrcDoc(buildPreviewDocument());
+    } catch (err) {
+      console.error('Preview refresh error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to render preview');
+      setLoading(false);
+    }
   };
 
   return (
@@ -128,10 +118,15 @@ export const HTMLComponentPreview: React.FC<HTMLComponentPreviewProps> = ({
       )}
 
       <iframe
-        ref={iframeRef}
+        srcDoc={srcDoc}
         className="w-full h-full border-0"
         title="Component Preview"
-        sandbox="allow-scripts allow-same-origin"
+        sandbox="allow-scripts"
+        onLoad={() => setLoading(false)}
+        onError={() => {
+          setError('Failed to load preview');
+          setLoading(false);
+        }}
       />
     </div>
   );

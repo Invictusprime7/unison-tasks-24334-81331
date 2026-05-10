@@ -142,6 +142,53 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode }> 
   other: { label: 'Other Services', icon: <Plug className="h-4 w-4" /> },
 };
 
+function isMissingUserSettingsError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+  } | null;
+  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
+  return (
+    candidate?.code === '42P01' ||
+    candidate?.code === 'PGRST205' ||
+    candidate?.status === 404 ||
+    combined.includes('user_settings')
+  );
+}
+
+async function readUserSettings(userId: string): Promise<Record<string, any>> {
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('settings')
+    .eq('user_id', userId)
+    .limit(1);
+
+  if (error) {
+    if (isMissingUserSettingsError(error)) {
+      return {};
+    }
+    throw error;
+  }
+
+  const rawSettings = data?.[0]?.settings;
+  return typeof rawSettings === 'string' ? JSON.parse(rawSettings) : rawSettings || {};
+}
+
+async function writeUserSettings(userId: string, settings: Record<string, any>): Promise<void> {
+  const { error } = await supabase
+    .from('user_settings')
+    .upsert({
+      user_id: userId,
+      settings,
+    });
+
+  if (error && !isMissingUserSettingsError(error)) {
+    throw error;
+  }
+}
+
 export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState<Integration[]>(INTEGRATIONS);
@@ -162,28 +209,18 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
 
   const loadIntegrations = async () => {
     try {
-      const { data, error } = await supabase
-        .from('user_settings')
-        .select('settings')
-        .eq('user_id', userId)
-        .single();
-
-      if (data?.settings) {
-        const settings = typeof data.settings === 'string' 
-          ? JSON.parse(data.settings) 
-          : data.settings;
+      const settings = await readUserSettings(userId);
           
-        if (settings.integrations) {
-          setIntegrations(
-            INTEGRATIONS.map(i => ({
-              ...i,
-              connected: settings.integrations[i.id]?.connected || false,
-            }))
-          );
-        }
-        if (settings.apiKeys) {
-          setGeneratedApiKeys(settings.apiKeys);
-        }
+      if (settings.integrations) {
+        setIntegrations(
+          INTEGRATIONS.map(i => ({
+            ...i,
+            connected: settings.integrations[i.id]?.connected || false,
+          }))
+        );
+      }
+      if (settings.apiKeys) {
+        setGeneratedApiKeys(settings.apiKeys);
       }
     } catch (error) {
       console.error('Error loading integrations:', error);
@@ -205,17 +242,7 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
     setConnectingId(selectedIntegration.id);
     
     try {
-      const { data: existingSettings } = await supabase
-        .from('user_settings')
-        .select('settings')
-        .eq('user_id', userId)
-        .single();
-
-      const currentSettings = existingSettings?.settings 
-        ? (typeof existingSettings.settings === 'string' 
-            ? JSON.parse(existingSettings.settings) 
-            : existingSettings.settings)
-        : {};
+      const currentSettings = await readUserSettings(userId);
 
       const newSettings = {
         ...currentSettings,
@@ -228,12 +255,7 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
         },
       };
 
-      await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: userId,
-          settings: newSettings,
-        });
+      await writeUserSettings(userId, newSettings);
 
       setIntegrations(
         integrations.map(i => 
@@ -264,30 +286,15 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
     if (!confirm(`Disconnect ${integration.name}?`)) return;
 
     try {
-      const { data: existingSettings } = await supabase
-        .from('user_settings')
-        .select('settings')
-        .eq('user_id', userId)
-        .single();
-
-      const currentSettings = existingSettings?.settings 
-        ? (typeof existingSettings.settings === 'string' 
-            ? JSON.parse(existingSettings.settings) 
-            : existingSettings.settings)
-        : {};
+      const currentSettings = await readUserSettings(userId);
 
       const newIntegrations = { ...(currentSettings.integrations || {}) };
       delete newIntegrations[integration.id];
 
-      await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: userId,
-          settings: {
-            ...currentSettings,
-            integrations: newIntegrations,
-          },
-        });
+      await writeUserSettings(userId, {
+        ...currentSettings,
+        integrations: newIntegrations,
+      });
 
       setIntegrations(
         integrations.map(i => 
@@ -319,27 +326,12 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
     setGeneratedApiKeys(updatedKeys);
 
     try {
-      const { data: existingSettings } = await supabase
-        .from('user_settings')
-        .select('settings')
-        .eq('user_id', userId)
-        .single();
+      const currentSettings = await readUserSettings(userId);
 
-      const currentSettings = existingSettings?.settings 
-        ? (typeof existingSettings.settings === 'string' 
-            ? JSON.parse(existingSettings.settings) 
-            : existingSettings.settings)
-        : {};
-
-      await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: userId,
-          settings: {
-            ...currentSettings,
-            apiKeys: updatedKeys,
-          },
-        });
+      await writeUserSettings(userId, {
+        ...currentSettings,
+        apiKeys: updatedKeys,
+      });
 
       toast({
         title: 'API Key Generated',
@@ -365,27 +357,12 @@ export function CloudIntegrations({ userId }: CloudIntegrationsProps) {
     setGeneratedApiKeys(updatedKeys);
 
     try {
-      const { data: existingSettings } = await supabase
-        .from('user_settings')
-        .select('settings')
-        .eq('user_id', userId)
-        .single();
+      const currentSettings = await readUserSettings(userId);
 
-      const currentSettings = existingSettings?.settings 
-        ? (typeof existingSettings.settings === 'string' 
-            ? JSON.parse(existingSettings.settings) 
-            : existingSettings.settings)
-        : {};
-
-      await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: userId,
-          settings: {
-            ...currentSettings,
-            apiKeys: updatedKeys,
-          },
-        });
+      await writeUserSettings(userId, {
+        ...currentSettings,
+        apiKeys: updatedKeys,
+      });
 
       toast({
         title: 'API Key Deleted',

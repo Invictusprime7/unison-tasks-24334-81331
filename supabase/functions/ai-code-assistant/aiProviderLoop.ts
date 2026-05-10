@@ -27,7 +27,7 @@ export async function runProviderLoop(opts: {
   lovableApiKey?: string;
   reasoningEffort?: "none" | "low" | "medium" | "high";
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, navPageGen, lovableApiKey, reasoningEffort } = opts;
+  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort } = opts;
   let content = '';
   let lastError = '';
   let reasoning = '';
@@ -38,6 +38,14 @@ export async function runProviderLoop(opts: {
   const TOTAL_BUDGET_MS = 135_000;
   const startedAt = Date.now();
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
+  const hasDirectOpenAI = Boolean(Deno.env.get('OPENAI_API_KEY'));
+  const providerErrors: string[] = [];
+  let deferredEarlyError: ProviderEarlyError | undefined;
+  const recordProviderError = (label: string, detail: string) => {
+    const message = `${label}: ${detail}`;
+    providerErrors.push(message);
+    lastError = message;
+  };
 
   // ── Phase 1: Lovable AI Gateway ──────────────────────────────────────
   if (lovableApiKey) {
@@ -61,9 +69,12 @@ export async function runProviderLoop(opts: {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
+        const usesCompletionTokens = model.id.includes('gpt-5');
         const reqBody: Record<string, unknown> = {
           model: model.id,
-          ...(model.id.startsWith('openai/') ? { max_completion_tokens: model.maxTokens } : { max_tokens: model.maxTokens }),
+          ...(usesCompletionTokens
+            ? { max_completion_tokens: model.maxTokens }
+            : { max_tokens: model.maxTokens }),
           messages: aiMessages,
         };
         // Only send reasoning parameter for supported models and only via the correct API format
@@ -83,23 +94,18 @@ export async function runProviderLoop(opts: {
         });
         clearTimeout(timeoutId);
 
-        if (resp.status === 429) {
-          return {
-            content: '', reasoning: '', modelUsed: undefined,
-            earlyError: {
-              status: 429,
-              error: 'Rate limit exceeded. Please try again later.',
-            },
-          };
-        }
-        if (resp.status === 402) {
-          return {
-            content: '', reasoning: '', modelUsed: undefined,
-            earlyError: {
-              status: 402,
-              error: 'Payment required. Please add credits to your workspace.',
-            },
-          };
+        if (resp.status === 429 || resp.status === 402) {
+          const errText = await resp.text().catch(() => '');
+          const earlyError: ProviderEarlyError = resp.status === 429
+            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
+            : { status: 402, error: 'Payment required. Please add credits to your workspace.' };
+          recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+          if (!hasDirectOpenAI) {
+            return { content: '', reasoning: '', modelUsed: undefined, earlyError };
+          }
+          deferredEarlyError ??= earlyError;
+          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying direct provider fallbacks...`);
+          break;
         }
 
         if (!resp.ok) {
@@ -109,14 +115,14 @@ export async function runProviderLoop(opts: {
           if (resp.status === 400) {
             console.error(`[AI-Hybrid] 400 Bad Request for ${model.id}. Request body keys: ${Object.keys(reqBody).join(', ')}`);
           }
-          lastError = `${model.label}: ${resp.status}`;
+          recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
           continue;
         }
 
         const responseText = await resp.text();
         if (!responseText || responseText.trim() === '') {
           console.warn(`[AI-Hybrid] ${model.label} returned empty response, trying next...`);
-          lastError = `${model.label}: empty response`;
+          recordProviderError(model.label, 'empty response');
           continue;
         }
 
@@ -125,14 +131,14 @@ export async function runProviderLoop(opts: {
           data = JSON.parse(responseText);
         } catch {
           console.warn(`[AI-Hybrid] ${model.label} returned invalid JSON, trying next...`);
-          lastError = `${model.label}: invalid JSON`;
+          recordProviderError(model.label, 'invalid JSON');
           continue;
         }
 
         const parsedContent = data.choices?.[0]?.message?.content || '';
         if (!parsedContent) {
           console.warn(`[AI-Hybrid] ${model.label} returned no content, trying next...`);
-          lastError = `${model.label}: no content`;
+          recordProviderError(model.label, 'no content');
           continue;
         }
 
@@ -148,11 +154,11 @@ export async function runProviderLoop(opts: {
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
-          lastError = `${model.label}: timeout`;
+          recordProviderError(model.label, 'timeout');
           continue;
         }
         console.warn(`[AI-Hybrid] ${model.label} failed:`, err);
-        lastError = `${model.label}: ${err instanceof Error ? err.message : 'unknown'}`;
+        recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
         continue;
       }
     }
@@ -162,10 +168,14 @@ export async function runProviderLoop(opts: {
   if (!content) {
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     if (OPENAI_API_KEY) {
+      const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
       const openaiModels = [
+        ...(configuredOpenAIModel
+          ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
+          : []),
         { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },
         { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
-      ];
+      ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
       for (const model of openaiModels) {
         const remaining = budgetRemaining();
         if (remaining < 8000) {
@@ -177,25 +187,33 @@ export async function runProviderLoop(opts: {
           console.log(`[AI-Hybrid] Trying direct ${model.label} (timeout: ${perModelMs / 1000}s)...`);
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+          const usesCompletionTokens = model.id.startsWith('gpt-5');
+          const requestBody: Record<string, unknown> = {
+            model: model.id,
+            messages: aiMessages,
+            ...(usesCompletionTokens
+              ? { max_completion_tokens: model.maxTokens }
+              : { max_tokens: model.maxTokens }),
+          };
           const resp = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${OPENAI_API_KEY}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ model: model.id, max_completion_tokens: model.maxTokens, messages: aiMessages }),
+            body: JSON.stringify(requestBody),
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
           if (!resp.ok) {
             const errText = await resp.text();
             console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 200)}`);
-            lastError = `${model.label}: ${resp.status}`;
+            recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
             continue;
           }
           const data = await resp.json();
           const parsedContent = data.choices?.[0]?.message?.content || '';
-          if (!parsedContent) { lastError = `${model.label}: no content`; continue; }
+          if (!parsedContent) { recordProviderError(model.label, 'no content'); continue; }
           const extracted = extractThinkingTags(parsedContent);
           if (extracted.reasoning) {
             reasoning = extracted.reasoning;
@@ -205,7 +223,7 @@ export async function runProviderLoop(opts: {
           console.log(`[AI-Hybrid] Success with ${model.label}`);
           break;
         } catch (err) {
-          lastError = `${model.label}: ${err instanceof Error ? err.message : 'unknown'}`;
+          recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
           continue;
         }
       }
@@ -216,66 +234,68 @@ export async function runProviderLoop(opts: {
   if (!content) {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (ANTHROPIC_API_KEY) {
-      try {
-        console.log('[AI-Hybrid] Trying direct Anthropic claude-sonnet-4-5 (extended thinking)...');
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-        const systemMsg = (aiMessages.find(m => m.role === 'system')?.content as string) || '';
-        const userMsgs = aiMessages.filter(m => m.role !== 'system');
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2025-02-19',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-5',
-            max_tokens: navPageGen ? 10000 : 32000,
-            ...(navPageGen ? {} : {
-              thinking: { type: 'enabled', budget_tokens: 10000 },
+      const remaining = budgetRemaining();
+      if (remaining >= 8000) {
+        const perModelMs = Math.min(28000, Math.max(8000, remaining - 2000));
+        try {
+          const systemMsg = (aiMessages.find((m) => m.role === 'system')?.content as string) || '';
+          const userMsgs = aiMessages.filter((m) => m.role !== 'system');
+          console.log(`[AI-Hybrid] Trying direct Anthropic claude-sonnet-4-5 (timeout: ${perModelMs / 1000}s)...`);
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+          const resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-5',
+              max_tokens: providerPlan.fallbackMaxTokens,
+              system: systemMsg,
+              messages: userMsgs,
             }),
-            system: systemMsg,
-            messages: userMsgs,
-          }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (resp.ok) {
-          const data = await resp.json();
-          const textBlock = (data.content as Array<{ type: string; text?: string; thinking?: string }> | undefined)
-            ?.find(b => b.type === 'text');
-          const thinkingBlocks = (data.content as Array<{ type: string; thinking?: string }> | undefined)
-            ?.filter(b => b.type === 'thinking')
-            .map(b => b.thinking || '')
-            .filter(Boolean);
-          const parsedContent = textBlock?.text || data.content?.[0]?.text || '';
-          if (parsedContent) {
-            if (thinkingBlocks?.length) {
-              reasoning = thinkingBlocks.join('\n\n');
-              content = parsedContent;
-            } else {
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+
+          if (!resp.ok) {
+            const errText = await resp.text();
+            recordProviderError('Anthropic claude-sonnet-4-5', `${resp.status} ${errText.substring(0, 200)}`);
+          } else {
+            const data = await resp.json();
+            const blocks = Array.isArray(data.content) ? data.content : [];
+            const textBlock = blocks.find((b: { type?: string; text?: string }) => b.type === 'text');
+            const parsedContent = textBlock?.text || '';
+            if (parsedContent) {
               const extracted = extractThinkingTags(parsedContent);
               if (extracted.reasoning) reasoning = extracted.reasoning;
               content = extracted.content;
+              modelUsed = 'claude-sonnet-4-5';
+              console.log('[AI-Hybrid] Success with direct Anthropic claude-sonnet-4-5');
+            } else {
+              recordProviderError('Anthropic claude-sonnet-4-5', 'no content');
             }
-            modelUsed = 'claude-sonnet-4-5';
-            console.log('[AI-Hybrid] Success with Anthropic claude-sonnet-4-5');
-          } else {
-            lastError = 'Anthropic: no content';
           }
-        } else {
-          const errText = await resp.text();
-          lastError = `Anthropic: ${resp.status} ${errText.substring(0, 100)}`;
+        } catch (err) {
+          recordProviderError('Anthropic claude-sonnet-4-5', err instanceof Error ? err.message : 'unknown');
         }
-      } catch (err) {
-        lastError = `Anthropic: ${err instanceof Error ? err.message : 'unknown'}`;
       }
     }
   }
 
   if (!content) {
-    throw new Error(`All AI providers failed. Last error: ${lastError}. Please ensure at least one of LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY is set in your Supabase secrets.`);
+    if (deferredEarlyError && providerErrors.length === 1) {
+      return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
+    }
+    const configuredProviders = [
+      lovableApiKey ? 'lovable-gateway' : '',
+      hasDirectOpenAI ? 'openai' : '',
+    ].filter(Boolean);
+    const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';
+    throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure LOVABLE_API_KEY and OPENAI_API_KEY are valid Supabase secrets.`);
   }
 
   return { content, reasoning, modelUsed };

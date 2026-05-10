@@ -78,6 +78,22 @@ import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import { extractCleanCode, looksLikeCode, ensureReactImports } from "@/utils/aiCodeCleaner";
 import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
+
+function isMissingBusinessInstallsError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+  } | null;
+  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
+  return (
+    candidate?.code === '42P01' ||
+    candidate?.code === 'PGRST205' ||
+    candidate?.status === 404 ||
+    combined.includes('business_installs')
+  );
+}
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
 import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';
@@ -2997,6 +3013,10 @@ export default function ${componentName}Page() {
           .limit(1);
 
         if (error) {
+          if (isMissingBusinessInstallsError(error)) {
+            if (!cancelled) setBackendInstalled(false);
+            return;
+          }
           console.warn("[WebBuilder] business_installs check failed", error);
           if (!cancelled) setBackendInstalled(false);
           return;

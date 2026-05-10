@@ -3,7 +3,7 @@
 // Lane-aware: lighter models for simple edits, stronger for debug/multi-file.
 // Complexity-aware: auto-upgrades model tier for complex/advanced prompts.
 
-import type { ClassifiedTask, AssistantTaskType } from "./taskClassifier.ts";
+import type { ClassifiedTask } from "./taskClassifier.ts";
 import type { PromptComplexity } from "./promptPreprocessor.ts";
 
 export interface ModelSpec {
@@ -32,13 +32,9 @@ export interface GatewayOverrides {
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  gemini3Flash: { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
-  gemini25Flash: { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  gemini25FlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
-  gemini25Pro: { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  gemini31Pro: { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
-  gpt5Mini: { id: "openai/gpt-5-mini", label: "GPT-5 Mini" },
-  gpt5: { id: "openai/gpt-5", label: "GPT-5" },
+  // Stable OpenAI models routed through the Lovable AI Gateway.
+  gpt4oMini: { id: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
+  gpt4o: { id: "openai/gpt-4o", label: "GPT-4o" },
 } as const;
 
 function m(spec: typeof MODELS[keyof typeof MODELS], maxTokens: number): ModelSpec {
@@ -67,21 +63,19 @@ function applyComplexityUpgrade(
     // and consumed the entire 135s budget on long prompts before fast models ran.
     const advancedTokens = Math.min(baseMaxTokens + 8000, 48000);
     const advancedModels: ModelSpec[] = [
-      m(MODELS.gemini3Flash, advancedTokens),
-      m(MODELS.gemini25Flash, advancedTokens),
-      m(MODELS.gemini25Pro, advancedTokens),
-      m(MODELS.gpt5Mini, advancedTokens),
+      m(MODELS.gpt4oMini, advancedTokens),
+      m(MODELS.gpt4o, advancedTokens),
     ];
     return { models: advancedModels, timeoutBoostMs: 5000 };
   }
 
   // Complex: append Pro-tier as fallback (don't prepend — fast models first)
-  const hasPro = models.some(mm => mm.id.includes("pro"));
-  if (!hasPro) {
+  const hasGpt4o = models.some(mm => mm.id === MODELS.gpt4o.id);
+  if (!hasGpt4o) {
     const complexTokens = Math.min(baseMaxTokens + 4000, 40000);
     const upgraded: ModelSpec[] = [
       ...models,
-      m(MODELS.gemini25Pro, complexTokens),
+      m(MODELS.gpt4o, complexTokens),
     ];
     return { models: upgraded, timeoutBoostMs: 5000 };
   }
@@ -118,9 +112,8 @@ export function buildProviderPlan(
     case "wizard_template_react":
       plan = {
         gatewayModels: [
-          m(MODELS.gemini3Flash, 16000),
-          m(MODELS.gemini25Flash, 16000),
-          m(MODELS.gpt5Mini, 16000),
+          m(MODELS.gpt4oMini, 16000),
+          m(MODELS.gpt4o, 16000),
         ],
         perModelTimeoutMs: 55000,
         fallbackMaxTokens: 16000,
@@ -131,8 +124,8 @@ export function buildProviderPlan(
     case "nav_page_generation":
       plan = {
         gatewayModels: [
-          m(MODELS.gemini25FlashLite, 12000),
-          m(MODELS.gemini3Flash, 12000),
+          m(MODELS.gpt4oMini, 12000),
+          m(MODELS.gpt4o, 12000),
         ],
         perModelTimeoutMs: 30000,
         fallbackMaxTokens: 10000,
@@ -142,9 +135,8 @@ export function buildProviderPlan(
     case "single_file_edit":
       plan = {
         gatewayModels: [
-          m(MODELS.gemini3Flash, 24000),
-          m(MODELS.gemini25Flash, 24000),
-          m(MODELS.gpt5Mini, 24000),
+          m(MODELS.gpt4oMini, 24000),
+          m(MODELS.gpt4o, 24000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 24000,
@@ -155,9 +147,8 @@ export function buildProviderPlan(
     case "debug_fix":
       plan = {
         gatewayModels: [
-          m(MODELS.gemini3Flash, 32000),
-          m(MODELS.gemini25Pro, 32000),
-          m(MODELS.gpt5Mini, 32000),
+          m(MODELS.gpt4oMini, 32000),
+          m(MODELS.gpt4o, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -168,9 +159,8 @@ export function buildProviderPlan(
     case "surgical_edit":
       plan = {
         gatewayModels: [
-          m(MODELS.gemini25Pro, 32000),
-          m(MODELS.gemini3Flash, 32000),
-          m(MODELS.gpt5Mini, 32000),
+          m(MODELS.gpt4oMini, 32000),
+          m(MODELS.gpt4o, 32000),
         ],
         perModelTimeoutMs: 50000,
         fallbackMaxTokens: 32000,
@@ -179,11 +169,12 @@ export function buildProviderPlan(
 
     // ── Lane B: Default ─────────────────────────────────────────────────
     default:
+    // ── Launch Desk ──────────────────────────────────────────────────────
+    case "launch_desk":
       plan = {
         gatewayModels: [
-          m(MODELS.gemini3Flash, 32000),
-          m(MODELS.gemini25Flash, 32000),
-          m(MODELS.gpt5Mini, 32000),
+          m(MODELS.gpt4oMini, 32000),
+          m(MODELS.gpt4o, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,

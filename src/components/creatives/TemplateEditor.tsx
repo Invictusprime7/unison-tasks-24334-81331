@@ -2,7 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Download, ArrowLeft, Code, Eye, Copy, RefreshCw, Wrench } from "lucide-react";
 import { toast } from "sonner";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -26,37 +26,13 @@ export const TemplateEditor = ({
   onBack,
 }: TemplateEditorProps) => {
   const navigate = useNavigate();
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [code, setCode] = useState(generatedCode);
   const [isEditing, setIsEditing] = useState(false);
+  const [previewKey, setPreviewKey] = useState(0);
 
   useEffect(() => {
     setCode(generatedCode);
   }, [generatedCode]);
-
-  useEffect(() => {
-    if (iframeRef.current && code) {
-      const iframe = iframeRef.current;
-      
-      // Wait for iframe to be ready
-      const updateIframe = () => {
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (iframeDoc) {
-          iframeDoc.open();
-          iframeDoc.write(code);
-          iframeDoc.close();
-        }
-      };
-
-      // If iframe is already loaded, update immediately
-      if (iframe.contentDocument?.readyState === 'complete') {
-        updateIframe();
-      } else {
-        // Otherwise wait for load
-        iframe.onload = updateIframe;
-      }
-    }
-  }, [code]);
 
   const handleDownload = () => {
     const blob = new Blob([code], { type: "text/html" });
@@ -77,15 +53,7 @@ export const TemplateEditor = ({
   };
 
   const handleRefreshPreview = () => {
-    if (iframeRef.current) {
-      const iframe = iframeRef.current;
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (iframeDoc) {
-        iframeDoc.open();
-        iframeDoc.write(code);
-        iframeDoc.close();
-      }
-    }
+    setPreviewKey((k) => k + 1);
     toast.success("Preview refreshed!");
   };
 
@@ -150,10 +118,11 @@ export const TemplateEditor = ({
           <TabsContent value="preview" className="flex-1 mt-2 sm:mt-4 overflow-hidden">
             <div className="h-full border rounded-lg overflow-hidden bg-white shadow-lg">
               <iframe
-                ref={iframeRef}
+                key={previewKey}
+                srcDoc={code}
                 className="w-full h-full"
                 title="Template Preview"
-                sandbox="allow-scripts allow-same-origin allow-forms"
+                sandbox="allow-scripts allow-forms"
                 style={{ border: 'none', minHeight: '300px' }}
               />
             </div>

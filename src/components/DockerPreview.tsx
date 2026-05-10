@@ -214,7 +214,7 @@ export function DockerPreview({ nodes, activeFileId, onFileChange, className }: 
             src={session.iframeUrl}
             className="w-full h-full border-0"
             title="Live Preview"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            sandbox="allow-scripts allow-forms allow-popups allow-modals"
           />
         ) : session.status === 'starting' ? (
           <div className="absolute inset-0 flex items-center justify-center">

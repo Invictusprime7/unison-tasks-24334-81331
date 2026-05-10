@@ -18,6 +18,39 @@ import {
   type RecentProject
 } from "@/components/home/sections";
 
+function isMissingUserSettingsError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+  } | null;
+  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
+  return (
+    candidate?.code === '42P01' ||
+    candidate?.code === 'PGRST205' ||
+    candidate?.status === 404 ||
+    combined.includes('user_settings')
+  );
+}
+
+async function readUserSettings(userId: string): Promise<unknown | null> {
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('settings')
+    .eq('user_id', userId)
+    .limit(1);
+
+  if (error) {
+    if (isMissingUserSettingsError(error)) {
+      return null;
+    }
+    throw error;
+  }
+
+  return data?.[0]?.settings ?? null;
+}
+
 const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -94,16 +127,12 @@ const Index = () => {
       if (!user || !isSupabaseConfigured) return;
       
       try {
-        const { data, error } = await supabase
-          .from('user_settings')
-          .select('settings')
-          .eq('user_id', user.id)
-          .single();
+        const rawSettings = await readUserSettings(user.id);
 
-        if (data?.settings) {
-          const settings = typeof data.settings === 'string' 
-            ? JSON.parse(data.settings) 
-            : data.settings;
+        if (rawSettings) {
+          const settings = typeof rawSettings === 'string'
+            ? JSON.parse(rawSettings)
+            : rawSettings;
             
           if (settings.integrations) {
             const connected: Record<string, boolean> = {};
@@ -155,16 +184,12 @@ const Index = () => {
       return;
     }
 
-    const { data: existingSettings } = await supabase
-      .from('user_settings')
-      .select('settings')
-      .eq('user_id', user.id)
-      .single();
+    const existingSettingsValue = await readUserSettings(user.id);
 
-    const currentSettings = existingSettings?.settings 
-      ? (typeof existingSettings.settings === 'string' 
-          ? JSON.parse(existingSettings.settings) 
-          : existingSettings.settings)
+    const currentSettings = existingSettingsValue
+      ? (typeof existingSettingsValue === 'string'
+          ? JSON.parse(existingSettingsValue)
+          : existingSettingsValue)
       : {};
 
     const newSettings = {
@@ -178,12 +203,16 @@ const Index = () => {
       },
     };
 
-    await supabase
+    const { error: upsertError } = await supabase
       .from('user_settings')
       .upsert({
         user_id: user.id,
         settings: newSettings,
       });
+
+    if (upsertError && !isMissingUserSettingsError(upsertError)) {
+      throw upsertError;
+    }
 
     setConnectedIntegrations(prev => ({
       ...prev,
@@ -194,22 +223,18 @@ const Index = () => {
   const handleDisconnectIntegration = async (integrationId: string) => {
     if (!user) return;
 
-    const { data: existingSettings } = await supabase
-      .from('user_settings')
-      .select('settings')
-      .eq('user_id', user.id)
-      .single();
+    const existingSettingsValue = await readUserSettings(user.id);
 
-    const currentSettings = existingSettings?.settings 
-      ? (typeof existingSettings.settings === 'string' 
-          ? JSON.parse(existingSettings.settings) 
-          : existingSettings.settings)
+    const currentSettings = existingSettingsValue
+      ? (typeof existingSettingsValue === 'string'
+          ? JSON.parse(existingSettingsValue)
+          : existingSettingsValue)
       : {};
 
     const newIntegrations = { ...(currentSettings.integrations || {}) };
     delete newIntegrations[integrationId];
 
-    await supabase
+    const { error: upsertError } = await supabase
       .from('user_settings')
       .upsert({
         user_id: user.id,
@@ -218,6 +243,10 @@ const Index = () => {
           integrations: newIntegrations,
         },
       });
+
+    if (upsertError && !isMissingUserSettingsError(upsertError)) {
+      throw upsertError;
+    }
 
     setConnectedIntegrations(prev => {
       const updated = { ...prev };

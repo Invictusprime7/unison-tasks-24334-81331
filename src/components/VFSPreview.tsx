@@ -824,7 +824,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                 pointerEvents: enableSelection ? 'auto' : undefined,
               }}
               title="VFS Preview"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              sandbox={enableSelection
+                ? 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals'
+                : 'allow-scripts allow-forms allow-popups allow-modals'}
             />
           </div>
         )}

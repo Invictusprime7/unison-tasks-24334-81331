@@ -177,6 +177,22 @@ const mergeTemplates = (templates: unknown): EmailTemplate[] => {
   });
 };
 
+function isMissingUserSettingsError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+  } | null;
+  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
+  return (
+    candidate?.code === '42P01' ||
+    candidate?.code === 'PGRST205' ||
+    candidate?.status === 404 ||
+    combined.includes('user_settings')
+  );
+}
+
 export function CloudEmail({ userId }: CloudEmailProps) {
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -209,13 +225,20 @@ export function CloudEmail({ userId }: CloudEmailProps) {
   }, [selectedTemplate, templatesOpen]);
 
   const getUserSettings = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('user_settings')
       .select('settings')
       .eq('user_id', userId)
-      .maybeSingle();
+      .limit(1);
 
-    const rawSettings = data?.settings;
+    if (error) {
+      if (isMissingUserSettingsError(error)) {
+        return {};
+      }
+      throw error;
+    }
+
+    const rawSettings = data?.[0]?.settings;
     return typeof rawSettings === 'string' ? JSON.parse(rawSettings) : rawSettings || {};
   };
 
@@ -223,10 +246,14 @@ export function CloudEmail({ userId }: CloudEmailProps) {
     const currentSettings = await getUserSettings();
     const nextSettings = updater(currentSettings);
 
-    await supabase.from('user_settings').upsert({
+    const { error } = await supabase.from('user_settings').upsert({
       user_id: userId,
       settings: nextSettings,
     });
+
+    if (error && !isMissingUserSettingsError(error)) {
+      throw error;
+    }
 
     return nextSettings;
   };

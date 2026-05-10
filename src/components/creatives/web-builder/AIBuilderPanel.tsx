@@ -212,6 +212,120 @@ function getScopedEditAutoApplyBlockReason(opts: {
   return null;
 }
 
+interface LaunchBriefPayload {
+  productBrief: string;
+  audience?: string;
+  launchDate?: string;
+  constraints?: string;
+  availableAssets?: string;
+}
+
+const LAUNCH_PLANNING_KEYWORDS = [
+  'launch plan',
+  'release plan',
+  'go-to-market plan',
+  'gtm plan',
+  'risk register',
+  'owner checklist',
+  'launch copy',
+  'launch readiness',
+];
+
+function detectLaunchPlanningIntent(prompt: string): boolean {
+  const normalized = prompt.toLowerCase();
+  return LAUNCH_PLANNING_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function extractLaunchBriefFromPrompt(prompt: string): LaunchBriefPayload {
+  const lines = prompt.split('\n').map((line) => line.trim()).filter(Boolean);
+  const getLabeledValue = (labels: string[]): string | undefined => {
+    const lowerLabels = labels.map((l) => l.toLowerCase());
+    const hit = lines.find((line) => {
+      const lower = line.toLowerCase();
+      return lowerLabels.some((label) => lower.startsWith(`${label}:`));
+    });
+    if (!hit) return undefined;
+    const idx = hit.indexOf(':');
+    return idx >= 0 ? hit.slice(idx + 1).trim() : undefined;
+  };
+
+  const audience = getLabeledValue(['audience', 'target audience', 'users']);
+  const launchDate = getLabeledValue(['launch date', 'release date', 'ship date']);
+  const constraints = getLabeledValue(['constraints', 'limitations', 'blockers']);
+  const availableAssets = getLabeledValue(['assets', 'available assets', 'materials']);
+
+  return {
+    productBrief: prompt,
+    audience,
+    launchDate,
+    constraints,
+    availableAssets,
+  };
+}
+
+function formatLaunchPlanForBuilder(plan: unknown, fallbackContent: string): string {
+  if (!plan || typeof plan !== 'object') {
+    return fallbackContent;
+  }
+
+  const p = plan as {
+    summary?: string;
+    tasks?: Array<{ title?: string; priority?: string; owner?: string }>;
+    readiness?: { score?: number; gaps?: string[] };
+    riskRegister?: Array<{ title?: string; mitigation?: string }>;
+    followUpQuestions?: string[];
+  };
+
+  const lines: string[] = [];
+
+  if (p.summary) {
+    lines.push('Launch Planning Summary');
+    lines.push(p.summary);
+  }
+
+  if (p.readiness) {
+    lines.push('');
+    lines.push(`Readiness Score: ${typeof p.readiness.score === 'number' ? p.readiness.score : 0}/100`);
+    const gaps = Array.isArray(p.readiness.gaps) ? p.readiness.gaps.slice(0, 4) : [];
+    if (gaps.length > 0) {
+      lines.push('Top Gaps:');
+      gaps.forEach((gap) => lines.push(`- ${gap}`));
+    }
+  }
+
+  const tasks = Array.isArray(p.tasks) ? p.tasks.slice(0, 8) : [];
+  if (tasks.length > 0) {
+    lines.push('');
+    lines.push('Prioritized Tasks:');
+    tasks.forEach((task) => {
+      const pr = task.priority || 'P2';
+      const owner = task.owner ? ` · ${task.owner}` : '';
+      lines.push(`- [${pr}] ${task.title || 'Untitled task'}${owner}`);
+    });
+  }
+
+  const risks = Array.isArray(p.riskRegister) ? p.riskRegister.slice(0, 5) : [];
+  if (risks.length > 0) {
+    lines.push('');
+    lines.push('Risk Register:');
+    risks.forEach((risk) => {
+      const title = risk.title || 'Unnamed risk';
+      const mitigation = risk.mitigation ? ` → Mitigation: ${risk.mitigation}` : '';
+      lines.push(`- ${title}${mitigation}`);
+    });
+  }
+
+  const followUps = Array.isArray(p.followUpQuestions) ? p.followUpQuestions.slice(0, 4) : [];
+  if (followUps.length > 0) {
+    lines.push('');
+    lines.push('Follow-up Questions:');
+    followUps.forEach((q) => lines.push(`- ${q}`));
+  }
+
+  const formatted = lines.join('\n').trim();
+  return formatted || fallbackContent;
+}
+
 
 export interface ThinkingStep {
   id: string;
@@ -609,6 +723,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       .map(f => ({ name: f.name, type: 'image', data: f.preview! }));
 
     const userContent = input.trim() || `Analyse the attached file${droppedFiles.length > 1 ? 's' : ''} and incorporate them into the design.`;
+    const isLaunchPlanningRequest = droppedFiles.length === 0 && detectLaunchPlanningIntent(userContent);
     const displayContent = userContent + (droppedFiles.length > 0 ? `\n📎 ${droppedFiles.length} file${droppedFiles.length > 1 ? 's' : ''} attached` : '');
 
     const userMessage: Message = {
@@ -625,7 +740,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
     // ── GHL Wire Fast Path ───────────────────────────────────────────────
     // Deterministic NL → site_intent_bindings write for GoHighLevel workflows.
-    if (droppedFiles.length === 0 && projectId && businessId) {
+    if (!isLaunchPlanningRequest && droppedFiles.length === 0 && projectId && businessId) {
       try {
         const wire = parseGhlWireIntent(userContent);
         if (wire && wire.confidence >= 0.75) {
@@ -666,7 +781,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     // ── Layout-Intent Fast Path ──────────────────────────────────────────
     // Deterministic NL → layout-op (center / move / align / reorder).
     // Skips the LLM round-trip entirely on a confident match.
-    if (layoutOps && droppedFiles.length === 0) {
+    if (!isLaunchPlanningRequest && layoutOps && droppedFiles.length === 0) {
       try {
         const previewSrc = layoutOps.getPreviewCode();
         const detected = previewSrc ? detectSections(previewSrc) : [];
@@ -727,6 +842,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     const _fileContext = fileContext;
     const _attachments = attachments;
     const _userContent = userContent;
+    const launchBrief = isLaunchPlanningRequest ? extractLaunchBriefFromPrompt(_userContent) : undefined;
 
     let streamingId: string | null = null;
 
@@ -950,7 +1066,14 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // For surgical edits, inject a strict prompt guard so the AI makes ONLY the targeted change
       // AND mandate that it outputs actual code, not just reasoning
       // Use intelligent prompt for general requests; for surgical edits, still inject strict guard
-      const promptForAI = isSurgicalEdit
+      const promptForAI = isLaunchPlanningRequest
+        ? [
+            'Generate a complete launch planning output for the brief below.',
+            'Include prioritized tasks, readiness score, risk register, owner checklists, launch copy, and follow-up questions.',
+            '',
+            `Brief:\n${_userContent}`,
+          ].join('\n')
+        : isSurgicalEdit
         ? [
             '🚨 SURGICAL EDIT MODE — CHANGE ONLY THE TARGETED ELEMENT/COMPONENT 🚨',
             '',
@@ -1001,6 +1124,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // Derive templateAction from prompt analysis instead of regex
       const templateAction = (() => {
+        if (isLaunchPlanningRequest) return undefined;
         switch (promptAnalysis.intent) {
           case 'full_generation': return 'full-control';
           case 'add_section': return 'add';
@@ -1148,17 +1272,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               // to ensure the AI generates React/TSX output, not raw HTML.
               // The surgicalEdit flag tells the edge function to apply surgical constraints.
               // Only fall back to 'code' mode for non-React (HTML template) surgical edits.
-              mode: isSurgicalEdit && !isReactProject ? 'code' : 'template-react',
-              currentCode: truncatedCode,
-              editMode: !!currentCode,
-              debugMode: isDebugMode,
-              surgicalEdit: isSurgicalEdit,
-              behavioralEdit: isBehavioralEdit,
+              mode: isLaunchPlanningRequest ? 'launch-desk' : (isSurgicalEdit && !isReactProject ? 'code' : 'template-react'),
+              currentCode: isLaunchPlanningRequest ? undefined : truncatedCode,
+              editMode: isLaunchPlanningRequest ? false : !!currentCode,
+              debugMode: isLaunchPlanningRequest ? false : isDebugMode,
+              surgicalEdit: isLaunchPlanningRequest ? false : isSurgicalEdit,
+              behavioralEdit: isLaunchPlanningRequest ? false : isBehavioralEdit,
               targetFile: resolvedTargetFile || undefined,
               componentBehaviorContext: behaviorContext || undefined,
               systemType,
               templateName,
               templateAction,
+              launchBrief,
               userDesignProfile: userDesignProfile ?? undefined,
               systemsBuildContext: systemsBuildContext ?? undefined,
               siteElementsLibraryContext,
@@ -1244,8 +1369,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
+      const isLaunchPlanningResponse = response.data?.mode === 'launch-desk' || !!response.data?.plan;
       const responseMeta: Message['meta'] = {
-        actionType: response.data?.actionType,
+        actionType: response.data?.actionType || (isLaunchPlanningResponse ? 'launch_planning' : undefined),
         modelUsed: response.data?.modelUsed,
         filesDetected: response.data?.filesDetected,
         warnings: response.data?.warnings,
@@ -1256,6 +1382,39 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
+
+      if (isLaunchPlanningResponse) {
+        liveStep('planning', 'Formatting launch plan for in-builder view...');
+        const launchPlanContent = formatLaunchPlanForBuilder(response.data?.plan, aiContent);
+        const completeStep: ThinkingStep = {
+          id: generateId(),
+          type: 'complete',
+          message: 'Launch plan ready',
+          timestamp: new Date(),
+        };
+
+        advancePlanStep(taskPlan, 'patch', 'done');
+        advancePlanStep(taskPlan, 'refresh', 'done');
+
+        setMessages(prev => prev.map(m =>
+          m.id === streamingId
+            ? {
+                ...m,
+                content: launchPlanContent,
+                thinking: [...thinkingSteps, completeStep],
+                taskPlan,
+                isStreaming: false,
+                modelUsed,
+                claudeReasoning: aiReasoning,
+                meta: responseMeta,
+                responseTimestamp: new Date().toISOString(),
+              }
+            : m
+        ));
+
+        setActiveTab('code');
+        return;
+      }
       
       // ── Phase 5: Code Extraction ──
       liveStep('validating', 'Extracting code from response...');

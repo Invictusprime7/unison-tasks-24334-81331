@@ -1148,7 +1148,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         wizardSelections,
       });
 
-      const wiredVfsFiles = launchArtifacts.files;
+      // Force-overwrite /src/App.tsx with the canonical router. The merge step
+      // may have written AI's App.tsx into '/src/App.tsx'; we want only the
+      // deterministic router to live there. The AI App.tsx body has already been
+      // rebased into the home page file by mergeGeneratedVfsWithCanonicalSnapshot.
+      const canonicalRouterCode =
+        compiledPlayground?.vfsFiles?.['/src/App.tsx'] ||
+        siteBundleSnapshot?.vfsFiles?.['/src/App.tsx'];
+      const wiredVfsFiles = canonicalRouterCode
+        ? { ...launchArtifacts.files, '/src/App.tsx': canonicalRouterCode }
+        : launchArtifacts.files;
       const runtimeManifest = launchArtifacts.runtimeManifest;
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {

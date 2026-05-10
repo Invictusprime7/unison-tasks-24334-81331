@@ -1098,14 +1098,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           console.error('[SystemLauncher] AI payload missing files:', lastPayloadIssue.aiContentPreview);
           return;
         }
-        if (lastPayloadIssue?.kind === 'app') {
-          const reason = lastPayloadIssue.aiAppMissing
-            ? 'AI did not return App.tsx after retrying. Please try again.'
-            : 'AI returned malformed App.tsx after retrying. Please try again.';
-          toast.error(reason);
-          console.error('[SystemLauncher] Aborting launch — AI App.tsx unusable after retries', lastPayloadIssue);
-          return;
-        }
+        // 'app' kind no longer surfaces — App.tsx is deterministic, not AI-owned.
+
         if (lastPayloadIssue?.kind === 'section') {
           toast.error('AI returned malformed section files after retrying. Please try again.');
           console.error('[SystemLauncher] Aborting launch — malformed AI section files after retries', lastPayloadIssue);

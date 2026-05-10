@@ -2410,7 +2410,7 @@ export default function App() {
       const title = base.replace(/([A-Z])/g, ' $1').trim().replace(/\b\w/g, (c) => c.toUpperCase()) || 'Page';
       const route = '/' + base.replace(/([A-Z])/g, '-$1').replace(/^-/, '').toLowerCase();
       console.log(`[WebBuilder] Auto-registering AI page: ${filePath} → ${route}`);
-      creatorPlayground.addPage(title, route, 'standalone', { filePath, showInNav: true });
+      creatorPlayground.addPage(title, route, 'custom', { filePath, showInNav: true });
     }
   }, [virtualFS.nodes, creatorPlayground]);
 

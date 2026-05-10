@@ -1032,30 +1032,27 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
         }
 
-        const aiAppMissing = !normalizedFiles['/src/App.tsx'];
-        const aiAppInvalid =
+        // App.tsx is OWNED by the deterministic canonical router (compiledPlayground).
+        // We discard any AI-authored App.tsx that looks like a router; if AI authored
+        // a single-page composition (no router), the launch-artifacts merge will move
+        // it into the home-page file path. App.tsx is no longer a launch gate.
+        const aiAppContent =
+          sanitized.files['/src/App.tsx'] || sanitized.files['src/App.tsx'] || '';
+        const aiAppLooksLikeRouter = /react-router-dom|<Routes\b|<Route\b|HashRouter|BrowserRouter|createBrowserRouter/.test(
+          aiAppContent,
+        );
+        const aiAppInvalidFlag =
           sanitized.invalidFiles.includes('/src/App.tsx') ||
           sanitized.invalidFiles.includes('src/App.tsx');
+        if (aiAppLooksLikeRouter || aiAppInvalidFlag) {
+          delete sanitized.files['/src/App.tsx'];
+          delete sanitized.files['src/App.tsx'];
+          delete normalizedFiles['/src/App.tsx'];
+          delete normalizedFiles['src/App.tsx'];
+        }
         const otherInvalid = sanitized.invalidFiles.filter(
           (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
         );
-
-        if (aiAppMissing || aiAppInvalid) {
-          lastPayloadIssue = {
-            kind: 'app',
-            invalidFiles: otherInvalid,
-            allInvalidFiles: sanitized.invalidFiles,
-            aiAppMissing,
-            aiAppInvalid,
-          };
-          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned malformed files`, {
-            aiAppMissing,
-            aiAppInvalid,
-            invalidFiles: sanitized.invalidFiles,
-            report: sanitized.report,
-          });
-          continue;
-        }
 
         if (otherInvalid.length > 0) {
           // Non-entry malformed files are tolerated for launch so users can still

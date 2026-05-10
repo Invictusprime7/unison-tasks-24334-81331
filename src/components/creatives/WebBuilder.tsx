@@ -6036,6 +6036,16 @@ ${html}
             .replace(/^(.)/, (_, c: string) => c.toUpperCase());
           const vfsPath = `/src/pages/${componentName}.tsx`;
           handleRemovePage(vfsPath);
+          // Regen canonical router so the deleted route is dropped from App.tsx
+          // immediately (the registry-version effect would also catch this, but
+          // doing it inline keeps file removal + router update atomic).
+          const result = syncRouterAndValidate(
+            creatorPlayground.pageRegistry,
+            virtualFS.getSandpackFiles(),
+          );
+          if (result.routerCode) {
+            virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
+          }
         }}
         onFunnelCreate={(funnelId, stepPages) => {
           // Auto-scaffold all funnel step pages in VFS

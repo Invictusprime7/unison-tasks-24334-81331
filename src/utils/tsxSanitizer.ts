@@ -309,6 +309,42 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
       });
       applied.push("dedupeDefaultExport");
     }
+
+    // Strip imports that collide with a top-level declaration of the same
+    // name (e.g. `import App from './pages/App.tsx'` followed by
+    // `export default function App()`). Babel hard-fails with "Identifier
+    // 'X' has already been declared" before we ever reach the preview.
+    const declaredNames = new Set<string>();
+    const declRe = /^[ \t]*(?:export\s+)?(?:default\s+)?(?:function|class)\s+([A-Za-z_$][\w$]*)/gm;
+    const constRe = /^[ \t]*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/gm;
+    for (const m of code.matchAll(declRe)) declaredNames.add(m[1]);
+    for (const m of code.matchAll(constRe)) declaredNames.add(m[1]);
+
+    if (declaredNames.size > 0) {
+      const before = code;
+      // Default imports: `import Name from '...'`
+      code = code.replace(
+        /^[ \t]*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"][^'"]+['"]\s*;?\s*$\n?/gm,
+        (full, name) => (declaredNames.has(name) ? "" : full),
+      );
+      // Named imports inside `{ ... }` — drop just the colliding specifier.
+      code = code.replace(
+        /^([ \t]*import\s*\{)([^}]+)(\}\s*from\s*['"][^'"]+['"]\s*;?\s*)$/gm,
+        (_full, head, body, tail) => {
+          const kept = body
+            .split(",")
+            .map((s: string) => s.trim())
+            .filter((s: string) => {
+              if (!s) return false;
+              const local = s.split(/\s+as\s+/i).pop()!.trim();
+              return !declaredNames.has(local);
+            });
+          if (kept.length === 0) return "";
+          return `${head} ${kept.join(", ")} ${tail}`;
+        },
+      );
+      if (code !== before) applied.push("stripCollidingImports");
+    }
   } catch (e) {
     issues.push(`stripSelfReferentialExport failed: ${(e as Error).message}`);
   }

@@ -6568,7 +6568,14 @@ export default function ${componentName}() {
                     )}
                   </div>
                 </div>
-                {/* Page tabs removed - navigation happens in-place within preview */}
+                {/* Page tabs — synced with PageRegistry (Creator Playground + AI-generated pages) */}
+                <PageNavigationBar
+                  pages={pageTabs}
+                  activePage={activePageTabId}
+                  onSelectPage={handlePageTabSelect}
+                  onAddPage={handlePageTabAdd}
+                  onRemovePage={handlePageTabRemove}
+                />
                 <div 
                   ref={scrollContainerRef}
                   data-drop-zone="true"

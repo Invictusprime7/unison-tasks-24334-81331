@@ -4061,10 +4061,6 @@ export default function ${componentName}Page() {
     };
   }, []);
 
-  // Dynamic page generation state
-  const [isGeneratingPage, setIsGeneratingPage] = useState(false);
-  const [currentNavPage, setCurrentNavPage] = useState<string | null>(null);
-
   const replaceProjectFiles = useCallback((
     files: Record<string, string>,
     options?: { activePath?: string; entryContent?: string }

@@ -137,6 +137,43 @@ const cardStyle = {
 };
 
 // ============================================================================
+// Intent Normalization — maps composition intents to canonical preview intents
+// (data-ut-intent) so the preview runtime click delegate fires industry-aware
+// behavior (scroll-to-form, cart toast, navigation, postMessage to parent).
+// ============================================================================
+const __INTENT_ALIASES = {
+  'cart.add': 'cart.add',
+  'cart.checkout': 'cart.checkout',
+  'shop.add_to_cart': 'cart.add',
+  'shop.checkout': 'cart.checkout',
+  'shop.open_cart': 'cart.checkout',
+  'booking.create': 'booking.create',
+  'booking.open': 'booking.create',
+  'reservation.create': 'booking.create',
+  'contact.submit': 'contact.submit',
+  'lead.open_form': 'contact.submit',
+  'lead.capture': 'lead.capture',
+  'quote.request': 'quote.request',
+  'newsletter.subscribe': 'newsletter.subscribe',
+  'waitlist.join': 'newsletter.subscribe',
+  'auth.signup': 'auth.register',
+  'auth.signin': 'auth.login',
+  'auth.login': 'auth.login',
+  'auth.register': 'auth.register',
+  'trial.start': 'auth.register',
+  'demo.request': 'lead.capture',
+  'pay.checkout': 'pay.checkout',
+  'checkout.start': 'pay.checkout',
+  'call.now': 'contact.submit',
+  'email.now': 'contact.submit',
+};
+function __utIntent(raw) {
+  if (!raw) return undefined;
+  const key = String(raw).toLowerCase();
+  return __INTENT_ALIASES[key] || key;
+}
+
+// ============================================================================
 // Section Components (inline for VFS portability)
 // ============================================================================
 

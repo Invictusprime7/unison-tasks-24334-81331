@@ -180,9 +180,27 @@ export function compilePlayground(
     content: routerContent,
   };
 
-  // 3. Collect VFS files — preserve existing, scaffold missing
+  // 3. Resolve the deterministic Template+Theme used to scaffold every page.
+  //    The Wizard's Template card and Style card are the single, durable source
+  //    of truth for non-AI page bodies. If a composition exists, we ALWAYS
+  //    render real role-filtered content (themed by the resolved style preset)
+  //    instead of a generic placeholder.
+  const activeTemplate = resolveActiveTemplate(options);
+  const themedComposition = (() => {
+    if (!activeTemplate) return null;
+    const preset = resolveThemePreset(
+      options?.selectedThemeId
+        ? ({ id: options.selectedThemeId } as Parameters<typeof resolveThemePreset>[0])
+        : null,
+      (options?.industry as LayoutCategory | undefined) ?? null,
+    );
+    const themedTokens = themePresetToThemeTokens(preset);
+    return { ...activeTemplate, theme: themedTokens } as TemplateComposition;
+  })();
+
+  // 4. Collect VFS files — preserve existing, scaffold missing
   const vfsFiles: Record<string, string> = {};
-  
+
   // Always include the router
   if (routerContent) {
     vfsFiles['/src/App.tsx'] = routerContent;
@@ -209,6 +227,16 @@ export function compilePlayground(
       }
     }
 
+    // Preferred path: render a real role-filtered themed composition for this page.
+    if (themedComposition) {
+      const subComposition = buildRoleComposition(themedComposition, page, businessName);
+      if (subComposition) {
+        vfsFiles[fp] = compositionToReactCode(subComposition);
+        continue;
+      }
+    }
+
+    // Last-resort fallback (no template/composition resolvable): generic placeholder.
     vfsFiles[fp] = generatePlaygroundPagePlaceholder(page, businessName, homePage);
   }
 

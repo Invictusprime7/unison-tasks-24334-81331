@@ -200,6 +200,7 @@ export function recompileFromPlayground(
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
   industry?: string,
+  options?: { selectedTemplateId?: string; selectedThemeId?: string },
 ): Omit<CanonicalPipelineResult, 'capabilities'> & { capabilities: null } {
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -211,7 +212,11 @@ export function recompileFromPlayground(
     for (const v of validations.filter(v => v.severity === 'warning')) warnings.push(v.message);
   }
 
-  const compileResult = compilePlayground(playground, existingVfsFiles, businessName);
+  const compileResult = compilePlayground(playground, existingVfsFiles, businessName, {
+    selectedTemplateId: options?.selectedTemplateId,
+    selectedThemeId: options?.selectedThemeId,
+    industry: industry || null,
+  });
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

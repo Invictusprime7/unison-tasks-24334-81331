@@ -137,6 +137,59 @@ const cardStyle = {
 };
 
 // ============================================================================
+// Intent Normalization — maps composition intents to canonical preview intents
+// (data-ut-intent) so the preview runtime click delegate fires industry-aware
+// behavior (scroll-to-form, cart toast, navigation, postMessage to parent).
+// ============================================================================
+const __INTENT_ALIASES = {
+  'cart.add': 'cart.add',
+  'cart.checkout': 'cart.checkout',
+  'shop.add_to_cart': 'cart.add',
+  'shop.checkout': 'cart.checkout',
+  'shop.open_cart': 'cart.checkout',
+  'booking.create': 'booking.create',
+  'booking.open': 'booking.create',
+  'reservation.create': 'booking.create',
+  'contact.submit': 'contact.submit',
+  'lead.open_form': 'contact.submit',
+  'lead.capture': 'lead.capture',
+  'quote.request': 'quote.request',
+  'newsletter.subscribe': 'newsletter.subscribe',
+  'waitlist.join': 'newsletter.subscribe',
+  'auth.signup': 'auth.register',
+  'auth.signin': 'auth.login',
+  'auth.login': 'auth.login',
+  'auth.register': 'auth.register',
+  'trial.start': 'auth.register',
+  'demo.request': 'lead.capture',
+  'pay.checkout': 'pay.checkout',
+  'checkout.start': 'pay.checkout',
+  'call.now': 'contact.submit',
+  'email.now': 'contact.submit',
+};
+function __inferIntentFromLabel(label) {
+  const t = String(label || '').toLowerCase();
+  if (!t) return undefined;
+  if (/(book|reserve|schedule|appointment|reservation)/.test(t)) return 'booking.create';
+  if (/(checkout|pay now|complete order|place order)/.test(t)) return 'pay.checkout';
+  if (/(add to cart|add to bag|buy now|shop now|shop the|order now)/.test(t)) return 'cart.add';
+  if (/(view cart|my cart|open cart)/.test(t)) return 'cart.checkout';
+  if (/(quote|estimate|pricing inquiry)/.test(t)) return 'quote.request';
+  if (/(subscribe|newsletter|join (the )?(waitlist|list)|stay in touch)/.test(t)) return 'newsletter.subscribe';
+  if (/(sign ?in|log ?in)/.test(t)) return 'auth.login';
+  if (/(sign ?up|register|create (an )?account|start free|free trial|try (it )?free|get started free)/.test(t)) return 'auth.register';
+  if (/(demo|see how|learn more|talk to (sales|us))/.test(t)) return 'lead.capture';
+  if (/(call (us|now)|phone)/.test(t)) return 'contact.submit';
+  if (/(email|send (a )?message|message us|get in touch|contact)/.test(t)) return 'contact.submit';
+  if (/(get started|start (now|here|today))/.test(t)) return 'lead.capture';
+  return undefined;
+}
+function __utIntent(raw, label) {
+  const aliased = raw ? (__INTENT_ALIASES[String(raw).toLowerCase()] || String(raw).toLowerCase()) : undefined;
+  return aliased || __inferIntentFromLabel(label);
+}
+
+// ============================================================================
 // Section Components (inline for VFS portability)
 // ============================================================================
 
@@ -148,7 +201,7 @@ function Navbar({ props }) {
         <a href="#" style={{ ...headingStyle, fontSize: '1.5rem', textDecoration: 'none', background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{brand}</a>
         <nav style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
           {links.map((l, i) => <a key={i} href={l.href} style={{ ...bodyStyle, fontSize: '0.9rem', textDecoration: 'none' }}>{l.label}</a>)}
-          {cta && <a href={cta.href || '#'} data-intent={cta.intent} style={{ ...primaryBtnStyle, fontSize: '0.875rem', padding: '0.5rem 1.25rem' }}>{cta.label}</a>}
+          {cta && <a href={cta.href || '#'} data-ut-intent={__utIntent(cta.intent, cta.label)} style={{ ...primaryBtnStyle, fontSize: '0.875rem', padding: '0.5rem 1.25rem' }}>{cta.label}</a>}
         </nav>
       </div>
     </header>
@@ -165,7 +218,7 @@ function Hero({ props }) {
         {badge && <span style={{ display: 'inline-block', padding: '0.35rem 1rem', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: '600', background: hsla(THEME.colors.primary, 0.12), color: hsl(THEME.colors.primary), border: \`1px solid \${hsla(THEME.colors.primary, 0.25)}\`, marginBottom: '1.5rem' }}>{badge}</span>}
         <h1 style={{ ...headingStyle, fontSize: 'clamp(2.5rem, 5vw, 4rem)', lineHeight: 1.1, marginBottom: '1.5rem' }}>{headline}</h1>
         {subheadline && <p style={{ ...bodyStyle, fontSize: '1.25rem', lineHeight: 1.6, maxWidth: split ? undefined : '640px', margin: split ? undefined : '0 auto', marginBottom: '2rem' }}>{subheadline}</p>}
-        {ctas.length > 0 && <div style={{ display: 'flex', gap: '1rem', justifyContent: split ? 'flex-start' : 'center', flexWrap: 'wrap' }}>{ctas.map((c, i) => <a key={i} href={c.href||'#'} data-intent={c.intent} style={c.variant === 'outline' ? outlineBtnStyle : primaryBtnStyle}>{c.label}</a>)}</div>}
+        {ctas.length > 0 && <div style={{ display: 'flex', gap: '1rem', justifyContent: split ? 'flex-start' : 'center', flexWrap: 'wrap' }}>{ctas.map((c, i) => <a key={i} href={c.href||'#'} data-ut-intent={__utIntent(c.intent, c.label)} style={c.variant === 'outline' ? outlineBtnStyle : primaryBtnStyle}>{c.label}</a>)}</div>}
         {stats && stats.length > 0 && <div style={{ display: 'flex', gap: '2.5rem', marginTop: '3rem', justifyContent: 'center' }}>{stats.map((s, i) => <div key={i} style={{ textAlign: 'center' }}><div style={{ ...headingStyle, fontSize: '2rem', color: hsl(THEME.colors.primary) }}>{s.value}</div><div style={{ ...bodyStyle, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{s.label}</div></div>)}</div>}
       </div>
     </section>
@@ -185,7 +238,7 @@ function Services({ props }) {
               <h3 style={{ ...headingStyle, fontSize: '1.25rem', marginBottom: '0.5rem' }}>{item.title}</h3>
               <p style={{ ...bodyStyle, fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1rem' }}>{item.description}</p>
               {(item.price || item.duration) && <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>{item.price && <span style={{ ...headingStyle, fontSize: '1.5rem', color: hsl(THEME.colors.primary) }}>{item.price}</span>}{item.duration && <span style={{ ...bodyStyle, fontSize: '0.8rem' }}>{item.duration}</span>}</div>}
-              {item.cta && <a href={item.cta.href||'#'} data-intent={item.cta.intent} style={{ ...primaryBtnStyle, fontSize: '0.85rem', padding: '0.5rem 1.25rem', marginTop: '1rem' }}>{item.cta.label}</a>}
+              {item.cta && <a href={item.cta.href||'#'} data-ut-intent={__utIntent(item.cta.intent, item.cta.label)} style={{ ...primaryBtnStyle, fontSize: '0.85rem', padding: '0.5rem 1.25rem', marginTop: '1rem' }}>{item.cta.label}</a>}
             </div>
           ))}
         </div>
@@ -222,7 +275,7 @@ function CTA({ props }) {
       <div style={containerStyle}>
         <h2 style={{ ...headingStyle, fontSize: '2.5rem', marginBottom: '1rem' }}>{headline}</h2>
         {description && <p style={{ ...bodyStyle, fontSize: '1.15rem', maxWidth: '600px', margin: '0 auto 2rem' }}>{description}</p>}
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>{ctas.map((c, i) => <a key={i} href={c.href||'#'} data-intent={c.intent} style={c.variant === 'outline' ? outlineBtnStyle : primaryBtnStyle}>{c.label}</a>)}</div>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>{ctas.map((c, i) => <a key={i} href={c.href||'#'} data-ut-intent={__utIntent(c.intent, c.label)} style={c.variant === 'outline' ? outlineBtnStyle : primaryBtnStyle}>{c.label}</a>)}</div>
       </div>
     </section>
   );
@@ -235,7 +288,7 @@ function Contact({ props }) {
     <section style={{ ...sectionPad, background: hsl(THEME.colors.muted) }}>
       <div style={{ ...containerStyle, maxWidth: '900px' }}>
         {headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{description && <p style={{ ...bodyStyle, fontSize: '1.1rem' }}>{description}</p>}</div>}
-        <form data-demo-form="true" data-intent="contact.submit" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '500px', margin: '0 auto' }}>
+        <form data-demo-form="true" data-ut-intent="contact.submit" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '500px', margin: '0 auto' }}>
           <input type="text" placeholder="Your name" style={inputStyle} />
           <input type="email" placeholder="your@email.com" style={inputStyle} />
           <textarea placeholder="How can we help?" rows={4} style={inputStyle} />
@@ -254,7 +307,7 @@ function Footer({ props }) {
         <div style={{ display: 'grid', gridTemplateColumns: \`repeat(\${columns.length + 1}, 1fr)\`, gap: '3rem', marginBottom: '3rem' }}>
           <div>
             <h3 style={{ ...headingStyle, fontSize: '1.25rem', marginBottom: '1rem', background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{brand}</h3>
-            {newsletter && <form data-demo-form="true" data-intent="newsletter.subscribe" style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}><input type="email" placeholder="your@email.com" style={{ flex: 1, padding: '0.5rem 0.75rem', borderRadius: THEME.radius, border: \`1px solid \${hsla(THEME.colors.border, 1)}\`, background: hsl(THEME.colors.background), color: hsl(THEME.colors.foreground), fontSize: '0.85rem' }} /><button type="submit" style={{ ...primaryBtnStyle, padding: '0.5rem 1rem', fontSize: '0.85rem' }}>Subscribe</button></form>}
+            {newsletter && <form data-demo-form="true" data-ut-intent="newsletter.subscribe" style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}><input type="email" placeholder="your@email.com" style={{ flex: 1, padding: '0.5rem 0.75rem', borderRadius: THEME.radius, border: \`1px solid \${hsla(THEME.colors.border, 1)}\`, background: hsl(THEME.colors.background), color: hsl(THEME.colors.foreground), fontSize: '0.85rem' }} /><button type="submit" style={{ ...primaryBtnStyle, padding: '0.5rem 1rem', fontSize: '0.85rem' }}>Subscribe</button></form>}
           </div>
           {columns.map((col, i) => <div key={i}><h4 style={{ ...headingStyle, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '1rem' }}>{col.title}</h4><ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{col.links.map((l, j) => <li key={j}><a href={l.href} style={{ ...bodyStyle, textDecoration: 'none', fontSize: '0.85rem' }}>{l.label}</a></li>)}</ul></div>)}
         </div>

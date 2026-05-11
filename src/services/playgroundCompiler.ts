@@ -189,10 +189,12 @@ export function compilePlayground(
   const activeTemplate = resolveActiveTemplate(options);
   const themedComposition = (() => {
     if (!activeTemplate) return null;
-    const preset = resolveThemePreset(
+    const explicitPreset =
       options?.selectedThemeId
-        ? ({ id: options.selectedThemeId } as Parameters<typeof resolveThemePreset>[0])
-        : null,
+        ? THEME_PRESETS.find((p) => p.id === options.selectedThemeId) ?? null
+        : null;
+    const preset = resolveThemePreset(
+      explicitPreset,
       (options?.industry as LayoutCategory | undefined) ?? null,
     );
     const themedTokens = themePresetToThemeTokens(preset);

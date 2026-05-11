@@ -21,6 +21,7 @@ import type { TemplateComposition, SectionEntry, SectionType, TemplatePageRole }
 import { getCompositionById, getCompositionsByIndustry, ALL_COMPOSITIONS } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
 import { resolveThemePreset } from '@/components/onboarding/industryThemePresetMap';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import type { LayoutCategory } from '@/data/templates/types';
 import type { PageRole } from '@/contracts/siteTopologyPlanner';

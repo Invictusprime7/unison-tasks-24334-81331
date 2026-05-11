@@ -156,7 +156,13 @@ export function executeCanonicalPipeline(
   }
 
   // Stage 4: Compile playground → VFS + router + bindings
-  const compileResult = compilePlayground(playground, existingVfsFiles, selections.businessName);
+  // Pass the wizard's Template + Style card selections so subpage scaffolds are
+  // real role-filtered themed compositions instead of generic placeholders.
+  const compileResult = compilePlayground(playground, existingVfsFiles, selections.businessName, {
+    selectedTemplateId: selections.templateId,
+    selectedThemeId: selections.themeId,
+    industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
+  });
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
@@ -194,6 +200,7 @@ export function recompileFromPlayground(
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
   industry?: string,
+  options?: { selectedTemplateId?: string; selectedThemeId?: string },
 ): Omit<CanonicalPipelineResult, 'capabilities'> & { capabilities: null } {
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -205,7 +212,11 @@ export function recompileFromPlayground(
     for (const v of validations.filter(v => v.severity === 'warning')) warnings.push(v.message);
   }
 
-  const compileResult = compilePlayground(playground, existingVfsFiles, businessName);
+  const compileResult = compilePlayground(playground, existingVfsFiles, businessName, {
+    selectedTemplateId: options?.selectedTemplateId,
+    selectedThemeId: options?.selectedThemeId,
+    industry: industry || null,
+  });
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

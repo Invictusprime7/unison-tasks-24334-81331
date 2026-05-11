@@ -14,18 +14,155 @@ import type {
   PlaygroundCompileResult,
   PlaygroundBinding,
 } from '@/types/playground';
-import type { PageRegistry, BuilderPage } from '@/types/pageRegistry';
+import type { PageRegistry, BuilderPage, BuilderPageType, BuilderPageRole } from '@/types/pageRegistry';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { deriveFilePath } from './routeNavigationService';
+import type { TemplateComposition, SectionEntry, SectionType, TemplatePageRole } from '@/sections/types';
+import { getCompositionById, getCompositionsByIndustry, ALL_COMPOSITIONS } from '@/sections/templates';
+import { compositionToReactCode } from '@/sections/PageRenderer';
+import { resolveThemePreset } from '@/components/onboarding/industryThemePresetMap';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
+import type { LayoutCategory } from '@/data/templates/types';
+import type { PageRole } from '@/contracts/siteTopologyPlanner';
 
 // ============================================================================
-// Core Compiler
+// Compile Options — drives deterministic full-site scaffolding from the
+// Wizard's Template card + Style card, instead of generic placeholders.
 // ============================================================================
+
+export interface CompilePlaygroundOptions {
+  /** Template card chosen by the wizard (drives section composition per page). */
+  selectedTemplateId?: string;
+  /** Style card chosen by the wizard (drives theme tokens used in scaffolds). */
+  selectedThemeId?: string;
+  /** Industry/category for fallback composition + theme resolution. */
+  industry?: LayoutCategory | string | null;
+}
+
+// Map BuilderPageType / BuilderPageRole → topology PageRole used by sectionPool lookup.
+const BUILDER_TYPE_TO_PAGE_ROLE: Record<BuilderPageType, PageRole> = {
+  landing: 'home',
+  home: 'home',
+  about: 'about',
+  contact: 'contact',
+  shop: 'shop',
+  product: 'shop',
+  checkout: 'checkout',
+  cart: 'checkout',
+  thankyou: 'thank_you',
+  booking: 'booking',
+  gallery: 'gallery',
+  blog: 'blog',
+  faq: 'faq',
+  pricing: 'pricing',
+  legal: 'custom',
+  custom: 'custom',
+};
+
+const BUILDER_ROLE_TO_PAGE_ROLE: Partial<Record<BuilderPageRole, PageRole>> = {
+  home: 'home',
+  landing: 'home',
+  service: 'services',
+  contact: 'contact',
+  checkout: 'checkout',
+  thank_you: 'thank_you',
+  upsell: 'custom',
+  booking: 'booking',
+  shop: 'shop',
+  gallery: 'gallery',
+  faq: 'faq',
+  blog: 'blog',
+  about: 'about',
+  pricing: 'pricing',
+  legal: 'custom',
+  custom: 'custom',
+};
+
+const DEFAULT_ROLE_SECTION_POOL: Record<PageRole, SectionType[]> = {
+  home:      ['navbar', 'hero', 'services', 'features', 'testimonials', 'cta', 'footer'],
+  services:  ['navbar', 'hero', 'services', 'pricing', 'cta', 'footer'],
+  pricing:   ['navbar', 'hero', 'pricing', 'faq', 'cta', 'footer'],
+  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'footer'],
+  contact:   ['navbar', 'hero', 'contact', 'footer'],
+  gallery:   ['navbar', 'hero', 'gallery', 'cta', 'footer'],
+  faq:       ['navbar', 'hero', 'faq', 'cta', 'footer'],
+  booking:   ['navbar', 'hero', 'services', 'contact', 'footer'],
+  shop:      ['navbar', 'hero', 'services', 'cta', 'footer'],
+  checkout:  ['navbar', 'hero', 'contact', 'footer'],
+  thank_you: ['navbar', 'hero', 'cta', 'footer'],
+  blog:      ['navbar', 'hero', 'cta', 'footer'],
+  custom:    ['navbar', 'hero', 'cta', 'footer'],
+};
+
+function pageToTopologyRole(page: BuilderPage): PageRole {
+  if (page.pageRole && BUILDER_ROLE_TO_PAGE_ROLE[page.pageRole]) {
+    return BUILDER_ROLE_TO_PAGE_ROLE[page.pageRole]!;
+  }
+  return BUILDER_TYPE_TO_PAGE_ROLE[page.pageType] || 'custom';
+}
+
+function resolveActiveTemplate(
+  options?: CompilePlaygroundOptions,
+): TemplateComposition | null {
+  if (options?.selectedTemplateId) {
+    const direct = getCompositionById(options.selectedTemplateId);
+    if (direct) return direct;
+  }
+  const industry = options?.industry;
+  if (industry) {
+    const byIndustry = getCompositionsByIndustry(String(industry));
+    if (byIndustry.length > 0) return byIndustry[0];
+    const fuzzy = ALL_COMPOSITIONS.find(
+      (c) => c.industry === industry || c.category === industry,
+    );
+    if (fuzzy) return fuzzy;
+  }
+  return null;
+}
+
+function buildRoleComposition(
+  template: TemplateComposition,
+  page: BuilderPage,
+  brand: string | undefined,
+): TemplateComposition | null {
+  const role = pageToTopologyRole(page);
+  const pool: SectionType[] =
+    template.sectionPool?.[role as TemplatePageRole] ??
+    DEFAULT_ROLE_SECTION_POOL[role] ??
+    DEFAULT_ROLE_SECTION_POOL.custom;
+
+  const byType = new Map<SectionType, SectionEntry>();
+  for (const s of template.sections) {
+    if (!byType.has(s.type)) byType.set(s.type, s);
+  }
+
+  const filtered: SectionEntry[] = [];
+  pool.forEach((type, idx) => {
+    const source = byType.get(type);
+    if (!source) return;
+    let next: SectionEntry = { ...source, id: `${page.pageId}-${type}-${idx}` };
+    if ((type === 'navbar' || type === 'footer') && brand) {
+      next = { ...next, props: { ...(next.props as Record<string, unknown>), brand } } as SectionEntry;
+    }
+    filtered.push(next);
+  });
+
+  if (filtered.length === 0) return null;
+
+  return {
+    ...template,
+    id: `${template.id}--${role}-${page.pageId.slice(0, 6)}`,
+    name: `${template.name} · ${page.title}`,
+    sections: filtered,
+  };
+}
 
 export function compilePlayground(
   state: PlaygroundState,
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
+  options?: CompilePlaygroundOptions,
 ): PlaygroundCompileResult {
   const registry = state.pageRegistry;
   const pages = Object.values(registry.pages);
@@ -44,9 +181,29 @@ export function compilePlayground(
     content: routerContent,
   };
 
-  // 3. Collect VFS files — preserve existing, scaffold missing
+  // 3. Resolve the deterministic Template+Theme used to scaffold every page.
+  //    The Wizard's Template card and Style card are the single, durable source
+  //    of truth for non-AI page bodies. If a composition exists, we ALWAYS
+  //    render real role-filtered content (themed by the resolved style preset)
+  //    instead of a generic placeholder.
+  const activeTemplate = resolveActiveTemplate(options);
+  const themedComposition = (() => {
+    if (!activeTemplate) return null;
+    const explicitPreset =
+      options?.selectedThemeId
+        ? THEME_PRESETS.find((p) => p.id === options.selectedThemeId) ?? null
+        : null;
+    const preset = resolveThemePreset(
+      explicitPreset,
+      (options?.industry as LayoutCategory | undefined) ?? null,
+    );
+    const themedTokens = themePresetToThemeTokens(preset);
+    return { ...activeTemplate, theme: themedTokens } as TemplateComposition;
+  })();
+
+  // 4. Collect VFS files — preserve existing, scaffold missing
   const vfsFiles: Record<string, string> = {};
-  
+
   // Always include the router
   if (routerContent) {
     vfsFiles['/src/App.tsx'] = routerContent;
@@ -73,6 +230,16 @@ export function compilePlayground(
       }
     }
 
+    // Preferred path: render a real role-filtered themed composition for this page.
+    if (themedComposition) {
+      const subComposition = buildRoleComposition(themedComposition, page, businessName);
+      if (subComposition) {
+        vfsFiles[fp] = compositionToReactCode(subComposition);
+        continue;
+      }
+    }
+
+    // Last-resort fallback (no template/composition resolvable): generic placeholder.
     vfsFiles[fp] = generatePlaygroundPagePlaceholder(page, businessName, homePage);
   }
 

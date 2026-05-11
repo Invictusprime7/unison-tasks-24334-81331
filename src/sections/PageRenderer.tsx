@@ -167,10 +167,26 @@ const __INTENT_ALIASES = {
   'call.now': 'contact.submit',
   'email.now': 'contact.submit',
 };
-function __utIntent(raw) {
-  if (!raw) return undefined;
-  const key = String(raw).toLowerCase();
-  return __INTENT_ALIASES[key] || key;
+function __inferIntentFromLabel(label) {
+  const t = String(label || '').toLowerCase();
+  if (!t) return undefined;
+  if (/(book|reserve|schedule|appointment|reservation)/.test(t)) return 'booking.create';
+  if (/(checkout|pay now|complete order|place order)/.test(t)) return 'pay.checkout';
+  if (/(add to cart|add to bag|buy now|shop now|shop the|order now)/.test(t)) return 'cart.add';
+  if (/(view cart|my cart|open cart)/.test(t)) return 'cart.checkout';
+  if (/(quote|estimate|pricing inquiry)/.test(t)) return 'quote.request';
+  if (/(subscribe|newsletter|join (the )?(waitlist|list)|stay in touch)/.test(t)) return 'newsletter.subscribe';
+  if (/(sign ?in|log ?in)/.test(t)) return 'auth.login';
+  if (/(sign ?up|register|create (an )?account|start free|free trial|try (it )?free|get started free)/.test(t)) return 'auth.register';
+  if (/(demo|see how|learn more|talk to (sales|us))/.test(t)) return 'lead.capture';
+  if (/(call (us|now)|phone)/.test(t)) return 'contact.submit';
+  if (/(email|send (a )?message|message us|get in touch|contact)/.test(t)) return 'contact.submit';
+  if (/(get started|start (now|here|today))/.test(t)) return 'lead.capture';
+  return undefined;
+}
+function __utIntent(raw, label) {
+  const aliased = raw ? (__INTENT_ALIASES[String(raw).toLowerCase()] || String(raw).toLowerCase()) : undefined;
+  return aliased || __inferIntentFromLabel(label);
 }
 
 // ============================================================================

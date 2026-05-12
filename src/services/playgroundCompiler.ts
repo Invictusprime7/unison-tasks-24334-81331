@@ -165,21 +165,35 @@ function buildRoleComposition(
     DEFAULT_ROLE_SECTION_POOL[role] ??
     DEFAULT_ROLE_SECTION_POOL.custom;
 
-  const byType = new Map<SectionType, SectionEntry>();
-  for (const s of template.sections) {
-    if (!byType.has(s.type)) byType.set(s.type, s);
-  }
+  const lookup = buildSectionLookup(template);
 
   const filtered: SectionEntry[] = [];
+  const usedTypes = new Set<SectionType>();
   pool.forEach((type, idx) => {
-    const source = byType.get(type);
+    if (usedTypes.has(type)) return; // dedupe within pool
+    const source = lookup.get(type);
     if (!source) return;
+    usedTypes.add(type);
     let next: SectionEntry = { ...source, id: `${page.pageId}-${type}-${idx}` };
     if ((type === 'navbar' || type === 'footer') && brand) {
       next = { ...next, props: { ...(next.props as Record<string, unknown>), brand } } as SectionEntry;
     }
     filtered.push(next);
   });
+
+  // Guarantee structural minimum: navbar + hero + footer at minimum
+  const ensure = (type: SectionType) => {
+    if (filtered.some((s) => s.type === type)) return;
+    const source = lookup.get(type);
+    if (!source) return;
+    const entry = { ...source, id: `${page.pageId}-${type}-ensure` } as SectionEntry;
+    if (type === 'navbar') filtered.unshift(entry);
+    else if (type === 'footer') filtered.push(entry);
+    else filtered.splice(1, 0, entry);
+  };
+  ensure('navbar');
+  ensure('hero');
+  ensure('footer');
 
   if (filtered.length === 0) return null;
 

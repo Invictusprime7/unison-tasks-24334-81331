@@ -119,7 +119,9 @@ import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilde
 import { useAIVFS } from '@/hooks/useAIVFS';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
-import { isValidAesthetic, completeAestheticCSS } from '@/utils/aestheticToCSS';
+import { isValidAesthetic } from '@/utils/aestheticToCSS';
+import { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
 import { getTemplateReactCodeWithCSS } from '@/data/templates';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';

@@ -283,13 +283,18 @@ export function materializePlayground(
   const industryKey = OVERLAY_TO_INDUSTRY[selections.industryOverlay] || 'general';
 
   // 1. Generate site topology plan → PageRegistry
-  const sitePlan = planSiteTopology(industryKey, selections.businessName);
+  //    Minimal mode: only Home is scaffolded. The Builder AI authors the rest.
+  const sitePlan = planSiteTopology(industryKey, selections.businessName, {
+    minimal: selections.minimalScaffold === true,
+  });
   const pageRegistry = populateRegistryFromTopology(sitePlan);
 
   // 2. Ensure ALL capability-required pages exist in the registry
-  //    The topology planner uses industry matrix which may not include all pages
-  //    required by the capability pack (e.g., checkout, thankyou for ecommerce).
-  ensureRequiredPages(pageRegistry, sitePlan, capabilities.requiredPages, selections.businessName);
+  //    Skipped in minimal mode — the in-Builder AI is responsible for adding
+  //    capability pages (checkout, thankyou, booking…) when the user prompts.
+  if (!sitePlan.isMinimal) {
+    ensureRequiredPages(pageRegistry, sitePlan, capabilities.requiredPages, selections.businessName);
+  }
 
   // 3. Create empty creator data
   const creatorData = createEmptyCreatorData(selections.businessName);

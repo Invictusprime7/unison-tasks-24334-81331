@@ -89,6 +89,7 @@ export const compositionToReactCode = (template: TemplateComposition): string =>
   const globalStylesJson = JSON.stringify(template.globalStyles || '');
 
   return `import React, { useEffect } from 'react';
+import { Instagram, Facebook, Twitter, Linkedin, Youtube, Github, Twitch, Dribbble, Figma, Globe } from 'lucide-react';
 
 // ============================================================================
 // Theme Tokens

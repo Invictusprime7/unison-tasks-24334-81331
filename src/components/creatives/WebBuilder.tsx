@@ -7140,13 +7140,31 @@ export default function ${componentName}() {
               readiness={selectedElementReadiness}
               onAIEditComplete={async (selector, newHtml) => {
                 const normalizedHtml = normalizeAIElementMarkup(newHtml);
-                const res = applyElementHtmlUpdate(previewCode, selector, normalizedHtml);
-                if (res.ok) {
-                    const targetPath = activePagePath.endsWith('.tsx') ? activePagePath : launchEntryPoint;
-                    vfsImportFiles({ [targetPath]: res.code });
-                    lastSyncedCodeRef.current = res.code;
-                    setPreviewCode(res.code);
-                    setEditorCode(res.code);
+                const targetPath = activePagePath.endsWith('.tsx') ? activePagePath : launchEntryPoint;
+                const vfsFiles = virtualFS.getSandpackFiles();
+                const candidatePaths = Array.from(new Set([
+                  targetPath,
+                  activePagePath,
+                  ...Object.keys(vfsFiles).filter((path) => /\.(tsx|jsx)$/.test(path) && !/\/main\.(tsx|jsx)$/.test(path)),
+                ])).filter(Boolean);
+
+                let applied: { path: string; code: string } | null = null;
+                for (const path of candidatePaths) {
+                  const source = path === targetPath ? previewCode : vfsFiles[path];
+                  if (!source) continue;
+                  const res = applyElementHtmlUpdate(source, selector, normalizedHtml);
+                  if (res.ok) {
+                    applied = { path, code: res.code };
+                    break;
+                  }
+                }
+
+                if (applied) {
+                    vfsImportFiles({ [applied.path]: applied.code });
+                    setActivePagePath(applied.path);
+                    lastSyncedCodeRef.current = applied.code;
+                    setPreviewCode(applied.code);
+                    setEditorCode(applied.code);
                     setSelectedHTMLElement(null);
                     clearLivePreviewSelection();
                     toast.success('Element updated by AI');

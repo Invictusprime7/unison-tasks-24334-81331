@@ -32,6 +32,8 @@ export interface RuntimeAppContext {
   businessName?: string;
   templateName?: string;
   templateCategory?: string;
+  /** Resolved Template-card id (single source of truth for structural composition) */
+  templateId?: string;
   systemType?: string;
   systemName?: string;
   industry?: string;

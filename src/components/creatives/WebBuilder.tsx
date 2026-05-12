@@ -232,19 +232,6 @@ function findElementBoundsInJSX(
   source: string,
   selector: string
 ): { start: number; end: number } | null {
-  const selectorAlternates = selector
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
-
-  if (selectorAlternates.length > 1) {
-    for (const alternate of selectorAlternates) {
-      const result = findElementBoundsInJSX(source, alternate);
-      if (result) return result;
-    }
-    return null;
-  }
-
   // Parse the selector into segments: "body > section:nth-of-type(2) > div > h1"
   const allParts = selector
     .split(/\s*>\s*/)
@@ -274,56 +261,6 @@ function findElementBoundsInJSX(
   return null;
 }
 
-function unescapeCSSSelectorValue(value: string): string {
-  return value.replace(/\\([^\\])/g, '$1');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function stripJSXAttributeExpression(value: string): string {
-  const trimmed = value.trim();
-  const quoted = trimmed.match(/^(?:"([^"]*)"|'([^']*)'|`([^`]*)`)$/);
-  return quoted ? (quoted[1] ?? quoted[2] ?? quoted[3] ?? '') : trimmed;
-}
-
-function openingTagHasAttribute(openTag: string, attrName: string, attrValue: string): boolean {
-  const attrPattern = /([A-Za-z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|\{([^}]*)\}|([^\s"'>/=`]+)))?/g;
-  let match: RegExpExecArray | null;
-  while ((match = attrPattern.exec(openTag)) !== null) {
-    if (match[1] !== attrName) continue;
-    if (!attrValue) return true;
-    const actual = stripJSXAttributeExpression(match[2] ?? match[3] ?? match[4] ?? match[5] ?? '');
-    if (actual === attrValue) return true;
-  }
-  return false;
-}
-
-function findElementByAttributeInSource(
-  searchSource: string,
-  baseOffset: number,
-  fullSource: string,
-  tagName: string,
-  attrName: string,
-  attrValue: string,
-): { start: number; end: number } | null {
-  const tagPattern = tagName
-    ? new RegExp(`<${escapeRegExp(tagName)}\\b[^>]*>`, 'gi')
-    : /<([A-Za-z][\w-]*)\b[^>]*>/g;
-  let match: RegExpExecArray | null;
-  while ((match = tagPattern.exec(searchSource)) !== null) {
-    const openTag = match[0];
-    if (!openingTagHasAttribute(openTag, attrName, attrValue)) continue;
-    const foundTag = tagName || openTag.match(/^<([A-Za-z][\w-]*)/)?.[1];
-    if (!foundTag) return null;
-    const start = baseOffset + match.index;
-    const end = findJSXClosingTag(fullSource, start, foundTag);
-    if (end !== -1) return { start, end };
-  }
-  return null;
-}
-
 function findBoundsForParts(
   source: string,
   parts: string[]
@@ -341,15 +278,6 @@ function findBoundsForParts(
     let tagName = '';
     let nthIndex = 0; // 0-based
     let id = '';
-    let attrName = '';
-    let attrValue = '';
-
-    const attrMatch = part.match(/(?:([a-zA-Z][\w-]*)\s*)?\[([\w:-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]+)))?\]/);
-    if (attrMatch) {
-      tagName = attrMatch[1] || '';
-      attrName = attrMatch[2] || '';
-      attrValue = unescapeCSSSelectorValue((attrMatch[3] ?? attrMatch[4] ?? attrMatch[5] ?? '').trim());
-    }
 
     const idMatch = part.match(/#([a-zA-Z0-9_-]+)/);
     if (idMatch) {
@@ -363,22 +291,15 @@ function findBoundsForParts(
       tagName = part.split(':')[0] || '';
     }
 
-    if (!tagName && !id && !attrName) {
+    if (!tagName && !id) {
       // Plain tag or tag.class
       tagName = part.split('.')[0].split(':')[0].split('[')[0];
     }
 
-    if (!tagName && !id && !attrName) return null;
+    if (!tagName && !id) return null;
 
     // Find the element
-    if (attrName) {
-      const result = findElementByAttributeInSource(searchSource, baseOffset, source, tagName, attrName, attrValue);
-      if (!result) return null;
-      if (isLast) return { start: result.start, end: result.end };
-      const openEnd = source.indexOf('>', result.start) + 1;
-      searchSource = source.substring(openEnd, result.end);
-      baseOffset = openEnd;
-    } else if (id) {
+    if (id) {
       // Find by id attribute
       const idPattern = new RegExp(`<(\\w+)\\b[^>]*\\bid=["'{]${id}["'}][^>]*>`, 'i');
       const idFound = idPattern.exec(searchSource);
@@ -507,30 +428,6 @@ function withSourceManipulation(
 
   const newCode = `${extracted.before}\n    ${result}\n  ${extracted.after}`;
   return { ok: true, code: newCode };
-}
-
-function normalizeAIElementMarkup(markup: string): string {
-  let next = (markup || '')
-    .replace(/^```(?:html|jsx|tsx)?\n?/i, '')
-    .replace(/\n?```\s*$/i, '')
-    .trim();
-
-  next = next
-    .replace(/<!DOCTYPE[^>]*>/gi, '')
-    .replace(/<\/?(?:html|head|body)[^>]*>/gi, '')
-    .trim();
-
-  next = htmlToJsx(next)
-    .replace(/\sclassName="([^"]*)"/g, (_full, classes: string) => {
-      const cleaned = classes
-        .split(/\s+/)
-        .filter((c: string) => c && c !== '__ut-selected' && c !== '__ut-hover')
-        .join(' ');
-      return cleaned ? ` className="${cleaned}"` : '';
-    })
-    .trim();
-
-  return next;
 }
 
 /**
@@ -3354,13 +3251,6 @@ export default function ${componentName}Page() {
       currentFiles,
       effectiveBusinessName,
       effectiveRouteState?.siteBundleSnapshot?.industry,
-      {
-        // Thread the wizard's Template + Style card selections so subpage
-        // scaffolds keep their themed compositions instead of falling back
-        // to the generic "modern" default on every recompile.
-        selectedTemplateId: effectiveRouteState?.wizardSelections?.templateId,
-        selectedThemeId: effectiveRouteState?.wizardSelections?.themeId,
-      },
     );
     const launchArtifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: currentFiles,
@@ -7146,34 +7036,13 @@ export default function ${componentName}() {
               systemsBuildContext={systemsBuildContextFromState}
               readiness={selectedElementReadiness}
               onAIEditComplete={async (selector, newHtml) => {
-                const normalizedHtml = normalizeAIElementMarkup(newHtml);
-                const targetPath = activePagePath.endsWith('.tsx') ? activePagePath : launchEntryPoint;
-                const vfsFiles = virtualFS.getSandpackFiles();
-                const candidatePaths = Array.from(new Set([
-                  targetPath,
-                  activePagePath,
-                  ...Object.keys(vfsFiles).filter((path) => /\.(tsx|jsx)$/.test(path) && !/\/main\.(tsx|jsx)$/.test(path)),
-                ])).filter(Boolean);
-
-                let applied: { path: string; code: string } | null = null;
-                for (const path of candidatePaths) {
-                  const source = path === targetPath ? previewCode : vfsFiles[path];
-                  if (!source) continue;
-                  const res = applyElementHtmlUpdate(source, selector, normalizedHtml);
-                  if (res.ok) {
-                    applied = { path, code: res.code };
-                    break;
-                  }
-                }
-
-                if (applied) {
-                    vfsImportFiles({ [applied.path]: applied.code });
-                    setActivePagePath(applied.path);
-                    lastSyncedCodeRef.current = applied.code;
-                    setPreviewCode(applied.code);
-                    setEditorCode(applied.code);
+                const res = applyElementHtmlUpdate(previewCode, selector, newHtml);
+                if (res.ok) {
+                    importBuilderFiles(templateToVFSFiles(res.code, currentTemplateName || 'Element Edit'), {
+                      preferredPath: activePagePath,
+                      entryPoint: activePagePath,
+                    });
                     setSelectedHTMLElement(null);
-                    clearLivePreviewSelection();
                     toast.success('Element updated by AI');
                     return true;
                 } else {

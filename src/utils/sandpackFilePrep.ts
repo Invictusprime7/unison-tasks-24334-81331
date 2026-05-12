@@ -660,21 +660,7 @@ function _wrapComponent(type: any): any {
   if (cached) return cached;
   const Wrapped = function _SafeFC(props: any, ref: any) {
     let result;
-    try {
-      result = (type as any)(props, ref);
-    } catch (e: any) {
-      // Surface the failure inline instead of crashing the entire preview tree.
-      // AI-generated components occasionally reference undefined identifiers
-      // (e.g. \`headline\` not destructured from props) — render a visible
-      // placeholder with the error message so the rest of the page still mounts.
-      const cmpName = (type as any).displayName || (type as any).name || 'Component';
-      const msg = (e && (e.message || String(e))) || 'Unknown error';
-      try { console.error('[Preview] Component "' + cmpName + '" threw:', e); } catch {}
-      return _origCreateElement('div', {
-        style: { display: 'block', padding: '12px 16px', margin: '8px 0', borderRadius: 8, border: '1px dashed hsl(0 70% 55%)', background: 'hsl(0 70% 97%)', color: 'hsl(0 60% 35%)', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap' },
-        title: 'Component runtime error — fix in source',
-      }, '⚠ ' + cmpName + ' failed to render: ' + msg);
-    }
+    try { result = (type as any)(props, ref); } catch (e) { throw e; }
     if (result == null || typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean') return result;
     if (typeof result === 'object' && (result as any).$$typeof) return result;
     if (Array.isArray(result)) return result.map(_sanitizeChild);

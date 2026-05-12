@@ -5,8 +5,26 @@ import "./index.css";
 // Enforce global dark theme (dark premium) across the whole app
 document.documentElement.classList.add('dark');
 
+// Benign third-party / observer noise we never want to surface to users
+const BENIGN_ERROR_PATTERNS = [
+  /ResizeObserver loop/i,
+  /MutationRecord/i,
+  /attributeName of #<MutationRecord>/i,
+  /Non-Error promise rejection captured/i,
+];
+
+const isBenignError = (msg: unknown): boolean => {
+  const text = typeof msg === 'string' ? msg : (msg as any)?.message ?? String(msg ?? '');
+  return BENIGN_ERROR_PATTERNS.some((re) => re.test(text));
+};
+
 // Add global error handler
 window.addEventListener('error', (event) => {
+  if (isBenignError(event.message) || isBenignError(event.error)) {
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    return;
+  }
   console.error('Global error:', event.error);
   // Prevent white/black screen by showing error message
   const root = document.getElementById("root");
@@ -24,11 +42,16 @@ window.addEventListener('error', (event) => {
       </div>
     `;
   }
-});
+}, true);
 
 window.addEventListener('unhandledrejection', (event) => {
+  if (isBenignError(event.reason)) {
+    event.preventDefault();
+    return;
+  }
   console.error('Unhandled promise rejection:', event.reason);
 });
+
 
 const rootElement = document.getElementById("root");
 

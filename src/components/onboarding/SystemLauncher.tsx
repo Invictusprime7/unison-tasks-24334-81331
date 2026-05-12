@@ -1795,6 +1795,44 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                     )}
                   />
                 </div>
+
+                {/* Social links */}
+                <div className="mt-5">
+                  <label className="block text-xs font-semibold text-white/50 mb-2 uppercase tracking-wider">
+                    Social Links <span className="text-white/20">(optional — leave blank to skip)</span>
+                  </label>
+                  <p className="text-[11px] text-white/30 mb-3">
+                    Paste full URLs. Filled platforms will render as branded icons in your footer and link out in a new tab.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    {([
+                      { key: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/yourbrand' },
+                      { key: 'facebook', label: 'Facebook', placeholder: 'https://facebook.com/yourbrand' },
+                      { key: 'tiktok', label: 'TikTok', placeholder: 'https://tiktok.com/@yourbrand' },
+                      { key: 'x', label: 'X (Twitter)', placeholder: 'https://x.com/yourbrand' },
+                      { key: 'linkedin', label: 'LinkedIn', placeholder: 'https://linkedin.com/company/yourbrand' },
+                      { key: 'youtube', label: 'YouTube', placeholder: 'https://youtube.com/@yourbrand' },
+                    ] as const).map((field) => (
+                      <div key={field.key} className="flex flex-col gap-1">
+                        <span className="text-[10px] uppercase tracking-wider text-white/35">{field.label}</span>
+                        <input
+                          type="url"
+                          value={socialLinks[field.key] || ''}
+                          onChange={(e) =>
+                            setSocialLinks((prev) => ({ ...prev, [field.key]: e.target.value }))
+                          }
+                          placeholder={field.placeholder}
+                          className={cn(
+                            "w-full px-3 py-2 text-xs rounded-lg transition-all",
+                            "bg-white/[0.03] border border-white/[0.06] text-white/85 placeholder:text-white/15",
+                            "focus:ring-1 focus:ring-cyan-500/25 focus:border-cyan-500/25 focus:bg-white/[0.05]",
+                            "outline-none"
+                          )}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Footer */}

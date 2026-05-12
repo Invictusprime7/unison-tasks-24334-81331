@@ -113,8 +113,21 @@ const hsla = (t, a) => \`hsla(\${t}, \${a})\`;
 
 const headingStyle = { fontFamily: THEME.typography.headingFont, fontWeight: THEME.typography.headingWeight, color: hsl(THEME.colors.foreground) };
 const bodyStyle = { fontFamily: THEME.typography.bodyFont, fontWeight: THEME.typography.bodyWeight, color: hsl(THEME.colors.mutedForeground) };
-const containerStyle = { maxWidth: THEME.containerWidth, margin: '0 auto', padding: '0 1rem' };
-const sectionPad = { padding: THEME.sectionPadding };
+const containerStyle = { maxWidth: THEME.containerWidth, margin: '0 auto', padding: '0 clamp(1rem, 4vw, 2rem)' };
+const sectionPad = { padding: 'clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem)' };
+const RESPONSIVE_CSS = \`
+  *, *::before, *::after { box-sizing: border-box; }
+  img, svg { max-width: 100%; height: auto; display: block; }
+  a { color: inherit; }
+  .ut-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .ut-grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  @media (max-width: 720px) {
+    .ut-nav-links { display: none !important; }
+    .ut-hero-stats { gap: 1.5rem !important; }
+    .ut-footer-grid { grid-template-columns: 1fr !important; gap: 2rem !important; }
+    .ut-footer-bottom { flex-direction: column !important; gap: 1rem !important; text-align: center; }
+  }
+\`;
 
 const primaryBtnStyle = {
   background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`,
@@ -146,7 +159,7 @@ function Navbar({ props }) {
     <header style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: hsla(THEME.colors.background, 0.85), backdropFilter: 'blur(12px)', borderBottom: \`1px solid \${hsla(THEME.colors.border, 0.5)}\` }}>
       <div style={{ ...containerStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '5rem' }}>
         <a href="#" style={{ ...headingStyle, fontSize: '1.5rem', textDecoration: 'none', background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{brand}</a>
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+        <nav className="ut-nav-links" style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
           {links.map((l, i) => <a key={i} href={l.href} style={{ ...bodyStyle, fontSize: '0.9rem', textDecoration: 'none' }}>{l.label}</a>)}
           {cta && <a href={cta.href || '#'} data-intent={cta.intent} style={{ ...primaryBtnStyle, fontSize: '0.875rem', padding: '0.5rem 1.25rem' }}>{cta.label}</a>}
         </nav>
@@ -166,7 +179,7 @@ function Hero({ props }) {
         <h1 style={{ ...headingStyle, fontSize: 'clamp(2.5rem, 5vw, 4rem)', lineHeight: 1.1, marginBottom: '1.5rem' }}>{headline}</h1>
         {subheadline && <p style={{ ...bodyStyle, fontSize: '1.25rem', lineHeight: 1.6, maxWidth: split ? undefined : '640px', margin: split ? undefined : '0 auto', marginBottom: '2rem' }}>{subheadline}</p>}
         {ctas.length > 0 && <div style={{ display: 'flex', gap: '1rem', justifyContent: split ? 'flex-start' : 'center', flexWrap: 'wrap' }}>{ctas.map((c, i) => <a key={i} href={c.href||'#'} data-intent={c.intent} style={c.variant === 'outline' ? outlineBtnStyle : primaryBtnStyle}>{c.label}</a>)}</div>}
-        {stats && stats.length > 0 && <div style={{ display: 'flex', gap: '2.5rem', marginTop: '3rem', justifyContent: 'center' }}>{stats.map((s, i) => <div key={i} style={{ textAlign: 'center' }}><div style={{ ...headingStyle, fontSize: '2rem', color: hsl(THEME.colors.primary) }}>{s.value}</div><div style={{ ...bodyStyle, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{s.label}</div></div>)}</div>}
+        {stats && stats.length > 0 && <div className="ut-hero-stats" style={{ display: 'flex', gap: '2.5rem', marginTop: '3rem', justifyContent: 'center', flexWrap: 'wrap' }}>{stats.map((s, i) => <div key={i} style={{ textAlign: 'center' }}><div style={{ ...headingStyle, fontSize: '2rem', color: hsl(THEME.colors.primary) }}>{s.value}</div><div style={{ ...bodyStyle, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{s.label}</div></div>)}</div>}
       </div>
     </section>
   );
@@ -178,7 +191,7 @@ function Services({ props }) {
     <section style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
       <div style={containerStyle}>
         {headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{subheadline && <p style={{ ...bodyStyle, fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>{subheadline}</p>}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: \`repeat(\${columns}, 1fr)\`, gap: '1.5rem' }}>
+        <div className="ut-grid" style={{ display: 'grid', gridTemplateColumns: \`repeat(auto-fit, minmax(260px, 1fr))\`, gap: '1.5rem' }}>
           {items.map((item, i) => (
             <div key={i} style={{ ...cardStyle, padding: '2rem' }}>
               {item.badge && <span style={{ display: 'inline-block', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: '600', background: hsla(THEME.colors.primary, 0.12), color: hsl(THEME.colors.primary), marginBottom: '1rem' }}>{item.badge}</span>}
@@ -201,7 +214,7 @@ function Testimonials({ props }) {
     <section style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
       <div style={containerStyle}>
         {headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{subheadline && <p style={{ ...bodyStyle, fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>{subheadline}</p>}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: \`repeat(\${cols}, 1fr)\`, gap: '1.5rem' }}>
+        <div className="ut-grid ut-grid-2" style={{ display: 'grid', gridTemplateColumns: \`repeat(auto-fit, minmax(320px, 1fr))\`, gap: '1.5rem' }}>
           {items.map((item, i) => (
             <div key={i} style={{ ...cardStyle, padding: '2rem' }}>
               {item.rating && <div style={{ marginBottom: '1rem', color: hsl(THEME.colors.accent) }}>{'★'.repeat(item.rating)}{'☆'.repeat(5-item.rating)}</div>}
@@ -251,14 +264,14 @@ function Footer({ props }) {
   return (
     <footer style={{ padding: '4rem 1rem 2rem', background: hsl(THEME.colors.card), borderTop: \`1px solid \${hsla(THEME.colors.border, 1)}\` }}>
       <div style={containerStyle}>
-        <div style={{ display: 'grid', gridTemplateColumns: \`repeat(\${columns.length + 1}, 1fr)\`, gap: '3rem', marginBottom: '3rem' }}>
+        <div className="ut-footer-grid" style={{ display: 'grid', gridTemplateColumns: \`repeat(\${columns.length + 1}, minmax(0, 1fr))\`, gap: '3rem', marginBottom: '3rem' }}>
           <div>
             <h3 style={{ ...headingStyle, fontSize: '1.25rem', marginBottom: '1rem', background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{brand}</h3>
-            {newsletter && <form data-demo-form="true" data-intent="newsletter.subscribe" style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}><input type="email" placeholder="your@email.com" style={{ flex: 1, padding: '0.5rem 0.75rem', borderRadius: THEME.radius, border: \`1px solid \${hsla(THEME.colors.border, 1)}\`, background: hsl(THEME.colors.background), color: hsl(THEME.colors.foreground), fontSize: '0.85rem' }} /><button type="submit" style={{ ...primaryBtnStyle, padding: '0.5rem 1rem', fontSize: '0.85rem' }}>Subscribe</button></form>}
+            {newsletter && <form data-demo-form="true" data-intent="newsletter.subscribe" style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}><input type="email" placeholder="your@email.com" style={{ flex: 1, minWidth: 0, padding: '0.5rem 0.75rem', borderRadius: THEME.radius, border: \`1px solid \${hsla(THEME.colors.border, 1)}\`, background: hsl(THEME.colors.background), color: hsl(THEME.colors.foreground), fontSize: '0.85rem' }} /><button type="submit" style={{ ...primaryBtnStyle, padding: '0.5rem 1rem', fontSize: '0.85rem' }}>Subscribe</button></form>}
           </div>
           {columns.map((col, i) => <div key={i}><h4 style={{ ...headingStyle, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '1rem' }}>{col.title}</h4><ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{col.links.map((l, j) => <li key={j}><a href={l.href} style={{ ...bodyStyle, textDecoration: 'none', fontSize: '0.85rem' }}>{l.label}</a></li>)}</ul></div>)}
         </div>
-        <div style={{ borderTop: \`1px solid \${hsla(THEME.colors.border, 0.5)}\`, paddingTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="ut-footer-bottom" style={{ borderTop: \`1px solid \${hsla(THEME.colors.border, 0.5)}\`, paddingTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={{ ...bodyStyle, fontSize: '0.8rem' }}>{copyright || \`© \${new Date().getFullYear()} \${brand}. All rights reserved.\`}</p>
           {socials.length > 0 && <div style={{ display: 'flex', gap: '1rem' }}>{socials.map((s, i) => <a key={i} href={s.url} style={{ ...bodyStyle, textDecoration: 'none', fontSize: '0.85rem' }}>{s.icon || s.platform}</a>)}</div>}
         </div>
@@ -285,7 +298,7 @@ function Team({ props }) {
     <section style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
       <div style={containerStyle}>
         {headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{subheadline && <p style={{ ...bodyStyle, fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>{subheadline}</p>}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: \`repeat(\${columns}, 1fr)\`, gap: '2rem' }}>
+        <div className="ut-grid" style={{ display: 'grid', gridTemplateColumns: \`repeat(auto-fit, minmax(240px, 1fr))\`, gap: '2rem' }}>
           {members.map((m, i) => <div key={i} style={{ ...cardStyle, textAlign: 'center', padding: '2rem' }}><h3 style={{ ...headingStyle, fontSize: '1.1rem', marginBottom: '0.25rem' }}>{m.name}</h3><p style={{ ...bodyStyle, fontSize: '0.85rem', color: hsl(THEME.colors.primary) }}>{m.role}</p>{m.bio && <p style={{ ...bodyStyle, fontSize: '0.85rem', lineHeight: 1.6, marginTop: '0.5rem' }}>{m.bio}</p>}</div>)}
         </div>
       </div>
@@ -323,12 +336,10 @@ const SECTION_MAP = { navbar: Navbar, hero: Hero, services: Services, features: 
 // ============================================================================
 export default function App() {
   useEffect(() => {
-    if (GLOBAL_STYLES) {
-      const s = document.createElement('style');
-      s.textContent = GLOBAL_STYLES;
-      document.head.appendChild(s);
-      return () => s.remove();
-    }
+    const s = document.createElement('style');
+    s.textContent = RESPONSIVE_CSS + '\\n' + (GLOBAL_STYLES || '');
+    document.head.appendChild(s);
+    return () => s.remove();
   }, []);
 
   useEffect(() => {

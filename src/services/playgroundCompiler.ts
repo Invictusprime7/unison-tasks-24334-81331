@@ -80,20 +80,53 @@ const BUILDER_ROLE_TO_PAGE_ROLE: Partial<Record<BuilderPageRole, PageRole>> = {
 };
 
 const DEFAULT_ROLE_SECTION_POOL: Record<PageRole, SectionType[]> = {
-  home:      ['navbar', 'hero', 'services', 'features', 'testimonials', 'cta', 'footer'],
-  services:  ['navbar', 'hero', 'services', 'pricing', 'cta', 'footer'],
+  home:      ['navbar', 'hero', 'services', 'testimonials', 'stats', 'cta', 'footer'],
+  services:  ['navbar', 'hero', 'services', 'pricing', 'testimonials', 'cta', 'footer'],
   pricing:   ['navbar', 'hero', 'pricing', 'faq', 'cta', 'footer'],
-  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'footer'],
-  contact:   ['navbar', 'hero', 'contact', 'footer'],
-  gallery:   ['navbar', 'hero', 'gallery', 'cta', 'footer'],
+  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'testimonials', 'cta', 'footer'],
+  contact:   ['navbar', 'hero', 'contact', 'cta', 'footer'],
+  gallery:   ['navbar', 'hero', 'gallery', 'testimonials', 'cta', 'footer'],
   faq:       ['navbar', 'hero', 'faq', 'cta', 'footer'],
-  booking:   ['navbar', 'hero', 'services', 'contact', 'footer'],
-  shop:      ['navbar', 'hero', 'services', 'cta', 'footer'],
+  booking:   ['navbar', 'hero', 'services', 'testimonials', 'contact', 'footer'],
+  shop:      ['navbar', 'hero', 'services', 'testimonials', 'cta', 'footer'],
   checkout:  ['navbar', 'hero', 'contact', 'footer'],
   thank_you: ['navbar', 'hero', 'cta', 'footer'],
-  blog:      ['navbar', 'hero', 'cta', 'footer'],
-  custom:    ['navbar', 'hero', 'cta', 'footer'],
+  blog:      ['navbar', 'hero', 'services', 'cta', 'footer'],
+  custom:    ['navbar', 'hero', 'services', 'cta', 'footer'],
 };
+
+/**
+ * Build a section-type → SectionEntry lookup from the active template,
+ * falling back to other compositions of the same industry, then any composition.
+ * This guarantees every pool slot has real content even when the chosen template
+ * lacks a particular section type.
+ */
+function buildSectionLookup(
+  template: TemplateComposition,
+): Map<SectionType, SectionEntry> {
+  const lookup = new Map<SectionType, SectionEntry>();
+  // 1. Primary: the active template
+  for (const s of template.sections) {
+    if (!lookup.has(s.type)) lookup.set(s.type, s);
+  }
+  // 2. Same-industry siblings
+  const siblings = ALL_COMPOSITIONS.filter(
+    (c) => c.id !== template.id && (c.industry === template.industry || c.category === template.category),
+  );
+  for (const sib of siblings) {
+    for (const s of sib.sections) {
+      if (!lookup.has(s.type)) lookup.set(s.type, s);
+    }
+  }
+  // 3. Universal fallback: any composition
+  for (const c of ALL_COMPOSITIONS) {
+    if (c.id === template.id) continue;
+    for (const s of c.sections) {
+      if (!lookup.has(s.type)) lookup.set(s.type, s);
+    }
+  }
+  return lookup;
+}
 
 function pageToTopologyRole(page: BuilderPage): PageRole {
   if (page.pageRole && BUILDER_ROLE_TO_PAGE_ROLE[page.pageRole]) {
@@ -132,21 +165,35 @@ function buildRoleComposition(
     DEFAULT_ROLE_SECTION_POOL[role] ??
     DEFAULT_ROLE_SECTION_POOL.custom;
 
-  const byType = new Map<SectionType, SectionEntry>();
-  for (const s of template.sections) {
-    if (!byType.has(s.type)) byType.set(s.type, s);
-  }
+  const lookup = buildSectionLookup(template);
 
   const filtered: SectionEntry[] = [];
+  const usedTypes = new Set<SectionType>();
   pool.forEach((type, idx) => {
-    const source = byType.get(type);
+    if (usedTypes.has(type)) return; // dedupe within pool
+    const source = lookup.get(type);
     if (!source) return;
+    usedTypes.add(type);
     let next: SectionEntry = { ...source, id: `${page.pageId}-${type}-${idx}` };
     if ((type === 'navbar' || type === 'footer') && brand) {
       next = { ...next, props: { ...(next.props as Record<string, unknown>), brand } } as SectionEntry;
     }
     filtered.push(next);
   });
+
+  // Guarantee structural minimum: navbar + hero + footer at minimum
+  const ensure = (type: SectionType) => {
+    if (filtered.some((s) => s.type === type)) return;
+    const source = lookup.get(type);
+    if (!source) return;
+    const entry = { ...source, id: `${page.pageId}-${type}-ensure` } as SectionEntry;
+    if (type === 'navbar') filtered.unshift(entry);
+    else if (type === 'footer') filtered.push(entry);
+    else filtered.splice(1, 0, entry);
+  };
+  ensure('navbar');
+  ensure('hero');
+  ensure('footer');
 
   if (filtered.length === 0) return null;
 

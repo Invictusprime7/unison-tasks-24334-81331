@@ -3354,6 +3354,13 @@ export default function ${componentName}Page() {
       currentFiles,
       effectiveBusinessName,
       effectiveRouteState?.siteBundleSnapshot?.industry,
+      {
+        // Thread the wizard's Template + Style card selections so subpage
+        // scaffolds keep their themed compositions instead of falling back
+        // to the generic "modern" default on every recompile.
+        selectedTemplateId: effectiveRouteState?.wizardSelections?.templateId,
+        selectedThemeId: effectiveRouteState?.wizardSelections?.themeId,
+      },
     );
     const launchArtifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: currentFiles,

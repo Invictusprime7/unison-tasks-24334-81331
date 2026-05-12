@@ -4355,7 +4355,7 @@ function pickRenderableLauncherEntry(
 
 export function normalizeLauncherFiles(
   files: Record<string, string>,
-  options?: { entryPoint?: string }
+  options?: { entryPoint?: string; themePresetId?: string | null }
 ): Record<string, string> {
   // ── Unwrap JSON envelope leaked into file content ──────────────────────
   // The AI sometimes wraps output in {"files":{...}} — if ANY file's content
@@ -4439,9 +4439,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );`;
   }
 
-  // Ensure /src/index.css exists
+  // Ensure /src/index.css exists — keyed on the wizard's resolved preset, never hard-coded
   if (!out['/src/index.css']) {
-    out['/src/index.css'] = BASE_CSS;
+    out['/src/index.css'] = buildBaseCssForPreset(options?.themePresetId);
   }
 
   // ── Inject conventional IDE JSON / config files ──────────────────────────

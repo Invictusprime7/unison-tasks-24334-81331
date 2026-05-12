@@ -291,6 +291,15 @@ function findBoundsForParts(
     let tagName = '';
     let nthIndex = 0; // 0-based
     let id = '';
+    let attrName = '';
+    let attrValue = '';
+
+    const attrMatch = part.match(/(?:([a-zA-Z][\w-]*)\s*)?\[([\w:-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]+)))?\]/);
+    if (attrMatch) {
+      tagName = attrMatch[1] || '';
+      attrName = attrMatch[2] || '';
+      attrValue = unescapeCSSSelectorValue((attrMatch[3] ?? attrMatch[4] ?? attrMatch[5] ?? '').trim());
+    }
 
     const idMatch = part.match(/#([a-zA-Z0-9_-]+)/);
     if (idMatch) {

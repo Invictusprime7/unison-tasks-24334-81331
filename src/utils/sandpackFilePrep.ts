@@ -4591,7 +4591,7 @@ export default function App() {
  */
 export function prepareSandpackFiles(
   files: Record<string, string>,
-  options?: { strict?: boolean; entryPoint?: string; aesthetic?: string }
+  options?: { strict?: boolean; entryPoint?: string; aesthetic?: string; themePresetId?: string | null }
 ): Record<string, string> {
   // ═══════════════════════════════════════════════════════════════════════════
   // GUARD: Unwrap JSON-wrapped file maps that leaked through as raw content.

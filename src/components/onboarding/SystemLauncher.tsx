@@ -1141,6 +1141,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemName: system.name,
         templateName: `${brand} Site`,
         templateCategory: generationCategory,
+        templateId: selectedTemplate?.id,
         businessName: brand,
         industry: generationCategory,
         aesthetic: resolvedPreset.id,

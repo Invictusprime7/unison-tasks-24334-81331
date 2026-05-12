@@ -2668,7 +2668,7 @@ export default function ${componentName}Page() {
               ...currentFiles,
               [targetPath]: previewCode,
             },
-            { entryPoint: targetPath }
+            { entryPoint: targetPath, themePresetId: resolvedThemePresetId }
           )
         : {
             [targetPath]: previewCode,
@@ -2677,7 +2677,7 @@ export default function ${componentName}Page() {
       virtualFSRef.current.importFiles(importPayload);
       lastSyncedCodeRef.current = previewCode;
     }
-  }, [previewCode, activePagePath, launchEntryPoint, routeStateHasStructuredProject]);
+  }, [previewCode, activePagePath, launchEntryPoint, routeStateHasStructuredProject, resolvedThemePresetId]);
   
   // NOTE: Effect B (VFS→previewCode) has been REMOVED.
   // Previously, it watched virtualFS.nodes and called setPreviewCode() whenever the

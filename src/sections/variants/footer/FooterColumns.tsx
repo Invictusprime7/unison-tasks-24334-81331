@@ -6,6 +6,7 @@
 import React from 'react';
 import type { BaseSectionProps } from '../../types';
 import { hsl, hsla } from '../../themeUtils';
+import { SocialIcon, socialAriaLabel } from '../../components/SocialIcon';
 
 export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, theme }) => {
   const { brand, columns = [], socials = [], copyright, newsletter } = section.props;
@@ -99,17 +100,23 @@ export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, t
             {copyright || `© ${new Date().getFullYear()} ${brand}. All rights reserved.`}
           </p>
           {socials.length > 0 && (
-            <div className="flex gap-3">
-              {socials.map((s, i) => (
-                <a
-                  key={i}
-                  href={s.url}
-                  className="text-sm hover:opacity-80"
-                  style={{ color: hsl(theme.colors.mutedForeground), textDecoration: 'none' }}
-                >
-                  {s.icon || s.platform}
-                </a>
-              ))}
+            <div className="flex gap-3 items-center">
+              {socials.map((s, i) => {
+                const hasUrl = s.url && s.url !== '#';
+                return (
+                  <a
+                    key={i}
+                    href={hasUrl ? s.url : undefined}
+                    target={hasUrl ? '_blank' : undefined}
+                    rel={hasUrl ? 'noopener noreferrer' : undefined}
+                    aria-label={socialAriaLabel(s.platform)}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:opacity-80 transition-opacity"
+                    style={{ color: hsl(theme.colors.mutedForeground), textDecoration: 'none' }}
+                  >
+                    <SocialIcon platform={s.platform} size={16} />
+                  </a>
+                );
+              })}
             </div>
           )}
         </div>

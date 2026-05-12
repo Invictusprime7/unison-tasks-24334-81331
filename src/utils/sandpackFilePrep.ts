@@ -4748,39 +4748,35 @@ export function prepareSandpackFiles(
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AESTHETIC THREADING: Apply selected aesthetic colors to ALL CSS files
-  // This ensures template rendering respects user's aesthetic choice (modern,
-  // editorial, futuristic, etc.) across multi-file VFS structures.
+  // THEME THREADING (canonical): Apply the wizard-resolved Style-card preset
+  // to ALL CSS files. The single source of truth is `themePresetId` (or its
+  // alias `aesthetic`); we delegate to buildBaseCssForPreset() so the SAME
+  // token system used by the launcher VFS is used here too.
   // ─────────────────────────────────────────────────────────────────────────
-  const aestheticCSS = options?.aesthetic && isValidAesthetic(options.aesthetic)
-    ? completeAestheticCSS(options.aesthetic)
-    : '';
+  const resolvedPresetId = options?.themePresetId || (options?.aesthetic && isValidAesthetic(options.aesthetic) ? options.aesthetic : null);
+  const themedCSS = resolvedPresetId ? buildBaseCssForPreset(resolvedPresetId) : '';
 
-  if (aestheticCSS) {
-    console.log(`[prepareSandpackFiles] Applying aesthetic: ${options?.aesthetic}`);
-    
-    // Apply aesthetic CSS to ALL existing CSS files (multi-file VFS support)
-    for (const [filePath, content] of Object.entries(sandpackFiles)) {
+  if (themedCSS) {
+    console.log(`[prepareSandpackFiles] Applying themePresetId: ${resolvedPresetId}`);
+
+    // Overwrite (not prepend) every existing CSS file so the wizard preset is
+    // authoritative across multi-file VFS structures. Prepend caused stale
+    // tokens to win for non-store industries (salon/coaching) — see prior fix.
+    for (const [filePath] of Object.entries(sandpackFiles)) {
       if (filePath.endsWith('.css') && !filePath.includes('shim')) {
-        // Prepend aesthetic CSS variables to each stylesheet
-        // Uses a wrapper comment to identify aesthetic-injected section
-        if (!sandpackFiles[filePath].includes('/* AESTHETIC:')) {
-          sandpackFiles[filePath] = aestheticCSS + '\n\n' + content;
-        }
+        sandpackFiles[filePath] = themedCSS;
       }
     }
   }
 
   if (!hasCSS) {
-    // No CSS file exists — create /index.css with defaults
-    const baseCSS = aestheticCSS || BASE_CSS;
-    sandpackFiles['/index.css'] = baseCSS;
-  } else {
-    // CSS exists — ensure semantic variables are prepended
+    // No CSS file exists — create /index.css from the resolved preset (or default)
+    sandpackFiles['/index.css'] = themedCSS || BASE_CSS;
+  } else if (!themedCSS) {
+    // CSS exists but no preset resolved — ensure semantic vars are present
     const existingIndexCSS = sandpackFiles['/index.css'] || '';
     if (existingIndexCSS && !existingIndexCSS.includes('--primary:')) {
-      const varsToUse = aestheticCSS || SEMANTIC_CSS_VARS;
-      sandpackFiles['/index.css'] = varsToUse + '\n' + existingIndexCSS;
+      sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingIndexCSS;
     }
   }
 

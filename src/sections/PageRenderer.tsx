@@ -336,12 +336,10 @@ const SECTION_MAP = { navbar: Navbar, hero: Hero, services: Services, features: 
 // ============================================================================
 export default function App() {
   useEffect(() => {
-    if (GLOBAL_STYLES) {
-      const s = document.createElement('style');
-      s.textContent = GLOBAL_STYLES;
-      document.head.appendChild(s);
-      return () => s.remove();
-    }
+    const s = document.createElement('style');
+    s.textContent = RESPONSIVE_CSS + '\\n' + (GLOBAL_STYLES || '');
+    document.head.appendChild(s);
+    return () => s.remove();
   }, []);
 
   useEffect(() => {

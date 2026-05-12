@@ -104,6 +104,14 @@ export interface GeneratedSitePlan {
    * layouts as role-filtered subsets of the chosen template.
    */
   selectedTemplateId?: string;
+  /**
+   * When true, the plan was produced in "minimal" mode: ONLY a Home page.
+   * Every additional page/funnel/route is expected to be authored by the
+   * in-Builder AI assistant in response to user prompts. Downstream stages
+   * (capability resolver, materializer, VFS scaffolder, router generator)
+   * MUST honor this flag and skip auto-expansion of capability-required pages.
+   */
+  isMinimal?: boolean;
 }
 
 // ============================================================================

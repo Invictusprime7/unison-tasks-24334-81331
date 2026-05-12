@@ -1070,6 +1070,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       effectiveRouteState?.aesthetic ||
       null
   );
+  // Resolved wizard Style-card preset id — single source of truth for /src/index.css
+  // across every CSS-fallback path the Builder triggers (Effect A, importBuilderFiles,
+  // template imports). Threaded into normalizeLauncherFiles so non-store industries
+  // never silently land on the 'modern' default.
+  const resolvedThemePresetId = useMemo<string | null>(() => {
+    const raw = effectiveRouteState?.designPreset
+      || effectiveRouteState?.aesthetic
+      || (effectiveRouteState?.runtimeManifest?.appContext as { themePresetId?: string } | undefined)?.themePresetId
+      || null;
+    return raw && isValidAesthetic(raw) ? raw : raw || null;
+  }, [effectiveRouteState?.designPreset, effectiveRouteState?.aesthetic, effectiveRouteState?.runtimeManifest?.appContext]);
   const [currentTemplateCategory, setCurrentTemplateCategory] = useState<string | null>(
     effectiveRouteState?.templateCategory || null
   );

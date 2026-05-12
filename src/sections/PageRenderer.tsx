@@ -113,8 +113,21 @@ const hsla = (t, a) => \`hsla(\${t}, \${a})\`;
 
 const headingStyle = { fontFamily: THEME.typography.headingFont, fontWeight: THEME.typography.headingWeight, color: hsl(THEME.colors.foreground) };
 const bodyStyle = { fontFamily: THEME.typography.bodyFont, fontWeight: THEME.typography.bodyWeight, color: hsl(THEME.colors.mutedForeground) };
-const containerStyle = { maxWidth: THEME.containerWidth, margin: '0 auto', padding: '0 1rem' };
-const sectionPad = { padding: THEME.sectionPadding };
+const containerStyle = { maxWidth: THEME.containerWidth, margin: '0 auto', padding: '0 clamp(1rem, 4vw, 2rem)' };
+const sectionPad = { padding: 'clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem)' };
+const RESPONSIVE_CSS = \`
+  *, *::before, *::after { box-sizing: border-box; }
+  img, svg { max-width: 100%; height: auto; display: block; }
+  a { color: inherit; }
+  .ut-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .ut-grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  @media (max-width: 720px) {
+    .ut-nav-links { display: none !important; }
+    .ut-hero-stats { gap: 1.5rem !important; }
+    .ut-footer-grid { grid-template-columns: 1fr !important; gap: 2rem !important; }
+    .ut-footer-bottom { flex-direction: column !important; gap: 1rem !important; text-align: center; }
+  }
+\`;
 
 const primaryBtnStyle = {
   background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`,

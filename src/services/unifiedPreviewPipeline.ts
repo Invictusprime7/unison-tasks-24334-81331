@@ -128,8 +128,9 @@ export function fullRebuildFromPlayground(
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
   industry?: string,
+  options?: { selectedTemplateId?: string; selectedThemeId?: string },
 ) {
-  return recompileFromPlayground(playground, existingVfsFiles, businessName, industry);
+  return recompileFromPlayground(playground, existingVfsFiles, businessName, industry, options);
 }
 
 /**

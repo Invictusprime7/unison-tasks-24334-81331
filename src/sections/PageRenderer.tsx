@@ -214,7 +214,7 @@ function Testimonials({ props }) {
     <section style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
       <div style={containerStyle}>
         {headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{subheadline && <p style={{ ...bodyStyle, fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>{subheadline}</p>}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: \`repeat(\${cols}, 1fr)\`, gap: '1.5rem' }}>
+        <div className="ut-grid ut-grid-2" style={{ display: 'grid', gridTemplateColumns: \`repeat(auto-fit, minmax(320px, 1fr))\`, gap: '1.5rem' }}>
           {items.map((item, i) => (
             <div key={i} style={{ ...cardStyle, padding: '2rem' }}>
               {item.rating && <div style={{ marginBottom: '1rem', color: hsl(THEME.colors.accent) }}>{'★'.repeat(item.rating)}{'☆'.repeat(5-item.rating)}</div>}

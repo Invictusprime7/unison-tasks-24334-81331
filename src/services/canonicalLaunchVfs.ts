@@ -211,8 +211,11 @@ export function buildCanonicalLaunchArtifacts(
   input: BuildCanonicalLaunchArtifactsInput,
 ): CanonicalLaunchArtifacts {
   const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
+  const resolvedThemePresetId =
+    input.themePresetId || (input.aesthetic as string | undefined) || null;
   const normalizedFiles = normalizeLauncherFiles(input.generatedFiles, {
     entryPoint: input.preferredEntryPoint,
+    themePresetId: resolvedThemePresetId,
   });
 
   const bindingApplication = input.siteBundleSnapshot

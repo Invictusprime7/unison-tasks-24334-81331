@@ -80,20 +80,53 @@ const BUILDER_ROLE_TO_PAGE_ROLE: Partial<Record<BuilderPageRole, PageRole>> = {
 };
 
 const DEFAULT_ROLE_SECTION_POOL: Record<PageRole, SectionType[]> = {
-  home:      ['navbar', 'hero', 'services', 'features', 'testimonials', 'cta', 'footer'],
-  services:  ['navbar', 'hero', 'services', 'pricing', 'cta', 'footer'],
+  home:      ['navbar', 'hero', 'services', 'testimonials', 'stats', 'cta', 'footer'],
+  services:  ['navbar', 'hero', 'services', 'pricing', 'testimonials', 'cta', 'footer'],
   pricing:   ['navbar', 'hero', 'pricing', 'faq', 'cta', 'footer'],
-  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'footer'],
-  contact:   ['navbar', 'hero', 'contact', 'footer'],
-  gallery:   ['navbar', 'hero', 'gallery', 'cta', 'footer'],
+  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'testimonials', 'cta', 'footer'],
+  contact:   ['navbar', 'hero', 'contact', 'cta', 'footer'],
+  gallery:   ['navbar', 'hero', 'gallery', 'testimonials', 'cta', 'footer'],
   faq:       ['navbar', 'hero', 'faq', 'cta', 'footer'],
-  booking:   ['navbar', 'hero', 'services', 'contact', 'footer'],
-  shop:      ['navbar', 'hero', 'services', 'cta', 'footer'],
+  booking:   ['navbar', 'hero', 'services', 'testimonials', 'contact', 'footer'],
+  shop:      ['navbar', 'hero', 'services', 'testimonials', 'cta', 'footer'],
   checkout:  ['navbar', 'hero', 'contact', 'footer'],
   thank_you: ['navbar', 'hero', 'cta', 'footer'],
-  blog:      ['navbar', 'hero', 'cta', 'footer'],
-  custom:    ['navbar', 'hero', 'cta', 'footer'],
+  blog:      ['navbar', 'hero', 'services', 'cta', 'footer'],
+  custom:    ['navbar', 'hero', 'services', 'cta', 'footer'],
 };
+
+/**
+ * Build a section-type → SectionEntry lookup from the active template,
+ * falling back to other compositions of the same industry, then any composition.
+ * This guarantees every pool slot has real content even when the chosen template
+ * lacks a particular section type.
+ */
+function buildSectionLookup(
+  template: TemplateComposition,
+): Map<SectionType, SectionEntry> {
+  const lookup = new Map<SectionType, SectionEntry>();
+  // 1. Primary: the active template
+  for (const s of template.sections) {
+    if (!lookup.has(s.type)) lookup.set(s.type, s);
+  }
+  // 2. Same-industry siblings
+  const siblings = ALL_COMPOSITIONS.filter(
+    (c) => c.id !== template.id && (c.industry === template.industry || c.category === template.category),
+  );
+  for (const sib of siblings) {
+    for (const s of sib.sections) {
+      if (!lookup.has(s.type)) lookup.set(s.type, s);
+    }
+  }
+  // 3. Universal fallback: any composition
+  for (const c of ALL_COMPOSITIONS) {
+    if (c.id === template.id) continue;
+    for (const s of c.sections) {
+      if (!lookup.has(s.type)) lookup.set(s.type, s);
+    }
+  }
+  return lookup;
+}
 
 function pageToTopologyRole(page: BuilderPage): PageRole {
   if (page.pageRole && BUILDER_ROLE_TO_PAGE_ROLE[page.pageRole]) {

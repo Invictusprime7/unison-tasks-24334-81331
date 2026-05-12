@@ -105,6 +105,7 @@ function buildRuntimeAppContext(
     businessName: input.businessName || siteBundleSnapshot?.businessName || undefined,
     templateName: input.templateName || undefined,
     templateCategory: input.templateCategory || undefined,
+    templateId: input.templateId || undefined,
     systemType: input.systemType || undefined,
     systemName: input.systemName || undefined,
     industry: input.industry || siteBundleSnapshot?.industry || undefined,

@@ -5245,15 +5245,21 @@ export function compileLauncherOutputForPreview(
   }
 
   // Step 2: Normalize launcher files (fix paths, add entry files, repair images)
+  const themePresetId =
+    runtimeManifest.appContext?.themePresetId ||
+    runtimeManifest.aesthetic ||
+    null;
   const normalized = normalizeLauncherFiles(mergedSource, {
     entryPoint: runtimeManifest.entryPoint,
+    themePresetId,
   });
 
-  // Step 3: Compile to Sandpack overlay (flatten /src/, inject shims, apply aesthetic, etc.)
+  // Step 3: Compile to Sandpack overlay (flatten /src/, inject shims, apply themed CSS, etc.)
   const previewFiles = prepareSandpackFiles(normalized, {
     strict: true,
     entryPoint: runtimeManifest.entryPoint,
-    aesthetic: runtimeManifest.aesthetic,  // Thread aesthetic through to CSS injection
+    aesthetic: runtimeManifest.aesthetic,  // legacy alias
+    themePresetId,                         // canonical source of truth
   });
 
   console.log('[compileLauncherOutputForPreview] Compiled preview:', {

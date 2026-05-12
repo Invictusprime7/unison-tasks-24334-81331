@@ -38,6 +38,8 @@ export interface RuntimeAppContext {
   entryPoint?: string;
   routes?: string[];
   wizardSelections?: Record<string, unknown>;
+  /** Resolved Style-card preset id (e.g. 'organic'); single source of truth for /src/index.css */
+  themePresetId?: string;
   generatedAt: string;
 }
 

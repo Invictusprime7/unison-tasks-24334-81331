@@ -119,7 +119,9 @@ import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilde
 import { useAIVFS } from '@/hooks/useAIVFS';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
-import { isValidAesthetic, completeAestheticCSS } from '@/utils/aestheticToCSS';
+import { isValidAesthetic } from '@/utils/aestheticToCSS';
+import { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
 import { getTemplateReactCodeWithCSS } from '@/data/templates';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
@@ -1068,6 +1070,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       effectiveRouteState?.aesthetic ||
       null
   );
+  // Resolved wizard Style-card preset id — single source of truth for /src/index.css
+  // across every CSS-fallback path the Builder triggers (Effect A, importBuilderFiles,
+  // template imports). Threaded into normalizeLauncherFiles so non-store industries
+  // never silently land on the 'modern' default.
+  const resolvedThemePresetId = useMemo<string | null>(() => {
+    const raw = effectiveRouteState?.designPreset
+      || effectiveRouteState?.aesthetic
+      || (effectiveRouteState?.runtimeManifest?.appContext as { themePresetId?: string } | undefined)?.themePresetId
+      || null;
+    return raw && isValidAesthetic(raw) ? raw : raw || null;
+  }, [effectiveRouteState?.designPreset, effectiveRouteState?.aesthetic, effectiveRouteState?.runtimeManifest?.appContext]);
   const [currentTemplateCategory, setCurrentTemplateCategory] = useState<string | null>(
     effectiveRouteState?.templateCategory || null
   );
@@ -2605,6 +2618,7 @@ export default function ${componentName}Page() {
       : undefined;
     const normalizedFiles = normalizeLauncherFiles({ ...incomingFiles }, {
       entryPoint: normalizedEntryPoint,
+      themePresetId: resolvedThemePresetId,
     });
 
     const appKey = resolveLauncherEntryPoint(
@@ -2655,7 +2669,7 @@ export default function ${componentName}Page() {
               ...currentFiles,
               [targetPath]: previewCode,
             },
-            { entryPoint: targetPath }
+            { entryPoint: targetPath, themePresetId: resolvedThemePresetId }
           )
         : {
             [targetPath]: previewCode,
@@ -2664,7 +2678,7 @@ export default function ${componentName}Page() {
       virtualFSRef.current.importFiles(importPayload);
       lastSyncedCodeRef.current = previewCode;
     }
-  }, [previewCode, activePagePath, launchEntryPoint, routeStateHasStructuredProject]);
+  }, [previewCode, activePagePath, launchEntryPoint, routeStateHasStructuredProject, resolvedThemePresetId]);
   
   // NOTE: Effect B (VFS→previewCode) has been REMOVED.
   // Previously, it watched virtualFS.nodes and called setPreviewCode() whenever the
@@ -4312,39 +4326,42 @@ export default function ${componentName}Page() {
 
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (launcherSourceFiles) {
-      // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist
+      // Resolve the wizard's Style-card preset (single source of truth for /src/index.css).
+      // Falls back deterministically: navState.aesthetic → siteBundle appContext → preview default.
+      const resolvedThemePresetId =
+        (navState.aesthetic && isValidAesthetic(navState.aesthetic) ? navState.aesthetic : null)
+        || ((navState as { siteBundleSnapshot?: { appContext?: { themePresetId?: string } } }).siteBundleSnapshot?.appContext?.themePresetId)
+        || null;
+
+      // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist.
+      // We thread the resolved preset so the css-fallback path inside normalizeLauncherFiles
+      // never injects a hard-coded 'modern' default for non-store industries.
       const normalizedEntryPoint = launcherEntryPoint
         ? (launcherEntryPoint.startsWith('/') ? launcherEntryPoint : `/${launcherEntryPoint}`)
         : null;
       const vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
         entryPoint: normalizedEntryPoint || launcherEntryPoint,
+        themePresetId: resolvedThemePresetId,
       });
 
-      // Apply aesthetic CSS if provided and valid
-      if (navState.aesthetic && isValidAesthetic(navState.aesthetic)) {
-        const aestheticCSS = completeAestheticCSS(navState.aesthetic);
-        
-        // Apply to /src/index.css or create it
-        if (vfsFiles["/src/index.css"]) {
-          // Prepend aesthetic CSS to existing stylesheet
-          if (!vfsFiles["/src/index.css"].includes('/* AESTHETIC:')) {
-            vfsFiles["/src/index.css"] = aestheticCSS + '\n\n' + vfsFiles["/src/index.css"];
-          }
-        } else {
-          // Create /src/index.css with aesthetic CSS
-          vfsFiles["/src/index.css"] = aestheticCSS;
-        }
-        
-        // Also apply to any other CSS files (multi-file VFS support)
-        Object.entries(vfsFiles).forEach(([path, content]) => {
+      // Force /src/index.css to the wizard's themed CSS — OVERWRITE, not prepend.
+      // The previous prepend-based approach lost to a race where the launcher's themed
+      // CSS hadn't yet hydrated into VFS, leaving the modern default. We now rebuild
+      // deterministically from the resolved preset, every time.
+      if (resolvedThemePresetId) {
+        const preset = THEME_PRESETS.find((p) => p.id === resolvedThemePresetId) || DEFAULT_PREVIEW_THEME_PRESET;
+        const themedCss = buildThemedIndexCss(preset);
+        vfsFiles["/src/index.css"] = themedCss;
+        // Mirror to any sibling CSS files so secondary stylesheets share the same tokens.
+        Object.keys(vfsFiles).forEach((path) => {
           if (path.endsWith('.css') && path !== '/src/index.css' && !path.includes('shim')) {
-            if (typeof content === 'string' && !content.includes('/* AESTHETIC:')) {
-              vfsFiles[path] = aestheticCSS + '\n\n' + content;
+            const existing = vfsFiles[path];
+            if (typeof existing === 'string' && !existing.includes('/* AESTHETIC:')) {
+              vfsFiles[path] = themedCss + '\n\n' + existing;
             }
           }
         });
-        
-        console.log('[WebBuilder] Applied aesthetic theme:', navState.aesthetic);
+        console.log('[WebBuilder] Applied wizard theme preset:', resolvedThemePresetId);
       }
 
       if (Object.keys(vfsFiles).length > 0) {
@@ -4465,7 +4482,7 @@ export default function ${componentName}Page() {
 
         nextFiles[launchEntryPoint] = nextCode;
         // Normalize to ensure main.tsx and index.css exist
-        const normalizedFiles = normalizeLauncherFiles(nextFiles, { entryPoint: launchEntryPoint });
+        const normalizedFiles = normalizeLauncherFiles(nextFiles, { entryPoint: launchEntryPoint, themePresetId: resolvedThemePresetId });
         replaceProjectFiles(normalizedFiles, {
           activePath: launchEntryPoint,
           entryContent: nextCode,
@@ -4536,6 +4553,7 @@ ${sectionsJsx}
         [launchEntryPoint]: reactCode,
       }, {
         entryPoint: launchEntryPoint,
+        themePresetId: resolvedThemePresetId,
       });
       replaceProjectFiles(templateFiles, {
         activePath: launchEntryPoint,

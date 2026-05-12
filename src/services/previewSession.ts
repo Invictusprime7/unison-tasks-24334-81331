@@ -13,7 +13,8 @@
  */
 
 import { extractDependencies } from '@/utils/dependencyExtractor';
-import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
+import { buildDefaultThemedIndexCss, buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
 
 // ============================================
@@ -254,6 +255,7 @@ export function ensureViteRootFiles(
   fileMap: FileMap,
   options?: {
     extraDependencies?: Record<string, string>;
+    themePresetId?: string | null;
   },
 ): FileMap {
   const result = { ...fileMap };
@@ -334,10 +336,17 @@ export function ensureViteRootFiles(
     }
   });
 
-  // Inject required src files if missing
+  // Inject required src files if missing — but resolve /src/index.css from the
+  // wizard's themePresetId when provided so non-store industries (salon/coaching/etc)
+  // never silently fall back to the 'modern' default.
   Object.entries(REQUIRED_SRC_FILES).forEach(([path, content]) => {
     if (!result[path]) {
-      result[path] = content;
+      if (path === '/src/index.css' && options?.themePresetId) {
+        const preset = THEME_PRESETS.find((p) => p.id === options.themePresetId) || DEFAULT_PREVIEW_THEME_PRESET;
+        result[path] = buildThemedIndexCss(preset);
+      } else {
+        result[path] = content;
+      }
     }
   });
 

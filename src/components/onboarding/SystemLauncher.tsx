@@ -1144,6 +1144,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         businessName: brand,
         industry: generationCategory,
         aesthetic: resolvedPreset.id,
+        themePresetId: resolvedPreset.id,
         backendRequired: false,
         wizardSelections,
       });

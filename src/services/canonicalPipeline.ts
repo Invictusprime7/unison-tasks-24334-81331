@@ -200,7 +200,7 @@ export function recompileFromPlayground(
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
   industry?: string,
-  options?: { selectedTemplateId?: string; selectedThemeId?: string },
+  options?: { selectedTemplateId?: string; selectedThemeId?: string; themePresetId?: string },
 ): Omit<CanonicalPipelineResult, 'capabilities'> & { capabilities: null } {
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -217,6 +217,19 @@ export function recompileFromPlayground(
     selectedThemeId: options?.selectedThemeId,
     industry: industry || null,
   });
+
+  // Re-emit themed /src/index.css from the wizard's preset so any in-builder
+  // recompile keeps the Style-card tokens locked across all industries.
+  const presetId = options?.themePresetId || options?.selectedThemeId;
+  if (presetId) {
+    // Lazy require to avoid a circular dep with onboarding modules.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { THEME_PRESETS } = require('@/components/onboarding/themePresets');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } = require('@/components/onboarding/themePresetToIndexCss');
+    const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId) || DEFAULT_PREVIEW_THEME_PRESET;
+    compileResult.vfsFiles['/src/index.css'] = buildThemedIndexCss(preset);
+  }
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

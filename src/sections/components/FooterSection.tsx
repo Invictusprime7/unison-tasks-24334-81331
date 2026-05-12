@@ -1,6 +1,7 @@
 import React from 'react';
 import type { BaseSectionProps } from '../types';
 import { hsl, hsla } from '../themeUtils';
+import { SocialIcon, socialAriaLabel } from './SocialIcon';
 
 export const FooterSection: React.FC<BaseSectionProps<'footer'>> = ({ section, theme }) => {
   const { brand, columns = [], socials = [], copyright, newsletter } = section.props;

@@ -274,6 +274,56 @@ function findElementBoundsInJSX(
   return null;
 }
 
+function unescapeCSSSelectorValue(value: string): string {
+  return value.replace(/\\([^\\])/g, '$1');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripJSXAttributeExpression(value: string): string {
+  const trimmed = value.trim();
+  const quoted = trimmed.match(/^(?:"([^"]*)"|'([^']*)'|`([^`]*)`)$/);
+  return quoted ? (quoted[1] ?? quoted[2] ?? quoted[3] ?? '') : trimmed;
+}
+
+function openingTagHasAttribute(openTag: string, attrName: string, attrValue: string): boolean {
+  const attrPattern = /([A-Za-z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|\{([^}]*)\}|([^\s"'>/=`]+)))?/g;
+  let match: RegExpExecArray | null;
+  while ((match = attrPattern.exec(openTag)) !== null) {
+    if (match[1] !== attrName) continue;
+    if (!attrValue) return true;
+    const actual = stripJSXAttributeExpression(match[2] ?? match[3] ?? match[4] ?? match[5] ?? '');
+    if (actual === attrValue) return true;
+  }
+  return false;
+}
+
+function findElementByAttributeInSource(
+  searchSource: string,
+  baseOffset: number,
+  fullSource: string,
+  tagName: string,
+  attrName: string,
+  attrValue: string,
+): { start: number; end: number } | null {
+  const tagPattern = tagName
+    ? new RegExp(`<${escapeRegExp(tagName)}\\b[^>]*>`, 'gi')
+    : /<([A-Za-z][\w-]*)\b[^>]*>/g;
+  let match: RegExpExecArray | null;
+  while ((match = tagPattern.exec(searchSource)) !== null) {
+    const openTag = match[0];
+    if (!openingTagHasAttribute(openTag, attrName, attrValue)) continue;
+    const foundTag = tagName || openTag.match(/^<([A-Za-z][\w-]*)/)?.[1];
+    if (!foundTag) return null;
+    const start = baseOffset + match.index;
+    const end = findJSXClosingTag(fullSource, start, foundTag);
+    if (end !== -1) return { start, end };
+  }
+  return null;
+}
+
 function findBoundsForParts(
   source: string,
   parts: string[]

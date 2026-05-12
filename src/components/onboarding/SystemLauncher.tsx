@@ -694,6 +694,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setPrimaryGoal(null);
     setCustomerNeeds([]);
     setSelectedPages(["about", "services", "contact"]);
+    setSocialLinks({ instagram: "", facebook: "", tiktok: "", x: "", linkedin: "", youtube: "" });
   }, []);
 
   const handleSystemSelect = (systemId: BusinessSystemType) => {

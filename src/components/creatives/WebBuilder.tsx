@@ -7139,13 +7139,16 @@ export default function ${componentName}() {
               systemsBuildContext={systemsBuildContextFromState}
               readiness={selectedElementReadiness}
               onAIEditComplete={async (selector, newHtml) => {
-                const res = applyElementHtmlUpdate(previewCode, selector, newHtml);
+                const normalizedHtml = normalizeAIElementMarkup(newHtml);
+                const res = applyElementHtmlUpdate(previewCode, selector, normalizedHtml);
                 if (res.ok) {
-                    importBuilderFiles(templateToVFSFiles(res.code, currentTemplateName || 'Element Edit'), {
-                      preferredPath: activePagePath,
-                      entryPoint: activePagePath,
-                    });
+                    const targetPath = activePagePath.endsWith('.tsx') ? activePagePath : launchEntryPoint;
+                    vfsImportFiles({ [targetPath]: res.code });
+                    lastSyncedCodeRef.current = res.code;
+                    setPreviewCode(res.code);
+                    setEditorCode(res.code);
                     setSelectedHTMLElement(null);
+                    clearLivePreviewSelection();
                     toast.success('Element updated by AI');
                     return true;
                 } else {

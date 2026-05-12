@@ -13,7 +13,8 @@
  */
 
 import { extractDependencies } from '@/utils/dependencyExtractor';
-import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
+import { buildDefaultThemedIndexCss, buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
 
 // ============================================
@@ -254,6 +255,7 @@ export function ensureViteRootFiles(
   fileMap: FileMap,
   options?: {
     extraDependencies?: Record<string, string>;
+    themePresetId?: string | null;
   },
 ): FileMap {
   const result = { ...fileMap };

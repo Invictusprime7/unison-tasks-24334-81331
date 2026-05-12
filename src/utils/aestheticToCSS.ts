@@ -1,13 +1,14 @@
 /**
- * Aesthetic-to-CSS Converter
+ * Aesthetic-to-CSS Converter — DEPRECATED
  *
- * Maps aesthetic preset IDs (from themePresets) to CSS custom properties.
- * This bridges the gap between visual aesthetic selection and rendered colors.
+ * @deprecated Use `buildThemedIndexCss(preset)` from
+ * `@/components/onboarding/themePresetToIndexCss` instead. That builder is the
+ * single source of truth for `/src/index.css` across the wizard, launcher VFS,
+ * preview session, and Sandpack overlay.
  *
- * Usage:
- *   const themedCSS = aestheticToCSSVariables('modern');
- *   // Returns :root { --primary: ..., --accent: ..., ... }
- *   // Can be prepended to any CSS file or injected into index.html <style>
+ * Only `isValidAesthetic` remains in active use (id validation alias). The
+ * `aestheticToCSSVariables` / `completeAestheticCSS` exports are kept solely
+ * for backward compatibility with callers that have not yet migrated.
  */
 
 import type { ThemePreset } from '@/components/onboarding/themePresets';

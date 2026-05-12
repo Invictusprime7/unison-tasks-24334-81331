@@ -2618,6 +2618,7 @@ export default function ${componentName}Page() {
       : undefined;
     const normalizedFiles = normalizeLauncherFiles({ ...incomingFiles }, {
       entryPoint: normalizedEntryPoint,
+      themePresetId: resolvedThemePresetId,
     });
 
     const appKey = resolveLauncherEntryPoint(
@@ -4481,7 +4482,7 @@ export default function ${componentName}Page() {
 
         nextFiles[launchEntryPoint] = nextCode;
         // Normalize to ensure main.tsx and index.css exist
-        const normalizedFiles = normalizeLauncherFiles(nextFiles, { entryPoint: launchEntryPoint });
+        const normalizedFiles = normalizeLauncherFiles(nextFiles, { entryPoint: launchEntryPoint, themePresetId: resolvedThemePresetId });
         replaceProjectFiles(normalizedFiles, {
           activePath: launchEntryPoint,
           entryContent: nextCode,
@@ -4552,6 +4553,7 @@ ${sectionsJsx}
         [launchEntryPoint]: reactCode,
       }, {
         entryPoint: launchEntryPoint,
+        themePresetId: resolvedThemePresetId,
       });
       replaceProjectFiles(templateFiles, {
         activePath: launchEntryPoint,

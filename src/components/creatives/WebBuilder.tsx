@@ -509,6 +509,30 @@ function withSourceManipulation(
   return { ok: true, code: newCode };
 }
 
+function normalizeAIElementMarkup(markup: string): string {
+  let next = (markup || '')
+    .replace(/^```(?:html|jsx|tsx)?\n?/i, '')
+    .replace(/\n?```\s*$/i, '')
+    .trim();
+
+  next = next
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+    .replace(/<\/?(?:html|head|body)[^>]*>/gi, '')
+    .trim();
+
+  next = htmlToJsx(next)
+    .replace(/\sclassName="([^"]*)"/g, (_full, classes: string) => {
+      const cleaned = classes
+        .split(/\s+/)
+        .filter((c: string) => c && c !== '__ut-selected' && c !== '__ut-hover')
+        .join(' ');
+      return cleaned ? ` className="${cleaned}"` : '';
+    })
+    .trim();
+
+  return next;
+}
+
 /**
  * Safely query a selector with escaping, trying multiple fallback strategies
  */

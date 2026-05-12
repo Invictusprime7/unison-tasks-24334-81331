@@ -232,6 +232,19 @@ function findElementBoundsInJSX(
   source: string,
   selector: string
 ): { start: number; end: number } | null {
+  const selectorAlternates = selector
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (selectorAlternates.length > 1) {
+    for (const alternate of selectorAlternates) {
+      const result = findElementBoundsInJSX(source, alternate);
+      if (result) return result;
+    }
+    return null;
+  }
+
   // Parse the selector into segments: "body > section:nth-of-type(2) > div > h1"
   const allParts = selector
     .split(/\s*>\s*/)

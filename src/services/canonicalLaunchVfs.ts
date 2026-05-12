@@ -41,6 +41,8 @@ export interface BuildCanonicalLaunchArtifactsInput {
   businessName?: string | null;
   industry?: string | null;
   aesthetic?: string | null;
+  /** Resolved wizard Style-card preset id (drives /src/index.css). */
+  themePresetId?: string | null;
   backendRequired?: boolean;
   wizardSelections?: WizardSelections | null;
 }
@@ -109,6 +111,7 @@ function buildRuntimeAppContext(
     wizardSelections: input.wizardSelections
       ? (JSON.parse(JSON.stringify(input.wizardSelections)) as Record<string, unknown>)
       : undefined,
+    themePresetId: input.themePresetId || (input.aesthetic as string | undefined) || undefined,
     generatedAt: new Date().toISOString(),
   };
 }

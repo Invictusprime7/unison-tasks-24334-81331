@@ -38,6 +38,8 @@ export interface BuildCanonicalLaunchArtifactsInput {
   systemName?: string | null;
   templateName?: string | null;
   templateCategory?: LayoutCategory | string | null;
+  /** Resolved Template-card id; persisted into appContext.templateId. */
+  templateId?: string | null;
   businessName?: string | null;
   industry?: string | null;
   aesthetic?: string | null;

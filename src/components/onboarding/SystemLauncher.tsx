@@ -1141,6 +1141,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemName: system.name,
         templateName: `${brand} Site`,
         templateCategory: generationCategory,
+        templateId: selectedTemplate?.id,
         businessName: brand,
         industry: generationCategory,
         aesthetic: resolvedPreset.id,
@@ -1170,7 +1171,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const navState = {
         templateName: `${brand} Site`,
         aesthetic: resolvedPreset.id,
+        themePresetId: resolvedPreset.id,
         templateCategory: generationCategory,
+        templateId: selectedTemplate?.id,
         systemType: selectedSystem,
         systemName: system.name,
         preloadedIntents: canonicalIntents,

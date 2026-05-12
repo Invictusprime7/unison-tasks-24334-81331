@@ -38,6 +38,8 @@ export interface BuildCanonicalLaunchArtifactsInput {
   systemName?: string | null;
   templateName?: string | null;
   templateCategory?: LayoutCategory | string | null;
+  /** Resolved Template-card id; persisted into appContext.templateId. */
+  templateId?: string | null;
   businessName?: string | null;
   industry?: string | null;
   aesthetic?: string | null;
@@ -103,6 +105,7 @@ function buildRuntimeAppContext(
     businessName: input.businessName || siteBundleSnapshot?.businessName || undefined,
     templateName: input.templateName || undefined,
     templateCategory: input.templateCategory || undefined,
+    templateId: input.templateId || undefined,
     systemType: input.systemType || undefined,
     systemName: input.systemName || undefined,
     industry: input.industry || siteBundleSnapshot?.industry || undefined,
@@ -208,8 +211,11 @@ export function buildCanonicalLaunchArtifacts(
   input: BuildCanonicalLaunchArtifactsInput,
 ): CanonicalLaunchArtifacts {
   const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
+  const resolvedThemePresetId =
+    input.themePresetId || (input.aesthetic as string | undefined) || null;
   const normalizedFiles = normalizeLauncherFiles(input.generatedFiles, {
     entryPoint: input.preferredEntryPoint,
+    themePresetId: resolvedThemePresetId,
   });
 
   const bindingApplication = input.siteBundleSnapshot

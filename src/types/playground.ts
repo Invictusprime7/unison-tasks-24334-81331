@@ -67,6 +67,11 @@ export interface WizardSelections {
   wantsLeadCapture?: boolean;
   templateId?: string;
   themeId?: string;
+  /**
+   * Wizard hands off a Home-only site; the in-Builder AI authors every other
+   * page/route/funnel from user prompts. Skips capability-driven page expansion.
+   */
+  minimalScaffold?: boolean;
 }
 
 // ============================================================================

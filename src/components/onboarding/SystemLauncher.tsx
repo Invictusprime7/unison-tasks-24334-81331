@@ -790,10 +790,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return null;
       });
 
-      // ── Plan topology (drives multi-page scaffolding) ──
+      // ── Plan topology (MINIMAL: Home only) ──
+      // The Wizard hands off a clean canvas. The in-Builder AI assistant is
+      // the sole author of every additional page/route/funnel/tab from user
+      // prompts (registry → VFS sync handles the rest).
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: selectedTemplate?.id,
+        minimal: true,
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
@@ -809,6 +813,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
         templateId: selectedTemplate?.id,
         themeId: selectedTheme?.id,
+        minimalScaffold: true,
       };
 
       const pipelineResult = executeCanonicalPipeline(wizardSelections);

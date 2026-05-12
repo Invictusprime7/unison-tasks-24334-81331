@@ -313,12 +313,12 @@ function findBoundsForParts(
       tagName = part.split(':')[0] || '';
     }
 
-    if (!tagName && !id) {
+    if (!tagName && !id && !attrName) {
       // Plain tag or tag.class
       tagName = part.split('.')[0].split(':')[0].split('[')[0];
     }
 
-    if (!tagName && !id) return null;
+    if (!tagName && !id && !attrName) return null;
 
     // Find the element
     if (id) {

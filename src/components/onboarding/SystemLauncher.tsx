@@ -652,6 +652,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const [customerNeeds, setCustomerNeeds] = useState<CustomerNeed[]>([]);
   const [selectedPages, setSelectedPages] = useState<PageChoice[]>(["about", "services", "contact"]);
 
+  // Social URLs collected on aesthetic step (optional, blank = skip)
+  const [socialLinks, setSocialLinks] = useState<Record<string, string>>({
+    instagram: "",
+    facebook: "",
+    tiktok: "",
+    x: "",
+    linkedin: "",
+    youtube: "",
+  });
+
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
 
   // Build template cards from real compositions (falls back to references if none exist)

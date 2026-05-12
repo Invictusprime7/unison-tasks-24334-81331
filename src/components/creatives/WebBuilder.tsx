@@ -4314,39 +4314,42 @@ export default function ${componentName}Page() {
 
     // If a pre-built VFS plan was passed (e.g. from System Launcher AI edits), import it first.
     if (launcherSourceFiles) {
-      // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist
+      // Resolve the wizard's Style-card preset (single source of truth for /src/index.css).
+      // Falls back deterministically: navState.aesthetic → siteBundle appContext → preview default.
+      const resolvedThemePresetId =
+        (navState.aesthetic && isValidAesthetic(navState.aesthetic) ? navState.aesthetic : null)
+        || ((navState as { siteBundleSnapshot?: { appContext?: { themePresetId?: string } } }).siteBundleSnapshot?.appContext?.themePresetId)
+        || null;
+
+      // Normalize launcher files — ensures /src/main.tsx, /src/index.css, /src/App.tsx exist.
+      // We thread the resolved preset so the css-fallback path inside normalizeLauncherFiles
+      // never injects a hard-coded 'modern' default for non-store industries.
       const normalizedEntryPoint = launcherEntryPoint
         ? (launcherEntryPoint.startsWith('/') ? launcherEntryPoint : `/${launcherEntryPoint}`)
         : null;
       const vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
         entryPoint: normalizedEntryPoint || launcherEntryPoint,
+        themePresetId: resolvedThemePresetId,
       });
 
-      // Apply aesthetic CSS if provided and valid
-      if (navState.aesthetic && isValidAesthetic(navState.aesthetic)) {
-        const aestheticCSS = completeAestheticCSS(navState.aesthetic);
-        
-        // Apply to /src/index.css or create it
-        if (vfsFiles["/src/index.css"]) {
-          // Prepend aesthetic CSS to existing stylesheet
-          if (!vfsFiles["/src/index.css"].includes('/* AESTHETIC:')) {
-            vfsFiles["/src/index.css"] = aestheticCSS + '\n\n' + vfsFiles["/src/index.css"];
-          }
-        } else {
-          // Create /src/index.css with aesthetic CSS
-          vfsFiles["/src/index.css"] = aestheticCSS;
-        }
-        
-        // Also apply to any other CSS files (multi-file VFS support)
-        Object.entries(vfsFiles).forEach(([path, content]) => {
+      // Force /src/index.css to the wizard's themed CSS — OVERWRITE, not prepend.
+      // The previous prepend-based approach lost to a race where the launcher's themed
+      // CSS hadn't yet hydrated into VFS, leaving the modern default. We now rebuild
+      // deterministically from the resolved preset, every time.
+      if (resolvedThemePresetId) {
+        const preset = THEME_PRESETS.find((p) => p.id === resolvedThemePresetId) || DEFAULT_PREVIEW_THEME_PRESET;
+        const themedCss = buildThemedIndexCss(preset);
+        vfsFiles["/src/index.css"] = themedCss;
+        // Mirror to any sibling CSS files so secondary stylesheets share the same tokens.
+        Object.keys(vfsFiles).forEach((path) => {
           if (path.endsWith('.css') && path !== '/src/index.css' && !path.includes('shim')) {
-            if (typeof content === 'string' && !content.includes('/* AESTHETIC:')) {
-              vfsFiles[path] = aestheticCSS + '\n\n' + content;
+            const existing = vfsFiles[path];
+            if (typeof existing === 'string' && !existing.includes('/* AESTHETIC:')) {
+              vfsFiles[path] = themedCss + '\n\n' + existing;
             }
           }
         });
-        
-        console.log('[WebBuilder] Applied aesthetic theme:', navState.aesthetic);
+        console.log('[WebBuilder] Applied wizard theme preset:', resolvedThemePresetId);
       }
 
       if (Object.keys(vfsFiles).length > 0) {

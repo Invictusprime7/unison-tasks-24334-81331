@@ -321,7 +321,14 @@ function findBoundsForParts(
     if (!tagName && !id && !attrName) return null;
 
     // Find the element
-    if (id) {
+    if (attrName) {
+      const result = findElementByAttributeInSource(searchSource, baseOffset, source, tagName, attrName, attrValue);
+      if (!result) return null;
+      if (isLast) return { start: result.start, end: result.end };
+      const openEnd = source.indexOf('>', result.start) + 1;
+      searchSource = source.substring(openEnd, result.end);
+      baseOffset = openEnd;
+    } else if (id) {
       // Find by id attribute
       const idPattern = new RegExp(`<(\\w+)\\b[^>]*\\bid=["'{]${id}["'}][^>]*>`, 'i');
       const idFound = idPattern.exec(searchSource);

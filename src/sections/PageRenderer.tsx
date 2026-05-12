@@ -299,7 +299,7 @@ function Footer({ props }) {
         </div>
         <div className="ut-footer-bottom" style={{ borderTop: \`1px solid \${hsla(THEME.colors.border, 0.5)}\`, paddingTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={{ ...bodyStyle, fontSize: '0.8rem' }}>{copyright || \`© \${new Date().getFullYear()} \${brand}. All rights reserved.\`}</p>
-          {socials.length > 0 && <div style={{ display: 'flex', gap: '1rem' }}>{socials.map((s, i) => <a key={i} href={s.url} style={{ ...bodyStyle, textDecoration: 'none', fontSize: '0.85rem' }}>{s.icon || s.platform}</a>)}</div>}
+          {socials.length > 0 && <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>{socials.map((s, i) => { const hasUrl = s.url && s.url !== '#'; return <a key={i} href={hasUrl ? s.url : undefined} target={hasUrl ? '_blank' : undefined} rel={hasUrl ? 'noopener noreferrer' : undefined} aria-label={\`Visit our \${s.platform} page\`} style={{ ...bodyStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '2rem', height: '2rem', borderRadius: '9999px' }}><SocialIconInline platform={s.platform} size={16} /></a>; })}</div>}
         </div>
       </div>
     </footer>

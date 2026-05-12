@@ -188,8 +188,18 @@ export function planSiteTopology(
     primaryIntent?: string;
     /** Template composition id selected by the wizard chip — drives sub-page scaffolding. */
     selectedTemplateId?: string;
+    /**
+     * Minimal mode: produce ONLY a Home page. The in-Builder AI assistant is
+     * responsible for adding every other page/route/funnel on user prompt.
+     * Used by the Wizard Launcher to hand a clean canvas to the Builder.
+     */
+    minimal?: boolean;
   }
 ): GeneratedSitePlan {
+  if (options?.minimal) {
+    return planMinimalHomeTopology(businessName, industryKey, options.selectedTemplateId);
+  }
+
   const profile = getIndustryProfile(industryKey);
   if (!profile) {
     // Fallback: generic site with home + contact
@@ -199,6 +209,45 @@ export function planSiteTopology(
   }
 
   return planFromProfile(profile, businessName, options);
+}
+
+/**
+ * Minimal topology — Home only. Used when the Wizard hands off to the Builder
+ * AI which will create additional pages/routes/funnels on demand.
+ */
+function planMinimalHomeTopology(
+  businessName: string,
+  industryKey: string,
+  selectedTemplateId?: string,
+): GeneratedSitePlan {
+  const siteId = generateUUID();
+  const homeId = generateUUID();
+  return {
+    siteId,
+    industry: industryKey || 'general',
+    businessName,
+    homePageId: homeId,
+    pages: [
+      {
+        id: homeId,
+        name: 'Home',
+        title: 'Home',
+        route: '/',
+        role: 'home',
+        filePath: '/src/pages/Home.tsx',
+        visibleInNav: true,
+        isHome: true,
+        generatedBy: 'wizard',
+        seo: { title: `Home | ${businessName}` },
+      },
+    ],
+    navItems: [homeId],
+    funnels: [],
+    redirects: [],
+    generatedAt: new Date().toISOString(),
+    selectedTemplateId,
+    isMinimal: true,
+  };
 }
 
 function planFromProfile(

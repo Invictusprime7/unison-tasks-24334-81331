@@ -242,6 +242,7 @@ export function buildCanonicalLaunchArtifacts(
   });
   const viteReadyFiles = ensureViteRootFiles(mergedFiles, {
     extraDependencies: runtimeManifest.dependencies,
+    themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
   const files = upsertCanonicalMetadataFiles(viteReadyFiles, {
     appContext,

@@ -90,6 +90,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setError(null);
   };
 
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await lovable.auth.signInWithOAuth('google', {
+        redirect_uri: window.location.origin,
+      });
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      if (result.redirected) {
+        return;
+      }
+
+      toast.success('Welcome back!');
+      onOpenChange(false);
+      onSuccess?.();
+
+      if (config.redirectOnSuccess) {
+        window.location.href = config.redirectOnSuccess;
+      }
+    } catch (err: any) {
+      setError(err.message || 'Google sign-in failed');
+      toast.error(err.message || 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">

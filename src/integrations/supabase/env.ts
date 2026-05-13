@@ -23,7 +23,7 @@ const cleanEnvValue = (value: unknown): string => {
 
 export const SUPABASE_URL =
   cleanEnvValue(import.meta.env.VITE_SUPABASE_URL) ||
-  'https://nfrdomdvyrbwuokathtw.supabase.co';
+  'https://oruwtgdjurstvhgqcvbv.supabase.co';
 
 export const SUPABASE_PUBLISHABLE_KEY =
   cleanEnvValue(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||

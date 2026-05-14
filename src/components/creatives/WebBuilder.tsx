@@ -1409,78 +1409,141 @@ export default function App() {
     }
   }, []);
 
+  // Apply a per-file mutator to the active page; if it fails, scan the VFS for
+  // a .tsx/.jsx file that contains the selector. This makes manual toolbar
+  // edits work for elements that live in imported component files (Navbar, etc.)
+  // and avoids the misleading "dynamic className" toast.
+  const applyMutatorAcrossVFS = useCallback((
+    selector: string,
+    mutate: (code: string) => string | null,
+    onActivePageSuccess: (next: string) => void,
+    snapshotLabel: string,
+  ): { ok: boolean; reason?: 'no-match' | 'no-change' } => {
+    // 1. Active page first
+    const next = mutate(previewCode);
+    if (next && next !== previewCode) {
+      recordManualPageEdit(snapshotLabel, previewCode, next);
+      onActivePageSuccess(next);
+      return { ok: true };
+    }
+    // 2. Scan VFS files for a matching selector
+    const ctx = snapshotCtxRef.current;
+    const activePath = ctx.activePagePath;
+    try {
+      const allFiles = virtualFS.getSandpackFiles();
+      for (const [path, code] of Object.entries(allFiles)) {
+        if (!path.endsWith('.tsx') && !path.endsWith('.jsx')) continue;
+        if (path === activePath) continue;
+        const attempt = mutate(code);
+        if (attempt && attempt !== code) {
+          try {
+            pushAISnapshot(ctx.projectId ?? null, {
+              label: `${snapshotLabel} (${path.split('/').pop()})`,
+              source: 'manual',
+              before: { [path]: code },
+              after: { [path]: attempt },
+              changedPaths: [path],
+              meta: { origin: 'floating-toolbar' },
+            });
+          } catch (err) { console.warn('[applyMutatorAcrossVFS] snapshot failed:', err); }
+          virtualFS.importFiles({ [path]: attempt });
+          return { ok: true };
+        }
+      }
+    } catch (err) {
+      console.warn('[applyMutatorAcrossVFS] VFS scan failed:', err);
+    }
+    return { ok: false, reason: next === previewCode ? 'no-change' : 'no-match' };
+  }, [previewCode, recordManualPageEdit]);
+
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);
-    const next = mutateJSXStyles(previewCode, selector, styles, findElementBoundsInJSX);
-    if (next && next !== previewCode) {
-      recordManualPageEdit(`Manual · style ${Object.keys(styles).join(', ').slice(0, 40)}`, previewCode, next);
-      setPreviewCode(next);
-      setEditorCode(next);
-      if (selectedHTMLElement?.selector === selector) {
-        setSelectedHTMLElement({
-          ...selectedHTMLElement,
-          styles: { ...(selectedHTMLElement.styles || {}), ...styles },
-        });
-      }
-    } else if (!next) {
+    const res = applyMutatorAcrossVFS(
+      selector,
+      (code) => mutateJSXStyles(code, selector, styles, findElementBoundsInJSX),
+      (next) => {
+        setPreviewCode(next);
+        setEditorCode(next);
+        if (selectedHTMLElement?.selector === selector) {
+          setSelectedHTMLElement({
+            ...selectedHTMLElement,
+            styles: { ...(selectedHTMLElement.styles || {}), ...styles },
+          });
+        }
+      },
+      `Manual · style ${Object.keys(styles).join(', ').slice(0, 40)}`,
+    );
+    if (!res.ok) {
       console.warn('[WebBuilder] mutateJSXStyles failed for selector', selector);
-      toast.error('Could not update styles — element uses a dynamic className. Try the AI edit instead.');
+      toast.error('Could not update styles — element not found in source. Try the AI edit instead.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [applyMutatorAcrossVFS, selectedHTMLElement, setSelectedHTMLElement]);
 
   const handleFloatingTextUpdate = useCallback((selector: string, text: string) => {
     console.log('[WebBuilder] handleFloatingTextUpdate called:', selector, text);
-    const next = mutateJSXText(previewCode, selector, text, findElementBoundsInJSX);
-    if (next && next !== previewCode) {
-      recordManualPageEdit(`Manual · text "${text.slice(0, 30)}"`, previewCode, next);
-      setPreviewCode(next);
-      setEditorCode(next);
-      if (selectedHTMLElement?.selector === selector) {
-        setSelectedHTMLElement({ ...selectedHTMLElement, textContent: text });
-      }
-    } else if (!next) {
-      toast.error('Could not update text — element contains nested markup. Try the AI edit instead.');
+    const res = applyMutatorAcrossVFS(
+      selector,
+      (code) => mutateJSXText(code, selector, text, findElementBoundsInJSX),
+      (next) => {
+        setPreviewCode(next);
+        setEditorCode(next);
+        if (selectedHTMLElement?.selector === selector) {
+          setSelectedHTMLElement({ ...selectedHTMLElement, textContent: text });
+        }
+      },
+      `Manual · text "${text.slice(0, 30)}"`,
+    );
+    if (!res.ok) {
+      toast.error('Could not update text — element contains nested markup or was not found. Try the AI edit instead.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
+  }, [applyMutatorAcrossVFS, selectedHTMLElement, setSelectedHTMLElement]);
 
   const handleFloatingImageReplace = useCallback((selector: string, src: string) => {
     console.log('[WebBuilder] handleFloatingImageReplace called:', selector, src.substring(0, 50));
-    const next = mutateJSXImageSrc(previewCode, selector, src, findElementBoundsInJSX);
-    if (next && next !== previewCode) {
-      recordManualPageEdit('Manual · replace image', previewCode, next);
-      setPreviewCode(next);
-      setEditorCode(next);
-      if (selectedHTMLElement?.selector === selector) {
-        setSelectedHTMLElement({
-          ...selectedHTMLElement,
-          attributes: { ...(selectedHTMLElement.attributes || {}), src },
-        });
-      }
-    } else if (!next) {
+    const res = applyMutatorAcrossVFS(
+      selector,
+      (code) => mutateJSXImageSrc(code, selector, src, findElementBoundsInJSX),
+      (next) => {
+        setPreviewCode(next);
+        setEditorCode(next);
+        if (selectedHTMLElement?.selector === selector) {
+          setSelectedHTMLElement({
+            ...selectedHTMLElement,
+            attributes: { ...(selectedHTMLElement.attributes || {}), src },
+          });
+        }
+      },
+      'Manual · replace image',
+    );
+    if (!res.ok) {
       toast.error('Could not replace image. Try selecting the <img> directly.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
+  }, [applyMutatorAcrossVFS, selectedHTMLElement, setSelectedHTMLElement]);
 
   const handleFloatingAttributeUpdate = useCallback((selector: string, attributes: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingAttributeUpdate called:', selector, attributes);
-    const next = mutateJSXAttributes(previewCode, selector, attributes, findElementBoundsInJSX);
-    if (next && next !== previewCode) {
-      recordManualPageEdit(`Manual · attrs ${Object.keys(attributes).join(', ').slice(0, 40)}`, previewCode, next);
-      setPreviewCode(next);
-      setEditorCode(next);
-      if (selectedHTMLElement?.selector === selector) {
-        setSelectedHTMLElement({
-          ...selectedHTMLElement,
-          attributes: {
-            ...(selectedHTMLElement.attributes || {}),
-            ...attributes,
-          },
-        });
-      }
-    } else if (!next) {
+    const res = applyMutatorAcrossVFS(
+      selector,
+      (code) => mutateJSXAttributes(code, selector, attributes, findElementBoundsInJSX),
+      (next) => {
+        setPreviewCode(next);
+        setEditorCode(next);
+        if (selectedHTMLElement?.selector === selector) {
+          setSelectedHTMLElement({
+            ...selectedHTMLElement,
+            attributes: {
+              ...(selectedHTMLElement.attributes || {}),
+              ...attributes,
+            },
+          });
+        }
+      },
+      `Manual · attrs ${Object.keys(attributes).join(', ').slice(0, 40)}`,
+    );
+    if (!res.ok) {
       toast.error('Could not update attributes for the selected element.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
+  }, [applyMutatorAcrossVFS, selectedHTMLElement, setSelectedHTMLElement]);
 
 
   const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {

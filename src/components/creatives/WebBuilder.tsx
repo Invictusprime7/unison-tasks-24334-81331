@@ -1547,13 +1547,22 @@ export default function App() {
 
 
   const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {
+    // AI/contentEditable often returns raw HTML (class=, unclosed <img>, hyphenated SVG attrs).
+    // Convert to JSX-safe markup before splicing into a .tsx file or Babel will explode with
+    // "Expected corresponding JSX closing tag" / "Cannot assign to read only property 'message'".
+    let safeJsx = newJsx;
+    try {
+      safeJsx = htmlToJsx(newJsx);
+    } catch (err) {
+      console.warn('[applyElementHtmlUpdate] htmlToJsx failed, using raw input:', err);
+    }
     return withSourceManipulation(code, (jsx) => {
       const bounds = findElementBoundsInJSX(jsx, selector);
       if (!bounds) {
         console.warn('[applyElementHtmlUpdate] No match for selector:', selector);
         return null;
       }
-      return jsx.substring(0, bounds.start) + newJsx + jsx.substring(bounds.end);
+      return jsx.substring(0, bounds.start) + safeJsx + jsx.substring(bounds.end);
     });
   }, []);
 

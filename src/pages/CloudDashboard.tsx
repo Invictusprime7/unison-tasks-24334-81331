@@ -706,6 +706,7 @@ function ContextRail({
     email: 'Review Integrations',
     integrations: 'Open Security',
     security: 'Open Profile',
+    'ai-usage': 'Open Profile',
     profile: 'Open Workspaces',
   };
 

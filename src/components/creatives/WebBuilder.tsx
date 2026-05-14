@@ -1553,8 +1553,6 @@ export default function App() {
     // "Expected corresponding JSX closing tag" / "Cannot assign to read only property 'message'".
     let safeJsx = newJsx;
     try {
-      // Lazy require to avoid import cycle issues during HMR
-      const { htmlToJsx } = require('@/utils/htmlToJsx') as typeof import('@/utils/htmlToJsx');
       safeJsx = htmlToJsx(newJsx);
     } catch (err) {
       console.warn('[applyElementHtmlUpdate] htmlToJsx failed, using raw input:', err);

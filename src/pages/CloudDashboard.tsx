@@ -1015,6 +1015,9 @@ export default function CloudDashboard() {
       case 'security':
         content = <CloudSecurity userId={user.id} />;
         break;
+      case 'ai-usage':
+        content = <CloudAIUsage userId={user.id} />;
+        break;
       case 'profile':
         content = <CloudProfile user={user} />;
         break;

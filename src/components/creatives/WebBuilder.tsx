@@ -234,19 +234,61 @@ function findElementBoundsInJSX(
   source: string,
   selector: string
 ): { start: number; end: number } | null {
-  // Parse the selector into segments: "body > section:nth-of-type(2) > div > h1"
-  const allParts = selector
-    .split(/\s*>\s*/)
+  if (!selector) return null;
+
+  // Selectors from the runtime can be comma-separated alternates,
+  // e.g. `[data-ut-binding-key="x"], [data-element-key="x"]`. Try each.
+  const alternates = splitTopLevelCommas(selector);
+  for (const alt of alternates) {
+    const result = findBoundsForSingleSelector(source, alt.trim());
+    if (result) return result;
+  }
+  return null;
+}
+
+function splitTopLevelCommas(input: string): string[] {
+  const out: string[] = [];
+  let buf = '';
+  let bracket = 0;
+  let paren = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (quote) {
+      if (ch === '\\') { buf += ch + (input[++i] ?? ''); continue; }
+      if (ch === quote) quote = null;
+      buf += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; buf += ch; continue; }
+    if (ch === '[') bracket++;
+    else if (ch === ']') bracket--;
+    else if (ch === '(') paren++;
+    else if (ch === ')') paren--;
+    if (ch === ',' && bracket === 0 && paren === 0) {
+      out.push(buf);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) out.push(buf);
+  return out;
+}
+
+function findBoundsForSingleSelector(
+  source: string,
+  selector: string
+): { start: number; end: number } | null {
+  // Parse the selector into segments. Split on `>` at top level only so
+  // attribute selectors like `[data-x="a > b"]` aren't broken.
+  const allParts = splitTopLevelCombinator(selector)
     .map(s => s.trim())
     .filter(s => s && s !== 'body' && s !== 'html');
 
   if (allParts.length === 0) return null;
 
   // Try the full path first; if no match, progressively drop leading segments.
-  // The runtime selector often includes outer wrappers (e.g. `div > div > main`)
-  // that don't appear in the TSX source root. By retrying with shorter
-  // suffixes we can still locate the target element when its inner path is
-  // unique within the source.
   for (let drop = 0; drop < allParts.length; drop++) {
     const result = findBoundsForParts(source, allParts.slice(drop));
     if (result) return result;
@@ -263,6 +305,55 @@ function findElementBoundsInJSX(
   return null;
 }
 
+function splitTopLevelCombinator(input: string): string[] {
+  const out: string[] = [];
+  let buf = '';
+  let bracket = 0;
+  let paren = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (quote) {
+      if (ch === '\\') { buf += ch + (input[++i] ?? ''); continue; }
+      if (ch === quote) quote = null;
+      buf += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; buf += ch; continue; }
+    if (ch === '[') bracket++;
+    else if (ch === ']') bracket--;
+    else if (ch === '(') paren++;
+    else if (ch === ')') paren--;
+    if (ch === '>' && bracket === 0 && paren === 0) {
+      out.push(buf);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) out.push(buf);
+  return out;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Parse leading `[name="value"]` / `[name=value]` / `[name]` selectors. */
+function parseAttributeSelectors(part: string): { attrs: Array<{ name: string; value: string | null }>; rest: string } {
+  const attrs: Array<{ name: string; value: string | null }> = [];
+  let rest = part;
+  const re = /\[([a-zA-Z_:][\w:.-]*)\s*(?:([~|^$*]?)=\s*(?:"([^"]*)"|'([^']*)'|([^\]]+)))?\]/;
+  while (true) {
+    const m = rest.match(re);
+    if (!m) break;
+    const value = m[3] ?? m[4] ?? m[5] ?? null;
+    attrs.push({ name: m[1], value: value !== null ? value.trim() : null });
+    rest = (rest.slice(0, m.index!) + rest.slice(m.index! + m[0].length)).trim();
+  }
+  return { attrs, rest };
+}
+
 function findBoundsForParts(
   source: string,
   parts: string[]
@@ -276,71 +367,103 @@ function findBoundsForParts(
     const part = parts[pi];
     const isLast = pi === parts.length - 1;
 
-    // Parse the part: tag, tag:nth-of-type(n), #id, tag.class
+    // Extract any [attr=...] selectors first
+    const { attrs, rest } = parseAttributeSelectors(part);
+
     let tagName = '';
     let nthIndex = 0; // 0-based
     let id = '';
 
-    const idMatch = part.match(/#([a-zA-Z0-9_-]+)/);
+    const idMatch = rest.match(/#([a-zA-Z0-9_-]+)/);
     if (idMatch) {
       id = idMatch[1];
-      tagName = part.split('#')[0] || '';
+      tagName = rest.split('#')[0] || '';
     }
 
-    const nthMatch = part.match(/:nth-of-type\((\d+)\)/);
+    const nthMatch = rest.match(/:nth-of-type\((\d+)\)/);
     if (nthMatch) {
-      nthIndex = parseInt(nthMatch[1], 10) - 1; // Convert 1-based to 0-based
-      tagName = part.split(':')[0] || '';
+      nthIndex = parseInt(nthMatch[1], 10) - 1;
+      tagName = rest.split(':')[0] || tagName;
     }
 
     if (!tagName && !id) {
-      // Plain tag or tag.class
-      tagName = part.split('.')[0].split(':')[0].split('[')[0];
+      tagName = rest.split('.')[0].split(':')[0].split('[')[0];
     }
 
-    if (!tagName && !id) return null;
+    // If we have neither tag/id nor any attribute selector, this part is unusable
+    if (!tagName && !id && attrs.length === 0) return null;
 
-    // Find the element
+    let start = -1;
+    let end = -1;
+    let foundTag = '';
+
     if (id) {
-      // Find by id attribute
-      const idPattern = new RegExp(`<(\\w+)\\b[^>]*\\bid=["'{]${id}["'}][^>]*>`, 'i');
+      const idPattern = new RegExp(`<(\\w+)\\b[^>]*\\bid=["'{]${escapeRegex(id)}["'}][^>]*>`, 'i');
       const idFound = idPattern.exec(searchSource);
       if (!idFound) return null;
-      const foundTag = idFound[1];
-      const start = baseOffset + idFound.index;
-      const end = findJSXClosingTag(source, start, foundTag);
-      if (end === -1) return null;
-      if (isLast) return { start, end };
-      // Narrow search to inside this element
-      searchSource = source.substring(start + idFound[0].length, end);
-      baseOffset = start + idFound[0].length;
+      foundTag = idFound[1];
+      start = baseOffset + idFound.index;
+      end = findJSXClosingTag(source, start, foundTag);
+    } else if (attrs.length > 0) {
+      // Match an opening tag carrying every required attribute.
+      // Optionally constrained by tagName.
+      const tagPart = tagName ? escapeRegex(tagName) : '[A-Za-z][\\w.-]*';
+      // Walk every opening tag and test attributes
+      const openRe = new RegExp(`<(${tagPart})\\b([^>]*)>`, 'gi');
+      let m: RegExpExecArray | null;
+      let count = 0;
+      while ((m = openRe.exec(searchSource)) !== null) {
+        const attrSegment = m[2] || '';
+        const allMatch = attrs.every(a => attrMatches(attrSegment, a.name, a.value));
+        if (!allMatch) continue;
+        if (nthMatch && count !== nthIndex) { count++; continue; }
+        foundTag = m[1];
+        start = baseOffset + m.index;
+        end = findJSXClosingTag(source, start, foundTag);
+        break;
+      }
+      if (start === -1) return null;
     } else {
-      // Find by tag name and nth-of-type index
-      const tagPattern = new RegExp(`<${tagName}\\b`, 'gi');
+      // tag + optional nth
+      const tagPattern = new RegExp(`<${escapeRegex(tagName)}\\b`, 'gi');
       let match: RegExpExecArray | null;
       let count = 0;
-      let found = false;
-
       while ((match = tagPattern.exec(searchSource)) !== null) {
         if (count === nthIndex) {
-          const start = baseOffset + match.index;
-          const end = findJSXClosingTag(source, start, tagName);
-          if (end === -1) return null;
-          if (isLast) return { start, end };
-          // Narrow search to inside this element
-          const openEnd = source.indexOf('>', start) + 1;
-          searchSource = source.substring(openEnd, end);
-          baseOffset = openEnd;
-          found = true;
+          start = baseOffset + match.index;
+          foundTag = tagName;
+          end = findJSXClosingTag(source, start, tagName);
           break;
         }
         count++;
       }
-      if (!found) return null;
+      if (start === -1) return null;
     }
+
+    if (end === -1) return null;
+    if (isLast) return { start, end };
+    const openEnd = source.indexOf('>', start) + 1;
+    searchSource = source.substring(openEnd, end);
+    baseOffset = openEnd;
   }
 
   return null;
+}
+
+function attrMatches(attrSegment: string, name: string, value: string | null): boolean {
+  // Match name="value" / name='value' / name={"value"} / name (boolean)
+  const re = new RegExp(`\\b${escapeRegex(name)}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|\\{\\s*['"\`]([^'"\`]*)['"\`]\\s*\\})`, 'i');
+  const m = attrSegment.match(re);
+  if (!m) {
+    if (value === null) {
+      // boolean attribute presence
+      return new RegExp(`\\b${escapeRegex(name)}\\b`, 'i').test(attrSegment);
+    }
+    return false;
+  }
+  if (value === null) return true;
+  const actual = m[1] ?? m[2] ?? m[3] ?? '';
+  return actual === value;
 }
 
 /**

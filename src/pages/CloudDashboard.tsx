@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
   ArrowLeft,
+  BarChart3,
   Building2,
   CheckCircle2,
   ChevronRight,
@@ -35,6 +36,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { listProjectsCompat } from '@/services/projectSchemaCompat';
 import {
+  CloudAIUsage,
   CloudAssets,
   CloudEmail,
   CloudIntegrations,
@@ -50,6 +52,7 @@ type CloudTab =
   | 'email'
   | 'integrations'
   | 'security'
+  | 'ai-usage'
   | 'profile';
 
 interface TabConfig {
@@ -165,6 +168,14 @@ const TABS: TabConfig[] = [
     description: 'Sessions, password, and account protection',
     gradient: 'from-lime-500 to-cyan-500',
     icon: Shield,
+  },
+  {
+    id: 'ai-usage',
+    label: 'AI Usage',
+    shortLabel: 'AI',
+    description: 'Unison Tasks AI request counts, model usage, error rates',
+    gradient: 'from-cyan-500 to-fuchsia-500',
+    icon: BarChart3,
   },
   {
     id: 'profile',
@@ -703,6 +714,7 @@ function ContextRail({
     email: 'Review Integrations',
     integrations: 'Open Security',
     security: 'Open Profile',
+    'ai-usage': 'Open Profile',
     profile: 'Open Workspaces',
   };
 
@@ -1002,6 +1014,9 @@ export default function CloudDashboard() {
         break;
       case 'security':
         content = <CloudSecurity userId={user.id} />;
+        break;
+      case 'ai-usage':
+        content = <CloudAIUsage userId={user.id} />;
         break;
       case 'profile':
         content = <CloudProfile user={user} />;

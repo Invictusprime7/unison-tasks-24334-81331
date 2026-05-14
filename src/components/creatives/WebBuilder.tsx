@@ -1427,15 +1427,17 @@ export default function App() {
       return { ok: true };
     }
     // 2. Scan VFS files for a matching selector
+    const ctx = snapshotCtxRef.current;
+    const activePath = ctx.activePagePath;
     try {
       const allFiles = virtualFS.getSandpackFiles();
       for (const [path, code] of Object.entries(allFiles)) {
         if (!path.endsWith('.tsx') && !path.endsWith('.jsx')) continue;
-        if (path === activePagePath) continue;
+        if (path === activePath) continue;
         const attempt = mutate(code);
         if (attempt && attempt !== code) {
           try {
-            pushAISnapshot(projectId ?? null, {
+            pushAISnapshot(ctx.projectId ?? null, {
               label: `${snapshotLabel} (${path.split('/').pop()})`,
               source: 'manual',
               before: { [path]: code },
@@ -1452,7 +1454,7 @@ export default function App() {
       console.warn('[applyMutatorAcrossVFS] VFS scan failed:', err);
     }
     return { ok: false, reason: next === previewCode ? 'no-change' : 'no-match' };
-  }, [previewCode, activePagePath, projectId, recordManualPageEdit]);
+  }, [previewCode, recordManualPageEdit]);
 
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);

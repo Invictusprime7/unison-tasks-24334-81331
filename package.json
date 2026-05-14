@@ -32,6 +32,7 @@
     "automation:dev": "concurrently \"npm run dev\" \"npm run inngest:dev\""
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.63",
     "@babel/standalone": "^7.28.4",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",
@@ -82,6 +83,7 @@
     "@types/dompurify": "^3.2.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vercel/analytics": "^1.6.1",
+    "ai": "^6.0.182",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

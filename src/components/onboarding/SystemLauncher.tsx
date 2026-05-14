@@ -363,7 +363,7 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
 const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
-const WIZARD_AI_TIMEOUT_MS = 75_000;
+const WIZARD_AI_TIMEOUT_MS = 150_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 
 function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {

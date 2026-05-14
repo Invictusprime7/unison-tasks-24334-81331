@@ -950,6 +950,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           },
         },
         design,
+        // Fully-resolved HSL token set (Style card → ThemePresetTokens). The
+        // edge-function fast-path consumes these so the AI's App.tsx inline
+        // styles stay in lockstep with the themed /src/index.css that the
+        // launcher force-applies post-generation. Without this, light-preset
+        // industries (salon/organic, restaurant/editorial, …) render dark.
+        theme_tokens: {
+          ...themedTokens.colors,
+          radius: themedTokens.radius,
+          headingFont: themedTokens.typography.headingFont,
+          bodyFont: themedTokens.typography.bodyFont,
+          headingWeight: themedTokens.typography.headingWeight,
+          bodyWeight: themedTokens.typography.bodyWeight,
+          isDark: parseInt(themedTokens.colors.background.split(' ')[2]) < 50,
+          presetId: resolvedPreset.id,
+          presetLabel: resolvedPreset.label,
+          styleDirective: resolvedPreset.styleDirective,
+        },
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
         // The Template card's section order — passed to the AI as a hard contract
         template_sections: composition.sections.map((s) => s.type),

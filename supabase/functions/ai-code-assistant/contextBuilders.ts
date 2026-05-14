@@ -183,6 +183,36 @@ type FastPathBuildContext = {
   };
   template_sections?: string[];
   intents?: Array<{ intent?: string }>;
+  /**
+   * Fully-resolved HSL token set from the wizard's Style card. When present,
+   * ALL CSS vars in the prompt derive from these values — never hardcoded.
+   * Without this, light-preset industries get a forced-dark App.tsx that
+   * clashes with the themed /src/index.css the launcher overwrites.
+   */
+  theme_tokens?: {
+    primary?: string;
+    primaryForeground?: string;
+    secondary?: string;
+    secondaryForeground?: string;
+    accent?: string;
+    accentForeground?: string;
+    background?: string;
+    foreground?: string;
+    muted?: string;
+    mutedForeground?: string;
+    card?: string;
+    cardForeground?: string;
+    border?: string;
+    radius?: string;
+    headingFont?: string;
+    bodyFont?: string;
+    headingWeight?: string;
+    bodyWeight?: string;
+    isDark?: boolean;
+    presetId?: string;
+    presetLabel?: string;
+    styleDirective?: string;
+  };
 };
 
 export function buildFastPathSystemPrompt(opts: {
@@ -197,16 +227,38 @@ export function buildFastPathSystemPrompt(opts: {
   const palette = bp?.brand?.palette || {};
   const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
   const intents = (bp?.intents || []).map((i) => i.intent).filter(Boolean).join(', ') || 'contact.submit, booking.create';
+  const t = bp?.theme_tokens || {};
 
   const toHsl = (hex: string | undefined, fallback: string): string => {
     if (!hex) return fallback;
     try { return hexToHsl(hex); } catch { return fallback; }
   };
-  const primaryHsl = toHsl(palette.primary, '221.2 83.2% 53.3%');
-  const secondaryHsl = toHsl(palette.secondary, '160 84.1% 39.4%');
-  const accentHsl = toHsl(palette.accent, '38 92.1% 50.2%');
-  const backgroundHsl = toHsl(palette.background, '222.2 84% 4.9%');
-  const foregroundHsl = toHsl(palette.foreground, '210 40% 98%');
+
+  // Prefer pre-resolved HSL tokens (Style card) → fall back to hex palette → final defaults.
+  const primaryHsl          = t.primary           ?? toHsl(palette.primary,    '221.2 83.2% 53.3%');
+  const primaryFgHsl        = t.primaryForeground ?? '210 40% 98%';
+  const secondaryHsl        = t.secondary         ?? toHsl(palette.secondary,  '160 84.1% 39.4%');
+  const secondaryFgHsl      = t.secondaryForeground ?? '210 40% 98%';
+  const accentHsl           = t.accent            ?? toHsl(palette.accent,     '38 92.1% 50.2%');
+  const accentFgHsl         = t.accentForeground  ?? '210 40% 98%';
+  const backgroundHsl       = t.background        ?? toHsl(palette.background, '222.2 84% 4.9%');
+  const foregroundHsl       = t.foreground        ?? toHsl(palette.foreground, '210 40% 98%');
+  const mutedHsl            = t.muted             ?? '217.2 32.6% 17.5%';
+  const mutedFgHsl          = t.mutedForeground   ?? '215 20.2% 65.1%';
+  const borderHsl           = t.border            ?? '217.2 32.6% 17.5%';
+  const cardHsl             = t.card              ?? backgroundHsl;
+  const cardFgHsl           = t.cardForeground    ?? foregroundHsl;
+  const radius              = t.radius            ?? '0.75rem';
+
+  // Lightness-aware theme mode. Falls back to parsing the background HSL.
+  const bgLightness = parseInt(String(backgroundHsl).split(' ')[2] ?? '50');
+  const isDark = typeof t.isDark === 'boolean' ? t.isDark : (Number.isFinite(bgLightness) ? bgLightness < 50 : true);
+  const themeMode = isDark ? 'DARK' : 'LIGHT';
+  const styleLabel = t.presetLabel || 'Modern';
+  const styleDirective = t.styleDirective || '';
+  const headingFont = t.headingFont || 'Inter';
+  const bodyFont    = t.bodyFont    || 'Inter';
+  const headingWeight = t.headingWeight || '700';
 
   return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
 
@@ -215,29 +267,34 @@ TONE: ${tone}
 SECTIONS: ${sections.join(' → ')}
 INTENTS TO WIRE: ${intents}
 
-BRAND COLORS — HSL values for CSS custom properties (no hsl() wrapper, just the values):
+VISUAL STYLE — LOCKED to the wizard's "${styleLabel}" preset (${themeMode} theme).
+${styleDirective ? `Style directive: ${styleDirective}` : ''}
+Typography: headings ${headingFont} (${headingWeight}); body ${bodyFont}.
+
+BRAND TOKENS — HSL values for CSS custom properties (no hsl() wrapper, just the values).
+These are the AUTHORITATIVE palette. Do NOT invent darker/lighter alternatives.
 --primary: ${primaryHsl}
---primary-foreground: 210 40% 98%
+--primary-foreground: ${primaryFgHsl}
 --secondary: ${secondaryHsl}
---secondary-foreground: 210 40% 98%
+--secondary-foreground: ${secondaryFgHsl}
 --accent: ${accentHsl}
---accent-foreground: 210 40% 98%
+--accent-foreground: ${accentFgHsl}
 --background: ${backgroundHsl}
 --foreground: ${foregroundHsl}
---muted: 217.2 32.6% 17.5%
---muted-foreground: 215 20.2% 65.1%
---border: 217.2 32.6% 17.5%
---card: 222.2 84% 4.9%
---card-foreground: 210 40% 98%
---ring: 224.3 76.3% 48%
---radius: 0.75rem
+--muted: ${mutedHsl}
+--muted-foreground: ${mutedFgHsl}
+--border: ${borderHsl}
+--card: ${cardHsl}
+--card-foreground: ${cardFgHsl}
+--ring: ${primaryHsl}
+--radius: ${radius}
 
 RULES:
 1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
 2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
 3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
-4. In App.tsx use Tailwind classes with semantic tokens: bg-primary, text-foreground, bg-muted, etc.
-5. For custom colors reference CSS vars: style={{ color: 'hsl(var(--primary))' }}
+4. Use Tailwind semantic tokens whenever possible: bg-primary, text-foreground, bg-card, border-border, text-muted-foreground. NEVER hardcode hex colors or Tailwind palette colors (bg-slate-900, text-white, bg-zinc-800, etc.) — those will fight the wizard theme.
+5. For custom color expressions reference CSS vars: style={{ color: 'hsl(var(--primary))' }}, style={{ background: 'hsl(var(--card) / 0.8)' }}.
 6. Wire ALL interactive buttons with data-ut-intent attributes. EVERY button/CTA must have one:
    - Contact/form buttons: data-ut-intent="contact.submit"
    - Booking/appointment buttons: data-ut-intent="booking.create"
@@ -249,7 +306,6 @@ RULES:
    - Learn more: data-ut-intent="nav.anchor" href="#about"
    - Phone/call: <a href="tel:..." data-ut-intent="contact.call">
    - Email: <a href="mailto:..." data-ut-intent="contact.email">
-   Example: <button data-ut-intent="booking.create" className="...">Book Now</button>
    Forms should use: <form data-ut-intent="contact.submit">
 7. Navigation anchor links: <a href="#sectionId" data-ut-intent="nav.anchor">
 8. Images: use ONLY these VERIFIED Unsplash URLs (they are guaranteed to load):
@@ -264,14 +320,16 @@ RULES:
    - Contractor: "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80"
    - Agency: "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80"
    - Coaching: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&q=80"
-   PEOPLE (for testimonials, team): "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80", "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80"
+   PEOPLE (testimonials/team): "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80", "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80"
    NEVER construct URLs with template literals or arithmetic. Always use plain static strings.
-9. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above
-10. MINIMUM 7 distinct sections, each with rich content
-11. Dark theme, premium glassmorphism + gradient effects, responsive (sm:/md:/lg:)
-12. export default function App() — must be the default export
-13. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object
-14. CONTRAST RULE: --foreground MUST be visually distinct from --background. If background is dark (lightness < 30%), foreground MUST be light (lightness > 80%). If background is light (lightness > 70%), foreground MUST be dark (lightness < 25%). Same rule applies to --card vs --card-foreground, --primary vs --primary-foreground. NEVER make text invisible.
+9. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above (the launcher will replace this file with its themed version, but emit it for completeness).
+10. MINIMUM 7 distinct sections, each with rich content.
+11. THEME-MODE-AWARE STYLING: this is a ${themeMode} theme. ${isDark
+    ? 'Use deeper backgrounds with subtle glassmorphism (hsl(var(--card) / 0.6) + backdrop-blur), bright accents, and high-contrast light text.'
+    : 'Use light/cream backgrounds, soft shadows, refined serif/clean sans typography, generous whitespace, and dark text on light surfaces. NO dark glassmorphism overlays. NO black panels.'} Responsive (sm:/md:/lg:).
+12. export default function App() — must be the default export.
+13. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object.
+14. CONTRAST RULE: the supplied --foreground / --primary-foreground / --card-foreground tokens are already chosen for legibility against their paired surface. Use them as-is. Never add inline white-on-white or black-on-black combos.
 15. LUCIDE ICONS — only use these VERIFIED icon names: Menu, X, ChevronDown, ChevronRight, ChevronLeft, ArrowRight, ArrowLeft, Star, Heart, Phone, Mail, MapPin, Clock, Calendar, Check, CheckCircle, CheckCircle2, Circle, Plus, Minus, Search, Settings, User, Users, Home, Building, Briefcase, Award, Shield, Zap, Sparkles, Sun, Moon, Eye, Camera, Image, Play, Pause, Volume2, MessageCircle, MessageSquare, Send, Share2, ExternalLink, Download, Upload, RefreshCw, RotateCw, Trash2, Edit, Copy, Bookmark, Flag, Bell, Lock, Unlock, Key, Globe, Wifi, Database, Server, Code, Terminal, GitBranch, Package, Layers, Layout, Grid, List, Filter, BarChart3, TrendingUp, DollarSign, CreditCard, ShoppingCart, ShoppingBag, Truck, Gift, Coffee, Utensils, Scissors, Palette, PenTool, Ruler, Wrench, Hammer, Stethoscope, GraduationCap, BookOpen, Lightbulb, Target, Rocket, Crown, Gem, Flame, Leaf, Droplets, Mountain, Waves, Music, Video, Pin, Radio, AtSign, CloudRain, Rss, Slack, Twitch, Dribbble, Figma, Chrome, Instagram, Facebook, Twitter, Linkedin, Youtube, Github
    EXACT BRAND EXPORT CASING: use Github (NOT GitHub), Linkedin (NOT LinkedIn), Youtube (NOT YouTube), and Twitter for X/Twitter. Lowercase icon names like facebook or github are invalid imports.
    SOCIAL MEDIA SUBSTITUTIONS (these do NOT exist in lucide-react — use the substitute): GitHub→Github, LinkedIn→Linkedin, YouTube→Youtube, TikTok→Music, Pinterest→Pin, Snapchat→Camera, WhatsApp→MessageCircle, Telegram→Send, Discord→MessageSquare, Reddit→MessageCircle, Spotify→Music, Threads→AtSign, Signal→Radio, Vimeo→Video, Behance→Palette, Medium→BookOpen.

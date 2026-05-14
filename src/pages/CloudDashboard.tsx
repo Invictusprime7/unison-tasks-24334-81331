@@ -36,6 +36,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { listProjectsCompat } from '@/services/projectSchemaCompat';
 import {
+  CloudAIUsage,
   CloudAssets,
   CloudEmail,
   CloudIntegrations,
@@ -51,6 +52,7 @@ type CloudTab =
   | 'email'
   | 'integrations'
   | 'security'
+  | 'ai-usage'
   | 'profile';
 
 interface TabConfig {

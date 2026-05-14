@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
   ArrowLeft,
+  BarChart3,
   Building2,
   CheckCircle2,
   ChevronRight,

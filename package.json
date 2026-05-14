@@ -32,6 +32,7 @@
     "automation:dev": "concurrently \"npm run dev\" \"npm run inngest:dev\""
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.63",
     "@babel/standalone": "^7.28.4",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",

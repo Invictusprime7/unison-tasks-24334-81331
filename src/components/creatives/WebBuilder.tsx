@@ -48,6 +48,7 @@ import { IntentDirectoryPanel } from "./web-builder/IntentDirectoryPanel";
 import { AutomationStatsPanel } from "./web-builder/AutomationStatsPanel";
 import { WorkflowListPanel } from "./web-builder/WorkflowListPanel";
 import { ProjectsPanel } from "./web-builder/ProjectsPanel";
+import { htmlToJsx } from "@/utils/htmlToJsx";
 import { LayoutTemplatesPanel } from "./web-builder/LayoutTemplatesPanel";
 import { FloatingDock } from "./web-builder/FloatingDock";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";

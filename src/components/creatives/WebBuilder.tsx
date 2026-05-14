@@ -1529,12 +1529,13 @@ export default function App() {
       toast.error('Could not delete element. Try selecting a different element.');
       return;
     }
+    recordManualPageEdit('Manual · delete element', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
     setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Element deleted');
-  }, [previewCode, applyElementDelete, clearLivePreviewSelection, setSelectedHTMLElement]);
+  }, [previewCode, applyElementDelete, clearLivePreviewSelection, setSelectedHTMLElement, recordManualPageEdit]);
 
   // Handle duplicate from floating toolbar - updates source code
   const handleFloatingDuplicate = useCallback((selector: string) => {
@@ -1543,11 +1544,12 @@ export default function App() {
       toast.error('Could not duplicate element. Try selecting a different element.');
       return;
     }
+    recordManualPageEdit('Manual · duplicate element', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
     clearLivePreviewSelection();
     toast.success('Element duplicated');
-  }, [previewCode, applyElementDuplicate, clearLivePreviewSelection]);
+  }, [previewCode, applyElementDuplicate, clearLivePreviewSelection, recordManualPageEdit]);
 
   // Handle move up - swap element with its previous sibling in TSX source
   const handleFloatingMoveUp = useCallback((selector: string) => {
@@ -1572,11 +1574,12 @@ export default function App() {
       toast.info('Already at the top');
       return;
     }
+    recordManualPageEdit('Manual · move element up', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
     clearLivePreviewSelection();
     toast.success('Moved up');
-  }, [previewCode, clearLivePreviewSelection]);
+  }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
 
   // Handle move down - swap element with its next sibling in TSX source
   const handleFloatingMoveDown = useCallback((selector: string) => {
@@ -1601,11 +1604,12 @@ export default function App() {
       toast.info('Already at the bottom');
       return;
     }
+    recordManualPageEdit('Manual · move element down', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
     clearLivePreviewSelection();
     toast.success('Moved down');
-  }, [previewCode, clearLivePreviewSelection]);
+  }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
 
   // ── Layout-Intent Fast Path bridge for AIBuilderPanel ────────────────────
   // Bundles the deterministic layout-op handlers (selection-aware class edits,

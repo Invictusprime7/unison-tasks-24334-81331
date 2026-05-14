@@ -7054,19 +7054,37 @@ export default function ${componentName}() {
               systemsBuildContext={systemsBuildContextFromState}
               readiness={selectedElementReadiness}
               onAIEditComplete={async (selector, newHtml) => {
-                const res = applyElementHtmlUpdate(previewCode, selector, newHtml);
-                if (res.ok) {
-                    importBuilderFiles(templateToVFSFiles(res.code, currentTemplateName || 'Element Edit'), {
-                      preferredPath: activePagePath,
-                      entryPoint: activePagePath,
-                    });
-                    setSelectedHTMLElement(null);
-                    toast.success('Element updated by AI');
-                    return true;
-                } else {
-                  toast.error('AI edit could not be applied — element not found');
-                  return false;
+                // 1. Try the active page first.
+                const primary = applyElementHtmlUpdate(previewCode, selector, newHtml);
+                if (primary.ok) {
+                  importBuilderFiles(templateToVFSFiles(primary.code, currentTemplateName || 'Element Edit'), {
+                    preferredPath: activePagePath,
+                    entryPoint: activePagePath,
+                  });
+                  setSelectedHTMLElement(null);
+                  toast.success('Element updated by AI');
+                  return true;
                 }
+                // 2. Element likely lives in an imported component file — scan VFS.
+                try {
+                  const allFiles = virtualFS.getSandpackFiles();
+                  for (const [path, code] of Object.entries(allFiles)) {
+                    if (!path.endsWith('.tsx') && !path.endsWith('.jsx')) continue;
+                    if (path === activePagePath) continue;
+                    const attempt = applyElementHtmlUpdate(code, selector, newHtml);
+                    if (attempt.ok) {
+                      virtualFS.importFiles({ [path]: attempt.code });
+                      setSelectedHTMLElement(null);
+                      toast.success(`Element updated by AI in ${path.split('/').pop()}`);
+                      return true;
+                    }
+                  }
+                } catch (err) {
+                  console.warn('[onAIEditComplete] VFS-wide scan failed:', err);
+                }
+                console.warn('[onAIEditComplete] selector not found in any VFS file:', selector);
+                toast.error('AI edit could not be applied — element not found');
+                return false;
               }}
             />
           </div>

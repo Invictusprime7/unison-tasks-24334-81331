@@ -1546,6 +1546,16 @@ export default function App() {
     const next = mutate(previewCode);
     if (next && next !== previewCode) {
       recordManualPageEdit(snapshotLabel, previewCode, next);
+      // Write directly to VFS so the Sandpack preview HMRs in real time
+      // instead of waiting for Effect A (previewCode → VFS) to flush.
+      try {
+        const activePath = snapshotCtxRef.current.activePagePath;
+        if (activePath && (activePath.endsWith('.tsx') || activePath.endsWith('.jsx'))) {
+          virtualFS.importFiles({ [activePath]: next });
+        }
+      } catch (err) {
+        console.warn('[applyMutatorAcrossVFS] direct VFS write failed:', err);
+      }
       onActivePageSuccess(next);
       return { ok: true };
     }

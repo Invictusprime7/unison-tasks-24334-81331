@@ -1432,6 +1432,7 @@ export default function App() {
     console.log('[WebBuilder] handleFloatingTextUpdate called:', selector, text);
     const next = mutateJSXText(previewCode, selector, text, findElementBoundsInJSX);
     if (next && next !== previewCode) {
+      recordManualPageEdit(`Manual · text "${text.slice(0, 30)}"`, previewCode, next);
       setPreviewCode(next);
       setEditorCode(next);
       if (selectedHTMLElement?.selector === selector) {
@@ -1440,12 +1441,13 @@ export default function App() {
     } else if (!next) {
       toast.error('Could not update text — element contains nested markup. Try the AI edit instead.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
 
   const handleFloatingImageReplace = useCallback((selector: string, src: string) => {
     console.log('[WebBuilder] handleFloatingImageReplace called:', selector, src.substring(0, 50));
     const next = mutateJSXImageSrc(previewCode, selector, src, findElementBoundsInJSX);
     if (next && next !== previewCode) {
+      recordManualPageEdit('Manual · replace image', previewCode, next);
       setPreviewCode(next);
       setEditorCode(next);
       if (selectedHTMLElement?.selector === selector) {
@@ -1457,12 +1459,13 @@ export default function App() {
     } else if (!next) {
       toast.error('Could not replace image. Try selecting the <img> directly.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
 
   const handleFloatingAttributeUpdate = useCallback((selector: string, attributes: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingAttributeUpdate called:', selector, attributes);
     const next = mutateJSXAttributes(previewCode, selector, attributes, findElementBoundsInJSX);
     if (next && next !== previewCode) {
+      recordManualPageEdit(`Manual · attrs ${Object.keys(attributes).join(', ').slice(0, 40)}`, previewCode, next);
       setPreviewCode(next);
       setEditorCode(next);
       if (selectedHTMLElement?.selector === selector) {
@@ -1477,7 +1480,7 @@ export default function App() {
     } else if (!next) {
       toast.error('Could not update attributes for the selected element.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
 
 
   const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {

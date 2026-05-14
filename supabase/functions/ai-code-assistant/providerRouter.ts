@@ -32,8 +32,11 @@ export interface GatewayOverrides {
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // Current OpenAI models routed through the Lovable AI Gateway.
-  // Gateway only accepts gpt-5* family + Gemini; gpt-4o* are no longer valid.
+  // Lovable AI Gateway models. Gemini Flash is much faster than GPT-5
+  // (which uses heavy reasoning + frequently times out at 50s).
+  geminiFlash: { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
+  geminiFlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  geminiPro: { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
   gpt4oMini: { id: "openai/gpt-5-mini", label: "GPT-5 Mini" },
   gpt4o: { id: "openai/gpt-5", label: "GPT-5" },
 } as const;
@@ -59,11 +62,10 @@ function applyComplexityUpgrade(
   }
 
   if (complexity === "advanced") {
-    // Advanced: lead with FAST models so we always get a response within budget,
-    // then escalate to Pro tiers as fallback. Previously Pro models were first
-    // and consumed the entire 135s budget on long prompts before fast models ran.
+    // Advanced: lead with FAST Gemini, then GPT-5 family as fallback.
     const advancedTokens = Math.min(baseMaxTokens + 8000, 48000);
     const advancedModels: ModelSpec[] = [
+      m(MODELS.geminiFlash, advancedTokens),
       m(MODELS.gpt4oMini, advancedTokens),
       m(MODELS.gpt4o, advancedTokens),
     ];
@@ -71,12 +73,12 @@ function applyComplexityUpgrade(
   }
 
   // Complex: append Pro-tier as fallback (don't prepend — fast models first)
-  const hasGpt4o = models.some(mm => mm.id === MODELS.gpt4o.id);
-  if (!hasGpt4o) {
+  const hasPro = models.some(mm => mm.id === MODELS.geminiPro.id || mm.id === MODELS.gpt4o.id);
+  if (!hasPro) {
     const complexTokens = Math.min(baseMaxTokens + 4000, 40000);
     const upgraded: ModelSpec[] = [
       ...models,
-      m(MODELS.gpt4o, complexTokens),
+      m(MODELS.geminiPro, complexTokens),
     ];
     return { models: upgraded, timeoutBoostMs: 5000 };
   }
@@ -113,10 +115,11 @@ export function buildProviderPlan(
     case "wizard_template_react":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 16000),
           m(MODELS.gpt4oMini, 16000),
           m(MODELS.gpt4o, 16000),
         ],
-        perModelTimeoutMs: 55000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 16000,
       };
       break;
@@ -125,8 +128,9 @@ export function buildProviderPlan(
     case "nav_page_generation":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlashLite, 12000),
+          m(MODELS.geminiFlash, 12000),
           m(MODELS.gpt4oMini, 12000),
-          m(MODELS.gpt4o, 12000),
         ],
         perModelTimeoutMs: 30000,
         fallbackMaxTokens: 10000,
@@ -136,10 +140,11 @@ export function buildProviderPlan(
     case "single_file_edit":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 24000),
           m(MODELS.gpt4oMini, 24000),
           m(MODELS.gpt4o, 24000),
         ],
-        perModelTimeoutMs: 45000,
+        perModelTimeoutMs: 40000,
         fallbackMaxTokens: 24000,
       };
       break;
@@ -148,6 +153,7 @@ export function buildProviderPlan(
     case "debug_fix":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
@@ -160,10 +166,11 @@ export function buildProviderPlan(
     case "surgical_edit":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
-        perModelTimeoutMs: 50000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
       };
       break;
@@ -174,6 +181,7 @@ export function buildProviderPlan(
     case "launch_desk":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],

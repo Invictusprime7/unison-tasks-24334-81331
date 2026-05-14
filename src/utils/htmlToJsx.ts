@@ -233,3 +233,63 @@ export function htmlToJsx(input: string): string {
   void looksLikeHtml;
   return out;
 }
+
+/**
+ * Extract <style>…</style> blocks and return cleaned body + concatenated CSS.
+ */
+function extractStyleBlocks(html: string): { body: string; css: string } {
+  const blocks: string[] = [];
+  const body = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, css) => {
+    blocks.push(String(css).trim());
+    return '';
+  });
+  return { body, css: blocks.join('\n\n').trim() };
+}
+
+/**
+ * Strip wrapping <!DOCTYPE>, <html>, <head>, <body> so we keep only renderable
+ * children. Safe to call on plain fragments — returns input unchanged.
+ */
+function unwrapHtmlDocument(html: string): string {
+  let out = html.replace(/<!DOCTYPE[^>]*>/gi, '');
+  // Remove <head>…</head> entirely (after style blocks have been pulled out)
+  out = out.replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '');
+  // Pull <body>…</body> contents if present
+  const bodyMatch = out.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch) out = bodyMatch[1];
+  // Drop stray <html> wrappers
+  out = out.replace(/<\/?html[^>]*>/gi, '');
+  return out.trim();
+}
+
+/**
+ * Convert an HTML document (or fragment) into the source of a React component.
+ * Returns just the component source string.
+ */
+export function htmlDocToReactComponent(html: string, componentName = 'App'): string {
+  const { body } = extractStyleBlocks(html || '');
+  const fragment = unwrapHtmlDocument(body);
+  const jsx = htmlToJsx(fragment) || '<div />';
+  // Wrap multiple top-level nodes in a fragment
+  const needsFragment = /^\s*<[^>]+>[\s\S]*<\/[^>]+>\s*<[^>]+>/.test(jsx);
+  const body2 = needsFragment ? `<>${jsx}</>` : jsx;
+  return `export default function ${componentName}() {\n  return (\n    ${body2}\n  );\n}\n`;
+}
+
+/**
+ * Same as `htmlDocToReactComponent`, but also returns extracted CSS so the
+ * caller can write it to a separate stylesheet (e.g. /src/template.css).
+ */
+export function htmlDocToReactComponentWithCSS(
+  html: string,
+  componentName = 'App',
+): { code: string; css: string } {
+  const { body, css } = extractStyleBlocks(html || '');
+  const fragment = unwrapHtmlDocument(body);
+  const jsx = htmlToJsx(fragment) || '<div />';
+  const needsFragment = /^\s*<[^>]+>[\s\S]*<\/[^>]+>\s*<[^>]+>/.test(jsx);
+  const body2 = needsFragment ? `<>${jsx}</>` : jsx;
+  const importCss = css ? `import './template.css';\n\n` : '';
+  const code = `${importCss}export default function ${componentName}() {\n  return (\n    ${body2}\n  );\n}\n`;
+  return { code, css };
+}

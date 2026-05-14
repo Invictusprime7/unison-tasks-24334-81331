@@ -297,6 +297,51 @@ export type Database = {
           },
         ]
       }
+      ai_request_logs: {
+        Row: {
+          completion_tokens: number | null
+          created_at: string
+          error_message: string | null
+          id: string
+          latency_ms: number | null
+          model: string
+          prompt_tokens: number | null
+          provider: string
+          status_code: number | null
+          success: boolean
+          total_tokens: number | null
+          user_id: string | null
+        }
+        Insert: {
+          completion_tokens?: number | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          latency_ms?: number | null
+          model: string
+          prompt_tokens?: number | null
+          provider: string
+          status_code?: number | null
+          success?: boolean
+          total_tokens?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          completion_tokens?: number | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          latency_ms?: number | null
+          model?: string
+          prompt_tokens?: number | null
+          provider?: string
+          status_code?: number | null
+          success?: boolean
+          total_tokens?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       ai_runs: {
         Row: {
           business_id: string
@@ -3211,6 +3256,27 @@ export type Database = {
           },
         ]
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_subscriptions: {
         Row: {
           ai_generations_reset_at: string | null
@@ -3324,6 +3390,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       increment_pattern_usage: {
         Args: { pattern_id: string }
         Returns: undefined
@@ -3349,6 +3422,7 @@ export type Database = {
         | "cancelled"
       agent_tier: "free" | "pro" | "enterprise" | "system"
       agent_ui_kind: "hidden" | "widget" | "modal" | "inline"
+      app_role: "admin" | "user"
       blend_mode:
         | "normal"
         | "multiply"
@@ -3501,6 +3575,7 @@ export const Constants = {
       ],
       agent_tier: ["free", "pro", "enterprise", "system"],
       agent_ui_kind: ["hidden", "widget", "modal", "inline"],
+      app_role: ["admin", "user"],
       blend_mode: [
         "normal",
         "multiply",

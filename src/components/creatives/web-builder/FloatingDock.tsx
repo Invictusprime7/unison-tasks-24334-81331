@@ -160,36 +160,39 @@ export const FloatingDock = ({
           </div>
 
           {/* Panel Content */}
-          <ScrollArea className="h-[calc(70vh-48px)] bg-[#0a0a12]">
-            {activePanel === "templates" && (
-              <LayoutTemplatesPanel 
-                onSelectTemplate={onSelectTemplate}
-                onDemoTemplate={onDemoTemplate}
-                previewDevice={previewDevice}
-                previewWidth={DEVICE_WIDTHS[previewDevice]}
-              />
-            )}
-            {activePanel === "layouts" && (
-              <SectionLayoutPicker
-                currentCode={currentCode}
-                onSwapSection={onSwapSection || (() => {})}
-              />
-            )}
-            {activePanel === "projects" && (
-              <ProjectsPanel
-                onLoadTemplate={onLoadTemplate}
-                onSaveTemplate={onSaveTemplate}
-                currentCode={currentCode}
-              />
-            )}
-            {activePanel === "cloud" && (
+          {activePanel === "cloud" ? (
+            <div className="h-[calc(80vh-48px)] bg-[#0a0a12]">
               <CloudPanel
                 businessId={cloudState.business.id}
                 businessName={cloudState.business.name}
                 onNavigateToCloud={onNavigateToCloud}
               />
-            )}
-          </ScrollArea>
+            </div>
+          ) : (
+            <ScrollArea className="h-[calc(70vh-48px)] bg-[#0a0a12]">
+              {activePanel === "templates" && (
+                <LayoutTemplatesPanel
+                  onSelectTemplate={onSelectTemplate}
+                  onDemoTemplate={onDemoTemplate}
+                  previewDevice={previewDevice}
+                  previewWidth={DEVICE_WIDTHS[previewDevice]}
+                />
+              )}
+              {activePanel === "layouts" && (
+                <SectionLayoutPicker
+                  currentCode={currentCode}
+                  onSwapSection={onSwapSection || (() => {})}
+                />
+              )}
+              {activePanel === "projects" && (
+                <ProjectsPanel
+                  onLoadTemplate={onLoadTemplate}
+                  onSaveTemplate={onSaveTemplate}
+                  currentCode={currentCode}
+                />
+              )}
+            </ScrollArea>
+          )}
         </div>
       )}
     </div>

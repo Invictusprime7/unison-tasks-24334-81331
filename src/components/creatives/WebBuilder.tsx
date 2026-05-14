@@ -1622,6 +1622,7 @@ export default function App() {
     getPreviewCode: () => previewCode,
     applyLayoutCode: (nextCode: string, summary: string) => {
       if (!nextCode || nextCode === previewCode) return false;
+      recordManualPageEdit(`Layout · ${summary}`, previewCode, nextCode);
       setPreviewCode(nextCode);
       setEditorCode(nextCode);
       toast.success(summary);

@@ -1372,11 +1372,14 @@ export default function App() {
 
   // Record a manual edit snapshot for the active page so the History menu can
   // revert/reapply granular toolbar changes alongside AI edits.
+  // Refs avoid TDZ on projectId/activePagePath which are declared later in the component.
+  const snapshotCtxRef = useRef<{ projectId?: string; activePagePath?: string }>({});
   const recordManualPageEdit = useCallback((label: string, beforeCode: string, afterCode: string) => {
     if (!afterCode || beforeCode === afterCode) return;
-    const path = activePagePath || '/src/App.tsx';
+    const ctx = snapshotCtxRef.current;
+    const path = ctx.activePagePath || '/src/App.tsx';
     try {
-      pushAISnapshot(projectId ?? null, {
+      pushAISnapshot(ctx.projectId ?? null, {
         label,
         source: 'manual',
         before: { [path]: beforeCode },
@@ -1387,13 +1390,13 @@ export default function App() {
     } catch (err) {
       console.warn('[recordManualPageEdit] snapshot failed:', err);
     }
-  }, [activePagePath, projectId]);
+  }, []);
 
   const recordManualVFSEdit = useCallback((label: string, beforeFiles: Record<string, string>, afterFiles: Record<string, string>, origin = 'floating-toolbar') => {
     const changed = diffChangedPaths(beforeFiles, afterFiles);
     if (!changed.length) return;
     try {
-      pushAISnapshot(projectId ?? null, {
+      pushAISnapshot(snapshotCtxRef.current.projectId ?? null, {
         label,
         source: 'manual',
         before: beforeFiles,
@@ -1404,7 +1407,7 @@ export default function App() {
     } catch (err) {
       console.warn('[recordManualVFSEdit] snapshot failed:', err);
     }
-  }, [projectId]);
+  }, []);
 
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);

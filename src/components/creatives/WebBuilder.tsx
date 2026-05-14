@@ -1766,6 +1766,8 @@ export default function App() {
 
   // Get full cloud context from location state (from CloudProjects or System Launcher)
   const projectId = effectiveRouteState?.projectId;
+  // Keep snapshot context ref in sync for manual-edit history recording
+  snapshotCtxRef.current = { projectId, activePagePath };
   const systemType = effectiveRouteState?.systemType;
   const systemName = effectiveRouteState?.systemName;
   const businessId = effectiveRouteState?.businessId;

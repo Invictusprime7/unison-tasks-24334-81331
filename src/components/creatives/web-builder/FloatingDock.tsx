@@ -110,7 +110,10 @@ export const FloatingDock = ({
 
       {/* Expandable Panel - positioned absolutely below the dock */}
       {activePanel && (
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50 w-[520px] max-h-[70vh] bg-[#0a0a12] rounded-xl shadow-[0_0_30px_rgba(0,255,255,0.2)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className={cn(
+          "absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50 max-h-[80vh] bg-[#0a0a12] rounded-xl shadow-[0_0_30px_rgba(0,255,255,0.2)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200",
+          activePanel === "cloud" ? "w-[860px]" : "w-[520px]"
+        )}>
           {/* Panel Header with Device Toggle */}
           <div className="flex items-center justify-between px-4 py-2.5 bg-[#0d0d18]">
             <span className="text-sm font-bold text-cyan-400 drop-shadow-[0_0_5px_rgba(0,255,255,0.5)]">

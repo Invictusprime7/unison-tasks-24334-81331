@@ -116,10 +116,11 @@ export function buildProviderPlan(
     case "wizard_template_react":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 16000),
           m(MODELS.gpt4oMini, 16000),
           m(MODELS.gpt4o, 16000),
         ],
-        perModelTimeoutMs: 55000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 16000,
       };
       break;
@@ -128,8 +129,9 @@ export function buildProviderPlan(
     case "nav_page_generation":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlashLite, 12000),
+          m(MODELS.geminiFlash, 12000),
           m(MODELS.gpt4oMini, 12000),
-          m(MODELS.gpt4o, 12000),
         ],
         perModelTimeoutMs: 30000,
         fallbackMaxTokens: 10000,
@@ -139,10 +141,11 @@ export function buildProviderPlan(
     case "single_file_edit":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 24000),
           m(MODELS.gpt4oMini, 24000),
           m(MODELS.gpt4o, 24000),
         ],
-        perModelTimeoutMs: 45000,
+        perModelTimeoutMs: 40000,
         fallbackMaxTokens: 24000,
       };
       break;
@@ -151,6 +154,7 @@ export function buildProviderPlan(
     case "debug_fix":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
@@ -163,10 +167,11 @@ export function buildProviderPlan(
     case "surgical_edit":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
-        perModelTimeoutMs: 50000,
+        perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
       };
       break;
@@ -177,6 +182,7 @@ export function buildProviderPlan(
     case "launch_desk":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlash, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],

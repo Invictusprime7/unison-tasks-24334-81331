@@ -7,7 +7,7 @@ const openai = createOpenAI({
 });
 
 const result = streamText({
-  model: openai('openai/gpt-5.5'),
+  model: openai.chat('openai/gpt-5.5'),
   prompt: 'Explain quantum computing in simple terms.',
 });
 

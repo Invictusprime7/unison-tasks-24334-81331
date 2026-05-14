@@ -170,6 +170,14 @@ const TABS: TabConfig[] = [
     icon: Shield,
   },
   {
+    id: 'ai-usage',
+    label: 'AI Usage',
+    shortLabel: 'AI',
+    description: 'Unison Tasks AI request counts, model usage, error rates',
+    gradient: 'from-cyan-500 to-fuchsia-500',
+    icon: BarChart3,
+  },
+  {
     id: 'profile',
     label: 'Profile',
     shortLabel: 'Profile',

@@ -7108,6 +7108,16 @@ export default function ${componentName}() {
                 // 1. Try the active page first.
                 const primary = applyElementHtmlUpdate(previewCode, selector, newHtml);
                 if (primary.ok) {
+                  try {
+                    pushAISnapshot(projectId ?? null, {
+                      label: `AI · element edit ${selector.slice(0, 40)}`,
+                      source: 'ai',
+                      before: { [activePagePath]: previewCode },
+                      after: { [activePagePath]: primary.code },
+                      changedPaths: [activePagePath],
+                      meta: { origin: 'floating-toolbar-ai', actionType: 'element-edit' },
+                    });
+                  } catch (err) { console.warn('[onAIEditComplete] snapshot failed:', err); }
                   importBuilderFiles(templateToVFSFiles(primary.code, currentTemplateName || 'Element Edit'), {
                     preferredPath: activePagePath,
                     entryPoint: activePagePath,
@@ -7124,6 +7134,16 @@ export default function ${componentName}() {
                     if (path === activePagePath) continue;
                     const attempt = applyElementHtmlUpdate(code, selector, newHtml);
                     if (attempt.ok) {
+                      try {
+                        pushAISnapshot(projectId ?? null, {
+                          label: `AI · element edit in ${path.split('/').pop()}`,
+                          source: 'ai',
+                          before: { [path]: code },
+                          after: { [path]: attempt.code },
+                          changedPaths: [path],
+                          meta: { origin: 'floating-toolbar-ai', actionType: 'element-edit' },
+                        });
+                      } catch (err) { console.warn('[onAIEditComplete] snapshot failed:', err); }
                       virtualFS.importFiles({ [path]: attempt.code });
                       setSelectedHTMLElement(null);
                       toast.success(`Element updated by AI in ${path.split('/').pop()}`);

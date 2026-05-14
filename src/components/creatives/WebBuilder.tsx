@@ -1369,10 +1369,51 @@ export default function App() {
   // that effect re-runs `applyOverrides(getOriginalSource())` and overwrites
   // our just-baked edit with the un-mutated original template. The customizer
   // remains authoritative for global theme/typography/image-replacement state.
+
+  // Record a manual edit snapshot for the active page so the History menu can
+  // revert/reapply granular toolbar changes alongside AI edits.
+  // Refs avoid TDZ on projectId/activePagePath which are declared later in the component.
+  const snapshotCtxRef = useRef<{ projectId?: string; activePagePath?: string }>({});
+  const recordManualPageEdit = useCallback((label: string, beforeCode: string, afterCode: string) => {
+    if (!afterCode || beforeCode === afterCode) return;
+    const ctx = snapshotCtxRef.current;
+    const path = ctx.activePagePath || '/src/App.tsx';
+    try {
+      pushAISnapshot(ctx.projectId ?? null, {
+        label,
+        source: 'manual',
+        before: { [path]: beforeCode },
+        after: { [path]: afterCode },
+        changedPaths: [path],
+        meta: { origin: 'floating-toolbar' },
+      });
+    } catch (err) {
+      console.warn('[recordManualPageEdit] snapshot failed:', err);
+    }
+  }, []);
+
+  const recordManualVFSEdit = useCallback((label: string, beforeFiles: Record<string, string>, afterFiles: Record<string, string>, origin = 'floating-toolbar') => {
+    const changed = diffChangedPaths(beforeFiles, afterFiles);
+    if (!changed.length) return;
+    try {
+      pushAISnapshot(snapshotCtxRef.current.projectId ?? null, {
+        label,
+        source: 'manual',
+        before: beforeFiles,
+        after: afterFiles,
+        changedPaths: changed,
+        meta: { origin },
+      });
+    } catch (err) {
+      console.warn('[recordManualVFSEdit] snapshot failed:', err);
+    }
+  }, []);
+
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);
     const next = mutateJSXStyles(previewCode, selector, styles, findElementBoundsInJSX);
     if (next && next !== previewCode) {
+      recordManualPageEdit(`Manual · style ${Object.keys(styles).join(', ').slice(0, 40)}`, previewCode, next);
       setPreviewCode(next);
       setEditorCode(next);
       if (selectedHTMLElement?.selector === selector) {
@@ -1391,6 +1432,7 @@ export default function App() {
     console.log('[WebBuilder] handleFloatingTextUpdate called:', selector, text);
     const next = mutateJSXText(previewCode, selector, text, findElementBoundsInJSX);
     if (next && next !== previewCode) {
+      recordManualPageEdit(`Manual · text "${text.slice(0, 30)}"`, previewCode, next);
       setPreviewCode(next);
       setEditorCode(next);
       if (selectedHTMLElement?.selector === selector) {
@@ -1399,12 +1441,13 @@ export default function App() {
     } else if (!next) {
       toast.error('Could not update text — element contains nested markup. Try the AI edit instead.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
 
   const handleFloatingImageReplace = useCallback((selector: string, src: string) => {
     console.log('[WebBuilder] handleFloatingImageReplace called:', selector, src.substring(0, 50));
     const next = mutateJSXImageSrc(previewCode, selector, src, findElementBoundsInJSX);
     if (next && next !== previewCode) {
+      recordManualPageEdit('Manual · replace image', previewCode, next);
       setPreviewCode(next);
       setEditorCode(next);
       if (selectedHTMLElement?.selector === selector) {
@@ -1416,12 +1459,13 @@ export default function App() {
     } else if (!next) {
       toast.error('Could not replace image. Try selecting the <img> directly.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
 
   const handleFloatingAttributeUpdate = useCallback((selector: string, attributes: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingAttributeUpdate called:', selector, attributes);
     const next = mutateJSXAttributes(previewCode, selector, attributes, findElementBoundsInJSX);
     if (next && next !== previewCode) {
+      recordManualPageEdit(`Manual · attrs ${Object.keys(attributes).join(', ').slice(0, 40)}`, previewCode, next);
       setPreviewCode(next);
       setEditorCode(next);
       if (selectedHTMLElement?.selector === selector) {
@@ -1436,7 +1480,7 @@ export default function App() {
     } else if (!next) {
       toast.error('Could not update attributes for the selected element.');
     }
-  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement]);
+  }, [previewCode, selectedHTMLElement, setSelectedHTMLElement, recordManualPageEdit]);
 
 
   const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {
@@ -1485,12 +1529,13 @@ export default function App() {
       toast.error('Could not delete element. Try selecting a different element.');
       return;
     }
+    recordManualPageEdit('Manual · delete element', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
     setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Element deleted');
-  }, [previewCode, applyElementDelete, clearLivePreviewSelection, setSelectedHTMLElement]);
+  }, [previewCode, applyElementDelete, clearLivePreviewSelection, setSelectedHTMLElement, recordManualPageEdit]);
 
   // Handle duplicate from floating toolbar - updates source code
   const handleFloatingDuplicate = useCallback((selector: string) => {
@@ -1499,11 +1544,12 @@ export default function App() {
       toast.error('Could not duplicate element. Try selecting a different element.');
       return;
     }
+    recordManualPageEdit('Manual · duplicate element', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
     clearLivePreviewSelection();
     toast.success('Element duplicated');
-  }, [previewCode, applyElementDuplicate, clearLivePreviewSelection]);
+  }, [previewCode, applyElementDuplicate, clearLivePreviewSelection, recordManualPageEdit]);
 
   // Handle move up - swap element with its previous sibling in TSX source
   const handleFloatingMoveUp = useCallback((selector: string) => {
@@ -1528,11 +1574,12 @@ export default function App() {
       toast.info('Already at the top');
       return;
     }
+    recordManualPageEdit('Manual · move element up', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
     clearLivePreviewSelection();
     toast.success('Moved up');
-  }, [previewCode, clearLivePreviewSelection]);
+  }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
 
   // Handle move down - swap element with its next sibling in TSX source
   const handleFloatingMoveDown = useCallback((selector: string) => {
@@ -1557,11 +1604,12 @@ export default function App() {
       toast.info('Already at the bottom');
       return;
     }
+    recordManualPageEdit('Manual · move element down', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
     clearLivePreviewSelection();
     toast.success('Moved down');
-  }, [previewCode, clearLivePreviewSelection]);
+  }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
 
   // ── Layout-Intent Fast Path bridge for AIBuilderPanel ────────────────────
   // Bundles the deterministic layout-op handlers (selection-aware class edits,
@@ -1574,6 +1622,7 @@ export default function App() {
     getPreviewCode: () => previewCode,
     applyLayoutCode: (nextCode: string, summary: string) => {
       if (!nextCode || nextCode === previewCode) return false;
+      recordManualPageEdit(`Layout · ${summary}`, previewCode, nextCode);
       setPreviewCode(nextCode);
       setEditorCode(nextCode);
       toast.success(summary);
@@ -1933,6 +1982,8 @@ export default function App() {
   
   // Multi-page navigation state — split into three concerns
   const [activePagePath, setActivePagePath] = useState<string>(launchEntryPoint);
+  // Keep snapshot ref synced so manual-edit history captures correct project + page
+  snapshotCtxRef.current = { projectId, activePagePath };
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [activePreviewRoute, setActivePreviewRoute] = useState<string>('/');
   
@@ -7057,6 +7108,16 @@ export default function ${componentName}() {
                 // 1. Try the active page first.
                 const primary = applyElementHtmlUpdate(previewCode, selector, newHtml);
                 if (primary.ok) {
+                  try {
+                    pushAISnapshot(projectId ?? null, {
+                      label: `AI · element edit ${selector.slice(0, 40)}`,
+                      source: 'ai',
+                      before: { [activePagePath]: previewCode },
+                      after: { [activePagePath]: primary.code },
+                      changedPaths: [activePagePath],
+                      meta: { origin: 'floating-toolbar-ai', actionType: 'element-edit' },
+                    });
+                  } catch (err) { console.warn('[onAIEditComplete] snapshot failed:', err); }
                   importBuilderFiles(templateToVFSFiles(primary.code, currentTemplateName || 'Element Edit'), {
                     preferredPath: activePagePath,
                     entryPoint: activePagePath,
@@ -7073,6 +7134,16 @@ export default function ${componentName}() {
                     if (path === activePagePath) continue;
                     const attempt = applyElementHtmlUpdate(code, selector, newHtml);
                     if (attempt.ok) {
+                      try {
+                        pushAISnapshot(projectId ?? null, {
+                          label: `AI · element edit in ${path.split('/').pop()}`,
+                          source: 'ai',
+                          before: { [path]: code },
+                          after: { [path]: attempt.code },
+                          changedPaths: [path],
+                          meta: { origin: 'floating-toolbar-ai', actionType: 'element-edit' },
+                        });
+                      } catch (err) { console.warn('[onAIEditComplete] snapshot failed:', err); }
                       virtualFS.importFiles({ [path]: attempt.code });
                       setSelectedHTMLElement(null);
                       toast.success(`Element updated by AI in ${path.split('/').pop()}`);

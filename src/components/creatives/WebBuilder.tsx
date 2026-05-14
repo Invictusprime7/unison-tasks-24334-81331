@@ -1369,10 +1369,48 @@ export default function App() {
   // that effect re-runs `applyOverrides(getOriginalSource())` and overwrites
   // our just-baked edit with the un-mutated original template. The customizer
   // remains authoritative for global theme/typography/image-replacement state.
+
+  // Record a manual edit snapshot for the active page so the History menu can
+  // revert/reapply granular toolbar changes alongside AI edits.
+  const recordManualPageEdit = useCallback((label: string, beforeCode: string, afterCode: string) => {
+    if (!afterCode || beforeCode === afterCode) return;
+    const path = activePagePath || '/src/App.tsx';
+    try {
+      pushAISnapshot(projectId ?? null, {
+        label,
+        source: 'manual',
+        before: { [path]: beforeCode },
+        after: { [path]: afterCode },
+        changedPaths: [path],
+        meta: { origin: 'floating-toolbar' },
+      });
+    } catch (err) {
+      console.warn('[recordManualPageEdit] snapshot failed:', err);
+    }
+  }, [activePagePath, projectId]);
+
+  const recordManualVFSEdit = useCallback((label: string, beforeFiles: Record<string, string>, afterFiles: Record<string, string>, origin = 'floating-toolbar') => {
+    const changed = diffChangedPaths(beforeFiles, afterFiles);
+    if (!changed.length) return;
+    try {
+      pushAISnapshot(projectId ?? null, {
+        label,
+        source: 'manual',
+        before: beforeFiles,
+        after: afterFiles,
+        changedPaths: changed,
+        meta: { origin },
+      });
+    } catch (err) {
+      console.warn('[recordManualVFSEdit] snapshot failed:', err);
+    }
+  }, [projectId]);
+
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);
     const next = mutateJSXStyles(previewCode, selector, styles, findElementBoundsInJSX);
     if (next && next !== previewCode) {
+      recordManualPageEdit(`Manual · style ${Object.keys(styles).join(', ').slice(0, 40)}`, previewCode, next);
       setPreviewCode(next);
       setEditorCode(next);
       if (selectedHTMLElement?.selector === selector) {

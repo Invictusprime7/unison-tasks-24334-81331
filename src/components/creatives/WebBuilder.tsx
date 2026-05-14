@@ -1974,6 +1974,8 @@ export default function App() {
   
   // Multi-page navigation state — split into three concerns
   const [activePagePath, setActivePagePath] = useState<string>(launchEntryPoint);
+  // Keep snapshot ref synced so manual-edit history captures correct project + page
+  snapshotCtxRef.current = { projectId, activePagePath };
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [activePreviewRoute, setActivePreviewRoute] = useState<string>('/');
   

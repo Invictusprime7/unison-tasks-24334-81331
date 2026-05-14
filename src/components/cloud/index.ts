@@ -12,6 +12,7 @@ export { CloudEmail } from './CloudEmail';
 export { CloudIntegrations } from './CloudIntegrations';
 export { CloudAutomations } from './CloudAutomations';
 export { CloudSecurity } from './CloudSecurity';
+export { CloudAIUsage } from './CloudAIUsage';
 export { CloudTeams } from './CloudTeams';
 export { CloudOrganization } from './CloudOrganization';
 export { EntitlementGate } from './EntitlementGate';

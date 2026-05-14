@@ -32,9 +32,10 @@ export interface GatewayOverrides {
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // Stable OpenAI models routed through the Lovable AI Gateway.
-  gpt4oMini: { id: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
-  gpt4o: { id: "openai/gpt-4o", label: "GPT-4o" },
+  // Current OpenAI models routed through the Lovable AI Gateway.
+  // Gateway only accepts gpt-5* family + Gemini; gpt-4o* are no longer valid.
+  gpt4oMini: { id: "openai/gpt-5-mini", label: "GPT-5 Mini" },
+  gpt4o: { id: "openai/gpt-5", label: "GPT-5" },
 } as const;
 
 function m(spec: typeof MODELS[keyof typeof MODELS], maxTokens: number): ModelSpec {

@@ -173,8 +173,8 @@ export async function runProviderLoop(opts: {
         ...(configuredOpenAIModel
           ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
           : []),
-        { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },
-        { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
+        { id: 'gpt-5-mini', maxTokens: 16000, label: 'OpenAI gpt-5-mini' },
+        { id: 'gpt-5', maxTokens: 16000, label: 'OpenAI gpt-5' },
       ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
       for (const model of openaiModels) {
         const remaining = budgetRemaining();

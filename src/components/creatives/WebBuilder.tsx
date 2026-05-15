@@ -131,6 +131,7 @@ import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { recompileFromPlayground, type SiteBundleSnapshot } from '@/services/canonicalPipeline';
 import { generateUnisonDataFile, UNISON_DATA_PATH } from '@/services/unisonDataGenerator';
+import { generateUnisonProductsFile, UNISON_PRODUCTS_PATH } from '@/services/unisonProductsGenerator';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {
@@ -2156,7 +2157,10 @@ export default function App() {
   useEffect(() => {
     try {
       const source = generateUnisonDataFile(creatorDataForUnison);
-      vfsImportFiles({ [UNISON_DATA_PATH]: source });
+      vfsImportFiles({
+        [UNISON_DATA_PATH]: source,
+        [UNISON_PRODUCTS_PATH]: generateUnisonProductsFile(),
+      });
     } catch (err) {
       console.warn('[unison-data] Failed to regenerate', err);
     }

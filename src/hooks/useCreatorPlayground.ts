@@ -68,6 +68,7 @@ export interface UseCreatorPlaygroundReturn {
 
   // Collection CRUD
   addCollection: (collection: Omit<CreatorCollection, "collectionId" | "sortOrder">) => CreatorCollection;
+  updateCollection: (collectionId: string, updates: Partial<CreatorCollection>) => void;
   removeCollection: (collectionId: string) => void;
 
   // Hydration — auto-populate from VFS
@@ -526,6 +527,12 @@ export function useCreatorPlayground(
     return c;
   }, [creatorData.collections, patchCreatorData]);
 
+  const updateCollection = useCallback((collectionId: string, updates: Partial<CreatorCollection>) => {
+    const existing = creatorData.collections[collectionId];
+    if (!existing) return;
+    patchCreatorData("collections", { ...creatorData.collections, [collectionId]: { ...existing, ...updates } });
+  }, [creatorData.collections, patchCreatorData]);
+
   const removeCollection = useCallback((collectionId: string) => {
     const { [collectionId]: _, ...rest } = creatorData.collections;
     patchCreatorData("collections", rest);
@@ -572,7 +579,7 @@ export function useCreatorPlayground(
     addForm, updateForm, removeForm,
     addComponentInstance, updateComponentInstance, removeComponentInstance,
     updateBusinessInfo,
-    addCollection, removeCollection,
+    addCollection, updateCollection, removeCollection,
     hydrateFromVFS,
     lastHydration,
     isDirty,

@@ -157,7 +157,7 @@ function extractProducts(content: string): CreatorProduct[] {
       name: match[1],
       price: parseFloat(match[2]),
       currency: "USD",
-      inStock: true,
+      status: "active",
       sortOrder: products.length,
     });
   }
@@ -173,7 +173,7 @@ function extractProducts(content: string): CreatorProduct[] {
           name,
           price: parseFloat(match[2]),
           currency: "USD",
-          inStock: true,
+          status: "active",
           sortOrder: products.length,
         });
       }

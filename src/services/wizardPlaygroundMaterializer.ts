@@ -370,7 +370,7 @@ export function materializePlayground(
       price: template.price,
       currency: 'USD',
       category: template.category,
-      inStock: true,
+      status: 'active',
       sortOrder: Object.keys(creatorData.products).length,
     };
   }

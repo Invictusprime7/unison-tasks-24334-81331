@@ -1467,6 +1467,19 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
 
   const selectedService = selectedServiceId ? playground.creatorData.services[selectedServiceId] : null;
 
+  const selectedServiceSurfaces = useMemo(() => {
+    if (!selectedService) return [];
+    return getServiceSurfaces(selectedService, playground.creatorData, playground.pageRegistry, vfsFiles);
+  }, [selectedService, playground.creatorData, playground.pageRegistry, vfsFiles]);
+
+  const serviceSurfaceCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of services) {
+      m.set(s.serviceId, getServiceSurfaces(s, playground.creatorData, playground.pageRegistry, vfsFiles).length);
+    }
+    return m;
+  }, [services, playground.creatorData, playground.pageRegistry, vfsFiles]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">

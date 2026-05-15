@@ -1318,41 +1318,65 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                 )}
               </div>
 
-              {/* Bindings preview */}
+              {/* Topology — where this product appears in the live preview */}
               <div className="rounded-lg border border-border/20 bg-background/30 p-3 space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                  <Link2 className="h-3.5 w-3.5 text-emerald-500" /> Live Bindings
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Link2 className="h-3.5 w-3.5 text-emerald-500" /> Appears on
+                  </div>
+                  <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                    {selectedProductSurfaces.length} surface{selectedProductSurfaces.length === 1 ? "" : "s"}
+                  </Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Surfaces in the rendered site that read this product via <code className="rounded bg-muted/40 px-1 py-px text-[10px]">@/unison/products</code>.
+                  Real bindings + VFS scan: where this product is rendered in the preview canvas right now.
                 </p>
-                {selectedProductBindings.length === 0 ? (
-                  <div className="rounded border border-dashed border-border/30 px-2.5 py-2 text-[11px] text-muted-foreground">
-                    Not bound to any component yet. Add a <code className="rounded bg-muted/40 px-1 text-[10px]">ProductGrid</code> with <code className="rounded bg-muted/40 px-1 text-[10px]">source="all"</code>{selectedProduct.featured ? ' or "featured"' : ""}, or include this product in a collection.
+                {selectedProductSurfaces.length === 0 ? (
+                  <div className="rounded border border-dashed border-rose-500/30 bg-rose-500/5 px-2.5 py-2 text-[11px] text-rose-300">
+                    <strong className="font-semibold">Orphaned</strong> — not rendered anywhere yet. Add a <code className="rounded bg-muted/40 px-1 text-[10px]">ProductGrid</code> with <code className="rounded bg-muted/40 px-1 text-[10px]">source="all"</code>{selectedProduct.featured ? ' or "featured"' : ""}, or drop it into a collection above.
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    {selectedProductBindings.map((ci) => {
-                      const src = (ci.bindings?.source ?? (ci.props as Record<string, unknown> | undefined)?.source) as string | undefined;
-                      const colId = ci.bindings?.collectionId;
-                      const colName = colId ? playground.creatorData.collections[colId]?.name : undefined;
-                      return (
-                        <div key={ci.instanceId} className="flex items-center justify-between gap-2 rounded-md border border-border/20 bg-muted/10 px-2.5 py-1.5">
-                          <div className="min-w-0">
-                            <div className="truncate text-xs font-medium text-foreground">{ci.label || ci.componentSlug || ci.componentType}</div>
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">
-                              {ci.componentType}
-                              {src ? <span className="ml-1.5">· source: <span className="font-mono">{src}</span></span> : null}
-                              {colName ? <span className="ml-1.5">· collection: <span className="font-mono">{colName}</span></span> : null}
-                              {ci.bindings?.productId === selectedProduct.productId ? <span className="ml-1.5">· direct</span> : null}
-                            </div>
+                    {selectedProductSurfaces.map((surface) => (
+                      <button
+                        type="button"
+                        key={surface.id}
+                        disabled={!surface.pageId || !onNavigateToPage}
+                        onClick={() => surface.pageId && onNavigateToPage?.(surface.pageId)}
+                        className={cn(
+                          "w-full text-left flex items-center justify-between gap-2 rounded-md border border-border/20 bg-muted/10 px-2.5 py-1.5 transition-colors",
+                          surface.pageId && onNavigateToPage ? "hover:bg-muted/20 cursor-pointer" : "cursor-default opacity-90",
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-medium text-foreground">
+                            {surface.pageLabel}
+                            {surface.pageSlug ? <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">{surface.pageSlug}</span> : null}
                           </div>
-                          <Badge variant="outline" className="text-[9px] h-4 px-1.5">
-                            {ci.usedOnPages?.length || 0} page{(ci.usedOnPages?.length || 0) === 1 ? "" : "s"}
-                          </Badge>
+                          <div className="mt-0.5 text-[10px] text-muted-foreground">
+                            <span className="font-mono">{surface.componentType}</span>
+                            <span className="ml-1.5">·</span>
+                            <span className="ml-1.5">{surface.kind === "vfs_static" ? "static jsx" : surface.kind}</span>
+                            {surface.source ? <span className="ml-1.5">· source: <span className="font-mono">{surface.source}</span></span> : null}
+                            {surface.collectionName ? <span className="ml-1.5">· collection: <span className="font-mono">{surface.collectionName}</span></span> : null}
+                            {surface.filePath ? <span className="ml-1.5 opacity-70">· {surface.filePath.replace(/^\/src\//, "")}</span> : null}
+                          </div>
                         </div>
-                      );
-                    })}
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[9px] h-4 px-1.5",
+                            surface.kind === "direct" && "border-emerald-500/40 text-emerald-400",
+                            surface.kind === "featured" && "border-amber-500/40 text-amber-400",
+                            surface.kind === "collection" && "border-sky-500/40 text-sky-400",
+                            surface.kind === "all" && "border-violet-500/40 text-violet-400",
+                            surface.kind === "vfs_static" && "border-zinc-500/40 text-zinc-400",
+                          )}
+                        >
+                          {surface.kind}
+                        </Badge>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

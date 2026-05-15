@@ -1431,7 +1431,7 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
   );
 }
 
-function ServicesSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
+function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playground: UseCreatorPlaygroundReturn; vfsFiles: Record<string, string>; onNavigateToPage?: (pageId: string) => void }) {
   const services = Object.values(playground.creatorData.services).sort((a, b) => a.sortOrder - b.sortOrder);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(services[0]?.serviceId || null);
 

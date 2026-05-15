@@ -929,7 +929,19 @@ function ProductsSection({ playground }: { playground: UseCreatorPlaygroundRetur
                   <div className="mt-1 text-[11px] text-muted-foreground">{product.currency} {product.price}{product.priceSuffix ? ` ${product.priceSuffix}` : ""}</div>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {product.featured && <Badge variant="outline" className="text-[9px] h-4 px-1.5">Featured</Badge>}
-                    <Badge variant="outline" className="text-[9px] h-4 px-1.5">{product.inStock ? "In Stock" : "Out of Stock"}</Badge>
+                    {(() => {
+                      const inStock = isProductInStock(product);
+                      const tracked = product.trackInventory;
+                      const qty = product.stockQuantity ?? 0;
+                      const low = product.lowStockThreshold ?? 0;
+                      let label = inStock ? "In Stock" : "Out of Stock";
+                      if (inStock && tracked && low > 0 && qty > 0 && qty <= low) label = `Only ${qty} left`;
+                      else if (inStock && tracked) label = `${qty} in stock`;
+                      return <Badge variant="outline" className="text-[9px] h-4 px-1.5">{label}</Badge>;
+                    })()}
+                    {product.status && product.status !== "active" && (
+                      <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">{product.status}</Badge>
+                    )}
                     {product.billingType && <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">{product.billingType.replace("_", " ")}</Badge>}
                   </div>
                 </div>
@@ -995,13 +1007,80 @@ function ProductsSection({ playground }: { playground: UseCreatorPlaygroundRetur
                 <Input value={(selectedProduct.tags || []).join(", ")} onChange={(e) => playground.updateProduct(selectedProduct.productId, { tags: toCommaList(e.target.value) })} placeholder="starter, featured, bestseller" className="h-9 text-sm" />
               </Field>
 
-              <div className="flex flex-wrap gap-2">
-                <Button variant={selectedProduct.featured ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => playground.updateProduct(selectedProduct.productId, { featured: !selectedProduct.featured })}>
-                  {selectedProduct.featured ? "Featured" : "Mark Featured"}
-                </Button>
-                <Button variant={selectedProduct.inStock ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => playground.updateProduct(selectedProduct.productId, { inStock: !selectedProduct.inStock })}>
-                  {selectedProduct.inStock ? "In Stock" : "Out of Stock"}
-                </Button>
+              <div className="rounded-lg border border-border/20 bg-background/30 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-foreground">Inventory & Status</div>
+                  <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                    {isProductInStock(selectedProduct) ? "Available" : "Unavailable"}
+                  </Badge>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Status">
+                    <Select
+                      value={selectedProduct.status || "active"}
+                      onValueChange={(value) => playground.updateProduct(selectedProduct.productId, { status: value as "draft" | "active" | "archived" })}
+                    >
+                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="archived">Archived</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Inventory Policy">
+                    <Select
+                      value={selectedProduct.inventoryPolicy || "deny_when_out"}
+                      onValueChange={(value) => playground.updateProduct(selectedProduct.productId, { inventoryPolicy: value as "deny_when_out" | "allow_backorder" })}
+                    >
+                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="deny_when_out">Deny when out of stock</SelectItem>
+                        <SelectItem value="allow_backorder">Allow backorder</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Stock Quantity">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={selectedProduct.stockQuantity ?? ""}
+                      onChange={(e) => playground.updateProduct(selectedProduct.productId, { stockQuantity: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })}
+                      placeholder="Untracked"
+                      disabled={!selectedProduct.trackInventory}
+                      className="h-9 text-sm"
+                    />
+                  </Field>
+                  <Field label="Low Stock Threshold">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={selectedProduct.lowStockThreshold ?? ""}
+                      onChange={(e) => playground.updateProduct(selectedProduct.productId, { lowStockThreshold: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })}
+                      placeholder="e.g. 3"
+                      disabled={!selectedProduct.trackInventory}
+                      className="h-9 text-sm"
+                    />
+                  </Field>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={selectedProduct.featured ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => playground.updateProduct(selectedProduct.productId, { featured: !selectedProduct.featured })}
+                  >
+                    {selectedProduct.featured ? "Featured" : "Mark Featured"}
+                  </Button>
+                  <Button
+                    variant={selectedProduct.trackInventory ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => playground.updateProduct(selectedProduct.productId, { trackInventory: !selectedProduct.trackInventory })}
+                  >
+                    {selectedProduct.trackInventory ? "Tracking Inventory" : "Track Inventory"}
+                  </Button>
+                </div>
               </div>
 
               <div className="rounded-lg border border-border/20 bg-background/30 p-3">

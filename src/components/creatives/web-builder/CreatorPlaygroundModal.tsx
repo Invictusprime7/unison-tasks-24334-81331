@@ -870,24 +870,113 @@ function CustomizationSection({ playground }: { playground: UseCreatorPlayground
   );
 }
 
+type ProductFilter = "all" | "active" | "draft" | "archived" | "featured" | "out_of_stock" | "low_stock";
+
 function ProductsSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
-  const products = Object.values(playground.creatorData.products).sort((a, b) => a.sortOrder - b.sortOrder);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(products[0]?.productId || null);
+  const allProducts = useMemo(
+    () => Object.values(playground.creatorData.products).sort((a, b) => a.sortOrder - b.sortOrder),
+    [playground.creatorData.products],
+  );
+  const collections = useMemo(
+    () => Object.values(playground.creatorData.collections).filter((c) => c.type === "products"),
+    [playground.creatorData.collections],
+  );
+  const componentInstances = useMemo(
+    () => Object.values(playground.creatorData.componentInstances),
+    [playground.creatorData.componentInstances],
+  );
+
+  const [filter, setFilter] = useState<ProductFilter>("all");
+  const [search, setSearch] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(allProducts[0]?.productId || null);
+
+  const stats = useMemo(() => {
+    let active = 0, draft = 0, archived = 0, featured = 0, outOfStock = 0, lowStock = 0;
+    for (const p of allProducts) {
+      if (p.status === "draft") draft++;
+      else if (p.status === "archived") archived++;
+      else active++;
+      if (p.featured) featured++;
+      if (!isProductInStock(p)) outOfStock++;
+      else if (p.trackInventory && (p.lowStockThreshold ?? 0) > 0 && (p.stockQuantity ?? 0) > 0 && (p.stockQuantity ?? 0) <= (p.lowStockThreshold ?? 0)) lowStock++;
+    }
+    return { total: allProducts.length, active, draft, archived, featured, outOfStock, lowStock };
+  }, [allProducts]);
+
+  const products = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allProducts.filter((p) => {
+      if (filter === "active" && (p.status && p.status !== "active")) return false;
+      if (filter === "draft" && p.status !== "draft") return false;
+      if (filter === "archived" && p.status !== "archived") return false;
+      if (filter === "featured" && !p.featured) return false;
+      if (filter === "out_of_stock" && isProductInStock(p)) return false;
+      if (filter === "low_stock") {
+        const qty = p.stockQuantity ?? 0;
+        const low = p.lowStockThreshold ?? 0;
+        if (!p.trackInventory || low <= 0 || qty <= 0 || qty > low) return false;
+      }
+      if (q && !`${p.name} ${p.sku || ""} ${p.category || ""} ${(p.tags || []).join(" ")}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [allProducts, filter, search]);
 
   useEffect(() => {
     if (!selectedProductId || !playground.creatorData.products[selectedProductId]) {
-      setSelectedProductId(products[0]?.productId || null);
+      setSelectedProductId(allProducts[0]?.productId || null);
     }
-  }, [playground.creatorData.products, products, selectedProductId]);
+  }, [playground.creatorData.products, allProducts, selectedProductId]);
 
   const selectedProduct = selectedProductId ? playground.creatorData.products[selectedProductId] : null;
 
+  const selectedProductCollections = useMemo(() => {
+    if (!selectedProduct) return [];
+    return collections.filter((c) => c.itemIds.includes(selectedProduct.productId));
+  }, [collections, selectedProduct]);
+
+  const selectedProductBindings = useMemo(() => {
+    if (!selectedProduct) return [];
+    const collectionIds = new Set(selectedProductCollections.map((c) => c.collectionId));
+    return componentInstances.filter((ci) => {
+      const bindings = ci.bindings || {};
+      const propsSource = (ci.props as Record<string, unknown> | undefined)?.source;
+      if (bindings.productId === selectedProduct.productId) return true;
+      if (bindings.collectionId && collectionIds.has(bindings.collectionId)) return true;
+      if (selectedProduct.featured && (bindings.source === "featured" || propsSource === "featured")) return true;
+      if (bindings.source === "all" || propsSource === "all") return true;
+      return false;
+    });
+  }, [componentInstances, selectedProduct, selectedProductCollections]);
+
+  const toggleProductInCollection = (collectionId: string) => {
+    if (!selectedProduct) return;
+    const col = playground.creatorData.collections[collectionId];
+    if (!col) return;
+    const has = col.itemIds.includes(selectedProduct.productId);
+    const itemIds = has ? col.itemIds.filter((id) => id !== selectedProduct.productId) : [...col.itemIds, selectedProduct.productId];
+    playground.updateCollection(collectionId, { itemIds });
+  };
+
+  const filterChips: { value: ProductFilter; label: string; count: number }[] = [
+    { value: "all", label: "All", count: stats.total },
+    { value: "active", label: "Active", count: stats.active },
+    { value: "featured", label: "Featured", count: stats.featured },
+    { value: "draft", label: "Draft", count: stats.draft },
+    { value: "low_stock", label: "Low Stock", count: stats.lowStock },
+    { value: "out_of_stock", label: "Out of Stock", count: stats.outOfStock },
+    { value: "archived", label: "Archived", count: stats.archived },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-foreground">Products</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Configure offers, pricing, variants, and checkout copy directly from the Playground.</p>
+          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+            <Package className="h-4 w-4 text-emerald-500" /> Catalog
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Live-bound to <code className="rounded bg-muted/40 px-1 py-px text-[10px]">@/unison/products</code> — edits flow into ProductGrid, ProductCard, and cart at runtime.
+          </p>
         </div>
         <Button
           size="sm"
@@ -914,56 +1003,143 @@ function ProductsSection({ playground }: { playground: UseCreatorPlaygroundRetur
         </Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-2">
-          {products.length === 0 && <p className="text-sm text-muted-foreground">No products configured yet.</p>}
-          {products.map((product) => (
+      {/* Stats strip */}
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
+        {[
+          { label: "Total", value: stats.total, tone: "text-foreground" },
+          { label: "Active", value: stats.active, tone: "text-emerald-500" },
+          { label: "Featured", value: stats.featured, tone: "text-amber-500" },
+          { label: "Low Stock", value: stats.lowStock, tone: "text-orange-500" },
+          { label: "Out of Stock", value: stats.outOfStock, tone: "text-rose-500" },
+          { label: "Collections", value: collections.length, tone: "text-sky-500" },
+        ].map((s) => (
+          <div key={s.label} className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
+            <div className={cn("text-lg font-semibold leading-tight", s.tone)}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter + search */}
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {filterChips.map((chip) => (
             <button
-              key={product.productId}
+              key={chip.value}
               type="button"
-              onClick={() => setSelectedProductId(product.productId)}
+              onClick={() => setFilter(chip.value)}
               className={cn(
-                "w-full rounded-xl border p-3 text-left transition-colors",
-                selectedProductId === product.productId ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-muted/10 hover:bg-muted/20",
+                "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                filter === chip.value
+                  ? "border-emerald-500/40 bg-emerald-500/15 text-foreground"
+                  : "border-border/30 bg-muted/10 text-muted-foreground hover:bg-muted/20",
               )}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-foreground">{product.name}</div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{product.currency} {product.price}{product.priceSuffix ? ` ${product.priceSuffix}` : ""}</div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {product.featured && <Badge variant="outline" className="text-[9px] h-4 px-1.5">Featured</Badge>}
-                    {(() => {
-                      const inStock = isProductInStock(product);
-                      const tracked = product.trackInventory;
-                      const qty = product.stockQuantity ?? 0;
-                      const low = product.lowStockThreshold ?? 0;
-                      let label = inStock ? "In Stock" : "Out of Stock";
-                      if (inStock && tracked && low > 0 && qty > 0 && qty <= low) label = `Only ${qty} left`;
-                      else if (inStock && tracked) label = `${qty} in stock`;
-                      return <Badge variant="outline" className="text-[9px] h-4 px-1.5">{label}</Badge>;
-                    })()}
-                    {product.status && product.status !== "active" && (
-                      <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">{product.status}</Badge>
-                    )}
-                    {product.billingType && <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">{product.billingType.replace("_", " ")}</Badge>}
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    playground.removeProduct(product.productId);
-                    if (selectedProductId === product.productId) setSelectedProductId(null);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+              {chip.label}
+              <span className="ml-1 text-muted-foreground/70">{chip.count}</span>
             </button>
           ))}
+        </div>
+        <div className="relative md:w-64">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, SKU, tag…"
+            className="h-8 pl-7 text-xs"
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-2">
+          {products.length === 0 && (
+            <div className="rounded-lg border border-dashed border-border/30 bg-muted/5 px-3 py-6 text-center text-xs text-muted-foreground">
+              {allProducts.length === 0 ? "No products yet — add one to start binding." : "No products match this filter."}
+            </div>
+          )}
+          {products.map((product) => {
+            const inStock = isProductInStock(product);
+            const tracked = product.trackInventory;
+            const qty = product.stockQuantity ?? 0;
+            const low = product.lowStockThreshold ?? 0;
+            let label = inStock ? "In Stock" : "Out of Stock";
+            if (inStock && tracked && low > 0 && qty > 0 && qty <= low) label = `Only ${qty} left`;
+            else if (inStock && tracked) label = `${qty} in stock`;
+            const productCollectionsCount = collections.filter((c) => c.itemIds.includes(product.productId)).length;
+
+            return (
+              <button
+                key={product.productId}
+                type="button"
+                onClick={() => setSelectedProductId(product.productId)}
+                className={cn(
+                  "w-full rounded-xl border p-3 text-left transition-colors",
+                  selectedProductId === product.productId ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-muted/10 hover:bg-muted/20",
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md border border-border/30 bg-muted/20 flex items-center justify-center">
+                    {product.imageAssetId || (product.images && product.images.length > 0) ? (
+                      <img
+                        src={product.imageAssetId || (product.images?.[0] as { url?: string } | undefined)?.url || ""}
+                        alt={product.name}
+                        className="h-full w-full object-cover"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                      />
+                    ) : (
+                      <ImageIcon className="h-4 w-4 text-muted-foreground/60" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className="truncate text-sm font-medium text-foreground">{product.name}</div>
+                      {product.featured && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      {product.currency} {product.price}{product.priceSuffix ? ` ${product.priceSuffix}` : ""}
+                      {product.sku ? <span className="ml-2 font-mono opacity-70">{product.sku}</span> : null}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[9px] h-4 px-1.5",
+                          !inStock && "border-rose-500/40 text-rose-500",
+                          inStock && tracked && low > 0 && qty <= low && "border-orange-500/40 text-orange-500",
+                        )}
+                      >
+                        {label}
+                      </Badge>
+                      {product.status && product.status !== "active" && (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">{product.status}</Badge>
+                      )}
+                      {product.billingType === "subscription" && (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5">Subscription</Badge>
+                      )}
+                      {productCollectionsCount > 0 && (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-sky-500/40 text-sky-500">
+                          <Layers className="mr-0.5 h-2.5 w-2.5" />{productCollectionsCount}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      playground.removeProduct(product.productId);
+                      if (selectedProductId === product.productId) setSelectedProductId(null);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
@@ -1003,6 +1179,15 @@ function ProductsSection({ playground }: { playground: UseCreatorPlaygroundRetur
                 </Field>
               </div>
 
+              <Field label="Image URL / Asset">
+                <Input
+                  value={selectedProduct.imageAssetId || ""}
+                  onChange={(e) => playground.updateProduct(selectedProduct.productId, { imageAssetId: e.target.value || undefined })}
+                  placeholder="https://… or asset_id"
+                  className="h-9 text-sm"
+                />
+              </Field>
+
               <Field label="Description">
                 <Textarea value={selectedProduct.description || ""} onChange={(e) => playground.updateProduct(selectedProduct.productId, { description: e.target.value })} className="min-h-[88px] text-sm" />
               </Field>
@@ -1014,7 +1199,7 @@ function ProductsSection({ playground }: { playground: UseCreatorPlaygroundRetur
               <div className="rounded-lg border border-border/20 bg-background/30 p-3 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold text-foreground">Inventory & Status</div>
-                  <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                  <Badge variant="outline" className={cn("text-[9px] h-4 px-1.5", isProductInStock(selectedProduct) ? "border-emerald-500/40 text-emerald-500" : "border-rose-500/40 text-rose-500")}>
                     {isProductInStock(selectedProduct) ? "Available" : "Unavailable"}
                   </Badge>
                 </div>
@@ -1074,6 +1259,7 @@ function ProductsSection({ playground }: { playground: UseCreatorPlaygroundRetur
                     className="h-8 text-xs"
                     onClick={() => playground.updateProduct(selectedProduct.productId, { featured: !selectedProduct.featured })}
                   >
+                    <Star className={cn("mr-1 h-3 w-3", selectedProduct.featured && "fill-current")} />
                     {selectedProduct.featured ? "Featured" : "Mark Featured"}
                   </Button>
                   <Button
@@ -1085,6 +1271,89 @@ function ProductsSection({ playground }: { playground: UseCreatorPlaygroundRetur
                     {selectedProduct.trackInventory ? "Tracking Inventory" : "Track Inventory"}
                   </Button>
                 </div>
+              </div>
+
+              {/* Collections binding */}
+              <div className="rounded-lg border border-border/20 bg-background/30 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Layers className="h-3.5 w-3.5 text-sky-500" /> Collections
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
+                    onClick={() => {
+                      playground.addCollection({ name: "New Collection", type: "products", itemIds: [selectedProduct.productId] });
+                    }}
+                  >
+                    <Plus className="mr-1 h-3 w-3" /> New
+                  </Button>
+                </div>
+                {collections.length === 0 ? (
+                  <div className="text-[11px] text-muted-foreground">No product collections yet.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {collections.map((c) => {
+                      const member = c.itemIds.includes(selectedProduct.productId);
+                      return (
+                        <button
+                          key={c.collectionId}
+                          type="button"
+                          onClick={() => toggleProductInCollection(c.collectionId)}
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                            member
+                              ? "border-sky-500/40 bg-sky-500/15 text-foreground"
+                              : "border-border/30 bg-muted/10 text-muted-foreground hover:bg-muted/20",
+                          )}
+                        >
+                          {member ? "✓ " : "+ "}{c.name}
+                          <span className="ml-1 opacity-60">{c.itemIds.length}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Bindings preview */}
+              <div className="rounded-lg border border-border/20 bg-background/30 p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                  <Link2 className="h-3.5 w-3.5 text-emerald-500" /> Live Bindings
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Surfaces in the rendered site that read this product via <code className="rounded bg-muted/40 px-1 py-px text-[10px]">@/unison/products</code>.
+                </p>
+                {selectedProductBindings.length === 0 ? (
+                  <div className="rounded border border-dashed border-border/30 px-2.5 py-2 text-[11px] text-muted-foreground">
+                    Not bound to any component yet. Add a <code className="rounded bg-muted/40 px-1 text-[10px]">ProductGrid</code> with <code className="rounded bg-muted/40 px-1 text-[10px]">source="all"</code>{selectedProduct.featured ? ' or "featured"' : ""}, or include this product in a collection.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {selectedProductBindings.map((ci) => {
+                      const src = (ci.bindings?.source ?? (ci.props as Record<string, unknown> | undefined)?.source) as string | undefined;
+                      const colId = ci.bindings?.collectionId;
+                      const colName = colId ? playground.creatorData.collections[colId]?.name : undefined;
+                      return (
+                        <div key={ci.instanceId} className="flex items-center justify-between gap-2 rounded-md border border-border/20 bg-muted/10 px-2.5 py-1.5">
+                          <div className="min-w-0">
+                            <div className="truncate text-xs font-medium text-foreground">{ci.label || ci.componentSlug || ci.componentType}</div>
+                            <div className="mt-0.5 text-[10px] text-muted-foreground">
+                              {ci.componentType}
+                              {src ? <span className="ml-1.5">· source: <span className="font-mono">{src}</span></span> : null}
+                              {colName ? <span className="ml-1.5">· collection: <span className="font-mono">{colName}</span></span> : null}
+                              {ci.bindings?.productId === selectedProduct.productId ? <span className="ml-1.5">· direct</span> : null}
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                            {ci.usedOnPages?.length || 0} page{(ci.usedOnPages?.length || 0) === 1 ? "" : "s"}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="rounded-lg border border-border/20 bg-background/30 p-3">

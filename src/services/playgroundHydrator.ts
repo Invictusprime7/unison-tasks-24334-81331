@@ -148,7 +148,7 @@ function extractRoutesFromApp(appContent: string): Map<string, string> {
 function extractProducts(content: string): CreatorProduct[] {
   const products: CreatorProduct[] = [];
   const seen = new Set<string>();
-  const push = (p: Omit<CreatorProduct, "productId" | "sortOrder"> & { name: string }) => {
+  const push = (p: Partial<CreatorProduct> & { name: string; price: number }) => {
     const key = (p.name || "").trim().toLowerCase();
     if (!key || seen.has(key)) return;
     seen.add(key);

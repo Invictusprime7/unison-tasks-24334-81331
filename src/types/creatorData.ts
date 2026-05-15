@@ -31,8 +31,30 @@ export interface CreatorProduct {
   checkoutLabel?: string;
   fulfillmentType?: "digital" | "physical" | "service" | "custom";
   variants?: Array<{ label: string; price?: number; sku?: string }>;
-  inStock: boolean;
+  /** Lifecycle status. Defaults to "active". */
+  status?: "draft" | "active" | "archived";
+  /** When true, inStock is derived from stockQuantity + inventoryPolicy. When false, product is always considered available. */
+  trackInventory?: boolean;
+  /** Available units. Only meaningful when trackInventory=true. */
+  stockQuantity?: number;
+  /** What to do when stockQuantity hits 0. Defaults to "deny_when_out". */
+  inventoryPolicy?: "deny_when_out" | "allow_backorder";
+  /** UI badge threshold ("Only N left"). */
+  lowStockThreshold?: number;
   sortOrder: number;
+}
+
+/**
+ * Canonical availability check. Replaces the legacy `inStock` boolean.
+ * Use this everywhere downstream (ProductCard, cart, AI generators).
+ */
+export function isProductInStock(
+  p: Pick<CreatorProduct, "status" | "trackInventory" | "stockQuantity" | "inventoryPolicy">,
+): boolean {
+  if (p.status === "archived" || p.status === "draft") return false;
+  if (!p.trackInventory) return true;
+  if (p.inventoryPolicy === "allow_backorder") return true;
+  return (p.stockQuantity ?? 0) > 0;
 }
 
 export interface CreatorService {

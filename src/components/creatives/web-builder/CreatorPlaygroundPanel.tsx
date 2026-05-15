@@ -373,7 +373,7 @@ export const CreatorPlaygroundPanel: React.FC<CreatorPlaygroundPanelProps> = ({
                 title="Products"
                 icon={<ShoppingBag className="h-3.5 w-3.5" />}
                 items={Object.values(playground.creatorData.products)}
-                onAdd={() => playground.addProduct({ name: "New Product", price: 0, currency: "USD", inStock: true })}
+                onAdd={() => playground.addProduct({ name: "New Product", price: 0, currency: "USD", status: "active" })}
                 onRemove={(id) => playground.removeProduct(id)}
                 renderItem={(p) => (
                   <div className="flex items-center justify-between">

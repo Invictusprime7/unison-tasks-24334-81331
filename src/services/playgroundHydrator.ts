@@ -147,58 +147,83 @@ function extractRoutesFromApp(appContent: string): Map<string, string> {
 
 function extractProducts(content: string): CreatorProduct[] {
   const products: CreatorProduct[] = [];
-  
-  // Match product-like objects: { name: "...", price: N, ... }
-  const productBlockRe = /\{\s*(?:name|title)\s*:\s*["']([^"']+)["'][^}]*price\s*:\s*(\d+(?:\.\d+)?)[^}]*\}/g;
-  let match: RegExpExecArray | null;
-  while ((match = productBlockRe.exec(content)) !== null) {
+  const seen = new Set<string>();
+  const push = (p: Omit<CreatorProduct, "productId" | "sortOrder"> & { name: string }) => {
+    const key = (p.name || "").trim().toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
     products.push({
       productId: `prod_${nanoid(8)}`,
-      name: match[1],
-      price: parseFloat(match[2]),
+      sortOrder: products.length,
       currency: "USD",
       status: "active",
-      sortOrder: products.length,
+      ...p,
+    });
+  };
+
+  // 1. Object literals: { name|title: "...", price: N, ... }
+  const productBlockRe =
+    /\{\s*(?:name|title)\s*:\s*["']([^"']+)["']([^}]*?)price\s*:\s*(\d+(?:\.\d+)?)([^}]*)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = productBlockRe.exec(content)) !== null) {
+    const before = match[2] || "";
+    const after = match[4] || "";
+    const blob = before + after;
+    const desc = blob.match(/description\s*:\s*["']([^"']+)["']/)?.[1];
+    const image = blob.match(/(?:image|imageUrl|imageAssetId|src)\s*:\s*["']([^"']+)["']/)?.[1];
+    const sku = blob.match(/sku\s*:\s*["']([^"']+)["']/)?.[1];
+    const category = blob.match(/category\s*:\s*["']([^"']+)["']/)?.[1];
+    const featured = /featured\s*:\s*true/.test(blob) || undefined;
+    push({
+      name: match[1],
+      price: parseFloat(match[3]),
+      description: desc,
+      imageAssetId: image,
+      sku,
+      category,
+      featured,
     });
   }
-  
-  // Match card-like patterns with price strings: $29.99
+
+  // 2. Card-style fallback: "Title" ... $29.99
   if (products.length === 0) {
     const priceRe = /["']([^"']{3,40})["'][^}]{0,200}\$(\d+(?:\.\d{2})?)/g;
     while ((match = priceRe.exec(content)) !== null) {
       const name = match[1];
       if (/^[A-Z]/.test(name) && !/className|style|href|src/i.test(name)) {
-        products.push({
-          productId: `prod_${nanoid(8)}`,
-          name,
-          price: parseFloat(match[2]),
-          currency: "USD",
-          status: "active",
-          sortOrder: products.length,
-        });
+        push({ name, price: parseFloat(match[2]) });
       }
     }
   }
-  
+
   return products;
 }
 
 function extractServices(content: string): CreatorService[] {
   const services: CreatorService[] = [];
-  
-  // Match service-like objects
-  const serviceRe = /\{\s*(?:name|title|service)\s*:\s*["']([^"']+)["'][^}]*(?:description|desc)\s*:\s*["']([^"']+)["']/g;
+  const seen = new Set<string>();
+
+  const serviceRe = /\{\s*(?:name|title|service)\s*:\s*["']([^"']+)["']([^}]*?)(?:description|desc)\s*:\s*["']([^"']+)["']([^}]*)\}/g;
   let match: RegExpExecArray | null;
   while ((match = serviceRe.exec(content)) !== null) {
+    const key = match[1].trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const blob = (match[2] || "") + (match[4] || "");
+    const duration = blob.match(/duration\s*:\s*(\d+)/)?.[1];
+    const price = blob.match(/price\s*:\s*(\d+(?:\.\d+)?)/)?.[1];
     services.push({
       serviceId: `svc_${nanoid(8)}`,
       name: match[1],
-      description: match[2],
-      bookable: false,
+      description: match[3],
+      duration: duration ? parseInt(duration, 10) : undefined,
+      price: price ? parseFloat(price) : undefined,
+      currency: "USD",
+      bookable: true,
       sortOrder: services.length,
     });
   }
-  
+
   return services;
 }
 

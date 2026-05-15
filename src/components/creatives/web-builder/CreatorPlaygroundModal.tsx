@@ -935,19 +935,19 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
     return collections.filter((c) => c.itemIds.includes(selectedProduct.productId));
   }, [collections, selectedProduct]);
 
-  const selectedProductBindings = useMemo(() => {
+  const selectedProductSurfaces: CatalogSurface[] = useMemo(() => {
     if (!selectedProduct) return [];
-    const collectionIds = new Set(selectedProductCollections.map((c) => c.collectionId));
-    return componentInstances.filter((ci) => {
-      const bindings = ci.bindings || {};
-      const propsSource = (ci.props as Record<string, unknown> | undefined)?.source;
-      if (bindings.productId === selectedProduct.productId) return true;
-      if (bindings.collectionId && collectionIds.has(bindings.collectionId)) return true;
-      if (selectedProduct.featured && (bindings.source === "featured" || propsSource === "featured")) return true;
-      if (bindings.source === "all" || propsSource === "all") return true;
-      return false;
-    });
-  }, [componentInstances, selectedProduct, selectedProductCollections]);
+    return getProductSurfaces(selectedProduct, playground.creatorData, playground.pageRegistry, vfsFiles);
+  }, [selectedProduct, playground.creatorData, playground.pageRegistry, vfsFiles]);
+
+  // Per-product surface counts for the list (orphan badge / topology chip).
+  const productSurfaceCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of allProducts) {
+      m.set(p.productId, getProductSurfaces(p, playground.creatorData, playground.pageRegistry, vfsFiles).length);
+    }
+    return m;
+  }, [allProducts, playground.creatorData, playground.pageRegistry, vfsFiles]);
 
   const toggleProductInCollection = (collectionId: string) => {
     if (!selectedProduct) return;

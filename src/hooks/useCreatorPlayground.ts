@@ -527,6 +527,12 @@ export function useCreatorPlayground(
     return c;
   }, [creatorData.collections, patchCreatorData]);
 
+  const updateCollection = useCallback((collectionId: string, updates: Partial<CreatorCollection>) => {
+    const existing = creatorData.collections[collectionId];
+    if (!existing) return;
+    patchCreatorData("collections", { ...creatorData.collections, [collectionId]: { ...existing, ...updates } });
+  }, [creatorData.collections, patchCreatorData]);
+
   const removeCollection = useCallback((collectionId: string) => {
     const { [collectionId]: _, ...rest } = creatorData.collections;
     patchCreatorData("collections", rest);

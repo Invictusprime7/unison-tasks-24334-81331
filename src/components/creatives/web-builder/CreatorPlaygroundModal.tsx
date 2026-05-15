@@ -873,7 +873,7 @@ function CustomizationSection({ playground }: { playground: UseCreatorPlayground
 
 type ProductFilter = "all" | "active" | "draft" | "archived" | "featured" | "out_of_stock" | "low_stock";
 
-function ProductsSection({ playground }: { playground: UseCreatorPlaygroundReturn }) {
+function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playground: UseCreatorPlaygroundReturn; vfsFiles: Record<string, string>; onNavigateToPage?: (pageId: string) => void }) {
   const allProducts = useMemo(
     () => Object.values(playground.creatorData.products).sort((a, b) => a.sortOrder - b.sortOrder),
     [playground.creatorData.products],

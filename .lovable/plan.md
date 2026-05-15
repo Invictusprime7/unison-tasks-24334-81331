@@ -1,76 +1,90 @@
-## Problem
+## Goal
 
-Style-card theme injection only renders for ecommerce/store at runtime in the Web Builder. Salon/booking (and other industries) revert to the **modern** preset regardless of:
-- explicit Style-card pick (Organic, Bold, Editorial, …), or
-- industry-default (salon → organic) from `INDUSTRY_TO_THEME_PRESET_ID`.
+Make Playground Catalog reflect what the System Launcher AI actually generated and what the preview canvas actually renders — with a real visual topology view, not stateless cards.
 
-Repro path: Wizard → pick Salon + Booking + any Style card → Launch → Web Builder preview shows modern colors/fonts.
+## Three-part build
 
-## Root cause
+### 1. Hydration: Pull AI-generated products/services into CreatorData
 
-There are **four** independent producers of `/src/index.css`, only one of which is keyed on the wizard's resolved `ThemePreset`:
+**File:** `src/services/playgroundHydrator.ts` (extend existing `hydratePlaygroundFromVFS`)
 
-| # | Producer | Preset source | When it runs |
-|---|----------|---------------|--------------|
-| 1 | `buildThemedIndexCss(resolvedPreset)` in `SystemLauncher` | ✅ wizard pick / industry map | Only at launch, single shot |
-| 2 | `BASE_CSS = buildDefaultThemedIndexCss()` in `sandpackFilePrep.ts` | ❌ hard-coded `'modern'` | Inside `normalizeLauncherFiles` whenever `/src/index.css` is missing |
-| 3 | `DEFAULT_INDEX_CSS = buildDefaultThemedIndexCss()` in `previewSession.ts` | ❌ hard-coded `'modern'` | Inside `ensureViteRootFiles` whenever `/src/index.css` is missing |
-| 4 | `completeAestheticCSS(navState.aesthetic)` in `WebBuilder.tsx` (line 4325) | ⚠️ separate `aestheticToCSS.ts` system | On every Builder hydration; **prepended** so the launcher's `:root` overrides it (when present) |
+- Scan VFS files for product-shaped data:
+  - Hardcoded `products = [...]` arrays in `.tsx` (regex + AST-lite extraction of `{ name, price, description, image }` objects).
+  - JSX `<ProductCard ... />` and `<UnisonProductCard ... />` props.
+  - Emitted `unisonData` files if the AI wrote one directly.
+- Heuristic: extract name, price, currency, description, image URL, sku (if present), category.
+- Map → `CreatorProduct` with `status:"active"`, `trackInventory:false`, sortOrder appended.
+- Same for services (`services = [...]`, `<ServiceCard />`, `<BookingCard />`).
+- Idempotent merge in `mergeHydrationResult` keyed by name+sku to avoid duplicates on re-hydrate.
+- Trigger automatically in `WebBuilder` after Launcher hand-off (already calls `hydrateFromVFS`).
 
-Plus a fifth layer: `recompileFromPlayground` in `canonicalPipeline.ts` does **not** thread `themedIndexCss` at all, so any in-builder Playground recompile that strips/replaces VFS files leaves no themed CSS to fall back to.
+### 2. Topology graph: where each product appears
 
-The race in the Builder:
-1. WebBuilder hydrates from `navState.vfsFiles` → launcher's themed `/src/index.css` arrives.
-2. Effect A (line 2643) fires on `previewCode` before VFS is fully synced; if its `currentFiles` snapshot is missing `/src/index.css`, it calls `normalizeLauncherFiles(...)` which injects **`BASE_CSS` (modern)**.
-3. That `/src/index.css` value is what the Sandpack preview compiles.
+**New helper:** `src/services/catalogTopology.ts`
 
-Store/ecommerce happens to win because its single-page launcher output arrives in VFS before Effect A runs; salon/booking is multi-page (booking funnel + service pages) and the additional file sync delays index.css enough for the race to lose.
+```ts
+export type ProductSurface = {
+  pageId: string;
+  pageLabel: string;
+  pageSlug: string;
+  componentInstanceId?: string;
+  componentType: string;        // ProductGrid | ProductCard | …
+  source?: "all" | "featured" | "collection" | "direct";
+  collectionId?: string;
+  collectionName?: string;
+};
 
-## Fix — unify theme-token injection on the wizard preset
+export function getProductSurfaces(
+  productId: string,
+  creatorData: CreatorData,
+  pageRegistry: PageRegistry,
+  vfsFiles: Record<string,string>,
+): ProductSurface[];
+```
 
-The architecture already states `SiteBundleSnapshot` is the single source of truth. Extend that contract to **theme tokens** and remove all hard-coded `'modern'` fallbacks. PageRegistry/SiteBundle drive structure; `appContext.themePresetId` drives `/src/index.css`.
+Resolution order:
+1. Component instances bound directly (`bindings.productId === productId`).
+2. Component instances bound by collection containing productId.
+3. Component instances with `source:"all"` or `"featured"` (filter featured by product flag).
+4. VFS scan: pages whose `.tsx` references the product's name/sku in `<ProductCard>`/`<UnisonProductCard productId="...">` — picks up AI-authored static usages.
 
-### 1. Persist the resolved preset in the canonical artifacts
+### 3. Visual topology UI in Playground Catalog
 
-- `RuntimeAppContext` (`src/types/runtimeManifest.ts`): add `themePresetId?: string`.
-- `SystemLauncher.tsx` (line ~1132 `buildCanonicalLaunchArtifacts({...})`): pass `themePresetId: resolvedPreset.id` into `appContext` (route via a new field on `BuildCanonicalLaunchArtifactsInput`, plumbed in `canonicalLaunchVfs.ts:buildRuntimeAppContext`).
-- `WizardSelections.themeId` is already set; ensure the launcher always writes `appContext.themePresetId` regardless of whether the user picked a card (use `resolveThemePreset(...)` so the industry-default flows through too).
+**File:** `src/components/creatives/web-builder/CreatorPlaygroundModal.tsx` (`ProductsSection`)
 
-### 2. Make every CSS producer key off the resolved preset, not `'modern'`
+Replace flat cards with a richer node:
 
-- `sandpackFilePrep.ts`:
-  - Replace the module-level `const BASE_CSS = buildDefaultThemedIndexCss()` with a function `buildBaseCssForPreset(presetId?: string)` that calls `buildThemedIndexCss(THEME_PRESETS.find(p => p.id === presetId) ?? DEFAULT_PREVIEW_THEME_PRESET)`.
-  - Add `themePresetId?: string` to `normalizeLauncherFiles` options; use it when injecting the missing `/src/index.css` (line ~4437).
-- `previewSession.ts`:
-  - Same treatment: `ensureViteRootFiles(fileMap, { themePresetId? })`. When `/src/index.css` is missing, build from preset.
-- `WebBuilder.tsx`:
-  - Read `themePresetId` from `siteBundleSnapshot.appContext` (or fallback `navState.aesthetic`) and pass it to every `normalizeLauncherFiles(...)` call (lines 2652, 4319, 4467).
-  - Replace the dual-write `completeAestheticCSS(...)` prepend (lines 4324–4348) with a single-source rewrite: if `/src/index.css` exists and lacks the wizard's `AESTHETIC: <label>` marker, **overwrite** it with `buildThemedIndexCss(resolvedPreset)`. Stop using `aestheticToCSS.ts` for this path (it produces a competing/incomplete `:root` block).
+```
+┌──────────────────────────────────────────────┐
+│ [img]  Product name      $price   ★ Featured │
+│        SKU · category    [In Stock 12]       │
+│        ─── Appears on ──────────────────     │
+│        • Home → Featured Grid (source:fea…)  │
+│        • Shop → All Products (source:all)    │
+│        • /products/coffee.tsx (direct)       │
+└──────────────────────────────────────────────┘
+```
 
-### 3. Make `recompileFromPlayground` re-emit themed CSS
+- Mini live preview tile uses host-side `<ProductCard creatorData productId />` (already built in Phase 2) at scale ~0.7, in a hover-zoom popover.
+- "Appears on" rows are clickable → call `onNavigateToPage(pageId)` (existing prop pattern in modal) so user jumps to the page in preview.
+- Empty-topology badge: "Orphaned — not rendered anywhere" with a one-click "Insert into Featured Grid on Home" action.
+- Same treatment in `ServicesSection`.
 
-In `src/services/canonicalPipeline.ts:recompileFromPlayground`:
-- Accept `themePresetId` in `options`.
-- After `compilePlayground`, if `themePresetId` is provided, set `compileResult.vfsFiles['/src/index.css'] = buildThemedIndexCss(preset)` so any Playground-driven recompile in the Builder keeps the wizard's tokens locked.
-- Update the only Builder caller of `recompileFromPlayground` to thread `appContext.themePresetId`.
+A new "Topology" tab/toggle on top of the catalog:
+- **Cards view** (current upgraded list).
+- **Graph view** — left column: pages, right column: products/services, lines (CSS-only) connecting them. Built with simple absolute-positioned divs + SVG lines; no new deps.
 
-### 4. Deprecate the parallel `aestheticToCSS.ts` system
+## Technical details
 
-`completeAestheticCSS / aestheticToCSSVariables` produce a **second** `:root` block keyed on hex→HSL math that's almost—but not exactly—identical to `themePresetToTokens.ts`. Delete its WebBuilder usage; keep the file only if external callers exist (search-and-confirm, then remove).
-
-### 5. Tests
-
-Extend `src/test/launchToSandpack.test.ts` and `src/test/canonicalLaunchVfs.test.ts` (or add `themeTokenInjection.test.ts`) with:
-- Salon + Organic: assert `/src/index.css` in builder VFS contains `AESTHETIC: Organic` and the organic primary HSL, NOT modern.
-- Salon default (no Style card): assert organic-injected (industry map).
-- Store + Bold: assert bold tokens.
-- Recompile through `recompileFromPlayground` preserves the Style-card tokens.
+- Hydration regex examples:
+  - `/(?:const|let|var)\s+products\s*=\s*\[([\s\S]*?)\]/`
+  - JSX prop scrape via small tag-tokenizer already used in `multi-page-routing-and-intent-bridge` flow.
+- Reverse-sync rule: hydration is **additive only** — it never deletes Playground products the user added manually. Discovered products get a `discoveredFromVFS:true` marker on `CreatorProduct.tags` (internal `__discovered`) so the user can audit in a future pass.
+- Topology recomputes via `useMemo([creatorData, pageRegistry, vfsFiles])`.
+- Uses existing `playground.updateCollection` (added last turn) for orphan-fix actions.
 
 ## Out of scope
 
-- AI prompt contract changes (the AI already receives palette + typography correctly; the bug is in the deterministic CSS write path).
-- Section JSX inline-color audit — addressed separately if the AI generation still bakes hex values after this fix.
-
-## Acceptance
-
-Launch Salon → Booking → Organic. Web Builder preview shows organic warm palette + Cormorant heading font. Same for every (industry × style) combination, including the no-pick default.
+- Drag-and-drop binding from topology graph (next phase).
+- Persisting hydration discoveries to Supabase (CreatorData is already saved in `builder_drafts`).
+- Refactoring System Launcher itself to emit CreatorData natively (that's a deeper Lane-A change; hydration covers the gap for now).

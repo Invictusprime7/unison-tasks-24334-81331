@@ -579,7 +579,7 @@ export function useCreatorPlayground(
     addForm, updateForm, removeForm,
     addComponentInstance, updateComponentInstance, removeComponentInstance,
     updateBusinessInfo,
-    addCollection, removeCollection,
+    addCollection, updateCollection, removeCollection,
     hydrateFromVFS,
     lastHydration,
     isDirty,

@@ -1570,6 +1570,60 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                   {selectedService.featured ? "Featured" : "Mark Featured"}
                 </Button>
               </div>
+
+              {/* Topology — where this service appears */}
+              <div className="rounded-lg border border-border/20 bg-background/30 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Link2 className="h-3.5 w-3.5 text-emerald-500" /> Appears on
+                  </div>
+                  <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                    {selectedServiceSurfaces.length} surface{selectedServiceSurfaces.length === 1 ? "" : "s"}
+                  </Badge>
+                </div>
+                {selectedServiceSurfaces.length === 0 ? (
+                  <div className="rounded border border-dashed border-rose-500/30 bg-rose-500/5 px-2.5 py-2 text-[11px] text-rose-300">
+                    <strong>Orphaned</strong> — this service isn't rendered on any page yet.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {selectedServiceSurfaces.map((surface) => (
+                      <button
+                        type="button"
+                        key={surface.id}
+                        disabled={!surface.pageId || !onNavigateToPage}
+                        onClick={() => surface.pageId && onNavigateToPage?.(surface.pageId)}
+                        className={cn(
+                          "w-full text-left flex items-center justify-between gap-2 rounded-md border border-border/20 bg-muted/10 px-2.5 py-1.5 transition-colors",
+                          surface.pageId && onNavigateToPage ? "hover:bg-muted/20 cursor-pointer" : "cursor-default opacity-90",
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-medium text-foreground">
+                            {surface.pageLabel}
+                            {surface.pageSlug ? <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">{surface.pageSlug}</span> : null}
+                          </div>
+                          <div className="mt-0.5 text-[10px] text-muted-foreground">
+                            <span className="font-mono">{surface.componentType}</span>
+                            <span className="ml-1.5">· {surface.kind === "vfs_static" ? "static jsx" : surface.kind}</span>
+                            {surface.filePath ? <span className="ml-1.5 opacity-70">· {surface.filePath.replace(/^\/src\//, "")}</span> : null}
+                          </div>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[9px] h-4 px-1.5",
+                            surface.kind === "direct" && "border-emerald-500/40 text-emerald-400",
+                            surface.kind === "vfs_static" && "border-zinc-500/40 text-zinc-400",
+                          )}
+                        >
+                          {surface.kind}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

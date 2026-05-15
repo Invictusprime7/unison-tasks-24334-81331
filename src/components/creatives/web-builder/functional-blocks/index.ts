@@ -3,6 +3,7 @@ export { ContactForm } from './ContactForm';
 export { BookingWidget } from './BookingWidget';
 export { PaymentButton } from './PaymentButton';
 export { ProductCard } from './ProductCard';
+export { ProductGrid } from './ProductGrid';
 export { ShoppingCart } from './ShoppingCart';
 export { OpenStreetMap } from './OpenStreetMap';
 export { WorkflowButton } from './WorkflowButton';

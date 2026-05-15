@@ -2157,7 +2157,10 @@ export default function App() {
   useEffect(() => {
     try {
       const source = generateUnisonDataFile(creatorDataForUnison);
-      vfsImportFiles({ [UNISON_DATA_PATH]: source });
+      vfsImportFiles({
+        [UNISON_DATA_PATH]: source,
+        [UNISON_PRODUCTS_PATH]: generateUnisonProductsFile(),
+      });
     } catch (err) {
       console.warn('[unison-data] Failed to regenerate', err);
     }

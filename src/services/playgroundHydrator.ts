@@ -577,14 +577,28 @@ export function mergeHydrationResult(
     }
   }
   
-  // Merge creator data: append new items, don't overwrite existing
+  // Merge creator data: dedupe products/services by normalized name to keep
+  // re-hydration idempotent (each scan generates new ids).
   const mergedData: CreatorData = { ...existing.creatorData };
-  
+
+  const existingProductNames = new Set(
+    Object.values(mergedData.products).map((p) => (p.name || "").trim().toLowerCase()),
+  );
   for (const [id, p] of Object.entries(incoming.creatorData.products)) {
-    if (!mergedData.products[id]) mergedData.products[id] = p;
+    const key = (p.name || "").trim().toLowerCase();
+    if (!key || existingProductNames.has(key)) continue;
+    mergedData.products[id] = { ...p, sortOrder: Object.keys(mergedData.products).length };
+    existingProductNames.add(key);
   }
+
+  const existingServiceNames = new Set(
+    Object.values(mergedData.services).map((s) => (s.name || "").trim().toLowerCase()),
+  );
   for (const [id, s] of Object.entries(incoming.creatorData.services)) {
-    if (!mergedData.services[id]) mergedData.services[id] = s;
+    const key = (s.name || "").trim().toLowerCase();
+    if (!key || existingServiceNames.has(key)) continue;
+    mergedData.services[id] = { ...s, sortOrder: Object.keys(mergedData.services).length };
+    existingServiceNames.add(key);
   }
   for (const [id, t] of Object.entries(incoming.creatorData.testimonials)) {
     if (!mergedData.testimonials[id]) mergedData.testimonials[id] = t;

@@ -68,6 +68,7 @@ export interface UseCreatorPlaygroundReturn {
 
   // Collection CRUD
   addCollection: (collection: Omit<CreatorCollection, "collectionId" | "sortOrder">) => CreatorCollection;
+  updateCollection: (collectionId: string, updates: Partial<CreatorCollection>) => void;
   removeCollection: (collectionId: string) => void;
 
   // Hydration — auto-populate from VFS

@@ -130,6 +130,7 @@ import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { recompileFromPlayground, type SiteBundleSnapshot } from '@/services/canonicalPipeline';
+import { generateUnisonDataFile, UNISON_DATA_PATH } from '@/services/unisonDataGenerator';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {
@@ -2144,7 +2145,23 @@ export default function App() {
     resetToEmpty: vfsResetToEmpty,
     loadDefaultTemplate: vfsLoadDefaultTemplate,
   } = virtualFS;
-  
+
+  // ──────────────────────────────────────────────────────────────
+  // Unison Data Generator (Phase 1)
+  // Mirrors CreatorData → /src/unison/data.ts in the VFS so that
+  // generated pages/widgets can read business content from a
+  // single canonical source instead of hardcoded arrays.
+  // ──────────────────────────────────────────────────────────────
+  const creatorDataForUnison = creatorPlayground.creatorData;
+  useEffect(() => {
+    try {
+      const source = generateUnisonDataFile(creatorDataForUnison);
+      vfsImportFiles({ [UNISON_DATA_PATH]: source });
+    } catch (err) {
+      console.warn('[unison-data] Failed to regenerate', err);
+    }
+  }, [creatorDataForUnison, vfsImportFiles]);
+
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
   const aiVFS = useAIVFS(virtualFS, livePreviewRef);
   

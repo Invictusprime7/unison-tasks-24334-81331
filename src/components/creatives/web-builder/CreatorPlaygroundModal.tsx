@@ -380,9 +380,9 @@ export function CreatorPlaygroundModal({
                 )}
                 {activeSection === "pages" && <PagesSection playground={playground} controlPlane={controlPlane} onPageSelect={onPageSelect} onPageAdd={onPageAdd} onPageRemove={onPageRemove} />}
                 {activeSection === "funnels" && <FunnelsSection playground={playground} controlPlane={controlPlane} onFunnelCreate={onFunnelCreate} />}
-                {activeSection === "products" && <ProductsSection playground={playground} />}
+                {activeSection === "products" && <ProductsSection playground={playground} vfsFiles={vfsFiles} onNavigateToPage={onPageSelect} />}
                 {activeSection === "customization" && <CustomizationSection playground={playground} />}
-                {activeSection === "services" && <ServicesSection playground={playground} />}
+                {activeSection === "services" && <ServicesSection playground={playground} vfsFiles={vfsFiles} onNavigateToPage={onPageSelect} />}
                 {activeSection === "forms" && <FormsSection playground={playground} />}
                 {activeSection === "components" && (
                   <ComponentsSection

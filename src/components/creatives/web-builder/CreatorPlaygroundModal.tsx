@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { isProductInStock } from "@/types/creatorData";
 import {
   Dialog,
   DialogContent,
@@ -893,7 +894,10 @@ function ProductsSection({ playground }: { playground: UseCreatorPlaygroundRetur
               description: "",
               price: 99,
               currency: "USD",
-              inStock: true,
+              status: "active",
+              trackInventory: true,
+              stockQuantity: 10,
+              inventoryPolicy: "deny_when_out",
               ctaLabel: "Buy Now",
               checkoutLabel: "Complete Purchase",
               variants: [],

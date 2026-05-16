@@ -162,6 +162,22 @@ export function applyAIOutputToVFS(
   try {
     // 0. Snapshot current state for undo
     const currentFiles = preserveExisting ? vfs.getSandpackFiles() : {};
+    const validationErrors = validateAIFileEdits(aiFiles, currentFiles);
+    if (validationErrors.length > 0) {
+      errors.push(...validationErrors);
+      vfsEventBus.emit('ai:apply:error', { message: validationErrors.join('\n') });
+      return {
+        success: false,
+        filesWritten: [],
+        dependencies: createEmptyDeps(),
+        packageJson: null,
+        errors,
+        timing: {
+          depExtractionMs: 0,
+          totalMs: performance.now() - startTime,
+        },
+      };
+    }
     vfsSnapshotManager.createSnapshot(currentFiles, `Before AI edit (${Object.keys(aiFiles).length} files)`, 'ai');
 
     // 1. Merge AI output with existing files

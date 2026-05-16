@@ -219,6 +219,15 @@ class WorkspacePatchEngineService {
       if (protectedPaths.includes(p.path) && p.operation !== 'update') {
         errors.push(`Cannot ${p.operation} protected file: ${p.path}`);
       }
+      // Block ALL edits to auto-generated Unison canonical files — they
+      // are deterministically regenerated from CreatorData and any patch
+      // is overwritten on the next preview compile anyway.
+      if (isUnisonProtectedPath(p.path)) {
+        errors.push(
+          `Cannot ${p.operation} auto-generated file: ${p.path}. ` +
+            `Edit the Creator Playground catalog instead.`,
+        );
+      }
     }
 
     return { valid: errors.length === 0, errors, warnings };

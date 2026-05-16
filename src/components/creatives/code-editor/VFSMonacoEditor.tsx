@@ -216,7 +216,7 @@ const VFSMonacoEditor: React.FC<VFSMonacoEditorProps> = ({
   // Format action
   const handleFormat = useCallback(async () => {
     const editor = editorRef.current;
-    if (!editor || readOnly) return;
+    if (!editor || effectiveReadOnly) return;
     setIsFormatting(true);
     try {
       const formatted = await formatCode(editor.getValue(), language);
@@ -227,7 +227,7 @@ const VFSMonacoEditor: React.FC<VFSMonacoEditorProps> = ({
     } finally {
       setIsFormatting(false);
     }
-  }, [language, onChange, readOnly]);
+  }, [language, onChange, effectiveReadOnly]);
 
   const handleEditorDidMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -405,7 +405,7 @@ const VFSMonacoEditor: React.FC<VFSMonacoEditorProps> = ({
             </div>
           }
           options={{
-            readOnly,
+            readOnly: effectiveReadOnly,
             minimap: { enabled: true, maxColumn: 80 },
             fontSize: 14,
             fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",

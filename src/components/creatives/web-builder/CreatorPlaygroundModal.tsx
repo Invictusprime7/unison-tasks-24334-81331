@@ -1364,8 +1364,42 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                   Real bindings + VFS scan: where this product is rendered in the preview canvas right now.
                 </p>
                 {selectedProductSurfaces.length === 0 ? (
-                  <div className="rounded border border-dashed border-rose-500/30 bg-rose-500/5 px-2.5 py-2 text-[11px] text-rose-300">
-                    <strong className="font-semibold">Orphaned</strong> — not rendered anywhere yet. Add a <code className="rounded bg-muted/40 px-1 text-[10px]">ProductGrid</code> with <code className="rounded bg-muted/40 px-1 text-[10px]">source="all"</code>{selectedProduct.featured ? ' or "featured"' : ""}, or drop it into a collection above.
+                  <div className="rounded border border-dashed border-rose-500/30 bg-rose-500/5 px-2.5 py-2 text-[11px] text-rose-300 space-y-2">
+                    <div>
+                      <strong className="font-semibold">Orphaned</strong> — not rendered anywhere yet. Add a <code className="rounded bg-muted/40 px-1 text-[10px]">ProductGrid</code> on Home, or drop it into a collection above.
+                    </div>
+                    {homePageId && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedProduct.featured && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+                            onClick={() => insertOrphanFix(selectedProduct, "featured")}
+                          >
+                            <Plus className="mr-1 h-3 w-3" /> Insert Featured Grid on Home
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-violet-500/40 text-violet-300 hover:bg-violet-500/10"
+                          onClick={() => insertOrphanFix(selectedProduct, "all")}
+                        >
+                          <Plus className="mr-1 h-3 w-3" /> Insert All-Products Grid on Home
+                        </Button>
+                        {!selectedProduct.featured && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-[11px]"
+                            onClick={() => playground.updateProduct(selectedProduct.productId, { featured: true })}
+                          >
+                            <Star className="mr-1 h-3 w-3" /> Mark Featured
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-1.5">

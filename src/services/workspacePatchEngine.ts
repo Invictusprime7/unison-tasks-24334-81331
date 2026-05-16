@@ -231,6 +231,18 @@ class WorkspacePatchEngineService {
             `Edit the Creator Playground catalog instead.`,
         );
       }
+      // Block inline rewiring of slotted elements — bindings must go through
+      // applyButtonBinding so the AI can't introduce syntax errors or
+      // dangling intents while touching button JSX.
+      if (p.operation === 'update') {
+        const violations = detectSlotBindingViolations(
+          currentFiles[p.path],
+          p.newContent,
+        );
+        for (const v of violations) {
+          errors.push(`[${p.path}] ${v.reason}`);
+        }
+      }
     }
 
     return { valid: errors.length === 0, errors, warnings };

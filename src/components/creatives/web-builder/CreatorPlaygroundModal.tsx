@@ -1099,6 +1099,16 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
         </div>
       </div>
 
+      {viewMode === "graph" ? (
+        <CatalogGraph
+          playground={playground}
+          vfsFiles={vfsFiles}
+          mode="products"
+          onSelect={(productId) => { setSelectedProductId(productId); setViewMode("list"); }}
+          onNavigateToPage={onNavigateToPage}
+          selectedItemId={selectedProductId}
+        />
+      ) : (
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="space-y-2">
           {products.length === 0 && (

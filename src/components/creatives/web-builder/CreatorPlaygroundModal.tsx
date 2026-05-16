@@ -891,7 +891,25 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
 
   const [filter, setFilter] = useState<ProductFilter>("all");
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "graph">("list");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(allProducts[0]?.productId || null);
+
+  const homePageId = playground.pageRegistry.homePageId
+    || Object.values(playground.pageRegistry.pages).find((p) => p.isHome)?.pageId
+    || Object.values(playground.pageRegistry.pages)[0]?.pageId
+    || null;
+
+  const insertOrphanFix = (product: typeof allProducts[number], source: "featured" | "all") => {
+    if (!homePageId) return;
+    const created = playground.addComponentInstance({
+      componentType: "ProductGrid",
+      componentSlug: "product-grid",
+      bindings: { source },
+      props: { source, title: source === "featured" ? "Featured Products" : "All Products" },
+      usedOnPages: [homePageId],
+    });
+    if (created && onNavigateToPage) onNavigateToPage(homePageId);
+  };
 
   const stats = useMemo(() => {
     let active = 0, draft = 0, archived = 0, featured = 0, outOfStock = 0, lowStock = 0;

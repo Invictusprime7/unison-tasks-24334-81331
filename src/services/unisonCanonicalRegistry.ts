@@ -155,6 +155,7 @@ export function applyUnisonCanonicals(
 
   if (includeSandpackMirrors) {
     for (const [path, source] of Object.entries(canonical)) {
+      overlay[path] = toSandpackSource(path, source);
       const sandpackPath = toSandpackPath(path);
       overlay[sandpackPath] = toSandpackSource(path, source);
     }

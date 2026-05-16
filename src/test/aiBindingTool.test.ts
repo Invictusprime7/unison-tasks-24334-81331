@@ -44,7 +44,7 @@ describe('applyButtonBinding', () => {
       { pageRegistry: baseRegistry },
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('invalid_intent');
+    expect((r as any).code).toBe('invalid_intent');
   });
 
   it('requires targetPageId for nav.goto', async () => {
@@ -53,7 +53,7 @@ describe('applyButtonBinding', () => {
       { pageRegistry: baseRegistry },
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('missing_target_page');
+    expect((r as any).code).toBe('missing_target_page');
   });
 
   it('rejects nav.goto pointing at a page that does not exist', async () => {
@@ -62,7 +62,7 @@ describe('applyButtonBinding', () => {
       { pageRegistry: baseRegistry },
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('unknown_target_page');
+    expect((r as any).code).toBe('unknown_target_page');
   });
 
   it('persists a valid nav.goto binding with targetPageId in payload', async () => {
@@ -80,7 +80,7 @@ describe('applyButtonBinding', () => {
       { pageRegistry: baseRegistry, slotExists: () => false },
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('slot_not_found');
+    expect((r as any).code).toBe('slot_not_found');
   });
 });
 

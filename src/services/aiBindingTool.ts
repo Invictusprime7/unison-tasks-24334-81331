@@ -203,6 +203,16 @@ export function detectSlotBindingViolations(
   const oldSlots = extractSlotElements(oldContent);
   const newSlots = extractSlotElements(newContent);
   const violations: SlotBindingViolation[] = [];
+  for (const slot of oldSlots.keys()) {
+    if (!newSlots.has(slot)) {
+      violations.push({
+        slot,
+        reason:
+          `Slot "${slot}" was removed or renamed inline. ` +
+          `Use the structured page/slot editor so bindings stay aligned with the registry.`,
+      });
+    }
+  }
   for (const [slot, newWindow] of newSlots) {
     const oldWindow = oldSlots.get(slot);
     if (!oldWindow) continue; // new slot — allow (scaffold path)

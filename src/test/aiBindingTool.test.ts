@@ -117,4 +117,10 @@ describe('detectSlotBindingViolations', () => {
       `<button data-ut-slot="footer.cta" data-ut-intent="newsletter.subscribe">Join</button>`;
     expect(detectSlotBindingViolations(before, after)).toEqual([]);
   });
+
+  it('flags removing or renaming existing slots', () => {
+    const after = before.replace('data-ut-slot="hero.primary-cta"', 'data-ut-slot="hero.primary-renamed"');
+    const v = detectSlotBindingViolations(before, after);
+    expect(v.some(x => x.slot === 'hero.primary-cta')).toBe(true);
+  });
 });

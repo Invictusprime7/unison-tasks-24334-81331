@@ -63,4 +63,16 @@ describe('unisonCanonicalRegistry', () => {
       window.removeEventListener('unison-canonical:overwrite', handler);
     }
   });
+
+  it('mirrors protected files to flattened Sandpack runtime paths', () => {
+    const out = applyUnisonCanonicals({ '/unison/products.tsx': 'broken runtime copy' });
+    expect(out['/unison/products.tsx']).toContain('import {');
+    expect(out['/unison/products.tsx']).toContain('from "./data"');
+    expect(out['/unison/products.tsx']).toContain('unisonData');
+  });
+
+  it('treats flattened Unison paths as protected aliases', () => {
+    expect(isUnisonProtectedPath('/unison/products.tsx')).toBe(true);
+    expect(isUnisonProtectedPath('unison/data.ts')).toBe(true);
+  });
 });

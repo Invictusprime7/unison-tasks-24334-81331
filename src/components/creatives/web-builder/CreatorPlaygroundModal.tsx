@@ -3237,7 +3237,7 @@ function CatalogGraph({
             <strong className="text-foreground">{edges.length}</strong> connection{edges.length === 1 ? "" : "s"} ·{" "}
             <strong className="text-foreground">{orphanIds.length}</strong> orphan{orphanIds.length === 1 ? "" : "s"}
           </div>
-          <div className="text-[10px]">Click an item to edit · click a page to open it in preview</div>
+          <div className="text-[10px]">Click to edit · drag an item onto a page to bind directly</div>
         </div>
       </div>
     </div>

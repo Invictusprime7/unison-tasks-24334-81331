@@ -70,6 +70,7 @@ import {
   Image as ImageIcon,
   Star,
   Trash2,
+  Pencil,
   XCircle,
   Zap,
 } from "lucide-react";

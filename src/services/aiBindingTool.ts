@@ -147,17 +147,25 @@ const SLOT_ATTR_RE = /data-ut-slot=["']([^"']+)["']/g;
  * Extract `data-ut-slot` values from a file's content. Cheap regex sweep —
  * the patch engine only needs a set comparison.
  */
+/**
+ * Extract `data-ut-slot` values mapped to the JSX opening tag that contains
+ * them. Tag-scoped extraction is stable under unrelated edits elsewhere in
+ * the file (adding a new slot won't shift the window of existing slots).
+ */
 function extractSlotElements(content: string): Map<string, string> {
   const slots = new Map<string, string>();
   if (!content) return slots;
-  // For each slot, capture a window of ~400 chars around the tag for attr diff.
-  let m: RegExpExecArray | null;
   const re = new RegExp(SLOT_ATTR_RE.source, 'g');
+  let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
     const slot = m[1];
-    const start = Math.max(0, m.index - 200);
-    const end = Math.min(content.length, m.index + 400);
-    slots.set(slot, content.slice(start, end));
+    // Walk back to the nearest '<' (start of opening tag).
+    let start = m.index;
+    while (start > 0 && content[start] !== '<') start--;
+    // Walk forward to the matching '>' that closes the opening tag.
+    let end = m.index;
+    while (end < content.length && content[end] !== '>') end++;
+    slots.set(slot, content.slice(start, Math.min(content.length, end + 1)));
   }
   return slots;
 }

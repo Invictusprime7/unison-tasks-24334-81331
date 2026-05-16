@@ -55,6 +55,8 @@ import {
   Home,
   Info,
   Link2,
+  Network,
+  LayoutGrid,
   MessageSquare,
   Plus,
   Rocket,

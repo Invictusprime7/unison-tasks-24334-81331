@@ -19,6 +19,8 @@ import { analyzeReactSite, type SiteAnalysis } from '@/utils/reactSiteAnalysis';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { getGraphSummaryForAI } from '@/services/importGraphAnalyzer';
+import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
+import { detectSlotBindingViolations } from '@/services/aiBindingTool';
 
 // ============================================================================
 // Types
@@ -94,6 +96,32 @@ const BASE_DEV_DEPS: Record<string, string> = {
   'typescript': '^5.6.3',
   'vite': '^5.4.11',
 };
+
+function getExistingContent(files: Record<string, string>, path: string): string | undefined {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return files[path] ?? files[normalized] ?? files[normalized.replace(/^\/src\//, '/')];
+}
+
+function validateAIFileEdits(
+  aiFiles: Record<string, string>,
+  currentFiles: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  for (const [path, nextContent] of Object.entries(aiFiles)) {
+    if (isUnisonProtectedPath(path)) {
+      errors.push(
+        `AI edit blocked for auto-generated file ${path}. ` +
+          `Edit CreatorData/Creator Playground inputs; Unison files are regenerated canonically.`,
+      );
+      continue;
+    }
+    const previousContent = getExistingContent(currentFiles, path);
+    for (const violation of detectSlotBindingViolations(previousContent, nextContent)) {
+      errors.push(`[${path}] ${violation.reason}`);
+    }
+  }
+  return errors;
+}
 
 // ============================================================================
 // Core Orchestrator

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { SetupWizardPanel } from "./setup-wizard/SetupWizardPanel";
@@ -69,6 +70,7 @@ import {
   Image as ImageIcon,
   Star,
   Trash2,
+  Pencil,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -1366,20 +1368,31 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                     {collections.map((c) => {
                       const member = c.itemIds.includes(selectedProduct.productId);
                       return (
-                        <button
+                        <div
                           key={c.collectionId}
-                          type="button"
-                          onClick={() => toggleProductInCollection(c.collectionId)}
                           className={cn(
-                            "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                            "inline-flex items-center gap-1 rounded-full border pl-2.5 pr-1 py-0.5 text-[11px] transition-colors",
                             member
                               ? "border-sky-500/40 bg-sky-500/15 text-foreground"
                               : "border-border/30 bg-muted/10 text-muted-foreground hover:bg-muted/20",
                           )}
                         >
-                          {member ? "✓ " : "+ "}{c.name}
-                          <span className="ml-1 opacity-60">{c.itemIds.length}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleProductInCollection(c.collectionId)}
+                            className="inline-flex items-center gap-1"
+                            title={member ? "Remove from collection" : "Add to collection"}
+                          >
+                            {member ? "✓ " : "+ "}{c.name}
+                            <span className="ml-0.5 opacity-60">{c.itemIds.length}</span>
+                          </button>
+                          <CollectionPillEditor
+                            playground={playground}
+                            collectionId={c.collectionId}
+                            itemKind="products"
+                            candidates={allProducts.map((p) => ({ id: p.productId, name: p.name, meta: `${p.currency} ${p.price}` }))}
+                          />
+                        </div>
                       );
                     })}
                   </div>
@@ -1557,6 +1570,142 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
     </div>
   );
 }
+
+/**
+ * Inline mini-editor for a collection — opens from a pencil affordance on the
+ * collection pill. Lets you rename, manage members (multi-select with search),
+ * and delete the collection without leaving the Products/Services tab.
+ */
+function CollectionPillEditor({
+  playground,
+  collectionId,
+  candidates,
+  itemKind,
+}: {
+  playground: UseCreatorPlaygroundReturn;
+  collectionId: string;
+  candidates: Array<{ id: string; name: string; meta?: string }>;
+  itemKind: "products" | "services";
+}) {
+  const collection = playground.creatorData.collections[collectionId];
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  if (!collection) return null;
+
+  const memberSet = new Set(collection.itemIds);
+  const filtered = candidates.filter((c) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) || (c.meta || "").toLowerCase().includes(q);
+  });
+
+  const toggle = (id: string) => {
+    const has = collection.itemIds.includes(id);
+    const itemIds = has ? collection.itemIds.filter((x) => x !== id) : [...collection.itemIds, id];
+    playground.updateCollection(collectionId, { itemIds });
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center rounded-full border border-border/30 bg-muted/10 p-0.5 text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
+          title={`Edit "${collection.name}"`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Pencil className="h-2.5 w-2.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-80 p-3 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Collection name</div>
+          <Input
+            value={collection.name}
+            onChange={(e) => playground.updateCollection(collectionId, { name: e.target.value })}
+            className="h-8 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Members · {collection.itemIds.length}
+            </div>
+            <div className="text-[10px] text-muted-foreground/70">
+              {itemKind === "products" ? "Products" : "Services"}
+            </div>
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="h-7 pl-6 text-xs"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto rounded-md border border-border/30 bg-muted/5">
+            {filtered.length === 0 ? (
+              <div className="px-2.5 py-3 text-[11px] text-center text-muted-foreground">
+                No {itemKind === "products" ? "products" : "services"} match.
+              </div>
+            ) : (
+              filtered.map((c) => {
+                const member = memberSet.has(c.id);
+                return (
+                  <button
+                    type="button"
+                    key={c.id}
+                    onClick={() => toggle(c.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs border-b border-border/10 last:border-b-0 transition-colors",
+                      member ? "bg-sky-500/10 text-foreground" : "hover:bg-muted/20 text-muted-foreground",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                        member ? "border-sky-500/60 bg-sky-500/30 text-sky-100" : "border-border/40",
+                      )}
+                    >
+                      {member && <CheckCircle className="h-2.5 w-2.5" />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                    {c.meta && <span className="text-[10px] text-muted-foreground/70 shrink-0">{c.meta}</span>}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-border/20 pt-2">
+          <div className="text-[10px] text-muted-foreground">
+            Bound via <code className="rounded bg-muted/40 px-1">collectionId</code>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[11px] text-destructive hover:bg-destructive/10"
+            onClick={() => {
+              playground.removeCollection(collectionId);
+              setOpen(false);
+            }}
+          >
+            <Trash2 className="mr-1 h-3 w-3" /> Delete
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 
 type ServiceFilter = "all" | "bookable" | "featured" | "not_bookable";
 
@@ -1894,20 +2043,31 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                     {collections.map((c) => {
                       const member = c.itemIds.includes(selectedService.serviceId);
                       return (
-                        <button
+                        <div
                           key={c.collectionId}
-                          type="button"
-                          onClick={() => toggleServiceInCollection(c.collectionId)}
                           className={cn(
-                            "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                            "inline-flex items-center gap-1 rounded-full border pl-2.5 pr-1 py-0.5 text-[11px] transition-colors",
                             member
                               ? "border-sky-500/40 bg-sky-500/15 text-foreground"
                               : "border-border/30 bg-muted/10 text-muted-foreground hover:bg-muted/20",
                           )}
                         >
-                          {member ? "✓ " : "+ "}{c.name}
-                          <span className="ml-1 opacity-60">{c.itemIds.length}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleServiceInCollection(c.collectionId)}
+                            className="inline-flex items-center gap-1"
+                            title={member ? "Remove from collection" : "Add to collection"}
+                          >
+                            {member ? "✓ " : "+ "}{c.name}
+                            <span className="ml-0.5 opacity-60">{c.itemIds.length}</span>
+                          </button>
+                          <CollectionPillEditor
+                            playground={playground}
+                            collectionId={c.collectionId}
+                            itemKind="services"
+                            candidates={allServices.map((s) => ({ id: s.serviceId, name: s.name, meta: s.duration ? `${s.duration} min` : "" }))}
+                          />
+                        </div>
                       );
                     })}
                   </div>
@@ -2882,24 +3042,76 @@ function CatalogGraph({
   const orphanIds = mode === "products" ? topology.orphanProductIds : topology.orphanServiceIds;
   const orphanSet = new Set(orphanIds);
 
+  const [dragItemId, setDragItemId] = useState<string | null>(null);
+  const [dropPageId, setDropPageId] = useState<string | null>(null);
+  const [lastBind, setLastBind] = useState<{ pageLabel: string; itemName: string } | null>(null);
+
+  const handleDropOnPage = (pageId: string) => {
+    if (!dragItemId) return;
+    const item = items.find((i) => i.id === dragItemId);
+    if (!item) return;
+    const page = topology.pages.find((p) => p.pageId === pageId);
+    if (!page) return;
+
+    // Check if a direct-binding instance already exists on this page
+    const existing = Object.values(playground.creatorData.componentInstances).find((ci) => {
+      const matchesItem = mode === "products"
+        ? ci.bindings?.productId === dragItemId
+        : ci.bindings?.serviceId === dragItemId;
+      return matchesItem && (ci.usedOnPages || []).includes(pageId);
+    });
+
+    if (!existing) {
+      const componentType = mode === "products" ? "ProductGrid" : "ServiceGrid";
+      const componentSlug = mode === "products" ? "product-grid" : "service-grid";
+      const bindings = mode === "products"
+        ? { productId: dragItemId }
+        : { serviceId: dragItemId };
+
+      playground.addComponentInstance({
+        componentType,
+        componentSlug,
+        label: item.name,
+        bindings,
+        props: { title: item.name },
+        usedOnPages: [pageId],
+      });
+    }
+
+    setLastBind({ pageLabel: page.label, itemName: item.name });
+    setDragItemId(null);
+    setDropPageId(null);
+    window.setTimeout(() => setLastBind(null), 2400);
+  };
+
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-border/30 bg-muted/5 px-3 py-6 text-center text-xs text-muted-foreground">Nothing to graph yet.</div>;
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-        <span className="font-semibold uppercase tracking-wide">Legend:</span>
-        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-emerald-500/70" /> direct</span>
-        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-amber-500/70" /> featured</span>
-        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-sky-500/70" /> collection</span>
-        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-violet-500/70" /> all</span>
-        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-zinc-500/60" /> vfs static</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold uppercase tracking-wide">Legend:</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-emerald-500/70" /> direct</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-amber-500/70" /> featured</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-sky-500/70" /> collection</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-violet-500/70" /> all</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-zinc-500/60" /> vfs static</span>
+        </div>
+        {dragItemId && (
+          <span className="text-emerald-400">Drop onto a page to bind directly →</span>
+        )}
+        {lastBind && (
+          <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-300">
+            Bound “{lastBind.itemName}” → {lastBind.pageLabel}
+          </span>
+        )}
       </div>
 
       <div className="relative rounded-xl border border-border/30 bg-muted/5 p-4">
         <div className="grid grid-cols-2 gap-x-12 gap-y-2">
-          {/* Pages column */}
+          {/* Pages column — drop targets */}
           <div className="space-y-1.5">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Pages</div>
             {topology.pages.length === 0 && (
@@ -2907,13 +3119,35 @@ function CatalogGraph({
             )}
             {topology.pages.map((page) => {
               const incoming = edges.filter((e) => e.pageId === page.pageId);
+              const isDropTarget = dragItemId && dropPageId === page.pageId;
+              const isDragActive = !!dragItemId;
               return (
                 <button
                   key={page.pageId}
                   type="button"
                   data-graph-node={`page:${page.pageId}`}
                   onClick={() => onNavigateToPage?.(page.pageId)}
-                  className="w-full text-left rounded-md border border-border/30 bg-background/40 px-2.5 py-1.5 hover:bg-muted/20 transition-colors"
+                  onDragOver={(e) => {
+                    if (!dragItemId) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "link";
+                    if (dropPageId !== page.pageId) setDropPageId(page.pageId);
+                  }}
+                  onDragLeave={() => {
+                    if (dropPageId === page.pageId) setDropPageId(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleDropOnPage(page.pageId);
+                  }}
+                  className={cn(
+                    "w-full text-left rounded-md border px-2.5 py-1.5 transition-colors",
+                    isDropTarget
+                      ? "border-emerald-500/60 bg-emerald-500/15 ring-1 ring-emerald-500/40"
+                      : isDragActive
+                        ? "border-dashed border-emerald-500/30 bg-background/40 hover:bg-emerald-500/5"
+                        : "border-border/30 bg-background/40 hover:bg-muted/20",
+                  )}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="truncate text-xs font-medium text-foreground">{page.label}</div>
@@ -2925,7 +3159,7 @@ function CatalogGraph({
             })}
           </div>
 
-          {/* Items column */}
+          {/* Items column — draggable sources */}
           <div className="space-y-1.5">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
               {mode === "products" ? "Products" : "Services"}
@@ -2934,55 +3168,69 @@ function CatalogGraph({
               const outgoing = edges.filter((e) => e.itemId === item.id);
               const isOrphan = orphanSet.has(item.id);
               const isSelected = selectedItemId === item.id;
+              const isDragging = dragItemId === item.id;
               return (
-                <button
+                <div
                   key={item.id}
-                  type="button"
-                  data-graph-node={`item:${item.id}`}
-                  onClick={() => onSelect(item.id)}
+                  draggable
+                  onDragStart={(e) => {
+                    setDragItemId(item.id);
+                    e.dataTransfer.effectAllowed = "link";
+                    e.dataTransfer.setData("text/plain", item.id);
+                  }}
+                  onDragEnd={() => { setDragItemId(null); setDropPageId(null); }}
                   className={cn(
-                    "w-full text-left rounded-md border px-2.5 py-1.5 transition-colors",
+                    "group rounded-md border px-2.5 py-1.5 transition-colors cursor-grab active:cursor-grabbing",
                     isSelected ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-background/40 hover:bg-muted/20",
                     isOrphan && "border-rose-500/30 bg-rose-500/5",
+                    isDragging && "opacity-60 ring-1 ring-emerald-500/40",
                   )}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {item.featured && <Star className="h-3 w-3 fill-amber-400 text-amber-400 shrink-0" />}
-                      <div className="truncate text-xs font-medium text-foreground">{item.name}</div>
-                    </div>
-                    {isOrphan ? (
-                      <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-rose-500/40 text-rose-400">orphan</Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-emerald-500/40 text-emerald-400">
-                        <Link2 className="mr-0.5 h-2.5 w-2.5" />{outgoing.length}
-                      </Badge>
-                    )}
-                  </div>
-                  {item.meta && <div className="mt-0.5 text-[10px] text-muted-foreground">{item.meta}</div>}
-                  {outgoing.length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {outgoing.slice(0, 4).map((e, i) => (
-                        <span
-                          key={`${e.itemId}-${e.pageId}-${i}`}
-                          className={cn(
-                            "rounded px-1 py-px text-[9px] border",
-                            e.kind === "direct" && "border-emerald-500/40 text-emerald-400",
-                            e.kind === "featured" && "border-amber-500/40 text-amber-400",
-                            e.kind === "collection" && "border-sky-500/40 text-sky-400",
-                            e.kind === "all" && "border-violet-500/40 text-violet-400",
-                            e.kind === "vfs_static" && "border-zinc-500/40 text-zinc-400",
-                          )}
-                        >
-                          {e.kind}
-                        </span>
-                      ))}
-                      {outgoing.length > 4 && (
-                        <span className="text-[9px] text-muted-foreground">+{outgoing.length - 4}</span>
+                  <button
+                    type="button"
+                    data-graph-node={`item:${item.id}`}
+                    onClick={() => onSelect(item.id)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <GripVertical className="h-3 w-3 text-muted-foreground/50 group-hover:text-muted-foreground shrink-0" />
+                        {item.featured && <Star className="h-3 w-3 fill-amber-400 text-amber-400 shrink-0" />}
+                        <div className="truncate text-xs font-medium text-foreground">{item.name}</div>
+                      </div>
+                      {isOrphan ? (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-rose-500/40 text-rose-400">orphan</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-emerald-500/40 text-emerald-400">
+                          <Link2 className="mr-0.5 h-2.5 w-2.5" />{outgoing.length}
+                        </Badge>
                       )}
                     </div>
-                  )}
-                </button>
+                    {item.meta && <div className="mt-0.5 text-[10px] text-muted-foreground">{item.meta}</div>}
+                    {outgoing.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {outgoing.slice(0, 4).map((e, i) => (
+                          <span
+                            key={`${e.itemId}-${e.pageId}-${i}`}
+                            className={cn(
+                              "rounded px-1 py-px text-[9px] border",
+                              e.kind === "direct" && "border-emerald-500/40 text-emerald-400",
+                              e.kind === "featured" && "border-amber-500/40 text-amber-400",
+                              e.kind === "collection" && "border-sky-500/40 text-sky-400",
+                              e.kind === "all" && "border-violet-500/40 text-violet-400",
+                              e.kind === "vfs_static" && "border-zinc-500/40 text-zinc-400",
+                            )}
+                          >
+                            {e.kind}
+                          </span>
+                        ))}
+                        {outgoing.length > 4 && (
+                          <span className="text-[9px] text-muted-foreground">+{outgoing.length - 4}</span>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -2993,7 +3241,7 @@ function CatalogGraph({
             <strong className="text-foreground">{edges.length}</strong> connection{edges.length === 1 ? "" : "s"} ·{" "}
             <strong className="text-foreground">{orphanIds.length}</strong> orphan{orphanIds.length === 1 ? "" : "s"}
           </div>
-          <div className="text-[10px]">Click an item to edit · click a page to open it in preview</div>
+          <div className="text-[10px]">Click to edit · drag an item onto a page to bind directly</div>
         </div>
       </div>
     </div>

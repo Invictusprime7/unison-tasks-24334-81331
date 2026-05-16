@@ -16,6 +16,7 @@ import Editor, { OnMount, loader } from '@monaco-editor/react';
 // Infer editor type from OnMount callback (avoids direct 'monaco-editor' dependency)
 type IStandaloneCodeEditor = Parameters<OnMount>[0];
 import { cn } from '@/lib/utils';
+import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
 
 // ---------------------------------------------------------------------------
 // Fallback plain-text editor when Monaco fails to load
@@ -206,10 +207,16 @@ const VFSMonacoEditor: React.FC<VFSMonacoEditorProps> = ({
 
   const language = detectLanguage(fileName, languageOverride);
 
+  // Auto-protect canonical Unison files — they're deterministically
+  // regenerated from CreatorData, so any manual edit is overwritten on
+  // the next preview compile anyway. Force read-only to prevent confusion.
+  const isCanonicalProtected = fileName ? isUnisonProtectedPath(fileName) : false;
+  const effectiveReadOnly = readOnly || isCanonicalProtected;
+
   // Format action
   const handleFormat = useCallback(async () => {
     const editor = editorRef.current;
-    if (!editor || readOnly) return;
+    if (!editor || effectiveReadOnly) return;
     setIsFormatting(true);
     try {
       const formatted = await formatCode(editor.getValue(), language);
@@ -220,7 +227,7 @@ const VFSMonacoEditor: React.FC<VFSMonacoEditorProps> = ({
     } finally {
       setIsFormatting(false);
     }
-  }, [language, onChange, readOnly]);
+  }, [language, onChange, effectiveReadOnly]);
 
   const handleEditorDidMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -398,7 +405,7 @@ const VFSMonacoEditor: React.FC<VFSMonacoEditorProps> = ({
             </div>
           }
           options={{
-            readOnly,
+            readOnly: effectiveReadOnly,
             minimap: { enabled: true, maxColumn: 80 },
             fontSize: 14,
             fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",

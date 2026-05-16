@@ -1696,6 +1696,8 @@ function CollectionPillEditor({
 }
 
 
+type ServiceFilter = "all" | "bookable" | "featured" | "not_bookable";
+
 function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playground: UseCreatorPlaygroundReturn; vfsFiles: Record<string, string>; onNavigateToPage?: (pageId: string) => void }) {
   const allServices = useMemo(
     () => Object.values(playground.creatorData.services).sort((a, b) => a.sortOrder - b.sortOrder),

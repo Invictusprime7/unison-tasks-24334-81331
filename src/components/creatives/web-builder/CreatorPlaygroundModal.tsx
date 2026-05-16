@@ -1558,17 +1558,73 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
   );
 }
 
+type ServiceFilter = "all" | "bookable" | "featured" | "not_bookable";
+
 function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playground: UseCreatorPlaygroundReturn; vfsFiles: Record<string, string>; onNavigateToPage?: (pageId: string) => void }) {
-  const services = Object.values(playground.creatorData.services).sort((a, b) => a.sortOrder - b.sortOrder);
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(services[0]?.serviceId || null);
+  const allServices = useMemo(
+    () => Object.values(playground.creatorData.services).sort((a, b) => a.sortOrder - b.sortOrder),
+    [playground.creatorData.services],
+  );
+  const collections = useMemo(
+    () => Object.values(playground.creatorData.collections).filter((c) => c.type === "services"),
+    [playground.creatorData.collections],
+  );
+
+  const [filter, setFilter] = useState<ServiceFilter>("all");
+  const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "graph">("list");
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(allServices[0]?.serviceId || null);
+
+  const homePageId = playground.pageRegistry.homePageId
+    || Object.values(playground.pageRegistry.pages).find((p) => p.isHome)?.pageId
+    || Object.values(playground.pageRegistry.pages)[0]?.pageId
+    || null;
+
+  const insertOrphanFix = (service: typeof allServices[number], source: "featured" | "all") => {
+    if (!homePageId) return;
+    const created = playground.addComponentInstance({
+      componentType: "ServiceGrid",
+      componentSlug: "service-grid",
+      label: source === "featured" ? "Featured Services" : "All Services",
+      bindings: { source },
+      props: { source, title: source === "featured" ? "Featured Services" : "All Services" },
+      usedOnPages: [homePageId],
+    });
+    if (created && onNavigateToPage) onNavigateToPage(homePageId);
+  };
+
+  const stats = useMemo(() => {
+    let bookable = 0, featured = 0, notBookable = 0;
+    for (const s of allServices) {
+      if (s.bookable) bookable++; else notBookable++;
+      if (s.featured) featured++;
+    }
+    return { total: allServices.length, bookable, featured, notBookable };
+  }, [allServices]);
+
+  const services = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allServices.filter((s) => {
+      if (filter === "bookable" && !s.bookable) return false;
+      if (filter === "not_bookable" && s.bookable) return false;
+      if (filter === "featured" && !s.featured) return false;
+      if (q && !`${s.name} ${s.serviceCode || ""} ${s.category || ""}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [allServices, filter, search]);
 
   useEffect(() => {
     if (!selectedServiceId || !playground.creatorData.services[selectedServiceId]) {
-      setSelectedServiceId(services[0]?.serviceId || null);
+      setSelectedServiceId(allServices[0]?.serviceId || null);
     }
-  }, [playground.creatorData.services, selectedServiceId, services]);
+  }, [playground.creatorData.services, selectedServiceId, allServices]);
 
   const selectedService = selectedServiceId ? playground.creatorData.services[selectedServiceId] : null;
+
+  const selectedServiceCollections = useMemo(() => {
+    if (!selectedService) return [];
+    return collections.filter((c) => c.itemIds.includes(selectedService.serviceId));
+  }, [collections, selectedService]);
 
   const selectedServiceSurfaces = useMemo(() => {
     if (!selectedService) return [];
@@ -1577,93 +1633,213 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
 
   const serviceSurfaceCounts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const s of services) {
+    for (const s of allServices) {
       m.set(s.serviceId, getServiceSurfaces(s, playground.creatorData, playground.pageRegistry, vfsFiles).length);
     }
     return m;
-  }, [services, playground.creatorData, playground.pageRegistry, vfsFiles]);
+  }, [allServices, playground.creatorData, playground.pageRegistry, vfsFiles]);
+
+  const toggleServiceInCollection = (collectionId: string) => {
+    if (!selectedService) return;
+    const col = playground.creatorData.collections[collectionId];
+    if (!col) return;
+    const has = col.itemIds.includes(selectedService.serviceId);
+    const itemIds = has
+      ? col.itemIds.filter((id) => id !== selectedService.serviceId)
+      : [...col.itemIds, selectedService.serviceId];
+    playground.updateCollection(collectionId, { itemIds });
+  };
+
+  const filterChips: { value: ServiceFilter; label: string; count: number }[] = [
+    { value: "all", label: "All", count: stats.total },
+    { value: "bookable", label: "Bookable", count: stats.bookable },
+    { value: "featured", label: "Featured", count: stats.featured },
+    { value: "not_bookable", label: "Not Bookable", count: stats.notBookable },
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-foreground">Services</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Control bookable offers, durations, pricing, and service-specific CTA copy.</p>
+          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+            <Briefcase className="h-4 w-4 text-emerald-500" /> Services
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Live-bound to <code className="rounded bg-muted/40 px-1 py-px text-[10px]">@/unison/services</code> — edits flow into ServiceCard, BookingCard, and booking flows at runtime.
+          </p>
         </div>
-        <Button
-          size="sm"
-          className="h-8 px-3"
-          onClick={() => {
-            const created = playground.addService({
-              name: "New Service",
-              description: "",
-              price: 150,
-              duration: 60,
-              currency: "USD",
-              bookable: true,
-              ctaLabel: "Book Now",
-            });
-            setSelectedServiceId(created.serviceId);
-          }}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Add Service
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-border/30 bg-muted/10 p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
+                viewMode === "list" ? "bg-emerald-500/15 text-foreground" : "text-muted-foreground hover:bg-muted/20",
+              )}
+              title="List view"
+            >
+              <LayoutGrid className="h-3 w-3" /> List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("graph")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
+                viewMode === "graph" ? "bg-emerald-500/15 text-foreground" : "text-muted-foreground hover:bg-muted/20",
+              )}
+              title="Topology graph view"
+            >
+              <Network className="h-3 w-3" /> Graph
+            </button>
+          </div>
+          <Button
+            size="sm"
+            className="h-8 px-3"
+            onClick={() => {
+              const created = playground.addService({
+                name: "New Service",
+                description: "",
+                price: 150,
+                duration: 60,
+                currency: "USD",
+                bookable: true,
+                ctaLabel: "Book Now",
+              });
+              setSelectedServiceId(created.serviceId);
+            }}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Add Service
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-2">
-          {services.length === 0 && <p className="text-sm text-muted-foreground">No services configured yet.</p>}
-          {services.map((service) => (
+      {/* Stats strip */}
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        {[
+          { label: "Total", value: stats.total, tone: "text-foreground" },
+          { label: "Bookable", value: stats.bookable, tone: "text-emerald-500" },
+          { label: "Featured", value: stats.featured, tone: "text-amber-500" },
+          { label: "Not Bookable", value: stats.notBookable, tone: "text-muted-foreground" },
+          { label: "Collections", value: collections.length, tone: "text-sky-500" },
+        ].map((s) => (
+          <div key={s.label} className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
+            <div className={cn("text-lg font-semibold leading-tight", s.tone)}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter + search */}
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {filterChips.map((chip) => (
             <button
-              key={service.serviceId}
+              key={chip.value}
               type="button"
-              onClick={() => setSelectedServiceId(service.serviceId)}
+              onClick={() => setFilter(chip.value)}
               className={cn(
-                "w-full rounded-xl border p-3 text-left transition-colors",
-                selectedServiceId === service.serviceId ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-muted/10 hover:bg-muted/20",
+                "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                filter === chip.value
+                  ? "border-emerald-500/40 bg-emerald-500/15 text-foreground"
+                  : "border-border/30 bg-muted/10 text-muted-foreground hover:bg-muted/20",
               )}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="truncate text-sm font-medium text-foreground">{service.name}</div>
-                    {service.featured && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
-                  </div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{service.duration ? `${service.duration} min` : "Flexible duration"}{service.price ? ` • ${service.currency || "USD"} ${service.price}` : ""}</div>
-                  <div className="mt-1.5">
-                    {(() => {
-                      const sc = serviceSurfaceCounts.get(service.serviceId) ?? 0;
-                      return (
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "text-[9px] h-4 px-1.5",
-                            sc === 0 ? "border-rose-500/40 text-rose-400" : "border-emerald-500/40 text-emerald-500",
-                          )}
-                          title={sc === 0 ? "Orphaned — not rendered on any page" : `Appears on ${sc} surface${sc === 1 ? "" : "s"}`}
-                        >
-                          <Link2 className="mr-0.5 h-2.5 w-2.5" />{sc}
-                        </Badge>
-                      );
-                    })()}
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    playground.removeService(service.serviceId);
-                    if (selectedServiceId === service.serviceId) setSelectedServiceId(null);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+              {chip.label}
+              <span className="ml-1 text-muted-foreground/70">{chip.count}</span>
             </button>
           ))}
+        </div>
+        <div className="relative md:w-64">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, code, category…"
+            className="h-8 pl-7 text-xs"
+          />
+        </div>
+      </div>
+
+      {viewMode === "graph" ? (
+        <CatalogGraph
+          playground={playground}
+          vfsFiles={vfsFiles}
+          mode="services"
+          onSelect={(serviceId) => { setSelectedServiceId(serviceId); setViewMode("list"); }}
+          onNavigateToPage={onNavigateToPage}
+          selectedItemId={selectedServiceId}
+        />
+      ) : (
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-2">
+          {services.length === 0 && (
+            <div className="rounded-lg border border-dashed border-border/30 bg-muted/5 px-3 py-6 text-center text-xs text-muted-foreground">
+              {allServices.length === 0 ? "No services yet — add one to start binding." : "No services match this filter."}
+            </div>
+          )}
+          {services.map((service) => {
+            const serviceCollectionsCount = collections.filter((c) => c.itemIds.includes(service.serviceId)).length;
+            const surfaceCount = serviceSurfaceCounts.get(service.serviceId) ?? 0;
+            return (
+              <button
+                key={service.serviceId}
+                type="button"
+                onClick={() => setSelectedServiceId(service.serviceId)}
+                className={cn(
+                  "w-full rounded-xl border p-3 text-left transition-colors",
+                  selectedServiceId === service.serviceId ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-muted/10 hover:bg-muted/20",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className="truncate text-sm font-medium text-foreground">{service.name}</div>
+                      {service.featured && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      {service.duration ? `${service.duration} min` : "Flexible duration"}
+                      {service.price ? ` • ${service.currency || "USD"} ${service.price}` : ""}
+                      {service.serviceCode ? <span className="ml-2 font-mono opacity-70">{service.serviceCode}</span> : null}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <Badge variant="outline" className={cn("text-[9px] h-4 px-1.5", service.bookable ? "border-emerald-500/40 text-emerald-500" : "border-muted-foreground/40 text-muted-foreground")}>
+                        {service.bookable ? "Bookable" : "Not Bookable"}
+                      </Badge>
+                      {serviceCollectionsCount > 0 && (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-sky-500/40 text-sky-500">
+                          <Layers className="mr-0.5 h-2.5 w-2.5" />{serviceCollectionsCount}
+                        </Badge>
+                      )}
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[9px] h-4 px-1.5",
+                          surfaceCount === 0 ? "border-rose-500/40 text-rose-400" : "border-emerald-500/40 text-emerald-500",
+                        )}
+                        title={surfaceCount === 0 ? "Orphaned — not rendered on any page" : `Appears on ${surfaceCount} surface${surfaceCount === 1 ? "" : "s"}`}
+                      >
+                        <Link2 className="mr-0.5 h-2.5 w-2.5" />{surfaceCount}
+                      </Badge>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      playground.removeService(service.serviceId);
+                      if (selectedServiceId === service.serviceId) setSelectedServiceId(null);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
@@ -1694,6 +1870,50 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                 </Button>
               </div>
 
+              {/* Collections binding */}
+              <div className="rounded-lg border border-border/20 bg-background/30 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Layers className="h-3.5 w-3.5 text-sky-500" /> Collections
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
+                    onClick={() => {
+                      playground.addCollection({ name: "New Collection", type: "services", itemIds: [selectedService.serviceId] });
+                    }}
+                  >
+                    <Plus className="mr-1 h-3 w-3" /> New
+                  </Button>
+                </div>
+                {collections.length === 0 ? (
+                  <div className="text-[11px] text-muted-foreground">No service collections yet.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {collections.map((c) => {
+                      const member = c.itemIds.includes(selectedService.serviceId);
+                      return (
+                        <button
+                          key={c.collectionId}
+                          type="button"
+                          onClick={() => toggleServiceInCollection(c.collectionId)}
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                            member
+                              ? "border-sky-500/40 bg-sky-500/15 text-foreground"
+                              : "border-border/30 bg-muted/10 text-muted-foreground hover:bg-muted/20",
+                          )}
+                        >
+                          {member ? "✓ " : "+ "}{c.name}
+                          <span className="ml-1 opacity-60">{c.itemIds.length}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* Topology — where this service appears */}
               <div className="rounded-lg border border-border/20 bg-background/30 p-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -1704,9 +1924,46 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                     {selectedServiceSurfaces.length} surface{selectedServiceSurfaces.length === 1 ? "" : "s"}
                   </Badge>
                 </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Real bindings + VFS scan: where this service is rendered in the preview canvas right now.
+                </p>
                 {selectedServiceSurfaces.length === 0 ? (
-                  <div className="rounded border border-dashed border-rose-500/30 bg-rose-500/5 px-2.5 py-2 text-[11px] text-rose-300">
-                    <strong>Orphaned</strong> — this service isn't rendered on any page yet.
+                  <div className="rounded border border-dashed border-rose-500/30 bg-rose-500/5 px-2.5 py-2 text-[11px] text-rose-300 space-y-2">
+                    <div>
+                      <strong className="font-semibold">Orphaned</strong> — not rendered anywhere yet. Add a <code className="rounded bg-muted/40 px-1 text-[10px]">ServiceGrid</code> on Home, or drop it into a collection above.
+                    </div>
+                    {homePageId && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedService.featured && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+                            onClick={() => insertOrphanFix(selectedService, "featured")}
+                          >
+                            <Plus className="mr-1 h-3 w-3" /> Insert Featured Grid on Home
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-violet-500/40 text-violet-300 hover:bg-violet-500/10"
+                          onClick={() => insertOrphanFix(selectedService, "all")}
+                        >
+                          <Plus className="mr-1 h-3 w-3" /> Insert All-Services Grid on Home
+                        </Button>
+                        {!selectedService.featured && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-[11px]"
+                            onClick={() => playground.updateService(selectedService.serviceId, { featured: true })}
+                          >
+                            <Star className="mr-1 h-3 w-3" /> Mark Featured
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-1.5">
@@ -1728,7 +1985,10 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                           </div>
                           <div className="mt-0.5 text-[10px] text-muted-foreground">
                             <span className="font-mono">{surface.componentType}</span>
-                            <span className="ml-1.5">· {surface.kind === "vfs_static" ? "static jsx" : surface.kind}</span>
+                            <span className="ml-1.5">·</span>
+                            <span className="ml-1.5">{surface.kind === "vfs_static" ? "static jsx" : surface.kind}</span>
+                            {surface.source ? <span className="ml-1.5">· source: <span className="font-mono">{surface.source}</span></span> : null}
+                            {surface.collectionName ? <span className="ml-1.5">· collection: <span className="font-mono">{surface.collectionName}</span></span> : null}
                             {surface.filePath ? <span className="ml-1.5 opacity-70">· {surface.filePath.replace(/^\/src\//, "")}</span> : null}
                           </div>
                         </div>
@@ -1737,6 +1997,9 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                           className={cn(
                             "text-[9px] h-4 px-1.5",
                             surface.kind === "direct" && "border-emerald-500/40 text-emerald-400",
+                            surface.kind === "featured" && "border-amber-500/40 text-amber-400",
+                            surface.kind === "collection" && "border-sky-500/40 text-sky-400",
+                            surface.kind === "all" && "border-violet-500/40 text-violet-400",
                             surface.kind === "vfs_static" && "border-zinc-500/40 text-zinc-400",
                           )}
                         >
@@ -1751,6 +2014,7 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

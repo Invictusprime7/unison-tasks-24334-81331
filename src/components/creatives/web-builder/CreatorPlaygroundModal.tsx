@@ -35,7 +35,7 @@ import {
   CANONICAL_COMPONENT_DEFINITIONS,
   createCanonicalComponentInstance,
 } from "@/services/canonicalComponentRegistry";
-import { getProductSurfaces, getServiceSurfaces, type CatalogSurface } from "@/services/catalogTopology";
+import { getProductSurfaces, getServiceSurfaces, buildCatalogTopology, type CatalogSurface } from "@/services/catalogTopology";
 import {
   AlertTriangle,
   ArrowRight,
@@ -55,6 +55,8 @@ import {
   Home,
   Info,
   Link2,
+  Network,
+  LayoutGrid,
   MessageSquare,
   Plus,
   Rocket,
@@ -889,7 +891,26 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
 
   const [filter, setFilter] = useState<ProductFilter>("all");
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "graph">("list");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(allProducts[0]?.productId || null);
+
+  const homePageId = playground.pageRegistry.homePageId
+    || Object.values(playground.pageRegistry.pages).find((p) => p.isHome)?.pageId
+    || Object.values(playground.pageRegistry.pages)[0]?.pageId
+    || null;
+
+  const insertOrphanFix = (product: typeof allProducts[number], source: "featured" | "all") => {
+    if (!homePageId) return;
+    const created = playground.addComponentInstance({
+      componentType: "ProductGrid",
+      componentSlug: "product-grid",
+      label: source === "featured" ? "Featured Products" : "All Products",
+      bindings: { source },
+      props: { source, title: source === "featured" ? "Featured Products" : "All Products" },
+      usedOnPages: [homePageId],
+    });
+    if (created && onNavigateToPage) onNavigateToPage(homePageId);
+  };
 
   const stats = useMemo(() => {
     let active = 0, draft = 0, archived = 0, featured = 0, outOfStock = 0, lowStock = 0;
@@ -979,29 +1000,55 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
             Live-bound to <code className="rounded bg-muted/40 px-1 py-px text-[10px]">@/unison/products</code> — edits flow into ProductGrid, ProductCard, and cart at runtime.
           </p>
         </div>
-        <Button
-          size="sm"
-          className="h-8 px-3"
-          onClick={() => {
-            const created = playground.addProduct({
-              name: "New Offer",
-              description: "",
-              price: 99,
-              currency: "USD",
-              status: "active",
-              trackInventory: true,
-              stockQuantity: 10,
-              inventoryPolicy: "deny_when_out",
-              ctaLabel: "Buy Now",
-              checkoutLabel: "Complete Purchase",
-              variants: [],
-            });
-            setSelectedProductId(created.productId);
-          }}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Add Product
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-border/30 bg-muted/10 p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
+                viewMode === "list" ? "bg-emerald-500/15 text-foreground" : "text-muted-foreground hover:bg-muted/20",
+              )}
+              title="List view"
+            >
+              <LayoutGrid className="h-3 w-3" /> List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("graph")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
+                viewMode === "graph" ? "bg-emerald-500/15 text-foreground" : "text-muted-foreground hover:bg-muted/20",
+              )}
+              title="Topology graph view"
+            >
+              <Network className="h-3 w-3" /> Graph
+            </button>
+          </div>
+          <Button
+            size="sm"
+            className="h-8 px-3"
+            onClick={() => {
+              const created = playground.addProduct({
+                name: "New Offer",
+                description: "",
+                price: 99,
+                currency: "USD",
+                status: "active",
+                trackInventory: true,
+                stockQuantity: 10,
+                inventoryPolicy: "deny_when_out",
+                ctaLabel: "Buy Now",
+                checkoutLabel: "Complete Purchase",
+                variants: [],
+              });
+              setSelectedProductId(created.productId);
+            }}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Add Product
+          </Button>
+        </div>
       </div>
 
       {/* Stats strip */}
@@ -1052,6 +1099,16 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
         </div>
       </div>
 
+      {viewMode === "graph" ? (
+        <CatalogGraph
+          playground={playground}
+          vfsFiles={vfsFiles}
+          mode="products"
+          onSelect={(productId) => { setSelectedProductId(productId); setViewMode("list"); }}
+          onNavigateToPage={onNavigateToPage}
+          selectedItemId={selectedProductId}
+        />
+      ) : (
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="space-y-2">
           {products.length === 0 && (
@@ -1068,6 +1125,7 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
             if (inStock && tracked && low > 0 && qty > 0 && qty <= low) label = `Only ${qty} left`;
             else if (inStock && tracked) label = `${qty} in stock`;
             const productCollectionsCount = collections.filter((c) => c.itemIds.includes(product.productId)).length;
+            const surfaceCount = productSurfaceCounts.get(product.productId) ?? 0;
 
             return (
               <button
@@ -1123,6 +1181,16 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                           <Layers className="mr-0.5 h-2.5 w-2.5" />{productCollectionsCount}
                         </Badge>
                       )}
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[9px] h-4 px-1.5",
+                          surfaceCount === 0 ? "border-rose-500/40 text-rose-400" : "border-emerald-500/40 text-emerald-500",
+                        )}
+                        title={surfaceCount === 0 ? "Orphaned — not rendered on any page" : `Appears on ${surfaceCount} surface${surfaceCount === 1 ? "" : "s"}`}
+                      >
+                        <Link2 className="mr-0.5 h-2.5 w-2.5" />{surfaceCount}
+                      </Badge>
                     </div>
                   </div>
                   <Button
@@ -1332,8 +1400,42 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                   Real bindings + VFS scan: where this product is rendered in the preview canvas right now.
                 </p>
                 {selectedProductSurfaces.length === 0 ? (
-                  <div className="rounded border border-dashed border-rose-500/30 bg-rose-500/5 px-2.5 py-2 text-[11px] text-rose-300">
-                    <strong className="font-semibold">Orphaned</strong> — not rendered anywhere yet. Add a <code className="rounded bg-muted/40 px-1 text-[10px]">ProductGrid</code> with <code className="rounded bg-muted/40 px-1 text-[10px]">source="all"</code>{selectedProduct.featured ? ' or "featured"' : ""}, or drop it into a collection above.
+                  <div className="rounded border border-dashed border-rose-500/30 bg-rose-500/5 px-2.5 py-2 text-[11px] text-rose-300 space-y-2">
+                    <div>
+                      <strong className="font-semibold">Orphaned</strong> — not rendered anywhere yet. Add a <code className="rounded bg-muted/40 px-1 text-[10px]">ProductGrid</code> on Home, or drop it into a collection above.
+                    </div>
+                    {homePageId && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedProduct.featured && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+                            onClick={() => insertOrphanFix(selectedProduct, "featured")}
+                          >
+                            <Plus className="mr-1 h-3 w-3" /> Insert Featured Grid on Home
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-violet-500/40 text-violet-300 hover:bg-violet-500/10"
+                          onClick={() => insertOrphanFix(selectedProduct, "all")}
+                        >
+                          <Plus className="mr-1 h-3 w-3" /> Insert All-Products Grid on Home
+                        </Button>
+                        {!selectedProduct.featured && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-[11px]"
+                            onClick={() => playground.updateProduct(selectedProduct.productId, { featured: true })}
+                          >
+                            <Star className="mr-1 h-3 w-3" /> Mark Featured
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-1.5">
@@ -1451,6 +1553,7 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -1522,9 +1625,29 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
               )}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-foreground">{service.name}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="truncate text-sm font-medium text-foreground">{service.name}</div>
+                    {service.featured && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
+                  </div>
                   <div className="mt-1 text-[11px] text-muted-foreground">{service.duration ? `${service.duration} min` : "Flexible duration"}{service.price ? ` • ${service.currency || "USD"} ${service.price}` : ""}</div>
+                  <div className="mt-1.5">
+                    {(() => {
+                      const sc = serviceSurfaceCounts.get(service.serviceId) ?? 0;
+                      return (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[9px] h-4 px-1.5",
+                            sc === 0 ? "border-rose-500/40 text-rose-400" : "border-emerald-500/40 text-emerald-500",
+                          )}
+                          title={sc === 0 ? "Orphaned — not rendered on any page" : `Appears on ${sc} surface${sc === 1 ? "" : "s"}`}
+                        >
+                          <Link2 className="mr-0.5 h-2.5 w-2.5" />{sc}
+                        </Badge>
+                      );
+                    })()}
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
@@ -2453,6 +2576,162 @@ function SummaryCard({ title, value }: { title: string; value: string }) {
     <div className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2 text-xs">
       <div className="text-muted-foreground">{title}</div>
       <div className="mt-1 text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function CatalogGraph({
+  playground,
+  vfsFiles,
+  mode,
+  onSelect,
+  onNavigateToPage,
+  selectedItemId,
+}: {
+  playground: UseCreatorPlaygroundReturn;
+  vfsFiles: Record<string, string>;
+  mode: "products" | "services";
+  onSelect: (itemId: string) => void;
+  onNavigateToPage?: (pageId: string) => void;
+  selectedItemId: string | null;
+}) {
+  const topology = useMemo(
+    () => buildCatalogTopology(playground.creatorData, playground.pageRegistry, vfsFiles),
+    [playground.creatorData, playground.pageRegistry, vfsFiles],
+  );
+
+  const items = useMemo(() => {
+    if (mode === "products") {
+      return Object.values(playground.creatorData.products)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((p) => ({ id: p.productId, name: p.name, meta: `${p.currency} ${p.price}`, featured: !!p.featured }));
+    }
+    return Object.values(playground.creatorData.services)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => ({ id: s.serviceId, name: s.name, meta: s.duration ? `${s.duration} min` : "", featured: !!s.featured }));
+  }, [mode, playground.creatorData.products, playground.creatorData.services]);
+
+  const edges = mode === "products"
+    ? topology.productEdges.map((e) => ({ pageId: e.pageId, itemId: e.productId, kind: e.kind }))
+    : topology.serviceEdges.map((e) => ({ pageId: e.pageId, itemId: e.serviceId, kind: e.kind }));
+
+  const orphanIds = mode === "products" ? topology.orphanProductIds : topology.orphanServiceIds;
+  const orphanSet = new Set(orphanIds);
+
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-border/30 bg-muted/5 px-3 py-6 text-center text-xs text-muted-foreground">Nothing to graph yet.</div>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+        <span className="font-semibold uppercase tracking-wide">Legend:</span>
+        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-emerald-500/70" /> direct</span>
+        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-amber-500/70" /> featured</span>
+        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-sky-500/70" /> collection</span>
+        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-violet-500/70" /> all</span>
+        <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-zinc-500/60" /> vfs static</span>
+      </div>
+
+      <div className="relative rounded-xl border border-border/30 bg-muted/5 p-4">
+        <div className="grid grid-cols-2 gap-x-12 gap-y-2">
+          {/* Pages column */}
+          <div className="space-y-1.5">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Pages</div>
+            {topology.pages.length === 0 && (
+              <div className="text-[11px] text-muted-foreground/70">No pages.</div>
+            )}
+            {topology.pages.map((page) => {
+              const incoming = edges.filter((e) => e.pageId === page.pageId);
+              return (
+                <button
+                  key={page.pageId}
+                  type="button"
+                  data-graph-node={`page:${page.pageId}`}
+                  onClick={() => onNavigateToPage?.(page.pageId)}
+                  className="w-full text-left rounded-md border border-border/30 bg-background/40 px-2.5 py-1.5 hover:bg-muted/20 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="truncate text-xs font-medium text-foreground">{page.label}</div>
+                    <Badge variant="outline" className="text-[9px] h-4 px-1.5">{incoming.length}</Badge>
+                  </div>
+                  {page.slug && <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{page.slug}</div>}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Items column */}
+          <div className="space-y-1.5">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+              {mode === "products" ? "Products" : "Services"}
+            </div>
+            {items.map((item) => {
+              const outgoing = edges.filter((e) => e.itemId === item.id);
+              const isOrphan = orphanSet.has(item.id);
+              const isSelected = selectedItemId === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-graph-node={`item:${item.id}`}
+                  onClick={() => onSelect(item.id)}
+                  className={cn(
+                    "w-full text-left rounded-md border px-2.5 py-1.5 transition-colors",
+                    isSelected ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/30 bg-background/40 hover:bg-muted/20",
+                    isOrphan && "border-rose-500/30 bg-rose-500/5",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {item.featured && <Star className="h-3 w-3 fill-amber-400 text-amber-400 shrink-0" />}
+                      <div className="truncate text-xs font-medium text-foreground">{item.name}</div>
+                    </div>
+                    {isOrphan ? (
+                      <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-rose-500/40 text-rose-400">orphan</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-emerald-500/40 text-emerald-400">
+                        <Link2 className="mr-0.5 h-2.5 w-2.5" />{outgoing.length}
+                      </Badge>
+                    )}
+                  </div>
+                  {item.meta && <div className="mt-0.5 text-[10px] text-muted-foreground">{item.meta}</div>}
+                  {outgoing.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {outgoing.slice(0, 4).map((e, i) => (
+                        <span
+                          key={`${e.itemId}-${e.pageId}-${i}`}
+                          className={cn(
+                            "rounded px-1 py-px text-[9px] border",
+                            e.kind === "direct" && "border-emerald-500/40 text-emerald-400",
+                            e.kind === "featured" && "border-amber-500/40 text-amber-400",
+                            e.kind === "collection" && "border-sky-500/40 text-sky-400",
+                            e.kind === "all" && "border-violet-500/40 text-violet-400",
+                            e.kind === "vfs_static" && "border-zinc-500/40 text-zinc-400",
+                          )}
+                        >
+                          {e.kind}
+                        </span>
+                      ))}
+                      {outgoing.length > 4 && (
+                        <span className="text-[9px] text-muted-foreground">+{outgoing.length - 4}</span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-2 border-t border-border/20 pt-3 text-[11px] text-muted-foreground">
+          <div>
+            <strong className="text-foreground">{edges.length}</strong> connection{edges.length === 1 ? "" : "s"} ·{" "}
+            <strong className="text-foreground">{orphanIds.length}</strong> orphan{orphanIds.length === 1 ? "" : "s"}
+          </div>
+          <div className="text-[10px]">Click an item to edit · click a page to open it in preview</div>
+        </div>
+      </div>
     </div>
   );
 }

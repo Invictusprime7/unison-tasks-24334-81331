@@ -1625,9 +1625,29 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
               )}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-foreground">{service.name}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="truncate text-sm font-medium text-foreground">{service.name}</div>
+                    {service.featured && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
+                  </div>
                   <div className="mt-1 text-[11px] text-muted-foreground">{service.duration ? `${service.duration} min` : "Flexible duration"}{service.price ? ` • ${service.currency || "USD"} ${service.price}` : ""}</div>
+                  <div className="mt-1.5">
+                    {(() => {
+                      const sc = serviceSurfaceCounts.get(service.serviceId) ?? 0;
+                      return (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[9px] h-4 px-1.5",
+                            sc === 0 ? "border-rose-500/40 text-rose-400" : "border-emerald-500/40 text-emerald-500",
+                          )}
+                          title={sc === 0 ? "Orphaned — not rendered on any page" : `Appears on ${sc} surface${sc === 1 ? "" : "s"}`}
+                        >
+                          <Link2 className="mr-0.5 h-2.5 w-2.5" />{sc}
+                        </Badge>
+                      );
+                    })()}
+                  </div>
                 </div>
                 <Button
                   variant="ghost"

@@ -3084,6 +3084,10 @@ function CatalogGraph({
     window.setTimeout(() => setLastBind(null), 2400);
   };
 
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-border/30 bg-muted/5 px-3 py-6 text-center text-xs text-muted-foreground">Nothing to graph yet.</div>;
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">

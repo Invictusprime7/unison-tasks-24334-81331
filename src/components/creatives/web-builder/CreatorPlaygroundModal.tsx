@@ -35,7 +35,7 @@ import {
   CANONICAL_COMPONENT_DEFINITIONS,
   createCanonicalComponentInstance,
 } from "@/services/canonicalComponentRegistry";
-import { getProductSurfaces, getServiceSurfaces, type CatalogSurface } from "@/services/catalogTopology";
+import { getProductSurfaces, getServiceSurfaces, buildCatalogTopology, type CatalogSurface, type CatalogSurfaceKind } from "@/services/catalogTopology";
 import {
   AlertTriangle,
   ArrowRight,

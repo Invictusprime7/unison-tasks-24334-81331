@@ -1145,7 +1145,16 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                           <Layers className="mr-0.5 h-2.5 w-2.5" />{productCollectionsCount}
                         </Badge>
                       )}
-                    </div>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[9px] h-4 px-1.5",
+                          surfaceCount === 0 ? "border-rose-500/40 text-rose-400" : "border-emerald-500/40 text-emerald-500",
+                        )}
+                        title={surfaceCount === 0 ? "Orphaned — not rendered on any page" : `Appears on ${surfaceCount} surface${surfaceCount === 1 ? "" : "s"}`}
+                      >
+                        <Link2 className="mr-0.5 h-2.5 w-2.5" />{surfaceCount}
+                      </Badge>
                   </div>
                   <Button
                     variant="ghost"

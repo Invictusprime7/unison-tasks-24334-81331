@@ -1155,6 +1155,7 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                       >
                         <Link2 className="mr-0.5 h-2.5 w-2.5" />{surfaceCount}
                       </Badge>
+                    </div>
                   </div>
                   <Button
                     variant="ghost"

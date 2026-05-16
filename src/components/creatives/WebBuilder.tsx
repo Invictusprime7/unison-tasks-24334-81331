@@ -132,6 +132,7 @@ import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contract
 import { recompileFromPlayground, type SiteBundleSnapshot } from '@/services/canonicalPipeline';
 import { generateUnisonDataFile, UNISON_DATA_PATH } from '@/services/unisonDataGenerator';
 import { generateUnisonProductsFile, UNISON_PRODUCTS_PATH } from '@/services/unisonProductsGenerator';
+import { publishCreatorDataForUnison } from '@/services/unisonCanonicalRegistry';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {

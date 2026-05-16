@@ -206,6 +206,12 @@ const VFSMonacoEditor: React.FC<VFSMonacoEditorProps> = ({
 
   const language = detectLanguage(fileName, languageOverride);
 
+  // Auto-protect canonical Unison files — they're deterministically
+  // regenerated from CreatorData, so any manual edit is overwritten on
+  // the next preview compile anyway. Force read-only to prevent confusion.
+  const isCanonicalProtected = fileName ? isUnisonProtectedPath(fileName) : false;
+  const effectiveReadOnly = readOnly || isCanonicalProtected;
+
   // Format action
   const handleFormat = useCallback(async () => {
     const editor = editorRef.current;

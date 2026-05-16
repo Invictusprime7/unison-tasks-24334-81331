@@ -29,12 +29,17 @@ export function buildPreviewArtifacts(
     baseDependencies = SANDPACK_DEPENDENCIES,
   } = options;
 
-  const sandpackFiles = launchState
+  const rawSandpackFiles = launchState
     ? launchStateToSandpackFiles({
         launchState,
         vfsFiles: sourceFiles,
       })
     : prepareSandpackFiles(sourceFiles);
+
+  // Re-stamp AUTO-GENERATED canonical Unison files (data + product widgets)
+  // on every compile so AI / editor mutations cannot break the preview.
+  // See src/services/unisonCanonicalRegistry.ts.
+  const sandpackFiles = applyUnisonCanonicals(rawSandpackFiles);
 
   const { dependencies } = getDependenciesForSandpack(sourceFiles, baseDependencies);
 

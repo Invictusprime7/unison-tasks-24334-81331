@@ -1089,6 +1089,7 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
             if (inStock && tracked && low > 0 && qty > 0 && qty <= low) label = `Only ${qty} left`;
             else if (inStock && tracked) label = `${qty} in stock`;
             const productCollectionsCount = collections.filter((c) => c.itemIds.includes(product.productId)).length;
+            const surfaceCount = productSurfaceCounts.get(product.productId) ?? 0;
 
             return (
               <button

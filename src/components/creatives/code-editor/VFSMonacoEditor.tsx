@@ -16,6 +16,7 @@ import Editor, { OnMount, loader } from '@monaco-editor/react';
 // Infer editor type from OnMount callback (avoids direct 'monaco-editor' dependency)
 type IStandaloneCodeEditor = Parameters<OnMount>[0];
 import { cn } from '@/lib/utils';
+import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
 
 // ---------------------------------------------------------------------------
 // Fallback plain-text editor when Monaco fails to load

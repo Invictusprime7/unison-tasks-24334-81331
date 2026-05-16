@@ -8,6 +8,8 @@
  * - Generate unified diff for UI display
  */
 
+import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
+
 // ============================================================================
 // Types
 // ============================================================================

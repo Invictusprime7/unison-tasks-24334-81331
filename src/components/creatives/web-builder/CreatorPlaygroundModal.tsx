@@ -1553,6 +1553,7 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

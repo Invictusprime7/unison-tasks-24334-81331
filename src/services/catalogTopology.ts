@@ -152,28 +152,61 @@ export function getServiceSurfaces(
   const surfaces: CatalogSurface[] = [];
   const seen = new Set<string>();
 
+  const collections = Object.values(creatorData.collections).filter((c) => c.type === "services");
+  const memberCollectionIds = new Set(
+    collections.filter((c) => c.itemIds.includes(service.serviceId)).map((c) => c.collectionId),
+  );
+
+  // 1–3. Component instance bindings (direct / collection / featured / all)
   for (const ci of Object.values(creatorData.componentInstances)) {
     const bindings = ci.bindings || {};
+    const propsSource = (ci.props as Record<string, unknown> | undefined)?.source as string | undefined;
+    const source = (bindings.source ?? propsSource) as string | undefined;
+    const componentType = ci.componentType || ci.componentSlug || "Component";
+    const isServiceComponent = /service/i.test(componentType);
+
+    let kind: CatalogSurfaceKind | null = null;
+    let collectionId: string | undefined;
+
     if (bindings.serviceId === service.serviceId) {
-      const pages = ci.usedOnPages?.length ? ci.usedOnPages : [null];
-      for (const pid of pages) {
-        const page = pid ? pageRegistry.pages[pid] : null;
-        const surfaceId = `ci_${ci.instanceId}_${pid || "_"}`;
-        if (seen.has(surfaceId)) continue;
-        seen.add(surfaceId);
-        surfaces.push({
-          id: surfaceId,
-          pageId: pid,
-          pageLabel: page?.title || (pid ? pid : "Unattached"),
-          pageSlug: page?.path || "",
-          componentType: ci.componentType || ci.componentSlug || "Service",
-          kind: "direct",
-          componentInstanceId: ci.instanceId,
-        });
-      }
+      kind = "direct";
+    } else if (bindings.collectionId && memberCollectionIds.has(bindings.collectionId)) {
+      kind = "collection";
+      collectionId = bindings.collectionId;
+    } else if (isServiceComponent && source === "featured" && service.featured) {
+      kind = "featured";
+    } else if (isServiceComponent && source === "all") {
+      kind = "all";
+    }
+    if (!kind) continue;
+
+    const pages = ci.usedOnPages?.length ? ci.usedOnPages : [null];
+    for (const pid of pages) {
+      const page = pid ? pageRegistry.pages[pid] : null;
+      const surfaceId = `ci_${ci.instanceId}_${pid || "_"}`;
+      if (seen.has(surfaceId)) continue;
+      seen.add(surfaceId);
+      surfaces.push({
+        id: surfaceId,
+        pageId: pid,
+        pageLabel: page?.title || (pid ? pid : "Unattached"),
+        pageSlug: page?.path || "",
+        componentType,
+        kind,
+        source,
+        collectionId,
+        collectionName: collectionId ? creatorData.collections[collectionId]?.name : undefined,
+        componentInstanceId: ci.instanceId,
+      });
     }
   }
 
+  // 4. VFS static scan: <ServiceCard serviceId="..."/>, <BookingCard serviceId="..."/>,
+  //    or .tsx referencing the service name/code verbatim.
+  const idRe = new RegExp(
+    `<(UnisonServiceCard|ServiceCard|BookingCard)\\b[^>]*serviceId=["']${escapeRegex(service.serviceId)}["']`,
+    "i",
+  );
   const nameRe = service.name && service.name.length > 2
     ? new RegExp(`>\\s*${escapeRegex(service.name)}\\s*<`, "i")
     : null;
@@ -182,7 +215,12 @@ export function getServiceSurfaces(
   for (const [filePath, content] of Object.entries(vfsFiles)) {
     if (!/\.(tsx|jsx)$/i.test(filePath)) continue;
     if (filePath.endsWith("/App.tsx")) continue;
-    if (!((nameRe && nameRe.test(content)) || (codeRe && codeRe.test(content)))) continue;
+    let matched: { kind: CatalogSurfaceKind; componentType: string } | null = null;
+    if (idRe.test(content)) matched = { kind: "direct", componentType: "ServiceCard" };
+    else if (nameRe && nameRe.test(content)) matched = { kind: "vfs_static", componentType: "<inline>" };
+    else if (codeRe && codeRe.test(content)) matched = { kind: "vfs_static", componentType: "<inline>" };
+    if (!matched) continue;
+
     const { pageId, label, slug } = findPageByFile(filePath, pageRegistry);
     const surfaceId = `vfs_${filePath}_${service.serviceId}`;
     if (seen.has(surfaceId)) continue;
@@ -193,8 +231,8 @@ export function getServiceSurfaces(
       pageLabel: label,
       pageSlug: slug,
       filePath,
-      componentType: "<inline>",
-      kind: "vfs_static",
+      componentType: matched.componentType,
+      kind: matched.kind,
     });
   }
 

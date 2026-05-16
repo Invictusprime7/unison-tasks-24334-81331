@@ -2157,6 +2157,9 @@ export default function App() {
   const creatorDataForUnison = creatorPlayground.creatorData;
   useEffect(() => {
     try {
+      // Publish to the canonical registry FIRST so the preview compiler can
+      // re-stamp these files on every build (self-healing against AI edits).
+      publishCreatorDataForUnison(creatorDataForUnison);
       const source = generateUnisonDataFile(creatorDataForUnison);
       vfsImportFiles({
         [UNISON_DATA_PATH]: source,

@@ -8,6 +8,8 @@
  * - Generate unified diff for UI display
  */
 
+import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -218,6 +220,15 @@ class WorkspacePatchEngineService {
       const protectedPaths = ['/index.html', '/index.tsx'];
       if (protectedPaths.includes(p.path) && p.operation !== 'update') {
         errors.push(`Cannot ${p.operation} protected file: ${p.path}`);
+      }
+      // Block ALL edits to auto-generated Unison canonical files — they
+      // are deterministically regenerated from CreatorData and any patch
+      // is overwritten on the next preview compile anyway.
+      if (isUnisonProtectedPath(p.path)) {
+        errors.push(
+          `Cannot ${p.operation} auto-generated file: ${p.path}. ` +
+            `Edit the Creator Playground catalog instead.`,
+        );
       }
     }
 

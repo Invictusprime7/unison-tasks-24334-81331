@@ -3,20 +3,23 @@
  * --------------------------------------------------------------
  * Single source of truth for AUTO-GENERATED files under
  * `/src/unison/*`. These files are deterministically rebuilt from
- * CreatorData by `unisonDataGenerator` / `unisonProductsGenerator`
- * and must NEVER be hand-edited (by humans OR by the AI).
+ * CreatorData (and pure module generators) and must NEVER be
+ * hand-edited (by humans OR by the AI).
  *
- * Problem this solves:
- *   The AI assistant, code editor, or out-of-band patches can mutate
- *   files in the VFS — including auto-generated ones. When that
- *   happens to `/src/unison/products.tsx` the preview Sandpack
- *   reports "unisonData is not defined" because imports/scopes get
- *   mangled. We fix this at compile time, not after the fact.
+ * Extensibility:
+ *   New generators register themselves via `registerCanonicalGenerator`.
+ *   Adding a generator automatically opts its path into:
+ *     - preview-compile self-healing (applyUnisonCanonicals)
+ *     - VFS write-back (writeCanonicalsToVFS)
+ *     - patch-engine write protection (isUnisonProtectedPath)
  *
- * Strategy: any caller composing Sandpack files runs them through
- * `applyUnisonCanonicals()`, which re-stamps the canonical contents
- * over whatever is in the VFS. This makes these paths self-healing
- * regardless of upstream mutations.
+ * Resilience:
+ *   - Each generator is wrapped in try/catch. On failure we leave the
+ *     existing VFS contents untouched rather than emitting a broken
+ *     module that breaks every project on every compile.
+ *   - When the canonical contents diverge from the VFS contents we
+ *     emit a diagnostics event so the user/AI can see that an edit
+ *     was silently overwritten instead of looping on "fix" attempts.
  */
 
 import type { CreatorData } from '@/types/creatorData';
@@ -29,49 +32,153 @@ import {
   UNISON_PRODUCTS_PATH,
 } from '@/services/unisonProductsGenerator';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Registry
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type CanonicalGenerator = (ctx: {
+  creatorData: CreatorData | null;
+}) => string | null;
+
+interface RegisteredGenerator {
+  path: string;
+  generate: CanonicalGenerator;
+  /** Set true to skip generation when creatorData is missing. */
+  requiresCreatorData?: boolean;
+}
+
+const generators = new Map<string, RegisteredGenerator>();
+
+export function registerCanonicalGenerator(entry: RegisteredGenerator): void {
+  const normalized = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
+  generators.set(normalized, { ...entry, path: normalized });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Built-in generators
+// ─────────────────────────────────────────────────────────────────────────────
+
+registerCanonicalGenerator({
+  path: UNISON_PRODUCTS_PATH,
+  // Pure module — no creatorData dependency.
+  generate: () => generateUnisonProductsFile(),
+});
+
+registerCanonicalGenerator({
+  path: UNISON_DATA_PATH,
+  requiresCreatorData: true,
+  generate: ({ creatorData }) =>
+    creatorData ? generateUnisonDataFile(creatorData) : null,
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Current snapshot (singleton fallback for callers that can't thread state)
+// ─────────────────────────────────────────────────────────────────────────────
+
 let latestCreatorData: CreatorData | null = null;
 
-/** Called by the playground/web-builder whenever CreatorData changes. */
 export function publishCreatorDataForUnison(creatorData: CreatorData): void {
   latestCreatorData = creatorData;
 }
 
-/** Returns the canonical file map for the current CreatorData snapshot. */
-export function getCanonicalUnisonFiles(): Record<string, string> {
-  const out: Record<string, string> = {
-    // Products module is purely deterministic — always safe to re-stamp.
-    [UNISON_PRODUCTS_PATH]: generateUnisonProductsFile(),
-  };
-  if (latestCreatorData) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Generation
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface BuildOptions {
+  /** Override the singleton snapshot (preferred — avoids race on first mount). */
+  creatorData?: CreatorData | null;
+}
+
+/**
+ * Returns the canonical file map for the current snapshot. Generators
+ * that throw or return null are silently dropped — callers fall back to
+ * whatever the VFS already has.
+ */
+export function getCanonicalUnisonFiles(opts: BuildOptions = {}): Record<string, string> {
+  const creatorData = opts.creatorData ?? latestCreatorData;
+  const out: Record<string, string> = {};
+
+  for (const gen of generators.values()) {
+    if (gen.requiresCreatorData && !creatorData) continue;
     try {
-      out[UNISON_DATA_PATH] = generateUnisonDataFile(latestCreatorData);
+      const source = gen.generate({ creatorData });
+      if (typeof source === 'string' && source.length > 0) {
+        out[gen.path] = source;
+      }
     } catch (err) {
-      // If CreatorData is malformed, leave whatever the VFS has rather than
-      // emitting a broken module.
-      console.warn('[unison-canonical] data regeneration failed', err);
+      console.warn(`[unison-canonical] generator failed for ${gen.path}`, err);
     }
   }
+
   return out;
 }
 
 /**
- * Overlay canonical Unison files onto a Sandpack file map. Call this
- * as the FINAL step of any preview compile pipeline.
+ * Overlay canonical files onto a Sandpack file map. Call this as the
+ * FINAL step of any preview compile pipeline.
+ *
+ * Emits a `unison-canonical:overwrite` window event whenever the
+ * canonical contents differ from the incoming VFS contents, so the
+ * Diagnostics Aggregator / AI context layer can surface that an edit
+ * was silently overwritten instead of letting callers loop on it.
  */
 export function applyUnisonCanonicals(
   files: Record<string, string>,
+  opts: BuildOptions = {},
 ): Record<string, string> {
-  const canonical = getCanonicalUnisonFiles();
+  const canonical = getCanonicalUnisonFiles(opts);
+
+  if (typeof window !== 'undefined') {
+    for (const [path, source] of Object.entries(canonical)) {
+      const existing = files[path];
+      if (existing != null && existing !== source) {
+        try {
+          window.dispatchEvent(
+            new CustomEvent('unison-canonical:overwrite', {
+              detail: { path, reason: 'vfs-divergence' },
+            }),
+          );
+        } catch {
+          /* no-op */
+        }
+      }
+    }
+  }
+
   return { ...files, ...canonical };
 }
 
-/** Paths that the AI / file scope guards must treat as read-only. */
-export const UNISON_PROTECTED_PATHS: ReadonlyArray<string> = [
-  UNISON_DATA_PATH,
-  UNISON_PRODUCTS_PATH,
-];
+/**
+ * Write canonical contents back into the live VFS. Use this from the
+ * web-builder so the code editor / deploy bundle / AI context see the
+ * same source the preview runs, instead of a stale mangled copy.
+ */
+export function writeCanonicalsToVFS(
+  importFiles: (files: Record<string, string>) => void,
+  opts: BuildOptions = {},
+): void {
+  const canonical = getCanonicalUnisonFiles(opts);
+  if (Object.keys(canonical).length === 0) return;
+  try {
+    importFiles(canonical);
+  } catch (err) {
+    console.warn('[unison-canonical] VFS write-back failed', err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Protection helpers — consumed by patch engine, file-scope guards, editor
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function getUnisonProtectedPaths(): string[] {
+  return Array.from(generators.keys());
+}
+
+/** Back-compat: legacy import. Prefer `getUnisonProtectedPaths()`. */
+export const UNISON_PROTECTED_PATHS: ReadonlyArray<string> = getUnisonProtectedPaths();
 
 export function isUnisonProtectedPath(path: string): boolean {
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  return UNISON_PROTECTED_PATHS.includes(normalized);
+  return generators.has(normalized);
 }

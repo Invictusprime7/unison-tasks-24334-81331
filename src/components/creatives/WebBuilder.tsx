@@ -130,9 +130,7 @@ import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
 import { recompileFromPlayground, type SiteBundleSnapshot } from '@/services/canonicalPipeline';
-import { generateUnisonDataFile, UNISON_DATA_PATH } from '@/services/unisonDataGenerator';
-import { generateUnisonProductsFile, UNISON_PRODUCTS_PATH } from '@/services/unisonProductsGenerator';
-import { publishCreatorDataForUnison } from '@/services/unisonCanonicalRegistry';
+import { publishCreatorDataForUnison, writeCanonicalsToVFS } from '@/services/unisonCanonicalRegistry';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {
@@ -2156,18 +2154,12 @@ export default function App() {
   // ──────────────────────────────────────────────────────────────
   const creatorDataForUnison = creatorPlayground.creatorData;
   useEffect(() => {
-    try {
-      // Publish to the canonical registry FIRST so the preview compiler can
-      // re-stamp these files on every build (self-healing against AI edits).
-      publishCreatorDataForUnison(creatorDataForUnison);
-      const source = generateUnisonDataFile(creatorDataForUnison);
-      vfsImportFiles({
-        [UNISON_DATA_PATH]: source,
-        [UNISON_PRODUCTS_PATH]: generateUnisonProductsFile(),
-      });
-    } catch (err) {
-      console.warn('[unison-data] Failed to regenerate', err);
-    }
+    // Publish to the canonical registry FIRST so the preview compiler can
+    // re-stamp protected files on every build (self-healing against AI edits).
+    publishCreatorDataForUnison(creatorDataForUnison);
+    // Then write canonical contents back into the live VFS so the code
+    // editor / deploy bundle / AI context all match what the preview runs.
+    writeCanonicalsToVFS(vfsImportFiles, { creatorData: creatorDataForUnison });
   }, [creatorDataForUnison, vfsImportFiles]);
 
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview

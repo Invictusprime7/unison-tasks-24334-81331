@@ -904,6 +904,7 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
     const created = playground.addComponentInstance({
       componentType: "ProductGrid",
       componentSlug: "product-grid",
+      label: source === "featured" ? "Featured Products" : "All Products",
       bindings: { source },
       props: { source, title: source === "featured" ? "Featured Products" : "All Products" },
       usedOnPages: [homePageId],

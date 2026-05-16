@@ -1560,7 +1560,141 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
   );
 }
 
-type ServiceFilter = "all" | "bookable" | "featured" | "not_bookable";
+/**
+ * Inline mini-editor for a collection — opens from a pencil affordance on the
+ * collection pill. Lets you rename, manage members (multi-select with search),
+ * and delete the collection without leaving the Products/Services tab.
+ */
+function CollectionPillEditor({
+  playground,
+  collectionId,
+  candidates,
+  itemKind,
+}: {
+  playground: UseCreatorPlaygroundReturn;
+  collectionId: string;
+  candidates: Array<{ id: string; name: string; meta?: string }>;
+  itemKind: "products" | "services";
+}) {
+  const collection = playground.creatorData.collections[collectionId];
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  if (!collection) return null;
+
+  const memberSet = new Set(collection.itemIds);
+  const filtered = candidates.filter((c) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) || (c.meta || "").toLowerCase().includes(q);
+  });
+
+  const toggle = (id: string) => {
+    const has = collection.itemIds.includes(id);
+    const itemIds = has ? collection.itemIds.filter((x) => x !== id) : [...collection.itemIds, id];
+    playground.updateCollection(collectionId, { itemIds });
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center rounded-full border border-border/30 bg-muted/10 p-0.5 text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
+          title={`Edit "${collection.name}"`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Pencil className="h-2.5 w-2.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-80 p-3 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Collection name</div>
+          <Input
+            value={collection.name}
+            onChange={(e) => playground.updateCollection(collectionId, { name: e.target.value })}
+            className="h-8 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Members · {collection.itemIds.length}
+            </div>
+            <div className="text-[10px] text-muted-foreground/70">
+              {itemKind === "products" ? "Products" : "Services"}
+            </div>
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="h-7 pl-6 text-xs"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto rounded-md border border-border/30 bg-muted/5">
+            {filtered.length === 0 ? (
+              <div className="px-2.5 py-3 text-[11px] text-center text-muted-foreground">
+                No {itemKind === "products" ? "products" : "services"} match.
+              </div>
+            ) : (
+              filtered.map((c) => {
+                const member = memberSet.has(c.id);
+                return (
+                  <button
+                    type="button"
+                    key={c.id}
+                    onClick={() => toggle(c.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs border-b border-border/10 last:border-b-0 transition-colors",
+                      member ? "bg-sky-500/10 text-foreground" : "hover:bg-muted/20 text-muted-foreground",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                        member ? "border-sky-500/60 bg-sky-500/30 text-sky-100" : "border-border/40",
+                      )}
+                    >
+                      {member && <CheckCircle className="h-2.5 w-2.5" />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                    {c.meta && <span className="text-[10px] text-muted-foreground/70 shrink-0">{c.meta}</span>}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-border/20 pt-2">
+          <div className="text-[10px] text-muted-foreground">
+            Bound via <code className="rounded bg-muted/40 px-1">collectionId</code>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[11px] text-destructive hover:bg-destructive/10"
+            onClick={() => {
+              playground.removeCollection(collectionId);
+              setOpen(false);
+            }}
+          >
+            <Trash2 className="mr-1 h-3 w-3" /> Delete
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 
 function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playground: UseCreatorPlaygroundReturn; vfsFiles: Record<string, string>; onNavigateToPage?: (pageId: string) => void }) {
   const allServices = useMemo(

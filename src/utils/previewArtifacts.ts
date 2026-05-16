@@ -3,6 +3,7 @@ import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { launchStateToSandpackFiles } from '@/utils/launchToSandpack';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
+import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;

@@ -2043,20 +2043,31 @@ function ServicesSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
                     {collections.map((c) => {
                       const member = c.itemIds.includes(selectedService.serviceId);
                       return (
-                        <button
+                        <div
                           key={c.collectionId}
-                          type="button"
-                          onClick={() => toggleServiceInCollection(c.collectionId)}
                           className={cn(
-                            "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                            "inline-flex items-center gap-1 rounded-full border pl-2.5 pr-1 py-0.5 text-[11px] transition-colors",
                             member
                               ? "border-sky-500/40 bg-sky-500/15 text-foreground"
                               : "border-border/30 bg-muted/10 text-muted-foreground hover:bg-muted/20",
                           )}
                         >
-                          {member ? "✓ " : "+ "}{c.name}
-                          <span className="ml-1 opacity-60">{c.itemIds.length}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleServiceInCollection(c.collectionId)}
+                            className="inline-flex items-center gap-1"
+                            title={member ? "Remove from collection" : "Add to collection"}
+                          >
+                            {member ? "✓ " : "+ "}{c.name}
+                            <span className="ml-0.5 opacity-60">{c.itemIds.length}</span>
+                          </button>
+                          <CollectionPillEditor
+                            playground={playground}
+                            collectionId={c.collectionId}
+                            itemKind="services"
+                            candidates={allServices.map((s) => ({ id: s.serviceId, name: s.name, meta: s.duration ? `${s.duration} min` : "" }))}
+                          />
+                        </div>
                       );
                     })}
                   </div>

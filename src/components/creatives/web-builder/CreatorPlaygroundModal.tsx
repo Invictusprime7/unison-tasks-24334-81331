@@ -2598,14 +2598,6 @@ function CatalogGraph({
   const orphanIds = mode === "products" ? topology.orphanProductIds : topology.orphanServiceIds;
   const orphanSet = new Set(orphanIds);
 
-  const kindColor = (k: CatalogSurfaceKind): string => {
-    if (k === "direct") return "stroke-emerald-500/70";
-    if (k === "featured") return "stroke-amber-500/70";
-    if (k === "collection") return "stroke-sky-500/70";
-    if (k === "all") return "stroke-violet-500/70";
-    return "stroke-zinc-500/60";
-  };
-
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-border/30 bg-muted/5 px-3 py-6 text-center text-xs text-muted-foreground">Nothing to graph yet.</div>;
   }

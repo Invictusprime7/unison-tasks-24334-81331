@@ -1000,29 +1000,55 @@ function ProductsSection({ playground, vfsFiles, onNavigateToPage }: { playgroun
             Live-bound to <code className="rounded bg-muted/40 px-1 py-px text-[10px]">@/unison/products</code> — edits flow into ProductGrid, ProductCard, and cart at runtime.
           </p>
         </div>
-        <Button
-          size="sm"
-          className="h-8 px-3"
-          onClick={() => {
-            const created = playground.addProduct({
-              name: "New Offer",
-              description: "",
-              price: 99,
-              currency: "USD",
-              status: "active",
-              trackInventory: true,
-              stockQuantity: 10,
-              inventoryPolicy: "deny_when_out",
-              ctaLabel: "Buy Now",
-              checkoutLabel: "Complete Purchase",
-              variants: [],
-            });
-            setSelectedProductId(created.productId);
-          }}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Add Product
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-border/30 bg-muted/10 p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
+                viewMode === "list" ? "bg-emerald-500/15 text-foreground" : "text-muted-foreground hover:bg-muted/20",
+              )}
+              title="List view"
+            >
+              <LayoutGrid className="h-3 w-3" /> List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("graph")}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
+                viewMode === "graph" ? "bg-emerald-500/15 text-foreground" : "text-muted-foreground hover:bg-muted/20",
+              )}
+              title="Topology graph view"
+            >
+              <Network className="h-3 w-3" /> Graph
+            </button>
+          </div>
+          <Button
+            size="sm"
+            className="h-8 px-3"
+            onClick={() => {
+              const created = playground.addProduct({
+                name: "New Offer",
+                description: "",
+                price: 99,
+                currency: "USD",
+                status: "active",
+                trackInventory: true,
+                stockQuantity: 10,
+                inventoryPolicy: "deny_when_out",
+                ctaLabel: "Buy Now",
+                checkoutLabel: "Complete Purchase",
+                variants: [],
+              });
+              setSelectedProductId(created.productId);
+            }}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Add Product
+          </Button>
+        </div>
       </div>
 
       {/* Stats strip */}

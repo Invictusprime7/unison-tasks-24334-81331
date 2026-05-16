@@ -88,6 +88,28 @@ export function publishCreatorDataForUnison(creatorData: CreatorData): void {
 interface BuildOptions {
   /** Override the singleton snapshot (preferred — avoids race on first mount). */
   creatorData?: CreatorData | null;
+  /**
+   * Preview/Sandpack flattens `/src/foo.tsx` to `/foo.tsx`. When true, mirror
+   * canonical files to their flattened runtime paths as the final compile step.
+   */
+  includeSandpackMirrors?: boolean;
+}
+
+function normalizeCanonicalPath(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return normalized.startsWith('/unison/') ? `/src${normalized}` : normalized;
+}
+
+function toSandpackPath(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return normalized.startsWith('/src/') ? normalized.replace('/src/', '/') : normalized;
+}
+
+function toSandpackSource(path: string, source: string): string {
+  if (!toSandpackPath(path).startsWith('/unison/')) return source;
+  return source
+    .replace(/from\s+["']@\/unison\//g, 'from "./')
+    .replace(/import\s+["']@\/unison\//g, 'import "./');
 }
 
 /**
@@ -128,9 +150,18 @@ export function applyUnisonCanonicals(
   opts: BuildOptions = {},
 ): Record<string, string> {
   const canonical = getCanonicalUnisonFiles(opts);
+  const includeSandpackMirrors = opts.includeSandpackMirrors ?? true;
+  const overlay: Record<string, string> = { ...canonical };
+
+  if (includeSandpackMirrors) {
+    for (const [path, source] of Object.entries(canonical)) {
+      const sandpackPath = toSandpackPath(path);
+      overlay[sandpackPath] = toSandpackSource(path, source);
+    }
+  }
 
   if (typeof window !== 'undefined') {
-    for (const [path, source] of Object.entries(canonical)) {
+    for (const [path, source] of Object.entries(overlay)) {
       const existing = files[path];
       if (existing != null && existing !== source) {
         try {
@@ -146,7 +177,7 @@ export function applyUnisonCanonicals(
     }
   }
 
-  return { ...files, ...canonical };
+  return { ...files, ...overlay };
 }
 
 /**
@@ -179,6 +210,6 @@ export function getUnisonProtectedPaths(): string[] {
 export const UNISON_PROTECTED_PATHS: ReadonlyArray<string> = getUnisonProtectedPaths();
 
 export function isUnisonProtectedPath(path: string): boolean {
-  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const normalized = normalizeCanonicalPath(path);
   return generators.has(normalized);
 }

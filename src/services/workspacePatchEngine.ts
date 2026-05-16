@@ -9,6 +9,7 @@
  */
 
 import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
+import { detectSlotBindingViolations } from '@/services/aiBindingTool';
 
 // ============================================================================
 // Types

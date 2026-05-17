@@ -199,23 +199,8 @@ serve(async (req) => {
       }
     }
 
-    // 5) Register intent bindings
-    const bindings = defaultIntentBindingsForSystem(systemType);
-    if (bindings.length) {
-      const { error: bindingsError } = await admin.from("intent_bindings").insert(
-        bindings.map((b) => ({
-          business_id: businessId,
-          intent: b.intent,
-          handler: b.handler,
-          payload_defaults: {},
-          created_by: userId,
-        })),
-      );
-      if (bindingsError) {
-        console.error("[install-system] intent bindings registration failed", bindingsError);
-        warnings.push("intent_bindings_registration_failed");
-      }
-    }
+    // 5) Intent bindings are written launcher-side via persistGeneratedBindings —
+    //    install-system no longer seeds them. See src/services/persistGeneratedBindings.ts.
 
     return secureJsonResponse({
       success: true,
@@ -225,7 +210,7 @@ serve(async (req) => {
         packs,
         systemType,
         templateId: body.templateId ? sanitizeString(body.templateId, 100) : null,
-        intentsRegistered: bindings.length,
+        intentsRegistered: 0,
         warnings,
       },
     }, 200, corsHeaders);

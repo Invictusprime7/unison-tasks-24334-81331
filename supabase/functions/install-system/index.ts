@@ -42,30 +42,11 @@ function packsForSystem(systemType: SystemType): string[] {
   }
 }
 
-function defaultIntentBindingsForSystem(systemType: SystemType): Array<{ intent: string; handler: string }> {
-  // NOTE: new installs should bind action intents to the canonical executor.
-  switch (systemType) {
-    case "booking":
-      return [
-        { intent: "booking.create", handler: "intent-exec" },
-        { intent: "reservation.submit", handler: "intent-exec" },
-        { intent: "contact.submit", handler: "intent-exec" },
-        { intent: "newsletter.subscribe", handler: "intent-exec" },
-      ];
-    case "store":
-      return [
-        { intent: "cart.add", handler: "workflow-trigger" },
-        { intent: "checkout.start", handler: "workflow-trigger" },
-        { intent: "contact.submit", handler: "intent-exec" },
-        { intent: "newsletter.subscribe", handler: "intent-exec" },
-      ];
-    default:
-      return [
-        { intent: "contact.submit", handler: "intent-exec" },
-        { intent: "newsletter.subscribe", handler: "intent-exec" },
-      ];
-  }
-}
+// NOTE: Intent bindings are no longer seeded here. Wiring is launcher-native:
+// the System Launcher AI generation path stamps data-ut-intent on every CTA
+// and persistGeneratedBindings() upserts the matching rows into
+// site_intent_bindings as part of the launch transaction. install-system
+// now provisions only the business entity, packs, and demo seed data.
 
 const VALID_SYSTEM_TYPES: SystemType[] = [
   "booking",

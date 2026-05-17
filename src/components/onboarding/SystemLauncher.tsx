@@ -1224,6 +1224,24 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         );
       }
 
+      // Persist generated bindings → site_intent_bindings (launcher-native wiring).
+      // Best-effort; failures never block launch.
+      const launchProjectId =
+        (launchArtifacts.siteBundleSnapshot as { projectId?: string } | undefined)?.projectId;
+      if (provisionedBusinessId && launchProjectId) {
+        try {
+          const { persistGeneratedBindings } = await import('@/services/persistGeneratedBindings');
+          const result = await persistGeneratedBindings({
+            businessId: provisionedBusinessId,
+            projectId: launchProjectId,
+            files: wiredVfsFiles,
+          });
+          console.log('[SystemLauncher] Persisted generated bindings', result);
+        } catch (err) {
+          console.warn('[SystemLauncher] persistGeneratedBindings failed (non-fatal)', err);
+        }
+      }
+
       const navState = {
         templateName: `${brand} Site`,
         aesthetic: resolvedPreset.id,

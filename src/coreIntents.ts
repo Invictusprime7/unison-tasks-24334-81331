@@ -51,26 +51,26 @@ export type ActionIntent = string;
 export type AutomationIntent = string;
 export type CoreIntent = string;
 
-export function isCoreIntent(intent: string): intent is CoreIntent {
+export function isCoreIntent(intent: string): boolean {
   return isRegisteredIntent(intent);
 }
 
-export function isNavIntent(intent: string): intent is NavIntent {
+export function isNavIntent(intent: string): boolean {
   const canonical = resolveIntentName(intent);
   return !!canonical && (NAV_INTENTS as string[]).includes(canonical);
 }
 
-export function isPayIntent(intent: string): intent is PayIntent {
+export function isPayIntent(intent: string): boolean {
   const canonical = resolveIntentName(intent);
   return !!canonical && (PAY_INTENTS as string[]).includes(canonical);
 }
 
-export function isActionIntent(intent: string): intent is ActionIntent {
+export function isActionIntent(intent: string): boolean {
   const canonical = resolveIntentName(intent);
   return !!canonical && (ACTION_INTENTS as string[]).includes(canonical);
 }
 
-export function isAutomationIntent(intent: string): intent is AutomationIntent {
+export function isAutomationIntent(intent: string): boolean {
   const canonical = resolveIntentName(intent);
   return !!canonical && (AUTOMATION_INTENTS as string[]).includes(canonical);
 }

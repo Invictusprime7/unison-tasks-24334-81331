@@ -314,6 +314,6 @@ serve(async (req) => {
       }, 200, corsHeaders);
   } catch (error) {
     console.error("Create lead error:", error);
-    return errorResponse(error instanceof Error ? error.message : "Unknown error", 500, corsHeaders);
+    return errorResponse("Unable to process request. Please try again.", 500, corsHeaders);
   }
 });

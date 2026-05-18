@@ -61,53 +61,83 @@ serve(async (req) => {
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    const useOpenAI = typeof model === 'string' && model.startsWith('openai/') && !!OPENAI_API_KEY;
-    provider = useOpenAI ? "openai" : "lovable";
+    // Unison Task default: OpenAI primary, Lovable AI Gateway fallback.
+    // Any model id may be sent; "openai/*" or bare names route to OpenAI first,
+    // "google/*" or other gateway-prefixed ids route to Lovable first.
+    const prefersLovable = typeof model === 'string' && /^(google|anthropic|meta|mistral|lovable)\//.test(model);
+    const openAIModel = typeof model === 'string' ? model.replace(/^openai\//, '') : 'gpt-5-mini';
+    const lovableModel = prefersLovable ? model : 'google/gemini-2.5-flash';
 
-    const upstreamUrl = useOpenAI
-      ? "https://api.openai.com/v1/chat/completions"
-      : "https://ai.gateway.lovable.dev/v1/chat/completions";
-
-    const apiKey = useOpenAI ? OPENAI_API_KEY : LOVABLE_API_KEY;
-    if (!apiKey) throw new Error(useOpenAI ? "OPENAI_API_KEY is not configured" : "LOVABLE_API_KEY is not configured");
-
-    resolvedModel = useOpenAI ? model.replace(/^openai\//, '') : model;
-
-    const body: Record<string, unknown> = {
-      model: resolvedModel,
-      messages: [
-        { role: "system", content: "You are Unison Task's AI assistant. Be clear, concise, and accurate." },
-        ...messages,
-      ],
-      stream: true,
+    type Attempt = { provider: 'openai' | 'lovable'; url: string; key: string | undefined; modelId: string };
+    const openaiAttempt: Attempt = {
+      provider: 'openai',
+      url: 'https://api.openai.com/v1/chat/completions',
+      key: OPENAI_API_KEY,
+      modelId: openAIModel,
+    };
+    const lovableAttempt: Attempt = {
+      provider: 'lovable',
+      url: 'https://ai.gateway.lovable.dev/v1/chat/completions',
+      key: LOVABLE_API_KEY,
+      modelId: lovableModel,
     };
 
-    if (reasoning?.effort && reasoning.effort !== 'none') {
-      body.reasoning = { effort: reasoning.effort };
+    const attempts: Attempt[] = prefersLovable
+      ? [lovableAttempt, openaiAttempt]
+      : [openaiAttempt, lovableAttempt];
+
+    let response: Response | null = null;
+    let lastErrorText = '';
+    let lastStatus: number | null = null;
+
+    for (const attempt of attempts) {
+      if (!attempt.key) continue;
+      provider = attempt.provider;
+      resolvedModel = attempt.modelId;
+
+      const body: Record<string, unknown> = {
+        model: attempt.modelId,
+        messages: [
+          { role: "system", content: "You are Unison Task's AI assistant. Be clear, concise, and accurate." },
+          ...messages,
+        ],
+        stream: true,
+      };
+      if (reasoning?.effort && reasoning.effort !== 'none') {
+        body.reasoning = { effort: reasoning.effort };
+      }
+
+      const res = await fetch(attempt.url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${attempt.key}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) { response = res; break; }
+
+      lastStatus = res.status;
+      lastErrorText = await res.text();
+      console.error(`AI provider error (${attempt.provider}):`, res.status, lastErrorText);
+      await logRequest({ statusCode: res.status, success: false, errorMessage: `[${attempt.provider}] ${lastErrorText.slice(0, 400)}` });
+      // Fall through to next attempt on auth/quota/server errors
+      if (![401, 402, 403, 408, 429, 500, 502, 503, 504].includes(res.status)) break;
     }
 
-    const response = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const t = await response.text();
-      console.error(`AI provider error (${provider}):`, response.status, t);
-      await logRequest({ statusCode: response.status, success: false, errorMessage: t.slice(0, 500) });
-
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limits exceeded, please try again later." }), {
+    if (!response) {
+      if (!OPENAI_API_KEY && !LOVABLE_API_KEY) {
+        throw new Error("No AI provider configured: set OPENAI_API_KEY (primary) or LOVABLE_API_KEY (fallback).");
+      }
+      if (lastStatus === 429) {
+        return new Response(JSON.stringify({ error: "Rate limits exceeded on all providers, please try again later." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
+      if (lastStatus === 402) {
         return new Response(JSON.stringify({ error: "Payment required, please add credits to your AI provider workspace." }), {
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ error: "AI provider error", detail: t }), {
+      return new Response(JSON.stringify({ error: "AI provider error (all attempts failed)", detail: lastErrorText }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

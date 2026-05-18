@@ -31,7 +31,7 @@ export interface GatewayConfig {
 }
 
 const DEFAULT_CONFIG: GatewayConfig = {
-  selectedModelId: "google/gemini-3-flash-preview",
+  selectedModelId: "openai/gpt-5",
   reasoningEffort: "none",
   timeoutMs: 45000,
   autoModelSelection: true,

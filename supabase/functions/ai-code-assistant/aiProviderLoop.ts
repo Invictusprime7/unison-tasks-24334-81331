@@ -47,8 +47,121 @@ export async function runProviderLoop(opts: {
     lastError = message;
   };
 
-  // ── Phase 1: Lovable AI Gateway ──────────────────────────────────────
-  if (lovableApiKey) {
+  // ── Phase 1: Direct OpenAI API (PRIMARY) ─────────────────────────────
+  // OpenAI is the primary provider when available
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  if (OPENAI_API_KEY) {
+    const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
+    const openaiModels = [
+      ...(configuredOpenAIModel
+        ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
+        : []),
+      { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
+      { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },
+    ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
+    
+    for (const model of openaiModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) {
+        console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining OpenAI models`);
+        lastError = lastError || 'budget exhausted before all models tried';
+        break;
+      }
+      const perModelMs = Math.min(25000, Math.max(8000, remaining - 2000));
+      try {
+        console.log(`[AI-Hybrid] Trying PRIMARY OpenAI ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        
+        const requestBody: Record<string, unknown> = {
+          model: model.id,
+          messages: aiMessages,
+          max_completion_tokens: model.maxTokens,
+        };
+        
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (resp.status === 429 || resp.status === 402) {
+          const errText = await resp.text().catch(() => '');
+          const earlyError: ProviderEarlyError = resp.status === 429
+            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
+            : { status: 402, error: 'Payment required. Please add credits to your OpenAI account.' };
+          recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+          if (!lovableApiKey) {
+            return { content: '', reasoning: '', modelUsed: undefined, earlyError };
+          }
+          deferredEarlyError ??= earlyError;
+          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying Lovable gateway fallback...`);
+          break;
+        }
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 300)}`);
+          if (resp.status === 400) {
+            console.error(`[AI-Hybrid] 400 Bad Request for ${model.id}. Request body keys: ${Object.keys(requestBody).join(', ')}`);
+          }
+          recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
+          continue;
+        }
+
+        const responseText = await resp.text();
+        if (!responseText || responseText.trim() === '') {
+          console.warn(`[AI-Hybrid] ${model.label} returned empty response, trying next...`);
+          recordProviderError(model.label, 'empty response');
+          continue;
+        }
+
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          console.warn(`[AI-Hybrid] ${model.label} returned invalid JSON, trying next...`);
+          recordProviderError(model.label, 'invalid JSON');
+          continue;
+        }
+
+        const parsedContent = data.choices?.[0]?.message?.content || '';
+        if (!parsedContent) {
+          console.warn(`[AI-Hybrid] ${model.label} returned no content, trying next...`);
+          recordProviderError(model.label, 'no content');
+          continue;
+        }
+
+        const extracted = extractThinkingTags(parsedContent);
+        if (extracted.reasoning) {
+          reasoning = extracted.reasoning;
+          console.log(`[AI-Hybrid] Thinking tags extracted from ${model.label}: ${extracted.reasoning.length} chars`);
+        }
+        content = extracted.content;
+        modelUsed = model.id;
+        console.log(`[AI-Hybrid] Success with PRIMARY ${model.label}`);
+        break;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
+          recordProviderError(model.label, 'timeout');
+          continue;
+        }
+        console.warn(`[AI-Hybrid] ${model.label} failed:`, err);
+        recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
+        continue;
+      }
+    }
+  }
+
+  // ── Phase 2: Lovable AI Gateway (FALLBACK) ───────────────────────────
+  // Lovable gateway is secondary fallback if OpenAI is unavailable or fails
+  if (!content && lovableApiKey) {
     // Log total prompt size for debugging
     const totalChars = aiMessages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
     console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
@@ -65,7 +178,7 @@ export async function runProviderLoop(opts: {
       const halfBudget = Math.max(15000, Math.floor(remaining / 2));
       const perModelMs = Math.min(providerPlan.perModelTimeoutMs, halfBudget, Math.max(8000, remaining - 2000));
       try {
-        console.log(`[AI-Hybrid] Trying gateway model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        console.log(`[AI-Hybrid] Trying FALLBACK gateway model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
@@ -100,11 +213,8 @@ export async function runProviderLoop(opts: {
             ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
             : { status: 402, error: 'Payment required. Please add credits to your workspace.' };
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
-          if (!hasDirectOpenAI) {
-            return { content: '', reasoning: '', modelUsed: undefined, earlyError };
-          }
           deferredEarlyError ??= earlyError;
-          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying direct provider fallbacks...`);
+          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next provider...`);
           break;
         }
 
@@ -149,7 +259,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
-        console.log(`[AI-Hybrid] Success with ${model.label}`);
+        console.log(`[AI-Hybrid] Success with FALLBACK ${model.label}`);
         break;
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -160,72 +270,6 @@ export async function runProviderLoop(opts: {
         console.warn(`[AI-Hybrid] ${model.label} failed:`, err);
         recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
         continue;
-      }
-    }
-  }
-
-  // ── Phase 2: Direct OpenAI API fallback ──────────────────────────────
-  if (!content) {
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-    if (OPENAI_API_KEY) {
-      const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
-      const openaiModels = [
-        ...(configuredOpenAIModel
-          ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
-          : []),
-        { id: 'gpt-5-mini', maxTokens: 16000, label: 'OpenAI gpt-5-mini' },
-        { id: 'gpt-5', maxTokens: 16000, label: 'OpenAI gpt-5' },
-      ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
-      for (const model of openaiModels) {
-        const remaining = budgetRemaining();
-        if (remaining < 8000) {
-          console.warn(`[AI-Hybrid] Budget exhausted before direct OpenAI fallback (${remaining}ms left)`);
-          break;
-        }
-        const perModelMs = Math.min(25000, Math.max(8000, remaining - 2000));
-        try {
-          console.log(`[AI-Hybrid] Trying direct ${model.label} (timeout: ${perModelMs / 1000}s)...`);
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), perModelMs);
-          const usesCompletionTokens = model.id.startsWith('gpt-5');
-          const requestBody: Record<string, unknown> = {
-            model: model.id,
-            messages: aiMessages,
-            ...(usesCompletionTokens
-              ? { max_completion_tokens: model.maxTokens }
-              : { max_tokens: model.maxTokens }),
-          };
-          const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${OPENAI_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody),
-            signal: controller.signal,
-          });
-          clearTimeout(timeoutId);
-          if (!resp.ok) {
-            const errText = await resp.text();
-            console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 200)}`);
-            recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
-            continue;
-          }
-          const data = await resp.json();
-          const parsedContent = data.choices?.[0]?.message?.content || '';
-          if (!parsedContent) { recordProviderError(model.label, 'no content'); continue; }
-          const extracted = extractThinkingTags(parsedContent);
-          if (extracted.reasoning) {
-            reasoning = extracted.reasoning;
-          }
-          content = extracted.content;
-          modelUsed = model.id;
-          console.log(`[AI-Hybrid] Success with ${model.label}`);
-          break;
-        } catch (err) {
-          recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
-          continue;
-        }
       }
     }
   }

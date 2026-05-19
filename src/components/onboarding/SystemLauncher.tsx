@@ -748,22 +748,30 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setIsLaunching(true);
     try {
       let { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
+      const isDev = import.meta.env.DEV;
+      
+      // In dev mode, allow generation without a valid session
+      if (!sessionData.session && !isDev) {
         toast.error("Please sign in to continue");
         navigate("/auth");
         return;
       }
 
       // Refresh proactively when session is about to expire to avoid 401 loops
-      const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;
-      if (expiresAtMs > 0 && expiresAtMs <= Date.now() + 60_000) {
-        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-        if (refreshError || !refreshed.session) {
-          toast.error("Session expired. Please sign in again.");
-          navigate("/auth");
-          return;
+      if (sessionData.session) {
+        const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;
+        if (expiresAtMs > 0 && expiresAtMs <= Date.now() + 60_000) {
+          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError || !refreshed.session) {
+            if (!isDev) {
+              toast.error("Session expired. Please sign in again.");
+              navigate("/auth");
+              return;
+            }
+          } else {
+            sessionData = refreshed as typeof sessionData;
+          }
         }
-        sessionData = refreshed as typeof sessionData;
       }
 
       const generationCategory = getGenerationCategory(system, selectedTemplate);

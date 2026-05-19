@@ -36,9 +36,38 @@ const Auth = () => {
     }
   };
 
-  // Dev mode: Bypass auth and navigate directly to onboarding
+  // Dev mode: Create a session that Supabase will recognize
   const handleDevModeLogin = async () => {
-    navigate("/onboarding?dev=true");
+    try {
+      // Use the project's anon key as a pseudo-JWT for dev mode
+      // This allows supabase.functions.invoke() to work in dev
+      const anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mcmRvbWR2eXJid3Vva2F0aHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5ODA2ODksImV4cCI6MjA1MDU1NjY4OX0.hXIS9fZcCl7IJ3j69L-vA0yAzZBWMCZqPtPqD1z2HnY";
+      const devUserId = 'dev-' + Math.random().toString(36).substring(7);
+      
+      // Create a session object that Supabase will use for function invocations
+      const session = {
+        access_token: anonKey,
+        refresh_token: 'dev-refresh',
+        expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        token_type: 'bearer',
+        user: {
+          id: devUserId,
+          aud: 'authenticated',
+          role: 'authenticated',
+          email: 'dev@example.local',
+        }
+      };
+      
+      // Store in localStorage so Supabase can use it
+      await supabase.auth.setSession(session as any);
+      
+      navigate("/onboarding?dev=true");
+    } catch (err) {
+      console.error('Dev login error:', err);
+      // Fall back to simple navigation if session setup fails
+      navigate("/onboarding?dev=true");
+    }
   };
 
   useEffect(() => {

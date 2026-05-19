@@ -747,7 +747,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
     setIsLaunching(true);
     try {
-      const isDev = import.meta.env.DEV;
+      const isDev = import.meta.env.DEV || new URLSearchParams(window.location.search).get('dev') === 'true';
       console.log('[SystemLauncher] isDev:', isDev, 'Launching with:', {
         system: selectedSystem,
         template: selectedTemplate?.label,
@@ -812,6 +812,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       console.log('[SystemLauncher] Invoking install-system with body:', installBody);
       const installPromise = supabase.functions.invoke('install-system', {
         body: installBody,
+        headers: {
+          'Content-Type': 'application/json'
+        }
       })
         .then(({ data, error }) => {
           if (error) {

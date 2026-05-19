@@ -34,9 +34,10 @@ serve(async (req: Request) => {
       return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
     }
 
-    const { data: rawBody, error: parseError } = await safeParseBody(req, 1_048_576);
+    const { data: rawBody, error: parseError } = await safeParseBody(req, 4_194_304);
     if (parseError || !rawBody) {
       const status = parseError?.includes("exceeds") ? 413 : 400;
+      console.error("[ai-code-assistant] body parse failed", { parseError, status });
       return errorResponse(parseError || "Invalid request body", status, corsHeaders);
     }
 

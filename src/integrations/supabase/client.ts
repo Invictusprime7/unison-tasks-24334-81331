@@ -21,9 +21,9 @@ const SANITIZED_SUPABASE_PUBLISHABLE_KEY = sanitizeEnvValue(SUPABASE_PUBLISHABLE
 
 export const supabase = createClient<Database>(SANITIZED_SUPABASE_URL, SANITIZED_SUPABASE_PUBLISHABLE_KEY, {
 	auth: {
-		autoRefreshToken: false,
-		persistSession: false,
-		detectSessionInUrl: false,
+		autoRefreshToken: true,
+		persistSession: true,
+		detectSessionInUrl: true,
 	},
 	realtime: {
 		// Disable Realtime in development to avoid WebSocket auth errors
@@ -35,42 +35,3 @@ export const supabase = createClient<Database>(SANITIZED_SUPABASE_URL, SANITIZED
 export const isSupabaseConfigured = Boolean(
 	SANITIZED_SUPABASE_URL && SANITIZED_SUPABASE_PUBLISHABLE_KEY,
 );
-
-// Development mode: Create a mock session for testing
-if (import.meta.env.DEV) {
-	// Auto-create a mock user session in development for testing
-	supabase.auth.getSession().then(({ data: { session } }) => {
-		if (!session) {
-			// Try to sign in with test credentials (or create mock session)
-			const mockSession = {
-				access_token: SANITIZED_SUPABASE_PUBLISHABLE_KEY,
-				refresh_token: 'dev-refresh-token',
-				expires_in: 3600,
-				expires_at: Math.floor(Date.now() / 1000) + 3600,
-				token_type: 'bearer',
-				user: {
-					id: 'dev-test-user-' + Math.random().toString(36).substring(7),
-					aud: 'authenticated',
-					role: 'authenticated',
-					email: 'dev@test.local',
-					email_confirmed_at: new Date().toISOString(),
-					phone: null,
-					phone_confirmed_at: null,
-					confirmed_at: new Date().toISOString(),
-					last_sign_in_at: new Date().toISOString(),
-					app_metadata: { provider: 'dev' },
-					user_metadata: { name: 'Dev Test User' },
-					identities: [],
-					created_at: new Date().toISOString(),
-					updated_at: new Date().toISOString(),
-				},
-			};
-			try {
-				supabase.auth.setSession(mockSession as any);
-				console.log('[Dev Mode] Mock session created for testing');
-			} catch (e) {
-				console.log('[Dev Mode] Could not create mock session:', e);
-			}
-		}
-	});
-}

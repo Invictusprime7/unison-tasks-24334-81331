@@ -6,7 +6,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://nfrdomdvyrbwu
 const SUPABASE_PUBLISHABLE_KEY =
 	import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
 	import.meta.env.VITE_SUPABASE_ANON_KEY ||
-	"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mcmRvbWR2eXJid3Vva2F0aHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5ODA2ODksImV4cCI6MjA1MDU1NjY4OX0.hXIS9fZcCl7IJ3j69L-vA0yAzZBWMCZqPtPqD1z2HnY";
+	"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mcmRvbWR2eXJid3Vva2F0aHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAyODE5MzgsImV4cCI6MjA3NTg1NzkzOH0.TFjyJIMlSMd3P0ZQkaStMiQpVlCviCLDrXyhLE5hZ2k";
 
 function sanitizeEnvValue(value: string): string {
 	// Removes hidden CR/LF or accidental whitespace in copied keys/URLs.

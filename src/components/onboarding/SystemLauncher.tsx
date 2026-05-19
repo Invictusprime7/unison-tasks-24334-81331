@@ -763,16 +763,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      // In dev mode, clear any invalid session to prevent auth header conflicts
-      if (isDev && sessionData.session) {
-        try {
-          await supabase.auth.signOut();
-          sessionData.session = null;
-        } catch (err) {
-          console.log('[SystemLauncher] Error clearing dev session:', err);
-        }
-      }
-
       // Refresh proactively when session is about to expire to avoid 401 loops
       if (sessionData.session && !isDev) {
         const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;

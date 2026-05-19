@@ -790,24 +790,32 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // ── Provision backend in background (non-blocking) ──
       const installSystemType = selectedSystem as string;
+      const installBody: any = {
+        systemType: installSystemType,
+        businessName: businessName.trim(),
+        templateName: selectedTemplate?.label || system.name,
+        templateCategory: generationCategory,
+        designPreset: selectedTheme?.id || undefined,
+      };
+
+      // In dev mode, add a flag to bypass JWT auth
+      if (isDev) {
+        installBody.__devMode = 'dev-' + Math.random().toString(36).substring(7);
+      }
+
       const installPromise = supabase.functions.invoke('install-system', {
-        body: {
-          systemType: installSystemType,
-          businessName: businessName.trim(),
-          templateName: selectedTemplate?.label || system.name,
-          templateCategory: generationCategory,
-          designPreset: selectedTheme?.id || undefined,
-        },
-      }).then(({ data, error }) => {
-        if (error) {
-          console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
+        body: installBody,
+      })
+        .then(({ data, error }) => {
+          if (error) {
+            console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
+            return null;
+          }
+          return data?.data?.businessId as string | null;
+        }).catch((err) => {
+          console.warn('[SystemLauncher] install-system error (non-fatal):', err);
           return null;
-        }
-        return data?.data?.businessId as string | null;
-      }).catch((err) => {
-        console.warn('[SystemLauncher] install-system error (non-fatal):', err);
-        return null;
-      });
+        });
 
       // ── Plan topology (MINIMAL: Home only) ──
       // The Wizard hands off a clean canvas. The in-Builder AI assistant is

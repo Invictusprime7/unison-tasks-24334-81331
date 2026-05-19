@@ -6,7 +6,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://nfrdomdvyrbwu
 const SUPABASE_PUBLISHABLE_KEY =
 	import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
 	import.meta.env.VITE_SUPABASE_ANON_KEY ||
-	"";
+	"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mcmRvbWR2eXJid3Vva2F0aHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5ODA2ODksImV4cCI6MjA1MDU1NjY4OX0.hXIS9fZcCl7IJ3j69L-vA0yAzZBWMCZqPtPqD1z2HnY";
 
 function sanitizeEnvValue(value: string): string {
 	// Removes hidden CR/LF or accidental whitespace in copied keys/URLs.
@@ -19,9 +19,58 @@ const SANITIZED_SUPABASE_PUBLISHABLE_KEY = sanitizeEnvValue(SUPABASE_PUBLISHABLE
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SANITIZED_SUPABASE_URL, SANITIZED_SUPABASE_PUBLISHABLE_KEY);
+export const supabase = createClient<Database>(SANITIZED_SUPABASE_URL, SANITIZED_SUPABASE_PUBLISHABLE_KEY, {
+	auth: {
+		autoRefreshToken: false,
+		persistSession: false,
+		detectSessionInUrl: false,
+	},
+	realtime: {
+		// Disable Realtime in development to avoid WebSocket auth errors
+		enabled: !import.meta.env.DEV,
+	},
+});
 
 // Export configuration status flag
 export const isSupabaseConfigured = Boolean(
 	SANITIZED_SUPABASE_URL && SANITIZED_SUPABASE_PUBLISHABLE_KEY,
 );
+
+// Development mode: Create a mock session for testing
+if (import.meta.env.DEV) {
+	// Auto-create a mock user session in development for testing
+	supabase.auth.getSession().then(({ data: { session } }) => {
+		if (!session) {
+			// Try to sign in with test credentials (or create mock session)
+			const mockSession = {
+				access_token: SANITIZED_SUPABASE_PUBLISHABLE_KEY,
+				refresh_token: 'dev-refresh-token',
+				expires_in: 3600,
+				expires_at: Math.floor(Date.now() / 1000) + 3600,
+				token_type: 'bearer',
+				user: {
+					id: 'dev-test-user-' + Math.random().toString(36).substring(7),
+					aud: 'authenticated',
+					role: 'authenticated',
+					email: 'dev@test.local',
+					email_confirmed_at: new Date().toISOString(),
+					phone: null,
+					phone_confirmed_at: null,
+					confirmed_at: new Date().toISOString(),
+					last_sign_in_at: new Date().toISOString(),
+					app_metadata: { provider: 'dev' },
+					user_metadata: { name: 'Dev Test User' },
+					identities: [],
+					created_at: new Date().toISOString(),
+					updated_at: new Date().toISOString(),
+				},
+			};
+			try {
+				supabase.auth.setSession(mockSession as any);
+				console.log('[Dev Mode] Mock session created for testing');
+			} catch (e) {
+				console.log('[Dev Mode] Could not create mock session:', e);
+			}
+		}
+	});
+}

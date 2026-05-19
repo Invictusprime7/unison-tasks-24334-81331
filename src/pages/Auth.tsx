@@ -41,7 +41,7 @@ const Auth = () => {
     try {
       // Use the project's anon key as a pseudo-JWT for dev mode
       // This allows supabase.functions.invoke() to work in dev
-      const anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mcmRvbWR2eXJid3Vva2F0aHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5ODA2ODksImV4cCI6MjA1MDU1NjY4OX0.hXIS9fZcCl7IJ3j69L-vA0yAzZBWMCZqPtPqD1z2HnY";
+      const anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mcmRvbWR2eXJid3Vva2F0aHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAyODE5MzgsImV4cCI6MjA3NTg1NzkzOH0.TFjyJIMlSMd3P0ZQkaStMiQpVlCviCLDrXyhLE5hZ2k";
       const devUserId = 'dev-' + Math.random().toString(36).substring(7);
       
       // Create a session object that Supabase will use for function invocations

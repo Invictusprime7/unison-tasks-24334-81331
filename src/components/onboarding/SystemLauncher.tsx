@@ -747,8 +747,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
     setIsLaunching(true);
     try {
-      let { data: sessionData } = await supabase.auth.getSession();
       const isDev = import.meta.env.DEV;
+      console.log('[SystemLauncher] isDev:', isDev, 'Launching with:', {
+        system: selectedSystem,
+        template: selectedTemplate?.label,
+        business: businessName.trim(),
+      });
+      
+      let { data: sessionData } = await supabase.auth.getSession();
       
       // In dev mode, allow generation without a valid session
       if (!sessionData.session && !isDev) {
@@ -757,17 +763,25 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
+      // In dev mode, clear any invalid session to prevent auth header conflicts
+      if (isDev && sessionData.session) {
+        try {
+          await supabase.auth.signOut();
+          sessionData.session = null;
+        } catch (err) {
+          console.log('[SystemLauncher] Error clearing dev session:', err);
+        }
+      }
+
       // Refresh proactively when session is about to expire to avoid 401 loops
-      if (sessionData.session) {
+      if (sessionData.session && !isDev) {
         const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;
         if (expiresAtMs > 0 && expiresAtMs <= Date.now() + 60_000) {
           const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
           if (refreshError || !refreshed.session) {
-            if (!isDev) {
-              toast.error("Session expired. Please sign in again.");
-              navigate("/auth");
-              return;
-            }
+            toast.error("Session expired. Please sign in again.");
+            navigate("/auth");
+            return;
           } else {
             sessionData = refreshed as typeof sessionData;
           }
@@ -800,9 +814,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // In dev mode, add a flag to bypass JWT auth
       if (isDev) {
-        installBody.__devMode = 'dev-' + Math.random().toString(36).substring(7);
+        const devModeId = 'dev-' + Math.random().toString(36).substring(7);
+        installBody.__devMode = devModeId;
+        console.log('[SystemLauncher] Dev mode enabled with ID:', devModeId);
       }
 
+      console.log('[SystemLauncher] Invoking install-system with body:', installBody);
       const installPromise = supabase.functions.invoke('install-system', {
         body: installBody,
       })

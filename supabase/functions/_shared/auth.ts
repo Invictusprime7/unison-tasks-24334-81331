@@ -51,11 +51,18 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
   try {
     if (req.method === "POST") {
       const contentType = req.headers.get("content-type") || "";
+      console.log("[auth] Request content-type:", contentType);
       if (contentType.includes("application/json")) {
-        const body = await req.clone().json();
-        if (body && body.__devMode && typeof body.__devMode === "string") {
-          devModeId = body.__devMode;
-          console.log("[auth] Dev mode detected from request body:", devModeId);
+        try {
+          const body = await req.clone().json();
+          console.log("[auth] Parsed body keys:", Object.keys(body || {}));
+          console.log("[auth] __devMode value:", body?.__devMode);
+          if (body && body.__devMode && typeof body.__devMode === "string") {
+            devModeId = body.__devMode;
+            console.log("[auth] Dev mode detected from request body:", devModeId);
+          }
+        } catch (parseErr) {
+          console.log("[auth] JSON parse error:", parseErr);
         }
       }
     }

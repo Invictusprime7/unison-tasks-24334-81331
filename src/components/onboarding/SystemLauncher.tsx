@@ -800,11 +800,22 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       };
 
       console.log('[SystemLauncher] Invoking install-system with body:', installBody);
+      
+      // Explicitly add Authorization header with JWT token
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (sessionData.session?.access_token) {
+        headers['Authorization'] = `Bearer ${sessionData.session.access_token}`;
+        console.log('[SystemLauncher] Adding Authorization header with JWT token');
+      } else {
+        console.warn('[SystemLauncher] No access token found in session');
+      }
+      
       const installPromise = supabase.functions.invoke('install-system', {
         body: installBody,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers
       })
         .then(({ data, error }) => {
           if (error) {
@@ -1048,6 +1059,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               currentCode: seedAppCode,
               systemsBuildContext: blueprint,
             },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(sessionData.session?.access_token && {
+                'Authorization': `Bearer ${sessionData.session.access_token}`
+              })
+            }
           }),
           WIZARD_AI_TIMEOUT_MS,
           `AI generation timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,

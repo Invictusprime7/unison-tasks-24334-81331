@@ -41,17 +41,6 @@ const Auth = () => {
   const handleDevModeLogin = async () => {
     navigate("/onboarding?dev=true");
   };
-      
-      // Store in localStorage so Supabase can use it
-      await supabase.auth.setSession(session as any);
-      
-      navigate("/onboarding?dev=true");
-    } catch (err) {
-      console.error('Dev login error:', err);
-      // Fall back to simple navigation if session setup fails
-      navigate("/onboarding?dev=true");
-    }
-  };
 
   useEffect(() => {
     let handled = false;

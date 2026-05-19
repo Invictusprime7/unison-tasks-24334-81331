@@ -56,21 +56,35 @@ export async function safeParseBody<T = Record<string, unknown>>(
   req: Request,
   maxSizeBytes = 1_048_576 // 1 MB
 ): Promise<{ data: T | null; error: string | null }> {
+  let text = "";
   try {
     const contentLength = req.headers.get("content-length");
     if (contentLength && parseInt(contentLength, 10) > maxSizeBytes) {
-      return { data: null, error: `Request body exceeds ${maxSizeBytes} byte limit` };
+      return { data: null, error: `Request body exceeds ${maxSizeBytes} byte limit (content-length=${contentLength})` };
     }
 
-    const text = await req.text();
+    text = await req.text();
     if (text.length > maxSizeBytes) {
-      return { data: null, error: `Request body exceeds ${maxSizeBytes} byte limit` };
+      return { data: null, error: `Request body exceeds ${maxSizeBytes} byte limit (text=${text.length})` };
+    }
+
+    if (!text || text.trim().length === 0) {
+      return { data: null, error: "Empty request body" };
     }
 
     const data = JSON.parse(text) as T;
     return { data, error: null };
-  } catch {
-    return { data: null, error: "Invalid JSON in request body" };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    const preview = text ? text.slice(0, 120).replace(/\s+/g, " ") : "(empty)";
+    console.error("[safeParseBody] JSON parse failed", {
+      reason,
+      textLength: text.length,
+      preview,
+      contentType: req.headers.get("content-type"),
+      contentEncoding: req.headers.get("content-encoding"),
+    });
+    return { data: null, error: `Invalid JSON in request body: ${reason} (len=${text.length})` };
   }
 }
 

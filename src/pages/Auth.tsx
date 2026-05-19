@@ -13,7 +13,6 @@ const Auth = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const isDev = import.meta.env.DEV;
 
   // Resolve destination after sign-in/up: /onboarding for new users, /dashboard for returning.
   // If the user was mid-checkout before authenticating, send them back to /pricing.
@@ -34,12 +33,6 @@ const Auth = () => {
     } catch {
       return "/dashboard";
     }
-  };
-
-    // Dev mode: Skip auth and go directly to onboarding
-  // The SystemLauncher will send a __devMode flag in the request body to bypass JWT validation
-  const handleDevModeLogin = async () => {
-    navigate("/onboarding?dev=true");
   };
 
   useEffect(() => {
@@ -322,26 +315,7 @@ const Auth = () => {
           </TabsContent>
         </Tabs>
 
-        {/* Development Mode Button */}
-        {isDev && (
-          <div className="mt-6 pt-6 border-t border-cyan-500/20">
-            <Button
-              onClick={handleDevModeLogin}
-              className={cn(
-                "w-full bg-purple-600/40 text-purple-300 border border-purple-500/40",
-                "hover:bg-purple-600/60 hover:border-purple-500/60",
-                "font-medium transition-all duration-200",
-                "text-sm"
-              )}
-            >
-              <Zap className="h-3 w-3 mr-2" />
-              Dev Mode Login
-            </Button>
-            <p className="text-xs text-purple-400/60 mt-2 text-center">
-              Creates test session for development
-            </p>
-          </div>
-        )}
+
       </div>
     </div>
   );

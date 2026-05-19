@@ -75,7 +75,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.install-system]
-verify_jwt = false
+verify_jwt = true
 
 [functions.automation-event]
 verify_jwt = false

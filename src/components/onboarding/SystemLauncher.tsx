@@ -747,8 +747,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
     setIsLaunching(true);
     try {
-      const isDev = import.meta.env.DEV || new URLSearchParams(window.location.search).get('dev') === 'true';
-      console.log('[SystemLauncher] isDev:', isDev, 'Launching with:', {
+      console.log('[SystemLauncher] Launching with:', {
         system: selectedSystem,
         template: selectedTemplate?.label,
         business: businessName.trim(),
@@ -756,25 +755,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       
       let { data: sessionData } = await supabase.auth.getSession();
       
-      // In dev mode, allow generation without a valid session
-      if (!sessionData.session && !isDev) {
+      // User must be authenticated to generate a site
+      if (!sessionData.session) {
         toast.error("Please sign in to continue");
         navigate("/auth");
         return;
       }
 
-      // Refresh proactively when session is about to expire to avoid 401 loops
-      if (sessionData.session && !isDev) {
-        const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;
-        if (expiresAtMs > 0 && expiresAtMs <= Date.now() + 60_000) {
-          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-          if (refreshError || !refreshed.session) {
-            toast.error("Session expired. Please sign in again.");
-            navigate("/auth");
-            return;
-          } else {
-            sessionData = refreshed as typeof sessionData;
-          }
+      // Refresh session proactively if it's about to expire to avoid 401 errors
+      const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;
+      if (expiresAtMs > 0 && expiresAtMs <= Date.now() + 60_000) {
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError || !refreshed.session) {
+          toast.error("Session expired. Please sign in again.");
+          navigate("/auth");
+          return;
+        } else {
+          sessionData = refreshed as typeof sessionData;
         }
       }
 
@@ -801,13 +798,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         templateCategory: generationCategory,
         designPreset: selectedTheme?.id || undefined,
       };
-
-      // In dev mode, add a flag to bypass JWT auth
-      if (isDev) {
-        const devModeId = 'dev-' + Math.random().toString(36).substring(7);
-        installBody.__devMode = devModeId;
-        console.log('[SystemLauncher] Dev mode enabled with ID:', devModeId);
-      }
 
       console.log('[SystemLauncher] Invoking install-system with body:', installBody);
       const installPromise = supabase.functions.invoke('install-system', {

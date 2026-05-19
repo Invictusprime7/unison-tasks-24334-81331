@@ -46,45 +46,7 @@ function getAdminClient(): ReturnType<typeof createClient> {
  * for local development and testing.
  */
 export async function verifyAuth(req: Request): Promise<AuthResult> {
-  // Check for dev mode flag in request body
-  let devModeId: string | null = null;
-  try {
-    if (req.method === "POST") {
-      const contentType = req.headers.get("content-type") || "";
-      console.log("[auth] Request content-type:", contentType);
-      if (contentType.includes("application/json")) {
-        try {
-          const body = await req.clone().json();
-          console.log("[auth] Parsed body keys:", Object.keys(body || {}));
-          console.log("[auth] __devMode value:", body?.__devMode);
-          if (body && body.__devMode && typeof body.__devMode === "string") {
-            devModeId = body.__devMode;
-            console.log("[auth] Dev mode detected from request body:", devModeId);
-          }
-        } catch (parseErr) {
-          console.log("[auth] JSON parse error:", parseErr);
-        }
-      }
-    }
-  } catch (err) {
-    // Body parsing failed, continue with normal auth
-    console.log("[auth] Failed to parse body for dev mode check:", err);
-  }
-
-  // Development mode bypass for testing (when dev mode ID is present in body)
-  if (devModeId) {
-    console.log("[auth] Development mode: using mock user", devModeId);
-    return {
-      user: {
-        id: devModeId,
-        email: `dev-${devModeId}@local.test`,
-        role: "authenticated",
-      },
-      error: null,
-      status: 200,
-    };
-  }
-
+  // Check for JWT in the Authorization header
   const authHeader = req.headers.get("authorization");
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {

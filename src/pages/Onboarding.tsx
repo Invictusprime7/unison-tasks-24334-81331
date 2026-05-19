@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
@@ -10,50 +10,29 @@ import { Zap, ArrowRight, CheckSquare } from "lucide-react";
  * Full-screen onboarding page.
  * Shown to new users after signup, or to returning users with no completed projects.
  * Opens the SystemLauncher wizard immediately so the user can build their first site.
+ * 
+ * Note: Route protection via requiresAuth ensures only authenticated users can access this page.
  */
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Allow dev mode bypass with ?dev=true
-  const isDevMode = import.meta.env.DEV || searchParams.get('dev') === 'true';
-
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (!session && !isDevMode) navigate("/auth");
+      if (!session) navigate("/auth");
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setIsLoading(false);
-      if (!session && !isDevMode) navigate("/auth");
-      // In dev mode, create a test user object if no session
-      if (!session && isDevMode) {
-        setUser({
-          id: 'dev-test-' + Math.random().toString(36).substring(7),
-          aud: 'authenticated',
-          role: 'authenticated',
-          email: 'dev@test.local',
-          email_confirmed_at: new Date().toISOString(),
-          phone: null,
-          phone_confirmed_at: null,
-          confirmed_at: new Date().toISOString(),
-          last_sign_in_at: new Date().toISOString(),
-          app_metadata: { provider: 'dev' },
-          user_metadata: { name: 'Dev Test User' },
-          identities: [],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as User);
-      }
+      if (!session) navigate("/auth");
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate, isDevMode]);
+  }, [navigate]);
 
   const handleLauncherClose = (open: boolean) => {
     setLauncherOpen(open);

@@ -1587,6 +1587,71 @@ function ensureDefaultExportForReactModule(content: string, filePath: string): s
   return `${content}\nexport default ${exportName};\n`;
 }
 
+/**
+ * Inject `useState` declarations for common boolean toggle identifiers the AI
+ * frequently references (mobile menus, modals, accordions) without declaring.
+ * Without this repair the preview throws "isMenuOpen is not defined" at runtime.
+ *
+ * For each detected pair `<name>` + `set<Name>`, we:
+ *   1. Ensure `useState` is imported from react
+ *   2. Inject `const [name, setName] = React.useState(false);` at the top of
+ *      the first component function body that references it.
+ */
+function injectMissingToggleState(content: string, filePath: string): string {
+  if (!/\.(tsx|jsx)$/.test(filePath)) return content;
+
+  // Common AI-emitted toggle pairs. Keep names ASCII; setter is capitalized.
+  const PAIRS: Array<{ getter: string; setter: string }> = [
+    { getter: 'isMenuOpen', setter: 'setIsMenuOpen' },
+    { getter: 'isMobileMenuOpen', setter: 'setIsMobileMenuOpen' },
+    { getter: 'isOpen', setter: 'setIsOpen' },
+    { getter: 'menuOpen', setter: 'setMenuOpen' },
+    { getter: 'mobileMenuOpen', setter: 'setMobileMenuOpen' },
+    { getter: 'isDrawerOpen', setter: 'setIsDrawerOpen' },
+    { getter: 'isModalOpen', setter: 'setIsModalOpen' },
+  ];
+
+  const declaredRe = (name: string) =>
+    new RegExp(`\\b(const|let|var)\\s+\\[\\s*${name}\\b|\\b(const|let|var)\\s+${name}\\b|\\bfunction\\s+${name}\\b`);
+
+  const missing = PAIRS.filter(({ getter, setter }) => {
+    const usesGetter = new RegExp(`\\b${getter}\\b`).test(content);
+    const usesSetter = new RegExp(`\\b${setter}\\b`).test(content);
+    if (!usesGetter && !usesSetter) return false;
+    return !declaredRe(getter).test(content) && !declaredRe(setter).test(content);
+  });
+
+  if (missing.length === 0) return content;
+
+  let next = content;
+
+  // Ensure React import exists (we use React.useState to avoid clobbering existing imports).
+  if (!/from\s+['"]react['"]/.test(next)) {
+    next = `import React from 'react';\n${next}`;
+  }
+
+  // Find the first function/arrow component body and inject declarations there.
+  // Match: `function Name(...) {` or `const Name = (...) => {` returning JSX.
+  const fnMatch =
+    next.match(/(function\s+[A-Z][A-Za-z0-9_]*\s*\([^)]*\)\s*\{)/) ||
+    next.match(/(const\s+[A-Z][A-Za-z0-9_]*\s*=\s*(?:\([^)]*\)|[A-Za-z_][A-Za-z0-9_]*)\s*=>\s*\{)/);
+
+  const declarations = missing
+    .map(({ getter, setter }) => `  const [${getter}, ${setter}] = React.useState(false);`)
+    .join('\n');
+
+  if (fnMatch && fnMatch.index !== undefined) {
+    const insertAt = fnMatch.index + fnMatch[0].length;
+    next = next.slice(0, insertAt) + `\n${declarations}\n` + next.slice(insertAt);
+  } else {
+    // No component scope found — wrap the file's JSX-bearing module by prepending
+    // module-level declarations. Safer than failing the preview.
+    next = `${next}\n// auto-injected toggle state (no component scope detected)\n${declarations.replace(/^  /gm, '')}\n`;
+  }
+
+  return next;
+}
+
 function createProxyApp(targetPath: string): string {
   const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
 

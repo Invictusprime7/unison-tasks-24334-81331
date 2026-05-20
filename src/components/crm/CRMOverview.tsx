@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Target, Workflow, FileText, TrendingUp, Clock, Kanban } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase as _sb } from "@/integrations/supabase/client";
+const supabase: any = _sb;
 import { WorkflowActivityFeed } from "./WorkflowActivityFeed";
 import { GhlReactionsManager } from "./GhlReactionsManager";
 

@@ -21,7 +21,8 @@ import {
   Send, X, Loader2, AlertCircle, CheckCircle2, Link2, Eye, EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase as supabaseClient } from '@/integrations/supabase/client';
+const supabase = supabaseClient as any;
 import { toast } from 'sonner';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import type { BusinessSystemType } from '@/data/templates/types';

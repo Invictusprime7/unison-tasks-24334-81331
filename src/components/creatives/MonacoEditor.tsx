@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase as supabaseClient } from '@/integrations/supabase/client';
+const supabase = supabaseClient as any;
 import { toast } from 'sonner';
 import { sanitizeTsxFile } from '@/utils/tsxSanitizer';
 

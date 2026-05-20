@@ -16,7 +16,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase as supabaseClient } from '@/integrations/supabase/client';
+const supabase = supabaseClient as any;
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {

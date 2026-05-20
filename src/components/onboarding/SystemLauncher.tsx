@@ -1119,12 +1119,28 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const aiAppInvalidFlag =
           sanitized.invalidFiles.includes('/src/App.tsx') ||
           sanitized.invalidFiles.includes('src/App.tsx');
-        if (aiAppInvalidFlag) {
-          delete sanitized.files['/src/App.tsx'];
-          delete sanitized.files['src/App.tsx'];
-          delete normalizedFiles['/src/App.tsx'];
-          delete normalizedFiles['src/App.tsx'];
+        const aiAppMissing =
+          !sanitized.files['/src/App.tsx'] && !sanitized.files['src/App.tsx'];
+
+        // CRITICAL: the AI's App.tsx carries the wizard composition that gets
+        // rebased into /src/pages/Home.tsx by mergeGeneratedVfsWithCanonicalSnapshot.
+        // If it's missing or invalid, the home route silently falls back to the
+        // canonical placeholder (the "generic fallback layout" symptom). Force a
+        // retry instead of degrading silently.
+        if (aiAppInvalidFlag || aiAppMissing) {
+          lastPayloadIssue = {
+            kind: 'app',
+            aiAppMissing,
+            aiAppInvalid: aiAppInvalidFlag,
+            invalidFiles: sanitized.invalidFiles,
+          };
+          console.warn(
+            `[SystemLauncher] AI attempt ${attempt + 1} produced no valid /src/App.tsx — retrying so the home composition isn't lost`,
+            lastPayloadIssue,
+          );
+          continue;
         }
+
         const otherInvalid = sanitized.invalidFiles.filter(
           (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
         );
@@ -1141,6 +1157,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         generationResult = { structured, sanitized };
         break;
       }
+
 
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);

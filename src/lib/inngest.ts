@@ -269,7 +269,6 @@ type Events = {
 // Create the Inngest client
 export const inngest = new Inngest({
   id: "unison-tasks",
-  schemas: new EventSchemas().fromRecord<Events>(),
 });
 
 // Export event types for use in other files

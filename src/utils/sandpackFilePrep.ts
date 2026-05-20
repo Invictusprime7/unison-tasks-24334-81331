@@ -4486,8 +4486,10 @@ export function normalizeLauncherFiles(
     }
     if (/\.(tsx|jsx)$/.test(normalized)) {
       sanitized = ensureDefaultExportForReactModule(sanitized, normalized);
+      sanitized = injectMissingToggleState(sanitized, normalized);
     }
     out[normalized] = sanitized;
+
   }
 
   // Ensure /src/main.tsx exists

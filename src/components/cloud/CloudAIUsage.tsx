@@ -5,7 +5,9 @@
  * (highlighting 429 rate-limits and 402 payment-required errors).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase as supabaseClient } from '@/integrations/supabase/client';
+// Cast to any to bypass TS deep-instantiation issues on the large generated Database type.
+const supabase = supabaseClient as any;
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

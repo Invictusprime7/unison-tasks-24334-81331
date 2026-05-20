@@ -27,7 +27,7 @@ export const supabase = createClient<Database>(SANITIZED_SUPABASE_URL, SANITIZED
 	},
 	realtime: {
 		// Disable Realtime in development to avoid WebSocket auth errors
-		enabled: !import.meta.env.DEV,
+		params: import.meta.env.DEV ? { eventsPerSecond: 0 } : undefined,
 	},
 });
 

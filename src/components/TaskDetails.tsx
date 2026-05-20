@@ -80,7 +80,7 @@ export const TaskDetails = ({ taskId, open, onOpenChange, userId }: TaskDetailsP
   }, [open, taskId]);
 
   const fetchTask = async () => {
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('tasks')
       .select(`
         *,
@@ -92,12 +92,12 @@ export const TaskDetails = ({ taskId, open, onOpenChange, userId }: TaskDetailsP
       .single();
 
     if (data) {
-      setTask(data);
+      setTask(data as Task);
     }
   };
 
   const fetchComments = async () => {
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('comments')
       .select(`
         *,
@@ -109,12 +109,12 @@ export const TaskDetails = ({ taskId, open, onOpenChange, userId }: TaskDetailsP
       .order('created_at', { ascending: true });
 
     if (data) {
-      setComments(data);
+      setComments(data as Comment[]);
     }
   };
 
   const handleStatusChange = async (newStatus: string) => {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('tasks')
       .update({ status: newStatus })
       .eq('id', taskId);
@@ -138,7 +138,7 @@ export const TaskDetails = ({ taskId, open, onOpenChange, userId }: TaskDetailsP
     if (!newComment.trim()) return;
 
     setLoading(true);
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('comments')
       .insert({
         task_id: taskId,

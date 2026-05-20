@@ -47,13 +47,13 @@ export const CreateTaskDialog = ({ open, onOpenChange, projectId, userId }: Crea
   }, [open, projectId]);
 
   const fetchMembers = async () => {
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('profiles')
       .select('id, full_name')
       .order('full_name');
 
     if (data) {
-      setMembers(data);
+      setMembers(data as Profile[]);
     }
   };
 
@@ -68,7 +68,7 @@ export const CreateTaskDialog = ({ open, onOpenChange, projectId, userId }: Crea
     const assigneeId = formData.get("assignee") as string;
     const dueDate = formData.get("due_date") as string;
 
-    const { data: inserted, error } = await supabase
+    const { data: inserted, error } = await (supabase as any)
       .from('tasks')
       .insert({
         title,

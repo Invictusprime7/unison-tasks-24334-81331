@@ -54,7 +54,7 @@ export const TasksList = ({ projectId, userId }: TasksListProps) => {
   }, [projectId]);
 
   const fetchTasks = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('tasks')
       .select(`
         *,
@@ -66,7 +66,7 @@ export const TasksList = ({ projectId, userId }: TasksListProps) => {
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      setTasks(data);
+      setTasks(data as Task[]);
     }
     setLoading(false);
   };

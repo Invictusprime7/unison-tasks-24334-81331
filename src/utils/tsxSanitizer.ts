@@ -123,6 +123,20 @@ export function validateTsxStructure(code: string): {
     issues.push(`unbalanced fragments (<>:${openFrag} </>:${closeFrag})`);
   }
 
+  // Structural JSX tag balance — catches scattered/deformed layouts where the
+  // AI forgot to close a wrapper. We only check tags that meaningfully shape
+  // layout and never self-close in practice.
+  const STRUCTURAL_TAGS = ["div", "section", "header", "footer", "main", "nav", "article", "aside", "ul", "ol"];
+  for (const tag of STRUCTURAL_TAGS) {
+    const openRe = new RegExp(`<${tag}(\\s|>)`, "g");
+    const closeRe = new RegExp(`</${tag}\\s*>`, "g");
+    const opens = (code.match(openRe) || []).length;
+    const closes = (code.match(closeRe) || []).length;
+    if (opens !== closes) {
+      issues.push(`unbalanced <${tag}> tags (open:${opens} close:${closes})`);
+    }
+  }
+
   // Component must export something renderable
   if (!/export\s+(default|const|function)/.test(code)) {
     issues.push("no export statement");

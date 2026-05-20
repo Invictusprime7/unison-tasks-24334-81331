@@ -842,7 +842,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
         templateId: selectedTemplate?.id,
         themeId: preResolvedPreset.id,
-        themeExplicit: !!selectedTheme,
         minimalScaffold: true,
       };
 

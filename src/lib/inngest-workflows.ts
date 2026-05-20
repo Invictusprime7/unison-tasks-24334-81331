@@ -19,9 +19,9 @@ export const dealStageWorkflow = inngest.createFunction(
     id: "deal-stage-workflow",
     name: "Deal Stage Change Handler",
     retries: 3,
-    event: "crm/deal.stage.changed",
+    triggers: [{ event: "crm/deal.stage.changed" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { dealId, businessId, newStage, previousStage, contactEmail } = event.data;
 
     // Step 1: Log the stage change
@@ -105,9 +105,9 @@ export const leadFollowUpWorkflow = inngest.createFunction(
     id: "lead-follow-up-workflow",
     name: "Lead Follow-up Sequence",
     retries: 3,
-    event: "crm/lead.created",
+    triggers: [{ event: "crm/lead.created" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { leadId, businessId, email, phone } = event.data;
 
     // Step 0: Execute matching recipes (e.g., contractor-lead-followup)
@@ -163,9 +163,9 @@ export const bookingReminderWorkflow = inngest.createFunction(
     id: "booking-reminder-workflow",
     name: "Booking Reminder Sequence",
     retries: 3,
-    event: "booking/created",
+    triggers: [{ event: "booking/created" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { bookingId, businessId, contactEmail, scheduledAt, service } = event.data;
     
     // Step 0: Execute matching recipes (e.g., salon-booking-confirm, restaurant-reservation-confirm)
@@ -227,9 +227,9 @@ export const reviewRequestWorkflow = inngest.createFunction(
     id: "review-request-workflow",
     name: "Post-Service Review Request",
     retries: 2,
-    event: "booking/completed",
+    triggers: [{ event: "booking/completed" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { bookingId, businessId, contactEmail } = event.data;
 
     // Wait 2 hours after completion
@@ -264,9 +264,9 @@ export const noShowFollowUpWorkflow = inngest.createFunction(
     id: "no-show-follow-up-workflow",
     name: "No-Show Follow-up",
     retries: 2,
-    event: "booking/no.show",
+    triggers: [{ event: "booking/no.show" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { bookingId, businessId, contactEmail } = event.data;
 
     // Wait 1 hour after no-show detection
@@ -295,9 +295,9 @@ export const formSubmissionWorkflow = inngest.createFunction(
     id: "form-submission-workflow",
     name: "Form Submission Handler",
     retries: 3,
-    event: "form/submitted",
+    triggers: [{ event: "form/submitted" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { formId, businessId, submissionId, email, data } = event.data;
 
     // Step 1: Create or update contact/lead
@@ -348,9 +348,9 @@ export const cartAbandonmentWorkflow = inngest.createFunction(
     id: "cart-abandonment-workflow",
     name: "Cart Abandonment Recovery",
     retries: 3,
-    event: "cart/abandoned",
+    triggers: [{ event: "cart/abandoned" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { cartId, businessId, customerEmail, items, total } = event.data;
 
     if (!customerEmail) {
@@ -406,9 +406,9 @@ export const orderFulfillmentWorkflow = inngest.createFunction(
     id: "order-fulfillment-workflow",
     name: "Order Fulfillment Sequence",
     retries: 3,
-    event: "order/created",
+    triggers: [{ event: "order/created" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { orderId, businessId, customerEmail, items, total } = event.data;
 
     // Step 1: Immediate order confirmation
@@ -455,9 +455,9 @@ export const newsletterWelcomeWorkflow = inngest.createFunction(
     id: "newsletter-welcome-workflow",
     name: "Newsletter Welcome Sequence",
     retries: 3,
-    event: "newsletter/subscribed",
+    triggers: [{ event: "newsletter/subscribed" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { subscriptionId, businessId, email, source } = event.data;
 
     // Step 1: Immediate welcome email
@@ -505,9 +505,9 @@ export const automationTriggerWorkflow = inngest.createFunction(
     id: "automation-trigger-workflow",
     name: "Automation Trigger Handler",
     retries: 3,
-    event: "automation/trigger",
+    triggers: [{ event: "automation/trigger" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step  }: any) => {
     const { automationId, businessId, triggerId, triggerType, payload } = event.data;
 
     // Step 0: Execute any matching recipe steps attached to this event

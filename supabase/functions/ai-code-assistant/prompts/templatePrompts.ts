@@ -329,17 +329,33 @@ ${premiumCssBlock}
 2. **NO <script> TAGS** — All logic uses React hooks and event handlers
 3. **NO document.getElementById** — Use React refs (useRef)
 4. **NO vanilla DOM manipulation** — Use React state and JSX
-5. **PROPER IMPORTS** — Every .tsx file that uses hooks MUST start with \`import React, { useState, useEffect, useRef } from 'react';\` (only the hooks actually used)
+5. **PROPER IMPORTS** — Every .tsx file that uses hooks MUST start with \`import React, { useState, useEffect, useRef } from 'react';\` (only the hooks actually used). No unused imports.
 6. **DEFAULT EXPORT** — Every component file MUST end with \`export default ComponentName;\` on its own top-level line. NEVER place \`export default\` inside a JSX block, function body, or after a \`return\` statement.
 7. **TypeScript** — Use interfaces for all data structures
-8. **BALANCED BRACES** — Every curly brace, parenthesis, bracket, and angle bracket MUST have a matching close. Count them before emitting.
+8. **BALANCED BRACES** — Every curly brace, parenthesis, bracket, and JSX angle bracket MUST have a matching close. Count them before emitting each file.
 9. **SELF-CLOSE VOID ELEMENTS** — br, hr, img, input, meta, link (JSX, not HTML).
 10. **JSX STYLE OBJECTS** — Use style object NOT style string.
 11. **NO HALLUCINATED NAMESPACES** — Use path, circle, rect, never dc.path, svg.path, lucide.icon.
 12. **NO PROSE LEAKS** — Output is parsed as JSON. NEVER write "Here's the file:", "\`\`\`tsx", or any markdown around file contents. File values are raw TSX strings only.
 13. **NO module.exports / require()** — ESM only.
-14. **CLOSE EVERY JSX TAG** — div requires /div, fragments require closed tags.
-15. **ONE TOP-LEVEL DEFAULT EXPORT PER FILE** — and it must appear at the very top level (column 0), never nested.
+14. **CLOSE EVERY JSX TAG** — every <div>, <section>, <ul>, <li>, <a>, <span> must have its matching close tag. No orphaned siblings.
+15. **ONE TOP-LEVEL DEFAULT EXPORT PER FILE** — at column 0, never nested or duplicated.
+16. **ALL map() callbacks** include a stable \`key\` (item.id ?? index). Zero key warnings.
+17. **NO unused variables / props / imports** — strip them before emitting.
+
+## 🧱 LAYOUT DISCIPLINE (NON-NEGOTIABLE — scattered output gets rejected):
+- Every \`<section>\` is a direct child of the page root, uses \`py-16 md:py-24\`, and contains exactly ONE wrapping container: \`<div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">\`. No bare text/buttons as section children.
+- Multi-item rows (services, features, team, testimonials, gallery, pricing, logos) ALWAYS use a responsive grid: \`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8\`. Use 4 cols only for ≥8 items. Never stack with margin hacks.
+- Hero / CTA rows use \`flex flex-col lg:flex-row items-center gap-8 lg:gap-12\`. Children share an explicit \`flex-1\` or fractional basis.
+- Navbar: \`sticky top-0 z-50 backdrop-blur\` + inner container with \`flex items-center justify-between h-16\`. Logo left, nav middle/right, CTA far right.
+- Footer: container + \`grid grid-cols-2 md:grid-cols-4 gap-8\`, social row uses \`flex items-center gap-4\`.
+- Images: wrap in fixed-aspect div (\`aspect-video\`, \`aspect-square\`, \`aspect-[4/3]\`) with \`<img className="w-full h-full object-cover" />\`. Never let an image size itself.
+- Cards: \`rounded-2xl border bg-card p-6 md:p-8\` with \`space-y-4\` internal stack. All cards in a grid share the same structure.
+- Spacing scale only: \`gap-{4|6|8|12}\`, \`py-{12|16|24}\`, \`mb-{4|6|8|12}\`. No arbitrary \`[123px]\` values for layout.
+- Mobile-first: every grid/flex declares mobile cols BEFORE \`sm/md/lg\` overrides.
+- Z-index: only 0/10/20/40/50. Reserve 50 for navbar/dialog.
+- NEVER use \`position: absolute\` for primary layout — only for hero backgrounds, decorative blurs, and badges anchored to a \`relative\` parent.
+
 
 ## OUTPUT FORMAT (MANDATORY):
 Return a JSON object with ALL files:

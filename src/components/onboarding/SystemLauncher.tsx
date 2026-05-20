@@ -762,16 +762,21 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         return;
       }
 
-      // Refresh session proactively if it's about to expire to avoid 401 errors
+      // Refresh session proactively if it's actually expired. A failed refresh
+      // is NOT fatal here — fall back to the existing session and let the real
+      // API call surface a genuine 401 instead of bouncing the user to /auth
+      // (which then redirects back to /onboarding and kills the launch flow).
       const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;
-      if (expiresAtMs > 0 && expiresAtMs <= Date.now() + 60_000) {
-        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-        if (refreshError || !refreshed.session) {
-          toast.error("Session expired. Please sign in again.");
-          navigate("/auth");
-          return;
-        } else {
-          sessionData = refreshed as typeof sessionData;
+      if (expiresAtMs > 0 && expiresAtMs <= Date.now()) {
+        try {
+          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+          if (!refreshError && refreshed.session) {
+            sessionData = refreshed as typeof sessionData;
+          } else {
+            console.warn('[SystemLauncher] proactive refresh failed; continuing with existing session', refreshError);
+          }
+        } catch (e) {
+          console.warn('[SystemLauncher] proactive refresh threw; continuing', e);
         }
       }
 

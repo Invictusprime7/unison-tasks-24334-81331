@@ -37,7 +37,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase as _sb } from '@/integrations/supabase/client';
+const supabase: any = _sb;
 import { useMyRole, Organization } from '@/services/teamService';
 import { auditLogger } from '@/services/auditLogger';
 

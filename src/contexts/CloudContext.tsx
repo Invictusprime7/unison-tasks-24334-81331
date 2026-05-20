@@ -10,7 +10,8 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase as _sb } from '@/integrations/supabase/client';
+const supabase: any = _sb;
 import { User } from '@supabase/supabase-js';
 import { profileService, type UserProfile } from '@/services/profileService';
 import { teamService, type Organization, type TeamMember, type TeamInvitation } from '@/services/teamService';

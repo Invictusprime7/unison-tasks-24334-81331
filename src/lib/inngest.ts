@@ -10,7 +10,7 @@
  * - Automatic retries: Built-in retry logic with backoff
  */
 
-import { Inngest, EventSchemas } from "inngest";
+import { Inngest } from "inngest";
 
 // Define event schemas for type safety
 type Events = {

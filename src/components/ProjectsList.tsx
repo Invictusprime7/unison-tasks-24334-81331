@@ -71,7 +71,7 @@ export const ProjectsList = ({ userId }: ProjectsListProps) => {
       }
 
       const accessibleBusinessIds = Array.from(new Set([
-        ...((ownedBusinesses || []).map((business) => business.id)),
+        ...((ownedBusinesses || []).map((business: any) => business.id as string)),
         ...((memberBusinesses || [])
           .map((entry: any) => entry.business?.id)
           .filter((businessId: string | undefined): businessId is string => Boolean(businessId))),

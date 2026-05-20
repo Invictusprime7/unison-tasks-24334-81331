@@ -37,7 +37,7 @@ export const CreateProjectDialog = ({ open, onOpenChange, userId, onProjectCreat
     const name = formData.get("name") as string;
     const description = formData.get("description") as string;
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('projects')
       .insert({
         name,

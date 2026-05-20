@@ -825,6 +825,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
+      // Resolve theme BEFORE pipeline so industry-aware theme (when user skips
+      // Style card) flows into compiledPlayground / index.css instead of the
+      // pipeline's hard-coded 'modern' fallback. Explicit Style card selection
+      // still wins via resolveThemePreset's resolution order.
+      const preResolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
       const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
       const wizardSelections: WizardSelections = {
         businessName: businessName.trim(),
@@ -836,7 +841,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
         wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
         templateId: selectedTemplate?.id,
-        themeId: selectedTheme?.id,
+        themeId: preResolvedPreset.id,
+        themeExplicit: !!selectedTheme,
         minimalScaffold: true,
       };
 

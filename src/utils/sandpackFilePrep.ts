@@ -1631,7 +1631,6 @@ function injectMissingToggleState(content: string, filePath: string): string {
   }
 
   // Find the first function/arrow component body and inject declarations there.
-  // Match: `function Name(...) {` or `const Name = (...) => {` returning JSX.
   const fnMatch =
     next.match(/(function\s+[A-Z][A-Za-z0-9_]*\s*\([^)]*\)\s*\{)/) ||
     next.match(/(const\s+[A-Z][A-Za-z0-9_]*\s*=\s*(?:\([^)]*\)|[A-Za-z_][A-Za-z0-9_]*)\s*=>\s*\{)/);
@@ -1643,12 +1642,30 @@ function injectMissingToggleState(content: string, filePath: string): string {
   if (fnMatch && fnMatch.index !== undefined) {
     const insertAt = fnMatch.index + fnMatch[0].length;
     next = next.slice(0, insertAt) + `\n${declarations}\n` + next.slice(insertAt);
-  } else {
-    // No component scope found — wrap the file's JSX-bearing module by prepending
-    // module-level declarations. Safer than failing the preview.
-    next = `${next}\n// auto-injected toggle state (no component scope detected)\n${declarations.replace(/^  /gm, '')}\n`;
+    return next;
   }
 
+  // Pattern: `const Name = ( <jsx/> );` — JSX assigned to const at module
+  // scope. Hooks cannot run at module scope, so wrap into a function component.
+  const jsxConstMatch = next.match(/const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(\(\s*<|<)/);
+  if (jsxConstMatch && jsxConstMatch.index !== undefined) {
+    const compName = jsxConstMatch[1];
+    next = next.replace(
+      new RegExp(`const\\s+${compName}\\s*=\\s*`),
+      `function ${compName}() {\n${declarations}\n  return `,
+    );
+    const exportRe = new RegExp(`(\\n\\s*export\\s+default\\s+${compName}\\b)`);
+    if (exportRe.test(next)) {
+      next = next.replace(exportRe, '\n}$1');
+    } else {
+      next = `${next}\n}\n`;
+    }
+    return next;
+  }
+
+  // Do NOT inject module-level hooks — that throws at module init and blanks
+  // the section. Leave a comment marker instead.
+  next = `${next}\n// [sandpack] missing toggle state for: ${missing.map((m) => m.getter).join(', ')}\n`;
   return next;
 }
 

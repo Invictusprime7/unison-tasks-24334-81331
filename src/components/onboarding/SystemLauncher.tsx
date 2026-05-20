@@ -1033,6 +1033,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
           await new Promise((r) => setTimeout(r, retryDelayMs));
         }
+        // CRITICAL: do NOT pass `currentCode` or `editMode` here. The edge
+        // function's taskClassifier requires (mode==='template-react' &&
+        // systemsBuildContext && !currentCode && !editMode && !templateAction)
+        // to select Lane A `wizard_template_react` (the 6-card wizard fast
+        // path that consumes blueprint + theme_tokens + template_sections +
+        // intents). Passing currentCode routes it to Lane B template_react_edit
+        // (builder edit), which ignores the wizard blueprint and produces the
+        // generic fallback the user is seeing.
         const result = await withTimeout(
           supabase.functions.invoke('ai-code-assistant', {
             body: {
@@ -1042,7 +1050,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               aesthetic: resolvedPreset.id,
               source: resolvedIndustry,
               systemType: selectedSystem,
-              currentCode: seedAppCode,
               systemsBuildContext: blueprint,
             },
           }),

@@ -8,7 +8,7 @@
  *  - jsxTemplates.renderButtons() — stamps data-ut-intent at generation time
  *  - persistGeneratedBindings — fallback when scanned TSX has no explicit intent
  */
-import { getIntentDef, resolveIntentName } from './registry';
+import { getIntentDef, resolveIntentName } from '@/platform/core/intentSurfaceRegistry';
 
 export type LauncherSystemType =
   | 'booking'

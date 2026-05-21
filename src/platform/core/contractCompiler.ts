@@ -24,7 +24,7 @@ import {
   isCoreIntent,
   isNavIntent,
   type CoreIntent,
-} from '@/coreIntents';
+} from './coreIntents';
 import { normalizeIntent } from '@/runtime/intentAliases';
 import type { BusinessBlueprint, BlueprintPage } from './blueprintSchema';
 import {
@@ -35,10 +35,10 @@ import {
   type CapabilityId,
   type WorkflowSpec,
 } from './capabilityRegistry';
-import { getIndustryProfile } from '@/contracts/industryMatrix';
+import { getIndustryProfile } from './industryMatrix';
 import { getCompositionsByIndustry } from '@/sections/templates';
 import { buildRoutePolicy, isOverlayIntent, type RoutePolicy } from './routePolicy';
-import { resolveSlotBindings, type SlotBindingPolicy } from '@/contracts/slotBindingPolicy';
+import { resolveSlotBindings, type SlotBindingPolicy } from './slotBindingPolicy';
 import { validateProvisioning, type ProvisioningReport } from './provisioningValidator';
 
 // ============================================================================

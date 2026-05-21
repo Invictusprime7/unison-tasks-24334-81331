@@ -24,8 +24,8 @@ import type { PageRegistry } from '@/types/pageRegistry';
 import { inferPageRoleFromType } from '@/types/pageRegistry';
 import type { CreatorFormField } from '@/types/creatorData';
 import { createEmptyCreatorData } from '@/types/creatorData';
-import { planSiteTopology, populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
-import { normalizePlaygroundIntent, inferUIAction } from '@/contracts/intentNormalizer';
+import { planSiteTopology, populateRegistryFromTopology, type GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
+import { normalizePlaygroundIntent, inferUIAction } from '@/platform/core/intentNormalizer';
 import {
   createCanonicalComponentInstance,
 } from '@/services/canonicalComponentRegistry';

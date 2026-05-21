@@ -12,7 +12,7 @@
  * This is the single source of truth for "what a business system can do."
  */
 
-import type { CoreIntent, ActionIntent } from '@/coreIntents';
+import type { CoreIntent, ActionIntent } from './coreIntents';
 
 // ============================================================================
 // Capability Definition

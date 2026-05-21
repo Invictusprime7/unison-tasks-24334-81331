@@ -9,7 +9,7 @@
  * canonical intents, even when sourced from playground specs.
  */
 
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from './coreIntents';
 import type { PlaygroundBindingIntent } from '@/types/playground';
 
 // ============================================================================

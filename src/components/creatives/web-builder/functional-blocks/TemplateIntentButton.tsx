@@ -7,7 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { handleIntent } from '@/runtime/intentRouter';
-import { isCoreIntent } from '@/coreIntents';
+import { isCoreIntent } from '@/platform/core/coreIntents';
 import { matchLabelToIntent, TemplateCategory } from '@/runtime/templateIntentConfig';
 import { toast } from 'sonner';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';

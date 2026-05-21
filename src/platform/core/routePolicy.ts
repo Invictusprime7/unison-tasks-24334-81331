@@ -8,7 +8,7 @@
  * Themes NEVER invent route semantics. Only the blueprint does.
  */
 
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from './coreIntents';
 import type { BlueprintPage } from './blueprintSchema';
 import type { CapabilityId } from './capabilityRegistry';
 

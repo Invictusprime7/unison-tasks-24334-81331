@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useWorkflowTrigger } from '@/hooks/useWorkflowTrigger';
 import { handleIntent } from '@/runtime/intentRouter';
-import { isCoreIntent } from '@/coreIntents';
+import { isCoreIntent } from '@/platform/core/coreIntents';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 

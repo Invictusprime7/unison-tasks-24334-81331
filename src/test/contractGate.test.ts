@@ -11,7 +11,7 @@ import {
   isPublishReady,
   getPublishBlockers,
   type CompiledContract,
-} from '@/contracts/contractCompiler';
+} from '@/platform/core/contractCompiler';
 
 function makeContract(overrides: Partial<CompiledContract> = {}): CompiledContract {
   const base: CompiledContract = {

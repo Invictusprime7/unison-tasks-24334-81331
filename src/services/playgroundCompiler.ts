@@ -24,7 +24,7 @@ import { resolveThemePreset } from '@/components/onboarding/industryThemePresetM
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import type { LayoutCategory } from '@/data/templates/types';
-import type { PageRole } from '@/contracts/siteTopologyPlanner';
+import type { PageRole } from '@/platform/core/siteTopologyPlanner';
 
 // ============================================================================
 // Compile Options — drives deterministic full-site scaffolding from the

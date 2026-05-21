@@ -12,7 +12,7 @@
  */
 
 import type { CapabilityId } from './capabilityRegistry';
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from './coreIntents';
 import type { BusinessSystemType } from '@/data/templates/types';
 
 // ============================================================================
@@ -106,7 +106,7 @@ export interface BlueprintPage {
 // Blueprint Builder — Creates blueprint from industry profile + user input
 // ============================================================================
 
-import { getIndustryProfile, type IndustryProfile } from '@/contracts/industryMatrix';
+import { getIndustryProfile, type IndustryProfile } from './industryMatrix';
 import { getAllowedIntents } from './capabilityRegistry';
 
 /**

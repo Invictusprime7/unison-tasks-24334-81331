@@ -16,7 +16,7 @@ import {
   compileContract,
   createBlueprintFromIndustry,
   getIndustryForSystemType,
-} from '@/contracts';
+} from '@/platform/core';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import type { BusinessSystemType } from '@/data/templates/types';
 

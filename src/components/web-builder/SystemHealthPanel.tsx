@@ -33,7 +33,7 @@ import { cn } from '@/lib/utils';
 import {
   type CompiledContract,
   type ProvisioningStatus,
-} from '@/contracts';
+} from '@/platform/core';
 import { PreviewGate, PublishGate } from '@/platform/core';
 
 // ============================================================================

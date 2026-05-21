@@ -8,7 +8,7 @@
  */
 
 import type { ParsedUserIntent, CapabilityValidationResult, CapabilityStatus } from './nlTypes';
-import type { CapabilityId } from '@/contracts/capabilityRegistry';
+import type { CapabilityId } from '@/platform/core/capabilityRegistry';
 
 // ============================================================================
 // Intent → Required Capability mapping

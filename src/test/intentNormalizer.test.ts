@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { normalizePlaygroundIntent } from '@/contracts/intentNormalizer';
+import { normalizePlaygroundIntent } from '@/platform/core/intentNormalizer';
 
 describe('normalizePlaygroundIntent', () => {
   it('maps navigation intents to nav.goto', () => {

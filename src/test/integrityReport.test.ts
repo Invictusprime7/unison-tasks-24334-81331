@@ -4,9 +4,9 @@
  * Tests the unified validation aggregator.
  */
 import { describe, it, expect } from "vitest";
-import { runIntegrityReport, type IntegrityReport } from "@/contracts/integrityReport";
-import type { CompiledContract } from "@/contracts/contractCompiler";
-import type { ProvisioningReport } from "@/contracts/provisioningValidator";
+import { runIntegrityReport, type IntegrityReport } from "@/platform/core/integrityReport";
+import type { CompiledContract } from "@/platform/core/contractCompiler";
+import type { ProvisioningReport } from "@/platform/core/provisioningValidator";
 
 // ── Minimal fixtures ──────────────────────────────────────────────────
 

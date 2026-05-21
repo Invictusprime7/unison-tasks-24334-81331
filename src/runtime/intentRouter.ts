@@ -34,7 +34,7 @@ import {
   isPayIntent,
   isActionIntent,
   isAutomationIntent,
-} from "@/coreIntents";
+} from "@/platform/core/coreIntents";
 
 
 export interface IntentPayload {

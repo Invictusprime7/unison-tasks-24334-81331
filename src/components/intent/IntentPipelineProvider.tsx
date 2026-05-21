@@ -18,7 +18,7 @@ import {
   type AuthModalConfig,
 } from '@/runtime/intentPipeline';
 import { handleIntent, type IntentPayload, type IntentResult } from '@/runtime/intentRouter';
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from '@/platform/core/coreIntents';
 import type { TemplateCategory } from '@/runtime/templateIntentConfig';
 
 // ============================================================================

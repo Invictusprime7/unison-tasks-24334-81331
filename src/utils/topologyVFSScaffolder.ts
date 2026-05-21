@@ -13,7 +13,7 @@
  * page scaffolding direction.
  */
 
-import type { GeneratedSitePlan, PageRouteNode, PageRole } from '@/contracts/siteTopologyPlanner';
+import type { GeneratedSitePlan, PageRouteNode, PageRole } from '@/platform/core/siteTopologyPlanner';
 import { generateCanonicalRouter, generateCanonicalRouterFromPlan } from './topologyRouterGenerator';
 import type { PageRegistry } from '@/types/pageRegistry';
 import type { SectionEntry, SectionType, TemplateComposition, TemplatePageRole } from '@/sections/types';

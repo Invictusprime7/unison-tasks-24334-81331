@@ -33,11 +33,11 @@ import { cn } from "@/lib/utils";
 import {
   getIndustryForCategory,
   getAllowedIntents,
-} from "@/contracts";
+} from "@/platform/core";
 import {
   planSiteTopology,
   type GeneratedSitePlan,
-} from "@/contracts/siteTopologyPlanner";
+} from "@/platform/core/siteTopologyPlanner";
 import {
   generateDesignVariation,
   randomFontPairing,

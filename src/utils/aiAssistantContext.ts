@@ -2,7 +2,7 @@ import type { BusinessSystemType } from "@/data/templates/types";
 import { getSystemContract } from "@/data/templates/contracts";
 import { getDefaultManifestForSystem, getManifestStats } from "@/data/templates/manifest";
 import type { TemplateCtaAnalysis } from "@/utils/ctaContract";
-import { CORE_INTENTS } from "@/coreIntents";
+import { CORE_INTENTS } from "@/platform/core/coreIntents";
 
 /**
  * Builds a compact “backend awareness” context string for the AI assistant.

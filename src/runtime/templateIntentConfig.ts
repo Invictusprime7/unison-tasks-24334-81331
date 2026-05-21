@@ -5,7 +5,7 @@
  * This provides intelligent end-to-end button wiring based on template type
  */
 
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from '@/platform/core/coreIntents';
 
 export type TemplateCategory = 
   | 'landing' 

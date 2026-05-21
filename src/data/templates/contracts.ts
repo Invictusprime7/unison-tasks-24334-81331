@@ -12,7 +12,7 @@
  */
 
 import type { BusinessSystemType } from './types';
-import type { ActionIntent } from '@/coreIntents';
+import type { ActionIntent } from '@/platform/core/coreIntents';
 
 export interface SystemContract {
   systemType: BusinessSystemType;

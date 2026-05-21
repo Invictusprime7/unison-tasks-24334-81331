@@ -10,7 +10,7 @@ import { PublishGate } from '@/platform/core';
 import type {
   CompiledContract,
   PublishBlocker,
-} from '@/contracts';
+} from '@/platform/core';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
 

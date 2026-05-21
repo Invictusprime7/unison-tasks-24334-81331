@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { runWithContractGuard, validateDiff } from '@/platform/core';
-import type { CompiledContract } from '@/contracts/contractCompiler';
+import type { CompiledContract } from '@/platform/core/contractCompiler';
 
 function contract(opts: { ok?: boolean; pages?: string[]; caps?: string[] } = {}): CompiledContract {
   const { ok = true, pages = ['/'], caps = [] } = opts;

@@ -9,7 +9,7 @@
  * - Preview adapter exists
  */
 
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from './coreIntents';
 import type { CapabilityId, CapabilityDefinition } from './capabilityRegistry';
 import { CAPABILITY_REGISTRY } from './capabilityRegistry';
 import type { RoutePolicy } from './routePolicy';

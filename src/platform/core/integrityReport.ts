@@ -17,7 +17,7 @@ import type { SiteBundle } from '@/types/siteBundle';
 import type { CompiledContract, ValidationIssue, ValidationSeverity } from './contractCompiler';
 import type { ProvisioningStatus } from './provisioningValidator';
 import { SiteBundleSchema } from '@/schemas/SiteBundle';
-import { CORE_INTENTS, isCoreIntent } from '@/coreIntents';
+import { CORE_INTENTS, isCoreIntent } from './coreIntents';
 import { normalizeIntent } from '@/runtime/intentAliases';
 
 // ============================================================================

@@ -27,7 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Plus, Play, Trash2, Edit, Workflow, Clock, Zap, Settings, MousePointer, CreditCard, Calendar, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { WorkflowStepBuilder, WorkflowStep } from "./WorkflowStepBuilder";
-import { AUTOMATION_INTENTS, ACTION_INTENTS } from "@/coreIntents";
+import { AUTOMATION_INTENTS, ACTION_INTENTS } from "@/platform/core/coreIntents";
 import { useCRMActions } from "@/hooks/useCRMActions";
 
 interface WorkflowType {

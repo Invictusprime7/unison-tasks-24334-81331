@@ -12,8 +12,8 @@
  *       → **Automation Orchestrator** → Working Business Website
  */
 
-import type { CoreIntent } from '@/coreIntents';
-import { isActionIntent, isAutomationIntent } from '@/coreIntents';
+import type { CoreIntent } from '@/platform/core/coreIntents';
+import { isActionIntent, isAutomationIntent } from '@/platform/core/coreIntents';
 import { isAutomatable } from '@/runtime/intentClassifier';
 import {
   BUILT_IN_RECIPE_PACKS,

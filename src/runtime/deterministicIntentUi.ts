@@ -1,4 +1,4 @@
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from '@/platform/core/coreIntents';
 
 export interface PreviewIntentInventory {
   sectionIntents: string[];

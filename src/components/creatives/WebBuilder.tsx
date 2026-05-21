@@ -1028,6 +1028,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { BuilderSessionProvider } from "@/builder/controllers/BuilderSessionProvider";
 
 // ---------------------------------------------------------------------------
 // Error boundary for the code/split view panels

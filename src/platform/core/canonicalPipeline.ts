@@ -38,6 +38,7 @@ import { compilePlayground } from '@/services/playgroundCompiler';
 import { createRuntimeManifest } from '@/types/runtimeManifest';
 import { validateComposition } from '@/services/componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
+import { assertWithinCommit } from './pipelineGuard';
 
 // ============================================================================
 // Pipeline Result
@@ -120,6 +121,7 @@ export function executeCanonicalPipeline(
   selections: WizardSelections,
   existingVfsFiles: Record<string, string> = {},
 ): CanonicalPipelineResult {
+  assertWithinCommit('executeCanonicalPipeline');
   const warnings: string[] = [];
   const errors: string[] = [];
 
@@ -202,6 +204,7 @@ export function recompileFromPlayground(
   industry?: string,
   options?: { selectedTemplateId?: string; selectedThemeId?: string; themePresetId?: string },
 ): Omit<CanonicalPipelineResult, 'capabilities'> & { capabilities: null } {
+  assertWithinCommit('recompileFromPlayground');
   const warnings: string[] = [];
   const errors: string[] = [];
 

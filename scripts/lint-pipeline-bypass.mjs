@@ -21,6 +21,7 @@ const ALLOWLIST = new Set([
   'src/platform/core/commitToPipeline.ts',
   // Legacy re-export shim (kept until full removal)
   'src/services/canonicalPipeline.ts',
+  'src/platform/core/pipelineGuard.ts',
 ]);
 
 const FORBIDDEN_SYMBOLS = ['executeCanonicalPipeline', 'recompileFromPlayground'];

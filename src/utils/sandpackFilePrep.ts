@@ -595,21 +595,22 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
 /**
  * DEFAULT_INDEX — the canonical Sandpack entry point.
  * Sandpack react-ts uses /index.tsx, NOT /main.tsx.
+ *
+ * Runtime React monkey-patches (SafeCreateElement / jsx-runtime sanitization)
+ * are gated behind ENABLE_REACT_RUNTIME_PATCH. These shims historically masked
+ * malformed component returns by wrapping every function component and every
+ * React.createElement / jsx() / jsxs() / jsxDEV() call. They are EXPENSIVE
+ * (WeakMap wrap on every render), break reference-equality libraries
+ * (React Router's Route discovery, framer-motion's variant matching, etc.),
+ * and can mask the real source bug we want to repair upstream.
+ *
+ * Default OFF: the per-file repair passes (concise-arrow children, prose
+ * fallback, raw-CSS wrapping) should be the canonical fix. Flip to true only
+ * as a temporary mitigation while a regression is being root-caused.
  */
-const DEFAULT_INDEX = `import React, { Component } from 'react';
-import ReactDOM from 'react-dom/client';
-import * as __JsxRuntime from 'react/jsx-runtime';
-import * as __JsxDevRuntime from 'react/jsx-dev-runtime';
-import * as AppModule from './App';
-import './index.css';
-import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';
-const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
-  let inRouter = false;
-  try { inRouter = __useInRouterContext(); } catch { inRouter = false; }
-  return inRouter ? <>{children}</> : <__PreviewHashRouter>{children}</__PreviewHashRouter>;
-};
+const ENABLE_REACT_RUNTIME_PATCH = false;
 
-
+const REACT_RUNTIME_PATCH_BLOCK = `
 // ── Runtime guard: intercept undefined components BEFORE they crash React ──
 // This prevents "Element type is invalid" errors by replacing undefined/null
 // component references with a visible placeholder instead of a hard crash.
@@ -620,9 +621,7 @@ function _sanitizeChild(child: any): any {
   if (child == null || typeof child === 'string' || typeof child === 'number' || typeof child === 'boolean') return child;
   if (Array.isArray(child)) return child.map(_sanitizeChild);
   if (typeof child === 'object') {
-    // Valid React element
     if ((child as any).$$typeof) return child;
-    // Plain object accidentally rendered as child — unwrap common shapes
     const keys = Object.keys(child);
     const sig = keys.sort().join(',');
     if (!_badChildLogged.has(sig)) {
@@ -633,21 +632,11 @@ function _sanitizeChild(child: any): any {
     if ('text' in child || 'label' in child || 'title' in child) {
       return String((child as any).text ?? (child as any).label ?? (child as any).title ?? '');
     }
-    // Last resort: stringify so React doesn't crash
     try { return JSON.stringify(child); } catch { return ''; }
   }
   return child;
 }
-// Wrap function components so their RETURN value is sanitized too.
-// Catches "Objects are not valid as a React child" thrown at mount when a
-// component returns a plain object (e.g. { children: ... }) instead of JSX.
 const _wrappedComponentCache = new WeakMap<any, any>();
-// React Router (and similar libs) rely on REFERENCE EQUALITY of child.type
-// (e.g. Routes validates each child is the literal Route export).
-// Wrapping these would break that check with errors like:
-//   "[_SafeFC] is not a Route component"
-// Skip wrapping for known router/library components AND for anything whose
-// displayName/name starts with an uppercase letter and is in our skip list.
 const _SKIP_WRAP_NAMES = new Set([
   'Route','Routes','Router','BrowserRouter','HashRouter','MemoryRouter',
   'Outlet','Navigate','Switch','Link','NavLink','RouterProvider',
@@ -656,12 +645,9 @@ const _SKIP_WRAP_NAMES = new Set([
 ]);
 function _wrapComponent(type: any): any {
   if (typeof type !== 'function') return type;
-  // Skip class components (they have a prototype with isReactComponent)
   if (type.prototype && type.prototype.isReactComponent) return type;
-  // Skip components requiring reference identity (router, framer, etc.)
   const name = (type as any).displayName || (type as any).name;
   if (name && _SKIP_WRAP_NAMES.has(name)) return type;
-  // Skip forwardRef / memo / context objects (already non-function or special)
   if ((type as any).$$typeof) return type;
   const cached = _wrappedComponentCache.get(type);
   if (cached) return cached;
@@ -671,7 +657,6 @@ function _wrapComponent(type: any): any {
     if (result == null || typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean') return result;
     if (typeof result === 'object' && (result as any).$$typeof) return result;
     if (Array.isArray(result)) return result.map(_sanitizeChild);
-    // Plain object returned — sanitize it like a child
     return _sanitizeChild(result);
   };
   try { (Wrapped as any).displayName = (type as any).displayName || (type as any).name || 'SafeFC'; } catch {}
@@ -692,9 +677,7 @@ function _wrapComponent(type: any): any {
       title: 'This component resolved to undefined — check imports',
     }, '⚠ missing component');
   }
-  // Sanitize children to prevent "Objects are not valid as a React child" crashes
   const safeChildren = children.map(_sanitizeChild);
-  // Also sanitize props.children if no explicit children passed
   if (safeChildren.length === 0 && props && typeof props === 'object' && 'children' in props) {
     const sanitized = _sanitizeChild((props as any).children);
     if (sanitized !== (props as any).children) {
@@ -704,10 +687,6 @@ function _wrapComponent(type: any): any {
   return _origCreateElement(_wrapComponent(type), props, ...safeChildren);
 };
 
-// ── Patch react/jsx-runtime so the modern JSX transform also gets sanitized ──
-// Vite/SWC/Babel "automatic" JSX compiles to jsx()/jsxs()/jsxDEV() which
-// bypass React.createElement entirely. Without this, our sanitizer is dead
-// weight against the "Objects are not valid as a React child" crash.
 try {
   const __jsxRT: any = __JsxRuntime;
   const __jsxDEVRT: any = __JsxDevRuntime;
@@ -745,6 +724,23 @@ try {
 } catch (e) {
   console.warn('[Preview] Failed to patch jsx-runtime:', e);
 }
+`;
+
+const DEFAULT_INDEX = `import React, { Component } from 'react';
+import ReactDOM from 'react-dom/client';
+import * as __JsxRuntime from 'react/jsx-runtime';
+import * as __JsxDevRuntime from 'react/jsx-dev-runtime';
+import * as AppModule from './App';
+import './index.css';
+import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';
+const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
+  let inRouter = false;
+  try { inRouter = __useInRouterContext(); } catch { inRouter = false; }
+  return inRouter ? <>{children}</> : <__PreviewHashRouter>{children}</__PreviewHashRouter>;
+};
+
+${ENABLE_REACT_RUNTIME_PATCH ? REACT_RUNTIME_PATCH_BLOCK : '// React runtime patch disabled — per-file repair passes are authoritative.'}
+
 
 // ── Robust App resolution: handle default + named exports gracefully ──
 const App = (() => {

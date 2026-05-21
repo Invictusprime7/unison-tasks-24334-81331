@@ -95,7 +95,7 @@ describe('runWithContractGuard', () => {
     });
     expect(out.accepted).toBe(false);
     expect(propose).toHaveBeenCalledTimes(3); // 1 + 2 retries
-    if (!out.accepted) {
+    if (out.accepted === false) {
       expect(out.rejections).toHaveLength(3);
       expect(out.lastDiff.removedPageIds).toContain('/about');
       expect(out.rejections[1].promptAddendum).toContain('Do NOT remove these pages');

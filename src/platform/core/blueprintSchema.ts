@@ -106,7 +106,7 @@ export interface BlueprintPage {
 // Blueprint Builder — Creates blueprint from industry profile + user input
 // ============================================================================
 
-import { getIndustryProfile, type IndustryProfile } from './industryMatrix';
+import { getIndustryProfile, type IndustryProfile } from '@/contracts/industryMatrix';
 import { getAllowedIntents } from './capabilityRegistry';
 
 /**

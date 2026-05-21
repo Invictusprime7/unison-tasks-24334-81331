@@ -31,12 +31,12 @@ import type { CreatorData } from '@/types/creatorData';
 import type { PageRegistry } from '@/types/pageRegistry';
 import type { RuntimeAppContext, RuntimeManifest } from '@/types/runtimeManifest';
 import type { SiteBundle, SiteManifest, RouteDef, NavItem } from '@/types/siteBundle';
-import { resolveCapabilities } from './wizardCapabilityResolver';
-import { materializePlayground } from './wizardPlaygroundMaterializer';
-import { validatePlayground, getValidationSummary } from './playgroundValidationService';
-import { compilePlayground } from './playgroundCompiler';
+import { resolveCapabilities } from '@/services/wizardCapabilityResolver';
+import { materializePlayground } from '@/services/wizardPlaygroundMaterializer';
+import { validatePlayground, getValidationSummary } from '@/services/playgroundValidationService';
+import { compilePlayground } from '@/services/playgroundCompiler';
 import { createRuntimeManifest } from '@/types/runtimeManifest';
-import { validateComposition } from './componentIntelligenceRegistry';
+import { validateComposition } from '@/services/componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
 
 // ============================================================================

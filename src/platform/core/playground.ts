@@ -5,16 +5,16 @@
  * including bindings, calendars, popups, and the full materialization pipeline.
  */
 
-import type { BuilderPageType, FunnelRole } from './pageRegistry';
-import type { CreatorData } from './creatorData';
-import type { PageRegistry } from './pageRegistry';
+import type { BuilderPageType, FunnelRole } from '@/types/pageRegistry';
+import type { CreatorData } from '@/types/creatorData';
+import type { PageRegistry } from '@/types/pageRegistry';
 import type {
   BuilderPageRole,
   BuilderPublishedStatus,
   BuilderRouteState,
   BuilderSetupStatus,
   FunnelType,
-} from './pageRegistry';
+} from '@/types/pageRegistry';
 
 // ============================================================================
 // Wizard Input

@@ -1028,6 +1028,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { BuilderSessionProvider } from "@/builder/controllers/BuilderSessionProvider";
 
 // ---------------------------------------------------------------------------
 // Error boundary for the code/split view panels
@@ -5902,6 +5903,14 @@ ${html}
   console.log('[WebBuilder] About to return JSX...');
 
   return (
+    <BuilderSessionProvider
+      value={{
+        projectId: projectId || undefined,
+        businessId: businessId || undefined,
+        currentUserId,
+        draftId: currentTemplateId || undefined,
+      }}
+    >
     <div ref={mainContainerRef} className={cn("flex flex-col h-screen bg-[#1a0a14]", isMobile && "pb-14")}>
       {/* SystemLauncher — auto-opens when no pre-generated content */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
@@ -7790,5 +7799,6 @@ export default function ${componentName}() {
         }}
       />
     </div>
+    </BuilderSessionProvider>
   );
 };

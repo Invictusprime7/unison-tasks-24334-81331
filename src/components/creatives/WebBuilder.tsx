@@ -5903,6 +5903,14 @@ ${html}
   console.log('[WebBuilder] About to return JSX...');
 
   return (
+    <BuilderSessionProvider
+      value={{
+        projectId: projectId || undefined,
+        businessId: businessId || undefined,
+        currentUserId,
+        draftId: currentTemplateId || undefined,
+      }}
+    >
     <div ref={mainContainerRef} className={cn("flex flex-col h-screen bg-[#1a0a14]", isMobile && "pb-14")}>
       {/* SystemLauncher — auto-opens when no pre-generated content */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />

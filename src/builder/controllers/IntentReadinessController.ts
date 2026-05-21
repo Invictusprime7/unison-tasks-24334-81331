@@ -117,7 +117,7 @@ export class IntentReadinessController {
     };
     if (!this.report) return empty;
 
-    const entries = Object.values(this.report.bindingReadiness ?? {});
+    const entries = Object.values(this.report.readiness ?? {});
     let previewReady = 0;
     let publishReady = 0;
     let worstPreview: PlaygroundReadinessStatus = 'ready';

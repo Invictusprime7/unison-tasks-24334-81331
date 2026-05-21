@@ -13,6 +13,7 @@
     "build:analyze": "vite build --mode analyze",
     "lint": "eslint .",
     "lint:pipeline-bypass": "node scripts/lint-pipeline-bypass.mjs",
+    "lint:single-source-of-truth": "node scripts/lint-single-source-of-truth.mjs",
     "type-check": "tsc --build --noEmit",
     "preview": "vite preview",
     "deploy": "vercel --prod",

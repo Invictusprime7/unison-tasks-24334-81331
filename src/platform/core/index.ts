@@ -24,6 +24,20 @@ export * from './capabilityRegistry';
 
 // Compilation + gates (PreviewGate / PublishGate live here as isPreviewReady / isPublishReady)
 export * from './contractCompiler';
+// First-class Gate objects (PR5). Re-export AFTER contractCompiler so the
+// Gate object versions of isPreviewReady/isPublishReady win the slot —
+// they're back-compat re-exports of the same underlying functions.
+export {
+  PreviewGate,
+  PublishGate,
+  GATES,
+  evaluateAllGates,
+  GateFailedError,
+  type Gate,
+  type GateVerdict,
+  type GateReason,
+  type GateKey,
+} from './gates';
 
 // Runtime artifacts
 export * from './runtimeManifest';

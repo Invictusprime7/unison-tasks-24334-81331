@@ -62,13 +62,17 @@ export function validateDiff(
   const introduced = afterIssues.filter(i => !beforeSet.has(beforeKey(i)));
   const resolved = beforeIssues.filter(i => !afterSet.has(beforeKey(i)));
 
-  const beforeCaps = new Set(before?.capabilities ?? []);
-  const afterCaps = new Set(after.capabilities);
+  const beforeCaps = new Set(
+    (before?.provisioningReport.capabilities ?? []).map(c => String(c.capabilityId)),
+  );
+  const afterCaps = new Set(
+    after.provisioningReport.capabilities.map(c => String(c.capabilityId)),
+  );
   const removedCapabilities: string[] = [];
   for (const c of beforeCaps) if (!afterCaps.has(c)) removedCapabilities.push(c);
 
-  const beforePageIds = new Set((before?.pages ?? []).map(p => p.id));
-  const afterPageIds = new Set(after.pages.map(p => p.id));
+  const beforePageIds = new Set((before?.pages ?? []).map(p => p.path));
+  const afterPageIds = new Set(after.pages.map(p => p.path));
   const removedPageIds: string[] = [];
   for (const id of beforePageIds) if (!afterPageIds.has(id)) removedPageIds.push(id);
 

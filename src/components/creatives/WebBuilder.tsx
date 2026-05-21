@@ -71,6 +71,7 @@ import { DemoIntentOverlay, type DemoIntentOverlayConfig } from "./web-builder/D
 import { ResearchOverlay, type ResearchOverlayPayload } from "./web-builder/ResearchOverlay";
 import { decideIntentUx } from "@/runtime/intentUx";
 import SystemHealthPanel from "@/components/web-builder/SystemHealthPanel";
+import GateVerdictStrip from "@/components/web-builder/GateVerdictStrip";
 import { useCompiledContract } from "@/hooks/useCompiledContract";
 import type { BusinessSystemType } from "@/data/templates/types";
 import { normalizeTemplateForCtaContract, type TemplateCtaAnalysis } from "@/utils/ctaContract";

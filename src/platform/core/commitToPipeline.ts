@@ -31,7 +31,7 @@ import {
 } from './pipelineGuard';
 import type { PlaygroundState } from './playground';
 import type { CompiledContract } from './contractCompiler';
-import { isPreviewReady, isPublishReady, getPublishBlockers } from './contractCompiler';
+import { PreviewGate, PublishGate, type GateVerdict } from './gates';
 
 // ============================================================================
 // Commit Source — every legal caller MUST identify itself.
@@ -66,9 +66,11 @@ export interface CommitInput {
 }
 
 export interface CommitGateVerdict {
+  preview: GateVerdict;
+  publish: GateVerdict;
+  /** Convenience flags mirroring gate.ok. */
   previewReady: boolean;
   publishReady: boolean;
-  publishBlockers: ReturnType<typeof getPublishBlockers>;
 }
 
 export interface CommitResult extends CanonicalPipelineResult {
@@ -107,13 +109,17 @@ export function commitToPipeline(
     endCommitContext();
   }
 
-  const gate = input.compiledContract
-    ? {
-        previewReady: isPreviewReady(input.compiledContract),
-        publishReady: isPublishReady(input.compiledContract),
-        publishBlockers: getPublishBlockers(input.compiledContract),
-      }
-    : null;
+  let gate: CommitGateVerdict | null = null;
+  if (input.compiledContract) {
+    const preview = PreviewGate.evaluate(input.compiledContract);
+    const publish = PublishGate.evaluate(input.compiledContract);
+    gate = {
+      preview,
+      publish,
+      previewReady: preview.ok,
+      publishReady: publish.ok,
+    };
+  }
 
   const committed: CommitResult = {
     ...result,

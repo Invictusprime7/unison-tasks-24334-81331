@@ -38,6 +38,9 @@ jobs:
       - name: Lint code
         run: npm run lint
 
+      - name: Lint pipeline bypass (commitToPipeline enforcement)
+        run: npm run lint:pipeline-bypass
+
       - name: Run unit & contract tests (blocking)
         run: npx vitest run --reporter=default
 

@@ -130,7 +130,7 @@ import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from 
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
-import { recompileFromPlayground, type SiteBundleSnapshot } from '@/services/canonicalPipeline';
+import { commitToPipeline, type SiteBundleSnapshot } from '@/platform/core';
 import { publishCreatorDataForUnison, writeCanonicalsToVFS } from '@/services/unisonCanonicalRegistry';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
@@ -3534,11 +3534,14 @@ export default function ${componentName}Page() {
       projectNameFromState ||
       systemName ||
       'Business';
-    const recompilation = recompileFromPlayground(
-      canonicalPlayground,
-      currentFiles,
-      effectiveBusinessName,
-      effectiveRouteState?.siteBundleSnapshot?.industry,
+    const recompilation = commitToPipeline(
+      {
+        playground: canonicalPlayground,
+        existingVfsFiles: currentFiles,
+        businessName: effectiveBusinessName,
+        industry: effectiveRouteState?.siteBundleSnapshot?.industry,
+      },
+      'playground-edit',
     );
     const launchArtifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: currentFiles,

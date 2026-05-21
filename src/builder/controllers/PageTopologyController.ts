@@ -96,8 +96,8 @@ export class PageTopologyController {
    * orchestrator result so the caller can decide whether to commit the new
    * registry, surface validation errors, or roll back.
    *
-   * If `commit` is true and the change reports `success`, the controller
-   * stores the new registry and notifies subscribers.
+   * If `commit` is true (default) and validation produced no errors, the
+   * controller stores the updated registry and notifies subscribers.
    */
   applyChange(
     change: TopologyChange,
@@ -105,16 +105,15 @@ export class PageTopologyController {
     businessName?: string,
     opts: { commit?: boolean } = {},
   ): TopologyChangeResult {
-    const base = this.registry ?? change.registry ?? null;
-    if (!base) {
+    if (!this.registry) {
       throw new Error(
-        '[PageTopologyController] applyChange called without a registry; ' +
-          'call setRegistry() first or include one on the change payload.',
+        '[PageTopologyController] applyChange called without a registry; call setRegistry() first.',
       );
     }
-    const result = applyTopologyChange(change, base, vfsFiles, businessName);
-    if (opts.commit !== false && result.success && result.registry) {
-      this.setRegistry(result.registry);
+    const result = applyTopologyChange(change, this.registry, vfsFiles, businessName);
+    const hasErrors = result.validation.issues.some(i => i.severity === 'error');
+    if (opts.commit !== false && !hasErrors) {
+      this.setRegistry(result.updatedRegistry);
     }
     return result;
   }
@@ -139,8 +138,16 @@ export class PageTopologyController {
 
   // -------------------------------------------------------------- navigation
 
-  resolveNavigation(req: NavigationRequest): ResolvedPageTarget | null {
-    return resolveNavigationTarget(req);
+  resolveNavigation(
+    req: NavigationRequest,
+    vfsFiles: Record<string, string>,
+    registry?: PageRegistry,
+  ): ResolvedPageTarget {
+    const target = registry ?? this.registry;
+    if (!target) {
+      throw new Error('[PageTopologyController] resolveNavigation called without a registry.');
+    }
+    return resolveNavigationTarget(req, target, vfsFiles);
   }
 
   deriveFilePath(page: BuilderPage): string {

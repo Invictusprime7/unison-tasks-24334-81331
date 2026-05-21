@@ -8,7 +8,7 @@ Headless controllers extracted from the monolithic `WebBuilder.tsx` and
 | # | Controller                     | Status   | Notes |
 |---|--------------------------------|----------|-------|
 | 1 | `BuilderSessionProvider`       | **done** | Identity tuple (projectId, businessId, currentUserId, draftId, sessionId). |
-| 2 | `PreviewRuntimeController`     | pending  | Will wrap `unifiedPreviewPipeline` + sandpack lifecycle. |
+| 2 | `PreviewRuntimeController`     | **done** | Façade over `unifiedPreviewPipeline` + preview-state slice + `forScratch()` seam for Phase B. Call-site migration in WebBuilder is incremental. |
 | 3 | `PageTopologyController`       | pending  | Will wrap `pageTopologyOrchestrator` + validator. |
 | 4 | `PlaygroundSyncController`     | pending  | Will wrap `playgroundHydrator` + `playgroundCompiler`. |
 | 5 | `IntentReadinessController`    | pending  | Façade over `intentReadinessService`. |

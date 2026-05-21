@@ -41,6 +41,9 @@ jobs:
       - name: Lint pipeline bypass (commitToPipeline enforcement)
         run: npm run lint:pipeline-bypass
 
+      - name: Lint single source of truth (brainstem import guard)
+        run: npm run lint:single-source-of-truth
+
       - name: Run unit & contract tests (blocking)
         run: npx vitest run --reporter=default
 

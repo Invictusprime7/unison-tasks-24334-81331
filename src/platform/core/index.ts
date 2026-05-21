@@ -31,3 +31,6 @@ export * from './canonicalPipeline';
 
 // Playground state model
 export * from './playground';
+
+// Single legal mutation entry — Wizard, AI Builder, Playground edits, Republish.
+export * from './commitToPipeline';

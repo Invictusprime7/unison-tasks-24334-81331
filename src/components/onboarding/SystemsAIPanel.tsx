@@ -333,10 +333,10 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
     entryPoint?: string;
     runtimeManifest?: RuntimeManifest;
     systemsBuildContext?: SystemsBuildContext;
-    siteBundleSnapshot?: ReturnType<typeof executeCanonicalPipeline>['siteBundleSnapshot'];
-    materializedPlayground?: ReturnType<typeof executeCanonicalPipeline>['playground'];
-    compiledPlayground?: ReturnType<typeof executeCanonicalPipeline>['compileResult'];
-    pipelineManifest?: ReturnType<typeof executeCanonicalPipeline>['runtimeManifest'];
+    siteBundleSnapshot?: ReturnType<typeof commitToPipeline>['siteBundleSnapshot'];
+    materializedPlayground?: ReturnType<typeof commitToPipeline>['playground'];
+    compiledPlayground?: ReturnType<typeof commitToPipeline>['compileResult'];
+    pipelineManifest?: ReturnType<typeof commitToPipeline>['runtimeManifest'];
     wizardSelections?: WizardSelections;
   }) => {
     setLaunch(

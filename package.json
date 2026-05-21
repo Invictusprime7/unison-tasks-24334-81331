@@ -12,6 +12,7 @@
     "build:dev": "vite build --mode development",
     "build:analyze": "vite build --mode analyze",
     "lint": "eslint .",
+    "lint:pipeline-bypass": "tsx scripts/lint-pipeline-bypass.ts",
     "type-check": "tsc --build --noEmit",
     "preview": "vite preview",
     "deploy": "vercel --prod",

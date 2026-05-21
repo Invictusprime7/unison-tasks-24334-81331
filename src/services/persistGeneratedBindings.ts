@@ -11,7 +11,7 @@
  * a matching DB row that the runtime intentRouter can resolve.
  */
 import { upsertIntentBinding } from '@/services/intentBindingService';
-import { getIntentDef, resolveIntentName } from '@/intents/registry';
+import { getIntentDef, resolveIntentName } from '@/platform/core';
 
 export interface GeneratedBindingRow {
   pagePath: string;

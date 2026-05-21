@@ -31,11 +31,11 @@ const usageRegex = new RegExp(
   'g',
 );
 
-type Violation = { file: string; line: number; symbol: string; text: string };
 
-const violations: Violation[] = [];
 
-function walk(dir: string) {
+const violations= [];
+
+function walk(dir) {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
     const st = statSync(full);
@@ -56,7 +56,7 @@ function walk(dir: string) {
     lines.forEach((line, idx) => {
       // Strip line comments to reduce false positives.
       const stripped = line.replace(/\/\/.*$/, '');
-      let m: RegExpExecArray | null;
+      let m;
       usageRegex.lastIndex = 0;
       while ((m = usageRegex.exec(stripped))) {
         violations.push({

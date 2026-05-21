@@ -4873,6 +4873,12 @@ export function prepareSandpackFiles(
       );
     }
 
+    // SAFETY NET: Prose-only TSX (AI emitted narration instead of a component).
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isProseOnlyModule(processedContent)) {
+      console.warn(`[sandpackFilePrep] Prose-only module detected at ${normalizedPath} — injecting safe fallback`);
+      processedContent = buildProseFallback(normalizedPath);
+    }
+
     // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {
       console.warn(`[sandpackFilePrep] Raw CSS detected in ${normalizedPath} — wrapping in React component`);
@@ -4884,6 +4890,9 @@ export function prepareSandpackFiles(
       processedContent = ensureReactImports(processedContent);
       // Fix broken SVG elements (dc.path, svg.circle, etc.)
       processedContent = sanitizeSvgElements(processedContent);
+      // Repair `=> ({ children })` and `return { children: x }` style returns
+      // before the JSX runtime pragma pass so the rewritten JSX is normalized.
+      processedContent = repairConciseArrowChildren(processedContent);
       processedContent = forceClassicReactJsxRuntime(processedContent);
     }
 

@@ -25,6 +25,10 @@ import {
   recompileFromPlayground,
   type CanonicalPipelineResult,
 } from './canonicalPipeline';
+import {
+  beginCommitContext,
+  endCommitContext,
+} from './pipelineGuard';
 import type { PlaygroundState } from './playground';
 import type { CompiledContract } from './contractCompiler';
 import { isPreviewReady, isPublishReady, getPublishBlockers } from './contractCompiler';

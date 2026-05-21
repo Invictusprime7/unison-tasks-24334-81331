@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { planSiteTopology } from "@/platform/core/siteTopologyPlanner";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
-import { executeCanonicalPipeline } from "@/services/canonicalPipeline";
+import { commitToPipeline } from "@/platform/core";
 import { getCompositionsBySystemType } from "@/sections/templates";
 import { createLaunchState } from "@/types/launchState";
 import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";

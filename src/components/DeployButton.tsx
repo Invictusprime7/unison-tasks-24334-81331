@@ -181,7 +181,10 @@ export function DeployButton({
           <div className="space-y-4 py-4">
             {/* Publish-time pre-flight: PreviewGate + PublishGate verdicts */}
             {!result && (
-              <GateVerdictStrip contract={contract} compact />
+              <>
+                <GateVerdictStrip contract={contract} compact />
+                <PublishBlockersList contract={contract} />
+              </>
             )}
             {!result && (
               <>

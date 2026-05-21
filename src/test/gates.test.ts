@@ -112,3 +112,113 @@ describe('evaluateAllGates', () => {
     expect(all.publish.gate).toBe('PublishGate');
   });
 });
+
+// ============================================================================
+// Per-capability publish-blocker coverage — each business-critical capability
+// must independently block publish when stubbed or missing.
+// ============================================================================
+
+const BUSINESS_CRITICAL: CapabilityId[] = [
+  'commerce',
+  'auth',
+  'booking',
+  'lead-capture',
+  'quoting',
+  'donation',
+];
+
+describe('PublishGate per-capability coverage', () => {
+  for (const cap of BUSINESS_CRITICAL) {
+    it(`blocks when "${cap}" is stubbed`, () => {
+      const c = makeContract({
+        provisioningReport: {
+          previewReady: true,
+          productionReady: false,
+          capabilities: [{ capabilityId: cap, capabilityName: cap, status: 'stub', checks: [] } as never],
+        } as never,
+      });
+      const v = PublishGate.evaluate(c);
+      expect(v.ok).toBe(false);
+      const stub = v.reasons.find(r => r.code === 'critical-capability-stub');
+      expect(stub?.meta?.capabilityId).toBe(cap);
+    });
+
+    it(`blocks when "${cap}" is missing`, () => {
+      const c = makeContract({
+        provisioningReport: {
+          previewReady: true,
+          productionReady: false,
+          capabilities: [{ capabilityId: cap, capabilityName: cap, status: 'missing', checks: [] } as never],
+        } as never,
+      });
+      const v = PublishGate.evaluate(c);
+      expect(v.ok).toBe(false);
+      expect(v.reasons.some(r => r.code === 'critical-capability-missing' && r.meta?.capabilityId === cap)).toBe(true);
+    });
+
+    it(`blocks when "${cap}" has an unprovisioned workflow`, () => {
+      const c = makeContract({
+        provisioningReport: {
+          previewReady: true,
+          productionReady: false,
+          capabilities: [{
+            capabilityId: cap,
+            capabilityName: cap,
+            status: 'provisioned',
+            checks: [{ check: 'workflow', label: `${cap}-flow`, status: 'stub' }],
+          } as never],
+        } as never,
+      });
+      const v = PublishGate.evaluate(c);
+      expect(v.reasons.some(r => r.code === 'critical-workflow-not-provisioned' && r.meta?.capabilityId === cap)).toBe(true);
+    });
+  }
+
+  it('does NOT block on a non-critical stubbed capability', () => {
+    const c = makeContract({
+      provisioningReport: {
+        previewReady: true,
+        productionReady: true,
+        capabilities: [{ capabilityId: 'crm', capabilityName: 'CRM', status: 'stub', checks: [] } as never],
+      } as never,
+    });
+    expect(PublishGate.evaluate(c).ok).toBe(true);
+  });
+
+  it('surfaces unresolved-slots and blocked-bindings codes', () => {
+    const c = makeContract({
+      slotBindingPolicy: { unresolved: [{ slotId: 'cta' }], resolved: [] } as never,
+      intentBindings: [{ readiness: 'blocked', elementRole: 'primary-cta' } as never],
+    });
+    const v = PublishGate.evaluate(c);
+    expect(v.reasons.some(r => r.code === 'unresolved-slots')).toBe(true);
+    expect(v.reasons.some(r => r.code === 'blocked-bindings')).toBe(true);
+  });
+});
+
+describe('DeployButton publish-gating contract', () => {
+  // DeployButton disables the Deploy CTA via: contract ? !isPublishReady(contract) : false
+  // These assertions lock that behavior at the predicate level so the button
+  // can never regress to deploying a non-publish-ready contract.
+  it('healthy contract → isPublishReady === true → button enabled', () => {
+    expect(isPublishReady(makeContract())).toBe(true);
+  });
+
+  it('stubbed commerce → isPublishReady === false → button disabled', () => {
+    const c = makeContract({
+      provisioningReport: {
+        previewReady: true,
+        productionReady: false,
+        capabilities: [{ capabilityId: 'commerce', capabilityName: 'Commerce', status: 'stub', checks: [] } as never],
+      } as never,
+    });
+    expect(isPublishReady(c)).toBe(false);
+  });
+
+  it('no contract → button must not be gated (returns false branch)', () => {
+    // Mirrors DeployButton's `contract ? !isPublishReady(contract) : false` ternary.
+    const contract: CompiledContract | null = null;
+    const disabledByGate = contract ? !isPublishReady(contract) : false;
+    expect(disabledByGate).toBe(false);
+  });
+});

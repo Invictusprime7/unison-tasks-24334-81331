@@ -50,7 +50,7 @@ describe('PreviewRuntimeController', () => {
     c.subscribe(s => seen.push(s.activeRoute));
     c.navigateTo(makeRegistry(), 'about');
     expect(c.getState().activeRoute).toBe('/about');
-    expect(seen.at(-1)).toBe('/about');
+    expect(seen[seen.length - 1]).toBe('/about');
   });
 
   it('tracks pending generations idempotently', () => {

@@ -58,7 +58,7 @@ import {
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
-import { executeCanonicalPipeline, type CanonicalPipelineResult } from "@/services/canonicalPipeline";
+import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
@@ -845,7 +845,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         minimalScaffold: true,
       };
 
-      const pipelineResult = executeCanonicalPipeline(wizardSelections);
+      const pipelineResult = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
       const {
         playground: materializedPlayground,
         compileResult: compiledPlayground,

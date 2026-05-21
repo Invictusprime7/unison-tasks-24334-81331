@@ -51,7 +51,7 @@ import { useLaunch } from "@/contexts/useLaunchHooks";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { createLaunchState } from "@/types/launchState";
 import type { RuntimeManifest } from "@/types/runtimeManifest";
-import { executeCanonicalPipeline } from "@/services/canonicalPipeline";
+import { commitToPipeline } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
@@ -333,10 +333,10 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
     entryPoint?: string;
     runtimeManifest?: RuntimeManifest;
     systemsBuildContext?: SystemsBuildContext;
-    siteBundleSnapshot?: ReturnType<typeof executeCanonicalPipeline>['siteBundleSnapshot'];
-    materializedPlayground?: ReturnType<typeof executeCanonicalPipeline>['playground'];
-    compiledPlayground?: ReturnType<typeof executeCanonicalPipeline>['compileResult'];
-    pipelineManifest?: ReturnType<typeof executeCanonicalPipeline>['runtimeManifest'];
+    siteBundleSnapshot?: ReturnType<typeof commitToPipeline>['siteBundleSnapshot'];
+    materializedPlayground?: ReturnType<typeof commitToPipeline>['playground'];
+    compiledPlayground?: ReturnType<typeof commitToPipeline>['compileResult'];
+    pipelineManifest?: ReturnType<typeof commitToPipeline>['runtimeManifest'];
     wizardSelections?: WizardSelections;
   }) => {
     setLaunch(
@@ -498,7 +498,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         const chipLabel = codePromptChips.find(c => c.id === selectedCodeChip)?.label || "website";
         const chipBusinessName = ref?.templateName || chipLabel;
         const chipWizardSelections = buildWizardSelectionsForChip(selectedCodeChip, codePrompt, chipBusinessName);
-        const chipPipeline = executeCanonicalPipeline(chipWizardSelections);
+        const chipPipeline = commitToPipeline({ selections: chipWizardSelections }, 'wizard-launch');
         const {
           playground: materializedPlayground,
           compileResult: compiledPlayground,

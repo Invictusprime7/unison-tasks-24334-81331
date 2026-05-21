@@ -23,7 +23,7 @@ import {
   type TopologyChangeType,
 } from './pageTopologyOrchestrator';
 import { generateCanonicalRouter, patchVFSWithRouter } from '@/utils/topologyRouterGenerator';
-import { recompileFromPlayground } from './canonicalPipeline';
+import { commitToPipeline } from '@/platform/core';
 import {
   resolveNavigationTarget,
   deriveFilePath,
@@ -129,7 +129,10 @@ export function fullRebuildFromPlayground(
   businessName?: string,
   industry?: string,
 ) {
-  return recompileFromPlayground(playground, existingVfsFiles, businessName, industry);
+  return commitToPipeline(
+    { playground, existingVfsFiles, businessName, industry },
+    'playground-edit',
+  );
 }
 
 /**

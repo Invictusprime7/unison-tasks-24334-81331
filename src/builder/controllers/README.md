@@ -12,7 +12,7 @@ Headless controllers extracted from the monolithic `WebBuilder.tsx` and
 | 3 | `PageTopologyController`       | **done** | Façade over orchestrator + validator + routeNavigationService. Holds active PageRegistry. |
 | 4 | `PlaygroundSyncController`     | **done** | Two-way bridge: `hydrateFromVFS()` + `compile()`. Caches last results for diagnostics. |
 | 5 | `IntentReadinessController`    | **done** | Caches readiness report + `summarize()` helper for preview/publish gate booleans. |
-| 6 | `LaunchStateController`        | pending  | Publish gate + deploy state. |
+| 6 | `LaunchStateController`        | **done** | Wraps PublishGate + deploymentService. Owns verdict, blockers, canPublish, and deploy progress slice. |
 | 7 | `VFSCommitService`             | pending  | Final commit seam — Phase B plugs in here. |
 
 ## Rules

@@ -25,6 +25,10 @@ import {
   recompileFromPlayground,
   type CanonicalPipelineResult,
 } from './canonicalPipeline';
+import {
+  beginCommitContext,
+  endCommitContext,
+} from './pipelineGuard';
 import type { PlaygroundState } from './playground';
 import type { CompiledContract } from './contractCompiler';
 import { isPreviewReady, isPublishReady, getPublishBlockers } from './contractCompiler';
@@ -92,10 +96,16 @@ export function commitToPipeline(
   input: CommitInput,
   source: CommitSource,
 ): CommitResult {
-  const result =
-    source === 'wizard-launch'
-      ? runWizardLaunch(input)
-      : runRecompile(input);
+  beginCommitContext();
+  let result: CanonicalPipelineResult;
+  try {
+    result =
+      source === 'wizard-launch'
+        ? runWizardLaunch(input)
+        : runRecompile(input);
+  } finally {
+    endCommitContext();
+  }
 
   const gate = input.compiledContract
     ? {

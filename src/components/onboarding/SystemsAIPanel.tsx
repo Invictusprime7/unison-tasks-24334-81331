@@ -239,7 +239,7 @@ function getTemplateReference(chipId: string): { templateId: string; templateHtm
  */
 function buildContractAndContext(chipId: string, prompt: string, businessName?: string): {
   context: SystemsBuildContext;
-  compiled: import('@/contracts').CompiledContract;
+  compiled: import('@/platform/core').CompiledContract;
 } {
   const chip = codePromptChips.find(c => c.id === chipId);
   const canonicalIndustry = getCanonicalIndustry(chipId);

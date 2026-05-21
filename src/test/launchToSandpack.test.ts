@@ -236,7 +236,7 @@ describe("launchStateToSandpackFiles", () => {
       themeId: "modern",
     };
 
-    const pipeline = executeCanonicalPipeline(wizardSelections);
+    const pipeline = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
     const sitePlan = planSiteTopology("salon", "Vela Salon", {
       selectedTemplateId: templateId,
     });

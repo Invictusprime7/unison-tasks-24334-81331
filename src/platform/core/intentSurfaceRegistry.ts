@@ -7,9 +7,6 @@
  *
  * Adding a new intent: append an IntentDef here, optionally extend an alias.
  * Do NOT add to any other guard — they all read this map.
- *
- * Back-compat: `src/intents/registry.ts` re-exports this module so legacy
- * imports keep working during the migration window.
  */
 export type IntentNamespace =
   | 'nav'

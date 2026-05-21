@@ -129,7 +129,7 @@ import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
 import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from '@/types/playground';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
-import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
+import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import { commitToPipeline, type SiteBundleSnapshot } from '@/platform/core';
 import { publishCreatorDataForUnison, writeCanonicalsToVFS } from '@/services/unisonCanonicalRegistry';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';

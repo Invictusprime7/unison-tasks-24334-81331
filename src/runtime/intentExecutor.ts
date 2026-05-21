@@ -14,7 +14,7 @@
  * This replaces scattered handlers with ONE unified flow.
  */
 
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from '@/platform/core/coreIntents';
 import { emitIntentFailure } from './intentFailureBus';
 import { 
   isNavIntent, 
@@ -22,7 +22,7 @@ import {
   isActionIntent, 
   isAutomationIntent,
   isCoreIntent 
-} from '@/coreIntents';
+} from '@/platform/core/coreIntents';
 import { normalizeIntent } from './intentAliases';
 import { classifyIntent } from './intentClassifier';
 import { logIntentExecution, createLogEntryFromResult } from '@/services/intentExecutionLogger';

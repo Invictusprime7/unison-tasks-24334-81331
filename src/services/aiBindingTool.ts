@@ -20,7 +20,7 @@
  * deterministic error in the next turn instead of looping on broken patches.
  */
 
-import { isCoreIntent, isNavIntent, type CoreIntent } from '@/coreIntents';
+import { isCoreIntent, isNavIntent, type CoreIntent } from '@/platform/core/coreIntents';
 import { upsertIntentBinding, type IntentBinding } from '@/services/intentBindingService';
 import type { PageRegistry } from '@/types/pageRegistry';
 

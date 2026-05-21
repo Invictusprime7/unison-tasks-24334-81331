@@ -12,7 +12,7 @@
  */
 
 import type { PageRegistry, BuilderPage } from '@/types/pageRegistry';
-import type { GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
+import type { GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 
 // ============================================================================
 // Types

@@ -48,7 +48,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { handleIntent } from "@/runtime/intentRouter";
-import { AUTOMATION_INTENTS, ACTION_INTENTS, isAutomationIntent, isActionIntent } from "@/coreIntents";
+import { AUTOMATION_INTENTS, ACTION_INTENTS, isAutomationIntent, isActionIntent } from "@/platform/core/coreIntents";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ElementSelection {

@@ -21,9 +21,9 @@
  * }
  */
 
-import type { CoreIntent } from '@/coreIntents';
-import { CORE_INTENTS, NAV_INTENTS, PAY_INTENTS, ACTION_INTENTS } from '@/coreIntents';
-import { ICON_INTENT_REGISTRY, resolveIconKeyFromLucide } from '@/contracts/iconIntentRegistry';
+import type { CoreIntent } from '@/platform/core/coreIntents';
+import { CORE_INTENTS, NAV_INTENTS, PAY_INTENTS, ACTION_INTENTS } from '@/platform/core/coreIntents';
+import { ICON_INTENT_REGISTRY, resolveIconKeyFromLucide } from '@/platform/core/iconIntentRegistry';
 
 // ============ CLICKABLE INTENTS ============
 // These intents can be auto-bound to buttons. Automation-only intents

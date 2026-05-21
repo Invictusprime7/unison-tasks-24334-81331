@@ -8,7 +8,7 @@
  * - Autorun intents: Execute immediately with toast feedback
  */
 
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from '@/platform/core/coreIntents';
 import type { TemplateCategory } from './templateIntentConfig';
 
 // ============================================================================

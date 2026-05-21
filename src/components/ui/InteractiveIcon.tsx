@@ -24,7 +24,7 @@ import {
   type IconUIBehavior,
   resolveIconBinding,
   getIconDefinition,
-} from '@/contracts/iconIntentRegistry';
+} from '@/platform/core/iconIntentRegistry';
 
 // ============================================================================
 // Props

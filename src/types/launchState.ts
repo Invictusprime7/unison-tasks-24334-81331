@@ -12,7 +12,7 @@
 import type { SiteBundleVersion } from './siteBundle';
 import type { LauncherHandoff, RuntimeManifest } from './runtimeManifest';
 import type { SystemsBuildContext } from './systemsBuildContext';
-import type { GeneratedSitePlan } from '@/contracts/siteTopologyPlanner';
+import type { GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import type { LayoutCategory } from '@/data/templates/types';
 import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from './playground';
 import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';

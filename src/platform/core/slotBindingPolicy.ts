@@ -10,7 +10,7 @@
  * V2: Added shop-grid, cart, and checkout section types for ecommerce flows.
  */
 
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from './coreIntents';
 import type { CapabilityId } from './capabilityRegistry';
 
 // ============================================================================

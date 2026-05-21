@@ -62,7 +62,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { CORE_INTENTS, AUTOMATION_INTENTS, ACTION_INTENTS, isAutomationIntent, isActionIntent } from "@/coreIntents";
+import { CORE_INTENTS, AUTOMATION_INTENTS, ACTION_INTENTS, isAutomationIntent, isActionIntent } from "@/platform/core/coreIntents";
 
 // Types
 interface DetectedIntent {

@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { PreviewGate, PublishGate, GateFailedError, evaluateAllGates } from '@/platform/core';
-import type { CompiledContract } from '@/contracts/contractCompiler';
+import type { CompiledContract } from '@/platform/core/contractCompiler';
 
 function makeContract(overrides: Partial<CompiledContract> = {}): CompiledContract {
   const base = {

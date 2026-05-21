@@ -5,7 +5,7 @@ import {
   resolveDeterministicIntentSurface,
   type PreviewIntentInventory,
 } from '@/runtime/deterministicIntentUi';
-import { buildRoutePolicy } from '@/contracts/routePolicy';
+import { buildRoutePolicy } from '@/platform/core/routePolicy';
 import { resolvePreviewAction } from '@/utils/previewActionResolver';
 
 const emptyInventory: PreviewIntentInventory = {

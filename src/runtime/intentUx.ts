@@ -5,7 +5,7 @@ import {
   determinePipelineAction,
   type PipelineMode 
 } from './intentPipeline';
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from '@/platform/core/coreIntents';
 import type { TemplateCategory } from './templateIntentConfig';
 
 // ============================================================================

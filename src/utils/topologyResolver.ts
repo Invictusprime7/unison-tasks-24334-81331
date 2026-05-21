@@ -6,7 +6,7 @@
  */
 
 import type { PageRegistry } from '@/types/pageRegistry';
-import type { GeneratedSitePlan, RedirectBinding } from '@/contracts/siteTopologyPlanner';
+import type { GeneratedSitePlan, RedirectBinding } from '@/platform/core/siteTopologyPlanner';
 import { supabase } from '@/integrations/supabase/client';
 
 // ============================================================================

@@ -59,7 +59,7 @@ import {
   createBlueprintFromIndustry,
   compileContract,
   getIndustryProfile,
-} from "@/contracts";
+} from "@/platform/core";
 
 // Dropped file type
 interface DroppedFile {

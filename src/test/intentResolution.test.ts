@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { normalizeIntent, isNormalizedCoreIntent, getCanonicalIntent, getAliasesFor } from "@/runtime/intentAliases";
-import { CORE_INTENTS, NAV_INTENTS, PAY_INTENTS, ACTION_INTENTS } from "@/coreIntents";
+import { CORE_INTENTS, NAV_INTENTS, PAY_INTENTS, ACTION_INTENTS } from "@/platform/core/coreIntents";
 
 describe("normalizeIntent", () => {
   it("returns canonical intents unchanged", () => {

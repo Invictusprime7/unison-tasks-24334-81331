@@ -19,7 +19,7 @@ import {
   PAY_INTENTS,
   type ActionIntent,
   type AutomationIntent,
-} from "@/coreIntents";
+} from "@/platform/core/coreIntents";
 
 import type {
   BusinessBlueprint,

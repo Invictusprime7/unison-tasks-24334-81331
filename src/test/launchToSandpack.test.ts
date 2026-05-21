@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planSiteTopology } from "@/contracts/siteTopologyPlanner";
+import { planSiteTopology } from "@/platform/core/siteTopologyPlanner";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { executeCanonicalPipeline } from "@/services/canonicalPipeline";
 import { getCompositionsBySystemType } from "@/sections/templates";

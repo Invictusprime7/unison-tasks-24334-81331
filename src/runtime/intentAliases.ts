@@ -14,8 +14,8 @@
  * RULE: Everything normalizes to CORE_INTENTS before execution.
  */
 
-import type { CoreIntent } from '@/coreIntents';
-import { CORE_INTENTS } from '@/coreIntents';
+import type { CoreIntent } from '@/platform/core/coreIntents';
+import { CORE_INTENTS } from '@/platform/core/coreIntents';
 
 /**
  * Comprehensive alias map: legacy/alternate intent → canonical CoreIntent

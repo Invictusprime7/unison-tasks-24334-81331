@@ -15,7 +15,7 @@
  * are NOT registered here. Only icons that trigger interactive behavior.
  */
 
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from './coreIntents';
 
 // ============================================================================
 // Types

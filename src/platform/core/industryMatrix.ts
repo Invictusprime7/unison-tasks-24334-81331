@@ -10,7 +10,7 @@
 
 import type { CapabilityId } from './capabilityRegistry';
 import type { BusinessSystemType, LayoutCategory } from '@/data/templates/types';
-import type { CoreIntent } from '@/coreIntents';
+import type { CoreIntent } from './coreIntents';
 
 // ============================================================================
 // Industry Profile

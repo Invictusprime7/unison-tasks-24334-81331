@@ -1,9 +1,16 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { installPipelineBypassGuard } from "@/platform/core";
 
 // Enforce global dark theme (dark premium) across the whole app
 document.documentElement.classList.add('dark');
+
+// Install the dev-mode pipeline bypass guard (PR4). In DEV this throws when
+// any caller invokes executeCanonicalPipeline / recompileFromPlayground
+// outside of commitToPipeline. In PROD it silently counts bypasses on
+// window.__unisonPipelineStats — the CI lint is the hard wall.
+installPipelineBypassGuard();
 
 // Benign third-party / observer noise we never want to surface to users
 const BENIGN_ERROR_PATTERNS = [

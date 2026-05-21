@@ -33,10 +33,8 @@ import { cn } from '@/lib/utils';
 import {
   type CompiledContract,
   type ProvisioningStatus,
-  isPreviewReady,
-  isPublishReady,
-  getPublishBlockers,
 } from '@/contracts';
+import { PreviewGate, PublishGate } from '@/platform/core';
 
 // ============================================================================
 // Props
@@ -81,9 +79,14 @@ export const SystemHealthPanel: React.FC<SystemHealthPanelProps> = ({
   onPublishCheck,
   className,
 }) => {
-  const previewReady = useMemo(() => contract ? isPreviewReady(contract) : false, [contract]);
-  const publishReady = useMemo(() => contract ? isPublishReady(contract) : false, [contract]);
-  const publishBlockers = useMemo(() => contract ? getPublishBlockers(contract) : [], [contract]);
+  const previewVerdict = useMemo(() => contract ? PreviewGate.evaluate(contract) : null, [contract]);
+  const publishVerdict = useMemo(() => contract ? PublishGate.evaluate(contract) : null, [contract]);
+  const previewReady = previewVerdict?.ok ?? false;
+  const publishReady = publishVerdict?.ok ?? false;
+  const publishBlockers = useMemo(
+    () => (publishVerdict?.reasons ?? []).map((r) => ({ code: r.code, message: r.message })),
+    [publishVerdict],
+  );
 
   const healthScore = useMemo(() => {
     if (!contract) return 0;

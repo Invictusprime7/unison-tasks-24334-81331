@@ -6,10 +6,10 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import {
-  getPublishBlockers,
-  type CompiledContract,
-  type PublishBlocker,
+import { PublishGate } from '@/platform/core';
+import type {
+  CompiledContract,
+  PublishBlocker,
 } from '@/contracts';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
@@ -171,10 +171,15 @@ export async function deployToProvider(
     // (commerce/auth/booking/lead-capture/quoting/donation) block publish even
     // when preview was happy.
     if (request.contract) {
-      const blockers = getPublishBlockers(request.contract);
-      if (blockers.length > 0) {
-        const summary = blockers.map(b => `• ${b.message}`).join('\n');
-        const errorMessage = `Publish blocked by contract gate:\n${summary}`;
+      const verdict = PublishGate.evaluate(request.contract);
+      if (!verdict.ok) {
+        const blockers: PublishBlocker[] = verdict.reasons.map((r) => ({
+          code: r.code as PublishBlocker['code'],
+          message: r.message,
+          capabilityId: (r.meta?.capabilityId as PublishBlocker['capabilityId']) ?? undefined,
+        }));
+        const summary = blockers.map((b) => `• ${b.message}`).join('\n');
+        const errorMessage = `Publish blocked by ${verdict.gate}:\n${summary}`;
         const errorResponse: DeploymentResponse = {
           status: 'error',
           provider: request.provider,

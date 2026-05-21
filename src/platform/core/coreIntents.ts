@@ -1,12 +1,12 @@
 /**
- * CoreIntent surface — DERIVED from src/intents/registry.ts.
+ * CoreIntent surface — DERIVED from ./intentSurfaceRegistry.
  *
  * This file remains the public type/value surface that the rest of the
  * codebase imports (the in-flight refactor leaves ~50 call-sites pointing at
  * `@/coreIntents`). The registry is the single source of truth; legacy
  * exports here are computed views over it.
  *
- * To add a new intent: edit `src/intents/registry.ts` ONLY.
+ * To add a new intent: edit `./intentSurfaceRegistry.ts` ONLY.
  */
 import {
   INTENT_REGISTRY,
@@ -14,7 +14,7 @@ import {
   intentsByNamespace,
   isRegisteredIntent,
   resolveIntentName,
-} from '@/intents/registry';
+} from './intentSurfaceRegistry';
 
 // ============================================================================
 // Derived intent name lists (kept as runtime arrays for back-compat)

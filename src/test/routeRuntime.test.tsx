@@ -84,7 +84,7 @@ describe("route runtime", () => {
       routeId: "project-setup",
       pathname: "/project/project_1/setup",
       shell: "project",
-      section: "projects",
+      section: "project",
       chrome: "legacy",
       requiresAuth: true,
       requiresWorkspace: true,

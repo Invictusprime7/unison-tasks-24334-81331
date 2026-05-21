@@ -414,6 +414,5 @@ export function intentsByNamespace(ns: IntentNamespace): IntentDef[] {
   return Object.values(INTENT_REGISTRY).filter((d) => d.namespace === ns);
 }
 
-
 // Convenience alias — lets consumers spell the import as the namespace name.
-export { INTENT_REGISTRY as intentSurfaceRegistry } from "./intentSurfaceRegistry";
+export { INTENT_REGISTRY as intentSurfaceRegistry };

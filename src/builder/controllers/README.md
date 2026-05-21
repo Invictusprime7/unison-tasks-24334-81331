@@ -10,7 +10,7 @@ Headless controllers extracted from the monolithic `WebBuilder.tsx` and
 | 1 | `BuilderSessionProvider`       | **done** | Identity tuple (projectId, businessId, currentUserId, draftId, sessionId). |
 | 2 | `PreviewRuntimeController`     | **done** | Façade over `unifiedPreviewPipeline` + preview-state slice + `forScratch()` seam for Phase B. Call-site migration in WebBuilder is incremental. |
 | 3 | `PageTopologyController`       | **done** | Façade over orchestrator + validator + routeNavigationService. Holds active PageRegistry. |
-| 4 | `PlaygroundSyncController`     | pending  | Will wrap `playgroundHydrator` + `playgroundCompiler`. |
+| 4 | `PlaygroundSyncController`     | **done** | Two-way bridge: `hydrateFromVFS()` + `compile()`. Caches last results for diagnostics. |
 | 5 | `IntentReadinessController`    | pending  | Façade over `intentReadinessService`. |
 | 6 | `LaunchStateController`        | pending  | Publish gate + deploy state. |
 | 7 | `VFSCommitService`             | pending  | Final commit seam — Phase B plugs in here. |

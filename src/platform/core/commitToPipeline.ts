@@ -96,10 +96,16 @@ export function commitToPipeline(
   input: CommitInput,
   source: CommitSource,
 ): CommitResult {
-  const result =
-    source === 'wizard-launch'
-      ? runWizardLaunch(input)
-      : runRecompile(input);
+  beginCommitContext();
+  let result: CanonicalPipelineResult;
+  try {
+    result =
+      source === 'wizard-launch'
+        ? runWizardLaunch(input)
+        : runRecompile(input);
+  } finally {
+    endCommitContext();
+  }
 
   const gate = input.compiledContract
     ? {

@@ -34,3 +34,6 @@ export * from './playground';
 
 // Single legal mutation entry — Wizard, AI Builder, Playground edits, Republish.
 export * from './commitToPipeline';
+
+// Contract Guard — silent-retry-then-surface enforcement for AI patches.
+export * from './contractGuard';

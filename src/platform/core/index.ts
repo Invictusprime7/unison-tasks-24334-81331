@@ -24,6 +24,11 @@ export * from './capabilityRegistry';
 export * from './routePolicy';
 export * from './provisioningValidator';
 export * from './intentNormalizer';
+export * from './slotBindingPolicy';
+export * from './industryMatrix';
+export * from './integrityReport';
+export * from './iconIntentRegistry';
+export * from './siteTopologyPlanner';
 
 // Compilation + gates (PreviewGate / PublishGate live here as isPreviewReady / isPublishReady)
 export * from './contractCompiler';

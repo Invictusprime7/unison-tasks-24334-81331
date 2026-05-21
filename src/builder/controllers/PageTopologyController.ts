@@ -128,12 +128,15 @@ export class PageTopologyController {
 
   // -------------------------------------------------------------- validation
 
-  validate(registry?: PageRegistry): TopologyValidationResult {
+  validate(
+    vfsFiles: Record<string, string>,
+    registry?: PageRegistry,
+  ): TopologyValidationResult {
     const target = registry ?? this.registry;
     if (!target) {
       throw new Error('[PageTopologyController] validate called without a registry.');
     }
-    return validatePageTopology(target);
+    return validatePageTopology(target, vfsFiles);
   }
 
   // -------------------------------------------------------------- navigation

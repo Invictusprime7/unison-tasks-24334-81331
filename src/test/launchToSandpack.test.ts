@@ -73,7 +73,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(previewFiles["/App.tsx"] || "").toContain("return <div>clean</div>");
   });
 
-  it.todo("injects a safe fallback when a TSX module is prose-only", () => {
+  it.skip("injects a safe fallback when a TSX module is prose-only", () => {
     const proseOnly = "I will now create a polished landing page with a modern hero and strong CTA.";
 
     const launchState = createLaunchState({
@@ -98,7 +98,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(recoveredPage).toContain("safe fallback was injected");
   });
 
-  it.todo("repairs parenthesized and concise-arrow {children} object returns", () => {
+  it.skip("repairs parenthesized and concise-arrow {children} object returns", () => {
     const brokenChildrenCode = [
       "import React from 'react';",
       "const Wrapper = ({ children }: { children: React.ReactNode }) => ({ children });",
@@ -183,7 +183,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(appCode).not.toContain("</Router>");
   });
 
-  it.todo("does not monkey-patch React component rendering in the runtime entry", () => {
+  it.skip("does not monkey-patch React component rendering in the runtime entry", () => {
     const launchState = createLaunchState({
       systemType: "store",
       systemName: "Store",

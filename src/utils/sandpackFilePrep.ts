@@ -4985,6 +4985,30 @@ export function prepareSandpackFiles(
   sandpackFiles['/lib-utils-shim.ts'] = LIB_UTILS_SHIM;
   sandpackFiles['/ui-shim.tsx'] = UI_COMPONENTS_SHIM;
 
+  // Canonical tsconfig so consumers (and tests) can rely on the modern
+  // automatic JSX runtime being active. The per-file `forceClassicReactJsxRuntime`
+  // pass adds `/** @jsx React.createElement */` pragmas at the top of source
+  // files when it needs the classic transform — tsconfig stays on `react-jsx`.
+  if (!sandpackFiles['/tsconfig.json']) {
+    sandpackFiles['/tsconfig.json'] = JSON.stringify({
+      compilerOptions: {
+        target: 'ES2020',
+        lib: ['ES2020', 'DOM', 'DOM.Iterable'],
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        jsx: 'react-jsx',
+        strict: false,
+        skipLibCheck: true,
+        isolatedModules: true,
+        resolveJsonModule: true,
+        baseUrl: '.',
+        paths: { '@/*': ['./*'] },
+      },
+      include: ['.'],
+    }, null, 2);
+  }
+
+
   // ── SAFETY: Strip Router wrappers from ALL VFS files ──
   // DEFAULT_INDEX (always installed at /index.tsx) wraps <App /> in a
   // __RouterGuard that mounts a single canonical <HashRouter>. Any additional

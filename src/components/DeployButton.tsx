@@ -27,6 +27,7 @@ import { useDeployment } from '@/hooks/useDeployment';
 import { DeploymentProvider, wrapHtmlForDeployment } from '@/services/deploymentService';
 import { toast } from 'sonner';
 import GateVerdictStrip from '@/components/web-builder/GateVerdictStrip';
+import PublishBlockersList from '@/components/web-builder/PublishBlockersList';
 import type { CompiledContract } from '@/platform/core';
 import { isPublishReady } from '@/platform/core';
 
@@ -180,7 +181,10 @@ export function DeployButton({
           <div className="space-y-4 py-4">
             {/* Publish-time pre-flight: PreviewGate + PublishGate verdicts */}
             {!result && (
-              <GateVerdictStrip contract={contract} compact />
+              <>
+                <GateVerdictStrip contract={contract} compact />
+                <PublishBlockersList contract={contract} />
+              </>
             )}
             {!result && (
               <>

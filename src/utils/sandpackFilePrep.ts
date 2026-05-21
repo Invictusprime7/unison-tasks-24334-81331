@@ -595,21 +595,22 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
 /**
  * DEFAULT_INDEX — the canonical Sandpack entry point.
  * Sandpack react-ts uses /index.tsx, NOT /main.tsx.
+ *
+ * Runtime React monkey-patches (SafeCreateElement / jsx-runtime sanitization)
+ * are gated behind ENABLE_REACT_RUNTIME_PATCH. These shims historically masked
+ * malformed component returns by wrapping every function component and every
+ * React.createElement / jsx() / jsxs() / jsxDEV() call. They are EXPENSIVE
+ * (WeakMap wrap on every render), break reference-equality libraries
+ * (React Router's Route discovery, framer-motion's variant matching, etc.),
+ * and can mask the real source bug we want to repair upstream.
+ *
+ * Default OFF: the per-file repair passes (concise-arrow children, prose
+ * fallback, raw-CSS wrapping) should be the canonical fix. Flip to true only
+ * as a temporary mitigation while a regression is being root-caused.
  */
-const DEFAULT_INDEX = `import React, { Component } from 'react';
-import ReactDOM from 'react-dom/client';
-import * as __JsxRuntime from 'react/jsx-runtime';
-import * as __JsxDevRuntime from 'react/jsx-dev-runtime';
-import * as AppModule from './App';
-import './index.css';
-import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';
-const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
-  let inRouter = false;
-  try { inRouter = __useInRouterContext(); } catch { inRouter = false; }
-  return inRouter ? <>{children}</> : <__PreviewHashRouter>{children}</__PreviewHashRouter>;
-};
+const ENABLE_REACT_RUNTIME_PATCH = false;
 
-
+const REACT_RUNTIME_PATCH_BLOCK = `
 // ── Runtime guard: intercept undefined components BEFORE they crash React ──
 // This prevents "Element type is invalid" errors by replacing undefined/null
 // component references with a visible placeholder instead of a hard crash.
@@ -620,9 +621,7 @@ function _sanitizeChild(child: any): any {
   if (child == null || typeof child === 'string' || typeof child === 'number' || typeof child === 'boolean') return child;
   if (Array.isArray(child)) return child.map(_sanitizeChild);
   if (typeof child === 'object') {
-    // Valid React element
     if ((child as any).$$typeof) return child;
-    // Plain object accidentally rendered as child — unwrap common shapes
     const keys = Object.keys(child);
     const sig = keys.sort().join(',');
     if (!_badChildLogged.has(sig)) {
@@ -633,21 +632,11 @@ function _sanitizeChild(child: any): any {
     if ('text' in child || 'label' in child || 'title' in child) {
       return String((child as any).text ?? (child as any).label ?? (child as any).title ?? '');
     }
-    // Last resort: stringify so React doesn't crash
     try { return JSON.stringify(child); } catch { return ''; }
   }
   return child;
 }
-// Wrap function components so their RETURN value is sanitized too.
-// Catches "Objects are not valid as a React child" thrown at mount when a
-// component returns a plain object (e.g. { children: ... }) instead of JSX.
 const _wrappedComponentCache = new WeakMap<any, any>();
-// React Router (and similar libs) rely on REFERENCE EQUALITY of child.type
-// (e.g. Routes validates each child is the literal Route export).
-// Wrapping these would break that check with errors like:
-//   "[_SafeFC] is not a Route component"
-// Skip wrapping for known router/library components AND for anything whose
-// displayName/name starts with an uppercase letter and is in our skip list.
 const _SKIP_WRAP_NAMES = new Set([
   'Route','Routes','Router','BrowserRouter','HashRouter','MemoryRouter',
   'Outlet','Navigate','Switch','Link','NavLink','RouterProvider',
@@ -656,12 +645,9 @@ const _SKIP_WRAP_NAMES = new Set([
 ]);
 function _wrapComponent(type: any): any {
   if (typeof type !== 'function') return type;
-  // Skip class components (they have a prototype with isReactComponent)
   if (type.prototype && type.prototype.isReactComponent) return type;
-  // Skip components requiring reference identity (router, framer, etc.)
   const name = (type as any).displayName || (type as any).name;
   if (name && _SKIP_WRAP_NAMES.has(name)) return type;
-  // Skip forwardRef / memo / context objects (already non-function or special)
   if ((type as any).$$typeof) return type;
   const cached = _wrappedComponentCache.get(type);
   if (cached) return cached;
@@ -671,7 +657,6 @@ function _wrapComponent(type: any): any {
     if (result == null || typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean') return result;
     if (typeof result === 'object' && (result as any).$$typeof) return result;
     if (Array.isArray(result)) return result.map(_sanitizeChild);
-    // Plain object returned — sanitize it like a child
     return _sanitizeChild(result);
   };
   try { (Wrapped as any).displayName = (type as any).displayName || (type as any).name || 'SafeFC'; } catch {}
@@ -692,9 +677,7 @@ function _wrapComponent(type: any): any {
       title: 'This component resolved to undefined — check imports',
     }, '⚠ missing component');
   }
-  // Sanitize children to prevent "Objects are not valid as a React child" crashes
   const safeChildren = children.map(_sanitizeChild);
-  // Also sanitize props.children if no explicit children passed
   if (safeChildren.length === 0 && props && typeof props === 'object' && 'children' in props) {
     const sanitized = _sanitizeChild((props as any).children);
     if (sanitized !== (props as any).children) {
@@ -704,10 +687,6 @@ function _wrapComponent(type: any): any {
   return _origCreateElement(_wrapComponent(type), props, ...safeChildren);
 };
 
-// ── Patch react/jsx-runtime so the modern JSX transform also gets sanitized ──
-// Vite/SWC/Babel "automatic" JSX compiles to jsx()/jsxs()/jsxDEV() which
-// bypass React.createElement entirely. Without this, our sanitizer is dead
-// weight against the "Objects are not valid as a React child" crash.
 try {
   const __jsxRT: any = __JsxRuntime;
   const __jsxDEVRT: any = __JsxDevRuntime;
@@ -745,6 +724,23 @@ try {
 } catch (e) {
   console.warn('[Preview] Failed to patch jsx-runtime:', e);
 }
+`;
+
+const DEFAULT_INDEX = `import React, { Component } from 'react';
+import ReactDOM from 'react-dom/client';
+import * as __JsxRuntime from 'react/jsx-runtime';
+import * as __JsxDevRuntime from 'react/jsx-dev-runtime';
+import * as AppModule from './App';
+import './index.css';
+import { HashRouter as __PreviewHashRouter, useInRouterContext as __useInRouterContext } from 'react-router-dom';
+const __RouterGuard = ({ children }: { children: React.ReactNode }) => {
+  let inRouter = false;
+  try { inRouter = __useInRouterContext(); } catch { inRouter = false; }
+  return inRouter ? <>{children}</> : <__PreviewHashRouter>{children}</__PreviewHashRouter>;
+};
+
+${ENABLE_REACT_RUNTIME_PATCH ? REACT_RUNTIME_PATCH_BLOCK : '// React runtime patch disabled — per-file repair passes are authoritative.'}
+
 
 // ── Robust App resolution: handle default + named exports gracefully ──
 const App = (() => {
@@ -4673,6 +4669,85 @@ export default function App() {
  * - Missing /App.tsx gets a proxy to the primary component
  * - Missing /index.tsx gets DEFAULT_INDEX injected
  */
+
+/**
+ * Detect "prose-only" TSX/JSX modules — the AI sometimes emits a sentence
+ * describing what it WILL build instead of the actual component. We replace
+ * the file with a safe fallback component so the preview doesn't blow up.
+ */
+function isProseOnlyModule(content: string): boolean {
+  if (!content) return false;
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  // If it has any JSX, import, export, function, class, const/let/var
+  // declaration, JSDoc/pragma block, or a meaningful keyword → not prose.
+  if (/<[A-Za-z/!?]/.test(trimmed)) return false;
+  if (/\b(import|export|function|class|const|let|var|return|=>|interface|type|enum)\b/.test(trimmed)) return false;
+  if (/^\s*\/[\*/]/.test(trimmed)) return false;
+  if (/[{};]/.test(trimmed)) return false;
+  // Looks like a sentence: contains alphabetic words and (often) ends with a period.
+  return /[A-Za-z]/.test(trimmed) && /\s/.test(trimmed);
+}
+
+function buildProseFallback(normalizedPath: string): string {
+  const safeName = (normalizedPath.split('/').pop() || 'Page').replace(/\.[jt]sx?$/, '').replace(/[^A-Za-z0-9]/g, '') || 'Page';
+  const componentName = /^[A-Z]/.test(safeName) ? safeName : `Page${safeName}`;
+  return `import React from 'react';
+
+// [sandpackFilePrep] Original module at ${normalizedPath} was prose-only;
+// a safe fallback was injected so the Preview recovered without crashing.
+export default function ${componentName}() {
+  return (
+    <main style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: 'system-ui' }}>
+      <div style={{ maxWidth: 480, textAlign: 'center' }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>📝</div>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Preview recovered</h2>
+        <p style={{ color: '#666', fontSize: 14, lineHeight: 1.5 }}>
+          The source for <code>${normalizedPath}</code> contained narration instead of a React component, so a safe fallback was injected.
+        </p>
+      </div>
+    </main>
+  );
+}
+`;
+}
+
+/**
+ * Repair concise-arrow / object-literal returns where a component accidentally
+ * returns <code>{ children }</code> as a plain object instead of JSX. The
+ * symptom in React is "Objects are not valid as a React child". We rewrite
+ * the obvious shapes to a Fragment-wrapped JSX return so the component renders.
+ *
+ * Handles:
+ *   () =&gt; ({ children })           → () =&gt; (&lt;&gt;{children}&lt;/&gt;)
+ *   () =&gt; ({ children, })          → () =&gt; (&lt;&gt;{children}&lt;/&gt;)
+ *   () =&gt; ({ children: x })        → () =&gt; (&lt;&gt;{x}&lt;/&gt;)
+ *   return ({ children });          → return &lt;&gt;{children}&lt;/&gt;;
+ *   return ({ children: children }); → return &lt;&gt;{children}&lt;/&gt;;
+ *   return { children: x };         → return &lt;&gt;{x}&lt;/&gt;;
+ *   return { children: x ?? null }; → return &lt;&gt;{x ?? null}&lt;/&gt;;
+ */
+function repairConciseArrowChildren(content: string): string {
+  if (!content || !/children/.test(content)) return content;
+  let out = content;
+  // Concise-arrow: => ({ children })  or  => ({ children, })  or  => ({ children: <expr> })
+  out = out.replace(
+    /=>\s*\(\s*\{\s*children\s*(?::\s*([^},]+?))?\s*,?\s*\}\s*\)/g,
+    (_m, expr) => `=> (<>{${(expr ?? 'children').trim()}}</>)`,
+  );
+  // return ({ children: <expr> })  or  return ({ children })
+  out = out.replace(
+    /return\s*\(\s*\{\s*children\s*(?::\s*([^},]+?))?\s*,?\s*\}\s*\)\s*;?/g,
+    (_m, expr) => `return <>{${(expr ?? 'children').trim()}}</>;`,
+  );
+  // return { children: <expr> }   (no surrounding parens)
+  out = out.replace(
+    /return\s*\{\s*children\s*(?::\s*([^},]+?))?\s*,?\s*\}\s*;/g,
+    (_m, expr) => `return <>{${(expr ?? 'children').trim()}}</>;`,
+  );
+  return out;
+}
+
 export function prepareSandpackFiles(
   files: Record<string, string>,
   options?: { strict?: boolean; entryPoint?: string; aesthetic?: string; themePresetId?: string | null }
@@ -4798,6 +4873,12 @@ export function prepareSandpackFiles(
       );
     }
 
+    // SAFETY NET: Prose-only TSX (AI emitted narration instead of a component).
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isProseOnlyModule(processedContent)) {
+      console.warn(`[sandpackFilePrep] Prose-only module detected at ${normalizedPath} — injecting safe fallback`);
+      processedContent = buildProseFallback(normalizedPath);
+    }
+
     // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {
       console.warn(`[sandpackFilePrep] Raw CSS detected in ${normalizedPath} — wrapping in React component`);
@@ -4809,6 +4890,9 @@ export function prepareSandpackFiles(
       processedContent = ensureReactImports(processedContent);
       // Fix broken SVG elements (dc.path, svg.circle, etc.)
       processedContent = sanitizeSvgElements(processedContent);
+      // Repair `=> ({ children })` and `return { children: x }` style returns
+      // before the JSX runtime pragma pass so the rewritten JSX is normalized.
+      processedContent = repairConciseArrowChildren(processedContent);
       processedContent = forceClassicReactJsxRuntime(processedContent);
     }
 
@@ -4900,6 +4984,30 @@ export function prepareSandpackFiles(
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
   sandpackFiles['/lib-utils-shim.ts'] = LIB_UTILS_SHIM;
   sandpackFiles['/ui-shim.tsx'] = UI_COMPONENTS_SHIM;
+
+  // Canonical tsconfig so consumers (and tests) can rely on the modern
+  // automatic JSX runtime being active. The per-file `forceClassicReactJsxRuntime`
+  // pass adds `/** @jsx React.createElement */` pragmas at the top of source
+  // files when it needs the classic transform — tsconfig stays on `react-jsx`.
+  if (!sandpackFiles['/tsconfig.json']) {
+    sandpackFiles['/tsconfig.json'] = JSON.stringify({
+      compilerOptions: {
+        target: 'ES2020',
+        lib: ['ES2020', 'DOM', 'DOM.Iterable'],
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        jsx: 'react-jsx',
+        strict: false,
+        skipLibCheck: true,
+        isolatedModules: true,
+        resolveJsonModule: true,
+        baseUrl: '.',
+        paths: { '@/*': ['./*'] },
+      },
+      include: ['.'],
+    }, null, 2);
+  }
+
 
   // ── SAFETY: Strip Router wrappers from ALL VFS files ──
   // DEFAULT_INDEX (always installed at /index.tsx) wraps <App /> in a

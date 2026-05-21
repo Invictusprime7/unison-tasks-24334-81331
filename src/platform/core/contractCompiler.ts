@@ -37,9 +37,9 @@ import {
 } from './capabilityRegistry';
 import { getIndustryProfile } from '@/contracts/industryMatrix';
 import { getCompositionsByIndustry } from '@/sections/templates';
-import { buildRoutePolicy, isOverlayIntent, type RoutePolicy } from '@/contracts/routePolicy';
+import { buildRoutePolicy, isOverlayIntent, type RoutePolicy } from './routePolicy';
 import { resolveSlotBindings, type SlotBindingPolicy } from '@/contracts/slotBindingPolicy';
-import { validateProvisioning, type ProvisioningReport } from '@/contracts/provisioningValidator';
+import { validateProvisioning, type ProvisioningReport } from './provisioningValidator';
 
 // ============================================================================
 // Validation Types

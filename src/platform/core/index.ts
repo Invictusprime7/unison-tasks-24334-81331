@@ -21,6 +21,9 @@ export * from './coreIntents';
 // Blueprint & capabilities
 export * from './blueprintSchema';
 export * from './capabilityRegistry';
+export * from './routePolicy';
+export * from './provisioningValidator';
+export * from './intentNormalizer';
 
 // Compilation + gates (PreviewGate / PublishGate live here as isPreviewReady / isPublishReady)
 export * from './contractCompiler';

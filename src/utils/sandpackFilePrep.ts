@@ -4669,6 +4669,85 @@ export default function App() {
  * - Missing /App.tsx gets a proxy to the primary component
  * - Missing /index.tsx gets DEFAULT_INDEX injected
  */
+
+/**
+ * Detect "prose-only" TSX/JSX modules — the AI sometimes emits a sentence
+ * describing what it WILL build instead of the actual component. We replace
+ * the file with a safe fallback component so the preview doesn't blow up.
+ */
+function isProseOnlyModule(content: string): boolean {
+  if (!content) return false;
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  // If it has any JSX, import, export, function, class, const/let/var
+  // declaration, JSDoc/pragma block, or a meaningful keyword → not prose.
+  if (/<[A-Za-z/!?]/.test(trimmed)) return false;
+  if (/\b(import|export|function|class|const|let|var|return|=>|interface|type|enum)\b/.test(trimmed)) return false;
+  if (/^\s*\/[\*/]/.test(trimmed)) return false;
+  if (/[{};]/.test(trimmed)) return false;
+  // Looks like a sentence: contains alphabetic words and (often) ends with a period.
+  return /[A-Za-z]/.test(trimmed) && /\s/.test(trimmed);
+}
+
+function buildProseFallback(normalizedPath: string): string {
+  const safeName = (normalizedPath.split('/').pop() || 'Page').replace(/\.[jt]sx?$/, '').replace(/[^A-Za-z0-9]/g, '') || 'Page';
+  const componentName = /^[A-Z]/.test(safeName) ? safeName : `Page${safeName}`;
+  return `import React from 'react';
+
+// [sandpackFilePrep] Original module at ${normalizedPath} was prose-only;
+// a safe fallback was injected so the Preview recovered without crashing.
+export default function ${componentName}() {
+  return (
+    <main style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: 'system-ui' }}>
+      <div style={{ maxWidth: 480, textAlign: 'center' }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>📝</div>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Preview recovered</h2>
+        <p style={{ color: '#666', fontSize: 14, lineHeight: 1.5 }}>
+          The source for <code>${normalizedPath}</code> contained narration instead of a React component, so a safe fallback was injected.
+        </p>
+      </div>
+    </main>
+  );
+}
+`;
+}
+
+/**
+ * Repair concise-arrow / object-literal returns where a component accidentally
+ * returns <code>{ children }</code> as a plain object instead of JSX. The
+ * symptom in React is "Objects are not valid as a React child". We rewrite
+ * the obvious shapes to a Fragment-wrapped JSX return so the component renders.
+ *
+ * Handles:
+ *   () =&gt; ({ children })           → () =&gt; (&lt;&gt;{children}&lt;/&gt;)
+ *   () =&gt; ({ children, })          → () =&gt; (&lt;&gt;{children}&lt;/&gt;)
+ *   () =&gt; ({ children: x })        → () =&gt; (&lt;&gt;{x}&lt;/&gt;)
+ *   return ({ children });          → return &lt;&gt;{children}&lt;/&gt;;
+ *   return ({ children: children }); → return &lt;&gt;{children}&lt;/&gt;;
+ *   return { children: x };         → return &lt;&gt;{x}&lt;/&gt;;
+ *   return { children: x ?? null }; → return &lt;&gt;{x ?? null}&lt;/&gt;;
+ */
+function repairConciseArrowChildren(content: string): string {
+  if (!content || !/children/.test(content)) return content;
+  let out = content;
+  // Concise-arrow: => ({ children })  or  => ({ children, })  or  => ({ children: <expr> })
+  out = out.replace(
+    /=>\s*\(\s*\{\s*children\s*(?::\s*([^},]+?))?\s*,?\s*\}\s*\)/g,
+    (_m, expr) => `=> (<>{${(expr ?? 'children').trim()}}</>)`,
+  );
+  // return ({ children: <expr> })  or  return ({ children })
+  out = out.replace(
+    /return\s*\(\s*\{\s*children\s*(?::\s*([^},]+?))?\s*,?\s*\}\s*\)\s*;?/g,
+    (_m, expr) => `return <>{${(expr ?? 'children').trim()}}</>;`,
+  );
+  // return { children: <expr> }   (no surrounding parens)
+  out = out.replace(
+    /return\s*\{\s*children\s*(?::\s*([^},]+?))?\s*,?\s*\}\s*;/g,
+    (_m, expr) => `return <>{${(expr ?? 'children').trim()}}</>;`,
+  );
+  return out;
+}
+
 export function prepareSandpackFiles(
   files: Record<string, string>,
   options?: { strict?: boolean; entryPoint?: string; aesthetic?: string; themePresetId?: string | null }

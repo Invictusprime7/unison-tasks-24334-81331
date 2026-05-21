@@ -26,6 +26,9 @@ import { Rocket, ChevronDown, ExternalLink, Check, AlertCircle } from 'lucide-re
 import { useDeployment } from '@/hooks/useDeployment';
 import { DeploymentProvider, wrapHtmlForDeployment } from '@/services/deploymentService';
 import { toast } from 'sonner';
+import GateVerdictStrip from '@/components/web-builder/GateVerdictStrip';
+import type { CompiledContract } from '@/platform/core';
+import { isPublishReady } from '@/platform/core';
 
 interface DeployButtonProps {
   /** File map to deploy (path -> content) */
@@ -42,6 +45,8 @@ interface DeployButtonProps {
   showProviderSelect?: boolean;
   /** Disabled state */
   disabled?: boolean;
+  /** Compiled contract used to render the publish-time pre-flight gate strip. */
+  contract?: CompiledContract | null;
 }
 
 export function DeployButton({
@@ -52,6 +57,7 @@ export function DeployButton({
   size = 'default',
   showProviderSelect = true,
   disabled = false,
+  contract = null,
 }: DeployButtonProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [siteName, setSiteName] = useState(defaultSiteName || '');
@@ -172,6 +178,10 @@ export function DeployButton({
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* Publish-time pre-flight: PreviewGate + PublishGate verdicts */}
+            {!result && (
+              <GateVerdictStrip contract={contract} compact />
+            )}
             {!result && (
               <>
                 <div className="space-y-2">
@@ -258,7 +268,7 @@ export function DeployButton({
                 </Button>
                 <Button
                   onClick={handleDeploy}
-                  disabled={isDeploying || !hasIndexHtml}
+                  disabled={isDeploying || !hasIndexHtml || (contract ? !isPublishReady(contract) : false)}
                 >
                   {isDeploying ? 'Deploying...' : 'Deploy'}
                 </Button>

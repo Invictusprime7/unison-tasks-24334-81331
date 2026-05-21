@@ -6623,7 +6623,8 @@ export default function ${componentName}() {
                                cloudState.business?.name?.toLowerCase().includes('contractor') ? 'contractor' : undefined}
                     />
                   </TabsContent>
-                  <TabsContent value="health" className="flex-1 m-0 min-h-0 overflow-auto p-2">
+                  <TabsContent value="health" className="flex-1 m-0 min-h-0 overflow-auto p-2 space-y-2">
+                    <GateVerdictStrip contract={compiledContract} />
                     <SystemHealthPanel
                       contract={compiledContract}
                       onPublishCheck={() => {

@@ -7799,5 +7799,6 @@ export default function ${componentName}() {
         }}
       />
     </div>
+    </BuilderSessionProvider>
   );
 };

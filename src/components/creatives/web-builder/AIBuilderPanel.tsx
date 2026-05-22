@@ -81,9 +81,13 @@ import {
   isTransactionalOptInEnabled,
   aiResponseToPatchPlan,
   runTransactionalPatch,
+  PatchPlanDiffViewer,
+  AIPatchTransactionService,
 } from '@/builder/patch';
+import { logTransactionalAttempt } from '@/builder/patch/telemetry';
 import type { PageRegistry } from '@/types/pageRegistry';
 import { createEmptyPageRegistry } from '@/types/pageRegistry';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 // ============================================================================
 /**
@@ -550,6 +554,27 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPromptRef = useRef<string | null>(null);
+
+  // Phase B — transactional patch review modal state.
+  const [pendingPatch, setPendingPatch] = useState<{
+    service: AIPatchTransactionService;
+    files: Record<string, string>;
+    originalFiles: Record<string, string>;
+    meta: {
+      prompt: string;
+      model: string;
+      summary?: string;
+      actionType?: string;
+      requiresApproval?: boolean;
+      warnings?: string[];
+    };
+  } | null>(null);
+  const [pendingPatchTick, setPendingPatchTick] = useState(0);
+  useEffect(() => {
+    if (!pendingPatch) return;
+    const off = pendingPatch.service.subscribe(() => setPendingPatchTick((t) => t + 1));
+    return () => { off(); };
+  }, [pendingPatch]);
 
   // Auto-send when a welcome prompt is selected
   useEffect(() => {
@@ -1677,7 +1702,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 { existingFiles: vfsFiles },
               );
               const registry = pageRegistry ?? createEmptyPageRegistry();
-              const { result } = await runTransactionalPatch({
+              const tStart = Date.now();
+              const { service, result } = await runTransactionalPatch({
                 initialPlan: plan,
                 vfsFiles,
                 registry,
@@ -1685,12 +1711,37 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 applyFn: async () => ({ ok: true, filesWritten: Object.keys(normalizedFiles) }),
                 scratchLabel: 'ai-builder-panel',
               });
+              // Fire-and-forget telemetry.
+              void logTransactionalAttempt({
+                businessId,
+                projectId,
+                plan,
+                result,
+                executionTimeMs: Date.now() - tStart,
+              });
               if (!result.ok) {
                 transactionalBlocked = true;
                 console.warn('[AIBuilderPanel] Transactional dry-run failed — auto-apply skipped', result);
                 toast.warning(`⚠️ Patch dry-run failed: ${result.errors[0] ?? 'unknown error'}. Use View Edits to inspect.`);
               } else {
-                console.log('[AIBuilderPanel] Transactional dry-run passed — proceeding with live apply');
+                // Dry-run passed — surface review modal instead of auto-applying.
+                transactionalBlocked = true;
+                setPendingPatch({
+                  service,
+                  files: normalizedFiles,
+                  originalFiles: vfsFiles,
+                  meta: {
+                    prompt: userContent,
+                    model: modelUsed,
+                    summary: responseMeta?.reviewSummary,
+                    actionType: responseMeta?.actionType,
+                    requiresApproval: responseMeta?.requiresApproval,
+                    warnings: responseMeta?.warnings?.map((w) => (typeof w === 'string' ? w : w.message)),
+                  },
+                });
+                toast.message('Patch ready for review', {
+                  description: `${Object.keys(normalizedFiles).length} file(s) — open the review dialog to Apply or Discard.`,
+                });
               }
             } catch (txErr) {
               // Adapter errors (e.g. empty files) are non-fatal — fall through to legacy path.
@@ -1699,7 +1750,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
 
           if (transactionalBlocked) {
-            // Skip auto-apply; user can still inspect via View Edits.
+            // Skip auto-apply; user reviews via the diff modal (or View Edits).
           } else if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
@@ -2328,6 +2379,53 @@ export default function App() {
           />
         </TabsContent>
       </Tabs>
+
+      {/* Phase B — Transactional patch review dialog */}
+      <Dialog
+        open={!!pendingPatch}
+        onOpenChange={(open) => {
+          if (!open && pendingPatch) {
+            try { pendingPatch.service.discard(); } catch { /* ignore */ }
+            setPendingPatch(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[85vh] p-0 flex flex-col">
+          <DialogHeader className="px-4 py-3 border-b border-border flex-shrink-0">
+            <DialogTitle>Review AI Patch{pendingPatchTick ? '' : ''}</DialogTitle>
+          </DialogHeader>
+          {pendingPatch && (
+            <div className="flex-1 min-h-0">
+              <PatchPlanDiffViewer
+                state={pendingPatch.service.getState()}
+                originalFiles={pendingPatch.originalFiles}
+                onApply={() => {
+                  const p = pendingPatch;
+                  if (!p || !onApplyToVFS) return;
+                  vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
+                  onApplyToVFS(p.files, {
+                    prompt: p.meta.prompt,
+                    model: p.meta.model,
+                    summary: p.meta.summary,
+                    actionType: p.meta.actionType,
+                    origin: 'multi-file',
+                    requiresApproval: p.meta.requiresApproval,
+                    warnings: p.meta.warnings?.map((w) => ({ message: w })),
+                  });
+                  vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(p.files), source: 'multi-file' });
+                  toast.success(`✅ Applied ${Object.keys(p.files).length} file(s)`);
+                  setPendingPatch(null);
+                }}
+                onDiscard={() => {
+                  try { pendingPatch.service.discard(); } catch { /* ignore */ }
+                  setPendingPatch(null);
+                  toast.message('Patch discarded');
+                }}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

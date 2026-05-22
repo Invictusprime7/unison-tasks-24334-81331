@@ -32,6 +32,10 @@ export interface VFSCommitState {
   lastResult: CommitResult | null;
   /** Last commit error, if any. */
   lastError: Error | null;
+  /** Paths written by the most recent low-level writeFiles call. */
+  lastWriteFiles: string[];
+  /** Timestamp (ms) of the most recent writeFiles call. */
+  lastWriteAt: number | null;
 }
 
 type Listener = (state: VFSCommitState) => void;
@@ -42,7 +46,18 @@ const initialState: VFSCommitState = {
   lastCommittedAt: null,
   lastResult: null,
   lastError: null,
+  lastWriteFiles: [],
+  lastWriteAt: null,
 };
+
+/** Low-level writer signature — matches `virtualFS.importFiles`. */
+export type VFSWriter = (files: Record<string, string>) => void;
+
+export interface WriteFilesOutcome {
+  ok: boolean;
+  filesWritten: string[];
+  error?: string;
+}
 
 export interface VFSCommitServiceOptions {
   label?: string;
@@ -106,6 +121,43 @@ export class VFSCommitService {
   /** Clear cached result/error (e.g. when switching projects). */
   reset() {
     this.set({ ...initialState });
+  }
+
+  // --------------------------------------------------------- writeFiles (low-level)
+
+  /**
+   * Low-level write seam. Wraps a writer fn (typically `virtualFS.importFiles`)
+   * so every direct VFS write is observable by the controller — without
+   * forcing callers through the heavier `commitToPipeline` path.
+   *
+   * Use for AI patch apply, router writes, snapshot restore, and any other
+   * site that previously called `virtualFS.importFiles` inline. Updates
+   * `lastWriteFiles` / `lastWriteAt` / `lastSource` but does NOT touch
+   * `lastResult` (that remains owned by `commit()`).
+   */
+  writeFiles(
+    files: Record<string, string>,
+    source: CommitSource,
+    writer: VFSWriter,
+  ): WriteFilesOutcome {
+    const paths = Object.keys(files);
+    if (paths.length === 0) {
+      return { ok: true, filesWritten: [] };
+    }
+    try {
+      writer(files);
+      this.set({
+        lastSource: source,
+        lastWriteFiles: paths,
+        lastWriteAt: Date.now(),
+        lastError: null,
+      });
+      return { ok: true, filesWritten: paths };
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.set({ lastError: error });
+      return { ok: false, filesWritten: [], error: error.message };
+    }
   }
 }
 

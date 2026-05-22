@@ -1759,17 +1759,10 @@ export default function App() {
         generatedCode = stripModuleExportsBlocks(generatedCode);
         
         // FINAL VALIDATION: Reject code that looks like AI reasoning/prose, not actual code
-        const looksLikeCode = generatedCode.includes('import ') || 
-          generatedCode.includes('export ') || 
-          generatedCode.includes('function ') ||
-          generatedCode.includes('dangerouslySetInnerHTML') ||
-          generatedCode.includes('return (') ||
-          /^\s*<!DOCTYPE/i.test(generatedCode) ||
-          /^\s*<html[\s>]/i.test(generatedCode);
-        
-        const looksLikeProse = /\b(I will|I need to|I'll|Let me|inspired|simplified|Here's my|I'm going to)\b/i.test(generatedCode.slice(0, 300));
-        
-        if (!looksLikeCode || (looksLikeProse && !generatedCode.includes('dangerouslySetInnerHTML'))) {
+        const isCode = looksLikeGeneratedCode(generatedCode);
+        const isProse = looksLikeAIProse(generatedCode);
+
+        if (!isCode || (isProse && !generatedCode.includes('dangerouslySetInnerHTML'))) {
           console.warn('[AIBuilderPanel] REJECTED: Generated code looks like AI reasoning, not actual code');
           console.warn('[AIBuilderPanel] First 200 chars:', generatedCode.slice(0, 200));
           generatedCode = null;

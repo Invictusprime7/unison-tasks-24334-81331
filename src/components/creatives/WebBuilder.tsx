@@ -6231,8 +6231,8 @@ ${html}
           creatorPlayground.updatePage(pageId, { filePath: vfsPath });
           
           // Regenerate canonical router first so the route is registered
-          const routerCode = livePreviewRuntime.regenerateRouter(creatorPlayground.pageRegistry);
-          if (routerCode) virtualFS.importFiles({ [launchEntryPoint]: routerCode });
+          livePreviewRuntime.regenerateRouterIntoVFS(creatorPlayground.pageRegistry, launchEntryPoint, virtualFS.importFiles);
+
           
           // Then trigger AI generation
           triggerPageGenRef.current(pageName, label, null);

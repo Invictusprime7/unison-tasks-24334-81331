@@ -152,6 +152,60 @@ export class PreviewRuntimeController {
     return patchVFS(vfsFiles, registry, businessName);
   }
 
+  /**
+   * Write router code into the entry point of a VFS importer. Returns true
+   * if the import actually ran. Bumps `lastRouterUpdate` so consumers can
+   * invalidate caches without each call site duplicating that bookkeeping.
+   */
+  applyRouterCode(
+    importFiles: (files: Record<string, string>) => void,
+    entryPoint: string,
+    routerCode: string | null | undefined,
+    extraFiles?: Record<string, string>,
+  ): boolean {
+    const payload: Record<string, string> = { ...(extraFiles ?? {}) };
+    if (routerCode) payload[entryPoint] = routerCode;
+    if (Object.keys(payload).length === 0) return false;
+    importFiles(payload);
+    this.emit({ lastRouterUpdate: Date.now() });
+    return true;
+  }
+
+  /**
+   * Convenience: sync the router from a registry snapshot and immediately
+   * write the result into the entry point via the supplied VFS importer.
+   * `extraFiles` is merged into the snapshot used for sync AND written
+   * alongside the router code so call sites can scaffold + sync atomically.
+   */
+  syncRouterIntoVFS(
+    registry: PageRegistry,
+    vfsFiles: Record<string, string>,
+    entryPoint: string,
+    importFiles: (files: Record<string, string>) => void,
+    extraFiles?: Record<string, string>,
+    businessName?: string,
+  ) {
+    const merged = extraFiles ? { ...vfsFiles, ...extraFiles } : vfsFiles;
+    const result = syncRouterAndValidate(registry, merged, businessName);
+    this.applyRouterCode(importFiles, entryPoint, result.routerCode, extraFiles);
+    return result;
+  }
+
+  /**
+   * Convenience: regenerate the router from a registry snapshot and write
+   * it into the entry point via the supplied VFS importer.
+   */
+  regenerateRouterIntoVFS(
+    registry: PageRegistry,
+    entryPoint: string,
+    importFiles: (files: Record<string, string>) => void,
+    businessName?: string,
+  ): string {
+    const code = regenerateRouter(registry, businessName);
+    this.applyRouterCode(importFiles, entryPoint, code);
+    return code;
+  }
+
   fullRebuildFromPlayground(
     playground: PlaygroundState,
     existingVfsFiles: Record<string, string> = {},

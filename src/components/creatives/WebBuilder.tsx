@@ -143,6 +143,7 @@ import {
 } from '@/services/unifiedPreviewPipeline';
 import { livePreviewRuntime } from '@/builder/controllers/PreviewRuntimeController';
 import { livePageTopology } from '@/builder/controllers/PageTopologyController';
+import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
@@ -2400,7 +2401,7 @@ export default function App() {
         registry,
         currentFiles,
         launchEntryPoint,
-        virtualFS.importFiles,
+        (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
         filesToImport,
       );
 
@@ -2610,7 +2611,7 @@ export default function App() {
       ) },
       virtualFS.getSandpackFiles(),
       launchEntryPoint,
-      virtualFS.importFiles,
+      (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
     );
 
 
@@ -6241,7 +6242,7 @@ ${html}
           creatorPlayground.updatePage(pageId, { filePath: vfsPath });
           
           // Regenerate canonical router first so the route is registered
-          livePreviewRuntime.regenerateRouterIntoVFS(creatorPlayground.pageRegistry, launchEntryPoint, virtualFS.importFiles);
+          livePreviewRuntime.regenerateRouterIntoVFS(creatorPlayground.pageRegistry, launchEntryPoint, (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles));
 
           
           // Then trigger AI generation
@@ -6262,7 +6263,7 @@ ${html}
             creatorPlayground.pageRegistry,
             virtualFS.getSandpackFiles(),
             launchEntryPoint,
-            virtualFS.importFiles,
+            (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
           );
 
         }}

@@ -1736,7 +1736,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                     summary: responseMeta?.reviewSummary,
                     actionType: responseMeta?.actionType,
                     requiresApproval: responseMeta?.requiresApproval,
-                    warnings: responseMeta?.warnings,
+                    warnings: responseMeta?.warnings?.map((w) => (typeof w === 'string' ? w : w.message)),
                   },
                 });
                 toast.message('Patch ready for review', {

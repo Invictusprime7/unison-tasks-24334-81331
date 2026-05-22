@@ -2391,7 +2391,7 @@ export default function App() {
       }
 
       const mergedForRouter = { ...currentFiles, ...filesToImport };
-      const result = syncRouterAndValidate(registry, mergedForRouter);
+      const result = livePreviewRuntime.syncRouterAndValidate(registry, mergedForRouter);
       if (result.routerCode) {
         filesToImport[launchEntryPoint] = result.routerCode;
       }

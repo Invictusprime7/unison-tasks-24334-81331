@@ -35,6 +35,7 @@ import type { PreviewRuntimeController } from '@/builder/controllers/PreviewRunt
 import type { PageRegistry } from '@/types/pageRegistry';
 import type { DryRunFn, DryRunOutcome } from './AIPatchTransactionService';
 import type { PatchPlan, PatchPlanFilePatch, UnifiedHunk } from './types';
+import { validateSideEffects } from './sideEffectValidators';
 
 // ---------------------------------------------------------------- forkVfs
 

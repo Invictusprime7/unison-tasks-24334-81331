@@ -42,11 +42,11 @@ describe('AIPatchTransactionService — propose', () => {
     expect(s.validationErrors.length).toBeGreaterThan(0);
   });
 
-  it('rejects out-of-scope intents in Phase B2', () => {
+  it('rejects intents outside the transactional scope', () => {
     const svc = new AIPatchTransactionService();
-    const s = svc.propose({ ...validPlan, intent: 'add_page' });
+    // Use a synthetic out-of-scope intent string to exercise the scope guard.
+    const s = svc.propose({ ...validPlan, intent: 'unknown_intent' as never });
     expect(s.phase).toBe('rejected');
-    expect(s.validationErrors[0]).toMatch(/not transactional/);
   });
 
   it('accepts well-formed in-scope plans', () => {

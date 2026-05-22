@@ -1590,7 +1590,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 vfsFiles,
                 registry,
                 regenerate: async () => null, // no auto-retry from this seam yet
-                applyFn: async () => ({ ok: true, filesWritten: Object.keys(normalizedFiles) }),
+                applyFn: async () =>
+                  liveVFSCommit.writeFiles(normalizedFiles, 'ai-builder', () => {
+                    /* observation-only: real apply happens via diff modal → onApplyToVFS */
+                  }),
                 scratchLabel: 'ai-builder-panel',
               });
               // Fire-and-forget telemetry.

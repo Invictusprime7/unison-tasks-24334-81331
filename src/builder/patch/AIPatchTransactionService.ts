@@ -152,7 +152,7 @@ export class AIPatchTransactionService {
     this.set({ phase: 'validating', validationErrors: [], dryRun: null, apply: null });
 
     const parsed = validatePatchPlan(input);
-    if (!parsed.ok) {
+    if (parsed.ok === false) {
       this.set({ phase: 'rejected', plan: null, validationErrors: parsed.errors });
       return this.state;
     }

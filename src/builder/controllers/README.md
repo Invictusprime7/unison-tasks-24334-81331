@@ -13,7 +13,7 @@ Headless controllers extracted from the monolithic `WebBuilder.tsx` and
 | 4 | `PlaygroundSyncController`     | **done** | Two-way bridge: `hydrateFromVFS()` + `compile()`. Caches last results for diagnostics. |
 | 5 | `IntentReadinessController`    | **done** | Caches readiness report + `summarize()` helper for preview/publish gate booleans. |
 | 6 | `LaunchStateController`        | **done** | Wraps PublishGate + deploymentService. Owns verdict, blockers, canPublish, and deploy progress slice. |
-| 7 | `VFSCommitService`             | pending  | Final commit seam — Phase B plugs in here. |
+| 7 | `VFSCommitService`             | **done** | Façade over `commitToPipeline`. Owns isCommitting / lastSource / lastResult / lastError. Phase B plugs in here. |
 
 ## Rules
 

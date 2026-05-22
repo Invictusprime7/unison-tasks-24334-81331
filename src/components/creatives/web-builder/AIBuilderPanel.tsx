@@ -77,6 +77,13 @@ import { parseGhlWireIntent } from '@/utils/ghlWireIntent';
 // Side-effect import: registers GHL skill pack with global registry
 import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
+import {
+  isTransactionalOptInEnabled,
+  aiResponseToPatchPlan,
+  runTransactionalPatch,
+} from '@/builder/patch';
+import type { PageRegistry } from '@/types/pageRegistry';
+import { createEmptyPageRegistry } from '@/types/pageRegistry';
 
 // ============================================================================
 /**

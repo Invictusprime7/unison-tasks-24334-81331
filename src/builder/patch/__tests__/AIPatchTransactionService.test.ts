@@ -17,13 +17,19 @@ const validPlan: PatchPlan = {
 };
 
 describe('AIPatchTransactionService — scope', () => {
-  it('limits transactional intents to modify_component + repair_error + update_style', () => {
-    expect([...TRANSACTIONAL_INTENTS].sort()).toEqual(['modify_component', 'repair_error', 'update_style']);
+  it('extends transactional intents to cover all five plan intents', () => {
+    expect([...TRANSACTIONAL_INTENTS].sort()).toEqual([
+      'add_page',
+      'modify_component',
+      'repair_error',
+      'update_style',
+      'wire_button',
+    ]);
     expect(isTransactionalIntent('modify_component')).toBe(true);
     expect(isTransactionalIntent('repair_error')).toBe(true);
     expect(isTransactionalIntent('update_style')).toBe(true);
-    expect(isTransactionalIntent('add_page')).toBe(false);
-    expect(isTransactionalIntent('wire_button')).toBe(false);
+    expect(isTransactionalIntent('add_page')).toBe(true);
+    expect(isTransactionalIntent('wire_button')).toBe(true);
   });
 });
 

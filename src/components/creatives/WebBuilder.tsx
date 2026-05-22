@@ -2597,15 +2597,15 @@ export default function App() {
 
     // The registry-version effect regenerates the router automatically,
     // but doing it inline keeps file removal + router update atomic.
-    const result = livePreviewRuntime.syncRouterAndValidate(
+    livePreviewRuntime.syncRouterIntoVFS(
       { ...creatorPlayground.pageRegistry, pages: Object.fromEntries(
         Object.entries(creatorPlayground.pageRegistry.pages).filter(([id]) => id !== pageId)
       ) },
       virtualFS.getSandpackFiles(),
+      launchEntryPoint,
+      virtualFS.importFiles,
     );
-    if (result.routerCode) {
-      virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
-    }
+
 
     if (activePagePath === page.filePath) {
       handleSelectPage(launchEntryPoint);

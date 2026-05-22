@@ -1688,7 +1688,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               if (!result.ok) {
                 transactionalBlocked = true;
                 console.warn('[AIBuilderPanel] Transactional dry-run failed — auto-apply skipped', result);
-                toast.warning(`⚠️ Patch dry-run failed: ${result.lastError ?? 'unknown error'}. Use View Edits to inspect.`);
+                toast.warning(`⚠️ Patch dry-run failed: ${result.errors[0] ?? 'unknown error'}. Use View Edits to inspect.`);
               } else {
                 console.log('[AIBuilderPanel] Transactional dry-run passed — proceeding with live apply');
               }

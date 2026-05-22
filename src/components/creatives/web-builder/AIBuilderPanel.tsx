@@ -2379,6 +2379,53 @@ export default function App() {
           />
         </TabsContent>
       </Tabs>
+
+      {/* Phase B — Transactional patch review dialog */}
+      <Dialog
+        open={!!pendingPatch}
+        onOpenChange={(open) => {
+          if (!open && pendingPatch) {
+            try { pendingPatch.service.discard(); } catch { /* ignore */ }
+            setPendingPatch(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[85vh] p-0 flex flex-col">
+          <DialogHeader className="px-4 py-3 border-b border-border flex-shrink-0">
+            <DialogTitle>Review AI Patch{pendingPatchTick ? '' : ''}</DialogTitle>
+          </DialogHeader>
+          {pendingPatch && (
+            <div className="flex-1 min-h-0">
+              <PatchPlanDiffViewer
+                state={pendingPatch.service.getState()}
+                originalFiles={pendingPatch.originalFiles}
+                onApply={() => {
+                  const p = pendingPatch;
+                  if (!p || !onApplyToVFS) return;
+                  vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
+                  onApplyToVFS(p.files, {
+                    prompt: p.meta.prompt,
+                    model: p.meta.model,
+                    summary: p.meta.summary,
+                    actionType: p.meta.actionType,
+                    origin: 'multi-file',
+                    requiresApproval: p.meta.requiresApproval,
+                    warnings: p.meta.warnings,
+                  });
+                  vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(p.files), source: 'multi-file' });
+                  toast.success(`✅ Applied ${Object.keys(p.files).length} file(s)`);
+                  setPendingPatch(null);
+                }}
+                onDiscard={() => {
+                  try { pendingPatch.service.discard(); } catch { /* ignore */ }
+                  setPendingPatch(null);
+                  toast.message('Patch discarded');
+                }}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

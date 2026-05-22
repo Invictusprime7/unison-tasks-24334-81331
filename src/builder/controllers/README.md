@@ -21,7 +21,7 @@ Headless controllers extracted from the monolithic `WebBuilder.tsx` and
 |---|---------------------------------------|----------|-------|
 | 1 | `src/builder/patch/types.ts`          | **done** | `PatchPlan`, `PatchPlanFilePatch`, `UnifiedHunk`, `RoutePatch`, `IntentBindingPatch`. No consumers yet — pure-additive. |
 | 1 | `src/builder/patch/schema.ts`         | **done** | Zod schema + `validatePatchPlan()` rejecting malformed plans before the scratch VFS sees them. 8 tests green. |
-| 2 | `AIPatchTransactionService`           | todo     | Scope: `modify_component` + `repair_error` first, behind a `transactional: true` opt-in flag. |
+| 2 | `AIPatchTransactionService`           | **done** | `propose → validate → dryRun → apply/discard` lifecycle. Scoped to `modify_component` + `repair_error`; everything else is rejected at `propose()`. `dryRunFn` / `applyFn` are injectable seams that Phase B3 wires to `PreviewRuntimeController.forScratch` and `VFSCommitService.commit`. 15 tests green. |
 | 3 | Scratch VFS (`vfsSnapshotManager.fork`)| todo    | Hidden sandpack instance reused via `PreviewRuntimeController.forScratch()`. |
 | 4 | Repair loop                           | todo     | Hard cap: 2 retries (retry 1 same model, retry 2 escalate to `openai/gpt-5.5`). |
 | 5 | Diff UI                               | todo     | File tree + per-file unified diff + Apply/Discard. Reuse existing diff viewer if present. |

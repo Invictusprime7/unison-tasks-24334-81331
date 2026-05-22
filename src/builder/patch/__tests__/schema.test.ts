@@ -24,7 +24,7 @@ describe('PatchPlan schema', () => {
   it('rejects plans with no edits', () => {
     const result = validatePatchPlan({ ...validPlan, edits: [] });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join('\n')).toMatch(/at least one edit/);
+    expect(result.ok === false && result.errors.join('\n')).toMatch(/at least one edit/);
   });
 
   it('rejects an unknown intent', () => {

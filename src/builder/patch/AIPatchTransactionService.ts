@@ -37,6 +37,8 @@ export const TRANSACTIONAL_INTENTS: ReadonlySet<PatchIntent> = new Set([
   'modify_component',
   'repair_error',
   'update_style',
+  'add_page',
+  'wire_button',
 ]);
 
 export function isTransactionalIntent(intent: PatchIntent): boolean {

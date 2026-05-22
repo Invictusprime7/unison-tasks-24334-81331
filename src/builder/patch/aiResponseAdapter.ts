@@ -41,7 +41,7 @@ export interface AdapterContext {
   intentOverride?: PatchIntent;
 }
 
-const SCOPED_INTENTS: PatchIntent[] = ['modify_component', 'repair_error'];
+const SCOPED_INTENTS: PatchIntent[] = ['modify_component', 'repair_error', 'update_style'];
 
 /** Normalize a path to the leading-slash form used by the scratch VFS. */
 export function normalizeVfsPath(path: string): string {
@@ -59,9 +59,16 @@ function fallbackHash(input: string): string {
   return `h${h.toString(16)}`;
 }
 
+function isStyleOnly(files: Record<string, string>): boolean {
+  const paths = Object.keys(files);
+  if (paths.length === 0) return false;
+  return paths.every((p) => /\.(css|scss|sass|less)$/i.test(p) || /tailwind\.config\.(t|j)s$/i.test(p));
+}
+
 function inferIntent(
   response: AICodeAssistantResponseLike,
-  override?: PatchIntent,
+  override: PatchIntent | undefined,
+  files: Record<string, string>,
 ): PatchIntent {
   if (override && SCOPED_INTENTS.includes(override)) return override;
   if (response.debugMode) return 'repair_error';
@@ -69,8 +76,11 @@ function inferIntent(
   if (raw === 'repair_error' || raw === 'debug' || raw === 'fix') {
     return 'repair_error';
   }
-  // Default to modify_component — the only other scoped intent currently
-  // accepted by AIPatchTransactionService.
+  if (raw === 'update_style' || raw === 'style' || raw === 'restyle' || raw === 'theme') {
+    return 'update_style';
+  }
+  if (isStyleOnly(files)) return 'update_style';
+  // Default to modify_component.
   return 'modify_component';
 }
 

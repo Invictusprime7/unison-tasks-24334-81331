@@ -6242,7 +6242,7 @@ ${html}
           creatorPlayground.updatePage(pageId, { filePath: vfsPath });
           
           // Regenerate canonical router first so the route is registered
-          livePreviewRuntime.regenerateRouterIntoVFS(creatorPlayground.pageRegistry, launchEntryPoint, virtualFS.importFiles);
+          livePreviewRuntime.regenerateRouterIntoVFS(creatorPlayground.pageRegistry, launchEntryPoint, (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles));
 
           
           // Then trigger AI generation
@@ -6263,7 +6263,7 @@ ${html}
             creatorPlayground.pageRegistry,
             virtualFS.getSandpackFiles(),
             launchEntryPoint,
-            virtualFS.importFiles,
+            (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
           );
 
         }}

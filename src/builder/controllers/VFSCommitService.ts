@@ -32,6 +32,10 @@ export interface VFSCommitState {
   lastResult: CommitResult | null;
   /** Last commit error, if any. */
   lastError: Error | null;
+  /** Paths written by the most recent low-level writeFiles call. */
+  lastWriteFiles: string[];
+  /** Timestamp (ms) of the most recent writeFiles call. */
+  lastWriteAt: number | null;
 }
 
 type Listener = (state: VFSCommitState) => void;
@@ -42,7 +46,18 @@ const initialState: VFSCommitState = {
   lastCommittedAt: null,
   lastResult: null,
   lastError: null,
+  lastWriteFiles: [],
+  lastWriteAt: null,
 };
+
+/** Low-level writer signature — matches `virtualFS.importFiles`. */
+export type VFSWriter = (files: Record<string, string>) => void;
+
+export interface WriteFilesOutcome {
+  ok: boolean;
+  filesWritten: string[];
+  error?: string;
+}
 
 export interface VFSCommitServiceOptions {
   label?: string;

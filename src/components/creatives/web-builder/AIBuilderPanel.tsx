@@ -555,6 +555,27 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPromptRef = useRef<string | null>(null);
 
+  // Phase B — transactional patch review modal state.
+  const [pendingPatch, setPendingPatch] = useState<{
+    service: AIPatchTransactionService;
+    files: Record<string, string>;
+    originalFiles: Record<string, string>;
+    meta: {
+      prompt: string;
+      model: string;
+      summary?: string;
+      actionType?: string;
+      requiresApproval?: boolean;
+      warnings?: string[];
+    };
+  } | null>(null);
+  const [pendingPatchTick, setPendingPatchTick] = useState(0);
+  useEffect(() => {
+    if (!pendingPatch) return;
+    const off = pendingPatch.service.subscribe(() => setPendingPatchTick((t) => t + 1));
+    return () => { off(); };
+  }, [pendingPatch]);
+
   // Auto-send when a welcome prompt is selected
   useEffect(() => {
     if (pendingPromptRef.current && input === pendingPromptRef.current && !isLoading) {

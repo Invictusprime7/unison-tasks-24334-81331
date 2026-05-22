@@ -2507,11 +2507,12 @@ export default function App() {
     }
 
     const vfsFiles = virtualFS.getSandpackFiles();
-    const resolved = resolveNavigationTarget(
+    const resolved = livePageTopology.resolveNavigation(
       { pageId },
-      creatorPlayground.pageRegistry,
       vfsFiles,
+      creatorPlayground.pageRegistry,
     );
+
 
     // Update all three state slices
     setActivePageId(pageId);
@@ -2529,7 +2530,7 @@ export default function App() {
 
     // If file doesn't exist in VFS, trigger AI generation as fallback
     if (!resolved.existsInVFS && !page.isHome) {
-      const fp = resolved.filePath || deriveFilePath(page);
+      const fp = resolved.filePath || livePageTopology.deriveFilePath(page);
       const pageName = fp.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
       creatorPlayground.updatePage(pageId, { filePath: fp });
       triggerPageGenRef.current(pageName, page.title, null);
@@ -4170,11 +4171,12 @@ export default function ${componentName}Page() {
       if (intent === 'nav.goto_page') {
         const targetPageId = (payload as any)?.targetPageId;
         const vfsFiles = virtualFS.getSandpackFiles();
-        const resolved = resolveNavigationTarget(
+        const resolved = livePageTopology.resolveNavigation(
           { targetPageId, label: buttonLabel },
-          creatorPlayground.pageRegistry,
           vfsFiles,
+          creatorPlayground.pageRegistry,
         );
+
 
         if (!resolved.existsInRegistry) {
           const sitePlan = activeSitePlanRef.current;
@@ -4186,11 +4188,12 @@ export default function ${componentName}Page() {
               buttonLabel || ''
             );
             if (fallbackRoute) {
-              const resolved2 = resolveNavigationTarget(
+              const resolved2 = livePageTopology.resolveNavigation(
                 { route: fallbackRoute },
-                creatorPlayground.pageRegistry,
                 vfsFiles,
+                creatorPlayground.pageRegistry,
               );
+
               if (resolved2.pageId) {
                 navigateToBuilderPage(resolved2.pageId);
                 sendResultToIframe({ success: true });
@@ -4236,11 +4239,12 @@ export default function ${componentName}Page() {
         }
         if (path) {
           const vfsFiles = virtualFS.getSandpackFiles();
-          const resolved = resolveNavigationTarget(
+          const resolved = livePageTopology.resolveNavigation(
             { route: path, label: buttonLabel },
-            creatorPlayground.pageRegistry,
             vfsFiles,
+            creatorPlayground.pageRegistry,
           );
+
           if (resolved.pageId) {
             navigateToBuilderPage(resolved.pageId);
             if (source && requestId) {

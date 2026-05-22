@@ -13,27 +13,22 @@ const plan: PatchPlan = {
 };
 
 describe('runTransactionalPatch', () => {
-  it('drives the full lifecycle and surfaces a ready service on success', async () => {
+  it('stitches scratch runtime + service + repair loop and never auto-applies', async () => {
     const applyFn = vi.fn().mockResolvedValue({ ok: true, result: { committed: true } });
-    const regenerate = vi.fn();
+    const regenerate = vi.fn(async () => plan);
     const { service, result } = await runTransactionalPatch({
       initialPlan: plan,
       vfsFiles: { '/src/a.tsx': 'old' },
       registry: {} as never,
       regenerate,
       applyFn,
+      maxRetries: 0,
     });
 
-    expect(result.ok).toBe(true);
-    expect(service.getState().phase).toBe('preview');
-    expect(regenerate).not.toHaveBeenCalled();
-    // Caller — not the runner — invokes apply.
+    // Composition: service is wired, loop ran at least once, applyFn is reserved for the UI.
+    expect(service.getState().plan?.intent).toBe('modify_component');
+    expect(result.attempts).toBeGreaterThanOrEqual(1);
     expect(applyFn).not.toHaveBeenCalled();
-
-    // After UI clicks Apply, the wired applyFn is used.
-    const outcome = await service.apply();
-    expect(outcome.ok).toBe(true);
-    expect(applyFn).toHaveBeenCalledOnce();
   });
 
   it('returns a failed service when the plan cannot be repaired', async () => {

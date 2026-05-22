@@ -6248,13 +6248,13 @@ ${html}
           // Regen canonical router so the deleted route is dropped from App.tsx
           // immediately (the registry-version effect would also catch this, but
           // doing it inline keeps file removal + router update atomic).
-          const result = livePreviewRuntime.syncRouterAndValidate(
+          livePreviewRuntime.syncRouterIntoVFS(
             creatorPlayground.pageRegistry,
             virtualFS.getSandpackFiles(),
+            launchEntryPoint,
+            virtualFS.importFiles,
           );
-          if (result.routerCode) {
-            virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
-          }
+
         }}
         onFunnelCreate={(funnelId, stepPages) => {
           // Auto-scaffold all funnel step pages in VFS

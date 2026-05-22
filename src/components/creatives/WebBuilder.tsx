@@ -2390,14 +2390,14 @@ export default function App() {
         }
       }
 
-      const mergedForRouter = { ...currentFiles, ...filesToImport };
-      const result = livePreviewRuntime.syncRouterAndValidate(registry, mergedForRouter);
-      if (result.routerCode) {
-        filesToImport[launchEntryPoint] = result.routerCode;
-      }
-      if (Object.keys(filesToImport).length > 0) {
-        virtualFS.importFiles(filesToImport);
-      }
+      const result = livePreviewRuntime.syncRouterIntoVFS(
+        registry,
+        currentFiles,
+        launchEntryPoint,
+        virtualFS.importFiles,
+        filesToImport,
+      );
+
       lastSyncedRegistryVersionRef.current = registry.version;
       if (result.validation && !result.validation.valid) {
         console.warn('[WebBuilder] Topology validation issues after registry sync:', result.validation.issues);
@@ -2597,15 +2597,15 @@ export default function App() {
 
     // The registry-version effect regenerates the router automatically,
     // but doing it inline keeps file removal + router update atomic.
-    const result = livePreviewRuntime.syncRouterAndValidate(
+    livePreviewRuntime.syncRouterIntoVFS(
       { ...creatorPlayground.pageRegistry, pages: Object.fromEntries(
         Object.entries(creatorPlayground.pageRegistry.pages).filter(([id]) => id !== pageId)
       ) },
       virtualFS.getSandpackFiles(),
+      launchEntryPoint,
+      virtualFS.importFiles,
     );
-    if (result.routerCode) {
-      virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
-    }
+
 
     if (activePagePath === page.filePath) {
       handleSelectPage(launchEntryPoint);
@@ -6231,8 +6231,8 @@ ${html}
           creatorPlayground.updatePage(pageId, { filePath: vfsPath });
           
           // Regenerate canonical router first so the route is registered
-          const routerCode = livePreviewRuntime.regenerateRouter(creatorPlayground.pageRegistry);
-          if (routerCode) virtualFS.importFiles({ [launchEntryPoint]: routerCode });
+          livePreviewRuntime.regenerateRouterIntoVFS(creatorPlayground.pageRegistry, launchEntryPoint, virtualFS.importFiles);
+
           
           // Then trigger AI generation
           triggerPageGenRef.current(pageName, label, null);
@@ -6248,13 +6248,13 @@ ${html}
           // Regen canonical router so the deleted route is dropped from App.tsx
           // immediately (the registry-version effect would also catch this, but
           // doing it inline keeps file removal + router update atomic).
-          const result = livePreviewRuntime.syncRouterAndValidate(
+          livePreviewRuntime.syncRouterIntoVFS(
             creatorPlayground.pageRegistry,
             virtualFS.getSandpackFiles(),
+            launchEntryPoint,
+            virtualFS.importFiles,
           );
-          if (result.routerCode) {
-            virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
-          }
+
         }}
         onFunnelCreate={(funnelId, stepPages) => {
           // Auto-scaffold all funnel step pages in VFS

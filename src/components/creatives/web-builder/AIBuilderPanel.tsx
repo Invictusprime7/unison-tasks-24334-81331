@@ -2410,7 +2410,7 @@ export default function App() {
                     actionType: p.meta.actionType,
                     origin: 'multi-file',
                     requiresApproval: p.meta.requiresApproval,
-                    warnings: p.meta.warnings,
+                    warnings: p.meta.warnings?.map((w) => ({ message: w })),
                   });
                   vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(p.files), source: 'multi-file' });
                   toast.success(`✅ Applied ${Object.keys(p.files).length} file(s)`);

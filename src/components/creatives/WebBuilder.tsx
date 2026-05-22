@@ -143,6 +143,7 @@ import {
 } from '@/services/unifiedPreviewPipeline';
 import { livePreviewRuntime } from '@/builder/controllers/PreviewRuntimeController';
 import { livePageTopology } from '@/builder/controllers/PageTopologyController';
+import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';

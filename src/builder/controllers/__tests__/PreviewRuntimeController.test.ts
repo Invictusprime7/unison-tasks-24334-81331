@@ -68,6 +68,9 @@ describe('PreviewRuntimeController', () => {
     const s = PreviewRuntimeController.forScratch('patch-1');
     expect(s.mode).toBe('scratch');
     expect(s.label).toContain('patch-1');
+  });
+
+
 
   it('applyRouterCode imports payload and bumps lastRouterUpdate', async () => {
     const c = new PreviewRuntimeController();

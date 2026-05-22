@@ -77,13 +77,6 @@ import { parseGhlWireIntent } from '@/utils/ghlWireIntent';
 // Side-effect import: registers GHL skill pack with global registry
 import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
-import {
-  isTransactionalOptInEnabled,
-  aiResponseToPatchPlan,
-  runTransactionalPatch,
-} from '@/builder/patch';
-import type { PageRegistry } from '@/types/pageRegistry';
-import { createEmptyPageRegistry } from '@/types/pageRegistry';
 
 // ============================================================================
 /**
@@ -460,8 +453,6 @@ interface AIBuilderPanelProps {
     /** Live preview source — required for deterministic mutations. */
     getPreviewCode: () => string;
   };
-  /** Optional page registry — when provided + transactional opt-in flag set, AI patches dry-run in a scratch VFS before applying. */
-  pageRegistry?: PageRegistry | null;
 }
 
 // ============================================================================
@@ -522,7 +513,6 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   projectId,
   businessId,
   layoutOps,
-  pageRegistry,
 }) => {
   // Hydrate persisted messages synchronously so a refresh never wipes history.
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -1656,51 +1646,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
           // Store files for manual apply later (user can use View Edits)
         } else {
-          // -- Phase B7 opt-in: transactional dry-run gate ---------------
-          // When the user has opted into the transactional patch path
-          // (localStorage `lovable:patch:transactionalOptIn=1` or the
-          // VITE_PATCH_TRANSACTIONAL_OPTIN env flag) AND we have enough
-          // context to dry-run (vfsFiles present), we synthesize a
-          // PatchPlan, run it through the scratch VFS + repair loop, and
-          // only proceed with the live apply when the dry-run succeeds.
-          // Failures surface as a toast and abort auto-apply — the user
-          // can still inspect via View Edits.
-          let transactionalBlocked = false;
-          if (isTransactionalOptInEnabled() && vfsFiles && onApplyToVFS) {
-            try {
-              const plan = aiResponseToPatchPlan(
-                {
-                  files: normalizedFiles,
-                  rationale: responseMeta?.reviewSummary ?? userContent,
-                  debugMode: isSurgicalEdit ? false : undefined,
-                },
-                { existingFiles: vfsFiles },
-              );
-              const registry = pageRegistry ?? createEmptyPageRegistry();
-              const { result } = await runTransactionalPatch({
-                initialPlan: plan,
-                vfsFiles,
-                registry,
-                regenerate: async () => null, // no auto-retry from this seam yet
-                applyFn: async () => ({ ok: true, filesWritten: Object.keys(normalizedFiles) }),
-                scratchLabel: 'ai-builder-panel',
-              });
-              if (!result.ok) {
-                transactionalBlocked = true;
-                console.warn('[AIBuilderPanel] Transactional dry-run failed — auto-apply skipped', result);
-                toast.warning(`⚠️ Patch dry-run failed: ${result.errors[0] ?? 'unknown error'}. Use View Edits to inspect.`);
-              } else {
-                console.log('[AIBuilderPanel] Transactional dry-run passed — proceeding with live apply');
-              }
-            } catch (txErr) {
-              // Adapter errors (e.g. empty files) are non-fatal — fall through to legacy path.
-              console.warn('[AIBuilderPanel] Transactional pre-flight skipped:', txErr);
-            }
-          }
-
-          if (transactionalBlocked) {
-            // Skip auto-apply; user can still inspect via View Edits.
-          } else if (onApplyToVFS) {
+          if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
             onApplyToVFS(normalizedFiles, {

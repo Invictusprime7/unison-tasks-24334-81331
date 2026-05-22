@@ -1702,7 +1702,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 { existingFiles: vfsFiles },
               );
               const registry = pageRegistry ?? createEmptyPageRegistry();
-              const { result } = await runTransactionalPatch({
+              const tStart = Date.now();
+              const { service, result } = await runTransactionalPatch({
                 initialPlan: plan,
                 vfsFiles,
                 registry,
@@ -1710,12 +1711,37 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 applyFn: async () => ({ ok: true, filesWritten: Object.keys(normalizedFiles) }),
                 scratchLabel: 'ai-builder-panel',
               });
+              // Fire-and-forget telemetry.
+              void logTransactionalAttempt({
+                businessId,
+                projectId,
+                plan,
+                result,
+                executionTimeMs: Date.now() - tStart,
+              });
               if (!result.ok) {
                 transactionalBlocked = true;
                 console.warn('[AIBuilderPanel] Transactional dry-run failed — auto-apply skipped', result);
                 toast.warning(`⚠️ Patch dry-run failed: ${result.errors[0] ?? 'unknown error'}. Use View Edits to inspect.`);
               } else {
-                console.log('[AIBuilderPanel] Transactional dry-run passed — proceeding with live apply');
+                // Dry-run passed — surface review modal instead of auto-applying.
+                transactionalBlocked = true;
+                setPendingPatch({
+                  service,
+                  files: normalizedFiles,
+                  originalFiles: vfsFiles,
+                  meta: {
+                    prompt: userContent,
+                    model: modelUsed,
+                    summary: responseMeta?.reviewSummary,
+                    actionType: responseMeta?.actionType,
+                    requiresApproval: responseMeta?.requiresApproval,
+                    warnings: responseMeta?.warnings,
+                  },
+                });
+                toast.message('Patch ready for review', {
+                  description: `${Object.keys(normalizedFiles).length} file(s) — open the review dialog to Apply or Discard.`,
+                });
               }
             } catch (txErr) {
               // Adapter errors (e.g. empty files) are non-fatal — fall through to legacy path.
@@ -1724,7 +1750,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
 
           if (transactionalBlocked) {
-            // Skip auto-apply; user can still inspect via View Edits.
+            // Skip auto-apply; user reviews via the diff modal (or View Edits).
           } else if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });

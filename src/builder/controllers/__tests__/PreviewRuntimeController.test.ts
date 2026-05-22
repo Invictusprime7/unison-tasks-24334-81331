@@ -93,8 +93,6 @@ describe('PreviewRuntimeController', () => {
     expect(wrote).toBe(false);
     expect(imp).not.toHaveBeenCalled();
   });
-});
-
 
   it('markReloaded bumps lastRouterUpdate', async () => {
     const c = new PreviewRuntimeController();
@@ -104,3 +102,4 @@ describe('PreviewRuntimeController', () => {
     expect(c.getState().lastRouterUpdate).toBeGreaterThan(before);
   });
 });
+

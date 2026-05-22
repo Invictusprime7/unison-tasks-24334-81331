@@ -138,12 +138,12 @@ import { publishCreatorDataForUnison, writeCanonicalsToVFS } from '@/services/un
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {
-  resolveNavigationTarget,
-  deriveFilePath,
   scaffoldMissingTopologyPagesWithRouter,
   getTopologyPagesForAIGeneration,
 } from '@/services/unifiedPreviewPipeline';
 import { livePreviewRuntime } from '@/builder/controllers/PreviewRuntimeController';
+import { livePageTopology } from '@/builder/controllers/PageTopologyController';
+
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
 import { buildIntentReadinessReport } from '@/services/intentReadinessService';

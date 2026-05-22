@@ -1167,14 +1167,30 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);
         const normalizedMsg = msg.toLowerCase();
-        if (
-          normalizedMsg.includes('invalid or expired token') ||
-          normalizedMsg.includes('unauthorized') ||
-          normalizedMsg.includes('authentication') ||
-          msg.includes('401')
-        ) {
+        // Distinguish user-session auth failures from AI provider auth failures.
+        // Provider/key errors contain "provider authentication" / "api key" /
+        // "gateway" and must NOT bounce the user to /auth.
+        const isProviderAuthError =
+          normalizedMsg.includes('provider authentication') ||
+          normalizedMsg.includes('api key') ||
+          normalizedMsg.includes('gateway') ||
+          normalizedMsg.includes('lovable_api_key') ||
+          normalizedMsg.includes('openai_api_key');
+        const isUserSessionError =
+          !isProviderAuthError &&
+          (normalizedMsg.includes('invalid or expired token') ||
+            normalizedMsg.includes('jwt') ||
+            normalizedMsg.includes('missing or invalid authorization') ||
+            normalizedMsg.includes('unauthorized') ||
+            msg.includes('401'));
+
+        if (isUserSessionError) {
           toast.error('Session expired. Please sign in again.');
           navigate('/auth');
+          return;
+        }
+        if (isProviderAuthError) {
+          toast.error(`AI provider not configured: ${msg}`);
           return;
         }
         if (msg.includes('429')) {
@@ -1188,6 +1204,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return;
         }
       }
+
 
       if (!generationResult) {
         if (lastPayloadIssue?.kind === 'empty') {

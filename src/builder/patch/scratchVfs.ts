@@ -202,6 +202,12 @@ export function createScratchDryRunner(opts: ScratchDryRunnerOptions): DryRunFn 
       return { ok: false, errors: applied.errors };
     }
 
+    // 1b. Validate route + binding side-effects against the registry.
+    const sideEffects = validateSideEffects(plan, opts.registry);
+    if (!sideEffects.ok) {
+      return { ok: false, errors: sideEffects.errors, artifact: { files: applied.files } };
+    }
+
     // 2. Run router sync + validation against the forked map.
     let validation: unknown = null;
     try {

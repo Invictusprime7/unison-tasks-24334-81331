@@ -139,13 +139,19 @@ describe('isTransactionalOptInEnabled', () => {
     try { globalThis.localStorage?.removeItem(__TRANSACTIONAL_OPT_IN_KEY); } catch { /* ignore */ }
   });
 
-  it('defaults to false', () => {
-    expect(isTransactionalOptInEnabled()).toBe(false);
+  it('defaults to true (aggressive rollout — Phase B follow-up #1)', () => {
+    expect(isTransactionalOptInEnabled()).toBe(true);
   });
 
   it('returns true when localStorage flag is set to "1"', () => {
     if (!globalThis.localStorage) return; // jsdom-only assertion
     globalThis.localStorage.setItem(__TRANSACTIONAL_OPT_IN_KEY, '1');
     expect(isTransactionalOptInEnabled()).toBe(true);
+  });
+
+  it('returns false when localStorage flag is explicitly set to "0"', () => {
+    if (!globalThis.localStorage) return;
+    globalThis.localStorage.setItem(__TRANSACTIONAL_OPT_IN_KEY, '0');
+    expect(isTransactionalOptInEnabled()).toBe(false);
   });
 });

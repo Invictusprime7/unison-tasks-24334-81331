@@ -85,6 +85,7 @@ import {
   AIPatchTransactionService,
 } from '@/builder/patch';
 import { logTransactionalAttempt } from '@/builder/patch/telemetry';
+import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 import type { PageRegistry } from '@/types/pageRegistry';
 import { createEmptyPageRegistry } from '@/types/pageRegistry';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';

@@ -16,6 +16,7 @@ export * from './AIPatchTransactionService';
 export * from './scratchVfs';
 export * from './repairLoop';
 export * from './transactionalRunner';
+export * from './sideEffectValidators';
 export { PatchPlanDiffViewer } from './PatchPlanDiffViewer';
 export type { PatchPlanDiffViewerProps } from './PatchPlanDiffViewer';
 export {

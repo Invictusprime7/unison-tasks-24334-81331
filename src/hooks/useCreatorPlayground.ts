@@ -11,7 +11,8 @@ import type { CreatorData, CreatorProduct, CreatorService, CreatorForm, CreatorO
 import { createEmptyCreatorData } from "@/types/creatorData";
 import type { PageRegistry, BuilderPage, FunnelGraph, FunnelStep, BuilderPageType, FunnelRole } from "@/types/pageRegistry";
 import { createEmptyPageRegistry, createBuilderPage, createFunnelGraph, getNavPages, getFunnelPages, resolveNextFunnelPage } from "@/types/pageRegistry";
-import { hydratePlaygroundFromVFS, mergeHydrationResult, type HydrationResult } from "@/services/playgroundHydrator";
+import { mergeHydrationResult, type HydrationResult } from "@/services/playgroundHydrator";
+import { livePlaygroundSync } from "@/builder/controllers/PlaygroundSyncController";
 import type { VirtualNode } from "@/hooks/useVirtualFileSystem";
 
 // ============================================================================
@@ -543,7 +544,10 @@ export function useCreatorPlayground(
   // --------------------------------------------------------------------------
 
   const hydrateFromVFS = useCallback((nodes: VirtualNode[], sandpackFiles: Record<string, string>): HydrationResult => {
-    const result = hydratePlaygroundFromVFS(nodes, sandpackFiles);
+    // Route through PlaygroundSyncController so other surfaces can observe the
+    // last hydration via livePlaygroundSync.getLastHydration(). commit:false
+    // because this hook owns the merge into local state below.
+    const result = livePlaygroundSync.hydrateFromVFS(nodes, sandpackFiles, { commit: false });
     
     // Merge with existing state (idempotent)
     const merged = mergeHydrationResult({ pageRegistry, creatorData }, result);

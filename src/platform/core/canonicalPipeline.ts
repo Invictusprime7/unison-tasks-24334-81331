@@ -34,7 +34,7 @@ import type { SiteBundle, SiteManifest, RouteDef, NavItem } from '@/types/siteBu
 import { resolveCapabilities } from '@/services/wizardCapabilityResolver';
 import { materializePlayground } from '@/services/wizardPlaygroundMaterializer';
 import { validatePlayground, getValidationSummary } from '@/services/playgroundValidationService';
-import { compilePlayground } from '@/services/playgroundCompiler';
+import { livePlaygroundSync } from '@/builder/controllers/PlaygroundSyncController';
 import { createRuntimeManifest } from '@/types/runtimeManifest';
 import { validateComposition } from '@/services/componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
@@ -160,11 +160,16 @@ export function executeCanonicalPipeline(
   // Stage 4: Compile playground → VFS + router + bindings
   // Pass the wizard's Template + Style card selections so subpage scaffolds are
   // real role-filtered themed compositions instead of generic placeholders.
-  const compileResult = compilePlayground(playground, existingVfsFiles, selections.businessName, {
-    selectedTemplateId: selections.templateId,
-    selectedThemeId: selections.themeId,
-    industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
-  });
+  const compileResult = livePlaygroundSync.compile(
+    existingVfsFiles,
+    selections.businessName,
+    {
+      selectedTemplateId: selections.templateId,
+      selectedThemeId: selections.themeId,
+      industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
+    },
+    playground,
+  );
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
@@ -215,11 +220,16 @@ export function recompileFromPlayground(
     for (const v of validations.filter(v => v.severity === 'warning')) warnings.push(v.message);
   }
 
-  const compileResult = compilePlayground(playground, existingVfsFiles, businessName, {
-    selectedTemplateId: options?.selectedTemplateId,
-    selectedThemeId: options?.selectedThemeId,
-    industry: industry || null,
-  });
+  const compileResult = livePlaygroundSync.compile(
+    existingVfsFiles,
+    businessName,
+    {
+      selectedTemplateId: options?.selectedTemplateId,
+      selectedThemeId: options?.selectedThemeId,
+      industry: industry || null,
+    },
+    playground,
+  );
 
   // Re-emit themed /src/index.css from the wizard's preset so any in-builder
   // recompile keeps the Style-card tokens locked across all industries.

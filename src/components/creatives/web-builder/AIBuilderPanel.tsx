@@ -57,7 +57,7 @@ import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { buildComponentBehaviorMap, formatBehaviorMapForPrompt } from '@/services/aiVFSOrchestrator';
-import { htmlDocToReactComponent as htmlDocToReactComponentFn } from '@/utils/htmlToJsx';
+// htmlDocToReactComponent now consumed via @/lib/ai/htmlToReactSafety (Phase C0).
 import { AIGatewayOptions, type GatewayConfig } from './AIGatewayOptions';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
@@ -88,141 +88,22 @@ import { logTransactionalAttempt } from '@/builder/patch/telemetry';
 import type { PageRegistry } from '@/types/pageRegistry';
 import { createEmptyPageRegistry } from '@/types/pageRegistry';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  stripModuleExportsBlocks,
+  stripInlineCodeRefs,
+  extractRawHtmlFromMixed,
+} from '@/lib/ai/aiResponseParsing';
+import { wrapHtmlInReactComponent } from '@/lib/ai/htmlToReactSafety';
+import {
+  getScopedEditAutoApplyBlockReason,
+  looksLikeGeneratedCode,
+  looksLikeAIProse,
+} from '@/lib/ai/aiPatchGuards';
 
-// ============================================================================
-/**
- * Strip module.exports blocks using brace-counting so nested objects are fully removed.
- * Also strips leading comment lines (e.g. "// tailwind.config.js") before the block.
- */
-function stripModuleExportsBlocks(code: string): string {
-  // First strip comment-prefixed config sections
-  code = code.replace(/(?:\/\/[^\n]*(?:tailwind|config)[^\n]*\n)+/gi, (match, offset) => {
-    // Only strip if followed by module.exports
-    const after = code.slice(offset + match.length).trimStart();
-    return after.startsWith('module.exports') ? '' : match;
-  });
-
-  let result = code;
-  let safetyCounter = 0;
-  while (safetyCounter++ < 5) {
-    const idx = result.indexOf('module.exports');
-    if (idx === -1) break;
-
-    // Find the opening brace
-    const braceStart = result.indexOf('{', idx);
-    if (braceStart === -1) {
-      result = result.slice(0, idx) + result.slice(result.indexOf('\n', idx) + 1);
-      continue;
-    }
-
-    // Count braces to find matching close
-    let depth = 0;
-    let end = braceStart;
-    for (; end < result.length; end++) {
-      if (result[end] === '{') depth++;
-      else if (result[end] === '}') { depth--; if (depth === 0) break; }
-    }
-
-    let removeEnd = end + 1;
-    if (result[removeEnd] === ';') removeEnd++;
-    while (result[removeEnd] === '\n' || result[removeEnd] === '\r') removeEnd++;
-
-    result = result.slice(0, idx) + result.slice(removeEnd);
-  }
-
-  return result.trim();
-}
-
-/**
- * Strip inline backtick code references from AI reasoning text.
- * Converts "`<style>`" → "STYLE_TAG" etc. to prevent HTML tag matching in reasoning.
- */
-function stripInlineCodeRefs(content: string): string {
-  return content.replace(/`[^`]*`/g, 'CODE_REF');
-}
-
-/**
- * Extract HTML from AI response that mixes reasoning text with raw HTML.
- * Handles cases like: "I will generate...<!DOCTYPE html><html>...</html>"
- * Returns the extracted HTML or null if no HTML found.
- * 
- * IMPORTANT: Ignores HTML tags mentioned inside backtick code references
- * in reasoning text (e.g. "`<html>`", "`<style>`").
- */
-function extractRawHtmlFromMixed(content: string): string | null {
-  // Strip inline code refs so `<html>` in reasoning doesn't trigger false match
-  const cleaned = stripInlineCodeRefs(content);
-
-  // Case 1: Content contains <!DOCTYPE html> — extract everything from there
-  const doctypeIdx = cleaned.indexOf('<!DOCTYPE');
-  if (doctypeIdx >= 0) {
-    // Use the index from cleaned to slice from the ORIGINAL content
-    const originalDoctypeIdx = content.indexOf('<!DOCTYPE', Math.max(0, doctypeIdx - 50));
-    if (originalDoctypeIdx >= 0) {
-      return content.slice(originalDoctypeIdx).trim();
-    }
-  }
-  
-  // Case 2: Content contains <html — but only if it looks like an actual tag (not inside prose)
-  // Match <html followed by > or whitespace+attributes, NOT inside backticks
-  const htmlTagRegex = /<html[\s>]/gi;
-  let match: RegExpExecArray | null;
-  while ((match = htmlTagRegex.exec(cleaned)) !== null) {
-    // Find the corresponding position in original content
-    const originalIdx = content.indexOf('<html', Math.max(0, match.index - 50));
-    if (originalIdx >= 0) {
-      const extracted = content.slice(originalIdx).trim();
-      if (extracted.includes('</html>')) return extracted;
-    }
-  }
-  
-  return null;
-}
-
-/**
- * Convert raw HTML into a proper React component with native JSX.
- */
-function wrapHtmlInReactComponent(html: string): string {
-  return htmlDocToReactComponentFn(html, 'App');
-}
-
-// Types
-// ============================================================================
-
-/**
- * Client-side scope guard — blocks auto-apply if a scoped edit
- * touches unauthorized files or creates too many new files.
- */
-function getScopedEditAutoApplyBlockReason(opts: {
-  files: Record<string, string>;
-  resolvedTargetFile: string | null;
-  existingFileKeys: string[];
-}): string | null {
-  const normalizePath = (p: string) => (p.startsWith('/') ? p : `/${p}`);
-  const paths = Object.keys(opts.files).map(normalizePath);
-
-  // If we resolved a target, the patch must include it
-  if (opts.resolvedTargetFile) {
-    const normTarget = normalizePath(opts.resolvedTargetFile);
-    if (!paths.includes(normTarget)) {
-      return `Scoped edit did not update the resolved target file (${normTarget}).`;
-    }
-  }
-
-  // Scoped edits should not produce more than 3 files
-  if (paths.length > 3) {
-    return `Scoped edit produced ${paths.length} files — likely a full regeneration.`;
-  }
-
-  // Should not create more than 1 new file
-  const existingNorm = opts.existingFileKeys.map(normalizePath);
-  const newFiles = paths.filter((p) => !existingNorm.includes(p));
-  if (newFiles.length > 1) {
-    return `Scoped edit created ${newFiles.length} new files — expected at most 1.`;
-  }
-
-  return null;
-}
+// stripModuleExportsBlocks, stripInlineCodeRefs, extractRawHtmlFromMixed,
+// wrapHtmlInReactComponent, getScopedEditAutoApplyBlockReason now live in
+// @/lib/ai/aiResponseParsing, @/lib/ai/htmlToReactSafety, @/lib/ai/aiPatchGuards
+// (Phase C0 helper drain — no behavior change).
 
 interface LaunchBriefPayload {
   productBrief: string;
@@ -1878,17 +1759,10 @@ export default function App() {
         generatedCode = stripModuleExportsBlocks(generatedCode);
         
         // FINAL VALIDATION: Reject code that looks like AI reasoning/prose, not actual code
-        const looksLikeCode = generatedCode.includes('import ') || 
-          generatedCode.includes('export ') || 
-          generatedCode.includes('function ') ||
-          generatedCode.includes('dangerouslySetInnerHTML') ||
-          generatedCode.includes('return (') ||
-          /^\s*<!DOCTYPE/i.test(generatedCode) ||
-          /^\s*<html[\s>]/i.test(generatedCode);
-        
-        const looksLikeProse = /\b(I will|I need to|I'll|Let me|inspired|simplified|Here's my|I'm going to)\b/i.test(generatedCode.slice(0, 300));
-        
-        if (!looksLikeCode || (looksLikeProse && !generatedCode.includes('dangerouslySetInnerHTML'))) {
+        const isCode = looksLikeGeneratedCode(generatedCode);
+        const isProse = looksLikeAIProse(generatedCode);
+
+        if (!isCode || (isProse && !generatedCode.includes('dangerouslySetInnerHTML'))) {
           console.warn('[AIBuilderPanel] REJECTED: Generated code looks like AI reasoning, not actual code');
           console.warn('[AIBuilderPanel] First 200 chars:', generatedCode.slice(0, 200));
           generatedCode = null;

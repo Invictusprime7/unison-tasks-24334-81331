@@ -165,7 +165,7 @@ export function aiResponseToPatchPlan(
     );
 
   return {
-    intent: inferIntent(response, ctx.intentOverride),
+    intent: inferIntent(response, ctx.intentOverride, files),
     targetFiles: edits.map((e) => e.path),
     expectedSymbols,
     edits,

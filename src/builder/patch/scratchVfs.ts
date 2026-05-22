@@ -35,6 +35,7 @@ import type { PreviewRuntimeController } from '@/builder/controllers/PreviewRunt
 import type { PageRegistry } from '@/types/pageRegistry';
 import type { DryRunFn, DryRunOutcome } from './AIPatchTransactionService';
 import type { PatchPlan, PatchPlanFilePatch, UnifiedHunk } from './types';
+import { validateSideEffects } from './sideEffectValidators';
 
 // ---------------------------------------------------------------- forkVfs
 
@@ -199,6 +200,12 @@ export function createScratchDryRunner(opts: ScratchDryRunnerOptions): DryRunFn 
     const applied = applyPlanToVfs(opts.vfsFiles, plan);
     if (!applied.ok) {
       return { ok: false, errors: applied.errors };
+    }
+
+    // 1b. Validate route + binding side-effects against the registry.
+    const sideEffects = validateSideEffects(plan, opts.registry);
+    if (!sideEffects.ok) {
+      return { ok: false, errors: sideEffects.errors, artifact: { files: applied.files } };
     }
 
     // 2. Run router sync + validation against the forked map.

@@ -1656,7 +1656,51 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
           // Store files for manual apply later (user can use View Edits)
         } else {
-          if (onApplyToVFS) {
+          // -- Phase B7 opt-in: transactional dry-run gate ---------------
+          // When the user has opted into the transactional patch path
+          // (localStorage `lovable:patch:transactionalOptIn=1` or the
+          // VITE_PATCH_TRANSACTIONAL_OPTIN env flag) AND we have enough
+          // context to dry-run (vfsFiles present), we synthesize a
+          // PatchPlan, run it through the scratch VFS + repair loop, and
+          // only proceed with the live apply when the dry-run succeeds.
+          // Failures surface as a toast and abort auto-apply — the user
+          // can still inspect via View Edits.
+          let transactionalBlocked = false;
+          if (isTransactionalOptInEnabled() && vfsFiles && onApplyToVFS) {
+            try {
+              const plan = aiResponseToPatchPlan(
+                {
+                  files: normalizedFiles,
+                  rationale: responseMeta?.reviewSummary ?? userContent,
+                  debugMode: isSurgicalEdit ? false : undefined,
+                },
+                { existingFiles: vfsFiles },
+              );
+              const registry = pageRegistry ?? createEmptyPageRegistry();
+              const { result } = await runTransactionalPatch({
+                initialPlan: plan,
+                vfsFiles,
+                registry,
+                regenerate: async () => null, // no auto-retry from this seam yet
+                applyFn: async () => ({ ok: true, filesWritten: Object.keys(normalizedFiles) }),
+                scratchLabel: 'ai-builder-panel',
+              });
+              if (!result.ok) {
+                transactionalBlocked = true;
+                console.warn('[AIBuilderPanel] Transactional dry-run failed — auto-apply skipped', result);
+                toast.warning(`⚠️ Patch dry-run failed: ${result.lastError ?? 'unknown error'}. Use View Edits to inspect.`);
+              } else {
+                console.log('[AIBuilderPanel] Transactional dry-run passed — proceeding with live apply');
+              }
+            } catch (txErr) {
+              // Adapter errors (e.g. empty files) are non-fatal — fall through to legacy path.
+              console.warn('[AIBuilderPanel] Transactional pre-flight skipped:', txErr);
+            }
+          }
+
+          if (transactionalBlocked) {
+            // Skip auto-apply; user can still inspect via View Edits.
+          } else if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
             onApplyToVFS(normalizedFiles, {

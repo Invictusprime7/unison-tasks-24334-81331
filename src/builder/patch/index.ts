@@ -18,3 +18,13 @@ export * from './repairLoop';
 export * from './transactionalRunner';
 export { PatchPlanDiffViewer } from './PatchPlanDiffViewer';
 export type { PatchPlanDiffViewerProps } from './PatchPlanDiffViewer';
+export {
+  aiResponseToPatchPlan,
+  normalizeVfsPath,
+  isTransactionalOptInEnabled,
+} from './aiResponseAdapter';
+export type {
+  AICodeAssistantResponseLike,
+  AdapterContext,
+} from './aiResponseAdapter';
+

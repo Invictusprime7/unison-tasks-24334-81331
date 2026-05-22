@@ -41,7 +41,7 @@ function registryPageIds(registry: PageRegistry | null | undefined): Set<string>
   const out = new Set<string>();
   if (!registry?.pages) return out;
   for (const p of Object.values(registry.pages)) {
-    if (p?.id) out.add(p.id);
+    if (p?.pageId) out.add(p.pageId);
   }
   return out;
 }

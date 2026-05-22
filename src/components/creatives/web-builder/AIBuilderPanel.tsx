@@ -81,9 +81,13 @@ import {
   isTransactionalOptInEnabled,
   aiResponseToPatchPlan,
   runTransactionalPatch,
+  PatchPlanDiffViewer,
+  AIPatchTransactionService,
 } from '@/builder/patch';
+import { logTransactionalAttempt } from '@/builder/patch/telemetry';
 import type { PageRegistry } from '@/types/pageRegistry';
 import { createEmptyPageRegistry } from '@/types/pageRegistry';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 // ============================================================================
 /**

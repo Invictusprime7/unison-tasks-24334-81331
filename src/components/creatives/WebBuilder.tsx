@@ -2401,7 +2401,7 @@ export default function App() {
         registry,
         currentFiles,
         launchEntryPoint,
-        virtualFS.importFiles,
+        (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
         filesToImport,
       );
 

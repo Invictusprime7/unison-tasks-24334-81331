@@ -181,11 +181,18 @@ const OPT_IN_STORAGE_KEY = 'lovable:patch:transactionalOptIn';
 
 /**
  * Returns whether the transactional patch path is enabled for the
- * current session. Checks (in order):
- *   1. `localStorage.getItem('lovable:patch:transactionalOptIn') === '1'`
- *   2. `import.meta.env.VITE_PATCH_TRANSACTIONAL_OPTIN === '1'`
+ * current session.
  *
- * Defaults to `false`. Pure read — safe to call from render paths.
+ * Default: **enabled** (aggressive rollout — Phase B follow-up #1).
+ *
+ * Override order (first match wins):
+ *   1. `localStorage.getItem('lovable:patch:transactionalOptIn')`:
+ *      `'0' | 'false'` disables, `'1' | 'true'` enables.
+ *   2. `import.meta.env.VITE_PATCH_TRANSACTIONAL_OPTIN`:
+ *      `'0' | 'false'` disables, `'1' | 'true'` enables.
+ *   3. Default → `true`.
+ *
+ * Pure read — safe to call from render paths.
  */
 export function isTransactionalOptInEnabled(): boolean {
   try {
@@ -199,13 +206,16 @@ export function isTransactionalOptInEnabled(): boolean {
   }
   try {
     const env = (import.meta as unknown as { env?: Record<string, string> }).env;
-    if (env && (env.VITE_PATCH_TRANSACTIONAL_OPTIN === '1' || env.VITE_PATCH_TRANSACTIONAL_OPTIN === 'true')) {
-      return true;
+    if (env) {
+      const flag = env.VITE_PATCH_TRANSACTIONAL_OPTIN;
+      if (flag === '1' || flag === 'true') return true;
+      if (flag === '0' || flag === 'false') return false;
     }
   } catch {
     /* import.meta.env unavailable (node test) — ignore */
   }
-  return false;
+  return true;
 }
+
 
 export const __TRANSACTIONAL_OPT_IN_KEY = OPT_IN_STORAGE_KEY;

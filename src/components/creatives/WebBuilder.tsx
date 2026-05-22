@@ -2373,8 +2373,14 @@ export default function App() {
   const lastSyncedRegistryVersionRef = useRef<number>(-1);
   useEffect(() => {
     const registry = creatorPlayground.pageRegistry;
-    if (!registry || Object.keys(registry.pages).length === 0) return;
+    if (!registry) return;
+    // Mirror current registry into the singleton topology controller so other
+    // modules (debug agent, AI patch lifecycle, intent inspector) can read
+    // topology without prop-drilling through WebBuilder.
+    livePageTopology.setRegistry(registry);
+    if (Object.keys(registry.pages).length === 0) return;
     if (lastSyncedRegistryVersionRef.current === registry.version) return;
+
     try {
       const currentFiles = virtualFS.getSandpackFiles();
       const filesToImport: Record<string, string> = {};

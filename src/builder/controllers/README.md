@@ -24,7 +24,7 @@ Headless controllers extracted from the monolithic `WebBuilder.tsx` and
 | 2 | `AIPatchTransactionService`           | **done** | `propose → validate → dryRun → apply/discard` lifecycle. Scoped to `modify_component` + `repair_error`; everything else is rejected at `propose()`. `dryRunFn` / `applyFn` are injectable seams that Phase B3 wires to `PreviewRuntimeController.forScratch` and `VFSCommitService.commit`. 15 tests green. |
 | 3 | Scratch VFS (`src/builder/patch/scratchVfs.ts`) | **done** | `forkVfs`, `applyPlanToVfs` (create/replace/edit/delete + unified-hunk applier), and `createScratchDryRunner({ previewRuntime, registry, vfsFiles })` that plugs into `AIPatchTransactionService.dryRunFn`. Requires `previewRuntime.mode === 'scratch'`. 11 tests green. |
 | 4 | Repair loop (`src/builder/patch/repairLoop.ts`) | **done** | `runRepairLoop(plan, { service, regenerate })`. Hard cap `MAX_REPAIR_RETRIES = 2` (3 attempts total). Retry 1 reuses base model (`openai/gpt-5-mini`), retry 2 escalates to `openai/gpt-5.5`. Treats validation rejection as retryable. Never calls `apply()`. 11 tests green. |
-| 5 | Diff UI                               | todo     | File tree + per-file unified diff + Apply/Discard. Reuse existing diff viewer if present. |
+| 5 | Diff UI (`src/builder/patch/PatchPlanDiffViewer.tsx`) | **done** | Pure presentational shell: header (intent + risk + phase badge + rationale + error banner), file tree, per-file unified diff (create/replace/edit/delete with color-coded +/- lines), footer Discard / Retry / Apply. Driven by `AIPatchTransactionState` + callback props. Tailwind semantic tokens + shadcn only. 6 tests green. |
 
 ## Rules
 

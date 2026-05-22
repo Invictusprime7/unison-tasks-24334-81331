@@ -2611,7 +2611,7 @@ export default function App() {
       ) },
       virtualFS.getSandpackFiles(),
       launchEntryPoint,
-      virtualFS.importFiles,
+      (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
     );
 
 

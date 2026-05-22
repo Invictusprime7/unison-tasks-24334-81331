@@ -31,7 +31,7 @@ function normalizePath(path: string): string {
 function registryPaths(registry: PageRegistry | null | undefined): Set<string> {
   const out = new Set<string>();
   if (!registry?.pages) return out;
-  for (const p of registry.pages) {
+  for (const p of Object.values(registry.pages)) {
     if (p?.path) out.add(normalizePath(p.path));
   }
   return out;
@@ -40,7 +40,7 @@ function registryPaths(registry: PageRegistry | null | undefined): Set<string> {
 function registryPageIds(registry: PageRegistry | null | undefined): Set<string> {
   const out = new Set<string>();
   if (!registry?.pages) return out;
-  for (const p of registry.pages) {
+  for (const p of Object.values(registry.pages)) {
     if (p?.id) out.add(p.id);
   }
   return out;

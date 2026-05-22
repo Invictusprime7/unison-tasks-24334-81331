@@ -460,6 +460,8 @@ interface AIBuilderPanelProps {
     /** Live preview source — required for deterministic mutations. */
     getPreviewCode: () => string;
   };
+  /** Optional page registry — when provided + transactional opt-in flag set, AI patches dry-run in a scratch VFS before applying. */
+  pageRegistry?: PageRegistry | null;
 }
 
 // ============================================================================

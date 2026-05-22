@@ -86,7 +86,7 @@ function extractSymbolsFromSource(source: string): string[] {
   const symbols = new Set<string>();
   const namedExport = /export\s+(?:const|function|class|let|var)\s+([A-Za-z_$][\w$]*)/g;
   const reExport = /export\s*\{\s*([^}]+)\}/g;
-  const defaultExport = /export\s+default\s+(?:function\s+)?([A-Za-z_$][\w$]*)?/g;
+  const defaultExport = /export\s+default\s+(?:(?:async\s+)?function\s*\*?\s*|class\s+)?([A-Za-z_$][\w$]*)?/g;
 
   let m: RegExpExecArray | null;
   while ((m = namedExport.exec(source))) symbols.add(m[1]);

@@ -53,8 +53,8 @@ describe('runRepairLoop', () => {
     expect(result.ok).toBe(false);
     expect(result.attempts).toBe(1 + MAX_REPAIR_RETRIES);
     expect(regenerate).toHaveBeenCalledTimes(MAX_REPAIR_RETRIES);
-    expect(regenerate.mock.calls[0][0].model).toBe(DEFAULT_REPAIR_MODEL);
-    expect(regenerate.mock.calls[1][0].model).toBe(ESCALATION_MODEL);
+    expect((regenerate.mock.calls[0] as any[])[0].model).toBe(DEFAULT_REPAIR_MODEL);
+    expect((regenerate.mock.calls[1] as any[])[0].model).toBe(ESCALATION_MODEL);
     expect(result.history.map((h) => h.model)).toEqual([
       DEFAULT_REPAIR_MODEL,
       DEFAULT_REPAIR_MODEL,
@@ -86,7 +86,7 @@ describe('runRepairLoop', () => {
     const regenerate = vi.fn(async () => validPlan('retry'));
 
     await runRepairLoop(validPlan('initial'), { service, regenerate });
-    const ctx = regenerate.mock.calls[0][0];
+    const ctx = (regenerate.mock.calls[0] as any[])[0];
     expect(ctx.attempt).toBe(1);
     expect(ctx.errors).toEqual(['need import']);
     expect(ctx.previousPlan?.rationale).toBe('initial');

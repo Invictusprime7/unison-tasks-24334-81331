@@ -68,7 +68,30 @@ describe('PreviewRuntimeController', () => {
     const s = PreviewRuntimeController.forScratch('patch-1');
     expect(s.mode).toBe('scratch');
     expect(s.label).toContain('patch-1');
+
+  it('applyRouterCode imports payload and bumps lastRouterUpdate', async () => {
+    const c = new PreviewRuntimeController();
+    const before = c.getState().lastRouterUpdate;
+    await new Promise(r => setTimeout(r, 2));
+    const imp = vi.fn();
+    const wrote = c.applyRouterCode(imp, '/src/App.tsx', 'export default () => null;', { '/src/extra.tsx': 'x' });
+    expect(wrote).toBe(true);
+    expect(imp).toHaveBeenCalledWith({
+      '/src/extra.tsx': 'x',
+      '/src/App.tsx': 'export default () => null;',
+    });
+    expect(c.getState().lastRouterUpdate).toBeGreaterThan(before);
   });
+
+  it('applyRouterCode is a no-op when nothing to write', () => {
+    const c = new PreviewRuntimeController();
+    const imp = vi.fn();
+    const wrote = c.applyRouterCode(imp, '/src/App.tsx', '', undefined);
+    expect(wrote).toBe(false);
+    expect(imp).not.toHaveBeenCalled();
+  });
+});
+
 
   it('markReloaded bumps lastRouterUpdate', async () => {
     const c = new PreviewRuntimeController();

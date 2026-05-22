@@ -2390,14 +2390,14 @@ export default function App() {
         }
       }
 
-      const mergedForRouter = { ...currentFiles, ...filesToImport };
-      const result = livePreviewRuntime.syncRouterAndValidate(registry, mergedForRouter);
-      if (result.routerCode) {
-        filesToImport[launchEntryPoint] = result.routerCode;
-      }
-      if (Object.keys(filesToImport).length > 0) {
-        virtualFS.importFiles(filesToImport);
-      }
+      const result = livePreviewRuntime.syncRouterIntoVFS(
+        registry,
+        currentFiles,
+        launchEntryPoint,
+        virtualFS.importFiles,
+        filesToImport,
+      );
+
       lastSyncedRegistryVersionRef.current = registry.version;
       if (result.validation && !result.validation.valid) {
         console.warn('[WebBuilder] Topology validation issues after registry sync:', result.validation.issues);

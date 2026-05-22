@@ -2597,7 +2597,7 @@ export default function App() {
 
     // The registry-version effect regenerates the router automatically,
     // but doing it inline keeps file removal + router update atomic.
-    const result = syncRouterAndValidate(
+    const result = livePreviewRuntime.syncRouterAndValidate(
       { ...creatorPlayground.pageRegistry, pages: Object.fromEntries(
         Object.entries(creatorPlayground.pageRegistry.pages).filter(([id]) => id !== pageId)
       ) },
@@ -6231,7 +6231,7 @@ ${html}
           creatorPlayground.updatePage(pageId, { filePath: vfsPath });
           
           // Regenerate canonical router first so the route is registered
-          const routerCode = regenerateRouter(creatorPlayground.pageRegistry);
+          const routerCode = livePreviewRuntime.regenerateRouter(creatorPlayground.pageRegistry);
           if (routerCode) virtualFS.importFiles({ [launchEntryPoint]: routerCode });
           
           // Then trigger AI generation
@@ -6248,7 +6248,7 @@ ${html}
           // Regen canonical router so the deleted route is dropped from App.tsx
           // immediately (the registry-version effect would also catch this, but
           // doing it inline keeps file removal + router update atomic).
-          const result = syncRouterAndValidate(
+          const result = livePreviewRuntime.syncRouterAndValidate(
             creatorPlayground.pageRegistry,
             virtualFS.getSandpackFiles(),
           );

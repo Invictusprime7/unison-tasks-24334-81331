@@ -81,6 +81,8 @@ import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import { extractCleanCode, looksLikeCode, ensureReactImports } from "@/utils/aiCodeCleaner";
 import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
+import { escapeCSSSelector } from "@/lib/builder/cssSelectorUtils";
+import { extractJsxReturnBody } from "@/lib/builder/jsxMutation";
 
 function isMissingBusinessInstallsError(error: unknown): boolean {
   const candidate = error as {
@@ -173,60 +175,9 @@ function getOrCreatePreviewBusinessId(systemType?: string): string {
   }
 }
 
-/**
- * Escape special characters in CSS selectors (e.g., Tailwind brackets like `min-h-[85vh]`)
- */
-function escapeCSSSelector(selector: string): string {
-  return selector.replace(/(\.)([^.\s#>+~:[\]]+)/g, (match, dot, className) => {
-    const escaped = className
-      .replace(/\[/g, '\\[')
-      .replace(/\]/g, '\\]')
-      .replace(/\(/g, '\\(')
-      .replace(/\)/g, '\\)')
-      .replace(/:/g, '\\:')
-      .replace(/\//g, '\\/');
-    return dot + escaped;
-  });
-}
+// escapeCSSSelector + extractJsxReturnBody extracted to @/lib/builder/* (Phase C0).
 
-/**
- * Extract the JSX return body from a React component.
- * Handles both `return (...)` and arrow `=> (...)` patterns.
- */
-function extractJsxReturnBody(code: string): { jsx: string; before: string; after: string } | null {
-  let returnIdx = code.search(/return\s*\(/);
-  if (returnIdx === -1) {
-    returnIdx = code.search(/=>\s*\(/);
-  }
-  if (returnIdx === -1) return null;
 
-  const parenStart = code.indexOf('(', returnIdx);
-  let depth = 0;
-  let parenEnd = -1;
-  let inString: string | null = null;
-  let escaped = false;
-  for (let i = parenStart; i < code.length; i++) {
-    const ch = code[i];
-    if (escaped) { escaped = false; continue; }
-    if (ch === '\\') { escaped = true; continue; }
-    if (inString) {
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === '`') { inString = ch; continue; }
-    if (ch === '(') depth++;
-    else if (ch === ')') {
-      depth--;
-      if (depth === 0) { parenEnd = i; break; }
-    }
-  }
-  if (parenEnd === -1) return null;
-
-  const jsx = code.slice(parenStart + 1, parenEnd).trim();
-  const before = code.slice(0, parenStart + 1);
-  const after = code.slice(parenEnd);
-  return { jsx, before, after };
-}
 
 /**
  * Find an element's start and end offsets in a JSX source string by a CSS-like selector.

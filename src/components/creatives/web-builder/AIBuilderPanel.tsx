@@ -88,6 +88,16 @@ import { logTransactionalAttempt } from '@/builder/patch/telemetry';
 import type { PageRegistry } from '@/types/pageRegistry';
 import { createEmptyPageRegistry } from '@/types/pageRegistry';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  stripModuleExportsBlocks,
+  extractRawHtmlFromMixed,
+} from '@/lib/ai/aiResponseParsing';
+import { wrapHtmlInReactComponent } from '@/lib/ai/htmlToReactSafety';
+import {
+  getScopedEditAutoApplyBlockReason,
+  looksLikeGeneratedCode,
+  looksLikeAIProse,
+} from '@/lib/ai/aiPatchGuards';
 
 // ============================================================================
 /**

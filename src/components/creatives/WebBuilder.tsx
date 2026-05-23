@@ -2211,7 +2211,7 @@ export default function App() {
           const existingFiles = virtualFS.getSandpackFiles();
           const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, registry);
           if (Object.keys(missingFiles).length > 0) {
-            virtualFS.importFiles(missingFiles);
+            liveVFSCommit.writeFiles(missingFiles, 'system-restore', virtualFS.importFiles);
           }
           // Trigger AI generation for placeholder pages
           const pagesToGenerate = getTopologyPagesForAIGeneration(dbPlan, existingFiles);
@@ -2266,7 +2266,7 @@ export default function App() {
       const existingFiles = virtualFS.getSandpackFiles();
       const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, canonicalRegistry || populateRegistryFromTopology(sitePlan));
       if (Object.keys(missingFiles).length > 0) {
-        virtualFS.importFiles(missingFiles);
+        liveVFSCommit.writeFiles(missingFiles, 'system-restore', virtualFS.importFiles);
         console.log(`[WebBuilder] Scaffolded ${Object.keys(missingFiles).length} placeholder pages:`, Object.keys(missingFiles));
       }
 
@@ -2288,7 +2288,7 @@ export default function App() {
         Object.entries(snapshot.vfsFiles).filter(([path]) => !existingFiles[path])
       ) as Record<string, string>;
       if (Object.keys(missingSnapshotFiles).length > 0) {
-        virtualFS.importFiles(missingSnapshotFiles);
+        liveVFSCommit.writeFiles(missingSnapshotFiles, 'system-restore', virtualFS.importFiles);
         console.log(`[WebBuilder] Imported ${Object.keys(missingSnapshotFiles).length} canonical snapshot files`);
       }
     } else {
@@ -5901,7 +5901,7 @@ ${html}
             projectId={projectId ?? null}
             onRevert={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
-              virtualFS.importFiles(snap.before);
+              liveVFSCommit.writeFiles(snap.before, 'system-restore', virtualFS.importFiles);
               syncBuilderFromFiles(snap.before, activePagePath);
               pushAISnapshot(projectId ?? null, {
                 label: `Revert · ${snap.label}`,
@@ -5914,7 +5914,7 @@ ${html}
             }}
             onReapply={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
-              virtualFS.importFiles(snap.after);
+              liveVFSCommit.writeFiles(snap.after, 'system-restore', virtualFS.importFiles);
               syncBuilderFromFiles(snap.after, activePagePath);
               pushAISnapshot(projectId ?? null, {
                 label: `Reapply · ${snap.label}`,
@@ -6940,13 +6940,13 @@ export default function ${componentName}() {
                   onUndo={() => {
                     const snap = vfsSnapshotManager.undo();
                     if (!snap) return false;
-                    virtualFS.importFiles(snap.files);
+                    liveVFSCommit.writeFiles(snap.files, 'system-restore', virtualFS.importFiles);
                     return true;
                   }}
                   onRedo={() => {
                     const snap = vfsSnapshotManager.redo();
                     if (!snap) return false;
-                    virtualFS.importFiles(snap.files);
+                    liveVFSCommit.writeFiles(snap.files, 'system-restore', virtualFS.importFiles);
                     return true;
                   }}
                   canUndo={vfsSnapshotManager.canUndo}

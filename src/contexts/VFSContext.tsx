@@ -12,6 +12,7 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { useVirtualFileSystem, VirtualFile, VirtualFolder, VirtualNode } from '@/hooks/useVirtualFileSystem';
+import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 import { usePreviewService, PreviewSession, PreviewServiceState } from '@/hooks/usePreviewService';
 import { 
   parseSavedProject, 

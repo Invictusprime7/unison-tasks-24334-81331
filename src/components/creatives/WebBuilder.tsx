@@ -1504,7 +1504,7 @@ export default function App() {
       try {
         const activePath = snapshotCtxRef.current.activePagePath;
         if (activePath && (activePath.endsWith('.tsx') || activePath.endsWith('.jsx'))) {
-          virtualFS.importFiles({ [activePath]: next });
+          liveVFSCommit.writeFiles({ [activePath]: next }, 'playground-edit', virtualFS.importFiles);
         }
       } catch (err) {
         console.warn('[applyMutatorAcrossVFS] direct VFS write failed:', err);
@@ -1532,7 +1532,7 @@ export default function App() {
               meta: { origin: 'floating-toolbar' },
             });
           } catch (err) { console.warn('[applyMutatorAcrossVFS] snapshot failed:', err); }
-          virtualFS.importFiles({ [path]: attempt });
+          liveVFSCommit.writeFiles({ [path]: attempt }, 'playground-edit', virtualFS.importFiles);
           return { ok: true };
         }
       }
@@ -2599,7 +2599,7 @@ export default function App() {
     if (page.filePath && vfsFiles[page.filePath]) {
       const next = { ...vfsFiles };
       delete next[page.filePath];
-      virtualFS.importFiles(next);
+      liveVFSCommit.writeFiles(next, 'playground-edit', virtualFS.importFiles);
     }
     creatorPlayground.removePage(pageId);
 
@@ -6294,7 +6294,7 @@ export default function ${componentName}() {
 }
 `;
           });
-          virtualFS.importFiles(newFiles);
+          liveVFSCommit.writeFiles(newFiles, 'playground-edit', virtualFS.importFiles);
           toast.success(`Funnel scaffolded: ${stepPages.length} pages created in VFS`);
         }}
       />
@@ -6497,7 +6497,7 @@ export default function ${componentName}() {
                     // Get current VFS files and patch with new element
                     const currentFiles = virtualFS.getSandpackFiles();
                     const patchFiles = elementToVFSPatch(currentFiles, html, 'FunctionalBlock', launchEntryPoint);
-                    virtualFS.importFiles(patchFiles);
+                    liveVFSCommit.writeFiles(patchFiles, 'playground-edit', virtualFS.importFiles);
                     
                     // Update legacy state
                     const newAppCode = patchFiles[launchEntryPoint] || '';
@@ -7341,7 +7341,7 @@ export default function ${componentName}() {
                           meta: { origin: 'floating-toolbar-ai', actionType: 'element-edit' },
                         });
                       } catch (err) { console.warn('[onAIEditComplete] snapshot failed:', err); }
-                      virtualFS.importFiles({ [path]: attempt.code });
+                      liveVFSCommit.writeFiles({ [path]: attempt.code }, 'ai-builder', virtualFS.importFiles);
                       setSelectedHTMLElement(null);
                       toast.success(`Element updated by AI in ${path.split('/').pop()}`);
                       return true;

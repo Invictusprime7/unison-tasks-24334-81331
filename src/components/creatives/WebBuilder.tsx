@@ -5914,7 +5914,7 @@ ${html}
             }}
             onReapply={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
-              virtualFS.importFiles(snap.after);
+              liveVFSCommit.writeFiles(snap.after, 'system-restore', virtualFS.importFiles);
               syncBuilderFromFiles(snap.after, activePagePath);
               pushAISnapshot(projectId ?? null, {
                 label: `Reapply · ${snap.label}`,

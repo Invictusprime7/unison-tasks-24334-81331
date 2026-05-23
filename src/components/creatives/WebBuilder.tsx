@@ -2211,7 +2211,7 @@ export default function App() {
           const existingFiles = virtualFS.getSandpackFiles();
           const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, registry);
           if (Object.keys(missingFiles).length > 0) {
-            virtualFS.importFiles(missingFiles);
+            liveVFSCommit.writeFiles(missingFiles, 'system-restore', virtualFS.importFiles);
           }
           // Trigger AI generation for placeholder pages
           const pagesToGenerate = getTopologyPagesForAIGeneration(dbPlan, existingFiles);

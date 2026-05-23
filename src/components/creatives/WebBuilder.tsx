@@ -2111,7 +2111,10 @@ export default function App() {
     publishCreatorDataForUnison(creatorDataForUnison);
     // Then write canonical contents back into the live VFS so the code
     // editor / deploy bundle / AI context all match what the preview runs.
-    writeCanonicalsToVFS(vfsImportFiles, { creatorData: creatorDataForUnison });
+    writeCanonicalsToVFS(
+      (files) => liveVFSCommit.writeFiles(files, 'system-restore', vfsImportFiles),
+      { creatorData: creatorDataForUnison },
+    );
   }, [creatorDataForUnison, vfsImportFiles]);
 
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview

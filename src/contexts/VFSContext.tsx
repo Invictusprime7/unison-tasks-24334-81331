@@ -232,14 +232,14 @@ export function VFSProvider({
   const undoSnapshot = useCallback((): boolean => {
     const snapshot = vfsSnapshotManager.undo();
     if (!snapshot) return false;
-    vfs.importFiles(snapshot.files);
+    liveVFSCommit.writeFiles(snapshot.files, 'system-restore', vfs.importFiles);
     return true;
   }, [vfs]);
 
   const redoSnapshot = useCallback((): boolean => {
     const snapshot = vfsSnapshotManager.redo();
     if (!snapshot) return false;
-    vfs.importFiles(snapshot.files);
+    liveVFSCommit.writeFiles(snapshot.files, 'system-restore', vfs.importFiles);
     return true;
   }, [vfs]);
 
@@ -256,7 +256,7 @@ export function VFSProvider({
     try {
       const project = parseSavedProject(data);
       if (project) {
-        vfs.importFiles(project.files);
+        liveVFSCommit.writeFiles(project.files, 'system-restore', vfs.importFiles);
         console.log('[VFSContext] Imported saved project:', project.name, Object.keys(project.files).length, 'files');
       }
       return project;
@@ -274,7 +274,7 @@ export function VFSProvider({
         splitComponents: true,
         useTypeScript: true,
       });
-      vfs.importFiles(result.files);
+      liveVFSCommit.writeFiles(result.files, 'system-restore', vfs.importFiles);
       console.log('[VFSContext] Imported webpage:', sourceUrl || 'unknown', Object.keys(result.files).length, 'files');
       return result;
     } catch (err) {
@@ -289,7 +289,7 @@ export function VFSProvider({
         projectName: projectName || 'Generated',
         preferReact: true,
       });
-      vfs.importFiles(result.files);
+      liveVFSCommit.writeFiles(result.files, 'system-restore', vfs.importFiles);
       console.log('[VFSContext] Imported code:', result.componentName, Object.keys(result.files).length, 'files');
       return result;
     } catch (err) {
@@ -329,7 +329,8 @@ export function VFSProvider({
     getOpenFiles: vfs.getOpenFiles,
     getNodePath: vfs.getNodePath,
     getSandpackFiles: vfs.getSandpackFiles,
-    importFiles: vfs.importFiles,
+    importFiles: (files: Record<string, string>) =>
+      liveVFSCommit.writeFiles(files, 'playground-edit', vfs.importFiles),
     resetToEmpty: vfs.resetToEmpty,
     loadDefaultTemplate: vfs.loadDefaultTemplate,
     

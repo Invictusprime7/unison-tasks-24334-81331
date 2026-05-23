@@ -309,7 +309,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       });
 
       if (Object.keys(changedFiles).length > 0) {
-        vfsContext.importFiles(changedFiles);
+        liveVFSCommit.writeFiles(changedFiles, 'system-restore', vfsContext.importFiles);
       }
     });
   }, [canUseContextPreview, vfsContext]);

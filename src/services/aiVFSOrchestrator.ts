@@ -213,7 +213,7 @@ export function applyAIOutputToVFS(
     }
 
     // 4. Import all files into VFS atomically
-    vfs.importFiles(mergedFiles);
+    liveVFSCommit.writeFiles(mergedFiles, 'ai-builder', vfs.importFiles);
 
     const filesWritten = Object.keys(aiFiles);
     onFilesWritten?.(filesWritten);

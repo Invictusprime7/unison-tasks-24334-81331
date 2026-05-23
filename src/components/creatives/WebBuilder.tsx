@@ -5901,7 +5901,7 @@ ${html}
             projectId={projectId ?? null}
             onRevert={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
-              virtualFS.importFiles(snap.before);
+              liveVFSCommit.writeFiles(snap.before, 'system-restore', virtualFS.importFiles);
               syncBuilderFromFiles(snap.before, activePagePath);
               pushAISnapshot(projectId ?? null, {
                 label: `Revert · ${snap.label}`,

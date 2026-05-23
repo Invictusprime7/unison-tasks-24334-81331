@@ -6940,13 +6940,13 @@ export default function ${componentName}() {
                   onUndo={() => {
                     const snap = vfsSnapshotManager.undo();
                     if (!snap) return false;
-                    virtualFS.importFiles(snap.files);
+                    liveVFSCommit.writeFiles(snap.files, 'system-restore', virtualFS.importFiles);
                     return true;
                   }}
                   onRedo={() => {
                     const snap = vfsSnapshotManager.redo();
                     if (!snap) return false;
-                    virtualFS.importFiles(snap.files);
+                    liveVFSCommit.writeFiles(snap.files, 'system-restore', virtualFS.importFiles);
                     return true;
                   }}
                   canUndo={vfsSnapshotManager.canUndo}

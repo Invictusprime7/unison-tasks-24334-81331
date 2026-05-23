@@ -2288,7 +2288,7 @@ export default function App() {
         Object.entries(snapshot.vfsFiles).filter(([path]) => !existingFiles[path])
       ) as Record<string, string>;
       if (Object.keys(missingSnapshotFiles).length > 0) {
-        virtualFS.importFiles(missingSnapshotFiles);
+        liveVFSCommit.writeFiles(missingSnapshotFiles, 'system-restore', virtualFS.importFiles);
         console.log(`[WebBuilder] Imported ${Object.keys(missingSnapshotFiles).length} canonical snapshot files`);
       }
     } else {

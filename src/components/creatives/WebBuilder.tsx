@@ -2266,7 +2266,7 @@ export default function App() {
       const existingFiles = virtualFS.getSandpackFiles();
       const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, canonicalRegistry || populateRegistryFromTopology(sitePlan));
       if (Object.keys(missingFiles).length > 0) {
-        virtualFS.importFiles(missingFiles);
+        liveVFSCommit.writeFiles(missingFiles, 'system-restore', virtualFS.importFiles);
         console.log(`[WebBuilder] Scaffolded ${Object.keys(missingFiles).length} placeholder pages:`, Object.keys(missingFiles));
       }
 

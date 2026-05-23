@@ -14,6 +14,7 @@
 
 import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useRef, useMemo, Component, type ReactNode, type ErrorInfo } from 'react';
 import { cn } from '@/lib/utils';
+import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 import { 
   RefreshCw, 
   ExternalLink, 
@@ -309,7 +310,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       });
 
       if (Object.keys(changedFiles).length > 0) {
-        vfsContext.importFiles(changedFiles);
+        liveVFSCommit.writeFiles(changedFiles, 'system-restore', vfsContext.importFiles);
       }
     });
   }, [canUseContextPreview, vfsContext]);

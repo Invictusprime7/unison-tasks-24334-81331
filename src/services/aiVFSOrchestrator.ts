@@ -18,6 +18,7 @@ import { extractDependencies, getDependenciesForSandpack, type ExtractedDependen
 import { analyzeReactSite, type SiteAnalysis } from '@/utils/reactSiteAnalysis';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
+import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 import { getGraphSummaryForAI } from '@/services/importGraphAnalyzer';
 import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
 import { detectSlotBindingViolations } from '@/services/aiBindingTool';
@@ -213,7 +214,7 @@ export function applyAIOutputToVFS(
     }
 
     // 4. Import all files into VFS atomically
-    vfs.importFiles(mergedFiles);
+    liveVFSCommit.writeFiles(mergedFiles, 'ai-builder', vfs.importFiles);
 
     const filesWritten = Object.keys(aiFiles);
     onFilesWritten?.(filesWritten);

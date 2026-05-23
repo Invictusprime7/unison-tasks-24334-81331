@@ -2111,7 +2111,10 @@ export default function App() {
     publishCreatorDataForUnison(creatorDataForUnison);
     // Then write canonical contents back into the live VFS so the code
     // editor / deploy bundle / AI context all match what the preview runs.
-    writeCanonicalsToVFS(vfsImportFiles, { creatorData: creatorDataForUnison });
+    writeCanonicalsToVFS(
+      (files) => liveVFSCommit.writeFiles(files, 'system-restore', vfsImportFiles),
+      { creatorData: creatorDataForUnison },
+    );
   }, [creatorDataForUnison, vfsImportFiles]);
 
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
@@ -2693,7 +2696,7 @@ export default function ${componentName}Page() {
   );
 }
 `;
-    vfsImportFiles({ [path]: newPageCode });
+    liveVFSCommit.writeFiles({ [path]: newPageCode }, 'playground-edit', vfsImportFiles);
     openBuilderFile(path, newPageCode);
     toast.success(`Page "${label}" created`);
   }, [getSandpackFiles, openBuilderFile, vfsImportFiles]);
@@ -2705,7 +2708,7 @@ export default function ${componentName}Page() {
     const allFiles = getSandpackFiles();
     delete allFiles[path];
     // Re-import without the deleted page
-    vfsImportFiles(allFiles);
+    liveVFSCommit.writeFiles(allFiles, 'playground-edit', vfsImportFiles);
     // Switch back to main page if we deleted the active one
     if (activePagePath === path) {
       handleSelectPage(launchEntryPoint);
@@ -2866,7 +2869,7 @@ export default function ${componentName}Page() {
       }
     }
 
-    vfsImportFiles(normalizedFiles);
+    liveVFSCommit.writeFiles(normalizedFiles, 'system-restore', vfsImportFiles);
     const syncedEntry = syncBuilderFromFiles(
       normalizedFiles,
       options?.preferredPath || normalizedEntryPoint || null,
@@ -2907,7 +2910,7 @@ export default function ${componentName}Page() {
             [targetPath]: previewCode,
           };
 
-      virtualFSRef.current.importFiles(importPayload);
+      liveVFSCommit.writeFiles(importPayload, 'playground-edit', virtualFSRef.current.importFiles);
       lastSyncedCodeRef.current = previewCode;
     }
   }, [previewCode, activePagePath, launchEntryPoint, routeStateHasStructuredProject, resolvedThemePresetId]);
@@ -4437,7 +4440,7 @@ export default function ${componentName}Page() {
     vfsResetToEmpty();
     const entryContent = options?.entryContent ?? files[activePath] ?? '';
     openBuilderFile(activePath, entryContent);
-    vfsImportFiles(files);
+    liveVFSCommit.writeFiles(files, 'system-restore', vfsImportFiles);
   }, [launchEntryPoint, openBuilderFile, vfsImportFiles, vfsResetToEmpty]);
 
   // Auto AI page generation on button click is REMOVED.
@@ -5467,7 +5470,7 @@ ${html}
       const patchedFiles = elementToVFSPatch(currentFiles, wrappedJsx, element.name, launchEntryPoint);
       
       // Apply to VFS — triggers Sandpack rebundle
-      vfsImportFiles(patchedFiles);
+      liveVFSCommit.writeFiles(patchedFiles, 'playground-edit', vfsImportFiles);
       
       // Update previewCode/editorCode to stay in sync
       const updatedApp = patchedFiles[launchEntryPoint];
@@ -6925,7 +6928,7 @@ export default function ${componentName}() {
                   getActiveFile={virtualFS.getActiveFile}
                   getOpenFiles={virtualFS.getOpenFiles}
                   updateFileContent={virtualFS.updateFileContent}
-                  importFiles={virtualFS.importFiles}
+                  importFiles={(files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles)}
                   loadDefaultTemplate={virtualFS.loadDefaultTemplate}
                   getSandpackFiles={virtualFS.getSandpackFiles}
                   modifiedFiles={modifiedFiles}

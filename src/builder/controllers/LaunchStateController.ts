@@ -85,6 +85,7 @@ export class LaunchStateController {
     canPublish: false,
     status: idleStatus,
     lastResult: null,
+    launcherDiagnostics: [],
   };
   private listeners = new Set<Listener>();
 

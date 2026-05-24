@@ -149,8 +149,8 @@ async function callLovableAI(opts: {
   href?: string;
   pageTitle?: string;
 }): Promise<{ summary?: string; keyPoints?: string[]; relevanceByUrl?: Record<string, string> }> {
-  const key = Deno.env.get("LOVABLE_API_KEY");
-  if (!key) throw new Error("LOVABLE_API_KEY is not configured");
+  const key = Deno.env.get("OPENAI_API_KEY");
+  if (!key) throw new Error("OPENAI_API_KEY is not configured");
 
   const sources = opts.articles.map((a, i) => ({
     n: i + 1,
@@ -178,7 +178,7 @@ async function callLovableAI(opts: {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
 
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
@@ -186,7 +186,7 @@ async function callLovableAI(opts: {
     },
     body: JSON.stringify({
       // User asked for "ChatGPT intelligence" → use an OpenAI-family model through the gateway.
-      model: "openai/gpt-5-mini",
+      model: "gpt-5-mini",
       messages: [
         { role: "system", content: system },
         { role: "user", content: JSON.stringify(user) },

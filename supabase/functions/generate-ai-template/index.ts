@@ -34,10 +34,10 @@ serve(async (req) => {
       return errorResponse("prompt is required", 400, corsHeaders);
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      console.warn("LOVABLE_API_KEY not configured - AI features unavailable in local development");
+    if (!OPENAI_API_KEY) {
+      console.warn("OPENAI_API_KEY not configured - AI features unavailable in local development");
       return secureJsonResponse(
         { 
           error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
@@ -202,14 +202,14 @@ OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explan
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
+        model: "gpt-5",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt }

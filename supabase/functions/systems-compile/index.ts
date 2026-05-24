@@ -5,8 +5,8 @@ import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
 
-const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const AI_MODEL = "google/gemini-2.5-pro";
+const AI_GATEWAY_URL = "https://api.openai.com/v1/chat/completions";
+const AI_MODEL = "gpt-5";
 
 /**
  * Systems AI - Compile Endpoint
@@ -15,7 +15,7 @@ const AI_MODEL = "google/gemini-2.5-pro";
  * Takes a business prompt + answers to clarifying questions
  * Returns a complete Business Blueprint ready for provisioning.
  * 
- * Uses AI for intelligent content generation when LOVABLE_API_KEY is configured,
+ * Uses AI for intelligent content generation when OPENAI_API_KEY is configured,
  * falls back to template-based generation otherwise.
  */
 
@@ -1027,7 +1027,7 @@ serve(async (req) => {
     let usedAI = false;
     
     // Try AI enhancement if API key is available
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (apiKey) {
       const enhancements = await enhanceBlueprintWithAI(
         prompt,

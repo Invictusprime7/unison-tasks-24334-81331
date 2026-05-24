@@ -6,7 +6,102 @@
 
 import { hexToHsl } from "./utils.ts";
 
+// ── Site topology (pages + funnels) + intent bindings ────────────────────────
+
+export interface SiteContextPage {
+  pageId: string;
+  title?: string;
+  path?: string;
+  filePath?: string;
+  pageRole?: string;
+  isHome?: boolean;
+  showInNav?: boolean;
+  funnelId?: string;
+  funnelRole?: string;
+}
+
+export interface SiteContextFunnel {
+  funnelId: string;
+  name?: string;
+  funnelType?: string;
+  steps?: Array<{ pageId: string; role?: string; nextStepId?: string | null }>;
+}
+
+export interface SiteContextBinding {
+  pagePath?: string;
+  elementKey?: string;
+  elementLabel?: string;
+  intent: string;
+  workflowId?: string | null;
+  enabled?: boolean;
+}
+
+export interface SiteContext {
+  pages?: SiteContextPage[];
+  funnels?: SiteContextFunnel[];
+  homePageId?: string;
+  intentBindings?: SiteContextBinding[];
+}
+
+export function buildSiteContextBlock(ctx?: SiteContext | null): string {
+  if (!ctx) return '';
+  const pages = ctx.pages ?? [];
+  const funnels = ctx.funnels ?? [];
+  const bindings = ctx.intentBindings ?? [];
+  if (pages.length === 0 && funnels.length === 0 && bindings.length === 0) return '';
+
+  const lines: string[] = ['\n[🧭 SITE TOPOLOGY & INTENT BINDINGS — editable via chat]'];
+  lines.push('You CAN modify site routes, page topology, and intent bindings directly from chat prompts.');
+  lines.push('Conventions: every page has a stable pageId, a hash route `path` (e.g. /about), and a VFS `filePath` under /src/pages/.');
+
+  if (pages.length) {
+    lines.push(`\nPages (${pages.length}):`);
+    for (const p of pages.slice(0, 40)) {
+      const tags: string[] = [];
+      if (p.isHome) tags.push('home');
+      if (p.pageRole) tags.push(`role:${p.pageRole}`);
+      if (p.funnelId) tags.push(`funnel:${p.funnelId}${p.funnelRole ? `(${p.funnelRole})` : ''}`);
+      if (p.showInNav === false) tags.push('hidden');
+      lines.push(
+        `  • ${p.pageId}  path=${p.path ?? '/'}  file=${p.filePath ?? '(unscaffolded)'}  title="${p.title ?? ''}"` +
+          (tags.length ? `  [${tags.join(', ')}]` : ''),
+      );
+    }
+  }
+
+  if (funnels.length) {
+    lines.push(`\nFunnels (${funnels.length}):`);
+    for (const f of funnels.slice(0, 12)) {
+      const seq = (f.steps ?? []).map(s => `${s.pageId}${s.role ? `(${s.role})` : ''}`).join(' → ');
+      lines.push(`  • ${f.funnelId} "${f.name ?? ''}" type=${f.funnelType ?? 'custom'}  ${seq}`);
+    }
+  }
+
+  if (bindings.length) {
+    lines.push(`\nIntent bindings (${bindings.length}) — persisted in site_intent_bindings:`);
+    for (const b of bindings.slice(0, 30)) {
+      lines.push(
+        `  • [${b.enabled === false ? 'OFF' : 'ON '}] ${b.pagePath ?? '/'}  "${b.elementLabel ?? b.elementKey ?? ''}"  → ${b.intent}` +
+          (b.workflowId ? `  (workflow=${b.workflowId})` : ''),
+      );
+    }
+  }
+
+  lines.push('\nRoute & binding edit protocol (apply when the user asks to add/rename/remove pages, change navigation, or rewire intents):');
+  lines.push('  1. Add a page → scaffold /src/pages/<Name>.tsx (default-export a React component) AND update the router entry in /src/App.tsx so the new hash route renders. The Builder PageRegistry will hydrate from these files.');
+  lines.push('  2. Rename / move a page → update its `path` in /src/App.tsx, rename the file under /src/pages/, and rewrite every <a data-ut-intent="nav.goto" data-ut-path="/old"> to the new path.');
+  lines.push('  3. Remove a page → delete /src/pages/<Name>.tsx, drop its route from /src/App.tsx, and rewrite/remove navigations that pointed to it.');
+  lines.push('  4. Wire a button to navigation → put `data-ut-intent="nav.goto" data-ut-path="/target"` (NEVER plain <a href> alone — HashRouter will not catch it).');
+  lines.push('  5. Wire a button to a canonical intent (cart.add, booking.create, contact.submit, pay.checkout, …) → emit `data-ut-intent` + relevant `data-ut-*` payload attributes. The runtime registry routes the click to the right surface (overlay, redirect, cart drawer, workflow).');
+  lines.push('  6. Funnels: use `data-ut-cta` labels (cta.primary / cta.hero / cta.footer) on each step CTA so the funnel orchestrator can sequence the steps shown above.');
+  lines.push('  7. NEVER invent custom intent names — pick from the canonical vocabulary in this prompt. Unknown names are flagged at review and may silently no-op.');
+
+  return lines.join('\n');
+}
+
 // ── System type context ──────────────────────────────────────────────────────
+
+
 
 export function buildSystemTypeContext(systemType?: string): string {
   if (!systemType) return '';

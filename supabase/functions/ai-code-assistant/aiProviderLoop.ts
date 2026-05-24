@@ -277,13 +277,6 @@ export async function runProviderLoop(opts: {
     }
   }
 
-  // ── Phase 2: Lovable AI Gateway — DISABLED (OpenAI-only mode) ────────
-  // Intentionally skipped. Re-enable by restoring the previous Lovable
-  // gateway loop guarded by `lovableApiKey`.
-  void lovableApiKey;
-
-
-
   // ── Phase 3: Direct Anthropic API fallback ───────────────────────────
   if (!content) {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
@@ -346,6 +339,7 @@ export async function runProviderLoop(opts: {
     }
     const configuredProviders = [
       hasDirectOpenAI ? 'openai' : '',
+      hasLovableGateway ? 'lovable-gateway' : '',
     ].filter(Boolean);
     const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';
     throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure OPENAI_API_KEY is a valid Supabase secret.`);

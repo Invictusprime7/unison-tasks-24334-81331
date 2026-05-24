@@ -183,6 +183,28 @@ type FastPathBuildContext = {
   };
   template_sections?: string[];
   intents?: Array<{ intent?: string }>;
+  style_selection?: {
+    preset_id?: string;
+    preset_label?: string;
+    style_directive?: string;
+    palette_hex?: Record<string, string | undefined>;
+    typography?: {
+      heading_font?: string;
+      body_font?: string;
+      heading_weight?: string;
+      body_weight?: string;
+    };
+  };
+  template_selection?: {
+    template_id?: string;
+    template_label?: string;
+    description?: string;
+    industry?: string;
+    traits?: string[];
+    section_order?: string[];
+    section_ids?: string[];
+    page_roles?: string[];
+  };
   /**
    * Fully-resolved HSL token set from the wizard's Style card. When present,
    * ALL CSS vars in the prompt derive from these values — never hardcoded.
@@ -225,7 +247,9 @@ export function buildFastPathSystemPrompt(opts: {
   const industry = bp?.identity?.industry || opts.source || 'professional services';
   const tone = bp?.brand?.tone || 'professional and friendly';
   const palette = bp?.brand?.palette || {};
-  const sections = bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
+  const templateSelection = bp?.template_selection || {};
+  const styleSelection = bp?.style_selection || {};
+  const sections = templateSelection.section_order || bp?.template_sections || ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
   const intents = (bp?.intents || []).map((i) => i.intent).filter(Boolean).join(', ') || 'contact.submit, booking.create';
   const t = bp?.theme_tokens || {};
 
@@ -254,11 +278,11 @@ export function buildFastPathSystemPrompt(opts: {
   const bgLightness = parseInt(String(backgroundHsl).split(' ')[2] ?? '50');
   const isDark = typeof t.isDark === 'boolean' ? t.isDark : (Number.isFinite(bgLightness) ? bgLightness < 50 : true);
   const themeMode = isDark ? 'DARK' : 'LIGHT';
-  const styleLabel = t.presetLabel || 'Modern';
-  const styleDirective = t.styleDirective || '';
-  const headingFont = t.headingFont || 'Inter';
-  const bodyFont    = t.bodyFont    || 'Inter';
-  const headingWeight = t.headingWeight || '700';
+  const styleLabel = t.presetLabel || styleSelection.preset_label || 'Modern';
+  const styleDirective = t.styleDirective || styleSelection.style_directive || '';
+  const headingFont = t.headingFont || styleSelection.typography?.heading_font || 'Inter';
+  const bodyFont    = t.bodyFont    || styleSelection.typography?.body_font || 'Inter';
+  const headingWeight = t.headingWeight || styleSelection.typography?.heading_weight || '700';
 
   return `You are an elite React developer. Generate a COMPLETE, premium single-page website as a React application.
 

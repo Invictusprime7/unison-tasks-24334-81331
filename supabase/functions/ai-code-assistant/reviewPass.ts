@@ -7,6 +7,7 @@
  */
 
 import { safetyCheck } from "./safetyRules.ts";
+import { normalizeIntentDialect } from "./intentDialectNormalizer.ts";
 
 export interface ReviewResult {
   /** Whether the patch passed review */

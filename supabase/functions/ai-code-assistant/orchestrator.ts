@@ -70,6 +70,15 @@ export function runAssistantOrchestrator(
   corsHeaders: Record<string, string>,
   userId?: string,
 ): Promise<Response> {
+  // Hard guard: wizardLaunch can ONLY be served by Lane A. If the classifier
+  // ever returns anything else with wizardLaunch set, force Lane A and log
+  // loudly so we catch any regression in routing logic.
+  if (parsed.wizardLaunch && task.type !== "wizard_template_react") {
+    console.error(
+      `[orchestrator] wizardLaunch=true but classifier routed to ${task.type}; forcing Lane A`,
+    );
+    return runWizardLane(parsed, { ...task, type: "wizard_template_react", fastPath: true }, corsHeaders);
+  }
   if (task.type === "wizard_template_react") {
     return runWizardLane(parsed, task, corsHeaders);
   }

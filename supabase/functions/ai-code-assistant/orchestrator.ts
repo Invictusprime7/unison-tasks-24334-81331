@@ -122,6 +122,8 @@ async function runWizardLane(
     providerPlan,
     navPageGen: false,
     lovableApiKey: LOVABLE_API_KEY ?? undefined,
+    forceJsonResponse: true,
+    taskType: task.type,
   });
 
   if (providerResult.earlyError) {

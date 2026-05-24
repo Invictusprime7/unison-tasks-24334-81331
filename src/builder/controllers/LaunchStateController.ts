@@ -32,6 +32,14 @@ export type {
   PublishBlocker,
 };
 
+export interface LauncherDiagnostic {
+  severity: 'info' | 'warn' | 'error';
+  code: string;
+  message: string;
+  /** Optional structured context for the chip UI. */
+  meta?: Record<string, unknown>;
+}
+
 export interface LaunchState {
   /** Latest publish-gate verdict (null until first evaluate call). */
   verdict: GateVerdict | null;
@@ -43,6 +51,8 @@ export interface LaunchState {
   status: DeploymentStatus;
   /** Last successful deploy response (kept across publish attempts). */
   lastResult: DeploymentResponse | null;
+  /** Diagnostics from the most recent launcher handoff (binding sweep + persist). */
+  launcherDiagnostics: LauncherDiagnostic[];
 }
 
 type Listener = (state: LaunchState) => void;

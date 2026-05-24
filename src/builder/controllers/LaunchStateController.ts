@@ -32,6 +32,14 @@ export type {
   PublishBlocker,
 };
 
+export interface LauncherDiagnostic {
+  severity: 'info' | 'warn' | 'error';
+  code: string;
+  message: string;
+  /** Optional structured context for the chip UI. */
+  meta?: Record<string, unknown>;
+}
+
 export interface LaunchState {
   /** Latest publish-gate verdict (null until first evaluate call). */
   verdict: GateVerdict | null;
@@ -43,6 +51,8 @@ export interface LaunchState {
   status: DeploymentStatus;
   /** Last successful deploy response (kept across publish attempts). */
   lastResult: DeploymentResponse | null;
+  /** Diagnostics from the most recent launcher handoff (binding sweep + persist). */
+  launcherDiagnostics: LauncherDiagnostic[];
 }
 
 type Listener = (state: LaunchState) => void;
@@ -75,6 +85,7 @@ export class LaunchStateController {
     canPublish: false,
     status: idleStatus,
     lastResult: null,
+    launcherDiagnostics: [],
   };
   private listeners = new Set<Listener>();
 
@@ -145,6 +156,17 @@ export class LaunchStateController {
   /** Reset deploy progress (e.g. after closing the publish modal). */
   resetStatus() {
     this.set({ status: idleStatus });
+  }
+
+  /** Replace launcher diagnostics (called by SystemLauncher after handoff). */
+  setLauncherDiagnostics(diagnostics: LauncherDiagnostic[]) {
+    this.set({ launcherDiagnostics: diagnostics });
+  }
+
+  /** Clear launcher diagnostics (e.g. after the user dismisses the chip). */
+  clearLauncherDiagnostics() {
+    if (this.state.launcherDiagnostics.length === 0) return;
+    this.set({ launcherDiagnostics: [] });
   }
 }
 

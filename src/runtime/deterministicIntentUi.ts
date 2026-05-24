@@ -107,19 +107,33 @@ export function resolveDeterministicIntentSurface(
   payload?: Record<string, unknown>,
   inventory?: PreviewIntentInventory | null,
 ): DeterministicIntentSurface {
-  // NOTE: Preset overlay + cart-checkout auto-wiring has been intentionally
-  // removed. Wizard-generated sites no longer auto-open overlays or the cart
-  // sheet on button click. Wiring is now AI-driven: the user must ask the
-  // assistant to bind a button → intent/handler, which writes an explicit
-  // record into `site_intent_bindings` and is executed by the runtime
-  // intent router (see runtime/intentRouter.ts + TemplateRuntimeProvider).
-  //
-  // We keep inline-scroll behavior for buttons whose target form/section
-  // already exists on the page — that's a passive UX nicety, not a wired
-  // action. Everything else falls through to "none" so the button stays
-  // inert until AI wires it.
+  // Cart-class intents → open the cart sheet at the right step so
+  // AI-generated "Add to cart" / "View cart" / "Checkout" buttons fire.
+  if (intent === 'cart.add' || intent === 'cart.view') {
+    return { kind: 'cart', step: 'cart' };
+  }
+  if (intent === 'cart.checkout') {
+    return { kind: 'cart', step: 'checkout' };
+  }
+
+  // If the matching form/section already lives on this page, prefer
+  // smooth-scrolling to it over opening an overlay.
   if (hasInlineIntentTarget(intent, inventory)) {
     return { kind: 'inline' };
+  }
+
+  // Otherwise fall back to the deterministic overlay (booking, contact,
+  // quote, newsletter, auth, checkout) so AI-generated CTAs actually fire
+  // on click instead of silently acknowledging.
+  const overlayId = resolveDeterministicOverlayId(intent);
+  if (overlayId) {
+    // pay.checkout only auto-opens checkout when a concrete plan/price
+    // was supplied via data-ut-* attributes; otherwise stay inert and let
+    // the resolver scroll/navigate to a pricing surface.
+    if (intent === 'pay.checkout' && !hasExplicitCheckoutConfig(payload)) {
+      return { kind: 'none' };
+    }
+    return { kind: 'overlay', overlayId };
   }
 
   return { kind: 'none' };

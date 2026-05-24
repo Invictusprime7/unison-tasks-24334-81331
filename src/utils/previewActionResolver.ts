@@ -194,9 +194,9 @@ export function resolvePreviewAction(
     return { action: 'scroll', command: scrollDef.command };
   }
 
-  // ── 3. Navigate — page already exists in VFS or in the site nav ──────────
-  // 3a. Check intent-specific page affinity candidates
-  const affinityCandidates = INTENT_PAGE_AFFINITY[intent] ?? [];
+  // ── 3. Deterministic surface (cart sheet / overlay) ──────────────────────
+  // This must run BEFORE the page-affinity navigate branch so that e.g.
+  // "Add to cart" opens the cart sheet instead of routing to /cart.
   const surface = resolveDeterministicIntentSurface(intent, payload, inv);
   if (surface.kind === 'cart') {
     return { action: 'cart', step: surface.step };
@@ -204,10 +204,13 @@ export function resolvePreviewAction(
   if (surface.kind === 'overlay') {
     return { action: 'overlay', overlayId: surface.overlayId };
   }
+
+  // ── 4. Navigate — page already exists in VFS or in the site nav ──────────
+  const affinityCandidates = INTENT_PAGE_AFFINITY[intent] ?? [];
   const affinityMatch = resolveToExistingPage(affinityCandidates, inv.navHrefs, vfsFiles);
   if (affinityMatch) return { action: 'navigate', ...affinityMatch };
 
-  // 3b. For redirect-classified labels, check suggestedPageType from classifier
+  // 4b. For redirect-classified labels, check suggestedPageType from classifier
   if (classification.category === 'redirect' && classification.suggestedPageType) {
     const labelMatch = resolveToExistingPage(
       [classification.suggestedPageType],
@@ -217,7 +220,7 @@ export function resolvePreviewAction(
     if (labelMatch) return { action: 'navigate', ...labelMatch };
   }
 
-  // 3c. Try matching the button label itself as a page name (nav links)
+  // 4c. Try matching the button label itself as a page name (nav links)
   if (buttonLabel) {
     const normLabel = normalise(buttonLabel);
     if (inv.navHrefs.some(h => normalise(h) === normLabel)) {
@@ -229,24 +232,18 @@ export function resolvePreviewAction(
     if (labelVfsPath) return { action: 'navigate', route: `/${normLabel}`, vfsPath: labelVfsPath };
   }
 
-  // ── 4. Generate — nothing found, last resort ──────────────────────────────
-  // Determine the best page type to generate
+  // ── 5. Generate / acknowledge ────────────────────────────────────────────
   const pageType =
     (affinityCandidates[0]) ||
     classification.suggestedPageType ||
     (classification.category === 'redirect' ? 'details' : null);
 
-  // Form intents without an on-page section still should NOT generate pages —
-  // they scroll to a section that simply doesn't exist yet, so we acknowledge
-  // and let the existing booking/contact flow handle it through the backend.
-  // Form / commerce / auth intents must NOT auto-generate pages or open
-  // overlays anymore. Wiring is AI-driven: if the user wants a button to
-  // do something, they ask the assistant which writes an explicit binding.
-  // Until then these intents are inert (acknowledged silently).
+  // Only the pure-form intents stay inert here — cart/auth/checkout already
+  // resolved to a real surface above. If they reach this point it means the
+  // user hasn't built that surface yet; acknowledge silently rather than
+  // generating noisy placeholder pages.
   const formOnlyIntents = ['contact.submit', 'newsletter.subscribe', 'quote.request',
-                           'lead.capture', 'booking.create', 'auth.login', 'auth.register',
-                           'cart.add', 'cart.view', 'cart.checkout', 'checkout.start',
-                           'pay.checkout', 'form.submit'];
+                           'lead.capture', 'booking.create', 'form.submit'];
   if (formOnlyIntents.includes(intent)) {
     return { action: 'acknowledge' };
   }

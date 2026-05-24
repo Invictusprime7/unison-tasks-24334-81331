@@ -568,43 +568,17 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return () => window.removeEventListener('message', handlePreviewMessage);
   }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
   
-  // Initialize backend — Docker for local dev, Sandpack for production
+  // Initialize backend — Canonical single path: Sandpack iframe with /src/App.tsx
+  // HashRouter as the sole multi-page React routing source. Docker/local-vite
+  // branches were removed to eliminate competing preview pipelines that caused
+  // broken layouts and route divergence during wizard launches.
   useEffect(() => {
     if (startAttemptedRef.current) return;
     startAttemptedRef.current = true;
-
-    if (forceBackend === 'sandpack') {
-      setBackend('sandpack');
-      onReady?.();
-      return;
-    }
-
-    if (localViteConfigured) {
-      setBackend('local');
-      onReady?.();
-      return;
-    }
-
-    if (dockerGatewayConfigured && autoStart) {
-      setBackend('loading');
-      dockerService.startSession(nodes).then((session) => {
-        if (session) {
-          setBackend('docker');
-        } else {
-          setBackend('sandpack');
-        }
-        onReady?.();
-      }).catch(() => {
-        setBackend('sandpack');
-        onReady?.();
-      });
-      return;
-    }
-
-    // Default: always Sandpack
     setBackend('sandpack');
     onReady?.();
-  }, [autoStart, dockerGatewayConfigured, dockerService, forceBackend, localViteConfigured, nodes, onReady]);
+  }, [onReady]);
+
   
   // Sync file changes to Docker when running
   useEffect(() => {

@@ -441,6 +441,17 @@ async function runBuilderLane(
     finalSystemPrompt += preprocessed.intentSummary;
   }
 
+  // Inject site topology + intent bindings so chat prompts can edit routes & wiring.
+  if (siteContextBlock) {
+    finalSystemPrompt += `\n${siteContextBlock}`;
+  }
+
+  // Inject user DB context (history + drafts) for Lane B personalization.
+  if (userDBContextBlock) {
+    finalSystemPrompt += `\n\n${userDBContextBlock}`;
+  }
+
+
   // Inject live preview DOM snapshot for context awareness
   if (previewSnapshot) {
     finalSystemPrompt += `\n\n${previewSnapshot}\nUse this to understand what the user currently sees and which elements/sections exist in the live preview.`;

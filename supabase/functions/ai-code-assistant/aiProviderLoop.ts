@@ -102,6 +102,10 @@ export async function runProviderLoop(opts: {
           messages: aiMessages,
           max_completion_tokens: model.maxTokens,
         };
+        if (forceJsonResponse) {
+          requestBody.response_format = { type: 'json_object' };
+        }
+        void reasoningEffort; // reserved for future per-model reasoning controls
         
         const resp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',

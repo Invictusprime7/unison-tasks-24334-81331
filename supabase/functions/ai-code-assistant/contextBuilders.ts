@@ -288,12 +288,20 @@ export function buildFastPathSystemPrompt(opts: {
 
 BUSINESS: "${brandName}" — ${industry}
 TONE: ${tone}
-SECTIONS: ${sections.join(' → ')}
+TEMPLATE SELECTION — LOCKED structural source from the Wizard template card.
+Template: ${templateSelection.template_label || opts.templateName || 'Selected wizard template'}${templateSelection.template_id ? ` (${templateSelection.template_id})` : ''}
+${templateSelection.description ? `Template description: ${templateSelection.description}` : ''}
+${templateSelection.traits?.length ? `Template traits: ${templateSelection.traits.join(', ')}` : ''}
+SECTION ORDER: ${sections.join(' → ')}
+${templateSelection.section_ids?.length ? `Section instance IDs: ${templateSelection.section_ids.join(' → ')}` : ''}
+${templateSelection.page_roles?.length ? `Template page roles available: ${templateSelection.page_roles.join(', ')}` : ''}
 INTENTS TO WIRE: ${intents}
 
 VISUAL STYLE — LOCKED to the wizard's "${styleLabel}" preset (${themeMode} theme).
 ${styleDirective ? `Style directive: ${styleDirective}` : ''}
 Typography: headings ${headingFont} (${headingWeight}); body ${bodyFont}.
+${styleSelection.preset_id ? `Style card id: ${styleSelection.preset_id}` : ''}
+${styleSelection.palette_hex ? `Style card hex palette: ${Object.entries(styleSelection.palette_hex).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}
 
 BRAND TOKENS — HSL values for CSS custom properties (no hsl() wrapper, just the values).
 These are the AUTHORITATIVE palette. Do NOT invent darker/lighter alternatives.
@@ -347,7 +355,7 @@ RULES:
    PEOPLE (testimonials/team): "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80", "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80"
    NEVER construct URLs with template literals or arithmetic. Always use plain static strings.
 9. index.css MUST contain: @tailwind base; @tailwind components; @tailwind utilities; then :root { } with ALL the HSL variables above (the launcher will replace this file with its themed version, but emit it for completeness).
-10. MINIMUM 7 distinct sections, each with rich content.
+10. Render EXACTLY this wizard template section order: ${sections.join(' → ')}. Do not invent a different layout family, reorder sections, or replace the selected template with a generic landing page.
 11. THEME-MODE-AWARE STYLING: this is a ${themeMode} theme. ${isDark
     ? 'Use deeper backgrounds with subtle glassmorphism (hsl(var(--card) / 0.6) + backdrop-blur), bright accents, and high-contrast light text.'
     : 'Use light/cream backgrounds, soft shadows, refined serif/clean sans typography, generous whitespace, and dark text on light surfaces. NO dark glassmorphism overlays. NO black panels.'} Responsive (sm:/md:/lg:).

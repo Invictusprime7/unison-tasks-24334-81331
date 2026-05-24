@@ -10,12 +10,12 @@ import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
  * POST /systems-classify
  * 
  * Takes a business prompt and returns industry classification + clarifying questions.
- * Uses AI for intelligent classification when LOVABLE_API_KEY is configured,
+ * Uses AI for intelligent classification when OPENAI_API_KEY is configured,
  * falls back to regex-based heuristics otherwise.
  */
 
-const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const AI_MODEL = "google/gemini-2.5-flash";
+const AI_GATEWAY_URL = "https://api.openai.com/v1/chat/completions";
+const AI_MODEL = "gpt-5-mini";
 
 interface ClassifyRequest {
   prompt: string;
@@ -451,7 +451,7 @@ serve(async (req) => {
     }
     
     // Try AI classification first if API key is available
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
     let result: ClassifyResponse | null = null;
     let usedAI = false;
     

@@ -410,21 +410,21 @@ async function callLLM(
   // deno-lint-ignore no-explicit-any
   [key: string]: any 
 }> {
-  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')
+  const lovableApiKey = Deno.env.get('OPENAI_API_KEY')
   
   if (!lovableApiKey) {
-    console.error('[agent-runner] LOVABLE_API_KEY not configured')
+    console.error('[agent-runner] OPENAI_API_KEY not configured')
     throw new Error('LLM service not configured')
   }
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${lovableApiKey}`,
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
+      model: 'gpt-5-mini',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: JSON.stringify(userPayload, null, 2) },

@@ -977,8 +977,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);
 
-      // Deterministic seed App.tsx — used as `currentCode` context to anchor
-      // the AI to the picked template's section structure.
+      // Deterministic seed App.tsx — never sent as currentCode, but measured so
+      // launcher diagnostics prove the picked template composition was resolved.
       const seedAppCode = compositionToReactCode(composition);
       const templateSectionOrder = composition.sections.map((s) => s.type);
       const templateGuidance = buildTemplateGuidance(selectedTemplate);
@@ -997,6 +997,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           enforceTemplateComposition: true,
           enforceThemeCssOverride: true,
           deterministicFallbackAllowed: false,
+          resolvedTemplateSeedChars: seedAppCode.length,
         },
         identity: {
           industry: resolvedIndustry,

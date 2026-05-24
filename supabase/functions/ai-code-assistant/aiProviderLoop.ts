@@ -26,8 +26,12 @@ export async function runProviderLoop(opts: {
   navPageGen: boolean;
   lovableApiKey?: string;
   reasoningEffort?: "none" | "low" | "medium" | "high";
+  /** Force OpenAI response_format = json_object (used by Lane A wizard) */
+  forceJsonResponse?: boolean;
+  /** Task type — used to choose the right OpenAI model from providerPlan */
+  taskType?: string;
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort } = opts;
+  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort, forceJsonResponse, taskType } = opts;
   let content = '';
   let lastError = '';
   let reasoning = '';
@@ -48,17 +52,37 @@ export async function runProviderLoop(opts: {
   };
 
   // ── Phase 1: Direct OpenAI API (PRIMARY) ─────────────────────────────
-  // OpenAI is the primary provider when available
+  // OpenAI is the primary provider. Honor the providerPlan: it carries the
+  // lane-specific model selection (Lane A wizard → gpt-5 family, Lane B
+  // builder → varies). We translate the gateway-style ids ("openai/gpt-5")
+  // to direct OpenAI ids ("gpt-5"). Falls back to gpt-4o ONLY if no openai
+  // models are in the plan, preserving compatibility for older callers.
   const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
   if (OPENAI_API_KEY) {
     const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
+    const planOpenAIModels = (providerPlan.gatewayModels || [])
+      .filter((m) => m.id.startsWith('openai/'))
+      .map((m) => ({
+        id: m.id.replace(/^openai\//, ''),
+        maxTokens: m.maxTokens,
+        label: `OpenAI ${m.label}`,
+      }));
+    const isWizard = taskType === 'wizard_template_react';
+    const baseModels = planOpenAIModels.length > 0
+      ? planOpenAIModels
+      : [
+          { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
+          { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },
+        ];
     const openaiModels = [
       ...(configuredOpenAIModel
         ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
         : []),
-      { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
-      { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },
-    ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
+      ...baseModels,
+    ].filter((model, index, models) => models.findIndex((mm) => mm.id === model.id) === index);
+    if (isWizard) {
+      console.log(`[AI-Hybrid] Wizard Lane A using OpenAI models: ${openaiModels.map((m) => m.id).join(', ')} (json mode: ${forceJsonResponse ? 'on' : 'off'})`);
+    }
     
     for (const model of openaiModels) {
       const remaining = budgetRemaining();

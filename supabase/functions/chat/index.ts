@@ -57,87 +57,52 @@ serve(async (req) => {
   };
 
   try {
-    const { messages, model = 'openai/gpt-5-mini', reasoning } = await req.json();
+    const { messages, model = 'gpt-5-mini', reasoning } = await req.json();
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    // Unison Task default: OpenAI primary, Lovable AI Gateway fallback.
-    // Any model id may be sent; "openai/*" or bare names route to OpenAI first,
-    // "google/*" or other gateway-prefixed ids route to Lovable first.
-    const prefersLovable = typeof model === 'string' && /^(google|anthropic|meta|mistral|lovable)\//.test(model);
-    const openAIModel = typeof model === 'string' ? model.replace(/^openai\//, '') : 'gpt-5-mini';
-    const lovableModel = prefersLovable ? model : 'google/gemini-2.5-flash';
-
-    type Attempt = { provider: 'openai' | 'lovable'; url: string; key: string | undefined; modelId: string };
-    const openaiAttempt: Attempt = {
-      provider: 'openai',
-      url: 'https://api.openai.com/v1/chat/completions',
-      key: OPENAI_API_KEY,
-      modelId: openAIModel,
-    };
-    const lovableAttempt: Attempt = {
-      provider: 'lovable',
-      url: 'https://ai.gateway.lovable.dev/v1/chat/completions',
-      key: LOVABLE_API_KEY,
-      modelId: lovableModel,
-    };
-
-    const attempts: Attempt[] = prefersLovable
-      ? [lovableAttempt, openaiAttempt]
-      : [openaiAttempt, lovableAttempt];
-
-    let response: Response | null = null;
-    let lastErrorText = '';
-    let lastStatus: number | null = null;
-
-    for (const attempt of attempts) {
-      if (!attempt.key) continue;
-      provider = attempt.provider;
-      resolvedModel = attempt.modelId;
-
-      const body: Record<string, unknown> = {
-        model: attempt.modelId,
-        messages: [
-          { role: "system", content: "You are Unison Task's AI assistant. Be clear, concise, and accurate." },
-          ...messages,
-        ],
-        stream: true,
-      };
-      if (reasoning?.effort && reasoning.effort !== 'none') {
-        body.reasoning = { effort: reasoning.effort };
-      }
-
-      const res = await fetch(attempt.url, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${attempt.key}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) { response = res; break; }
-
-      lastStatus = res.status;
-      lastErrorText = await res.text();
-      console.error(`AI provider error (${attempt.provider}):`, res.status, lastErrorText);
-      await logRequest({ statusCode: res.status, success: false, errorMessage: `[${attempt.provider}] ${lastErrorText.slice(0, 400)}` });
-      // Fall through to next attempt on auth/quota/server errors
-      if (![401, 402, 403, 408, 429, 500, 502, 503, 504].includes(res.status)) break;
+    // OpenAI-only mode: Lovable gateway fallback intentionally disabled.
+    if (!OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is not configured.");
     }
 
-    if (!response) {
-      if (!OPENAI_API_KEY && !LOVABLE_API_KEY) {
-        throw new Error("No AI provider configured: set OPENAI_API_KEY (primary) or LOVABLE_API_KEY (fallback).");
-      }
+    const openAIModel = typeof model === 'string' ? model.replace(/^openai\//, '') : 'gpt-5-mini';
+    provider = 'openai';
+    resolvedModel = openAIModel;
+
+    const body: Record<string, unknown> = {
+      model: openAIModel,
+      messages: [
+        { role: "system", content: "You are Unison Task's AI assistant. Be clear, concise, and accurate." },
+        ...messages,
+      ],
+      stream: true,
+    };
+    if (reasoning?.effort && reasoning.effort !== 'none') {
+      body.reasoning = { effort: reasoning.effort };
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: "POST",
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const lastStatus = response.status;
+      const lastErrorText = await response.text();
+      console.error(`OpenAI error:`, lastStatus, lastErrorText);
+      await logRequest({ statusCode: lastStatus, success: false, errorMessage: `[openai] ${lastErrorText.slice(0, 400)}` });
       if (lastStatus === 429) {
-        return new Response(JSON.stringify({ error: "Rate limits exceeded on all providers, please try again later." }), {
+        return new Response(JSON.stringify({ error: "OpenAI rate limit exceeded, please try again later." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (lastStatus === 402) {
-        return new Response(JSON.stringify({ error: "Payment required, please add credits to your AI provider workspace." }), {
+        return new Response(JSON.stringify({ error: "Payment required, please add credits to your OpenAI account." }), {
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ error: "AI provider error (all attempts failed)", detail: lastErrorText }), {
+      return new Response(JSON.stringify({ error: "OpenAI error", detail: lastErrorText }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

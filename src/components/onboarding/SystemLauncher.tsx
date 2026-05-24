@@ -841,8 +841,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         ...(compositionMeta?.intents || []),
       ]));
 
-      const fonts = randomFontPairing();
-      const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
 
       // ── Provision backend in background (non-blocking) ──
@@ -980,6 +978,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // Deterministic seed App.tsx — used as `currentCode` context to anchor
       // the AI to the picked template's section structure.
       const seedAppCode = compositionToReactCode(composition);
+      const templateSectionOrder = composition.sections.map((s) => s.type);
+      const lockedWizardDesign = buildLockedWizardDesign({
+        preset: resolvedPreset,
+        template: selectedTemplate,
+        sectionOrder: templateSectionOrder,
+      });
 
       // ── Blueprint enriched with Style card palette + custom instructions ──
       const blueprint = {
@@ -1018,7 +1022,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             foreground: resolvedPreset.palette.fg,
           },
         },
-        design,
+        design: lockedWizardDesign,
         // Fully-resolved HSL token set (Style card → ThemePresetTokens). The
         // edge-function fast-path consumes these so the AI's App.tsx inline
         // styles stay in lockstep with the themed /src/index.css that the

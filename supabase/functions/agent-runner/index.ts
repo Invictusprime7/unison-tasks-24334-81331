@@ -424,7 +424,7 @@ async function callLLM(
       'Authorization': `Bearer ${lovableApiKey}`,
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
+      model: 'gpt-5-mini',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: JSON.stringify(userPayload, null, 2) },

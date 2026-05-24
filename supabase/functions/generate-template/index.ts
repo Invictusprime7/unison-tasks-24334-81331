@@ -359,7 +359,7 @@ Return ONLY the complete HTML code. Make it look like a $5000 custom-built websi
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
+        model: 'gpt-5',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }

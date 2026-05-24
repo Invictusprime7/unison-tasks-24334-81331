@@ -7,9 +7,7 @@ import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   const preflight = handleCorsPreflightRequest(req, corsHeaders);
-  if (preflight) {
-    return preflight;
-  }
+  if (preflight) return preflight;
 
   if (req.method !== "POST") {
     return errorResponse("Method not allowed", 405, corsHeaders);
@@ -29,19 +27,14 @@ serve(async (req) => {
 
     const prompt = typeof body.prompt === "string" ? sanitizeString(body.prompt, 10_000) : "";
     const style = typeof body.style === "string" ? sanitizeString(body.style, 200) : undefined;
-    if (!prompt) {
-      return errorResponse("Prompt is required", 400, corsHeaders);
-    }
+    if (!prompt) return errorResponse("Prompt is required", 400, corsHeaders);
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const OPENAI_IMAGE_MODEL = Deno.env.get("OPENAI_IMAGE_MODEL") || "gpt-image-1";
 
-    if (!LOVABLE_API_KEY) {
-      console.warn("LOVABLE_API_KEY not configured - AI features unavailable in local development");
+    if (!OPENAI_API_KEY) {
       return secureJsonResponse(
-        {
-          error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
-          isLocalDevelopment: true,
-        },
+        { error: "OPENAI_API_KEY not configured.", isLocalDevelopment: true },
         503,
         corsHeaders,
       );
@@ -49,35 +42,36 @@ serve(async (req) => {
 
     const enhancedPrompt = `${prompt}. Style: ${style || "professional and modern"}. High quality, detailed, suitable for web design.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [{ role: "user", content: enhancedPrompt }],
-        modalities: ["image", "text"],
+        model: OPENAI_IMAGE_MODEL,
+        prompt: enhancedPrompt,
+        n: 1,
+        size: "1024x1024",
+        quality: "medium",
+        output_format: "png",
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
-      }
-      if (response.status === 402) {
-        return errorResponse("Payment required. Please add credits to your Lovable workspace.", 402, corsHeaders);
-      }
-      return errorResponse(`AI Gateway error: ${response.status}`, 503, corsHeaders);
+      const errText = await response.text();
+      console.error("[generate-template-image] OpenAI error:", response.status, errText);
+      if (response.status === 429) return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
+      if (response.status === 401) return errorResponse("OpenAI authentication failed.", 401, corsHeaders);
+      return errorResponse(`OpenAI error: ${response.status}`, 503, corsHeaders);
     }
 
     const data = await response.json();
-    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const b64 = data.data?.[0]?.b64_json;
+    const url = data.data?.[0]?.url;
+    const imageUrl = b64 ? `data:image/png;base64,${b64}` : url;
 
-    if (!imageUrl) {
-      throw new Error("No image generated");
-    }
+    if (!imageUrl) throw new Error("No image generated");
 
     return secureJsonResponse({ imageUrl }, 200, corsHeaders);
   } catch (error) {

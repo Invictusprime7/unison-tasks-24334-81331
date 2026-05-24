@@ -981,6 +981,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // the AI to the picked template's section structure.
       const seedAppCode = compositionToReactCode(composition);
       const templateSectionOrder = composition.sections.map((s) => s.type);
+      const templateGuidance = buildTemplateGuidance(selectedTemplate);
       const lockedWizardDesign = buildLockedWizardDesign({
         preset: resolvedPreset,
         template: selectedTemplate,
@@ -1000,11 +1001,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         identity: {
           industry: resolvedIndustry,
           business_model: system.id,
-          primary_goal: industryProfile
-            ? industryProfile.defaultCapabilities.includes("booking")
-              ? "bookings"
-              : "leads"
-            : "Generate leads and grow the business",
+          primary_goal: primaryGoal || "collect_leads",
         },
         brand: {
           business_name: brand,
@@ -1025,6 +1022,24 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           },
         },
         design: lockedWizardDesign,
+        style_selection: {
+          preset_id: resolvedPreset.id,
+          preset_label: resolvedPreset.label,
+          style_directive: resolvedPreset.styleDirective,
+          palette_hex: {
+            background: resolvedPreset.palette.bg,
+            foreground: resolvedPreset.palette.fg,
+            primary: resolvedPreset.palette.accent,
+            secondary: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+            accent: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+          },
+          typography: {
+            heading_font: resolvedPreset.typography.headingFont,
+            body_font: resolvedPreset.typography.bodyFont,
+            heading_weight: resolvedPreset.typography.headingWeight,
+            body_weight: themedTokens.typography.bodyWeight,
+          },
+        },
         // Fully-resolved HSL token set (Style card → ThemePresetTokens). The
         // edge-function fast-path consumes these so the AI's App.tsx inline
         // styles stay in lockstep with the themed /src/index.css that the
@@ -1044,7 +1059,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
         // The Template card's section order — passed to the AI as a hard contract
-        template_sections: composition.sections.map((s) => s.type),
+        template_selection: {
+          template_id: selectedTemplate.id,
+          template_label: selectedTemplate.label,
+          description: selectedTemplate.description,
+          industry: selectedTemplate.industry,
+          traits: selectedTemplate.traits,
+          section_order: templateSectionOrder,
+          section_ids: composition.sections.map((s) => s.id),
+          page_roles: composition.pageRoles,
+        },
+        template_sections: templateSectionOrder,
         template_intents: compositionMeta?.intents,
       };
 
@@ -1065,6 +1090,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         headingFont: resolvedPreset.typography.headingFont,
         headingWeight: resolvedPreset.typography.headingWeight,
         bodyFont: resolvedPreset.typography.bodyFont,
+        templateGuidance,
         canonicalIntents,
         customInstructionsRaw: customPrompt,
       });

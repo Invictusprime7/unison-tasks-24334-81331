@@ -6117,6 +6117,7 @@ ${html}
               <Save className="h-3.5 w-3.5 mr-1.5" />
               <span className="text-xs font-bold">{currentTemplateName ? 'Update' : 'Save'}</span>
             </Button>
+            <IntentHealthPill report={playgroundReadinessReport} />
             <DeployButton
               files={canonicalBuildArtifacts?.deployFiles || {}}
               defaultSiteName={currentTemplateName || 'unison-site'}

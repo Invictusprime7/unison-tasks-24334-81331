@@ -64,6 +64,8 @@ import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
 import { extractLauncherPayload } from "@/utils/launcherPayload";
+import { validateLaunchHandoff } from "@/services/launchHandoffValidator";
+import { liveLaunchState } from "@/builder/controllers/LaunchStateController";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================

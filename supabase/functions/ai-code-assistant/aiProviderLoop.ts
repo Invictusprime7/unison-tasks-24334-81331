@@ -43,6 +43,7 @@ export async function runProviderLoop(opts: {
   const startedAt = Date.now();
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const hasDirectOpenAI = Boolean(Deno.env.get('OPENAI_API_KEY'));
+  const hasLovableGateway = Boolean(lovableApiKey);
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
   const recordProviderError = (label: string, detail: string) => {
@@ -51,14 +52,92 @@ export async function runProviderLoop(opts: {
     lastError = message;
   };
 
-  // ── Phase 1: Direct OpenAI API (PRIMARY) ─────────────────────────────
+  // ── Phase 1: Lovable AI Gateway fast-path models ─────────────────────
+  // Lane A's provider plan intentionally starts with fast non-OpenAI models
+  // (Gemini Flash). Try those first so GPT-5 latency cannot consume the whole
+  // wizard launch budget before a fast structured model gets a chance.
+  const gatewayModels = (providerPlan.gatewayModels || []).filter((m) => !m.id.startsWith('openai/'));
+  if (lovableApiKey && gatewayModels.length > 0) {
+    if (taskType === 'wizard_template_react') {
+      console.log(`[AI-Hybrid] Wizard Lane A using Lovable Gateway models first: ${gatewayModels.map((m) => m.id).join(', ')}`);
+    }
+
+    for (const model of gatewayModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) {
+        console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining gateway models`);
+        lastError = lastError || 'budget exhausted before all gateway models tried';
+        break;
+      }
+      const perModelMs = Math.min(providerPlan.perModelTimeoutMs || 45000, Math.max(8000, remaining - 2000));
+      try {
+        console.log(`[AI-Hybrid] Trying Lovable Gateway ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+
+        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model.id,
+            messages: aiMessages,
+            max_tokens: model.maxTokens,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (resp.status === 429 || resp.status === 402) {
+          const errText = await resp.text().catch(() => '');
+          deferredEarlyError ??= resp.status === 429
+            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
+            : { status: 402, error: 'Payment required. Please add AI credits to continue.' };
+          recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+          continue;
+        }
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          console.warn(`[AI-Hybrid] ${model.label} gateway error ${resp.status}: ${errText.substring(0, 300)}`);
+          recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
+          continue;
+        }
+
+        const data = await resp.json();
+        const parsedContent = data.choices?.[0]?.message?.content || '';
+        if (!parsedContent) {
+          recordProviderError(model.label, 'no content');
+          continue;
+        }
+
+        const extracted = extractThinkingTags(parsedContent);
+        if (extracted.reasoning) reasoning = extracted.reasoning;
+        content = extracted.content;
+        modelUsed = model.id;
+        console.log(`[AI-Hybrid] Success with Lovable Gateway ${model.label}`);
+        break;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.warn(`[AI-Hybrid] ${model.label} gateway timed out, trying next...`);
+          recordProviderError(model.label, 'timeout');
+          continue;
+        }
+        recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
+      }
+    }
+  }
+
+  // ── Phase 2: Direct OpenAI API ───────────────────────────────────────
   // OpenAI is the primary provider. Honor the providerPlan: it carries the
   // lane-specific model selection (Lane A wizard → gpt-5 family, Lane B
   // builder → varies). We translate the gateway-style ids ("openai/gpt-5")
   // to direct OpenAI ids ("gpt-5"). Falls back to gpt-4o ONLY if no openai
   // models are in the plan, preserving compatibility for older callers.
   const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  if (OPENAI_API_KEY) {
+  if (!content && OPENAI_API_KEY) {
     const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
     const planOpenAIModels = (providerPlan.gatewayModels || [])
       .filter((m) => m.id.startsWith('openai/'))
@@ -74,7 +153,7 @@ export async function runProviderLoop(opts: {
           { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
           { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },
         ];
-    const openaiModels = [
+    const rawOpenaiModels = [
       ...(configuredOpenAIModel
         ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
         : []),
@@ -82,6 +161,12 @@ export async function runProviderLoop(opts: {
       // Fast fallback — gpt-4o responds in seconds, protects wizard from gpt-5 reasoning latency
       { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o (fallback)' },
     ].filter((model, index, models) => models.findIndex((mm) => mm.id === model.id) === index);
+    const openaiModels = isWizard
+      ? rawOpenaiModels.sort((a, b) => {
+          const score = (id: string) => id === 'gpt-4o' ? 0 : /^gpt-5-mini/i.test(id) ? 1 : /^gpt-5/i.test(id) ? 2 : 3;
+          return score(a.id) - score(b.id);
+        })
+      : rawOpenaiModels;
     if (isWizard) {
       console.log(`[AI-Hybrid] Wizard Lane A using OpenAI models: ${openaiModels.map((m) => m.id).join(', ')} (json mode: ${forceJsonResponse ? 'on' : 'off'})`);
     }
@@ -192,13 +277,6 @@ export async function runProviderLoop(opts: {
     }
   }
 
-  // ── Phase 2: Lovable AI Gateway — DISABLED (OpenAI-only mode) ────────
-  // Intentionally skipped. Re-enable by restoring the previous Lovable
-  // gateway loop guarded by `lovableApiKey`.
-  void lovableApiKey;
-
-
-
   // ── Phase 3: Direct Anthropic API fallback ───────────────────────────
   if (!content) {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
@@ -261,6 +339,7 @@ export async function runProviderLoop(opts: {
     }
     const configuredProviders = [
       hasDirectOpenAI ? 'openai' : '',
+      hasLovableGateway ? 'lovable-gateway' : '',
     ].filter(Boolean);
     const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';
     throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure OPENAI_API_KEY is a valid Supabase secret.`);

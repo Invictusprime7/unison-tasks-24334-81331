@@ -157,6 +157,17 @@ export class LaunchStateController {
   resetStatus() {
     this.set({ status: idleStatus });
   }
+
+  /** Replace launcher diagnostics (called by SystemLauncher after handoff). */
+  setLauncherDiagnostics(diagnostics: LauncherDiagnostic[]) {
+    this.set({ launcherDiagnostics: diagnostics });
+  }
+
+  /** Clear launcher diagnostics (e.g. after the user dismisses the chip). */
+  clearLauncherDiagnostics() {
+    if (this.state.launcherDiagnostics.length === 0) return;
+    this.set({ launcherDiagnostics: [] });
+  }
 }
 
 /** Shared singleton for the live builder surface. */

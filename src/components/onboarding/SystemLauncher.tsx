@@ -38,10 +38,6 @@ import {
   planSiteTopology,
   type GeneratedSitePlan,
 } from "@/platform/core/siteTopologyPlanner";
-import {
-  generateDesignVariation,
-  randomFontPairing,
-} from "@/utils/designVariation";
 // (aiCodeCleaner imports removed alongside the wizard fast-path enrichment)
 import { sanitizeGeneratedFiles } from "@/utils/tsxSanitizer";
 import { type LauncherHandoff } from "@/types/runtimeManifest";
@@ -385,6 +381,7 @@ function buildWizardAiSeedPrompt(opts: {
   headingFont: string;
   headingWeight: string;
   bodyFont: string;
+  templateGuidance: string;
   canonicalIntents: string[];
   customInstructionsRaw: string;
 }): string {
@@ -401,6 +398,7 @@ function buildWizardAiSeedPrompt(opts: {
     `4. Business Name: ${opts.businessName}`,
     `5. Visual Style preset (LOCKED aesthetic): ${opts.visualStyleLabel} — ${opts.visualStyleDirective}`,
     `   Headings: ${opts.headingFont} (${opts.headingWeight}). Body: ${opts.bodyFont}.`,
+    opts.templateGuidance ? `Template layout details (LOCKED):\n${opts.templateGuidance}` : `Template layout details: use the selected template card only`,
     customInstructionsPresent
       ? `6. Custom instructions from user (HIGHEST priority for copy/tone): included verbatim below`
       : `6. Custom instructions: (none)`,
@@ -437,6 +435,59 @@ function buildTemplateGuidance(card: TemplateCardData | null): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function buildLockedWizardDesign(opts: {
+  preset: ThemePreset;
+  template: TemplateCardData;
+  sectionOrder: string[];
+}) {
+  const lowerDirective = opts.preset.styleDirective.toLowerCase();
+  const isMinimal = opts.preset.id === 'minimalist' || lowerDirective.includes('minimal');
+  const isBold = opts.preset.id === 'bold' || lowerDirective.includes('oversized');
+  const isFuturistic = opts.preset.id === 'futuristic' || lowerDirective.includes('glassmorphism');
+  const heroStyle = opts.template.traits[0] || opts.template.sectionTypes[0] || 'premium image-first hero';
+
+  return {
+    layout: {
+      hero_style: heroStyle,
+      section_spacing: isMinimal ? 'airy' : isBold ? 'dramatic' : 'balanced',
+      max_width: isBold ? '1440px' : '1200px',
+      navigation_style: opts.sectionOrder.includes('navbar') ? 'template-navbar' : 'minimal',
+    },
+    effects: {
+      animations: !isMinimal,
+      scroll_animations: !isMinimal,
+      hover_effects: true,
+      gradient_backgrounds: opts.preset.id !== 'minimalist',
+      glassmorphism: isFuturistic,
+      shadows: isMinimal ? 'subtle' : isBold ? 'dramatic' : 'medium',
+    },
+    images: {
+      style: opts.template.traits.includes('editorial') ? 'editorial' : 'photographic',
+      aspect_ratio: '16:9',
+      overlay_style: isFuturistic ? 'glass' : 'soft',
+    },
+    buttons: {
+      style: isBold ? 'bold' : isMinimal ? 'outline' : 'rounded',
+      size: isBold ? 'large' : 'medium',
+      hover_effect: !isMinimal ? 'lift' : 'subtle',
+    },
+    sections: {
+      include_stats: opts.sectionOrder.includes('stats'),
+      include_testimonials: opts.sectionOrder.includes('testimonials'),
+      include_faq: opts.sectionOrder.includes('faq'),
+      include_cta_banner: opts.sectionOrder.includes('cta'),
+      include_newsletter: opts.sectionOrder.includes('blog-preview'),
+      include_social_proof: opts.sectionOrder.includes('logo-cloud') || opts.sectionOrder.includes('testimonials'),
+      use_counter_animations: !isMinimal && opts.sectionOrder.includes('stats'),
+    },
+    content: {
+      density: isBold ? 'high-impact' : isMinimal ? 'sparse' : 'balanced',
+      use_icons: opts.preset.id !== 'editorial',
+      writing_style: opts.preset.id,
+    },
+  };
 }
 
 function getGenerationCategory(
@@ -792,8 +843,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         ...(compositionMeta?.intents || []),
       ]));
 
-      const fonts = randomFontPairing();
-      const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
 
       // ── Provision backend in background (non-blocking) ──
@@ -928,9 +977,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);
 
-      // Deterministic seed App.tsx — used as `currentCode` context to anchor
-      // the AI to the picked template's section structure.
+      // Deterministic seed App.tsx — never sent as currentCode, but measured so
+      // launcher diagnostics prove the picked template composition was resolved.
       const seedAppCode = compositionToReactCode(composition);
+      const templateSectionOrder = composition.sections.map((s) => s.type);
+      const templateGuidance = buildTemplateGuidance(selectedTemplate);
+      const lockedWizardDesign = buildLockedWizardDesign({
+        preset: resolvedPreset,
+        template: selectedTemplate,
+        sectionOrder: templateSectionOrder,
+      });
 
       // ── Blueprint enriched with Style card palette + custom instructions ──
       const blueprint = {
@@ -941,15 +997,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           enforceTemplateComposition: true,
           enforceThemeCssOverride: true,
           deterministicFallbackAllowed: false,
+          resolvedTemplateSeedChars: seedAppCode.length,
         },
         identity: {
           industry: resolvedIndustry,
           business_model: system.id,
-          primary_goal: industryProfile
-            ? industryProfile.defaultCapabilities.includes("booking")
-              ? "bookings"
-              : "leads"
-            : "Generate leads and grow the business",
+          primary_goal: primaryGoal || "collect_leads",
         },
         brand: {
           business_name: brand,
@@ -969,7 +1022,25 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             foreground: resolvedPreset.palette.fg,
           },
         },
-        design,
+        design: lockedWizardDesign,
+        style_selection: {
+          preset_id: resolvedPreset.id,
+          preset_label: resolvedPreset.label,
+          style_directive: resolvedPreset.styleDirective,
+          palette_hex: {
+            background: resolvedPreset.palette.bg,
+            foreground: resolvedPreset.palette.fg,
+            primary: resolvedPreset.palette.accent,
+            secondary: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+            accent: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
+          },
+          typography: {
+            heading_font: resolvedPreset.typography.headingFont,
+            body_font: resolvedPreset.typography.bodyFont,
+            heading_weight: resolvedPreset.typography.headingWeight,
+            body_weight: themedTokens.typography.bodyWeight,
+          },
+        },
         // Fully-resolved HSL token set (Style card → ThemePresetTokens). The
         // edge-function fast-path consumes these so the AI's App.tsx inline
         // styles stay in lockstep with the themed /src/index.css that the
@@ -989,7 +1060,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
         // The Template card's section order — passed to the AI as a hard contract
-        template_sections: composition.sections.map((s) => s.type),
+        template_selection: {
+          template_id: selectedTemplate.id,
+          template_label: selectedTemplate.label,
+          description: selectedTemplate.description,
+          industry: selectedTemplate.industry,
+          traits: selectedTemplate.traits,
+          section_order: templateSectionOrder,
+          section_ids: composition.sections.map((s) => s.id),
+          page_roles: composition.pageRoles,
+        },
+        template_sections: templateSectionOrder,
         template_intents: compositionMeta?.intents,
       };
 
@@ -1010,6 +1091,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         headingFont: resolvedPreset.typography.headingFont,
         headingWeight: resolvedPreset.typography.headingWeight,
         bodyFont: resolvedPreset.typography.bodyFont,
+        templateGuidance,
         canonicalIntents,
         customInstructionsRaw: customPrompt,
       });

@@ -446,10 +446,8 @@ async function runBuilderLane(
     finalSystemPrompt += `\n${siteContextBlock}`;
   }
 
-  // Inject user DB context (history + drafts) for Lane B personalization.
-  if (userDBContextBlock) {
-    finalSystemPrompt += `\n\n${userDBContextBlock}`;
-  }
+
+
 
 
   // Inject live preview DOM snapshot for context awareness

@@ -381,6 +381,7 @@ function buildWizardAiSeedPrompt(opts: {
   headingFont: string;
   headingWeight: string;
   bodyFont: string;
+  templateGuidance: string;
   canonicalIntents: string[];
   customInstructionsRaw: string;
 }): string {
@@ -397,6 +398,7 @@ function buildWizardAiSeedPrompt(opts: {
     `4. Business Name: ${opts.businessName}`,
     `5. Visual Style preset (LOCKED aesthetic): ${opts.visualStyleLabel} — ${opts.visualStyleDirective}`,
     `   Headings: ${opts.headingFont} (${opts.headingWeight}). Body: ${opts.bodyFont}.`,
+    opts.templateGuidance ? `Template layout details (LOCKED):\n${opts.templateGuidance}` : `Template layout details: use the selected template card only`,
     customInstructionsPresent
       ? `6. Custom instructions from user (HIGHEST priority for copy/tone): included verbatim below`
       : `6. Custom instructions: (none)`,

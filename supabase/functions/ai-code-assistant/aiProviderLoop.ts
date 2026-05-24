@@ -79,6 +79,8 @@ export async function runProviderLoop(opts: {
         ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
         : []),
       ...baseModels,
+      // Fast fallback — gpt-4o responds in seconds, protects wizard from gpt-5 reasoning latency
+      { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o (fallback)' },
     ].filter((model, index, models) => models.findIndex((mm) => mm.id === model.id) === index);
     if (isWizard) {
       console.log(`[AI-Hybrid] Wizard Lane A using OpenAI models: ${openaiModels.map((m) => m.id).join(', ')} (json mode: ${forceJsonResponse ? 'on' : 'off'})`);
@@ -91,7 +93,10 @@ export async function runProviderLoop(opts: {
         lastError = lastError || 'budget exhausted before all models tried';
         break;
       }
-      const perModelMs = Math.min(25000, Math.max(8000, remaining - 2000));
+      // gpt-5* are reasoning models and routinely take 30-60s; gpt-4o is fast. Cap per-model accordingly.
+      const isReasoningModel = /^gpt-5/i.test(model.id);
+      const cap = isReasoningModel ? 60000 : 25000;
+      const perModelMs = Math.min(cap, Math.max(8000, remaining - 2000));
       try {
         console.log(`[AI-Hybrid] Trying PRIMARY OpenAI ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
         const controller = new AbortController();

@@ -38,6 +38,12 @@ export const AIRequestSchema = z.object({
     industryHints: z.array(z.string()).optional(),
   }).optional(),
   navPageGen: z.boolean().optional(),
+  /**
+   * Hard signal from the Wizard Launcher overlay (6-card flow). When true, the
+   * request is ALWAYS routed to Lane A (wizard_template_react) and Lane B is
+   * blocked, regardless of any other flags that may have leaked in.
+   */
+  wizardLaunch: z.boolean().optional(),
   navPageName: z.string().max(100).nullish(),
   navLabel: z.string().max(120).nullish(),
   systemsBuildContext: z.object({

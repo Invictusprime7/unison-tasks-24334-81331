@@ -1,6 +1,6 @@
 /**
  * Supabase Edge Function: Generate Image
- * Generates AI images using Lovable AI Gateway (Gemini image model)
+ * Generates AI images using OpenAI (gpt-image-1)
  */
 
 import { serve } from "serve";
@@ -9,7 +9,8 @@ import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
 
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const OPENAI_IMAGE_MODEL = Deno.env.get("OPENAI_IMAGE_MODEL") || "gpt-image-1";
 
 interface ImageGenerationRequest {
   prompt: string;
@@ -38,9 +39,7 @@ interface ImageGenerationResponse {
 serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
   const preflight = handleCorsPreflightRequest(req, corsHeaders);
-  if (preflight) {
-    return preflight;
-  }
+  if (preflight) return preflight;
 
   if (req.method !== "POST") {
     return errorResponse("Method not allowed", 405, corsHeaders);
@@ -68,13 +67,8 @@ serve(async (req: Request) => {
 
     console.log("[Generate-Image] Request:", { prompt, style, quality, placement });
 
-    if (!prompt) {
-      return errorResponse("Prompt is required", 400, corsHeaders);
-    }
-
-    if (!LOVABLE_API_KEY) {
-      return errorResponse("Lovable API key not configured", 500, corsHeaders);
-    }
+    if (!prompt) return errorResponse("Prompt is required", 400, corsHeaders);
+    if (!OPENAI_API_KEY) return errorResponse("OpenAI API key not configured", 500, corsHeaders);
 
     const stylePrompts: Record<string, string> = {
       "digital-art": "digital art style, vibrant colors, professional, high quality",
@@ -88,53 +82,55 @@ serve(async (req: Request) => {
       icon: "clean icon design, simple, flat design, scalable",
     };
 
-    const aspectRatio = width > height ? "landscape" : width < height ? "portrait" : "square";
-    const sizeContext = `${aspectRatio} ${width}x${height} aspect ratio`;
-    const enhancedPrompt = `${prompt}, ${stylePrompts[style] || stylePrompts["digital-art"]}, ${sizeContext}`;
+    const enhancedPrompt = `${prompt}, ${stylePrompts[style] || stylePrompts["digital-art"]}`;
     const fullPrompt = negativePrompt ? `${enhancedPrompt}. Avoid: ${negativePrompt}` : enhancedPrompt;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Map width/height to closest supported OpenAI size
+    const aspectRatio = width / height;
+    let size: string;
+    if (aspectRatio > 1.2) size = "1536x1024";
+    else if (aspectRatio < 0.85) size = "1024x1536";
+    else size = "1024x1024";
+
+    const openaiQuality = quality === "ultra" ? "high" : quality === "high" ? "medium" : "low";
+
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [{ role: "user", content: fullPrompt }],
-        modalities: ["image", "text"],
+        model: OPENAI_IMAGE_MODEL,
+        prompt: fullPrompt,
+        n: 1,
+        size,
+        quality: openaiQuality,
+        output_format: "png",
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[Generate-Image] Lovable AI Error:", response.status, errorText);
+      console.error("[Generate-Image] OpenAI Error:", response.status, errorText);
 
-      if (response.status === 429) {
-        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
-      }
-      if (response.status === 402) {
-        return errorResponse("Credits required. Please add credits to continue.", 402, corsHeaders);
-      }
-      if (response.status === 401) {
-        return errorResponse("AI service authentication failed. Please check API configuration.", 401, corsHeaders);
-      }
-
+      if (response.status === 429) return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
+      if (response.status === 401) return errorResponse("OpenAI authentication failed. Check OPENAI_API_KEY.", 401, corsHeaders);
       return errorResponse(`Failed to generate image: ${response.status}`, 503, corsHeaders);
     }
 
     const result = await response.json();
-    const imageData = result.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const b64 = result.data?.[0]?.b64_json;
+    const url = result.data?.[0]?.url;
+    const imageData = b64 ? `data:image/png;base64,${b64}` : url;
 
-    if (!imageData) {
-      throw new Error("No image generated");
-    }
+    if (!imageData) throw new Error("No image generated");
 
     const placementInfo = placement ? generatePlacementCSS(placement.position, placement.container) : undefined;
     const responseData: ImageGenerationResponse = {
       imageUrl: imageData,
       url: imageData,
-      base64: imageData.startsWith("data:") ? imageData : undefined,
+      base64: b64 ? imageData : undefined,
       placement: placementInfo,
     };
 
@@ -142,15 +138,7 @@ serve(async (req: Request) => {
   } catch (error) {
     console.error("[Generate-Image] Error:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to generate image";
-    return secureJsonResponse(
-      {
-        error: errorMessage,
-        imageUrl: "",
-        url: "",
-      },
-      500,
-      corsHeaders,
-    );
+    return secureJsonResponse({ error: errorMessage, imageUrl: "", url: "" }, 500, corsHeaders);
   }
 });
 
@@ -168,10 +156,6 @@ function generatePlacementCSS(position: string, _container?: string): { position
     "corner-left": "position: absolute; top: 10px; left: 10px;",
     "corner-right": "position: absolute; top: 10px; right: 10px;",
   };
-
   const css = positionMap[position] || positionMap["top-left"];
-  return {
-    position,
-    css: `${css} max-width: 100%; cursor: move; resize: both; overflow: hidden;`,
-  };
+  return { position, css: `${css} max-width: 100%; cursor: move; resize: both; overflow: hidden;` };
 }

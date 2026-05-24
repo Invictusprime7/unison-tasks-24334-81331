@@ -38,10 +38,6 @@ import {
   planSiteTopology,
   type GeneratedSitePlan,
 } from "@/platform/core/siteTopologyPlanner";
-import {
-  generateDesignVariation,
-  randomFontPairing,
-} from "@/utils/designVariation";
 // (aiCodeCleaner imports removed alongside the wizard fast-path enrichment)
 import { sanitizeGeneratedFiles } from "@/utils/tsxSanitizer";
 import { type LauncherHandoff } from "@/types/runtimeManifest";
@@ -437,6 +433,59 @@ function buildTemplateGuidance(card: TemplateCardData | null): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function buildLockedWizardDesign(opts: {
+  preset: ThemePreset;
+  template: TemplateCardData;
+  sectionOrder: string[];
+}) {
+  const lowerDirective = opts.preset.styleDirective.toLowerCase();
+  const isMinimal = opts.preset.id === 'minimalist' || lowerDirective.includes('minimal');
+  const isBold = opts.preset.id === 'bold' || lowerDirective.includes('oversized');
+  const isFuturistic = opts.preset.id === 'futuristic' || lowerDirective.includes('glassmorphism');
+  const heroStyle = opts.template.traits[0] || opts.template.sectionTypes[0] || 'premium image-first hero';
+
+  return {
+    layout: {
+      hero_style: heroStyle,
+      section_spacing: isMinimal ? 'airy' : isBold ? 'dramatic' : 'balanced',
+      max_width: isBold ? '1440px' : '1200px',
+      navigation_style: opts.sectionOrder.includes('navbar') ? 'template-navbar' : 'minimal',
+    },
+    effects: {
+      animations: !isMinimal,
+      scroll_animations: !isMinimal,
+      hover_effects: true,
+      gradient_backgrounds: opts.preset.id !== 'minimalist',
+      glassmorphism: isFuturistic,
+      shadows: isMinimal ? 'subtle' : isBold ? 'dramatic' : 'medium',
+    },
+    images: {
+      style: opts.template.traits.includes('editorial') ? 'editorial' : 'photographic',
+      aspect_ratio: '16:9',
+      overlay_style: isFuturistic ? 'glass' : 'soft',
+    },
+    buttons: {
+      style: isBold ? 'bold' : isMinimal ? 'outline' : 'rounded',
+      size: isBold ? 'large' : 'medium',
+      hover_effect: !isMinimal ? 'lift' : 'subtle',
+    },
+    sections: {
+      include_stats: opts.sectionOrder.includes('stats'),
+      include_testimonials: opts.sectionOrder.includes('testimonials'),
+      include_faq: opts.sectionOrder.includes('faq'),
+      include_cta_banner: opts.sectionOrder.includes('cta'),
+      include_newsletter: opts.sectionOrder.includes('blog-preview'),
+      include_social_proof: opts.sectionOrder.includes('logo-cloud') || opts.sectionOrder.includes('testimonials'),
+      use_counter_animations: !isMinimal && opts.sectionOrder.includes('stats'),
+    },
+    content: {
+      density: isBold ? 'high-impact' : isMinimal ? 'sparse' : 'balanced',
+      use_icons: opts.preset.id !== 'editorial',
+      writing_style: opts.preset.id,
+    },
+  };
 }
 
 function getGenerationCategory(

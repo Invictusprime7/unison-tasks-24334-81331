@@ -22,7 +22,12 @@ export function getScopedEditAutoApplyBlockReason(
 
   if (opts.resolvedTargetFile) {
     const normTarget = normalizePath(opts.resolvedTargetFile);
-    if (!paths.includes(normTarget)) {
+    const existingNorm = opts.existingFileKeys.map(normalizePath);
+    const targetExists = existingNorm.includes(normTarget);
+    // Only hard-block when the resolved target actually exists in the VFS.
+    // If it doesn't exist, the resolver was speculative (e.g. a page that
+    // hasn't been scaffolded yet) — let the AI create/choose the right file.
+    if (targetExists && !paths.includes(normTarget)) {
       return `Scoped edit did not update the resolved target file (${normTarget}).`;
     }
   }

@@ -1053,6 +1053,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             body: {
               messages: [{ role: 'user', content: aiUserPrompt }],
               mode: 'template-react',
+              // Hard signal: ALWAYS route to Lane A (wizard_template_react).
+              // This flag bypasses every other classifier branch so that the
+              // hardened 6-card aesthetic payload (theme_tokens + sections +
+              // intents) is the SOLE generation context. Without it, an
+              // accidental `currentCode` or `editMode` could route to Lane B.
+              wizardLaunch: true,
               templateName: selectedTemplate?.label || system.name,
               aesthetic: resolvedPreset.id,
               source: resolvedIndustry,

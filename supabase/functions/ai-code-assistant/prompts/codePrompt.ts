@@ -33,8 +33,9 @@ WIRING RULES (CRITICAL):
 - IMPORTANT: Do NOT wire every button. UI selectors (tabs, filters, time slots, service pickers, accordions, carousels) MUST NOT trigger intents.
   - For selector buttons, add: data-no-intent
   - Only add data-ut-intent on real conversion CTAs ("Book", "Submit", "Buy", "Join", "Request quote", etc.)
-- For e-commerce: use intents like cart.add, cart.view, checkout.start.
-- For auth: use intents like auth.signup, auth.signin, auth.signout.
+- For e-commerce: use canonical intents cart.add, cart.view, cart.checkout, pay.checkout. NEVER emit shop.add_to_cart, shop.checkout, or checkout.start — those are legacy aliases and will be rewritten/flagged at review.
+- For auth: use canonical intents auth.login, auth.register, auth.logout. NEVER emit auth.sign_in / auth.signup / auth.sign_out.
+- Canonical intent vocabulary (USE THESE EXACT NAMES): nav.goto, nav.anchor, nav.external, pay.checkout, cart.add, cart.view, cart.checkout, contact.submit, quote.request, lead.capture, newsletter.subscribe, booking.create, auth.login, auth.register, auth.logout, button.click, form.submit. Any other name is dialect drift and will be normalized or flagged by the review pass.
 
 NAVIGATION WIRING (MANDATORY FOR ALL LINKS):
 - The preview uses HashRouter - all internal links MUST use hash-based navigation or intent wiring

@@ -1205,6 +1205,37 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               userDesignProfile: userDesignProfile ?? undefined,
               systemsBuildContext: systemsBuildContext ?? undefined,
               siteElementsLibraryContext,
+              // Page topology + intent bindings → AI can edit routes & wiring from chat
+              siteContext: pageRegistry
+                ? {
+                    homePageId: pageRegistry.homePageId || undefined,
+                    pages: Object.values(pageRegistry.pages || {})
+                      .slice(0, 60)
+                      .map((p) => ({
+                        pageId: p.pageId,
+                        title: p.title,
+                        path: p.path,
+                        filePath: p.filePath,
+                        pageRole: p.pageRole,
+                        isHome: p.isHome,
+                        showInNav: p.showInNav,
+                        funnelId: p.funnelId,
+                        funnelRole: p.funnelRole,
+                      })),
+                    funnels: Object.values(pageRegistry.funnels || {})
+                      .slice(0, 20)
+                      .map((f) => ({
+                        funnelId: f.funnelId,
+                        name: f.name,
+                        funnelType: f.funnelType,
+                        steps: (f.steps || []).map((s) => ({
+                          pageId: s.pageId,
+                          role: s.role,
+                          nextStepId: s.nextStepId,
+                        })),
+                      })),
+                  }
+                : undefined,
               attachments: _attachments.length > 0 ? _attachments : undefined,
               // Send VFS files for edit context (all edit types, not just surgical)
               vfsFiles: vfsPayload,

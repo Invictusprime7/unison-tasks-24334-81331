@@ -35,7 +35,14 @@ WIRING RULES (CRITICAL):
   - Only add data-ut-intent on real conversion CTAs ("Book", "Submit", "Buy", "Join", "Request quote", etc.)
 - For e-commerce: use canonical intents cart.add, cart.view, cart.checkout, pay.checkout. NEVER emit shop.add_to_cart, shop.checkout, or checkout.start — those are legacy aliases and will be rewritten/flagged at review.
 - For auth: use canonical intents auth.login, auth.register, auth.logout. NEVER emit auth.sign_in / auth.signup / auth.sign_out.
-- Canonical intent vocabulary (USE THESE EXACT NAMES): nav.goto, nav.anchor, nav.external, pay.checkout, cart.add, cart.view, cart.checkout, contact.submit, quote.request, lead.capture, newsletter.subscribe, booking.create, auth.login, auth.register, auth.logout, button.click, form.submit. Any other name is dialect drift and will be normalized or flagged by the review pass.
+- Canonical intent vocabulary (USE THESE EXACT NAMES — every other name is dialect drift and will be normalized or flagged by the review pass):
+  • Navigation: nav.goto, nav.anchor, nav.external, nav.back
+  • Auth: auth.login, auth.register, auth.logout
+  • Commerce: cart.add, cart.view, cart.checkout, cart.remove, cart.abandoned, product.view, pay.checkout, pay.success, pay.cancel, order.created, order.shipped, order.delivered
+  • Booking: booking.create, booking.confirmed, booking.reminder, booking.cancelled, booking.noshow
+  • Lead/CRM: contact.submit, contact.call, contact.email, quote.request, lead.capture, newsletter.subscribe, deal.won, deal.lost, proposal.sent, job.completed
+  • Generic: button.click, form.submit
+  NEVER emit legacy names like shop.add_to_cart, shop.checkout, checkout.start, auth.signin, auth.signup, nav.goto_page, calendar.book, booking.open — they will be rewritten to canonical at review.
 
 NAVIGATION WIRING (MANDATORY FOR ALL LINKS):
 - The preview uses HashRouter - all internal links MUST use hash-based navigation or intent wiring

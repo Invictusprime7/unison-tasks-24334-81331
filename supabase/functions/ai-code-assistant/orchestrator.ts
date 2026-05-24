@@ -31,6 +31,7 @@ import {
   buildVfsFilesContext,
   buildFastPathSystemPrompt,
   buildUserDBContext,
+  buildSiteContextBlock,
   type UserDBContext,
 } from "./contextBuilders.ts";
 import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditReinforcement } from "./prompts/editPrompts.ts";
@@ -247,6 +248,7 @@ async function runBuilderLane(
     siteElementsLibraryContext, surgicalEdit = false,
     componentBehaviorContext, vfsFiles, gatewayOptions,
     previewDiagnostics, previewSnapshot, recentChangedFiles,
+    siteContext,
   } = parsed;
 
   // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
@@ -292,6 +294,7 @@ async function runBuilderLane(
   // ── 3a. User DB context (history + drafts) — non-blocking ──────────────
   const userDBCtx = userId && !task.fastPath ? await fetchUserContext(userId).catch(() => null) : null;
   const userDBContextBlock = buildUserDBContext(userDBCtx);
+  const siteContextBlock = buildSiteContextBlock(siteContext);
 
   // ── 4. Base system prompt ──────────────────────────────────────────────
   let basePrompt: string;
@@ -437,6 +440,15 @@ async function runBuilderLane(
   if (preprocessed.intentSummary) {
     finalSystemPrompt += preprocessed.intentSummary;
   }
+
+  // Inject site topology + intent bindings so chat prompts can edit routes & wiring.
+  if (siteContextBlock) {
+    finalSystemPrompt += `\n${siteContextBlock}`;
+  }
+
+
+
+
 
   // Inject live preview DOM snapshot for context awareness
   if (previewSnapshot) {

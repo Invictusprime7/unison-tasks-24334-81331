@@ -294,6 +294,7 @@ async function runBuilderLane(
   // ── 3a. User DB context (history + drafts) — non-blocking ──────────────
   const userDBCtx = userId && !task.fastPath ? await fetchUserContext(userId).catch(() => null) : null;
   const userDBContextBlock = buildUserDBContext(userDBCtx);
+  const siteContextBlock = buildSiteContextBlock(siteContext);
 
   // ── 4. Base system prompt ──────────────────────────────────────────────
   let basePrompt: string;

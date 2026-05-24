@@ -106,6 +106,7 @@ import { swapSectionVariant } from '@/utils/sectionSwapper';
 import type { VariantId } from '@/sections/variants/types';
 import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { ElementIntentInspector } from "./web-builder/ElementIntentInspector";
+import { IntentHealthPill } from "./web-builder/IntentHealthPill";
 import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
@@ -6116,6 +6117,7 @@ ${html}
               <Save className="h-3.5 w-3.5 mr-1.5" />
               <span className="text-xs font-bold">{currentTemplateName ? 'Update' : 'Save'}</span>
             </Button>
+            <IntentHealthPill report={playgroundReadinessReport} />
             <DeployButton
               files={canonicalBuildArtifacts?.deployFiles || {}}
               defaultSiteName={currentTemplateName || 'unison-site'}

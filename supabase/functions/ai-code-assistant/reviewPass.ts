@@ -7,6 +7,7 @@
  */
 
 import { safetyCheck } from "./safetyRules.ts";
+import { normalizeIntentDialect } from "./intentDialectNormalizer.ts";
 
 export interface ReviewResult {
   /** Whether the patch passed review */
@@ -64,6 +65,18 @@ export function reviewPatch(opts: {
     }
 
     cleanedFiles[path] = verdict.sanitizedContent ?? content;
+  }
+
+  // 1b. Intent dialect normalization — rewrite legacy `data-ut-intent`
+  // values to canonical CoreIntent names. Drift is logged as info; unknown
+  // intents are flagged but not rejected (runtime resolver has fallbacks).
+  const dialect = normalizeIntentDialect(cleanedFiles);
+  for (const [path, content] of Object.entries(dialect.cleanedFiles)) {
+    cleanedFiles[path] = content;
+  }
+  warnings.push(...dialect.warnings);
+  if (dialect.rewriteCount > 0) {
+    summaryParts.push(`${dialect.rewriteCount} intent dialect rewrites`);
   }
 
   // 2. Cross-file checks

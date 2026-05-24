@@ -1274,10 +1274,30 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const canonicalRouterCode =
         compiledPlayground?.vfsFiles?.['/src/App.tsx'] ||
         siteBundleSnapshot?.vfsFiles?.['/src/App.tsx'];
-      const wiredVfsFiles = canonicalRouterCode
+      const wiredVfsFilesPreSweep = canonicalRouterCode
         ? { ...launchArtifacts.files, '/src/App.tsx': canonicalRouterCode }
         : launchArtifacts.files;
       const runtimeManifest = launchArtifacts.runtimeManifest;
+
+      // ── Pre-handoff structural sweep ──────────────────────────────────────
+      // Repairs broken data-ut-* stamps BEFORE the Builder ever sees them so
+      // intents never render as "error code" in the published site. Unknown
+      // intents downgrade to contact.submit; stale target page ids are stripped;
+      // capability-gated stamps without the underlying capability are softened.
+      const provisionedCapabilities =
+        industryProfile?.defaultCapabilities?.map(String) ?? [];
+      const handoffReport = validateLaunchHandoff({
+        files: wiredVfsFilesPreSweep,
+        snapshot: launchArtifacts.siteBundleSnapshot,
+        provisionedCapabilities,
+      });
+      const wiredVfsFiles = handoffReport.files;
+      if (handoffReport.repaired > 0) {
+        console.warn(
+          `[SystemLauncher] Repaired ${handoffReport.repaired}/${handoffReport.scanned} stamped intents before handoff`,
+          handoffReport.issues,
+        );
+      }
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
         console.log(
@@ -1286,9 +1306,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
       // Persist generated bindings → site_intent_bindings (launcher-native wiring).
-      // Best-effort; failures never block launch.
+      // Failures and partial persists are promoted to launcher diagnostics so the
+      // Builder surface can show a yellow chip instead of silently dropping rows.
       const launchProjectId =
         (launchArtifacts.siteBundleSnapshot as { projectId?: string } | undefined)?.projectId;
+      type PersistDiagnostic = {
+        severity: 'info' | 'warn' | 'error';
+        code: 'PERSIST_PARTIAL' | 'PERSIST_ZERO' | 'PERSIST_FAILED';
+        message: string;
+      };
+      const persistDiagnostics: PersistDiagnostic[] = [];
       if (provisionedBusinessId && launchProjectId) {
         try {
           const { persistGeneratedBindings } = await import('@/services/persistGeneratedBindings');
@@ -1298,10 +1325,62 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             files: wiredVfsFiles,
           });
           console.log('[SystemLauncher] Persisted generated bindings', result);
+          if (result.attempted > 0 && result.persisted < result.attempted) {
+            persistDiagnostics.push({
+              severity: 'warn',
+              code: 'PERSIST_PARTIAL',
+              message: `Only ${result.persisted}/${result.attempted} intent bindings were saved; some buttons may not fire.`,
+            });
+          } else if (result.attempted === 0) {
+            // VFS contains stamps but harvester found none → catastrophic mismatch
+            const hasStamps = Object.values(wiredVfsFiles).some(
+              (c) => typeof c === 'string' && c.includes('data-ut-intent'),
+            );
+            if (hasStamps) {
+              persistDiagnostics.push({
+                severity: 'warn',
+                code: 'PERSIST_ZERO',
+                message:
+                  'Site contains interactive elements but no intent bindings were persisted.',
+              });
+            }
+          }
         } catch (err) {
           console.warn('[SystemLauncher] persistGeneratedBindings failed (non-fatal)', err);
+          persistDiagnostics.push({
+            severity: 'warn',
+            code: 'PERSIST_FAILED',
+            message: 'Could not save intent bindings; buttons will fall back to navigation only.',
+          });
         }
+      } else if (!provisionedBusinessId || !launchProjectId) {
+        persistDiagnostics.push({
+          severity: 'warn',
+          code: 'PERSIST_FAILED',
+          message:
+            'Business profile not provisioned; intent bindings were not saved. Buttons will navigate but not fire workflows.',
+        });
       }
+
+      // Push the merged diagnostic set to the live launch-state controller so
+      // the Builder surface (DeployButton, LaunchDesk, AIBuilderPanel) can chip.
+      const combinedDiagnostics = [
+        ...handoffReport.issues.map((i) => ({
+          severity: i.severity,
+          code: i.code,
+          message: i.message,
+          meta: {
+            filePath: i.filePath,
+            slot: i.slot,
+            intent: i.intent,
+            targetPageId: i.targetPageId,
+            capability: i.capability,
+          },
+        })),
+        ...persistDiagnostics,
+      ];
+      liveLaunchState.setLauncherDiagnostics(combinedDiagnostics);
+
 
       const navState = {
         templateName: `${brand} Site`,

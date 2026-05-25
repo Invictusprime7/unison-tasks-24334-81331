@@ -4279,15 +4279,47 @@ export default function ${componentName}Page() {
 
       console.log('[WebBuilder] Resolved action:', resolvedAction);
 
+      // ── Helper: dispatch unwired-click → AI Builder wires asynchronously ──
+      // Per the click-to-wire UX: unwired buttons no longer auto-open
+      // deterministic overlays. The click is acknowledged immediately and
+      // the AI Builder receives an event with full context to (a) wire the
+      // correct intent for the button label, or (b) scaffold a contextual
+      // page route if none exists. The NEXT click executes the now-wired
+      // intent. Builder-preview only — the published runtime never reaches
+      // this handler.
+      const dispatchUnwiredClick = (reason: 'overlay-fallback' | 'no-binding') => {
+        try {
+          window.dispatchEvent(new CustomEvent('lovable:unwired-click', {
+            detail: {
+              intent,
+              buttonLabel,
+              suggestedPageType: classification.suggestedPageType ?? null,
+              category: classification.category,
+              elementContext: elementCtx,
+              payload: payload as Record<string, unknown> | undefined,
+              reason,
+              currentPageId: (creatorPlayground as any)?.activePageId ?? null,
+            },
+          }));
+        } catch (err) {
+          console.warn('[WebBuilder] Failed to dispatch unwired-click:', err);
+        }
+      };
+
       switch (resolvedAction.action) {
 
-        // ── Acknowledge: preview already handled it, just confirm ─────────
+        // ── Acknowledge ────────────────────────────────────────────────────
+        // If the preview already handled it, just confirm. Otherwise this is
+        // a truly unwired button → hand off to the AI Builder.
         case 'acknowledge': {
+          if (!inPreviewHandled) {
+            dispatchUnwiredClick('no-binding');
+          }
           sendResultToIframe({ success: true });
           return;
         }
 
-        // ── Scroll: send INTENT_COMMAND to the iframe ──────────────────────
+        // ── Cart: explicit cart intents stay wired and execute now ────────
         case 'cart': {
           if (intent === 'cart.add' || intent === 'cart.view') {
             void handleIntent(intent, {
@@ -4313,22 +4345,14 @@ export default function ${componentName}Page() {
           return;
         }
 
+        // ── Overlay fallback REPLACED by AI wiring ────────────────────────
+        // Deterministic overlays (auth/booking/contact/quote/newsletter/
+        // checkout) are no longer auto-opened for unwired buttons. The AI
+        // Builder receives the click context and adds explicit wiring (or
+        // scaffolds a page) so the NEXT click executes correctly.
         case 'overlay': {
-          const overlayPayload = {
-            ...(payload as Record<string, unknown>),
-            businessId,
-            siteId: projectId,
-            projectId,
-            source: (payload as Record<string, unknown> | undefined)?.source
-              || (intent === 'lead.capture' ? 'lead_capture' : intent),
-          };
-          const overlayConfig = mapOverlayIdToConfig(resolvedAction.overlayId, overlayPayload);
-          if (overlayConfig) {
-            setActiveRuntimeOverlay(overlayConfig);
-            sendResultToIframe({ success: true, ui: { openModal: resolvedAction.overlayId } });
-            return;
-          }
-          sendResultToIframe({ success: false, error: `Unsupported overlay: ${resolvedAction.overlayId}` });
+          dispatchUnwiredClick('overlay-fallback');
+          sendResultToIframe({ success: true });
           return;
         }
 

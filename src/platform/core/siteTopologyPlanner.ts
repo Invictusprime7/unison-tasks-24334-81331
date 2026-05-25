@@ -105,6 +105,14 @@ export interface GeneratedSitePlan {
    */
   selectedTemplateId?: string;
   /**
+   * Canonical Style card id selected in the SystemLauncher wizard. Must match
+   * one of the six entries in THEME_PRESETS (modern, editorial, futuristic,
+   * minimalist, bold, organic). Carried through the plan so every downstream
+   * derivation (registry, runtime manifest, AI builder context) references
+   * the same aesthetic the user picked — no silent drift.
+   */
+  selectedThemeId?: string;
+  /**
    * When true, the plan was produced in "minimal" mode: ONLY a Home page.
    * Every additional page/funnel/route is expected to be authored by the
    * in-Builder AI assistant in response to user prompts. Downstream stages

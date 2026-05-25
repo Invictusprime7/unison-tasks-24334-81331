@@ -466,6 +466,68 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     }
   }, [input]);
 
+  // ── Click-to-Wire: AI Builder receives unwired button clicks from the
+  // preview and asynchronously wires them (intent binding or page scaffold).
+  // The user keeps interacting; the NEXT click executes the now-wired intent.
+  useEffect(() => {
+    const onUnwiredClick = (evt: Event) => {
+      const detail = (evt as CustomEvent).detail as {
+        intent?: string;
+        buttonLabel?: string;
+        suggestedPageType?: string | null;
+        category?: string;
+        elementContext?: { isInNav?: boolean; isInFooter?: boolean; href?: string };
+        payload?: Record<string, unknown>;
+        reason?: 'overlay-fallback' | 'no-binding';
+        currentPageId?: string | null;
+      } | undefined;
+
+      if (!detail) return;
+      if (isLoading) return; // don't queue while another patch is running
+
+      const label = (detail.buttonLabel || '').trim() || 'this button';
+      const intent = detail.intent || 'button.click';
+      const placement = detail.elementContext?.isInNav
+        ? 'in the navbar'
+        : detail.elementContext?.isInFooter
+          ? 'in the footer'
+          : 'on the current page';
+      const hrefHint = detail.elementContext?.href ? `\n- Existing href hint: \`${detail.elementContext.href}\`` : '';
+      const suggested = detail.suggestedPageType ? `\n- Classifier suggests page type: \`${detail.suggestedPageType}\`` : '';
+
+      const prompt = [
+        `[Click-to-Wire] A visitor clicked the "${label}" button ${placement} but it has no working binding.`,
+        ``,
+        `Wire this button correctly with a MINIMAL, scoped edit:`,
+        `1. Decide the canonical intent for the label "${label}" (current guess: \`${intent}\`). Use the canonical intent vocabulary (auth.login, auth.register, booking.create, contact.submit, newsletter.subscribe, quote.request, lead.capture, pay.checkout, cart.add, cart.view, cart.checkout, nav.goto_page, nav.goto, button.click).`,
+        `2. RESOLVE BEFORE SCAFFOLD — if the label maps to an existing page in the PageRegistry (by title or slug), wire the button to that page via \`data-ut-intent="nav.goto_page"\` + \`data-ut-target-page-id="<pageId>"\`. Do NOT create a new page in that case.`,
+        `3. Only if no matching page exists AND the label clearly implies navigation (e.g. "Shop", "Pricing", "About"), scaffold a new contextual page and register it; wire the button to the new \`pageId\`.`,
+        `4. For form/conversion intents (booking, contact, quote, newsletter, lead, auth), prefer adding \`data-ut-intent\` on the button so the runtime overlay/inline form fires — do NOT create a new page.`,
+        `5. Edit ONLY the file that contains the button. Do not refactor unrelated sections. Do not touch /src/App.tsx routing unless you are adding a brand-new page that requires a route.`,
+        ``,
+        `Context:`,
+        `- Button label: "${label}"`,
+        `- Original intent attribute: \`${intent}\``,
+        `- Reason fired: ${detail.reason}`,
+        `- Current pageId: ${detail.currentPageId ?? '(unknown)'}`,
+        suggested,
+        hrefHint,
+      ].filter(Boolean).join('\n');
+
+      toast.info(`Wiring "${label}"…`, {
+        description: 'AI Builder is configuring this action. Click again in a moment.',
+        duration: 4000,
+      });
+
+      setInput(prompt);
+      pendingPromptRef.current = prompt;
+    };
+
+    window.addEventListener('lovable:unwired-click', onUnwiredClick as EventListener);
+    return () => window.removeEventListener('lovable:unwired-click', onUnwiredClick as EventListener);
+  }, [isLoading]);
+
+
   // ── File processing helpers ───────────────────────────────────────────────
   const classifyFile = (file: File): DroppedFile['type'] => {
     if (file.type.startsWith('image/')) return 'image';

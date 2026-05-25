@@ -870,15 +870,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return null;
         });
 
-      // ── Plan topology (MINIMAL: Home only) ──
-      // The Wizard hands off a clean canvas. The in-Builder AI assistant is
-      // the sole author of every additional page/route/funnel/tab from user
-      // prompts (registry → VFS sync handles the rest).
+      // ── Plan topology (FULL: industry-profile driven) ──
+      // The Wizard seeds the canonical multi-page topology from the resolved
+      // IndustryProfile so the Builder hands off a complete site (Home + all
+      // capability/industry pages). The in-Builder AI then refines per prompt.
+      // NOTE: `minimal: true` is intentionally OFF — minimal mode produced a
+      // Home-only fallback and silently bypassed planFromProfile.
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: selectedTemplate?.id,
         selectedThemeId: selectedTheme?.id,
-        minimal: true,
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
@@ -894,8 +895,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
         templateId: selectedTemplate?.id,
         themeId: selectedTheme?.id,
-        minimalScaffold: true,
+        minimalScaffold: false,
       };
+
 
       const pipelineResult = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
       const {

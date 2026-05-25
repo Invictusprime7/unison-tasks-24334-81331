@@ -112,15 +112,20 @@ export function buildProviderPlan(
 
   switch (task.type) {
     // ── Lane A: Wizard (protected — no complexity upgrades) ─────────────
+    // A premium single-file site routinely needs 8–15K tokens of output. The
+    // previous 16K cap was causing truncated / simplistic fallback-looking
+    // outputs. Lead with Gemini Pro for quality, fall back to Flash for speed,
+    // then GPT-5 family for reliability. All models get 32K headroom.
     case "wizard_template_react":
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 16000),
-          m(MODELS.gpt4oMini, 16000),
-          m(MODELS.gpt4o, 16000),
+          m(MODELS.geminiPro, 32000),
+          m(MODELS.geminiFlash, 32000),
+          m(MODELS.gpt4oMini, 32000),
+          m(MODELS.gpt4o, 32000),
         ],
-        perModelTimeoutMs: 45000,
-        fallbackMaxTokens: 16000,
+        perModelTimeoutMs: 60000,
+        fallbackMaxTokens: 32000,
       };
       break;
 

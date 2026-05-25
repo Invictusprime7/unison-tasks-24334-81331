@@ -75,17 +75,23 @@ export async function runProviderLoop(opts: {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
+        const gatewayBody: Record<string, unknown> = {
+          model: model.id,
+          messages: aiMessages,
+          max_tokens: model.maxTokens,
+        };
+        // Force JSON object mode for Lane A wizard so Gemini/GPT cannot drift
+        // into prose or markdown fences. The launcher parses raw JSON.
+        if (forceJsonResponse) {
+          gatewayBody.response_format = { type: 'json_object' };
+        }
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${lovableApiKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            model: model.id,
-            messages: aiMessages,
-            max_tokens: model.maxTokens,
-          }),
+          body: JSON.stringify(gatewayBody),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);

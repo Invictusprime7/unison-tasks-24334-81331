@@ -877,6 +877,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: selectedTemplate?.id,
+        selectedThemeId: selectedTheme?.id,
         minimal: true,
       });
 

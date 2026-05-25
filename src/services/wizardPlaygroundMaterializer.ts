@@ -283,9 +283,14 @@ export function materializePlayground(
   const industryKey = OVERLAY_TO_INDUSTRY[selections.industryOverlay] || 'general';
 
   // 1. Generate site topology plan → PageRegistry
-  //    Minimal mode: only Home is scaffolded. The Builder AI authors the rest.
+  //    Forward the wizard's Template + Style card selections so the canonical
+  //    plan references the same six style cards / template options the user
+  //    picked in the SystemLauncher (no silent drift between launcher and
+  //    pipeline-internal topology).
   const sitePlan = planSiteTopology(industryKey, selections.businessName, {
     minimal: selections.minimalScaffold === true,
+    selectedTemplateId: selections.templateId,
+    selectedThemeId: selections.themeId,
   });
   const pageRegistry = populateRegistryFromTopology(sitePlan);
 

@@ -1671,17 +1671,14 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
           // Store files for manual apply later (user can use View Edits)
         } else {
-          // -- Phase B7 opt-in: transactional dry-run gate ---------------
-          // When the user has opted into the transactional patch path
-          // (localStorage `lovable:patch:transactionalOptIn=1` or the
-          // VITE_PATCH_TRANSACTIONAL_OPTIN env flag) AND we have enough
-          // context to dry-run (vfsFiles present), we synthesize a
-          // PatchPlan, run it through the scratch VFS + repair loop, and
-          // only proceed with the live apply when the dry-run succeeds.
+          // -- Transactional dry-run gate (always on) --------------------
+          // Every multi-file AI patch goes through the scratch VFS +
+          // syntax/intent/route validators before touching the live VFS.
           // Failures surface as a toast and abort auto-apply — the user
-          // can still inspect via View Edits.
+          // can still inspect via View Edits. Successes route through the
+          // PatchPlanDiffViewer modal so the user reviews before commit.
           let transactionalBlocked = false;
-          if (isTransactionalOptInEnabled() && vfsFiles && onApplyToVFS) {
+          if (vfsFiles && onApplyToVFS) {
             try {
               const plan = aiResponseToPatchPlan(
                 {

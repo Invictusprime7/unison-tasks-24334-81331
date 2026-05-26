@@ -78,7 +78,6 @@ import { parseGhlWireIntent } from '@/utils/ghlWireIntent';
 import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
 import {
-  isTransactionalOptInEnabled,
   aiResponseToPatchPlan,
   runTransactionalPatch,
   PatchPlanDiffViewer,

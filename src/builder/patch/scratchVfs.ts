@@ -36,6 +36,7 @@ import type { PageRegistry } from '@/types/pageRegistry';
 import type { DryRunFn, DryRunOutcome } from './AIPatchTransactionService';
 import type { PatchPlan, PatchPlanFilePatch, UnifiedHunk } from './types';
 import { validateSideEffects } from './sideEffectValidators';
+import { validateTsxSyntax, normalizeAndCheckIntents } from './syntaxValidators';
 
 // ---------------------------------------------------------------- forkVfs
 
@@ -202,7 +203,19 @@ export function createScratchDryRunner(opts: ScratchDryRunnerOptions): DryRunFn 
       return { ok: false, errors: applied.errors };
     }
 
-    // 1b. Validate route + binding side-effects against the registry.
+    // 1a. Intent dialect normalizer — heal legacy data-ut-intent values
+    //     in-place on the forked map BEFORE any downstream validation
+    //     sees them. Never blocks; only normalizes + emits warnings.
+    normalizeAndCheckIntents(applied.files);
+
+    // 1b. TSX/TS syntax parse — catches the most common AI failure
+    //     mode (broken JSX, stray braces) before we ship to live VFS.
+    const syntax = validateTsxSyntax(applied.files);
+    if (!syntax.ok) {
+      return { ok: false, errors: syntax.errors, artifact: { files: applied.files } };
+    }
+
+    // 1c. Validate route + binding side-effects against the registry.
     const sideEffects = validateSideEffects(plan, opts.registry);
     if (!sideEffects.ok) {
       return { ok: false, errors: sideEffects.errors, artifact: { files: applied.files } };

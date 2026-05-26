@@ -145,13 +145,25 @@ export async function runProviderLoop(opts: {
   const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
   if (!content && OPENAI_API_KEY) {
     const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
+    // Map gateway-prefixed ids to real OpenAI direct API model ids.
+    // gpt-5* are Lovable-gateway aliases and are NOT available on api.openai.com,
+    // so requests with those ids hang/timeout. Map them to the closest direct equivalent.
+    const directOpenAIIdMap: Record<string, string> = {
+      'gpt-5': 'gpt-4o',
+      'gpt-5-mini': 'gpt-4o-mini',
+      'gpt-5-nano': 'gpt-4o-mini',
+    };
     const planOpenAIModels = (providerPlan.gatewayModels || [])
       .filter((m) => m.id.startsWith('openai/'))
-      .map((m) => ({
-        id: m.id.replace(/^openai\//, ''),
-        maxTokens: m.maxTokens,
-        label: `OpenAI ${m.label}`,
-      }));
+      .map((m) => {
+        const rawId = m.id.replace(/^openai\//, '');
+        const directId = directOpenAIIdMap[rawId] ?? rawId;
+        return {
+          id: directId,
+          maxTokens: m.maxTokens,
+          label: `OpenAI ${directId}`,
+        };
+      });
     const isWizard = taskType === 'wizard_template_react';
     const baseModels = planOpenAIModels.length > 0
       ? planOpenAIModels
@@ -164,7 +176,8 @@ export async function runProviderLoop(opts: {
         ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
         : []),
       ...baseModels,
-      // Fast fallback — gpt-4o responds in seconds, protects wizard from gpt-5 reasoning latency
+      // Fast fallback — gpt-4o-mini responds in seconds
+      { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini (fallback)' },
       { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o (fallback)' },
     ].filter((model, index, models) => models.findIndex((mm) => mm.id === model.id) === index);
     const openaiModels = isWizard

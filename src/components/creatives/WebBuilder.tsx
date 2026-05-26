@@ -4289,18 +4289,33 @@ export default function ${componentName}Page() {
       // this handler.
       const dispatchUnwiredClick = (reason: 'overlay-fallback' | 'no-binding') => {
         try {
-          window.dispatchEvent(new CustomEvent('lovable:unwired-click', {
-            detail: {
-              intent,
-              buttonLabel,
-              suggestedPageType: classification.suggestedPageType ?? null,
-              category: classification.category,
-              elementContext: elementCtx,
-              payload: payload as Record<string, unknown> | undefined,
-              reason,
-              currentPageId: (creatorPlayground as any)?.activePageId ?? null,
-            },
-          }));
+          const detail = {
+            intent,
+            buttonLabel,
+            suggestedPageType: classification.suggestedPageType ?? null,
+            category: classification.category,
+            elementContext: elementCtx,
+            payload: payload as Record<string, unknown> | undefined,
+            reason,
+            currentPageId: (creatorPlayground as any)?.activePageId ?? null,
+            queuedAt: Date.now(),
+          };
+          // Queue on window so AIBuilderPanel can flush it on mount even if
+          // the panel was closed at click time (wizard-launched sites default
+          // to panel closed). The live listener handles the open-panel case.
+          try {
+            const w = window as unknown as { __lovableUnwiredQueue?: unknown[] };
+            w.__lovableUnwiredQueue = Array.isArray(w.__lovableUnwiredQueue) ? w.__lovableUnwiredQueue : [];
+            w.__lovableUnwiredQueue.push(detail);
+            if (w.__lovableUnwiredQueue.length > 5) w.__lovableUnwiredQueue.shift();
+          } catch { /* noop */ }
+
+          // Auto-open the AI panel so the listener mounts and the toast is visible.
+          if (!aiPanelOpen) {
+            try { setAiPanelOpen(true); } catch { /* noop */ }
+          }
+
+          window.dispatchEvent(new CustomEvent('lovable:unwired-click', { detail }));
         } catch (err) {
           console.warn('[WebBuilder] Failed to dispatch unwired-click:', err);
         }

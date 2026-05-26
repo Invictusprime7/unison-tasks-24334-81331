@@ -524,6 +524,21 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     };
 
     window.addEventListener('lovable:unwired-click', onUnwiredClick as EventListener);
+
+    // Flush any queued unwired-click events that fired before the panel mounted
+    // (e.g. wizard-launched site where the user clicked a button while the AI
+    // panel was closed). WebBuilder pushes details to window.__lovableUnwiredQueue.
+    try {
+      const w = window as unknown as { __lovableUnwiredQueue?: unknown[] };
+      const queue = Array.isArray(w.__lovableUnwiredQueue) ? w.__lovableUnwiredQueue : [];
+      if (queue.length > 0 && !isLoading) {
+        // Replay only the most recent click — older ones are stale UX.
+        const latest = queue[queue.length - 1];
+        w.__lovableUnwiredQueue = [];
+        onUnwiredClick(new CustomEvent('lovable:unwired-click', { detail: latest }));
+      }
+    } catch { /* noop */ }
+
     return () => window.removeEventListener('lovable:unwired-click', onUnwiredClick as EventListener);
   }, [isLoading]);
 

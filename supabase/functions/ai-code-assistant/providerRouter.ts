@@ -32,13 +32,10 @@ export interface GatewayOverrides {
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // Lovable AI Gateway models. Gemini Flash is much faster than GPT-5
-  // (which uses heavy reasoning + frequently times out at 50s).
+  // Gemini models only.
   geminiFlash: { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
   geminiFlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
   geminiPro: { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  gpt4oMini: { id: "openai/gpt-5-mini", label: "GPT-5 Mini" },
-  gpt4o: { id: "openai/gpt-5", label: "GPT-5" },
 } as const;
 
 function m(spec: typeof MODELS[keyof typeof MODELS], maxTokens: number): ModelSpec {
@@ -62,18 +59,17 @@ function applyComplexityUpgrade(
   }
 
   if (complexity === "advanced") {
-    // Advanced: lead with FAST Gemini, then GPT-5 family as fallback.
+    // Advanced: lead with fast Gemini, then Gemini Pro.
     const advancedTokens = Math.min(baseMaxTokens + 8000, 48000);
     const advancedModels: ModelSpec[] = [
       m(MODELS.geminiFlash, advancedTokens),
-      m(MODELS.gpt4oMini, advancedTokens),
-      m(MODELS.gpt4o, advancedTokens),
+      m(MODELS.geminiPro, advancedTokens),
     ];
     return { models: advancedModels, timeoutBoostMs: 5000 };
   }
 
   // Complex: append Pro-tier as fallback (don't prepend — fast models first)
-  const hasPro = models.some(mm => mm.id === MODELS.geminiPro.id || mm.id === MODELS.gpt4o.id);
+  const hasPro = models.some(mm => mm.id === MODELS.geminiPro.id);
   if (!hasPro) {
     const complexTokens = Math.min(baseMaxTokens + 4000, 40000);
     const upgraded: ModelSpec[] = [
@@ -112,20 +108,16 @@ export function buildProviderPlan(
 
   switch (task.type) {
     // ── Lane A: Wizard (protected — no complexity upgrades) ─────────────
-    // A premium single-file site routinely needs 8–15K tokens of output. The
-    // previous 16K cap was causing truncated / simplistic fallback-looking
-    // outputs. Lead with Gemini Pro for quality, fall back to Flash for speed,
-    // then GPT-5 family for reliability. All models get 32K headroom.
+    // Wizard lane favors responsiveness while preserving quality.
+    // Lead with Gemini Flash for first-paint speed, then Pro and OpenAI fallback.
     case "wizard_template_react":
       plan = {
         gatewayModels: [
-          m(MODELS.geminiPro, 32000),
-          m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
+          m(MODELS.geminiFlash, 20000),
+          m(MODELS.geminiPro, 20000),
         ],
-        perModelTimeoutMs: 60000,
-        fallbackMaxTokens: 32000,
+        perModelTimeoutMs: 30000,
+        fallbackMaxTokens: 20000,
       };
       break;
 
@@ -135,7 +127,6 @@ export function buildProviderPlan(
         gatewayModels: [
           m(MODELS.geminiFlashLite, 12000),
           m(MODELS.geminiFlash, 12000),
-          m(MODELS.gpt4oMini, 12000),
         ],
         perModelTimeoutMs: 30000,
         fallbackMaxTokens: 10000,
@@ -146,8 +137,6 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 24000),
-          m(MODELS.gpt4oMini, 24000),
-          m(MODELS.gpt4o, 24000),
         ],
         perModelTimeoutMs: 40000,
         fallbackMaxTokens: 24000,
@@ -159,8 +148,6 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -172,8 +159,6 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -187,8 +172,6 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,

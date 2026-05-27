@@ -211,8 +211,9 @@ export class PreviewRuntimeController {
     existingVfsFiles: Record<string, string> = {},
     businessName?: string,
     industry?: string,
+    options?: { selectedTemplateId?: string; selectedThemeId?: string; themePresetId?: string },
   ) {
-    return fullRebuildFromPlayground(playground, existingVfsFiles, businessName, industry);
+    return fullRebuildFromPlayground(playground, existingVfsFiles, businessName, industry, options);
   }
 
   // ------------------------------------------------------------- factories

@@ -39,6 +39,8 @@ import { createRuntimeManifest } from '@/types/runtimeManifest';
 import { validateComposition } from '@/services/componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
 import { assertWithinCommit } from './pipelineGuard';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
 
 // ============================================================================
 // Pipeline Result
@@ -101,6 +103,10 @@ export interface SiteBundleSnapshot {
   /** Available routes for preview */
   routes: string[];
   homeRoute: string;
+
+  /** Sticky wizard template/style identity for non-wizard recompiles. */
+  selectedTemplateId?: string;
+  selectedThemeId?: string;
 
   /** Timestamp */
   createdAt: string;
@@ -235,11 +241,6 @@ export function recompileFromPlayground(
   // recompile keeps the Style-card tokens locked across all industries.
   const presetId = options?.themePresetId || options?.selectedThemeId;
   if (presetId) {
-    // Lazy require to avoid a circular dep with onboarding modules.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { THEME_PRESETS } = require('@/components/onboarding/themePresets');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } = require('@/components/onboarding/themePresetToIndexCss');
     const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId) || DEFAULT_PREVIEW_THEME_PRESET;
     compileResult.vfsFiles['/src/index.css'] = buildThemedIndexCss(preset);
   }
@@ -247,7 +248,12 @@ export function recompileFromPlayground(
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
     compileResult,
-    { businessName: businessName || '', industry: industry || 'general' } as any,
+    {
+      businessName: businessName || '',
+      industry: industry || 'general',
+      templateId: options?.selectedTemplateId,
+      themeId: options?.selectedThemeId || options?.themePresetId,
+    },
   );
 
   const runtimeManifest = deriveRuntimeManifest(siteBundleSnapshot);
@@ -272,7 +278,13 @@ export function recompileFromPlayground(
 function projectToSiteBundleSnapshot(
   playground: PlaygroundState,
   compileResult: PlaygroundCompileResult,
-  selections: { businessName: string; industryOverlay?: string; industry?: string },
+  selections: {
+    businessName: string;
+    industryOverlay?: string;
+    industry?: string;
+    templateId?: string;
+    themeId?: string;
+  },
 ): SiteBundleSnapshot {
   const registry = compileResult.pageRouteRegistry;
   const pages = Object.values(registry.pages);
@@ -320,6 +332,8 @@ function projectToSiteBundleSnapshot(
     componentInstances: playground.creatorData.componentInstances,
     routes: compileResult.previewManifest.routes,
     homeRoute: compileResult.previewManifest.homeRoute,
+    selectedTemplateId: selections.templateId,
+    selectedThemeId: selections.themeId,
     createdAt: new Date().toISOString(),
   };
 }

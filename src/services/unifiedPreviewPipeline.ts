@@ -128,9 +128,10 @@ export function fullRebuildFromPlayground(
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
   industry?: string,
+  options?: { selectedTemplateId?: string; selectedThemeId?: string; themePresetId?: string },
 ) {
   return commitToPipeline(
-    { playground, existingVfsFiles, businessName, industry },
+    { playground, existingVfsFiles, businessName, industry, ...options },
     'playground-edit',
   );
 }

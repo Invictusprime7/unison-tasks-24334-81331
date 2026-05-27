@@ -286,7 +286,7 @@ function InlinePreview({ files, className, device }: InlinePreviewProps) {
       <div className="flex-1 min-h-0 bg-white overflow-hidden" style={{ width: DEVICE_WIDTHS[device] === '100%' ? '100%' : DEVICE_WIDTHS[device], margin: DEVICE_WIDTHS[device] !== '100%' ? '0 auto' : undefined }}>
         <SandpackProvider
           key={refreshKey}
-          template="react-ts"
+          template="vite-react-ts"
           files={sandpackFiles}
           customSetup={{ dependencies }}
           options={{

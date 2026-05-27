@@ -105,7 +105,7 @@ function buildRuntimeAppContext(
     businessName: input.businessName || siteBundleSnapshot?.businessName || undefined,
     templateName: input.templateName || undefined,
     templateCategory: input.templateCategory || undefined,
-    templateId: input.templateId || undefined,
+    templateId: input.templateId || siteBundleSnapshot?.selectedTemplateId || undefined,
     systemType: input.systemType || undefined,
     systemName: input.systemName || undefined,
     industry: input.industry || siteBundleSnapshot?.industry || undefined,
@@ -114,7 +114,11 @@ function buildRuntimeAppContext(
     wizardSelections: input.wizardSelections
       ? (JSON.parse(JSON.stringify(input.wizardSelections)) as Record<string, unknown>)
       : undefined,
-    themePresetId: input.themePresetId || (input.aesthetic as string | undefined) || undefined,
+    themePresetId:
+      input.themePresetId ||
+      siteBundleSnapshot?.selectedThemeId ||
+      (input.aesthetic as string | undefined) ||
+      undefined,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -137,6 +141,8 @@ function serializeSiteBundleSnapshot(siteBundleSnapshot?: SiteBundleSnapshot) {
     componentInstances: siteBundleSnapshot.componentInstances,
     routes: siteBundleSnapshot.routes,
     homeRoute: siteBundleSnapshot.homeRoute,
+    selectedTemplateId: siteBundleSnapshot.selectedTemplateId,
+    selectedThemeId: siteBundleSnapshot.selectedThemeId,
     createdAt: siteBundleSnapshot.createdAt,
     appContext: siteBundleSnapshot.appContext,
     routerFile: siteBundleSnapshot.routerFile
@@ -211,8 +217,13 @@ export function buildCanonicalLaunchArtifacts(
   input: BuildCanonicalLaunchArtifactsInput,
 ): CanonicalLaunchArtifacts {
   const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
+  const wizardSelections = input.wizardSelections ?? null;
   const resolvedThemePresetId =
-    input.themePresetId || (input.aesthetic as string | undefined) || null;
+    input.themePresetId ||
+    wizardSelections?.themeId ||
+    input.siteBundleSnapshot?.selectedThemeId ||
+    (input.aesthetic as string | undefined) ||
+    null;
   const normalizedFiles = normalizeLauncherFiles(input.generatedFiles, {
     entryPoint: input.preferredEntryPoint,
     themePresetId: resolvedThemePresetId,
@@ -229,7 +240,19 @@ export function buildCanonicalLaunchArtifacts(
     : { ...boundFiles };
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
-  const appContext = buildRuntimeAppContext(input, entryPoint, input.siteBundleSnapshot);
+  const appContext = buildRuntimeAppContext(
+    {
+      ...input,
+      templateId:
+        input.templateId ||
+        wizardSelections?.templateId ||
+        input.siteBundleSnapshot?.selectedTemplateId ||
+        undefined,
+      themePresetId: resolvedThemePresetId,
+    },
+    entryPoint,
+    input.siteBundleSnapshot,
+  );
   const siteBundleSnapshot = input.siteBundleSnapshot
     ? { ...input.siteBundleSnapshot, appContext }
     : undefined;

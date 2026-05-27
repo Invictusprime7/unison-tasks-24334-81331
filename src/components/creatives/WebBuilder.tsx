@@ -52,7 +52,7 @@ import { LayoutTemplatesPanel } from "./web-builder/LayoutTemplatesPanel";
 import { FloatingDock } from "./web-builder/FloatingDock";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useVFS } from "@/hooks/useVFSContext";
+import { useVFSSafe } from "@/hooks/useVFSContext";
 import { FileExplorer } from "./code-editor/FileExplorer";
 import { ModernFileExplorer } from "./code-editor/ModernFileExplorer";
 import { EditorTabs } from "./code-editor/EditorTabs";
@@ -83,6 +83,7 @@ import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
 import { escapeCSSSelector } from "@/lib/builder/cssSelectorUtils";
 import { extractJsxReturnBody } from "@/lib/builder/jsxMutation";
+import { safeOpenExternal } from "@/utils/safeOpenExternal";
 
 function isMissingBusinessInstallsError(error: unknown): boolean {
   const candidate = error as {
@@ -2088,7 +2089,17 @@ export default function App() {
   );
   
   // Virtual file system for code editor
-  const virtualFS = useVFS();
+  const virtualFS = useVFSSafe();
+  if (!virtualFS) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
+          <p className="text-sm text-muted-foreground">Loading builder context...</p>
+        </div>
+      </div>
+    );
+  }
   // Destructure stable callbacks for use in dependency arrays (avoids re-render loops)
   const {
     nodes: vfsNodes,
@@ -3496,12 +3507,28 @@ export default function ${componentName}Page() {
       projectNameFromState ||
       systemName ||
       'Business';
+    const preservedTemplateId =
+      effectiveRouteState?.siteBundleSnapshot?.appContext?.templateId ||
+      effectiveRouteState?.siteBundleSnapshot?.selectedTemplateId ||
+      effectiveRouteState?.runtimeManifest?.appContext?.templateId ||
+      effectiveRouteState?.wizardSelections?.templateId ||
+      undefined;
+    const preservedThemePresetId =
+      effectiveRouteState?.siteBundleSnapshot?.appContext?.themePresetId ||
+      effectiveRouteState?.siteBundleSnapshot?.selectedThemeId ||
+      effectiveRouteState?.runtimeManifest?.appContext?.themePresetId ||
+      effectiveRouteState?.wizardSelections?.themeId ||
+      currentDesignPreset ||
+      undefined;
     const recompilation = commitToPipeline(
       {
         playground: canonicalPlayground,
         existingVfsFiles: currentFiles,
         businessName: effectiveBusinessName,
         industry: effectiveRouteState?.siteBundleSnapshot?.industry,
+        selectedTemplateId: preservedTemplateId,
+        selectedThemeId: preservedThemePresetId,
+        themePresetId: preservedThemePresetId,
       },
       'playground-edit',
     );
@@ -3518,9 +3545,11 @@ export default function ${componentName}Page() {
       systemName: systemName || effectiveBusinessName,
       templateName: currentTemplateName || effectiveBusinessName,
       templateCategory: currentTemplateCategory || undefined,
+      templateId: preservedTemplateId,
       businessName: effectiveBusinessName,
       industry: recompilation.siteBundleSnapshot.industry,
-      aesthetic: currentDesignPreset || undefined,
+      aesthetic: preservedThemePresetId,
+      themePresetId: preservedThemePresetId,
       backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
       wizardSelections: effectiveRouteState?.wizardSelections || undefined,
     });
@@ -6168,7 +6197,11 @@ ${html}
                   description: `Live at ${url}`,
                   action: {
                     label: 'Open',
-                    onClick: () => window.open(url, '_blank'),
+                    onClick: () => {
+                      if (!safeOpenExternal(url, '_blank')) {
+                        toast.error('Invalid deployment URL returned.');
+                      }
+                    },
                   },
                 });
               }}
@@ -6871,6 +6904,7 @@ export default function ${componentName}() {
                       className="w-full h-full min-h-0 flex-1"
                       showToolbar={false}
                       autoStart={true}
+                      forceBackend="sandpack"
                       showBackendIndicator={false}
                       device={device}
                       enableSelection={builderMode === 'select'}
@@ -7084,6 +7118,7 @@ export default function ${componentName}() {
                         className="w-full h-full min-h-0 flex-1"
                         showToolbar={false}
                         autoStart={true}
+                        forceBackend="sandpack"
                         showBackendIndicator={false}
                         device={device}
                         enableSelection={builderMode === 'select'}

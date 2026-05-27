@@ -63,6 +63,78 @@ export interface OrchestratorResult {
   response: Response;
 }
 
+function hardenWizardSystemsBuildContext(raw: AIRequest['systemsBuildContext']): {
+  context: AIRequest['systemsBuildContext'];
+  hasExplicitTemplateContract: boolean;
+  hasExplicitStyleContract: boolean;
+} {
+  const ctx = (raw || {}) as Record<string, unknown>;
+  const templateSelection = ((ctx.template_selection as Record<string, unknown>) || {});
+  const styleSelection = ((ctx.style_selection as Record<string, unknown>) || {});
+  const themeTokens = ((ctx.theme_tokens as Record<string, unknown>) || {});
+
+  const fallbackSections = ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
+  const explicitTemplateSections = Array.isArray(ctx.template_sections)
+    ? ctx.template_sections.filter((s): s is string => typeof s === 'string')
+    : [];
+  const explicitSelectionOrder = Array.isArray(templateSelection.section_order)
+    ? (templateSelection.section_order as unknown[]).filter((s): s is string => typeof s === 'string')
+    : [];
+  const hasExplicitTemplateContract =
+    explicitSelectionOrder.length > 0 || explicitTemplateSections.length > 0;
+  const sectionOrder = explicitSelectionOrder.length > 0
+    ? explicitSelectionOrder
+    : (explicitTemplateSections.length > 0 ? explicitTemplateSections : fallbackSections);
+
+  const presetId =
+    (styleSelection.preset_id as string | undefined) ||
+    (themeTokens.presetId as string | undefined) ||
+    undefined;
+  const presetLabel =
+    (styleSelection.preset_label as string | undefined) ||
+    (themeTokens.presetLabel as string | undefined) ||
+    undefined;
+  const styleDirective =
+    (styleSelection.style_directive as string | undefined) ||
+    (themeTokens.styleDirective as string | undefined) ||
+    undefined;
+  const hasExplicitStyleContract = Boolean(
+    styleSelection.preset_id ||
+    themeTokens.presetId,
+  );
+
+  const hardened: Record<string, unknown> = {
+    ...ctx,
+    template_selection: {
+      ...templateSelection,
+      section_order: sectionOrder,
+    },
+    template_sections: sectionOrder,
+    style_selection: {
+      ...styleSelection,
+      ...(presetId ? { preset_id: presetId } : {}),
+      ...(presetLabel ? { preset_label: presetLabel } : {}),
+      ...(styleDirective ? { style_directive: styleDirective } : {}),
+    },
+    theme_tokens: {
+      ...themeTokens,
+      ...(presetId ? { presetId } : {}),
+      ...(presetLabel ? { presetLabel } : {}),
+      ...(styleDirective ? { styleDirective } : {}),
+    },
+  };
+
+  if (explicitSelectionOrder.length === 0 || explicitTemplateSections.length === 0) {
+    console.warn('[orchestrator] Hardened wizard context: repaired missing template section contract');
+  }
+
+  return {
+    context: hardened as AIRequest['systemsBuildContext'],
+    hasExplicitTemplateContract,
+    hasExplicitStyleContract,
+  };
+}
+
 // ── Main Orchestrator Entry ─────────────────────────────────────────────────
 
 export function runAssistantOrchestrator(
@@ -102,10 +174,37 @@ async function runWizardLane(
 
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   const { messages, systemsBuildContext, templateName, source, imagePlacement } = parsed;
+  const {
+    context: hardenedContext,
+    hasExplicitTemplateContract,
+    hasExplicitStyleContract,
+  } = hardenWizardSystemsBuildContext(systemsBuildContext);
+
+  // Strict guard for explicit wizard-launch requests from the 4-step launcher.
+  // If template/style registry selections are missing, fail fast instead of
+  // silently falling back to a generic output profile.
+  if (parsed.wizardLaunch && (!hasExplicitTemplateContract || !hasExplicitStyleContract)) {
+    console.error('[orchestrator] Lane A contract missing for wizardLaunch', {
+      hasExplicitTemplateContract,
+      hasExplicitStyleContract,
+      hasTemplateSelection: Boolean((systemsBuildContext as Record<string, unknown> | undefined)?.template_selection),
+      hasStyleSelection: Boolean((systemsBuildContext as Record<string, unknown> | undefined)?.style_selection),
+      hasThemeTokens: Boolean((systemsBuildContext as Record<string, unknown> | undefined)?.theme_tokens),
+    });
+    return new Response(
+      JSON.stringify({
+        error: 'Wizard launch contract missing template/style selections. Please relaunch from the wizard and select template + style cards.',
+      }),
+      {
+        status: 422,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    );
+  }
 
   // Fast path system prompt — no research, no memory, no patterns
   const finalSystemPrompt = buildFastPathSystemPrompt({
-    systemsBuildContext: systemsBuildContext ?? {},
+    systemsBuildContext: hardenedContext ?? {},
     templateName: templateName ?? undefined,
     source: source ?? undefined,
   });
@@ -122,7 +221,6 @@ async function runWizardLane(
     aiMessages,
     providerPlan,
     navPageGen: false,
-    lovableApiKey: LOVABLE_API_KEY ?? undefined,
     forceJsonResponse: true,
     taskType: task.type,
   });
@@ -197,7 +295,6 @@ async function runLaunchDeskLane(
     aiMessages,
     providerPlan,
     navPageGen: false,
-    lovableApiKey: LOVABLE_API_KEY ?? undefined,
   });
 
   if (providerResult.earlyError) {
@@ -477,7 +574,6 @@ async function runBuilderLane(
     aiMessages,
     providerPlan,
     navPageGen,
-    lovableApiKey: LOVABLE_API_KEY ?? undefined,
     reasoningEffort: gatewayOptions?.reasoningEffort,
   });
 

@@ -72,6 +72,58 @@ export interface SystemsBuildContext {
       writing_style?: string;
     };
   };
+  style_selection?: {
+    preset_id?: string;
+    preset_label?: string;
+    style_directive?: string;
+    palette_hex?: {
+      background?: string;
+      foreground?: string;
+      primary?: string;
+      secondary?: string;
+      accent?: string;
+    };
+    typography?: {
+      heading_font?: string;
+      body_font?: string;
+      heading_weight?: string;
+      body_weight?: string;
+    };
+  };
+  theme_tokens?: {
+    primary?: string;
+    primaryForeground?: string;
+    secondary?: string;
+    secondaryForeground?: string;
+    accent?: string;
+    accentForeground?: string;
+    background?: string;
+    foreground?: string;
+    muted?: string;
+    mutedForeground?: string;
+    card?: string;
+    cardForeground?: string;
+    border?: string;
+    radius?: string;
+    headingFont?: string;
+    bodyFont?: string;
+    headingWeight?: string;
+    bodyWeight?: string;
+    isDark?: boolean;
+    presetId?: string;
+    presetLabel?: string;
+    styleDirective?: string;
+  };
+  template_selection?: {
+    template_id?: string;
+    template_label?: string;
+    description?: string;
+    industry?: string;
+    traits?: string[];
+    section_order?: string[];
+    section_ids?: string[];
+    page_roles?: string[];
+  };
   /** Intent objects to wire on CTAs */
   intents?: Array<{
     intent: string;

@@ -382,6 +382,7 @@ function buildWizardAiSeedPrompt(opts: {
   headingWeight: string;
   bodyFont: string;
   templateGuidance: string;
+  compositionContext: string;
   canonicalIntents: string[];
   customInstructionsRaw: string;
 }): string {
@@ -399,6 +400,7 @@ function buildWizardAiSeedPrompt(opts: {
     `5. Visual Style preset (LOCKED aesthetic): ${opts.visualStyleLabel} — ${opts.visualStyleDirective}`,
     `   Headings: ${opts.headingFont} (${opts.headingWeight}). Body: ${opts.bodyFont}.`,
     opts.templateGuidance ? `Template layout details (LOCKED):\n${opts.templateGuidance}` : `Template layout details: use the selected template card only`,
+    opts.compositionContext ? `Canonical registry composition (LOCKED):\n${opts.compositionContext}` : `Canonical registry composition: use the registered composition only; do not invent sections or headings.`,
     customInstructionsPresent
       ? `6. Custom instructions from user (HIGHEST priority for copy/tone): included verbatim below`
       : `6. Custom instructions: (none)`,
@@ -435,6 +437,53 @@ function buildTemplateGuidance(card: TemplateCardData | null): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function ensureWizardLaneAContract(opts: {
+  blueprint: Record<string, any>;
+  sectionOrder: string[];
+  pageRoles: string[];
+  preset: ThemePreset;
+}) {
+  const sectionOrder = opts.sectionOrder.length > 0
+    ? opts.sectionOrder
+    : ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
+
+  const templateSelection = {
+    ...(opts.blueprint.template_selection || {}),
+    section_order:
+      Array.isArray(opts.blueprint.template_selection?.section_order) &&
+      opts.blueprint.template_selection.section_order.length > 0
+        ? opts.blueprint.template_selection.section_order
+        : sectionOrder,
+    page_roles:
+      Array.isArray(opts.blueprint.template_selection?.page_roles) &&
+      opts.blueprint.template_selection.page_roles.length > 0
+        ? opts.blueprint.template_selection.page_roles
+        : opts.pageRoles,
+  };
+
+  const styleSelection = {
+    ...(opts.blueprint.style_selection || {}),
+    preset_id: opts.blueprint.style_selection?.preset_id || opts.preset.id,
+    preset_label: opts.blueprint.style_selection?.preset_label || opts.preset.label,
+    style_directive: opts.blueprint.style_selection?.style_directive || opts.preset.styleDirective,
+  };
+
+  const themeTokens = {
+    ...(opts.blueprint.theme_tokens || {}),
+    presetId: opts.blueprint.theme_tokens?.presetId || styleSelection.preset_id,
+    presetLabel: opts.blueprint.theme_tokens?.presetLabel || styleSelection.preset_label,
+    styleDirective: opts.blueprint.theme_tokens?.styleDirective || styleSelection.style_directive,
+  };
+
+  return {
+    ...opts.blueprint,
+    template_selection: templateSelection,
+    template_sections: templateSelection.section_order,
+    style_selection: styleSelection,
+    theme_tokens: themeTokens,
+  };
 }
 
 function buildLockedWizardDesign(opts: {
@@ -1077,11 +1126,38 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         template_intents: compositionMeta?.intents,
       };
 
+      const hardenedBlueprint = ensureWizardLaneAContract({
+        blueprint,
+        sectionOrder: templateSectionOrder,
+        pageRoles: composition.pageRoles,
+        preset: resolvedPreset,
+      });
+
+      const hasTemplateContract =
+        Array.isArray(hardenedBlueprint.template_selection?.section_order) &&
+        hardenedBlueprint.template_selection.section_order.length > 0;
+      const hasStyleContract =
+        Boolean(hardenedBlueprint.style_selection?.preset_id) &&
+        Boolean(hardenedBlueprint.theme_tokens?.presetId);
+
+      if (!hasTemplateContract || !hasStyleContract) {
+        toast.error('Wizard launcher contract is incomplete. Please restart launch.');
+        console.error('[SystemLauncher] Lane A contract integrity check failed', {
+          hasTemplateContract,
+          hasStyleContract,
+          templateSelection: hardenedBlueprint.template_selection,
+          styleSelection: hardenedBlueprint.style_selection,
+          themeTokens: hardenedBlueprint.theme_tokens,
+        });
+        return;
+      }
+
       toast("Generating your site with AI…", {
         description: `${resolvedIndustry} • ${selectedTemplate?.label || system.name} • ${resolvedPreset.label}`,
       });
 
       // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
+      const compositionContext = getCompositionContentContext(selectedTemplate.id) || getCompositionContentContext(generationCategory) || '';
       const aiUserPrompt = buildWizardAiSeedPrompt({
         industrySystemName: system.name,
         resolvedIndustry,
@@ -1095,6 +1171,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         headingWeight: resolvedPreset.typography.headingWeight,
         bodyFont: resolvedPreset.typography.bodyFont,
         templateGuidance,
+        compositionContext,
         canonicalIntents,
         customInstructionsRaw: customPrompt,
       });
@@ -1148,7 +1225,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               aesthetic: resolvedPreset.id,
               source: resolvedIndustry,
               systemType: selectedSystem,
-              systemsBuildContext: blueprint,
+              systemsBuildContext: hardenedBlueprint,
             },
           }),
           WIZARD_AI_TIMEOUT_MS,
@@ -1242,6 +1319,25 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const otherInvalid = sanitized.invalidFiles.filter(
           (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
         );
+
+        const appSource = normalizedFiles['/src/App.tsx'] || normalizedFiles['src/App.tsx'] || '';
+        const missingSectionMarkers = templateSectionOrder.filter((section) => {
+          if (!section) return false;
+          return !new RegExp(`\\b${section}\\b`, 'i').test(appSource);
+        });
+
+        if (missingSectionMarkers.length > 0) {
+          lastPayloadIssue = {
+            kind: 'section',
+            invalidFiles: sanitized.invalidFiles,
+            allInvalidFiles: sanitized.invalidFiles,
+          };
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} omitted canonical template sections — retrying`, {
+            missingSectionMarkers,
+            templateSectionOrder,
+          });
+          continue;
+        }
 
         if (otherInvalid.length > 0) {
           // Non-entry malformed files are tolerated for launch so users can still
@@ -1490,6 +1586,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
         pipelineManifest,
         wizardSelections,
+        systemsBuildContext: hardenedBlueprint,
       };
 
       const launchState = createLaunchState({
@@ -1499,6 +1596,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         templateName: `${brand} Site`,
         templateCategory: generationCategory as any,
         blueprint: blueprint as any,
+        systemsBuildContext: hardenedBlueprint as any,
         vfsFiles: wiredVfsFiles,
         aesthetic: resolvedPreset.id,
         preloadedIntents: canonicalIntents,

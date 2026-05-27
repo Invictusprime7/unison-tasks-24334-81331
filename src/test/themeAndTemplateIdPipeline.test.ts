@@ -59,4 +59,27 @@ describe('templateId end-to-end persistence (Wizard → Launch artifacts)', () =
     });
     expect(artifacts.appContext.themePresetId).toBe('futuristic');
   });
+
+  it('falls back to wizardSelections for templateId and themePresetId', () => {
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: { '/src/App.tsx': 'export default () => null;' },
+      preferredEntryPoint: '/src/App.tsx',
+      wizardSelections: {
+        businessName: 'Test Salon',
+        businessModel: 'appointment_service',
+        industryOverlay: 'salon',
+        primaryGoal: 'book_appointments',
+        secondaryGoals: ['book_service'],
+        needsBooking: true,
+        wantsLeadCapture: true,
+        templateId: 'salon-modern-01',
+        themeId: 'organic',
+      },
+      industry: 'salon',
+      businessName: 'Test Salon',
+    });
+
+    expect(artifacts.appContext.templateId).toBe('salon-modern-01');
+    expect(artifacts.appContext.themePresetId).toBe('organic');
+  });
 });

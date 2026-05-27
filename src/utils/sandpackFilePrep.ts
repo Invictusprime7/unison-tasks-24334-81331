@@ -27,6 +27,7 @@ import { buildDefaultThemedIndexCss, buildThemedIndexCss, DEFAULT_PREVIEW_THEME_
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 
 const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
+const DEBUG_SANDPACK_PREP = Boolean(import.meta.env.VITE_DEBUG_SANDPACK_PREP);
 
 const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 
@@ -1369,7 +1370,9 @@ function enforceContrastInCSS(css: string): string {
           new RegExp(`(${fgVar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:\\s*)${fgVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
           `$1${newFgVal}`
         );
-        console.warn(`[contrast-fix] ${fgVar}: ${fgVal} → ${newFgVal} (bg lightness: ${bgL}%)`);
+        if (DEBUG_SANDPACK_PREP) {
+          console.warn(`[contrast-fix] ${fgVar}: ${fgVal} → ${newFgVal} (bg lightness: ${bgL}%)`);
+        }
       }
     }
   }
@@ -3358,7 +3361,9 @@ function matchSectionGenerator(componentName: string): string | null {
   // Last resort: fuzzy matching - find the closest match
   const fuzzyMatch = findClosestSectionKey(componentName);
   if (fuzzyMatch) {
-    console.warn(`[matchSectionGenerator] Fuzzy match: "${componentName}" → "${fuzzyMatch}"`);
+    if (DEBUG_SANDPACK_PREP) {
+      console.warn(`[matchSectionGenerator] Fuzzy match: "${componentName}" → "${fuzzyMatch}"`);
+    }
     return fuzzyMatch;
   }
   
@@ -4683,7 +4688,7 @@ function isProseOnlyModule(content: string): boolean {
   // declaration, JSDoc/pragma block, or a meaningful keyword → not prose.
   if (/<[A-Za-z/!?]/.test(trimmed)) return false;
   if (/\b(import|export|function|class|const|let|var|return|=>|interface|type|enum)\b/.test(trimmed)) return false;
-  if (/^\s*\/[\*/]/.test(trimmed)) return false;
+  if (/^\s*\/[*/]/.test(trimmed)) return false;
   if (/[{};]/.test(trimmed)) return false;
   // Looks like a sentence: contains alphabetic words and (often) ends with a period.
   return /[A-Za-z]/.test(trimmed) && /\s/.test(trimmed);
@@ -5055,7 +5060,9 @@ export function prepareSandpackFiles(
         .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
       if (fixed !== content) {
         sandpackFiles[filePath] = fixed;
-        console.warn(`[sandpackFilePrep] Stripped Router wrapper from ${filePath} (RouterGuard provides one)`);
+        if (DEBUG_SANDPACK_PREP) {
+          console.warn(`[sandpackFilePrep] Stripped Router wrapper from ${filePath} (RouterGuard provides one)`);
+        }
       }
     }
   }

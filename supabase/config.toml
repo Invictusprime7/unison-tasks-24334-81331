@@ -7,7 +7,7 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.ai-code-assistant]
-verify_jwt = true
+verify_jwt = false
 
 [functions.ai-design-assistant]
 verify_jwt = true

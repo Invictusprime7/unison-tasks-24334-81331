@@ -306,13 +306,37 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     if (backend !== 'sandpack') {
       return { sandpackFiles: {} as Record<string, string>, dependencies: {} as Record<string, string> };
     }
-    return buildPreviewArtifacts({
+    const built = buildPreviewArtifacts({
       sourceFiles: files,
       launchState: launch,
       dependencyMode: sandpackDependencyMode,
       baseDependencies: sandpackDependencyMode === 'base-only' ? MINIMAL_SANDPACK_DEPENDENCIES : undefined,
     });
+    // Sandpack's `vite-react-ts` template provides its own package.json, vite.config,
+    // tsconfig, tailwind/postcss config. Injecting our IDE-flavored versions overrides
+    // those defaults inside the nodebox and can prevent vite from starting on :5173
+    // ("server couldn't be reached"). Strip them — they remain visible in the editor
+    // (which reads from `nodes` directly), but the runtime gets the template's defaults.
+    const SANDPACK_CONFIG_BLOCKLIST = new Set([
+      '/package.json',
+      '/vite.config.ts',
+      '/vite.config.js',
+      '/tsconfig.json',
+      '/tsconfig.app.json',
+      '/tsconfig.node.json',
+      '/tailwind.config.ts',
+      '/tailwind.config.js',
+      '/postcss.config.js',
+      '/postcss.config.cjs',
+    ]);
+    const filtered: Record<string, string> = {};
+    for (const [p, c] of Object.entries(built.sandpackFiles)) {
+      if (SANDPACK_CONFIG_BLOCKLIST.has(p)) continue;
+      filtered[p] = c;
+    }
+    return { sandpackFiles: filtered, dependencies: built.dependencies };
   }, [backend, files, launch, sandpackDependencyMode]);
+
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
   useEffect(() => {

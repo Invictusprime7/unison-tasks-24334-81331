@@ -150,8 +150,8 @@ async function callLovableAI(opts: {
   href?: string;
   pageTitle?: string;
 }): Promise<{ summary?: string; keyPoints?: string[]; relevanceByUrl?: Record<string, string> }> {
-  const key = Deno.env.get("OPENAI_API_KEY");
-  if (!key) throw new Error("OPENAI_API_KEY is not configured");
+
+
 
   const sources = opts.articles.map((a, i) => ({
     n: i + 1,

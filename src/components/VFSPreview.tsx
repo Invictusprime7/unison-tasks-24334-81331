@@ -941,7 +941,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
             <SandpackProvider
               key={`sandpack-${sandpackKey}`}
-              template="vite-react-ts"
+              template="react-ts"
               files={sandpackFiles}
               theme="light"
               options={{

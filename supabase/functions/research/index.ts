@@ -3,6 +3,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString, isValidUrl } from "../_shared/validate.ts";
+import { callGeminiText, cleanJsonText } from "../_shared/gemini.ts";
 
 type ResearchPayload = {
   query: string;

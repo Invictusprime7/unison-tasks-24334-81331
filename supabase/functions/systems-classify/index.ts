@@ -4,18 +4,18 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
+import { callGeminiText, getGeminiApiKey, cleanJsonText } from "../_shared/gemini.ts";
 
 /**
  * Systems AI - Classify Endpoint
  * POST /systems-classify
- * 
+ *
  * Takes a business prompt and returns industry classification + clarifying questions.
- * Uses AI for intelligent classification when OPENAI_API_KEY is configured,
+ * Uses Gemini for intelligent classification when a Gemini API key is configured,
  * falls back to regex-based heuristics otherwise.
  */
 
-const AI_GATEWAY_URL = "https://api.openai.com/v1/chat/completions";
-const AI_MODEL = "gpt-5-mini";
+const AI_MODEL = "gemini-2.5-flash";
 
 interface ClassifyRequest {
   prompt: string;

@@ -126,7 +126,7 @@ export async function runProviderLoop(opts: {
           };
           return score(a.id) - score(b.id);
         })
-        .slice(0, 1)
+        .slice(0, 2)
     : geminiModels;
 
   const systemInstructionText = aiMessages

@@ -5,35 +5,7 @@
 
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
-
-function coerceMessageText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (content == null) return '';
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        if (part && typeof part === 'object' && 'text' in part && typeof (part as { text?: unknown }).text === 'string') {
-          return (part as { text: string }).text;
-        }
-        try {
-          return JSON.stringify(part);
-        } catch {
-          return String(part);
-        }
-      })
-      .join('\n')
-      .trim();
-  }
-  if (typeof content === 'object' && content && 'text' in content && typeof (content as { text?: unknown }).text === 'string') {
-    return (content as { text: string }).text;
-  }
-  try {
-    return JSON.stringify(content);
-  } catch {
-    return String(content);
-  }
-}
+import { coerceGeminiText, extractGeminiText, getGeminiApiKey, missingGeminiKeyMessage } from "../_shared/gemini.ts";
 
 function mapGatewayGeminiIdToDirect(id: string): string {
   const normalized = id.replace(/^google\//, '').trim();
@@ -73,13 +45,13 @@ export async function runProviderLoop(opts: {
   void opts.navPageGen;
   void opts.reasoningEffort;
 
-  const geminiApiKey = Deno.env.get('UNISONGEMINI_API_KEY') || Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
+  const geminiApiKey = getGeminiApiKey();
   if (!geminiApiKey) {
     return {
       content: '',
       reasoning: '',
       modelUsed: undefined,
-      earlyError: { status: 503, error: 'No Gemini API key configured. Set GEMINI_API_KEY or GOOGLE_API_KEY in Supabase secrets.' },
+      earlyError: { status: 503, error: missingGeminiKeyMessage() },
     };
   }
 
@@ -131,7 +103,7 @@ export async function runProviderLoop(opts: {
 
   const systemInstructionText = aiMessages
     .filter((message) => message.role === 'system')
-    .map((message) => coerceMessageText(message.content))
+    .map((message) => coerceGeminiText(message.content))
     .filter(Boolean)
     .join('\n\n')
     .trim();
@@ -140,7 +112,7 @@ export async function runProviderLoop(opts: {
     .filter((message) => message.role !== 'system')
     .map((message) => {
       const role = message.role === 'assistant' ? 'model' : 'user';
-      const text = coerceMessageText(message.content).trim();
+      const text = coerceGeminiText(message.content).trim();
       return text ? { role, parts: [{ text }] } : null;
     })
     .filter((entry): entry is { role: string; parts: Array<{ text: string }> } => Boolean(entry));
@@ -199,13 +171,7 @@ export async function runProviderLoop(opts: {
       }
 
       const data = await resp.json();
-      const parts = data?.candidates?.[0]?.content?.parts;
-      const parsedContent = Array.isArray(parts)
-        ? parts
-            .map((part: { text?: string }) => (typeof part?.text === 'string' ? part.text : ''))
-            .join('')
-            .trim()
-        : '';
+      const parsedContent = extractGeminiText(data);
 
       if (!parsedContent) {
         const blockReason = data?.promptFeedback?.blockReason;
@@ -239,7 +205,7 @@ export async function runProviderLoop(opts: {
   const configuredProviders = [geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
   const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
   const guidance = configuredProviders.length === 0
-    ? 'No Gemini API key is configured. Set GEMINI_API_KEY or GOOGLE_API_KEY in Supabase secrets.'
+    ? missingGeminiKeyMessage()
     : hasTimeoutError
       ? 'Gemini timed out. This is typically prompt size, latency, or network pressure.'
       : 'Gemini failed to produce a response. Check key validity and edge-function network latency.';

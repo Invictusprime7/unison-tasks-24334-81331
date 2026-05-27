@@ -152,7 +152,7 @@ export async function runProviderLoop(opts: {
       break;
     }
 
-    const phaseCapMs = isWizardLane ? 15_000 : (providerPlan.perModelTimeoutMs || 60_000);
+    const phaseCapMs = isWizardLane ? 45_000 : (providerPlan.perModelTimeoutMs || 60_000);
     const perModelMs = Math.min(phaseCapMs, Math.max(8000, remaining - 2000));
 
     try {

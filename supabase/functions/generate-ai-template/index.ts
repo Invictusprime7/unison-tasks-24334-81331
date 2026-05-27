@@ -37,17 +37,14 @@ serve(async (req) => {
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
-    if (!OPENAI_API_KEY) {
-      console.warn("OPENAI_API_KEY not configured - AI features unavailable in local development");
+    if (!getGeminiApiKey()) {
       return secureJsonResponse(
-        { 
-          error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
-          isLocalDevelopment: true
-        },
+        { error: "AI features are not available. Configure the Gemini API key.", isLocalDevelopment: true },
         503,
         corsHeaders
       );
     }
+
 
     // Generate unique template variation based on prompt and optional seed
     const variation: TemplateVariation = generateVariation(prompt, variationSeed);

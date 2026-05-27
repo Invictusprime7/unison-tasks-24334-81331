@@ -907,47 +907,17 @@ Respond ONLY with valid JSON:
 }`;
 
   try {
-    // Use AbortController with extended timeout for AI enhancement
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
-
-    const response = await fetch(AI_GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Business: ${businessName}\nIndustry: ${industry}\nDescription: ${prompt}` },
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
-      signal: controller.signal,
+    const content = await callGeminiText({
+      systemPrompt,
+      userPrompt: `Business: ${businessName}\nIndustry: ${industry}\nDescription: ${prompt}`,
+      model: AI_MODEL,
+      responseMimeType: "application/json",
+      temperature: 0.7,
+      maxOutputTokens: 500,
+      timeoutMs: 90_000,
     });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      console.error("[systems-compile] AI gateway error:", response.status);
-      return null;
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
     if (!content) return null;
-
-    // Parse JSON from response
-    let jsonStr = content.trim();
-    if (jsonStr.startsWith("```")) {
-      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-    }
-
-    return JSON.parse(jsonStr);
+    return JSON.parse(cleanJsonText(content));
   } catch (error) {
     console.error("[systems-compile] AI enhancement error:", error);
     return null;

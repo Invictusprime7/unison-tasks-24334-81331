@@ -3,6 +3,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from '../_shared/cors.ts'
 import { secureJsonResponse, errorResponse } from '../_shared/response.ts'
 import { verifyAuth, verifyBusinessAccess, authError } from '../_shared/auth.ts'
 import { safeParseBody, isValidUUID, sanitizeString } from '../_shared/validate.ts'
+import { callGeminiText, getGeminiApiKey, cleanJsonText } from '../_shared/gemini.ts'
 
 // =============================================================================
 // Types

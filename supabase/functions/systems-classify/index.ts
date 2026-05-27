@@ -422,11 +422,11 @@ serve(async (req) => {
       return errorResponse("prompt is required", 400, corsHeaders);
     }
     
-    // Try AI classification first if API key is available
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    // Try AI classification first if Gemini key is available
+    const apiKey = getGeminiApiKey();
     let result: ClassifyResponse | null = null;
     let usedAI = false;
-    
+
     if (apiKey) {
       result = await classifyWithAI(prompt, apiKey);
       if (result) {

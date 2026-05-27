@@ -6,6 +6,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody } from "../_shared/validate.ts";
+import { callGeminiText, getGeminiApiKey } from "../_shared/gemini.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);

@@ -35,7 +35,6 @@ serve(async (req) => {
       return errorResponse("prompt is required", 400, corsHeaders);
     }
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
     if (!getGeminiApiKey()) {
       return secureJsonResponse(

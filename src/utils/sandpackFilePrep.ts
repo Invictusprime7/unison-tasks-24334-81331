@@ -4548,10 +4548,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       version: '0.0.1',
       type: 'module',
       scripts: {
-        dev: 'vite',
+        dev: 'vite --host 0.0.0.0 --port 5173',
+        start: 'vite --host 0.0.0.0 --port 5173',
         build: 'tsc && vite build',
-        preview: 'vite preview',
+        preview: 'vite preview --host 0.0.0.0 --port 5173',
       },
+
       dependencies: detectedDeps,
       devDependencies: {
         '@vitejs/plugin-react-swc': '^3.5.0',
@@ -4596,6 +4598,12 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    host: true,
+    port: 5173,
+    strictPort: true,
+    hmr: { clientPort: 443 },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -4604,6 +4612,7 @@ export default defineConfig({
 });
 `;
   }
+
 
   if (!out['/tailwind.config.ts']) {
     out['/tailwind.config.ts'] = `import type { Config } from 'tailwindcss';

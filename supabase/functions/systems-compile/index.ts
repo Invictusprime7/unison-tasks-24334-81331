@@ -4,9 +4,9 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
+import { callGeminiText, getGeminiApiKey, cleanJsonText } from "../_shared/gemini.ts";
 
-const AI_GATEWAY_URL = "https://api.openai.com/v1/chat/completions";
-const AI_MODEL = "gpt-5";
+const AI_MODEL = "gemini-2.5-flash";
 
 /**
  * Systems AI - Compile Endpoint

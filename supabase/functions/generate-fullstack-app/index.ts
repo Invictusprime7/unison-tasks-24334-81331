@@ -63,14 +63,9 @@ serve(async (req: Request) => {
       return errorResponse("prompt and type are required", 400, corsHeaders);
     }
 
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-
-    if (!OPENAI_API_KEY) {
+    if (!getGeminiApiKey()) {
       return secureJsonResponse(
-        { 
-          error: "AI features are not available. Please deploy to Lovable Cloud.",
-          isLocalDevelopment: true
-        },
+        { error: "AI features are not available. Please configure the Gemini API key.", isLocalDevelopment: true },
         503,
         corsHeaders
       );

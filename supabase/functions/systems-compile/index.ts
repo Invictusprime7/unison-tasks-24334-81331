@@ -997,7 +997,7 @@ serve(async (req) => {
     let usedAI = false;
     
     // Try AI enhancement if API key is available
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    const apiKey = getGeminiApiKey();
     if (apiKey) {
       const enhancements = await enhanceBlueprintWithAI(
         prompt,

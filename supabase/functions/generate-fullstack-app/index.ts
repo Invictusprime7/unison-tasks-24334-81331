@@ -365,46 +365,25 @@ Generate a COMPLETE, PRODUCTION-READY application now. Include ALL components, p
 
     console.log('[Full-Stack Generator] Generating application:', { type, features: sanitizedFeatures, database, authentication });
 
-    // Use AbortController with extended timeout for full-stack app generation
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-5-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        response_format: { type: "json_object" },
+    let content = "";
+    try {
+      content = await callGeminiText({
+        systemPrompt,
+        userPrompt: prompt,
+        model: "gemini-2.5-flash",
+        responseMimeType: "application/json",
         temperature: 0.7,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
-      }
-      if (response.status === 402) {
-        return errorResponse("Payment required. Please add credits to your workspace.", 402, corsHeaders);
-      }
-      return errorResponse(`AI Gateway error: ${response.status}`, 503, corsHeaders);
+        maxOutputTokens: 8192,
+        timeoutMs: 120_000,
+      });
+    } catch (err) {
+      console.error('[Full-Stack Generator] Gemini error:', err);
+      return errorResponse(`AI Gateway error: ${err instanceof Error ? err.message : 'unknown'}`, 503, corsHeaders);
     }
 
-    const data = await response.json();
-    const content = data.choices[0].message.content;
-    
     let generatedApp;
     try {
-      generatedApp = JSON.parse(content);
+      generatedApp = JSON.parse(cleanJsonText(content));
     } catch (e) {
       console.error('[Full-Stack Generator] Failed to parse JSON response:', e);
       return errorResponse("Failed to parse AI response", 500, corsHeaders);

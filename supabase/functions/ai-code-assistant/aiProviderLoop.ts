@@ -84,7 +84,7 @@ export async function runProviderLoop(opts: {
   }
 
   const isWizardLane = taskType === 'wizard_template_react';
-  const totalBudgetMs = isWizardLane ? 70_000 : 135_000;
+  const totalBudgetMs = isWizardLane ? 120_000 : 135_000;
   const wizardMaxOutputTokens = 8_000;
   const startedAt = Date.now();
   const budgetRemaining = () => totalBudgetMs - (Date.now() - startedAt);
@@ -126,7 +126,7 @@ export async function runProviderLoop(opts: {
           };
           return score(a.id) - score(b.id);
         })
-        .slice(0, 1)
+        .slice(0, 2)
     : geminiModels;
 
   const systemInstructionText = aiMessages
@@ -152,7 +152,7 @@ export async function runProviderLoop(opts: {
       break;
     }
 
-    const phaseCapMs = isWizardLane ? 15_000 : (providerPlan.perModelTimeoutMs || 60_000);
+    const phaseCapMs = isWizardLane ? 45_000 : (providerPlan.perModelTimeoutMs || 60_000);
     const perModelMs = Math.min(phaseCapMs, Math.max(8000, remaining - 2000));
 
     try {

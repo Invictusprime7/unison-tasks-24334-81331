@@ -3,6 +3,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from '../_shared/cors.ts'
 import { secureJsonResponse, errorResponse } from '../_shared/response.ts'
 import { verifyAuth, verifyBusinessAccess, authError } from '../_shared/auth.ts'
 import { safeParseBody, isValidUUID, sanitizeString } from '../_shared/validate.ts'
+import { callGeminiText, getGeminiApiKey, cleanJsonText } from '../_shared/gemini.ts'
 
 // =============================================================================
 // Types
@@ -410,45 +411,33 @@ async function callLLM(
   // deno-lint-ignore no-explicit-any
   [key: string]: any 
 }> {
-  const lovableApiKey = Deno.env.get('OPENAI_API_KEY')
-  
-  if (!lovableApiKey) {
-    console.error('[agent-runner] OPENAI_API_KEY not configured')
+  if (!getGeminiApiKey()) {
+    console.error('[agent-runner] Gemini API key not configured')
     throw new Error('LLM service not configured')
   }
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${lovableApiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-5-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(userPayload, null, 2) },
-      ],
-      response_format: { type: 'json_object' },
+  let content = ''
+  try {
+    content = await callGeminiText({
+      systemPrompt,
+      userPrompt: JSON.stringify(userPayload, null, 2),
+      model: 'gemini-2.5-flash',
+      responseMimeType: 'application/json',
       temperature: 0.7,
-    }),
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error('[agent-runner] LLM call failed:', response.status, errorText)
-    throw new Error(`LLM call failed: ${response.status}`)
+      maxOutputTokens: 8192,
+      timeoutMs: 90_000,
+    })
+  } catch (err) {
+    console.error('[agent-runner] LLM call failed:', err)
+    throw new Error(`LLM call failed: ${err instanceof Error ? err.message : 'unknown'}`)
   }
-
-  const result = await response.json()
-  const content = result.choices?.[0]?.message?.content
 
   if (!content) {
     throw new Error('No content in LLM response')
   }
 
   try {
-    return JSON.parse(content)
+    return JSON.parse(cleanJsonText(content))
   } catch {
     console.error('[agent-runner] Failed to parse LLM response as JSON:', content)
     throw new Error('Invalid JSON response from LLM')

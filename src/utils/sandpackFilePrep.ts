@@ -4598,12 +4598,6 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  server: {
-    host: true,
-    port: 5173,
-    strictPort: true,
-    hmr: { clientPort: 443 },
-  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -4612,6 +4606,7 @@ export default defineConfig({
 });
 `;
   }
+
 
 
   if (!out['/tailwind.config.ts']) {

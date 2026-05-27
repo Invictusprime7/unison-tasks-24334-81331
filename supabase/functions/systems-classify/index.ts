@@ -288,7 +288,7 @@ function classifyPrompt(prompt: string): ClassifyResponse {
 /**
  * AI-powered classification using LLM
  */
-async function classifyWithAI(prompt: string, apiKey: string): Promise<ClassifyResponse | null> {
+async function classifyWithAI(prompt: string, _apiKey: string): Promise<ClassifyResponse | null> {
   const systemPrompt = `You are a business classification AI. Given a user's description of their business, you must:
 
 1. Identify the industry category (MUST be exactly one of):
@@ -332,50 +332,22 @@ Respond ONLY with valid JSON in this exact format:
 }`;
 
   try {
-    // Use AbortController with extended timeout for AI classification
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
-
-    const response = await fetch(AI_GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Classify this business: ${prompt}` },
-        ],
-        temperature: 0.3,
-        max_tokens: 1000,
-      }),
-      signal: controller.signal,
+    const content = await callGeminiText({
+      systemPrompt,
+      userPrompt: `Classify this business: ${prompt}`,
+      model: AI_MODEL,
+      responseMimeType: "application/json",
+      temperature: 0.3,
+      maxOutputTokens: 1000,
+      timeoutMs: 90_000,
     });
 
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      console.error("[systems-classify] AI gateway error:", response.status);
-      return null;
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
     if (!content) {
       console.error("[systems-classify] No content in AI response");
       return null;
     }
 
-    // Parse JSON from response (handle markdown code blocks)
-    let jsonStr = content.trim();
-    if (jsonStr.startsWith("```")) {
-      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-    }
-
-    const parsed = JSON.parse(jsonStr);
+    const parsed = JSON.parse(cleanJsonText(content));
     
     // Validate and normalize the response
     const validIndustries = [

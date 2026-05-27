@@ -73,7 +73,7 @@ export async function runProviderLoop(opts: {
   void opts.navPageGen;
   void opts.reasoningEffort;
 
-  const geminiApiKey = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
+  const geminiApiKey = Deno.env.get('UNISONGEMINI_API_KEY') || Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
   if (!geminiApiKey) {
     return {
       content: '',

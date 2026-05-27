@@ -43,22 +43,33 @@ export function validateTsxSyntax(
   const errors: string[] = [];
   const repairedFiles: string[] = [];
 
+  // Use @babel/parser directly (exposed via Babel.packages.parser in
+  // babel-standalone) so we control the plugin set explicitly. Going
+  // through Babel.transform with preset chains caused JSX in .tsx files
+  // to be parsed as regex literals — the parser API avoids that entirely.
+  const parser = (Babel as unknown as { packages?: { parser?: { parse: (src: string, opts: unknown) => unknown } } }).packages?.parser;
+
   for (const [path, content] of Object.entries(files)) {
     if (!TSX_RE.test(path)) continue;
+    const isTSX = /\.(tsx|jsx)$/.test(path);
     try {
-      // Babel.transform throws on syntax errors. We discard the output.
-      Babel.transform(content, {
-        filename: path,
-        presets: [
-          ['typescript', { allExtensions: true, isTSX: /\.(tsx|jsx)$/.test(path) }],
-          ['react', { runtime: 'automatic' }],
-        ],
-        // Pure parse — no plugins, no actual transform we care about.
-        compact: true,
-      });
+      if (parser) {
+        parser.parse(content, {
+          sourceType: 'module',
+          allowReturnOutsideFunction: true,
+          errorRecovery: false,
+          plugins: isTSX ? ['jsx', 'typescript'] : ['typescript'],
+        });
+      } else {
+        // Fallback — should not happen with babel-standalone.
+        Babel.transform(content, {
+          filename: path,
+          presets: [['typescript', { allExtensions: true, isTSX }], ['react', { runtime: 'automatic' }]],
+          compact: true,
+        });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Babel error messages already include line/col. Truncate noisy stack lines.
       const shortMsg = msg.split('\n').slice(0, 3).join(' | ');
       errors.push(`syntax: ${path}: ${shortMsg}`);
       continue;

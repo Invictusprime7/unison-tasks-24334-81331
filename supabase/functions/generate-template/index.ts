@@ -360,7 +360,6 @@ Return ONLY the complete HTML code. Make it look like a $5000 custom-built websi
     }
 
     generatedCode = String(generatedCode ?? '').slice(0, 500_000);
-    const generatedCode = String(data?.choices?.[0]?.message?.content ?? '').slice(0, 500_000);
 
     // Clean markdown code fences if the model wraps output
     let cleanedCode = generatedCode

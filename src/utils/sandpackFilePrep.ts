@@ -5146,8 +5146,15 @@ export function prepareSandpackFiles(
     sandpackFiles['/template.css'] = '/* template styles */\n';
   }
 
-  // Ensure index.html exists with Tailwind CDN + semantic theme config
-  if (!sandpackFiles['/index.html']) {
+  // Ensure index.html exists with Tailwind CDN + semantic theme config.
+  // Also replace empty / whitespace-only / mount-target-missing index.html files —
+  // an empty index.html leaves Sandpack with nothing to mount and renders a blank canvas.
+  const existingIndexHtml = sandpackFiles['/index.html'];
+  const indexHtmlIsUsable =
+    typeof existingIndexHtml === 'string' &&
+    existingIndexHtml.trim().length > 0 &&
+    /id=["']root["']/.test(existingIndexHtml);
+  if (!indexHtmlIsUsable) {
     sandpackFiles['/index.html'] = PREVIEW_INDEX_HTML;
   }
 

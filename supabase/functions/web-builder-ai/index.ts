@@ -1,4 +1,5 @@
 import { serve } from "serve";
+import { callGeminiText } from "../_shared/gemini.ts";
 import { z } from "zod";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
@@ -40,19 +41,6 @@ serve(async (req) => {
     }
 
     const { prompt, canvasState, action } = parsed.data;
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-
-    if (!OPENAI_API_KEY) {
-      console.warn("OPENAI_API_KEY not configured - AI features unavailable in local development");
-      return secureJsonResponse(
-        { 
-          error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
-          isLocalDevelopment: true
-        },
-        503,
-        corsHeaders
-      );
-    }
 
     const systemPrompt = `You are an expert web design AI assistant integrated with a Fabric.js canvas builder.
 
@@ -119,41 +107,15 @@ Action type: ${action || 'create'}
 
 IMPORTANT: Return ONLY valid JSON, no markdown, no explanations outside the JSON structure.`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-5",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.7,
-      }),
+    const content = await callGeminiText({
+      systemPrompt,
+      userPrompt: prompt,
+      model: "gemini-2.5-flash",
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+      temperature: 0.7,
+      timeoutMs: 90_000,
     });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
-      }
-      if (response.status === 402) {
-        return errorResponse("Payment required. Please add credits to your workspace.", 402, corsHeaders);
-      }
-      if (response.status === 401) {
-        console.error("AI gateway authentication failed");
-        return errorResponse("AI service authentication failed. Please check API configuration.", 401, corsHeaders);
-      }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      return errorResponse(`AI gateway error: ${response.status}`, 503, corsHeaders);
-    }
-
-    const data = await response.json();
-    const content = String(data?.choices?.[0]?.message?.content ?? "").slice(0, 250_000);
     
     let aiResponse;
     try {

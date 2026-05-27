@@ -249,6 +249,4 @@ export async function runProviderLoop(opts: {
   );
 }
 
-export { runProviderLoop };
-
 export default runProviderLoop;

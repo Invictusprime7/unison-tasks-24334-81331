@@ -44,19 +44,15 @@ serve(async (req) => {
     }
 
     const { templateName, aesthetic, source, variationSeed } = parsed.data;
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-    
-    if (!OPENAI_API_KEY) {
-      console.warn("OPENAI_API_KEY not configured - AI features unavailable in local development");
+    if (!getGeminiApiKey()) {
+      console.warn("Gemini API key not configured - AI features unavailable");
       return secureJsonResponse(
-        { 
-          error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
-          isLocalDevelopment: true
-        },
+        { error: "AI features are not available. Configure the Gemini API key.", isLocalDevelopment: true },
         503,
         corsHeaders
       );
     }
+
 
     // Generate unique template variation for diverse outputs
     const combinedPrompt = `${templateName} ${aesthetic} ${source}`;

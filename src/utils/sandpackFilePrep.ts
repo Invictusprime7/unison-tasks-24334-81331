@@ -4548,10 +4548,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       version: '0.0.1',
       type: 'module',
       scripts: {
-        dev: 'vite',
+        dev: 'vite --host 0.0.0.0 --port 5173',
+        start: 'vite --host 0.0.0.0 --port 5173',
         build: 'tsc && vite build',
-        preview: 'vite preview',
+        preview: 'vite preview --host 0.0.0.0 --port 5173',
       },
+
       dependencies: detectedDeps,
       devDependencies: {
         '@vitejs/plugin-react-swc': '^3.5.0',

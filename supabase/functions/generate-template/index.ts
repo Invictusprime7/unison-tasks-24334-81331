@@ -345,41 +345,21 @@ This must be a COMPLETE, MULTI-SECTION website (minimum 8 sections) that looks l
 
 Return ONLY the complete HTML code. Make it look like a $5000 custom-built website.`;
 
-    // Use AbortController with extended timeout for template generation
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-5',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
-      }
-      if (response.status === 402) {
-        return errorResponse("Payment required. Please add credits to your workspace.", 402, corsHeaders);
-      }
-      const errorText = await response.text();
-      console.error('AI API error:', response.status, errorText);
+    let generatedCode = "";
+    try {
+      generatedCode = await callGeminiText({
+        systemPrompt,
+        userPrompt,
+        model: "gemini-2.5-flash",
+        maxOutputTokens: 8192,
+        timeoutMs: 120_000,
+      });
+    } catch (err) {
+      console.error('AI API error:', err);
       throw new Error('Failed to generate template');
     }
 
-    const data = await response.json();
+    generatedCode = String(generatedCode ?? '').slice(0, 500_000);
     const generatedCode = String(data?.choices?.[0]?.message?.content ?? '').slice(0, 500_000);
 
     // Clean markdown code fences if the model wraps output

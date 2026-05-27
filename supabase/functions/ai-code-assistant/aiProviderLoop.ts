@@ -84,7 +84,7 @@ export async function runProviderLoop(opts: {
   }
 
   const isWizardLane = taskType === 'wizard_template_react';
-  const totalBudgetMs = isWizardLane ? 70_000 : 135_000;
+  const totalBudgetMs = isWizardLane ? 120_000 : 135_000;
   const wizardMaxOutputTokens = 8_000;
   const startedAt = Date.now();
   const budgetRemaining = () => totalBudgetMs - (Date.now() - startedAt);

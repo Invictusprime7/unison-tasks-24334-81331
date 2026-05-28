@@ -5,7 +5,7 @@
  *
  *   attempt 0 → original plan
  *   retry  1  → same model, prompt augmented with dry-run errors
- *   retry  2  → escalate to `openai/gpt-5.5`
+ *   retry  2  → escalate to Gemini Pro
  *
  * Hard cap: 2 retries (3 total attempts). The loop never applies — it
  * only drives `propose → dryRun` until a `preview` phase is reached or
@@ -26,10 +26,10 @@ import type { PatchPlan } from './types';
 // ----------------------------------------------------------- model policy
 
 /** Default model used for the original attempt + retry 1. */
-export const DEFAULT_REPAIR_MODEL = 'openai/gpt-5-mini';
+export const DEFAULT_REPAIR_MODEL = 'google/gemini-2.5-flash';
 
 /** Escalation model used for retry 2. */
-export const ESCALATION_MODEL = 'openai/gpt-5.5';
+export const ESCALATION_MODEL = 'google/gemini-2.5-pro';
 
 /** Hard cap on retries (NOT counting the original attempt). */
 export const MAX_REPAIR_RETRIES = 2;

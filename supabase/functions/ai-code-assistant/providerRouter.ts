@@ -13,7 +13,7 @@ export interface ModelSpec {
 }
 
 export interface ProviderPlan {
-  /** Ordered list of gateway models to try (via Lovable AI Gateway) */
+  /** Ordered list of Gemini models to try through the direct Google Gemini API */
   gatewayModels: ModelSpec[];
   /** Per-model timeout in ms */
   perModelTimeoutMs: number;
@@ -108,16 +108,17 @@ export function buildProviderPlan(
 
   switch (task.type) {
     // ── Lane A: Wizard (protected — no complexity upgrades) ─────────────
-    // Wizard lane favors responsiveness while preserving quality.
-    // Lead with Gemini Flash for first-paint speed, then Gemini Pro fallback.
+    // Wizard lane favors reliability and complete structured output.
+    // Flash Lite avoids transient Flash high-demand spikes; Flash/Pro remain fallbacks.
     case "wizard_template_react":
       plan = {
         gatewayModels: [
+          m(MODELS.geminiFlashLite, 24000),
           m(MODELS.geminiFlash, 20000),
           m(MODELS.geminiPro, 20000),
         ],
-        perModelTimeoutMs: 30000,
-        fallbackMaxTokens: 20000,
+        perModelTimeoutMs: 42000,
+        fallbackMaxTokens: 24000,
       };
       break;
 
@@ -189,7 +190,7 @@ export function buildProviderPlan(
 
   // Apply user overrides (Lane B only — wizard is protected)
   if (overrides && task.type !== "wizard_template_react") {
-    if (overrides.autoModelSelection === false && overrides.selectedModelId) {
+    if (overrides.autoModelSelection === false && overrides.selectedModelId?.startsWith("google/gemini-")) {
       const tokens = overrides.maxTokens ?? plan.gatewayModels[0]?.maxTokens ?? 32000;
       const modelId = overrides.selectedModelId;
       const label = modelId.split("/").pop() ?? modelId;

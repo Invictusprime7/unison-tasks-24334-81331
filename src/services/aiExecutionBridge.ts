@@ -247,20 +247,14 @@ export class AIExecutionBridge {
   private resolveProviderFromModel(modelUsed: string | undefined, fallback: ProviderType): ProviderType {
     if (!modelUsed) return fallback;
     const normalized = modelUsed.toLowerCase();
-    if (normalized.includes('gpt') || normalized.includes('openai')) return 'openai';
     if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
-    if (normalized.includes('claude') || normalized.includes('anthropic')) return 'claude';
-    if (normalized.includes('ollama')) return 'ollama';
     return fallback;
   }
 
   private estimateCost(provider: ProviderType, inputTokens: number, outputTokens: number): number {
     const estimated1kCost: Record<ProviderType, number> = {
-      claude: 0.003,
-      openai: 0.002,
       gemini: 0.0005,
       local: 0,
-      ollama: 0,
     };
     const totalTokens = inputTokens + outputTokens;
     return Number(((totalTokens / 1000) * estimated1kCost[provider]).toFixed(6));

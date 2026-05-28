@@ -94,6 +94,7 @@ import {
   extractRawHtmlFromMixed,
 } from '@/lib/ai/aiResponseParsing';
 import { wrapHtmlInReactComponent } from '@/lib/ai/htmlToReactSafety';
+import { normalizeLauncherFilesPayload } from '@/utils/launcherPayload';
 import {
   getScopedEditAutoApplyBlockReason,
   looksLikeGeneratedCode,
@@ -374,6 +375,101 @@ function generateId(): string {
 
 function formatTimestamp(date: Date): string {
   return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function shouldGenerateImageForPrompt(prompt: string): boolean {
+  return /\b(generate|create|make)\b[\s\S]{0,80}\b(image|logo|photo|picture|illustration|graphic)\b/i.test(prompt);
+}
+
+function shouldInsertAttachedImageForPrompt(prompt: string): boolean {
+  return /\b(add|insert|place|use|render|show|replace)\b[\s\S]{0,80}\b(attached|uploaded|image|logo|photo|picture)\b/i.test(prompt);
+}
+
+function detectRequestedImagePlacement(prompt: string): string | undefined {
+  const normalized = prompt.toLowerCase();
+  if (normalized.includes('top left') || normalized.includes('upper left')) return 'top-left';
+  if (normalized.includes('top right') || normalized.includes('upper right')) return 'top-right';
+  if (normalized.includes('bottom left') || normalized.includes('lower left')) return 'bottom-left';
+  if (normalized.includes('bottom right') || normalized.includes('lower right')) return 'bottom-right';
+  if (normalized.includes('center') || normalized.includes('middle')) return 'center';
+  if (normalized.includes('hero') || normalized.includes('header')) return 'top-center';
+  return undefined;
+}
+
+function imagePlacementClassName(placement?: string): string {
+  switch (placement) {
+    case 'top-left':
+      return 'fixed top-6 left-6';
+    case 'top-right':
+      return 'fixed top-6 right-6';
+    case 'bottom-left':
+      return 'fixed bottom-6 left-6';
+    case 'bottom-right':
+      return 'fixed bottom-6 right-6';
+    case 'center':
+      return 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2';
+    case 'top-center':
+    default:
+      return 'fixed top-6 left-1/2 -translate-x-1/2';
+  }
+}
+
+function injectPreviewImageIntoReactSource(
+  source: string,
+  imageSrc: string,
+  altText: string,
+  placement?: string,
+): string {
+  if (!source || !imageSrc || source.includes(imageSrc)) return source;
+
+  const safeAlt = altText.replace(/["{}<>]/g, '').slice(0, 90) || 'AI generated image';
+  const imageJsx = [
+    '<div data-ai-image="true" className="' + imagePlacementClassName(placement) + ' z-[80] max-w-[220px] rounded-2xl border border-white/25 bg-background/80 p-2 shadow-2xl backdrop-blur">',
+    '  <img src="' + imageSrc + '" alt="' + safeAlt + '" className="h-auto max-h-[180px] w-full rounded-xl object-contain" />',
+    '</div>',
+  ].join('\n');
+
+  const firstContainerMatch = source.match(/<((?:main|section|div))\b[^>]*>/);
+  if (firstContainerMatch?.index !== undefined) {
+    const insertAt = firstContainerMatch.index + firstContainerMatch[0].length;
+    return source.slice(0, insertAt) + '\n' + imageJsx + source.slice(insertAt);
+  }
+
+  const returnIndex = source.indexOf('return (');
+  if (returnIndex >= 0) {
+    const openIndex = source.indexOf('(', returnIndex);
+    if (openIndex >= 0) {
+      return source.slice(0, openIndex + 1) + '\n<>\n' + imageJsx + '\n' + source.slice(openIndex + 1) + '\n</>';
+    }
+  }
+
+  return source;
+}
+
+function injectPreviewImageIntoFiles(
+  files: Record<string, string>,
+  imageSrc: string,
+  altText: string,
+  placement?: string,
+  preferredPath?: string | null,
+): Record<string, string> {
+  if (!imageSrc) return files;
+  const normalizedPreferred = preferredPath
+    ? (preferredPath.startsWith('/') ? preferredPath : `/${preferredPath}`)
+    : null;
+  const targetPath =
+    (normalizedPreferred && files[normalizedPreferred] ? normalizedPreferred : null) ||
+    (normalizedPreferred && files[normalizedPreferred.slice(1)] ? normalizedPreferred.slice(1) : null) ||
+    (files['/src/App.tsx'] ? '/src/App.tsx' : null) ||
+    (files['src/App.tsx'] ? 'src/App.tsx' : null) ||
+    Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) ||
+    Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path));
+
+  if (!targetPath) return files;
+  return {
+    ...files,
+    [targetPath]: injectPreviewImageIntoReactSource(files[targetPath], imageSrc, altText, placement),
+  };
 }
 
 // Old ThinkingStepItem and MessageItem components removed — replaced by ai-chat/ sub-components
@@ -718,6 +814,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
     const userContent = input.trim() || `Analyse the attached file${droppedFiles.length > 1 ? 's' : ''} and incorporate them into the design.`;
     const isLaunchPlanningRequest = droppedFiles.length === 0 && detectLaunchPlanningIntent(userContent);
+    const requestedImageGeneration = shouldGenerateImageForPrompt(userContent);
+    const requestedImagePlacement = detectRequestedImagePlacement(userContent);
     const displayContent = userContent + (droppedFiles.length > 0 ? `\n📎 ${droppedFiles.length} file${droppedFiles.length > 1 ? 's' : ''} attached` : '');
 
     const userMessage: Message = {
@@ -1278,6 +1376,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               templateName,
               templateAction,
               launchBrief,
+              generateImage: requestedImageGeneration,
+              imagePlacement: requestedImagePlacement,
               userDesignProfile: userDesignProfile ?? undefined,
               systemsBuildContext: systemsBuildContext ?? undefined,
               siteElementsLibraryContext,
@@ -1407,6 +1507,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
+      const directResponseFiles = normalizeLauncherFilesPayload(response.data?.files);
+      const generatedImageSrc = typeof response.data?.generatedImage === 'string' ? response.data.generatedImage : '';
+      const attachedImageSrc = !generatedImageSrc && shouldInsertAttachedImageForPrompt(userContent)
+        ? (_attachments.find((attachment) => typeof attachment.data === 'string')?.data || '')
+        : '';
+      const deterministicImageSrc = generatedImageSrc || attachedImageSrc;
+      const deterministicImagePlacement =
+        (typeof response.data?.imagePlacement === 'string' ? response.data.imagePlacement : undefined) ||
+        requestedImagePlacement;
 
       if (isLaunchPlanningResponse) {
         liveStep('planning', 'Formatting launch plan for in-builder view...');
@@ -1449,7 +1558,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       let explanationText = '';
       let multiFileOutput: Record<string, string> | null = null;
 
-      if (aiContent) {
+      if (directResponseFiles) {
+        multiFileOutput = directResponseFiles;
+        explanationText = responseMeta?.reviewSummary || 'Multi-file patch generated and ready.';
+        console.log('[AIBuilderPanel] Using structured files payload:', Object.keys(directResponseFiles));
+      }
+
+      if (aiContent && !multiFileOutput) {
         const trimmed = aiContent.trim();
 
         // Strategy 0: Strip markdown JSON fences before checking for JSON structure
@@ -1650,6 +1765,16 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           normalizedFiles[normalizedPath] = fileContent;
         }
 
+        const filesForApply = deterministicImageSrc
+          ? injectPreviewImageIntoFiles(
+              normalizedFiles,
+              deterministicImageSrc,
+              userContent,
+              deterministicImagePlacement,
+              resolvedTargetFile || defaultTargetFile || '/src/App.tsx',
+            )
+          : normalizedFiles;
+
         // Check if approval is recommended before auto-applying
         const shouldBlock = responseMeta?.requiresApproval &&
           responseMeta.warnings?.some(w => w.severity === 'error');
@@ -1657,7 +1782,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         // Client-side scope enforcement for scoped edits
         const isScopedTask = isSurgicalEdit || isBehavioralEdit;
         const scopeBlockReason = isScopedTask ? getScopedEditAutoApplyBlockReason({
-          files: normalizedFiles,
+          files: filesForApply,
           resolvedTargetFile,
           existingFileKeys: vfsFiles ? Object.keys(vfsFiles) : [],
         }) : null;
@@ -1681,7 +1806,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             try {
               const plan = aiResponseToPatchPlan(
                 {
-                  files: normalizedFiles,
+                  files: filesForApply,
                   rationale: responseMeta?.reviewSummary ?? userContent,
                   debugMode: isSurgicalEdit ? false : undefined,
                 },
@@ -1695,7 +1820,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 registry,
                 regenerate: async () => null, // no auto-retry from this seam yet
                 applyFn: async () =>
-                  liveVFSCommit.writeFiles(normalizedFiles, 'ai-builder', () => {
+                  liveVFSCommit.writeFiles(filesForApply, 'ai-builder', () => {
                     /* observation-only: real apply happens via diff modal → onApplyToVFS */
                   }),
                 scratchLabel: 'ai-builder-panel',
@@ -1713,24 +1838,42 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 console.warn('[AIBuilderPanel] Transactional dry-run failed — auto-apply skipped', result);
                 toast.warning(`⚠️ Patch dry-run failed: ${result.errors[0] ?? 'unknown error'}. Use View Edits to inspect.`);
               } else {
-                // Dry-run passed — surface review modal instead of auto-applying.
+                // Dry-run passed: live-apply safe patches, hold high-risk patches for review.
                 transactionalBlocked = true;
-                setPendingPatch({
-                  service,
-                  files: normalizedFiles,
-                  originalFiles: vfsFiles,
-                  meta: {
+                const requiresManualReview = Boolean(responseMeta?.requiresApproval) || plan.riskLevel === 'high';
+                if (!requiresManualReview) {
+                  console.log('[AIBuilderPanel] Transactional dry-run passed; live-applying patch:', Object.keys(filesForApply));
+                  vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
+                  onApplyToVFS(filesForApply, {
                     prompt: userContent,
                     model: modelUsed,
                     summary: responseMeta?.reviewSummary,
                     actionType: responseMeta?.actionType,
+                    origin: 'multi-file',
                     requiresApproval: responseMeta?.requiresApproval,
-                    warnings: responseMeta?.warnings?.map((w) => (typeof w === 'string' ? w : w.message)),
-                  },
-                });
-                toast.message('Patch ready for review', {
-                  description: `${Object.keys(normalizedFiles).length} file(s) — open the review dialog to Apply or Discard.`,
-                });
+                    warnings: responseMeta?.warnings,
+                  });
+                  liveStep('complete', `Applied ${Object.keys(filesForApply).length} files to project`);
+                  vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(filesForApply), source: 'multi-file' });
+                  toast.success(`Multi-file patch applied (${Object.keys(filesForApply).length} files)`);
+                } else {
+                  setPendingPatch({
+                    service,
+                    files: filesForApply,
+                    originalFiles: vfsFiles,
+                    meta: {
+                      prompt: userContent,
+                      model: modelUsed,
+                      summary: responseMeta?.reviewSummary,
+                      actionType: responseMeta?.actionType,
+                      requiresApproval: responseMeta?.requiresApproval,
+                      warnings: responseMeta?.warnings?.map((w) => (typeof w === 'string' ? w : w.message)),
+                    },
+                  });
+                  toast.message('Patch ready for review', {
+                    description: `${Object.keys(filesForApply).length} file(s) need review before applying.`,
+                  });
+                }
               }
             } catch (txErr) {
               // Adapter errors (e.g. empty files) are non-fatal — fall through to legacy path.
@@ -1741,9 +1884,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           if (transactionalBlocked) {
             // Skip auto-apply; user reviews via the diff modal (or View Edits).
           } else if (onApplyToVFS) {
-            console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
+            console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(filesForApply));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
-            onApplyToVFS(normalizedFiles, {
+            onApplyToVFS(filesForApply, {
               prompt: userContent,
               model: modelUsed,
               summary: responseMeta?.reviewSummary,
@@ -1752,12 +1895,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               requiresApproval: responseMeta?.requiresApproval,
               warnings: responseMeta?.warnings,
             });
-            liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
-            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
+            liveStep('complete', `✅ Applied ${Object.keys(filesForApply).length} files to project`);
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(filesForApply), source: 'multi-file' });
             const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
             toast.success(`✅ Multi-file project applied${approvalNote}`);
           } else if (onFilesPatch) {
-            onFilesPatch(normalizedFiles);
+            onFilesPatch(filesForApply);
             toast.success('✅ Multi-file project applied to VFS');
           } else {
             console.warn('[AIBuilderPanel] No VFS callback available for multi-file output!');
@@ -1865,6 +2008,14 @@ export default function App() {
       if (generatedCode) {
         // Strip any module.exports / tailwind.config blocks that AI embedded in component code
         generatedCode = stripModuleExportsBlocks(generatedCode);
+        if (deterministicImageSrc) {
+          generatedCode = injectPreviewImageIntoReactSource(
+            generatedCode,
+            deterministicImageSrc,
+            userContent,
+            deterministicImagePlacement,
+          );
+        }
         
         // FINAL VALIDATION: Reject code that looks like AI reasoning/prose, not actual code
         const isCode = looksLikeGeneratedCode(generatedCode);

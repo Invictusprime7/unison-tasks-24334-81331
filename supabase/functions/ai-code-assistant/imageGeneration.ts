@@ -8,6 +8,7 @@ import { callGeminiImage } from "../_shared/gemini.ts";
 export interface ImageGenerationResult {
   generatedImageUrl: string;
   imageHtml: string;
+  imagePlacement?: string;
 }
 
 export async function generateImageIfNeeded(opts: {
@@ -39,6 +40,7 @@ export async function generateImageIfNeeded(opts: {
   const isLogo = opts.userPrompt.includes('logo') || opts.userPrompt.includes('brand');
 
   try {
+    result.imagePlacement = detectedPlacement;
     result.generatedImageUrl = await callGeminiImage(
       `${imageDescription}, ${isLogo ? 'clean professional logo design, minimal, vector style, transparent background' : 'high quality digital art'}`,
       { timeoutMs: 60_000 },

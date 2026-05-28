@@ -782,11 +782,17 @@ async function runBuilderLane(
 
   if (savePattern) saveLearningSession(parsed, content, userId);
 
-  const responseBody = buildResponseBody({
-    content: reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content,
+  const responseContent = reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content;
+  const responseFilesPayload = reviewResult
+    ? { files: reviewResult.cleanedFiles }
+    : parseLauncherFilesPayload(responseContent);
+
+  const responseBody = {
+    ...buildResponseBody({
+    content: responseContent,
     reasoning: providerResult.reasoning,
     generatedImageUrl: imageResult.generatedImageUrl,
-    imagePlacement: imagePlacement ?? undefined,
+    imagePlacement: imageResult.imagePlacement ?? imagePlacement ?? undefined,
     debugMode: _debugMode,
     mode: mode ?? undefined,
     modelUsed: providerResult.modelUsed,
@@ -795,7 +801,9 @@ async function runBuilderLane(
     removedFiles: reviewResult?.removedFiles,
     reviewSummary: reviewResult?.reviewSummary,
     applyState: applyState as Record<string, unknown> | undefined,
-  });
+    }),
+    ...(responseFilesPayload ? { files: responseFilesPayload.files } : {}),
+  };
 
   return new Response(
     JSON.stringify(responseBody),

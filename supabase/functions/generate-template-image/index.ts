@@ -3,6 +3,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
+import { callGeminiImage } from "../_shared/gemini.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -29,47 +30,8 @@ serve(async (req) => {
     const style = typeof body.style === "string" ? sanitizeString(body.style, 200) : undefined;
     if (!prompt) return errorResponse("Prompt is required", 400, corsHeaders);
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    const OPENAI_IMAGE_MODEL = Deno.env.get("OPENAI_IMAGE_MODEL") || "gpt-image-1";
-
-    if (!OPENAI_API_KEY) {
-      return secureJsonResponse(
-        { error: "OPENAI_API_KEY not configured.", isLocalDevelopment: true },
-        503,
-        corsHeaders,
-      );
-    }
-
     const enhancedPrompt = `${prompt}. Style: ${style || "professional and modern"}. High quality, detailed, suitable for web design.`;
-
-    const response = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OPENAI_IMAGE_MODEL,
-        prompt: enhancedPrompt,
-        n: 1,
-        size: "1024x1024",
-        quality: "medium",
-        output_format: "png",
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("[generate-template-image] OpenAI error:", response.status, errText);
-      if (response.status === 429) return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
-      if (response.status === 401) return errorResponse("OpenAI authentication failed.", 401, corsHeaders);
-      return errorResponse(`OpenAI error: ${response.status}`, 503, corsHeaders);
-    }
-
-    const data = await response.json();
-    const b64 = data.data?.[0]?.b64_json;
-    const url = data.data?.[0]?.url;
-    const imageUrl = b64 ? `data:image/png;base64,${b64}` : url;
+    const imageUrl = await callGeminiImage(enhancedPrompt, { timeoutMs: 120_000 });
 
     if (!imageUrl) throw new Error("No image generated");
 

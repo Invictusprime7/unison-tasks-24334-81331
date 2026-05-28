@@ -26,7 +26,7 @@ export async function validateAIService(): Promise<AIServiceStatus> {
       body: {
         messages: [{ role: 'user', content: 'test' }],
         mode: 'creative',
-        model: 'gpt-4o-mini', // Use smaller model for test
+        model: 'gemini-2.5-flash',
         maxTokens: 10
       }
     });
@@ -49,7 +49,7 @@ export async function validateAIService(): Promise<AIServiceStatus> {
           isConfigured: false,
           hasAPIKey: false,
           functionAvailable: true,
-          error: 'API key not configured. Set LOVABLE_API_KEY or OPENAI_API_KEY in Supabase secrets.'
+          error: 'Gemini API key not configured. Set UNISONGEMINI_API_KEY in backend secrets.'
         };
       }
       
@@ -122,7 +122,7 @@ export function getAIErrorMessage(error: any): string {
   }
   
   if (errorStr.includes('api key') || errorStr.includes('not configured') || errorStr.includes('503')) {
-    return 'AI service not configured. Set API key: supabase secrets set LOVABLE_API_KEY=your_key';
+    return 'AI service not configured. Set the Gemini API key in backend secrets.';
   }
   
   if (errorStr.includes('rate limit') || errorStr.includes('429')) {

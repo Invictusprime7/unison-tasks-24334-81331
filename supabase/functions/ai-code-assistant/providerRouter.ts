@@ -33,7 +33,7 @@ export interface GatewayOverrides {
 
 const MODELS = {
   // Gemini models only.
-  geminiFlash: { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
+  geminiFlash: { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   geminiFlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
   geminiPro: { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
 } as const;
@@ -109,7 +109,7 @@ export function buildProviderPlan(
   switch (task.type) {
     // ── Lane A: Wizard (protected — no complexity upgrades) ─────────────
     // Wizard lane favors responsiveness while preserving quality.
-    // Lead with Gemini Flash for first-paint speed, then Pro and OpenAI fallback.
+    // Lead with Gemini Flash for first-paint speed, then Gemini Pro fallback.
     case "wizard_template_react":
       plan = {
         gatewayModels: [

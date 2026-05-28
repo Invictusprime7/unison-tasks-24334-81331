@@ -1,6 +1,6 @@
 /**
  * Supabase Edge Function: Generate Image
- * Generates AI images using OpenAI (gpt-image-1)
+ * Generates AI images using Gemini only.
  */
 
 import { serve } from "serve";
@@ -8,9 +8,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
-
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-const OPENAI_IMAGE_MODEL = Deno.env.get("OPENAI_IMAGE_MODEL") || "gpt-image-1";
+import { callGeminiImage } from "../_shared/gemini.ts";
 
 interface ImageGenerationRequest {
   prompt: string;
@@ -68,7 +66,6 @@ serve(async (req: Request) => {
     console.log("[Generate-Image] Request:", { prompt, style, quality, placement });
 
     if (!prompt) return errorResponse("Prompt is required", 400, corsHeaders);
-    if (!OPENAI_API_KEY) return errorResponse("OpenAI API key not configured", 500, corsHeaders);
 
     const stylePrompts: Record<string, string> = {
       "digital-art": "digital art style, vibrant colors, professional, high quality",
@@ -83,46 +80,13 @@ serve(async (req: Request) => {
     };
 
     const enhancedPrompt = `${prompt}, ${stylePrompts[style] || stylePrompts["digital-art"]}`;
-    const fullPrompt = negativePrompt ? `${enhancedPrompt}. Avoid: ${negativePrompt}` : enhancedPrompt;
+    const fullPrompt = [
+      enhancedPrompt,
+      `Target composition: ${width}x${height}. Quality: ${quality}.`,
+      negativePrompt ? `Avoid: ${negativePrompt}` : "",
+    ].filter(Boolean).join("\n");
 
-    // Map width/height to closest supported OpenAI size
-    const aspectRatio = width / height;
-    let size: string;
-    if (aspectRatio > 1.2) size = "1536x1024";
-    else if (aspectRatio < 0.85) size = "1024x1536";
-    else size = "1024x1024";
-
-    const openaiQuality = quality === "ultra" ? "high" : quality === "high" ? "medium" : "low";
-
-    const response = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OPENAI_IMAGE_MODEL,
-        prompt: fullPrompt,
-        n: 1,
-        size,
-        quality: openaiQuality,
-        output_format: "png",
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[Generate-Image] OpenAI Error:", response.status, errorText);
-
-      if (response.status === 429) return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
-      if (response.status === 401) return errorResponse("OpenAI authentication failed. Check OPENAI_API_KEY.", 401, corsHeaders);
-      return errorResponse(`Failed to generate image: ${response.status}`, 503, corsHeaders);
-    }
-
-    const result = await response.json();
-    const b64 = result.data?.[0]?.b64_json;
-    const url = result.data?.[0]?.url;
-    const imageData = b64 ? `data:image/png;base64,${b64}` : url;
+    const imageData = await callGeminiImage(fullPrompt, { timeoutMs: 120_000 });
 
     if (!imageData) throw new Error("No image generated");
 
@@ -130,7 +94,7 @@ serve(async (req: Request) => {
     const responseData: ImageGenerationResponse = {
       imageUrl: imageData,
       url: imageData,
-      base64: b64 ? imageData : undefined,
+      base64: imageData,
       placement: placementInfo,
     };
 

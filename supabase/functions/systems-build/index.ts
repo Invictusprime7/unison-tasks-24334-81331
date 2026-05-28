@@ -151,14 +151,17 @@ Typography:
 ${buttonLabels}
 ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
 
-    // Call ai-code-assistant
+    // Call ai-code-assistant with the caller's JWT. Using the anon key as a
+    // Bearer token fails in ai-code-assistant's in-code auth and surfaces to
+    // the browser as a generic edge-function send failure.
     const aiUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-code-assistant`;
+    const callerAuthHeader = req.headers.get("authorization") || "";
 
     const aiResponse = await fetch(aiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`,
+        "Authorization": callerAuthHeader,
       },
       body: JSON.stringify({
         messages: [{ role: "user", content: reactPrompt }],

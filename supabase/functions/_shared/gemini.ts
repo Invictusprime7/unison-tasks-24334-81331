@@ -123,7 +123,7 @@ export async function callGeminiImage(prompt: string, opts?: { model?: string; t
   const apiKey = getGeminiApiKey();
   if (!apiKey) throw new Error(missingGeminiKeyMessage());
 
-  const model = opts?.model || Deno.env.get("GEMINI_IMAGE_MODEL") || "gemini-2.5-flash-image-preview";
+  const model = opts?.model || Deno.env.get("GEMINI_IMAGE_MODEL") || "gemini-2.5-flash-image";
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 90_000);
   try {

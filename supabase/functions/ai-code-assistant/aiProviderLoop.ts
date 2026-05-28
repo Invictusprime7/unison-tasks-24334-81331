@@ -7,6 +7,9 @@ import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
 import { coerceGeminiText, extractGeminiText, getGeminiApiKey, missingGeminiKeyMessage } from "../_shared/gemini.ts";
 
+type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+type GeminiContent = { role: string; parts: GeminiPart[] };
+
 function mapGatewayGeminiIdToDirect(id: string): string {
   const normalized = id.replace(/^google\//, '').trim();
   const aliases: Record<string, string> = {
@@ -24,6 +27,68 @@ function isRetryableGeminiStatus(status: number): boolean {
 
 function retryDelayMs(attempt: number): number {
   return 900 * (attempt + 1);
+}
+
+function parseDataUrl(value: string): { mimeType: string; data: string } | null {
+  const match = value.match(/^data:([^;,]+);base64,(.+)$/);
+  if (!match) return null;
+  return { mimeType: match[1], data: match[2] };
+}
+
+function openAIContentPartToGemini(part: unknown): GeminiPart[] {
+  if (typeof part === 'string') return part.trim() ? [{ text: part }] : [];
+  if (!part || typeof part !== 'object') return [];
+
+  const candidate = part as {
+    type?: unknown;
+    text?: unknown;
+    image_url?: { url?: unknown };
+    imageUrl?: { url?: unknown };
+    data?: unknown;
+    mimeType?: unknown;
+    mime_type?: unknown;
+    name?: unknown;
+  };
+
+  if (candidate.type === 'text' && typeof candidate.text === 'string') {
+    return candidate.text.trim() ? [{ text: candidate.text }] : [];
+  }
+
+  if (typeof candidate.text === 'string' && candidate.text.trim()) {
+    return [{ text: candidate.text }];
+  }
+
+  const imageUrl = candidate.image_url?.url || candidate.imageUrl?.url || candidate.data;
+  if (
+    (candidate.type === 'image_url' || candidate.type === 'input_image' || candidate.type === 'image') &&
+    typeof imageUrl === 'string'
+  ) {
+    const dataUrl = parseDataUrl(imageUrl);
+    if (dataUrl) return [{ inlineData: dataUrl }];
+
+    // Gemini direct API cannot fetch arbitrary browser URLs as inline media.
+    // Preserve the reference as text instead of silently dropping it.
+    return [{
+      text: `Attached image reference${typeof candidate.name === 'string' ? ` (${candidate.name})` : ''}: ${imageUrl}`,
+    }];
+  }
+
+  const maybeData = typeof candidate.data === 'string' ? parseDataUrl(candidate.data) : null;
+  if (maybeData) return [{ inlineData: maybeData }];
+
+  return [];
+}
+
+function messageToGeminiContent(message: { role: string; content: unknown }): GeminiContent | null {
+  const role = message.role === 'assistant' ? 'model' : 'user';
+  const parts = Array.isArray(message.content)
+    ? message.content.flatMap(openAIContentPartToGemini)
+    : openAIContentPartToGemini(message.content);
+
+  if (parts.length > 0) return { role, parts };
+
+  const text = coerceGeminiText(message.content).trim();
+  return text ? { role, parts: [{ text }] } : null;
 }
 
 export interface ProviderEarlyError {
@@ -52,7 +117,7 @@ export async function runProviderLoop(opts: {
 }): Promise<ProviderCallResult> {
   const { aiMessages, providerPlan, forceJsonResponse, taskType } = opts;
   void opts.navPageGen;
-  void opts.reasoningEffort;
+  const reasoningEffort = opts.reasoningEffort ?? 'medium';
 
   const geminiApiKey = getGeminiApiKey();
   if (!geminiApiKey) {
@@ -120,12 +185,8 @@ export async function runProviderLoop(opts: {
 
   const conversationContents = aiMessages
     .filter((message) => message.role !== 'system')
-    .map((message) => {
-      const role = message.role === 'assistant' ? 'model' : 'user';
-      const text = coerceGeminiText(message.content).trim();
-      return text ? { role, parts: [{ text }] } : null;
-    })
-    .filter((entry): entry is { role: string; parts: Array<{ text: string }> } => Boolean(entry));
+    .map(messageToGeminiContent)
+    .filter((entry): entry is GeminiContent => Boolean(entry));
 
   for (const model of orderedGeminiModels) {
     const maxAttempts = isWizardLane ? 2 : 1;
@@ -154,6 +215,8 @@ export async function runProviderLoop(opts: {
             : [{ role: 'user', parts: [{ text: 'Generate the requested output.' }] }],
           generationConfig: {
             maxOutputTokens: Math.min(model.maxTokens, isWizardLane ? wizardMaxOutputTokens : 32_768),
+            ...(reasoningEffort === 'none' ? { temperature: 0.2 } : {}),
+            ...(reasoningEffort === 'high' ? { temperature: 0.7 } : {}),
             ...(forceJsonResponse ? { responseMimeType: 'application/json' } : {}),
           },
         };

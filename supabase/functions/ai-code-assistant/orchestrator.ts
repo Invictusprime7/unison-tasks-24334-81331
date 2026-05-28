@@ -60,6 +60,37 @@ interface CodePattern {
   code_snippet: string;
 }
 
+function buildAttachmentMessages(attachments?: unknown[]): Array<{ role: 'user'; content: unknown[] }> {
+  if (!Array.isArray(attachments) || attachments.length === 0) return [];
+
+  const imageParts = attachments
+    .map((attachment) => {
+      if (!attachment || typeof attachment !== 'object') return null;
+      const item = attachment as { type?: unknown; name?: unknown; data?: unknown; preview?: unknown; dataUrl?: unknown };
+      const data = item.data || item.preview || item.dataUrl;
+      if (item.type !== 'image' || typeof data !== 'string') return null;
+      return {
+        type: 'image_url',
+        image_url: { url: data },
+        name: typeof item.name === 'string' ? item.name : 'attached image',
+      };
+    })
+    .filter((part): part is { type: string; image_url: { url: string }; name: string } => Boolean(part));
+
+  if (imageParts.length === 0) return [];
+
+  return [{
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text: `Use the attached image${imageParts.length > 1 ? 's' : ''} as visual context for layout, colors, typography, spacing, and asset placement. Preserve the user's written instructions as the source of truth.`,
+      },
+      ...imageParts,
+    ],
+  }];
+}
+
 export interface OrchestratorResult {
   response: Response;
 }
@@ -346,7 +377,7 @@ async function runBuilderLane(
     siteElementsLibraryContext, surgicalEdit = false,
     componentBehaviorContext, vfsFiles, gatewayOptions,
     previewDiagnostics, previewSnapshot, recentChangedFiles,
-    siteContext,
+    siteContext, attachments,
   } = parsed;
 
   // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
@@ -426,16 +457,19 @@ async function runBuilderLane(
     ? runNavResearch(systemType, navPageName ?? undefined, navLabel ?? undefined)
     : Promise.resolve('');
 
-  const imagePromise = generateImageIfNeeded({
+  const [research, industryPageContext] = await Promise.all([
+    researchPromise, navResearchPromise,
+  ]);
+
+  // Keep Gemini calls sequential. Image generation and text/code generation use
+  // the same upstream API quota, so running them concurrently can turn one user
+  // action into competing provider calls.
+  const imageResult = await generateImageIfNeeded({
     userPrompt: userPromptText.toLowerCase(),
     generateImage,
     imagePlacement: imagePlacement ?? undefined,
     fastTemplateReact: false,
   });
-
-  const [research, industryPageContext, imageResult] = await Promise.all([
-    researchPromise, navResearchPromise, imagePromise,
-  ]);
 
   const researchContext = formatResearchContext(research);
 
@@ -562,9 +596,15 @@ async function runBuilderLane(
     finalSystemPrompt += `\n\n${userDBContextBlock}`;
   }
 
+  const attachmentMessages = buildAttachmentMessages(attachments);
+  if (attachmentMessages.length > 0) {
+    console.log(`[orchestrator] Forwarding ${attachmentMessages[0].content.length - 1} image attachment(s) to Gemini`);
+  }
+
   const aiMessages = [
     { role: 'system', content: finalSystemPrompt },
     ...processedMessages,
+    ...attachmentMessages,
   ];
 
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────

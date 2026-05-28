@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 export interface GatewayModel {
   id: string;
   label: string;
-  provider: "google" | "openai";
+  provider: "google";
   tier: "lite" | "fast" | "standard" | "pro";
   supportsReasoning: boolean;
 }
@@ -15,8 +15,6 @@ const AVAILABLE_MODELS: GatewayModel[] = [
   { id: "google/gemini-2.5-flash", label: "Flash", provider: "google", tier: "fast", supportsReasoning: true },
   { id: "google/gemini-3-flash-preview", label: "Flash 3", provider: "google", tier: "fast", supportsReasoning: true },
   { id: "google/gemini-2.5-pro", label: "Pro", provider: "google", tier: "pro", supportsReasoning: true },
-  { id: "openai/gpt-5-mini", label: "GPT-5 Mini", provider: "openai", tier: "standard", supportsReasoning: true },
-  { id: "openai/gpt-5", label: "GPT-5", provider: "openai", tier: "pro", supportsReasoning: true },
 ];
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
@@ -31,7 +29,7 @@ export interface GatewayConfig {
 }
 
 const DEFAULT_CONFIG: GatewayConfig = {
-  selectedModelId: "openai/gpt-5",
+  selectedModelId: "google/gemini-2.5-flash",
   reasoningEffort: "none",
   timeoutMs: 45000,
   autoModelSelection: true,
@@ -137,7 +135,7 @@ export const AIGatewayOptions = ({ config: ext, onChange, className }: AIGateway
                   cfg.autoModelSelection && "opacity-40 pointer-events-none",
                 )}
               >
-                {m.provider === "google" ? <Zap className="h-3 w-3 shrink-0" /> : <Brain className="h-3 w-3 shrink-0" />}
+                <Zap className="h-3 w-3 shrink-0" />
                 {m.label}
               </button>
             ))}

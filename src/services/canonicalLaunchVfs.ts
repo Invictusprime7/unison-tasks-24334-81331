@@ -192,17 +192,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       continue;
     }
 
-    const shouldMoveLegacyAppIntoHome =
-      (path === '/src/App.tsx' || path === '/App.tsx') &&
-      canonicalFiles['/src/App.tsx'] &&
-      !generatedFiles[homeFilePath] &&
-      !looksLikeCanonicalRouter(content);
-
-    if (shouldMoveLegacyAppIntoHome) {
-      merged[homeFilePath] = rebaseAppModuleForHomePage(content);
-      continue;
-    }
-
     merged[path] = content;
   }
 

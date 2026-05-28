@@ -13,6 +13,35 @@ const TRUSTED_ORIGINS: string[] = [
   "https://unisontasks.com",
 ];
 
+const DEFAULT_ALLOWED_HEADERS = [
+  "authorization",
+  "x-client-info",
+  "x-supabase-api-version",
+  "apikey",
+  "content-type",
+  "accept",
+  "accept-language",
+  "cache-control",
+  "pragma",
+  "prefer",
+  "x-request-id",
+  "x-dev-mode-user",
+];
+
+function getAllowedHeaders(req: Request): string {
+  const requestedHeaders = req.headers.get("access-control-request-headers");
+  if (!requestedHeaders) return DEFAULT_ALLOWED_HEADERS.join(", ");
+
+  const headers = new Set(DEFAULT_ALLOWED_HEADERS);
+  requestedHeaders
+    .split(",")
+    .map((header) => header.trim().toLowerCase())
+    .filter(Boolean)
+    .forEach((header) => headers.add(header));
+
+  return Array.from(headers).join(", ");
+}
+
 /**
  * Build CORS headers based on the request origin.
  * - In production: only allows registered origins
@@ -57,8 +86,7 @@ export function getCorsHeaders(req: Request): Record<string, string> {
 
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
-    "Access-Control-Allow-Headers":
-      "authorization, x-client-info, x-supabase-api-version, apikey, content-type, accept, accept-language, cache-control, pragma, prefer, x-request-id, x-dev-mode-user",
+    "Access-Control-Allow-Headers": getAllowedHeaders(req),
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",

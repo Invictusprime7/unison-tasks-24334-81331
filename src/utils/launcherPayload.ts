@@ -99,6 +99,18 @@ export interface LauncherStructuredPayload {
   siteBundle?: Record<string, unknown>;
 }
 
+export function normalizeLauncherFilesPayload(filesPayload: unknown): Record<string, string> | null {
+  if (!filesPayload || typeof filesPayload !== 'object') return null;
+
+  const files = Object.fromEntries(
+    Object.entries(filesPayload as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
+      .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content])
+  );
+
+  return Object.keys(files).length > 0 ? files : null;
+}
+
 export function normalizeLauncherEntryPoint(entryPoint: unknown): string | undefined {
   if (typeof entryPoint !== 'string' || !entryPoint.trim()) return undefined;
   return entryPoint.startsWith('/') ? entryPoint : `/${entryPoint}`;
@@ -134,11 +146,8 @@ export function extractLauncherPayload(rawContent: unknown): LauncherStructuredP
   const parsed = parseLauncherJsonObject(sanitized);
   if (!parsed?.files || typeof parsed.files !== 'object') return null;
 
-  const files = Object.fromEntries(
-    Object.entries(parsed.files)
-      .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
-      .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content])
-  );
+  const files = normalizeLauncherFilesPayload(parsed.files);
+  if (!files) return null;
 
   return {
     files,

@@ -95,6 +95,100 @@ export interface OrchestratorResult {
   response: Response;
 }
 
+type LauncherFilesPayload = { files: Record<string, string> };
+
+function stripLauncherJsonText(rawContent: string): string {
+  let sanitized = rawContent
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .trim()
+    .replace(/^```json?\s*\n?/i, '')
+    .replace(/^```(?:html|tsx|jsx|typescript|javascript)?\s*\n?/i, '')
+    .replace(/\n?```\s*$/i, '')
+    .trim();
+
+  if (!sanitized.startsWith('{') && sanitized.includes('{"files"')) {
+    sanitized = sanitized.slice(sanitized.indexOf('{"files"'));
+  }
+
+  return sanitized.trim();
+}
+
+function extractBalancedJsonObject(input: string, preferredKey?: string): string | null {
+  if (!input) return null;
+
+  const seedIndex = preferredKey ? input.indexOf(preferredKey) : 0;
+  const searchStart = seedIndex >= 0 ? seedIndex : 0;
+  const openAt = input.lastIndexOf('{', searchStart);
+  const startIndex = openAt >= 0 ? openAt : input.indexOf('{');
+  if (startIndex < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIndex; i < input.length; i += 1) {
+    const ch = input[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return input.slice(startIndex, i + 1).trim();
+    }
+  }
+
+  return null;
+}
+
+function parseLauncherFilesPayload(rawContent: string): LauncherFilesPayload | null {
+  const sanitized = stripLauncherJsonText(rawContent);
+  if (!sanitized) return null;
+
+  const candidates = [
+    sanitized,
+    extractBalancedJsonObject(sanitized, '"files"'),
+    extractBalancedJsonObject(sanitized),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as { files?: Record<string, unknown> };
+      if (!parsed?.files || typeof parsed.files !== 'object') continue;
+
+      const files = Object.fromEntries(
+        Object.entries(parsed.files)
+          .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
+          .map(([path, content]) => [path.replace(/^\/+/, ''), content]),
+      );
+
+      if (Object.keys(files).length > 0) return { files };
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+}
+
 function hardenWizardSystemsBuildContext(raw: AIRequest['systemsBuildContext']): {
   context: AIRequest['systemsBuildContext'];
   hasExplicitTemplateContract: boolean;
@@ -267,19 +361,31 @@ async function runWizardLane(
     );
   }
 
-  const content = postProcessContent(providerResult.content);
+  const processedContent = postProcessContent(providerResult.content);
+  const launcherPayload = parseLauncherFilesPayload(processedContent);
+  const content = launcherPayload ? JSON.stringify(launcherPayload) : processedContent;
+
+  if (!launcherPayload) {
+    console.warn('[orchestrator] Lane A returned content without a parseable files payload', {
+      modelUsed: providerResult.modelUsed,
+      preview: processedContent.slice(0, 240),
+    });
+  }
 
   // Fire-and-forget learning session
   saveLearningSession(parsed, content);
 
-  const responseBody = buildResponseBody({
+  const responseBody = {
+    ...buildResponseBody({
     content,
     reasoning: providerResult.reasoning,
     generatedImageUrl: '',
     imagePlacement: imagePlacement ?? undefined,
     mode: 'template-react',
     modelUsed: providerResult.modelUsed,
-  });
+    }),
+    ...(launcherPayload ? { files: launcherPayload.files } : {}),
+  };
 
   return new Response(
     JSON.stringify(responseBody),

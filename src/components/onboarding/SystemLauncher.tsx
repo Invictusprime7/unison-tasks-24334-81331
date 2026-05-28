@@ -59,7 +59,7 @@ import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
-import { extractLauncherPayload } from "@/utils/launcherPayload";
+import { extractLauncherPayload, normalizeLauncherFilesPayload } from "@/utils/launcherPayload";
 import { validateLaunchHandoff } from "@/services/launchHandoffValidator";
 import { liveLaunchState } from "@/builder/controllers/LaunchStateController";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
@@ -1259,7 +1259,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           break;
         }
         const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
-        const structured = extractLauncherPayload(aiContent);
+        const directFiles = normalizeLauncherFilesPayload(aiData?.files);
+        const structured = directFiles
+          ? ({ files: directFiles } as LauncherPayload)
+          : extractLauncherPayload(aiContent);
 
         if (!structured?.files || Object.keys(structured.files).length === 0) {
           lastPayloadIssue = {

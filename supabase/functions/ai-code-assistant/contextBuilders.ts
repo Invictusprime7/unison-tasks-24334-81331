@@ -417,7 +417,9 @@ These are the AUTHORITATIVE palette. Do NOT invent darker/lighter alternatives.
 --radius: ${radius}
 
 RULES:
-1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
+1. Output ONLY valid JSON with this exact top-level shape: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
+   The top-level key MUST be "files". Do NOT return "components", "pages", "project", "app", arrays, prose, markdown, or a schema without file contents.
+   Every value inside "files" MUST be a complete source-code string. If the request is difficult, still return a minimal valid "files" object with src/App.tsx and src/index.css.
 2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
 3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
 4. Use Tailwind semantic tokens whenever possible: bg-primary, text-foreground, bg-card, border-border, text-muted-foreground. NEVER hardcode hex colors or Tailwind palette colors (bg-slate-900, text-white, bg-zinc-800, etc.) — those will fight the wizard theme.

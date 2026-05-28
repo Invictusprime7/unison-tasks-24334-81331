@@ -362,6 +362,36 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
     issues.push(`braceRepair failed: ${(e as Error).message}`);
   }
 
+  // Ensure a default export exists for page/component modules. The
+  // canonical router (topologyRouterGenerator) imports pages as default
+  // imports — a file with only named exports otherwise resolves to the
+  // module namespace object and React throws:
+  //   "Element type is invalid: ... but got: object"
+  try {
+    const isReactModule = /\.(t|j)sx$/.test(path);
+    const isEntry = /\/main\.(t|j)sx$/.test(path);
+    const hasDefault = /^[ \t]*export\s+default\b/m.test(code);
+    if (isReactModule && !isEntry && !hasDefault) {
+      const candidates: string[] = [];
+      const fnRe = /^[ \t]*(?:export\s+)?function\s+([A-Z][A-Za-z0-9_$]*)\s*\(/gm;
+      const constRe = /^[ \t]*(?:export\s+)?const\s+([A-Z][A-Za-z0-9_$]*)\s*[:=]/gm;
+      const classRe = /^[ \t]*(?:export\s+)?class\s+([A-Z][A-Za-z0-9_$]*)\b/gm;
+      for (const m of code.matchAll(fnRe)) candidates.push(m[1]);
+      for (const m of code.matchAll(constRe)) candidates.push(m[1]);
+      for (const m of code.matchAll(classRe)) candidates.push(m[1]);
+      const fileBase = (path.split("/").pop() || "").replace(/\.(t|j)sx?$/, "");
+      const preferred =
+        candidates.find((n) => n.toLowerCase() === fileBase.toLowerCase()) ||
+        candidates[0];
+      if (preferred) {
+        code = code.replace(/\s*$/, "") + `\n\nexport default ${preferred};\n`;
+        applied.push(`synthesizeDefaultExport(${preferred})`);
+      }
+    }
+  } catch (e) {
+    issues.push(`synthesizeDefaultExport failed: ${(e as Error).message}`);
+  }
+
   // Force React + hook imports last so we don't lose them to other transforms
   try {
     const next = ensureReactImports(code);

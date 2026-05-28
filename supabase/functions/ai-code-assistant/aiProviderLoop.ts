@@ -12,9 +12,18 @@ function mapGatewayGeminiIdToDirect(id: string): string {
   const aliases: Record<string, string> = {
     'gemini-3-flash-preview': 'gemini-2.5-flash',
     'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
+    'gemini-2.5-flash': 'gemini-2.5-flash',
     'gemini-2.5-pro': 'gemini-2.5-pro',
   };
   return aliases[normalized] ?? normalized;
+}
+
+function isRetryableGeminiStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function retryDelayMs(attempt: number): number {
+  return 900 * (attempt + 1);
 }
 
 export interface ProviderEarlyError {
@@ -56,8 +65,8 @@ export async function runProviderLoop(opts: {
   }
 
   const isWizardLane = taskType === 'wizard_template_react';
-  const totalBudgetMs = isWizardLane ? 120_000 : 135_000;
-  const wizardMaxOutputTokens = 8_000;
+  const totalBudgetMs = isWizardLane ? 145_000 : 145_000;
+  const wizardMaxOutputTokens = 16_000;
   const startedAt = Date.now();
   const budgetRemaining = () => totalBudgetMs - (Date.now() - startedAt);
 
@@ -83,6 +92,7 @@ export async function runProviderLoop(opts: {
   const geminiModels = geminiModelsFromPlan.length > 0
     ? geminiModelsFromPlan
     : [
+        { id: 'gemini-2.5-flash-lite', maxTokens: providerPlan.fallbackMaxTokens, label: 'Gemini gemini-2.5-flash-lite' },
         { id: 'gemini-2.5-flash', maxTokens: providerPlan.fallbackMaxTokens, label: 'Gemini gemini-2.5-flash' },
         { id: 'gemini-2.5-pro', maxTokens: providerPlan.fallbackMaxTokens, label: 'Gemini gemini-2.5-pro' },
       ];
@@ -98,7 +108,7 @@ export async function runProviderLoop(opts: {
           };
           return score(a.id) - score(b.id);
         })
-        .slice(0, 2)
+        .slice(0, 3)
     : geminiModels;
 
   const systemInstructionText = aiMessages

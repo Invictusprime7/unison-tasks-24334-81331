@@ -1251,14 +1251,19 @@ export default function App() {
   const hasIncomingContent = !!(
     effectiveRouteState?.vfsFiles ||
     effectiveRouteState?.generatedCode ||
-    effectiveRouteState?.generatedTemplate
+    effectiveRouteState?.generatedTemplate ||
+    effectiveRouteState?.siteBundleSnapshot ||
+    effectiveRouteState?.materializedPlayground ||
+    effectiveRouteState?.siteBundle
   );
   const [showLauncher, setShowLauncher] = useState(!hasIncomingContent);
   const routeStateHasStructuredProject = !!(
     effectiveRouteState?.vfsFiles ||
     effectiveRouteState?.generatedCode ||
     effectiveRouteState?.generatedTemplate ||
-    effectiveRouteState?.siteBundle
+    effectiveRouteState?.siteBundle ||
+    effectiveRouteState?.siteBundleSnapshot ||
+    effectiveRouteState?.materializedPlayground
   );
 
   // Collapse all panels when on mobile to ensure full-width canvas

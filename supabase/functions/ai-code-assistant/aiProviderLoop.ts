@@ -128,79 +128,91 @@ export async function runProviderLoop(opts: {
     .filter((entry): entry is { role: string; parts: Array<{ text: string }> } => Boolean(entry));
 
   for (const model of orderedGeminiModels) {
-    const remaining = budgetRemaining();
-    if (remaining < 8000) {
-      recordProviderError(model.label, 'budget exhausted');
-      break;
-    }
+    const maxAttempts = isWizardLane ? 2 : 1;
 
-    const phaseCapMs = isWizardLane ? 45_000 : (providerPlan.perModelTimeoutMs || 60_000);
-    const perModelMs = Math.min(phaseCapMs, Math.max(8000, remaining - 2000));
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) {
+        recordProviderError(model.label, 'budget exhausted');
+        break;
+      }
 
-    try {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt - 1)));
+      }
+
+      const phaseCapMs = isWizardLane ? 42_000 : (providerPlan.perModelTimeoutMs || 60_000);
+      const perModelMs = Math.min(phaseCapMs, Math.max(8000, remaining - 2000));
+      const attemptLabel = maxAttempts > 1 ? `${model.label} attempt ${attempt + 1}` : model.label;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
-      const geminiBody: Record<string, unknown> = {
-        contents: conversationContents.length > 0
-          ? conversationContents
-          : [{ role: 'user', parts: [{ text: 'Generate the requested output.' }] }],
-        generationConfig: {
-          maxOutputTokens: Math.min(model.maxTokens, isWizardLane ? wizardMaxOutputTokens : 32_768),
-          ...(forceJsonResponse ? { responseMimeType: 'application/json' } : {}),
-        },
-      };
+      try {
+        const geminiBody: Record<string, unknown> = {
+          contents: conversationContents.length > 0
+            ? conversationContents
+            : [{ role: 'user', parts: [{ text: 'Generate the requested output.' }] }],
+          generationConfig: {
+            maxOutputTokens: Math.min(model.maxTokens, isWizardLane ? wizardMaxOutputTokens : 32_768),
+            ...(forceJsonResponse ? { responseMimeType: 'application/json' } : {}),
+          },
+        };
 
-      if (systemInstructionText) {
-        geminiBody.systemInstruction = { parts: [{ text: systemInstructionText }] };
-      }
+        if (systemInstructionText) {
+          geminiBody.systemInstruction = { parts: [{ text: systemInstructionText }] };
+        }
 
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(geminiBody),
-          signal: controller.signal,
-        },
-      );
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(geminiBody),
+            signal: controller.signal,
+          },
+        );
 
-      clearTimeout(timeoutId);
+        if (resp.status === 429) {
+          const errText = await resp.text().catch(() => '');
+          deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
+          recordProviderError(attemptLabel, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+          continue;
+        }
 
-      if (resp.status === 429) {
-        const errText = await resp.text().catch(() => '');
-        deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
-        recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(attemptLabel, `${resp.status} ${errText.substring(0, 200)}`);
+          if (isRetryableGeminiStatus(resp.status)) continue;
+          break;
+        }
+
+        const data = await resp.json();
+        const parsedContent = extractGeminiText(data);
+
+        if (!parsedContent) {
+          const blockReason = data?.promptFeedback?.blockReason;
+          recordProviderError(attemptLabel, blockReason ? `blocked (${blockReason})` : 'no content');
+          continue;
+        }
+
+        const extracted = extractThinkingTags(parsedContent);
+        if (extracted.reasoning) reasoning = extracted.reasoning;
+        content = extracted.content;
+        modelUsed = `google/${model.id}`;
+        break;
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          recordProviderError(attemptLabel, 'timeout');
+          continue;
+        }
+        recordProviderError(attemptLabel, error instanceof Error ? error.message : 'unknown');
         continue;
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
-        continue;
-      }
-
-      const data = await resp.json();
-      const parsedContent = extractGeminiText(data);
-
-      if (!parsedContent) {
-        const blockReason = data?.promptFeedback?.blockReason;
-        recordProviderError(model.label, blockReason ? `blocked (${blockReason})` : 'no content');
-        continue;
-      }
-
-      const extracted = extractThinkingTags(parsedContent);
-      if (extracted.reasoning) reasoning = extracted.reasoning;
-      content = extracted.content;
-      modelUsed = `google/${model.id}`;
-      break;
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        recordProviderError(model.label, 'timeout');
-        continue;
-      }
-      recordProviderError(model.label, error instanceof Error ? error.message : 'unknown');
     }
+
+    if (content) break;
   }
 
   if (content) {

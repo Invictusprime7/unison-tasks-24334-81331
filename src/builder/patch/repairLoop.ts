@@ -5,7 +5,7 @@
  *
  *   attempt 0 → original plan
  *   retry  1  → same model, prompt augmented with dry-run errors
- *   retry  2  → escalate to `openai/gpt-5.5`
+ *   retry  2  → escalate to Gemini Pro
  *
  * Hard cap: 2 retries (3 total attempts). The loop never applies — it
  * only drives `propose → dryRun` until a `preview` phase is reached or

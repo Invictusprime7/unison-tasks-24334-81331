@@ -63,6 +63,10 @@ function looksLikeCanonicalRouter(content: string): boolean {
   return /react-router-dom|<Routes\b|<Route\b|BrowserRouter|HashRouter|createBrowserRouter/.test(content);
 }
 
+function isPageModulePath(path: string): boolean {
+  return /^\/src\/pages\/[^/]+\.(tsx|jsx|ts|js)$/i.test(path);
+}
+
 function buildCanonicalPlayground(
   siteBundleSnapshot?: SiteBundleSnapshot,
   canonicalPlayground?: PlaygroundState | Record<string, unknown> | null,
@@ -161,16 +165,30 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
+  const canonicalPagePaths = new Set(
+    registryPages
+      .map((page) => page.filePath)
+      .filter((path): path is string => Boolean(path)),
+  );
 
   for (const [path, content] of Object.entries(generatedFiles)) {
-    const shouldMoveLegacyAppIntoHome =
-      (path === '/src/App.tsx' || path === '/App.tsx') &&
-      canonicalFiles['/src/App.tsx'] &&
-      !generatedFiles[homeFilePath] &&
-      !looksLikeCanonicalRouter(content);
+    // The registry/router owns every canonical page path. Lane A may return a
+    // single-page App.tsx to enhance Home, but it must never replace registered
+    // sub-pages (Contact/Pricing/Booking/etc.) or the deterministic router.
+    if (path === '/src/App.tsx' || path === '/App.tsx') {
+      if (looksLikeCanonicalRouter(content)) continue;
 
-    if (shouldMoveLegacyAppIntoHome) {
-      merged[homeFilePath] = rebaseAppModuleForHomePage(content);
+      if (canonicalFiles['/src/App.tsx']) {
+        merged[homeFilePath] = rebaseAppModuleForHomePage(content);
+      }
+      continue;
+    }
+
+    if (canonicalPagePaths.has(path) && path !== homeFilePath) {
+      continue;
+    }
+
+    if (isPageModulePath(path) && !canonicalPagePaths.has(path)) {
       continue;
     }
 

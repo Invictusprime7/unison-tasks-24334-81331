@@ -1356,6 +1356,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
 
+      const buildDeterministicGenerationResult = (reason: string) => {
+        console.warn(`[SystemLauncher] Using canonical registry composition instead of AI output: ${reason}`);
+        const deterministicFiles = {
+          '/src/App.tsx': seedAppCode,
+          '/src/index.css': themedIndexCss,
+        };
+        return {
+          structured: { files: deterministicFiles } as LauncherPayload,
+          sanitized: sanitizeGeneratedFiles(deterministicFiles),
+        };
+      };
+
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);
         const normalizedMsg = msg.toLowerCase();
@@ -1381,40 +1393,32 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           navigate('/auth');
           return;
         }
-        if (isProviderAuthError) {
-          toast.error(`AI provider not configured: ${msg}`);
-          return;
-        }
-        if (msg.includes('429')) {
-          toast.error('AI is rate-limited. Please wait a moment and try again.');
-          return;
-        } else if (msg.includes('402')) {
-          toast.error('AI credits required. Please add credits to continue.');
-          return;
-        } else {
-          toast.error(`AI generation failed: ${msg || 'unknown error'}`);
-          return;
-        }
+        generationResult = buildDeterministicGenerationResult(
+          isProviderAuthError ? `provider unavailable (${msg})` : msg || 'AI edge function unavailable',
+        );
+        toast.warning('AI enhancement was unavailable, so I launched the canonical wizard site.');
       }
 
 
       if (!generationResult) {
         if (lastPayloadIssue?.kind === 'empty') {
-          toast.error('AI returned no usable files after retrying. Please try again.');
+          generationResult = buildDeterministicGenerationResult('AI returned no usable files after retrying');
+          toast.warning('AI returned no usable files, so I launched the canonical wizard site.');
           console.error('[SystemLauncher] AI payload missing files:', lastPayloadIssue.aiContentPreview);
-          return;
         }
         // 'app' kind no longer surfaces — App.tsx is deterministic, not AI-owned.
 
         if (lastPayloadIssue?.kind === 'section') {
-          toast.error('AI returned malformed section files after retrying. Please try again.');
+          generationResult = buildDeterministicGenerationResult('AI omitted canonical template sections after retrying');
+          toast.warning('AI omitted required sections, so I launched the canonical wizard site.');
           console.error('[SystemLauncher] Aborting launch — malformed AI section files after retries', lastPayloadIssue);
-          return;
         }
 
-        toast.error('AI generation failed. Please try again.');
-        console.error('[SystemLauncher] AI generation produced no launchable result.');
-        return;
+        if (!generationResult) {
+          generationResult = buildDeterministicGenerationResult('AI generation produced no launchable result');
+          toast.warning('AI generation was unavailable, so I launched the canonical wizard site.');
+          console.error('[SystemLauncher] AI generation produced no launchable result.');
+        }
       }
 
       // ── Merge AI output with LOCKED themed CSS + DETERMINISTIC ROUTER ──

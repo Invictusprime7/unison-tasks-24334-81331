@@ -26,10 +26,10 @@ import type { PatchPlan } from './types';
 // ----------------------------------------------------------- model policy
 
 /** Default model used for the original attempt + retry 1. */
-export const DEFAULT_REPAIR_MODEL = 'openai/gpt-5-mini';
+export const DEFAULT_REPAIR_MODEL = 'google/gemini-2.5-flash';
 
 /** Escalation model used for retry 2. */
-export const ESCALATION_MODEL = 'openai/gpt-5.5';
+export const ESCALATION_MODEL = 'google/gemini-2.5-pro';
 
 /** Hard cap on retries (NOT counting the original attempt). */
 export const MAX_REPAIR_RETRIES = 2;

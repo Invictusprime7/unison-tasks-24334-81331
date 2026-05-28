@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Settings2, Zap, Brain, Sparkles, RotateCcw } from "lucide-react";
+import { Settings2, Zap, Sparkles, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface GatewayModel {

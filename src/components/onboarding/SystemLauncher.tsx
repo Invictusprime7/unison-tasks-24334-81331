@@ -1176,6 +1176,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         customInstructionsRaw: customPrompt,
       });
 
+      // Inject the slot-bound INTERACTION WIRING CONTRACT so the AI stamps
+      // data-ut-* markers on every CTA/intent. Without this, the post-launch
+      // bindingApplication falls through to fragile label-text matching and
+      // most slots end up in missingBindings.
+      const bindingGuide = siteBundleSnapshot
+        ? buildWizardBindingGuide(siteBundleSnapshot)
+        : '';
+      const aiUserPromptWithBindings = bindingGuide
+        ? `${aiUserPrompt}\n\n${bindingGuide}`
+        : aiUserPrompt;
+
       console.info('[WizardLaunch] Implementation model', {
         policy: WIZARD_IMPLEMENTATION_MODEL,
         sectionCount: composition.sections.length,
@@ -1213,7 +1224,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const result = await withTimeout(
           supabase.functions.invoke('ai-code-assistant', {
             body: {
-              messages: [{ role: 'user', content: aiUserPrompt }],
+              messages: [{ role: 'user', content: aiUserPromptWithBindings }],
               mode: 'template-react',
               // Hard signal: ALWAYS route to Lane A (wizard_template_react).
               // This flag bypasses every other classifier branch so that the

@@ -75,8 +75,13 @@ export function getCompositionReactCode(categoryOrTemplateId: LayoutCategory | s
  * Used by systems-build to inject structured section/intent info instead of
  * parsing HTML with regex.
  */
-export function getCompositionMeta(category: LayoutCategory | string) {
-  const industry = CATEGORY_TO_INDUSTRY[category];
+export function getCompositionMeta(categoryOrTemplateId: LayoutCategory | string) {
+  // Template-ID-first resolution so each wizard variant exposes its own
+  // section order + intents instead of collapsing to the industry default.
+  const direct = getCompositionById(categoryOrTemplateId);
+  if (direct) return buildMetaFromComposition(direct);
+
+  const industry = CATEGORY_TO_INDUSTRY[categoryOrTemplateId];
   if (!industry) return null;
 
   let compositions = getCompositionsByIndustry(industry);

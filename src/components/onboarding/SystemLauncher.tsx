@@ -388,30 +388,31 @@ function buildWizardAiSeedPrompt(opts: {
 }): string {
   const customInstructionsPresent = opts.customInstructionsRaw.trim().length > 0;
 
+  const hasSectionHints = opts.sectionOrder.length > 0;
   return [
-    `Generate a complete, production-ready website for "${opts.businessName}" — a ${opts.resolvedIndustry} business.`,
+    `You are an elite web developer. Design and build a complete, production-ready single-page React (TSX) website for "${opts.businessName}" — a ${opts.resolvedIndustry} business.`,
     ``,
-    `BUSINESS INPUTS (from wizard, all binding):`,
+    `WIZARD INPUTS (use these as the creative brief; YOU decide the final structure):`,
     `1. Industry / System: ${opts.industrySystemName} (${opts.resolvedIndustry})`,
     `2. Primary Goal: ${opts.primaryGoal || 'collect_leads'}`,
-    `3. Template (LOCKED layout): ${opts.templateLabel}`,
-    `   Required section order — render in this exact sequence: ${opts.sectionOrder.join(' → ')}`,
+    `3. Template inspiration: ${opts.templateLabel}`,
+    hasSectionHints ? `   Suggested section flow (inspiration only — adapt, expand, or reorder as the design demands): ${opts.sectionOrder.join(' → ')}` : `   No fixed section order — choose the sections that best serve the business goal.`,
     `4. Business Name: ${opts.businessName}`,
     `5. Visual Style preset (LOCKED aesthetic): ${opts.visualStyleLabel} — ${opts.visualStyleDirective}`,
     `   Headings: ${opts.headingFont} (${opts.headingWeight}). Body: ${opts.bodyFont}.`,
-    opts.templateGuidance ? `Template layout details (LOCKED):\n${opts.templateGuidance}` : `Template layout details: use the selected template card only`,
-    opts.compositionContext ? `Canonical registry composition (LOCKED):\n${opts.compositionContext}` : `Canonical registry composition: use the registered composition only; do not invent sections or headings.`,
+    opts.templateGuidance ? `Template inspiration details (guidance, not contract):\n${opts.templateGuidance}` : ``,
+    opts.compositionContext ? `Reference composition (for inspiration; you may diverge to produce a better site):\n${opts.compositionContext}` : ``,
     customInstructionsPresent
-      ? `6. Custom instructions from user (HIGHEST priority for copy/tone): included verbatim below`
+      ? `6. Custom instructions from user (HIGHEST priority for copy/tone and structural overrides): included verbatim below`
       : `6. Custom instructions: (none)`,
     customInstructionsPresent ? `--- BEGIN VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
     customInstructionsPresent ? opts.customInstructionsRaw : ``,
     customInstructionsPresent ? `--- END VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
     ``,
-    `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
-    `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
-    `CONTENT CONTRACT: Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
-    `Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
+    `DESIGN AUTHORITY: You are the primary designer. Add, remove, reorder, or reinvent sections to produce the best possible site for this business. Template/composition data above is INSPIRATION, not a contract.`,
+    `AESTHETIC CONTRACT (hard): Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
+    `CONTENT CONTRACT (hard): Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
+    `WIRING CONTRACT (hard): Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
   ].filter(Boolean).join('\n');
 }
 

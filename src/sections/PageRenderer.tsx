@@ -154,9 +154,7 @@ export const compositionToReactCode = (
   }
   const variantOverrideMap = `const VARIANT_OVERRIDES = { ${variantOverrideEntries.join(', ')} };`;
   const variantInlineBlock = variantFnSources.join('\n\n');
-  const sectionsJson = JSON.stringify(template.sections, null, 2);
-  const themeJson = JSON.stringify(resolveThemeTokens(template.theme), null, 2);
-  const globalStylesJson = JSON.stringify(template.globalStyles || '');
+  // sectionsJson / themeJson / globalStylesJson declared above in the variant scan block
 
   return `import React, { useEffect } from 'react';
 import { Instagram, Facebook, Twitter, Linkedin, Youtube, Github, Twitch, Dribbble, Figma, Globe } from 'lucide-react';

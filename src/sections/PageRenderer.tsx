@@ -140,7 +140,7 @@ export const compositionToReactCode = (
   for (const section of template.sections) {
     const variantId = activeVariants[section.id] || section.variantId;
     if (!variantId) continue;
-    const variant = getVariantById(variantId);
+    const variant = getVariantById(variantId as ActiveVariantMap[string]);
     if (!variant?.renderJSX) continue;
     try {
       const content = sectionPropsToVariantContent(section);

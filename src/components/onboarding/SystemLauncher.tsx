@@ -1164,6 +1164,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           section_order: templateSectionOrder,
           section_ids: sectionIdsHint,
           page_roles: pageRolesHint,
+          // Per-section identity + chosen variant (default-stamped). Lets the
+          // AI know which visual variant each section should mirror, restoring
+          // the variant signal that was previously lost between the wizard
+          // and the edge-function prompt.
+          sections_detail: sectionsDetail,
+          // Trimmed structural seed from the registered composition. Acts as a
+          // reference layout the AI can refine, instead of free-designing
+          // from a bare section-name list.
+          seed_code_excerpt: seedAppCode ? seedAppCode.slice(0, 6000) : '',
         },
         template_sections: templateSectionOrder,
         template_intents: compositionMeta?.intents,

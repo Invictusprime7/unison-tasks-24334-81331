@@ -56,11 +56,16 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
       {template.sections
         .filter(s => !s.hidden)
         .map(section => {
-          // Check if a variant override is active for this section instance
+          // Per-section variant lookup: prefer runtime activeVariants override,
+          // then fall back to any variantId baked into the section entry.
+          const mergedVariants: ActiveVariantMap = {
+            ...(section.variantId ? { [section.id]: section.variantId as ActiveVariantMap[string] } : {}),
+            ...activeVariants,
+          };
           const VariantComponent = resolveVariantComponent(
             section.type,
             section.id,
-            activeVariants
+            mergedVariants
           );
           const Component = VariantComponent || getSectionComponent(section.type);
           if (!Component) {
@@ -69,7 +74,7 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
           }
           return (
             <Component
-              key={`${section.id}-${activeVariants[section.id] || 'default'}`}
+              key={`${section.id}-${mergedVariants[section.id] || 'default'}`}
               section={section as SectionEntry<any>}
               theme={theme}
             />

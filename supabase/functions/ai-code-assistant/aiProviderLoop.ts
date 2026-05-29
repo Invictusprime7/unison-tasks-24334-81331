@@ -1,5 +1,5 @@
 /**
- * AI provider call loop — direct Gemini only.
+ * AI provider call loop — Lovable AI Gateway first, direct Gemini fallback.
  * Returns content, reasoning, and the model that succeeded.
  */
 
@@ -13,6 +13,9 @@ type GeminiContent = { role: string; parts: GeminiPart[] };
 function mapGatewayGeminiIdToDirect(id: string): string {
   const normalized = id.replace(/^google\//, '').trim();
   const aliases: Record<string, string> = {
+    'gemini-3.5-flash': 'gemini-2.5-flash',
+    'gemini-3.1-flash-lite-preview': 'gemini-2.5-flash-lite',
+    'gemini-3.1-pro-preview': 'gemini-2.5-pro',
     'gemini-3-flash-preview': 'gemini-2.5-flash',
     'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
     'gemini-2.5-flash': 'gemini-2.5-flash',
@@ -197,7 +200,7 @@ export async function runProviderLoop(opts: {
     const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
     const primaryModels = gatewayModels.length > 0
       ? gatewayModels
-      : ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.5-pro'];
+      : ['google/gemini-3.5-flash', 'openai/gpt-5.4-mini', 'google/gemini-3.1-flash-lite-preview', 'google/gemini-3.1-pro-preview'];
 
     const openAiMessages = aiMessages.map((m) => ({
       role: m.role,
@@ -209,16 +212,18 @@ export async function runProviderLoop(opts: {
       if (remaining < 8000) break;
       const controller = new AbortController();
       // Wizard lane generates a full single-page composition (all template
-      // sections inlined into /src/App.tsx). That output regularly runs
-      // 8–18k tokens, so give it more wall-time AND ensure the gateway
-      // doesn't cap the response at its default ~4k tokens (which silently
-      // truncates the composition and triggers the deterministic fallback
-      // because canonical section markers are missing).
-      const phaseCap = isWizardLane ? 90_000 : (providerPlan.perModelTimeoutMs || 35_000);
+      // sections inlined into /src/App.tsx). Keep each attempt bounded so a
+      // single overloaded provider family cannot consume the whole edge budget;
+      // cross-provider fallback is more reliable than waiting 90s on one model.
+      const phaseCap = isWizardLane ? 45_000 : (providerPlan.perModelTimeoutMs || 35_000);
       const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const maxCompletionTokens = isWizardLane ? wizardMaxOutputTokens : 16_000;
+        const modelSpec = (providerPlan.gatewayModels || []).find((model) => model.id === modelId);
+        const maxCompletionTokens = Math.min(
+          modelSpec?.maxTokens ?? (isWizardLane ? wizardMaxOutputTokens : 16_000),
+          isWizardLane ? wizardMaxOutputTokens : 32_000,
+        );
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {

@@ -47,7 +47,6 @@ import { checkEditScope } from "./reviewScope.ts";
 import { buildApplyState, type ApplyState } from "./applyState.ts";
 import { preprocessPrompt } from "./promptPreprocessor.ts";
 import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
-import { getGeminiApiKey } from "../_shared/gemini.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -298,7 +297,7 @@ async function runWizardLane(
 ): Promise<Response> {
   console.log('[orchestrator] LANE A: wizard fast path');
 
-  const hasGeminiKey = Boolean(getGeminiApiKey());
+  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
   const { messages, systemsBuildContext, templateName, source, imagePlacement, siteElementsLibraryContext } = parsed;
   const {
     context: hardenedContext,
@@ -351,7 +350,7 @@ async function runWizardLane(
   ];
 
   // Provider plan — protected, no user overrides
-  const providerPlan = buildProviderPlan(task, hasGeminiKey);
+  const providerPlan = buildProviderPlan(task, hasLovableKey);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
@@ -417,7 +416,7 @@ async function runLaunchDeskLane(
 ): Promise<Response> {
   console.log('[orchestrator] LANE C: launch_desk');
 
-  const hasGeminiKey = Boolean(getGeminiApiKey());
+  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
   const { messages, launchBrief } = parsed;
 
   const systemPrompt = buildLaunchDeskSystemPrompt();
@@ -437,7 +436,7 @@ async function runLaunchDeskLane(
     { role: 'user', content: userContent },
   ];
 
-  const providerPlan = buildProviderPlan(task, hasGeminiKey);
+  const providerPlan = buildProviderPlan(task, hasLovableKey);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
@@ -483,7 +482,7 @@ async function runBuilderLane(
     'builder_generate'
   })`);
 
-  const hasGeminiKey = Boolean(getGeminiApiKey());
+  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
   const {
     messages, mode, savePattern = true, generateImage = false, imagePlacement,
     currentCode, editMode = false, debugMode: _debugMode = false,
@@ -724,7 +723,7 @@ async function runBuilderLane(
 
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────
   console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
-  const providerPlan = buildProviderPlan(task, hasGeminiKey, gatewayOptions, preprocessed.complexity.tier);
+  const providerPlan = buildProviderPlan(task, hasLovableKey, gatewayOptions, preprocessed.complexity.tier);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,

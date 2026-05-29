@@ -13,7 +13,7 @@ export interface ModelSpec {
 }
 
 export interface ProviderPlan {
-  /** Ordered list of Gemini models to try through the direct Google Gemini API */
+  /** Ordered list of Lovable AI Gateway models to try before direct Gemini fallback */
   gatewayModels: ModelSpec[];
   /** Per-model timeout in ms */
   perModelTimeoutMs: number;
@@ -32,10 +32,13 @@ export interface GatewayOverrides {
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // Gemini models only.
-  geminiFlash: { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  geminiFlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
-  geminiPro: { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  // Gateway-first models. Keep multiple provider families here so transient
+  // Gemini demand spikes do not take the builder down.
+  geminiFlash: { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+  geminiFlashLite: { id: "google/gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite" },
+  geminiPro: { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
+  openaiMini: { id: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini" },
+  openaiNano: { id: "openai/gpt-5.4-nano", label: "GPT-5.4 Nano" },
 } as const;
 
 function m(spec: typeof MODELS[keyof typeof MODELS], maxTokens: number): ModelSpec {
@@ -59,10 +62,11 @@ function applyComplexityUpgrade(
   }
 
   if (complexity === "advanced") {
-    // Advanced: lead with fast Gemini, then Gemini Pro.
+    // Advanced: lead with fast Gemini, then cross-provider fallback, then Pro.
     const advancedTokens = Math.min(baseMaxTokens + 8000, 48000);
     const advancedModels: ModelSpec[] = [
       m(MODELS.geminiFlash, advancedTokens),
+      m(MODELS.openaiMini, advancedTokens),
       m(MODELS.geminiPro, advancedTokens),
     ];
     return { models: advancedModels, timeoutBoostMs: 5000 };
@@ -114,10 +118,11 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlashLite, 24000),
-          m(MODELS.geminiFlash, 20000),
-          m(MODELS.geminiPro, 20000),
+          m(MODELS.geminiFlash, 24000),
+          m(MODELS.openaiMini, 24000),
+          m(MODELS.geminiPro, 24000),
         ],
-        perModelTimeoutMs: 42000,
+        perModelTimeoutMs: 55000,
         fallbackMaxTokens: 24000,
       };
       break;
@@ -128,6 +133,7 @@ export function buildProviderPlan(
         gatewayModels: [
           m(MODELS.geminiFlashLite, 12000),
           m(MODELS.geminiFlash, 12000),
+          m(MODELS.openaiNano, 12000),
         ],
         perModelTimeoutMs: 30000,
         fallbackMaxTokens: 10000,
@@ -138,6 +144,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 24000),
+          m(MODELS.openaiMini, 24000),
         ],
         perModelTimeoutMs: 40000,
         fallbackMaxTokens: 24000,
@@ -149,6 +156,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -160,6 +168,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -173,6 +182,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,

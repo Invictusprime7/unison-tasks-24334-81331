@@ -190,8 +190,77 @@ export async function runProviderLoop(opts: {
     .map(messageToGeminiContent)
     .filter((entry): entry is GeminiContent => Boolean(entry));
 
+  // ── Primary path: Lovable AI Gateway (OpenAI-compatible) ──────────────
+  // Faster + has built-in failover. Direct Gemini is used only as fallback.
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  if (lovableKey) {
+    const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
+    const primaryModels = gatewayModels.length > 0
+      ? gatewayModels
+      : ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.5-pro'];
+
+    const openAiMessages = aiMessages.map((m) => ({
+      role: m.role,
+      content: typeof m.content === 'string' ? m.content : coerceGeminiText(m.content),
+    }));
+
+    for (const modelId of primaryModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) break;
+      const controller = new AbortController();
+      const phaseCap = isWizardLane ? 42_000 : (providerPlan.perModelTimeoutMs || 35_000);
+      const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${lovableKey}`,
+          },
+          body: JSON.stringify({
+            model: modelId,
+            messages: openAiMessages,
+            ...(forceJsonResponse ? { response_format: { type: 'json_object' } } : {}),
+          }),
+          signal: controller.signal,
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(`Gateway ${modelId}`, `${resp.status} ${errText.substring(0, 200)}`);
+          if (resp.status === 429) {
+            deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
+          }
+          if (resp.status === 402) {
+            return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
+          }
+          continue;
+        }
+        const data = await resp.json();
+        const text = data?.choices?.[0]?.message?.content;
+        if (typeof text === 'string' && text.trim()) {
+          const extracted = extractThinkingTags(text);
+          if (extracted.reasoning) reasoning = extracted.reasoning;
+          content = extracted.content;
+          modelUsed = modelId;
+          break;
+        }
+        recordProviderError(`Gateway ${modelId}`, 'no content');
+      } catch (error) {
+        recordProviderError(`Gateway ${modelId}`, error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : 'unknown');
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (content) {
+      return { content, reasoning, modelUsed };
+    }
+  }
+
+  // ── Fallback: direct Gemini API ────────────────────────────────────────
   for (const model of (geminiApiKey ? orderedGeminiModels : [])) {
-    const maxAttempts = isWizardLane ? 2 : 1;
+    const maxAttempts = 1;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const remaining = budgetRemaining();
@@ -200,13 +269,9 @@ export async function runProviderLoop(opts: {
         break;
       }
 
-      if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt - 1)));
-      }
-
-      const phaseCapMs = isWizardLane ? 42_000 : (providerPlan.perModelTimeoutMs || 60_000);
+      const phaseCapMs = Math.min(25_000, providerPlan.perModelTimeoutMs || 25_000);
       const perModelMs = Math.min(phaseCapMs, Math.max(8000, remaining - 2000));
-      const attemptLabel = maxAttempts > 1 ? `${model.label} attempt ${attempt + 1}` : model.label;
+      const attemptLabel = model.label;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
@@ -228,7 +293,7 @@ export async function runProviderLoop(opts: {
         }
 
         const resp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}:generateContent?key=${encodeURIComponent(geminiApiKey!)}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -284,71 +349,7 @@ export async function runProviderLoop(opts: {
     return { content, reasoning, modelUsed };
   }
 
-  // Fallback: Lovable AI Gateway (OpenAI-compatible) when direct Gemini fails (timeouts / 503s).
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-  if (lovableKey && budgetRemaining() > 10_000) {
-    const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
-    const fallbackModels = gatewayModels.length > 0
-      ? gatewayModels
-      : ['google/gemini-2.5-flash', 'google/gemini-2.5-pro', 'openai/gpt-5-mini'];
 
-    const openAiMessages = aiMessages.map((m) => ({
-      role: m.role,
-      content: typeof m.content === 'string' ? m.content : coerceGeminiText(m.content),
-    }));
-
-    for (const modelId of fallbackModels) {
-      const remaining = budgetRemaining();
-      if (remaining < 8000) break;
-      const controller = new AbortController();
-      const timeoutMs = Math.min(60_000, Math.max(15_000, remaining - 2000));
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${lovableKey}`,
-          },
-          body: JSON.stringify({
-            model: modelId,
-            messages: openAiMessages,
-            ...(forceJsonResponse ? { response_format: { type: 'json_object' } } : {}),
-          }),
-          signal: controller.signal,
-        });
-        if (!resp.ok) {
-          const errText = await resp.text().catch(() => '');
-          recordProviderError(`Gateway ${modelId}`, `${resp.status} ${errText.substring(0, 200)}`);
-          if (resp.status === 429) {
-            deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
-          }
-          if (resp.status === 402) {
-            return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
-          }
-          continue;
-        }
-        const data = await resp.json();
-        const text = data?.choices?.[0]?.message?.content;
-        if (typeof text === 'string' && text.trim()) {
-          const extracted = extractThinkingTags(text);
-          if (extracted.reasoning) reasoning = extracted.reasoning;
-          content = extracted.content;
-          modelUsed = modelId;
-          break;
-        }
-        recordProviderError(`Gateway ${modelId}`, 'no content');
-      } catch (error) {
-        recordProviderError(`Gateway ${modelId}`, error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : 'unknown');
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    }
-
-    if (content) {
-      return { content, reasoning, modelUsed };
-    }
-  }
 
   if (deferredEarlyError && providerErrors.length === 1) {
     return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };

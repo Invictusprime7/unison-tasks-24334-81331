@@ -47,7 +47,6 @@ import { checkEditScope } from "./reviewScope.ts";
 import { buildApplyState, type ApplyState } from "./applyState.ts";
 import { preprocessPrompt } from "./promptPreprocessor.ts";
 import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
-import { getGeminiApiKey } from "../_shared/gemini.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

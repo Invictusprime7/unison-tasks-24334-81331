@@ -2253,6 +2253,28 @@ export default function App() {
       console.log(`[WebBuilder] Hydrated canonical PageRegistry: ${Object.keys(canonicalRegistry.pages).length} pages`);
     }
 
+    // CANONICAL VFS AUTHORITY:
+    // SiteBundleSnapshot.vfsFiles is the post-merge, post-bound, post-router
+    // output of canonicalLaunchVfs. It MUST overwrite any stale VFS state on
+    // first hydration — otherwise the builder previews a divergent tree from
+    // what the launcher just produced (broken sections, missing bindings,
+    // wrong router). We only overwrite once per mount (gated by the early
+    // return above on non-empty registry).
+    if (snapshot?.vfsFiles && Object.keys(snapshot.vfsFiles).length > 0) {
+      const existingFiles = virtualFS.getSandpackFiles();
+      const filesToWrite: Record<string, string> = {};
+      for (const [path, content] of Object.entries(snapshot.vfsFiles)) {
+        if (typeof content !== 'string') continue;
+        if (existingFiles[path] !== content) {
+          filesToWrite[path] = content;
+        }
+      }
+      if (Object.keys(filesToWrite).length > 0) {
+        liveVFSCommit.writeFiles(filesToWrite, 'system-restore', virtualFS.importFiles);
+        console.log(`[WebBuilder] Imported ${Object.keys(filesToWrite).length} canonical snapshot files (authoritative)`);
+      }
+    }
+
     if (sitePlan && sitePlan.pages.length > 0) {
       // Persist for refresh survival (session + DB)
       persistTopology(sitePlan);
@@ -2282,7 +2304,8 @@ export default function App() {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }
 
-      // Auto-scaffold placeholders + router for missing pages
+      // Auto-scaffold placeholders + router for any pages still missing
+      // after the canonical snapshot import above.
       const existingFiles = virtualFS.getSandpackFiles();
       const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, canonicalRegistry || populateRegistryFromTopology(sitePlan));
       if (Object.keys(missingFiles).length > 0) {
@@ -2302,19 +2325,11 @@ export default function App() {
           }, idx * 1500); // 1.5s stagger between pages
         });
       }
-    } else if (snapshot?.vfsFiles && Object.keys(snapshot.vfsFiles).length > 0) {
-      const existingFiles = virtualFS.getSandpackFiles();
-      const missingSnapshotFiles = Object.fromEntries(
-        Object.entries(snapshot.vfsFiles).filter(([path]) => !existingFiles[path])
-      ) as Record<string, string>;
-      if (Object.keys(missingSnapshotFiles).length > 0) {
-        liveVFSCommit.writeFiles(missingSnapshotFiles, 'system-restore', virtualFS.importFiles);
-        console.log(`[WebBuilder] Imported ${Object.keys(missingSnapshotFiles).length} canonical snapshot files`);
-      }
-    } else {
-      // Fallback: seed single Home page
+    } else if (!snapshot?.vfsFiles || Object.keys(snapshot.vfsFiles).length === 0) {
+      // Fallback: seed single Home page when there's neither plan nor snapshot
       creatorPlayground.addPage("Home", "/", "home", { showInNav: true, isHome: true });
     }
+
   }, []); // run once on mount
 
   // Route conflict detection from playground registry

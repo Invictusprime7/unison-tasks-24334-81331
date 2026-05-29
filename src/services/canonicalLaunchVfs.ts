@@ -247,15 +247,18 @@ export function buildCanonicalLaunchArtifacts(
     themePresetId: resolvedThemePresetId,
   });
 
-  const bindingApplication = input.siteBundleSnapshot
-    ? applyWizardBindingsToVfs(normalizedFiles, input.siteBundleSnapshot)
-    : null;
-
+  // NOTE: bindings are applied AFTER merging with the canonical snapshot so
+  // that scaffolded sub-pages (About/Contact/etc.) — which the AI never
+  // generates directly — also receive their data-ut-* binding stamps.
   const canonicalFiles = input.compiledPlayground?.vfsFiles || input.siteBundleSnapshot?.vfsFiles || {};
-  const boundFiles = bindingApplication?.files || normalizedFiles;
-  const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(boundFiles, canonicalFiles, input.siteBundleSnapshot)
-    : { ...boundFiles };
+  const preBindingFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
+    ? mergeGeneratedVfsWithCanonicalSnapshot(normalizedFiles, canonicalFiles, input.siteBundleSnapshot)
+    : { ...normalizedFiles };
+
+  const bindingApplication = input.siteBundleSnapshot
+    ? applyWizardBindingsToVfs(preBindingFiles, input.siteBundleSnapshot)
+    : null;
+  const mergedFiles = bindingApplication?.files || preBindingFiles;
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(

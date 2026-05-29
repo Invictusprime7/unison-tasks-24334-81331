@@ -1,5 +1,5 @@
 /**
- * AI provider call loop — direct Gemini only.
+ * AI provider call loop — Lovable AI Gateway first, direct Gemini fallback.
  * Returns content, reasoning, and the model that succeeded.
  */
 
@@ -13,6 +13,9 @@ type GeminiContent = { role: string; parts: GeminiPart[] };
 function mapGatewayGeminiIdToDirect(id: string): string {
   const normalized = id.replace(/^google\//, '').trim();
   const aliases: Record<string, string> = {
+    'gemini-3.5-flash': 'gemini-2.5-flash',
+    'gemini-3.1-flash-lite-preview': 'gemini-2.5-flash-lite',
+    'gemini-3.1-pro-preview': 'gemini-2.5-pro',
     'gemini-3-flash-preview': 'gemini-2.5-flash',
     'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
     'gemini-2.5-flash': 'gemini-2.5-flash',
@@ -197,7 +200,7 @@ export async function runProviderLoop(opts: {
     const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
     const primaryModels = gatewayModels.length > 0
       ? gatewayModels
-      : ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.5-pro'];
+      : ['google/gemini-3.5-flash', 'openai/gpt-5.4-mini', 'google/gemini-3.1-flash-lite-preview', 'google/gemini-3.1-pro-preview'];
 
     const openAiMessages = aiMessages.map((m) => ({
       role: m.role,

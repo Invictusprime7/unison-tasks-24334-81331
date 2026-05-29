@@ -388,30 +388,31 @@ function buildWizardAiSeedPrompt(opts: {
 }): string {
   const customInstructionsPresent = opts.customInstructionsRaw.trim().length > 0;
 
+  const hasSectionHints = opts.sectionOrder.length > 0;
   return [
-    `Generate a complete, production-ready website for "${opts.businessName}" — a ${opts.resolvedIndustry} business.`,
+    `You are an elite web developer. Design and build a complete, production-ready single-page React (TSX) website for "${opts.businessName}" — a ${opts.resolvedIndustry} business.`,
     ``,
-    `BUSINESS INPUTS (from wizard, all binding):`,
+    `WIZARD INPUTS (use these as the creative brief; YOU decide the final structure):`,
     `1. Industry / System: ${opts.industrySystemName} (${opts.resolvedIndustry})`,
     `2. Primary Goal: ${opts.primaryGoal || 'collect_leads'}`,
-    `3. Template (LOCKED layout): ${opts.templateLabel}`,
-    `   Required section order — render in this exact sequence: ${opts.sectionOrder.join(' → ')}`,
+    `3. Template inspiration: ${opts.templateLabel}`,
+    hasSectionHints ? `   Suggested section flow (inspiration only — adapt, expand, or reorder as the design demands): ${opts.sectionOrder.join(' → ')}` : `   No fixed section order — choose the sections that best serve the business goal.`,
     `4. Business Name: ${opts.businessName}`,
     `5. Visual Style preset (LOCKED aesthetic): ${opts.visualStyleLabel} — ${opts.visualStyleDirective}`,
     `   Headings: ${opts.headingFont} (${opts.headingWeight}). Body: ${opts.bodyFont}.`,
-    opts.templateGuidance ? `Template layout details (LOCKED):\n${opts.templateGuidance}` : `Template layout details: use the selected template card only`,
-    opts.compositionContext ? `Canonical registry composition (LOCKED):\n${opts.compositionContext}` : `Canonical registry composition: use the registered composition only; do not invent sections or headings.`,
+    opts.templateGuidance ? `Template inspiration details (guidance, not contract):\n${opts.templateGuidance}` : ``,
+    opts.compositionContext ? `Reference composition (for inspiration; you may diverge to produce a better site):\n${opts.compositionContext}` : ``,
     customInstructionsPresent
-      ? `6. Custom instructions from user (HIGHEST priority for copy/tone): included verbatim below`
+      ? `6. Custom instructions from user (HIGHEST priority for copy/tone and structural overrides): included verbatim below`
       : `6. Custom instructions: (none)`,
     customInstructionsPresent ? `--- BEGIN VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
     customInstructionsPresent ? opts.customInstructionsRaw : ``,
     customInstructionsPresent ? `--- END VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
     ``,
-    `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
-    `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
-    `CONTENT CONTRACT: Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
-    `Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
+    `DESIGN AUTHORITY: You are the primary designer. Add, remove, reorder, or reinvent sections to produce the best possible site for this business. Template/composition data above is INSPIRATION, not a contract.`,
+    `AESTHETIC CONTRACT (hard): Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
+    `CONTENT CONTRACT (hard): Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
+    `WIRING CONTRACT (hard): Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
   ].filter(Boolean).join('\n');
 }
 
@@ -963,25 +964,28 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
       }
 
-      // ── Resolve composition from selected Template card only ──
-      // Template selection is a hard structural contract for AI generation.
+      // ── Resolve composition (OPTIONAL inspiration) from selected Template card ──
+      // Template selection provides creative inspiration; AI is the primary
+      // designer. A missing registered composition is NOT a hard failure —
+      // the AI generates structure from the wizard inputs directly.
       if (!selectedTemplate?.id) {
         toast.error("Please select a template before launching.");
         return;
       }
       let composition = getCompositionById(selectedTemplate.id);
       if (!composition) {
-        toast.error(
-          `Selected template "${selectedTemplate.label}" has no registered composition. Please choose another template.`,
+        console.info(
+          `[SystemLauncher] No registered composition for "${selectedTemplate.label}" — AI will design structure from wizard inputs.`,
         );
-        return;
       }
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) ──
       // Explicit user selection > industry mapping. Never falls through.
       const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
       const themedTokens = themePresetToThemeTokens(resolvedPreset);
-      composition = { ...composition, theme: themedTokens };
+      if (composition) {
+        composition = { ...composition, theme: themedTokens };
+      }
 
       const themeTrace = {
         resolvedPresetId: resolvedPreset.id,
@@ -1003,36 +1007,38 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         })
         .filter((s): s is { platform: string; url: string } => !!s);
 
-      composition = {
-        ...composition,
-        sections: composition.sections.map((sec) => {
-          if (sec.type === 'navbar') {
-            return { ...sec, props: { ...(sec.props as any), brand } } as typeof sec;
-          }
-          if (sec.type === 'footer') {
-            const existing = ((sec.props as any).socials || []) as { platform: string; url: string }[];
-            // Prefer user-supplied URLs; fall back to template's existing entries
-            // for any platforms the user did not fill in. If the user supplied
-            // any socials at all, they become the canonical list.
-            const merged = userSocials.length > 0
-              ? userSocials
-              : existing.filter((s) => s && s.url && s.url !== '#');
-            return {
-              ...sec,
-              props: { ...(sec.props as any), brand, socials: merged },
-            } as typeof sec;
-          }
-          return sec;
-        }),
-      };
+      if (composition) {
+        composition = {
+          ...composition,
+          sections: composition.sections.map((sec) => {
+            if (sec.type === 'navbar') {
+              return { ...sec, props: { ...(sec.props as any), brand } } as typeof sec;
+            }
+            if (sec.type === 'footer') {
+              const existing = ((sec.props as any).socials || []) as { platform: string; url: string }[];
+              const merged = userSocials.length > 0
+                ? userSocials
+                : existing.filter((s) => s && s.url && s.url !== '#');
+              return {
+                ...sec,
+                props: { ...(sec.props as any), brand, socials: merged },
+              } as typeof sec;
+            }
+            return sec;
+          }),
+        };
+      }
 
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);
 
-      // Deterministic seed App.tsx — never sent as currentCode, but measured so
-      // launcher diagnostics prove the picked template composition was resolved.
-      const seedAppCode = compositionToReactCode(composition);
-      const templateSectionOrder = composition.sections.map((s) => s.type);
+      // Deterministic seed App.tsx — only built when a composition is registered.
+      // When AI is the primary designer (no composition), the seed is omitted and
+      // the AI structure becomes the source of truth.
+      const seedAppCode = composition ? compositionToReactCode(composition) : '';
+      const templateSectionOrder = composition ? composition.sections.map((s) => s.type) : [];
+      const pageRolesHint = composition?.pageRoles ?? [];
+      const sectionIdsHint = composition ? composition.sections.map((s) => s.id) : [];
       const templateGuidance = buildTemplateGuidance(selectedTemplate);
       const lockedWizardDesign = buildLockedWizardDesign({
         preset: resolvedPreset,
@@ -1046,9 +1052,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         launcherPolicy: {
           implementationModel: WIZARD_IMPLEMENTATION_MODEL,
           generationMode: "ai-tsx",
-          enforceTemplateComposition: true,
+          // AI is the primary designer; template composition is inspiration.
+          enforceTemplateComposition: false,
           enforceThemeCssOverride: true,
           deterministicFallbackAllowed: false,
+          aiPrimaryDesigner: true,
           resolvedTemplateSeedChars: seedAppCode.length,
         },
         identity: {
@@ -1111,7 +1119,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           styleDirective: resolvedPreset.styleDirective,
         },
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
-        // The Template card's section order — passed to the AI as a hard contract
+        // Template hints — passed to the AI as inspiration, NOT as a hard contract.
         template_selection: {
           template_id: selectedTemplate.id,
           template_label: selectedTemplate.label,
@@ -1119,8 +1127,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           industry: selectedTemplate.industry,
           traits: selectedTemplate.traits,
           section_order: templateSectionOrder,
-          section_ids: composition.sections.map((s) => s.id),
-          page_roles: composition.pageRoles,
+          section_ids: sectionIdsHint,
+          page_roles: pageRolesHint,
         },
         template_sections: templateSectionOrder,
         template_intents: compositionMeta?.intents,
@@ -1129,23 +1137,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const hardenedBlueprint = ensureWizardLaneAContract({
         blueprint,
         sectionOrder: templateSectionOrder,
-        pageRoles: composition.pageRoles,
+        pageRoles: pageRolesHint,
         preset: resolvedPreset,
       });
 
-      const hasTemplateContract =
-        Array.isArray(hardenedBlueprint.template_selection?.section_order) &&
-        hardenedBlueprint.template_selection.section_order.length > 0;
+      // Only the style/theme contract is hard. Section order is inspiration —
+      // the AI is now the structural authority.
       const hasStyleContract =
         Boolean(hardenedBlueprint.style_selection?.preset_id) &&
         Boolean(hardenedBlueprint.theme_tokens?.presetId);
 
-      if (!hasTemplateContract || !hasStyleContract) {
-        toast.error('Wizard launcher contract is incomplete. Please restart launch.');
-        console.error('[SystemLauncher] Lane A contract integrity check failed', {
-          hasTemplateContract,
-          hasStyleContract,
-          templateSelection: hardenedBlueprint.template_selection,
+      if (!hasStyleContract) {
+        toast.error('Wizard launcher style contract is incomplete. Please restart launch.');
+        console.error('[SystemLauncher] Lane A style contract integrity check failed', {
           styleSelection: hardenedBlueprint.style_selection,
           themeTokens: hardenedBlueprint.theme_tokens,
         });
@@ -1163,7 +1167,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         resolvedIndustry,
         primaryGoal: primaryGoal || 'collect_leads',
         templateLabel: selectedTemplate?.label || system.name,
-        sectionOrder: composition.sections.map((s) => s.type),
+        sectionOrder: templateSectionOrder,
         businessName: brand,
         visualStyleLabel: resolvedPreset.label,
         visualStyleDirective: resolvedPreset.styleDirective,
@@ -1189,7 +1193,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       console.info('[WizardLaunch] Implementation model', {
         policy: WIZARD_IMPLEMENTATION_MODEL,
-        sectionCount: composition.sections.length,
+        sectionCount: composition?.sections.length ?? 0,
         hasCustomInstructions: customPrompt.trim().length > 0,
       });
 

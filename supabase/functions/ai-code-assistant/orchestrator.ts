@@ -299,6 +299,7 @@ async function runWizardLane(
   console.log('[orchestrator] LANE A: wizard fast path');
 
   const hasGeminiKey = Boolean(getGeminiApiKey());
+  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
   const { messages, systemsBuildContext, templateName, source, imagePlacement, siteElementsLibraryContext } = parsed;
   const {
     context: hardenedContext,
@@ -351,7 +352,7 @@ async function runWizardLane(
   ];
 
   // Provider plan — protected, no user overrides
-  const providerPlan = buildProviderPlan(task, hasGeminiKey);
+  const providerPlan = buildProviderPlan(task, hasLovableKey);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
@@ -418,6 +419,7 @@ async function runLaunchDeskLane(
   console.log('[orchestrator] LANE C: launch_desk');
 
   const hasGeminiKey = Boolean(getGeminiApiKey());
+  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
   const { messages, launchBrief } = parsed;
 
   const systemPrompt = buildLaunchDeskSystemPrompt();
@@ -437,7 +439,7 @@ async function runLaunchDeskLane(
     { role: 'user', content: userContent },
   ];
 
-  const providerPlan = buildProviderPlan(task, hasGeminiKey);
+  const providerPlan = buildProviderPlan(task, hasLovableKey);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,

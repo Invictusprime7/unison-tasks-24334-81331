@@ -983,7 +983,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // Explicit user selection > industry mapping. Never falls through.
       const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
       const themedTokens = themePresetToThemeTokens(resolvedPreset);
-      composition = { ...composition, theme: themedTokens };
+      if (composition) {
+        composition = { ...composition, theme: themedTokens };
+      }
 
       const themeTrace = {
         resolvedPresetId: resolvedPreset.id,

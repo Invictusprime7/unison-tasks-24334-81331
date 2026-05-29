@@ -54,6 +54,8 @@ import {
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
+import { getDefaultVariantId, getVariantById } from "@/sections/variants";
+import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
@@ -901,6 +903,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemType: installSystemType,
         businessName: businessName.trim(),
         templateName: selectedTemplate?.label || system.name,
+        // Authoritative IDs so install-system can reconstruct exactly which
+        // template + style + industry were chosen (audit gap fix).
+        templateId: selectedTemplate?.id,
+        themeId: selectedTheme?.id,
+        industry: generationCategory,
         templateCategory: generationCategory,
         designPreset: selectedTheme?.id || undefined,
       };
@@ -1027,6 +1034,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             return sec;
           }),
         };
+        // Stamp default section variantIds so the variant-aware pipeline
+        // (PageRenderer/compositionToReactCode) carries real variant identity
+        // from the wizard through to the AI prompt and post-launch VARIANT_REGISTRY
+        // overrides. Prior to this, compositions had no variantId and every
+        // industry collapsed to the default visual layout.
+        composition = {
+          ...composition,
+          sections: composition.sections.map((sec) => {
+            if (sec.variantId) return sec;
+            const defId = getDefaultVariantId(sec.type);
+            return defId ? ({ ...sec, variantId: defId } as typeof sec) : sec;
+          }),
+        };
       }
 
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
@@ -1034,11 +1054,26 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // Deterministic seed App.tsx — only built when a composition is registered.
       // When AI is the primary designer (no composition), the seed is omitted and
-      // the AI structure becomes the source of truth.
+      // the AI structure becomes the source of truth. The seed is variant-aware:
+      // section.variantId stamped above is honored by compositionToReactCode.
       const seedAppCode = composition ? compositionToReactCode(composition) : '';
       const templateSectionOrder = composition ? composition.sections.map((s) => s.type) : [];
       const pageRolesHint = composition?.pageRoles ?? [];
       const sectionIdsHint = composition ? composition.sections.map((s) => s.id) : [];
+      // Per-section detail surfaced to the AI: section identity + chosen
+      // variant + variant description. Closes the variant-disconnect gap.
+      const sectionsDetail = composition
+        ? composition.sections.map((s) => {
+            const v = s.variantId ? getVariantById(s.variantId as any) : undefined;
+            return {
+              id: s.id,
+              type: s.type,
+              variant_id: s.variantId || null,
+              variant_name: v?.name || null,
+              variant_description: v?.description || null,
+            };
+          })
+        : [];
       const templateGuidance = buildTemplateGuidance(selectedTemplate);
       const lockedWizardDesign = buildLockedWizardDesign({
         preset: resolvedPreset,
@@ -1129,6 +1164,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           section_order: templateSectionOrder,
           section_ids: sectionIdsHint,
           page_roles: pageRolesHint,
+          // Per-section identity + chosen variant (default-stamped). Lets the
+          // AI know which visual variant each section should mirror, restoring
+          // the variant signal that was previously lost between the wizard
+          // and the edge-function prompt.
+          sections_detail: sectionsDetail,
+          // Trimmed structural seed from the registered composition. Acts as a
+          // reference layout the AI can refine, instead of free-designing
+          // from a bare section-name list.
+          seed_code_excerpt: seedAppCode ? seedAppCode.slice(0, 6000) : '',
         },
         template_sections: templateSectionOrder,
         template_intents: compositionMeta?.intents,
@@ -1197,6 +1241,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         hasCustomInstructions: customPrompt.trim().length > 0,
       });
 
+      // Build the Site Elements Library context (industry-scoped). Previously
+      // only AIBuilderPanel surfaced this — the wizard path never sent it, so
+      // the AI generated structure from scratch without any element library
+      // grounding. Closes the wizard→edge function library gap.
+      let siteElementsLibraryContext = '';
+      try {
+        siteElementsLibraryContext = generateLibraryPrompt({
+          systemType: selectedSystem,
+          maxElements: 14,
+        });
+      } catch (e) {
+        console.warn('[SystemLauncher] generateLibraryPrompt failed; continuing without library context', e);
+      }
+
       // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
       let generationResult: {
         structured: LauncherPayload;
@@ -1241,6 +1299,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               source: resolvedIndustry,
               systemType: selectedSystem,
               systemsBuildContext: hardenedBlueprint,
+              siteElementsLibraryContext: siteElementsLibraryContext || undefined,
             },
           }),
           WIZARD_AI_TIMEOUT_MS,

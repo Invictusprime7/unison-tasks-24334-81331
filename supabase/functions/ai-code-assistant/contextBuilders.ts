@@ -299,6 +299,14 @@ type FastPathBuildContext = {
     section_order?: string[];
     section_ids?: string[];
     page_roles?: string[];
+    sections_detail?: Array<{
+      id: string;
+      type: string;
+      variant_id?: string | null;
+      variant_name?: string | null;
+      variant_description?: string | null;
+    }>;
+    seed_code_excerpt?: string;
   };
   /**
    * Fully-resolved HSL token set from the wizard's Style card. When present,
@@ -390,6 +398,8 @@ ${templateSelection.traits?.length ? `Template traits: ${templateSelection.trait
 SECTION ORDER: ${sections.join(' → ')}
 ${templateSelection.section_ids?.length ? `Section instance IDs: ${templateSelection.section_ids.join(' → ')}` : ''}
 ${templateSelection.page_roles?.length ? `Template page roles available: ${templateSelection.page_roles.join(', ')}` : ''}
+${templateSelection.sections_detail?.length ? `\nPER-SECTION LAYOUT VARIANTS — mirror the variant style for each section:\n${templateSelection.sections_detail.map((s) => `  • ${s.type} [${s.id}]${s.variant_id ? ` → variant "${s.variant_name || s.variant_id}"${s.variant_description ? ` — ${s.variant_description}` : ''}` : ''}`).join('\n')}` : ''}
+${templateSelection.seed_code_excerpt ? `\nSTRUCTURAL REFERENCE — registered composition for this template (refine, do NOT copy verbatim; preserve section order, intent wiring, and variant layout style; adapt copy to the business; rewrite all visuals with the brand tokens below):\n\`\`\`tsx\n${templateSelection.seed_code_excerpt}\n\`\`\`\n` : ''}
 INTENTS TO WIRE: ${intents}
 
 VISUAL STYLE — LOCKED to the wizard's "${styleLabel}" preset (${themeMode} theme).

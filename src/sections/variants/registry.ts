@@ -342,6 +342,30 @@ export const getDefaultVariant = (sectionType: SectionType): SectionVariant | un
   return variants?.find(v => v.isDefault) || variants?.[0];
 };
 
+/**
+ * Stamps each section in a composition with the default variantId for its
+ * section type (if variants exist and no variantId is already present).
+ *
+ * This bridges the wizard pipeline (which historically had no variant
+ * picker) to the variant-aware `compositionToReactCode` / PageRenderer so
+ * that template variants reach the AI generation prompt and the final VFS
+ * output instead of being a post-launch-only WebBuilder feature.
+ *
+ * Pure — returns a new composition; does not mutate the input.
+ */
+/**
+ * Returns the default variantId for a section type (cast to the matching
+ * narrow VariantId template-literal type), or undefined if none exists.
+ * Used by the wizard pipeline to stamp variant identity onto template
+ * compositions that don't carry one of their own.
+ */
+export const getDefaultVariantId = <T extends SectionType>(
+  sectionType: T,
+): (`${T}:${string}`) | undefined => {
+  const def = getDefaultVariant(sectionType);
+  return def ? (def.id as `${T}:${string}`) : undefined;
+};
+
 /** Check if a section type has variants available */
 export const hasVariants = (sectionType: SectionType): boolean => {
   const variants = VARIANT_REGISTRY[sectionType];

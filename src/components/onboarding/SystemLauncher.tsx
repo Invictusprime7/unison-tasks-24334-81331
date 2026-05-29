@@ -54,7 +54,7 @@ import {
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
-import { stampDefaultVariants, getVariantById } from "@/sections/variants";
+import { getDefaultVariantId, getVariantById } from "@/sections/variants";
 import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
@@ -1039,7 +1039,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         // from the wizard through to the AI prompt and post-launch VARIANT_REGISTRY
         // overrides. Prior to this, compositions had no variantId and every
         // industry collapsed to the default visual layout.
-        composition = stampDefaultVariants(composition);
+        composition = {
+          ...composition,
+          sections: composition.sections.map((sec) => {
+            if (sec.variantId) return sec;
+            const defId = getDefaultVariantId(sec.type);
+            return defId ? ({ ...sec, variantId: defId } as typeof sec) : sec;
+          }),
+        };
       }
 
       // Themed CSS — LOCKED by Style card; force-applied over any AI output

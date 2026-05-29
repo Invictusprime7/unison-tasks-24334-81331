@@ -353,16 +353,17 @@ export const getDefaultVariant = (sectionType: SectionType): SectionVariant | un
  *
  * Pure — returns a new composition; does not mutate the input.
  */
-export const stampDefaultVariants = <T extends { sections: ReadonlyArray<{ id: string; type: SectionType; variantId?: VariantId }> }>(
-  composition: T,
-): T => {
-  const sections = composition.sections.map((s) => {
-    if (s.variantId) return s;
-    const def = getDefaultVariant(s.type);
-    if (!def) return s;
-    return { ...s, variantId: def.id as VariantId };
-  });
-  return { ...composition, sections } as T;
+/**
+ * Returns the default variantId for a section type (cast to the matching
+ * narrow VariantId template-literal type), or undefined if none exists.
+ * Used by the wizard pipeline to stamp variant identity onto template
+ * compositions that don't carry one of their own.
+ */
+export const getDefaultVariantId = <T extends SectionType>(
+  sectionType: T,
+): (`${T}:${string}`) | undefined => {
+  const def = getDefaultVariant(sectionType);
+  return def ? (def.id as `${T}:${string}`) : undefined;
 };
 
 /** Check if a section type has variants available */

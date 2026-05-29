@@ -12,8 +12,8 @@ import React, { useEffect } from 'react';
 import type { TemplateComposition, SectionEntry, SectionType } from './types';
 import { getSectionComponent } from './registry';
 import { themeToCSS, hsl } from './themeUtils';
-import { resolveVariantComponent } from './variants';
-import type { ActiveVariantMap } from './variants';
+import { resolveVariantComponent, getVariantById } from './variants';
+import type { ActiveVariantMap, ExtractedSectionContent } from './variants';
 import { resolveThemeTokens } from './themes';
 
 interface PageRendererProps {

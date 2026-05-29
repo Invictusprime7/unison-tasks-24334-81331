@@ -1818,13 +1818,72 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                 initialPlan: plan,
                 vfsFiles,
                 registry,
-                regenerate: async () => null, // no auto-retry from this seam yet
+                regenerate: async (ctx) => {
+                  // Auto-repair: re-invoke the assistant focused on the
+                  // failing file(s) with the dry-run errors as guidance.
+                  try {
+                    const prev = ctx.previousPlan;
+                    if (!prev || !prev.edits.length) return null;
+                    // Pick the first edited file that the validator complained about,
+                    // or fall back to the first edit.
+                    const errorBlob = (ctx.errors || []).join('\n');
+                    const flagged = prev.edits.find((e) =>
+                      e.kind !== 'delete' && errorBlob.includes(e.path),
+                    ) ?? prev.edits[0];
+                    if (flagged.kind === 'delete') return null;
+                    const brokenPath = flagged.path;
+                    const brokenContent = flagged.content;
+                    const repairPrompt =
+                      `The previous patch to \`${brokenPath}\` failed validation with these errors:\n` +
+                      `${errorBlob}\n\n` +
+                      `Rewrite ONLY \`${brokenPath}\` so it parses as valid TSX. ` +
+                      `Preserve the intent of the previous version, fix every unclosed/mismatched JSX tag, ` +
+                      `balance braces, and keep all existing imports/exports. Output the complete corrected file.`;
+                    const repairResp = await supabase.functions.invoke('ai-code-assistant', {
+                      body: {
+                        messages: [{ role: 'user', content: repairPrompt }],
+                        mode: 'code',
+                        currentCode: brokenContent,
+                        editMode: true,
+                        debugMode: true,
+                        surgicalEdit: true,
+                        targetFile: brokenPath,
+                        vfsFiles: { [brokenPath]: brokenContent },
+                        gatewayOptions: {
+                          selectedModelId: ctx.model,
+                          autoModelSelection: false,
+                        },
+                      },
+                    });
+                    if (repairResp.error || !repairResp.data) return null;
+                    const repairedFiles: Record<string, string> | undefined =
+                      repairResp.data.files && Object.keys(repairResp.data.files).length
+                        ? repairResp.data.files
+                        : (typeof repairResp.data.code === 'string'
+                            ? { [brokenPath]: repairResp.data.code }
+                            : undefined);
+                    if (!repairedFiles) return null;
+                    return aiResponseToPatchPlan(
+                      {
+                        files: repairedFiles,
+                        rationale: `Auto-repair attempt ${ctx.attempt} for ${brokenPath}`,
+                        intent: 'repair_error',
+                        debugMode: true,
+                      },
+                      { existingFiles: vfsFiles },
+                    );
+                  } catch (err) {
+                    console.warn('[AIBuilderPanel] repair regenerate failed', err);
+                    return null;
+                  }
+                },
                 applyFn: async () =>
                   liveVFSCommit.writeFiles(filesForApply, 'ai-builder', () => {
                     /* observation-only: real apply happens via diff modal → onApplyToVFS */
                   }),
                 scratchLabel: 'ai-builder-panel',
               });
+
               // Fire-and-forget telemetry.
               void logTransactionalAttempt({
                 businessId,

@@ -1064,7 +1064,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // variant + variant description. Closes the variant-disconnect gap.
       const sectionsDetail = composition
         ? composition.sections.map((s) => {
-            const v = s.variantId ? getVariantById(s.variantId) : undefined;
+            const v = s.variantId ? getVariantById(s.variantId as any) : undefined;
             return {
               id: s.id,
               type: s.type,

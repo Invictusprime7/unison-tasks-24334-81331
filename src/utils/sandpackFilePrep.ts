@@ -1266,57 +1266,92 @@ const PORTRAIT_IMAGES = [
 ];
 
 /**
- * Replace broken/fake Unsplash URLs and empty image sources with real contextual images.
- * Catches patterns like photo-1234567890 (sequential digits = fake), empty src, and placeholder.com.
+ * Replace broken/fake image URLs and empty image sources with real contextual
+ * images. Catches:
+ *   - Unsplash photo IDs that don't match the strict `<10digits>-<12hex>` shape
+ *     (the AI loves to hallucinate plausible-looking IDs that 404).
+ *   - source.unsplash.com (deprecated redirector, frequently dead).
+ *   - via.placeholder.com / placeholder.com / placehold.it.
+ *   - Hallucinated pexels / pixabay / freepik direct image links.
+ *   - Empty src / srcSet attributes and `background-image: url('')`.
+ *   - Avatar generators (randomuser / pravatar / ui-avatars).
+ *
+ * Operates on raw TSX/CSS source — safe to run after AI generation and before
+ * Sandpack mounts the VFS.
  */
 function repairBrokenImageUrls(code: string): string {
   let imgIndex = 0;
   const fallbackImages = CONTEXTUAL_IMAGES.default;
-
-  // Fix fake Unsplash URLs (sequential digits like photo-1234567890)
-  code = code.replace(
-    /https:\/\/images\.unsplash\.com\/photo-(\d{10,})\?[^"'\s)]+/g,
-    (match, photoId) => {
-      // Check if digits are sequential (fake) — e.g. 1234567890
-      const isSequential = /^0?1234/.test(photoId) || /^(\d)\1+$/.test(photoId);
-      if (isSequential) {
-        const replacement = fallbackImages[imgIndex % fallbackImages.length];
-        imgIndex++;
-        return replacement;
-      }
-      return match;
-    }
-  );
-
-  // Fix placeholder.com URLs
-  code = code.replace(
-    /https?:\/\/(?:via\.)?placeholder\.com\/[^"'\s)]+/g,
-    () => {
-      const replacement = fallbackImages[imgIndex % fallbackImages.length];
-      imgIndex++;
-      return replacement;
-    }
-  );
-
-  // Fix empty src attributes
-  code = code.replace(/src=["']\s*["']/g, () => {
-    const replacement = fallbackImages[imgIndex % fallbackImages.length];
+  const nextFallback = () => {
+    const u = fallbackImages[imgIndex % fallbackImages.length];
     imgIndex++;
-    return `src="${replacement}"`;
-  });
+    return u;
+  };
 
-  // Fix avatar/portrait placeholder URLs (small images in testimonials)
+  // Canonical Unsplash CDN format: photo-<10 digits>-<12 hex>.
+  // Anything else under images.unsplash.com is almost certainly hallucinated.
+  const UNSPLASH_OK = /^photo-\d{10}-[0-9a-f]{12}$/i;
+  code = code.replace(
+    /https:\/\/images\.unsplash\.com\/(photo-[A-Za-z0-9_-]+)(\?[^"'\s)`]*)?/g,
+    (match, slug) => (UNSPLASH_OK.test(slug) ? match : nextFallback()),
+  );
+
+  // Deprecated source.unsplash.com redirector — replace wholesale.
+  code = code.replace(
+    /https?:\/\/source\.unsplash\.com\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+
+  // placeholder.com / placehold.it variants.
+  code = code.replace(
+    /https?:\/\/(?:via\.)?placeholder\.com\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+  code = code.replace(
+    /https?:\/\/placehold\.(?:it|co)\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+
+  // Hallucinated pexels / pixabay / freepik direct asset URLs. Real Pexels CDN
+  // is `images.pexels.com/photos/<id>/...`; AI often emits the SEO page URL
+  // (`www.pexels.com/photo/...`) which 404s as an <img>.
+  code = code.replace(
+    /https?:\/\/(?:www\.)?pexels\.com\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+  code = code.replace(
+    /https?:\/\/(?:cdn\.)?pixabay\.com\/(?!photo\/[\d/]+\/[a-z0-9-]+_\d+\.(?:jpg|png|webp))[^"'\s)`]+/gi,
+    () => nextFallback(),
+  );
+  code = code.replace(
+    /https?:\/\/(?:img|images?)\.freepik\.com\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+
+  // Empty src / srcSet attributes.
+  code = code.replace(/src=["']\s*["']/g, () => `src="${nextFallback()}"`);
+  code = code.replace(/srcSet=["']\s*["']/g, () => `srcSet="${nextFallback()}"`);
+
+  // Empty CSS background-image declarations.
+  code = code.replace(
+    /background(?:-image)?\s*:\s*url\(\s*(["']?)\s*\1\s*\)/g,
+    () => `background-image: url('${nextFallback()}')`,
+  );
+
+  // Avatar generators in testimonial cards — these are reachable, but they
+  // serve placeholder grey blobs that look broken in marketing layouts.
   code = code.replace(
     /src=["'](https?:\/\/(?:randomuser|i\.pravatar|ui-avatars)[^"']*?)["']/g,
     () => {
       const replacement = PORTRAIT_IMAGES[imgIndex % PORTRAIT_IMAGES.length];
       imgIndex++;
       return `src="${replacement}"`;
-    }
+    },
   );
 
   return code;
 }
+
 
 /**
  * Parse an HSL CSS variable value like "222.2 84% 4.9%" and return the lightness as a number.

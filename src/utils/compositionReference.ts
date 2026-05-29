@@ -46,17 +46,19 @@ const INDUSTRY_FALLBACK: Record<string, string> = {
   'saas': 'agency',
 };
 
-export function getCompositionReactCode(category: LayoutCategory | string): string | null {
-  const industry = CATEGORY_TO_INDUSTRY[category];
+export function getCompositionReactCode(categoryOrTemplateId: LayoutCategory | string): string | null {
+  // Template-ID-first: respect the exact variant the wizard user picked.
+  const direct = getCompositionById(categoryOrTemplateId);
+  if (direct) return compositionToReactCode(direct);
+
+  const industry = CATEGORY_TO_INDUSTRY[categoryOrTemplateId];
   if (!industry) return null;
 
   const compositions = getCompositionsByIndustry(industry);
   if (compositions.length) {
-    // First composition is the premium/dark variant
     return compositionToReactCode(compositions[0]);
   }
 
-  // Fallback to nearest matching industry
   const fallbackIndustry = INDUSTRY_FALLBACK[industry];
   if (fallbackIndustry) {
     const fallbackCompositions = getCompositionsByIndustry(fallbackIndustry);

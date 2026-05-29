@@ -54,6 +54,8 @@ import {
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
+import { stampDefaultVariants, getVariantById } from "@/sections/variants";
+import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
@@ -901,6 +903,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemType: installSystemType,
         businessName: businessName.trim(),
         templateName: selectedTemplate?.label || system.name,
+        // Authoritative IDs so install-system can reconstruct exactly which
+        // template + style + industry were chosen (audit gap fix).
+        templateId: selectedTemplate?.id,
+        themeId: selectedTheme?.id,
+        industry: generationCategory,
         templateCategory: generationCategory,
         designPreset: selectedTheme?.id || undefined,
       };

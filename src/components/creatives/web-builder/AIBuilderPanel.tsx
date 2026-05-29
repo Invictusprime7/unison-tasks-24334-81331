@@ -1830,9 +1830,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
                     const flagged = prev.edits.find((e) =>
                       e.kind !== 'delete' && errorBlob.includes(e.path),
                     ) ?? prev.edits[0];
-                    if (flagged.kind === 'delete') return null;
+                    if (flagged.kind !== 'create' && flagged.kind !== 'replace') return null;
                     const brokenPath = flagged.path;
                     const brokenContent = flagged.content;
+
                     const repairPrompt =
                       `The previous patch to \`${brokenPath}\` failed validation with these errors:\n` +
                       `${errorBlob}\n\n` +

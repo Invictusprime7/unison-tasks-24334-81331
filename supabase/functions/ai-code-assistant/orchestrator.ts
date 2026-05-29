@@ -298,7 +298,6 @@ async function runWizardLane(
 ): Promise<Response> {
   console.log('[orchestrator] LANE A: wizard fast path');
 
-  const hasGeminiKey = Boolean(getGeminiApiKey());
   const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
   const { messages, systemsBuildContext, templateName, source, imagePlacement, siteElementsLibraryContext } = parsed;
   const {
@@ -418,7 +417,6 @@ async function runLaunchDeskLane(
 ): Promise<Response> {
   console.log('[orchestrator] LANE C: launch_desk');
 
-  const hasGeminiKey = Boolean(getGeminiApiKey());
   const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
   const { messages, launchBrief } = parsed;
 
@@ -485,7 +483,7 @@ async function runBuilderLane(
     'builder_generate'
   })`);
 
-  const hasGeminiKey = Boolean(getGeminiApiKey());
+  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
   const {
     messages, mode, savePattern = true, generateImage = false, imagePlacement,
     currentCode, editMode = false, debugMode: _debugMode = false,
@@ -726,7 +724,7 @@ async function runBuilderLane(
 
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────
   console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
-  const providerPlan = buildProviderPlan(task, hasGeminiKey, gatewayOptions, preprocessed.complexity.tier);
+  const providerPlan = buildProviderPlan(task, hasLovableKey, gatewayOptions, preprocessed.complexity.tier);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,

@@ -1034,6 +1034,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             return sec;
           }),
         };
+        // Stamp default section variantIds so the variant-aware pipeline
+        // (PageRenderer/compositionToReactCode) carries real variant identity
+        // from the wizard through to the AI prompt and post-launch VARIANT_REGISTRY
+        // overrides. Prior to this, compositions had no variantId and every
+        // industry collapsed to the default visual layout.
+        composition = stampDefaultVariants(composition);
       }
 
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
@@ -1041,11 +1047,26 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // Deterministic seed App.tsx — only built when a composition is registered.
       // When AI is the primary designer (no composition), the seed is omitted and
-      // the AI structure becomes the source of truth.
+      // the AI structure becomes the source of truth. The seed is variant-aware:
+      // section.variantId stamped above is honored by compositionToReactCode.
       const seedAppCode = composition ? compositionToReactCode(composition) : '';
       const templateSectionOrder = composition ? composition.sections.map((s) => s.type) : [];
       const pageRolesHint = composition?.pageRoles ?? [];
       const sectionIdsHint = composition ? composition.sections.map((s) => s.id) : [];
+      // Per-section detail surfaced to the AI: section identity + chosen
+      // variant + variant description. Closes the variant-disconnect gap.
+      const sectionsDetail = composition
+        ? composition.sections.map((s) => {
+            const v = s.variantId ? getVariantById(s.variantId) : undefined;
+            return {
+              id: s.id,
+              type: s.type,
+              variant_id: s.variantId || null,
+              variant_name: v?.name || null,
+              variant_description: v?.description || null,
+            };
+          })
+        : [];
       const templateGuidance = buildTemplateGuidance(selectedTemplate);
       const lockedWizardDesign = buildLockedWizardDesign({
         preset: resolvedPreset,

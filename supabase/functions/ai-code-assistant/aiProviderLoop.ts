@@ -120,7 +120,8 @@ export async function runProviderLoop(opts: {
   const reasoningEffort = opts.reasoningEffort ?? 'medium';
 
   const geminiApiKey = getGeminiApiKey();
-  if (!geminiApiKey) {
+  const lovableKeyAvailable = Boolean(Deno.env.get("LOVABLE_API_KEY"));
+  if (!geminiApiKey && !lovableKeyAvailable) {
     return {
       content: '',
       reasoning: '',
@@ -128,6 +129,7 @@ export async function runProviderLoop(opts: {
       earlyError: { status: 503, error: missingGeminiKeyMessage() },
     };
   }
+
 
   const isWizardLane = taskType === 'wizard_template_react';
   const totalBudgetMs = isWizardLane ? 145_000 : 145_000;
@@ -188,7 +190,7 @@ export async function runProviderLoop(opts: {
     .map(messageToGeminiContent)
     .filter((entry): entry is GeminiContent => Boolean(entry));
 
-  for (const model of orderedGeminiModels) {
+  for (const model of (geminiApiKey ? orderedGeminiModels : [])) {
     const maxAttempts = isWizardLane ? 2 : 1;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -282,18 +284,85 @@ export async function runProviderLoop(opts: {
     return { content, reasoning, modelUsed };
   }
 
+  // Fallback: Lovable AI Gateway (OpenAI-compatible) when direct Gemini fails (timeouts / 503s).
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  if (lovableKey && budgetRemaining() > 10_000) {
+    const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
+    const fallbackModels = gatewayModels.length > 0
+      ? gatewayModels
+      : ['google/gemini-2.5-flash', 'google/gemini-2.5-pro', 'openai/gpt-5-mini'];
+
+    const openAiMessages = aiMessages.map((m) => ({
+      role: m.role,
+      content: typeof m.content === 'string' ? m.content : coerceGeminiText(m.content),
+    }));
+
+    for (const modelId of fallbackModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) break;
+      const controller = new AbortController();
+      const timeoutMs = Math.min(60_000, Math.max(15_000, remaining - 2000));
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${lovableKey}`,
+          },
+          body: JSON.stringify({
+            model: modelId,
+            messages: openAiMessages,
+            ...(forceJsonResponse ? { response_format: { type: 'json_object' } } : {}),
+          }),
+          signal: controller.signal,
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(`Gateway ${modelId}`, `${resp.status} ${errText.substring(0, 200)}`);
+          if (resp.status === 429) {
+            deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
+          }
+          if (resp.status === 402) {
+            return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
+          }
+          continue;
+        }
+        const data = await resp.json();
+        const text = data?.choices?.[0]?.message?.content;
+        if (typeof text === 'string' && text.trim()) {
+          const extracted = extractThinkingTags(text);
+          if (extracted.reasoning) reasoning = extracted.reasoning;
+          content = extracted.content;
+          modelUsed = modelId;
+          break;
+        }
+        recordProviderError(`Gateway ${modelId}`, 'no content');
+      } catch (error) {
+        recordProviderError(`Gateway ${modelId}`, error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : 'unknown');
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (content) {
+      return { content, reasoning, modelUsed };
+    }
+  }
+
   if (deferredEarlyError && providerErrors.length === 1) {
     return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
   }
 
   const errorTrail = providerErrors.slice(-10).join(' | ') || 'no provider attempts completed';
-  const configuredProviders = [geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
+  const configuredProviders = [geminiApiKey ? 'gemini-direct' : '', lovableKey ? 'lovable-gateway' : ''].filter(Boolean);
   const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
   const guidance = configuredProviders.length === 0
     ? missingGeminiKeyMessage()
     : hasTimeoutError
-      ? 'Gemini timed out. This is typically prompt size, latency, or network pressure.'
-      : 'Gemini failed to produce a response. Check key validity and edge-function network latency.';
+      ? 'All AI providers timed out. Likely upstream model overload — retry shortly.'
+      : 'AI providers failed to produce a response. Check key validity and edge-function network latency.';
+
 
   throw new Error(
     `All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. ${guidance}`,

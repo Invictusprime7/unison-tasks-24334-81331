@@ -1032,10 +1032,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);
 
-      // Deterministic seed App.tsx — never sent as currentCode, but measured so
-      // launcher diagnostics prove the picked template composition was resolved.
-      const seedAppCode = compositionToReactCode(composition);
-      const templateSectionOrder = composition.sections.map((s) => s.type);
+      // Deterministic seed App.tsx — only built when a composition is registered.
+      // When AI is the primary designer (no composition), the seed is omitted and
+      // the AI structure becomes the source of truth.
+      const seedAppCode = composition ? compositionToReactCode(composition) : '';
+      const templateSectionOrder = composition ? composition.sections.map((s) => s.type) : [];
+      const pageRolesHint = composition?.pageRoles ?? [];
+      const sectionIdsHint = composition ? composition.sections.map((s) => s.id) : [];
       const templateGuidance = buildTemplateGuidance(selectedTemplate);
       const lockedWizardDesign = buildLockedWizardDesign({
         preset: resolvedPreset,
@@ -1049,9 +1052,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         launcherPolicy: {
           implementationModel: WIZARD_IMPLEMENTATION_MODEL,
           generationMode: "ai-tsx",
-          enforceTemplateComposition: true,
+          // AI is the primary designer; template composition is inspiration.
+          enforceTemplateComposition: false,
           enforceThemeCssOverride: true,
           deterministicFallbackAllowed: false,
+          aiPrimaryDesigner: true,
           resolvedTemplateSeedChars: seedAppCode.length,
         },
         identity: {

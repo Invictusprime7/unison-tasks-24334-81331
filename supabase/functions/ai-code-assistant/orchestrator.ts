@@ -299,7 +299,7 @@ async function runWizardLane(
   console.log('[orchestrator] LANE A: wizard fast path');
 
   const hasGeminiKey = Boolean(getGeminiApiKey());
-  const { messages, systemsBuildContext, templateName, source, imagePlacement } = parsed;
+  const { messages, systemsBuildContext, templateName, source, imagePlacement, siteElementsLibraryContext } = parsed;
   const {
     context: hardenedContext,
     hasExplicitTemplateContract,
@@ -329,11 +329,20 @@ async function runWizardLane(
   }
 
   // Fast path system prompt — no research, no memory, no patterns
-  const finalSystemPrompt = buildFastPathSystemPrompt({
+  const baseSystemPrompt = buildFastPathSystemPrompt({
     systemsBuildContext: hardenedContext ?? {},
     templateName: templateName ?? undefined,
     source: source ?? undefined,
   });
+
+  // Inject the Site Elements Library knowledge base. Previously only the
+  // Builder lane consumed this — wizard launches generated structure
+  // without any element-library grounding, which made every industry
+  // collapse to the same generic layout. (Audit gap fix.)
+  const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, false);
+  const finalSystemPrompt = elementsLibraryBlock
+    ? `${baseSystemPrompt}\n${elementsLibraryBlock}`
+    : baseSystemPrompt;
 
   const processedMessages = compactMessages(messages);
   const aiMessages = [

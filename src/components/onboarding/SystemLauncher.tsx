@@ -1119,7 +1119,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           styleDirective: resolvedPreset.styleDirective,
         },
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
-        // The Template card's section order — passed to the AI as a hard contract
+        // Template hints — passed to the AI as inspiration, NOT as a hard contract.
         template_selection: {
           template_id: selectedTemplate.id,
           template_label: selectedTemplate.label,
@@ -1127,8 +1127,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           industry: selectedTemplate.industry,
           traits: selectedTemplate.traits,
           section_order: templateSectionOrder,
-          section_ids: composition.sections.map((s) => s.id),
-          page_roles: composition.pageRoles,
+          section_ids: sectionIdsHint,
+          page_roles: pageRolesHint,
         },
         template_sections: templateSectionOrder,
         template_intents: compositionMeta?.intents,
@@ -1137,23 +1137,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const hardenedBlueprint = ensureWizardLaneAContract({
         blueprint,
         sectionOrder: templateSectionOrder,
-        pageRoles: composition.pageRoles,
+        pageRoles: pageRolesHint,
         preset: resolvedPreset,
       });
 
-      const hasTemplateContract =
-        Array.isArray(hardenedBlueprint.template_selection?.section_order) &&
-        hardenedBlueprint.template_selection.section_order.length > 0;
+      // Only the style/theme contract is hard. Section order is inspiration —
+      // the AI is now the structural authority.
       const hasStyleContract =
         Boolean(hardenedBlueprint.style_selection?.preset_id) &&
         Boolean(hardenedBlueprint.theme_tokens?.presetId);
 
-      if (!hasTemplateContract || !hasStyleContract) {
-        toast.error('Wizard launcher contract is incomplete. Please restart launch.');
-        console.error('[SystemLauncher] Lane A contract integrity check failed', {
-          hasTemplateContract,
-          hasStyleContract,
-          templateSelection: hardenedBlueprint.template_selection,
+      if (!hasStyleContract) {
+        toast.error('Wizard launcher style contract is incomplete. Please restart launch.');
+        console.error('[SystemLauncher] Lane A style contract integrity check failed', {
           styleSelection: hardenedBlueprint.style_selection,
           themeTokens: hardenedBlueprint.theme_tokens,
         });

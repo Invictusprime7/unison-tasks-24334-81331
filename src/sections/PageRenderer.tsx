@@ -426,6 +426,12 @@ function FAQ({ props }) {
 const SECTION_MAP = { navbar: Navbar, hero: Hero, services: Services, features: Services, testimonials: Testimonials, cta: CTA, contact: Contact, footer: Footer, stats: Stats, team: Team, faq: FAQ, pricing: Services, about: Hero, gallery: Services, 'logo-cloud': Stats, 'blog-preview': Services, 'before-after': Services };
 
 // ============================================================================
+// Variant Overrides (per-section, by id)
+// ============================================================================
+${variantInlineBlock}
+${variantOverrideMap}
+
+// ============================================================================
 // App
 // ============================================================================
 export default function App() {
@@ -448,7 +454,7 @@ export default function App() {
   return (
     <div>
       {SECTIONS.filter(s => !s.hidden).map(s => {
-        const C = SECTION_MAP[s.type];
+        const C = VARIANT_OVERRIDES[s.id] || SECTION_MAP[s.type];
         if (!C) return null;
         return <C key={s.id} props={s.props} />;
       })}

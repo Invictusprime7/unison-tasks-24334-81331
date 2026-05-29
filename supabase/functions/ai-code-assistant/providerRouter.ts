@@ -118,10 +118,11 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlashLite, 24000),
-          m(MODELS.geminiFlash, 20000),
-          m(MODELS.geminiPro, 20000),
+          m(MODELS.geminiFlash, 24000),
+          m(MODELS.openaiMini, 24000),
+          m(MODELS.geminiPro, 24000),
         ],
-        perModelTimeoutMs: 42000,
+        perModelTimeoutMs: 55000,
         fallbackMaxTokens: 24000,
       };
       break;
@@ -132,6 +133,7 @@ export function buildProviderPlan(
         gatewayModels: [
           m(MODELS.geminiFlashLite, 12000),
           m(MODELS.geminiFlash, 12000),
+          m(MODELS.openaiNano, 12000),
         ],
         perModelTimeoutMs: 30000,
         fallbackMaxTokens: 10000,
@@ -142,6 +144,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 24000),
+          m(MODELS.openaiMini, 24000),
         ],
         perModelTimeoutMs: 40000,
         fallbackMaxTokens: 24000,
@@ -153,6 +156,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -164,6 +168,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -177,6 +182,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,

@@ -1193,7 +1193,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       console.info('[WizardLaunch] Implementation model', {
         policy: WIZARD_IMPLEMENTATION_MODEL,
-        sectionCount: composition.sections.length,
+        sectionCount: composition?.sections.length ?? 0,
         hasCustomInstructions: customPrompt.trim().length > 0,
       });
 

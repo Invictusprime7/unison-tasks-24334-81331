@@ -4121,7 +4121,26 @@ export function processCode(code: string, filePath: string): string {
     'Rocket','Sparkles','Wand','Bot','Brain','Lightbulb','Flame','Crown',
     'Gem','HandHeart','Headphones','Languages','Laugh','PaintBucket','Palette',
     'Puzzle','Receipt','Scale','ScrollText','Shrub','Wrench',
+    // Nature / eco / lifestyle
+    'Leaf','Trees','TreePine','TreeDeciduous','Sprout','Flower','Flower2','Mountain',
+    'MountainSnow','Snowflake','Droplet','Droplets','Waves','Sunflower','Apple',
+    'Carrot','Cherry','Citrus','Egg','Fish','Beef','Wheat','Salad','Soup','Utensils',
+    'UtensilsCrossed','ChefHat','CookingPot','Pizza','Coffee','Wine','Beer','GlassWater',
+    // Commerce / business extras
+    'Store','Building','Building2','Factory','Warehouse','Landmark','Banknote','Wallet',
+    'HandCoins','PiggyBank','Coins','DollarSign','Euro','BadgeCheck','BadgePercent',
+    'Percent','Tags','Ticket','Gift',
+    // Communication / social extras
+    'AtSign','MessagesSquare','Linkedin','Twitch','Slack','Discord','Dribbble','Figma',
+    // UI extras
+    'ArrowUpRight','ArrowDownRight','ArrowUpLeft','ArrowDownLeft','ChevronsRight',
+    'ChevronsLeft','ChevronsUp','ChevronsDown','CornerUpRight','CornerDownRight',
+    'Plus','Minus','Divide','Equal','Hash','Asterisk','Dot','Ellipsis','Quote',
+    'Pin','PinOff','Bookmark','BookmarkPlus','Book','BookOpen','GraduationCap',
+    'Backpack','Brush','Scissors','Ruler','Calculator','ClipboardCheck','ClipboardList',
+    'FileCheck','FilePlus','FileSearch','FolderOpen','FolderPlus','FolderSearch',
   ]);
+
 
   // Find all PascalCase identifiers used in the body (outside imports/declarations)
   const bodyWithoutDecls = code.replace(/^(?:import\s+.*|const\s+\w+\s*=).*$/gm, '');

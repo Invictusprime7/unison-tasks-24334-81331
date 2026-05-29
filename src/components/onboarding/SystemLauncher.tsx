@@ -964,18 +964,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
       }
 
-      // ── Resolve composition from selected Template card only ──
-      // Template selection is a hard structural contract for AI generation.
+      // ── Resolve composition (OPTIONAL inspiration) from selected Template card ──
+      // Template selection provides creative inspiration; AI is the primary
+      // designer. A missing registered composition is NOT a hard failure —
+      // the AI generates structure from the wizard inputs directly.
       if (!selectedTemplate?.id) {
         toast.error("Please select a template before launching.");
         return;
       }
       let composition = getCompositionById(selectedTemplate.id);
       if (!composition) {
-        toast.error(
-          `Selected template "${selectedTemplate.label}" has no registered composition. Please choose another template.`,
+        console.info(
+          `[SystemLauncher] No registered composition for "${selectedTemplate.label}" — AI will design structure from wizard inputs.`,
         );
-        return;
       }
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) ──

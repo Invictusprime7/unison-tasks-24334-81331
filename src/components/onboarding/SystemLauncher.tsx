@@ -1007,28 +1007,27 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         })
         .filter((s): s is { platform: string; url: string } => !!s);
 
-      composition = {
-        ...composition,
-        sections: composition.sections.map((sec) => {
-          if (sec.type === 'navbar') {
-            return { ...sec, props: { ...(sec.props as any), brand } } as typeof sec;
-          }
-          if (sec.type === 'footer') {
-            const existing = ((sec.props as any).socials || []) as { platform: string; url: string }[];
-            // Prefer user-supplied URLs; fall back to template's existing entries
-            // for any platforms the user did not fill in. If the user supplied
-            // any socials at all, they become the canonical list.
-            const merged = userSocials.length > 0
-              ? userSocials
-              : existing.filter((s) => s && s.url && s.url !== '#');
-            return {
-              ...sec,
-              props: { ...(sec.props as any), brand, socials: merged },
-            } as typeof sec;
-          }
-          return sec;
-        }),
-      };
+      if (composition) {
+        composition = {
+          ...composition,
+          sections: composition.sections.map((sec) => {
+            if (sec.type === 'navbar') {
+              return { ...sec, props: { ...(sec.props as any), brand } } as typeof sec;
+            }
+            if (sec.type === 'footer') {
+              const existing = ((sec.props as any).socials || []) as { platform: string; url: string }[];
+              const merged = userSocials.length > 0
+                ? userSocials
+                : existing.filter((s) => s && s.url && s.url !== '#');
+              return {
+                ...sec,
+                props: { ...(sec.props as any), brand, socials: merged },
+              } as typeof sec;
+            }
+            return sec;
+          }),
+        };
+      }
 
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);

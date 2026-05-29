@@ -190,7 +190,165 @@ export async function runProviderLoop(opts: {
     .map(messageToGeminiContent)
     .filter((entry): entry is GeminiContent => Boolean(entry));
 
+  // ── Primary path: Lovable AI Gateway (OpenAI-compatible) ──────────────
+  // Faster + has built-in failover. Direct Gemini is used only as fallback.
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  if (lovableKey) {
+    const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
+    const primaryModels = gatewayModels.length > 0
+      ? gatewayModels
+      : ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.5-pro'];
+
+    const openAiMessages = aiMessages.map((m) => ({
+      role: m.role,
+      content: typeof m.content === 'string' ? m.content : coerceGeminiText(m.content),
+    }));
+
+    for (const modelId of primaryModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) break;
+      const controller = new AbortController();
+      const phaseCap = isWizardLane ? 42_000 : (providerPlan.perModelTimeoutMs || 35_000);
+      const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${lovableKey}`,
+          },
+          body: JSON.stringify({
+            model: modelId,
+            messages: openAiMessages,
+            ...(forceJsonResponse ? { response_format: { type: 'json_object' } } : {}),
+          }),
+          signal: controller.signal,
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(`Gateway ${modelId}`, `${resp.status} ${errText.substring(0, 200)}`);
+          if (resp.status === 429) {
+            deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
+          }
+          if (resp.status === 402) {
+            return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
+          }
+          continue;
+        }
+        const data = await resp.json();
+        const text = data?.choices?.[0]?.message?.content;
+        if (typeof text === 'string' && text.trim()) {
+          const extracted = extractThinkingTags(text);
+          if (extracted.reasoning) reasoning = extracted.reasoning;
+          content = extracted.content;
+          modelUsed = modelId;
+          break;
+        }
+        recordProviderError(`Gateway ${modelId}`, 'no content');
+      } catch (error) {
+        recordProviderError(`Gateway ${modelId}`, error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : 'unknown');
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (content) {
+      return { content, reasoning, modelUsed };
+    }
+  }
+
+  // ── Fallback: direct Gemini API ────────────────────────────────────────
   for (const model of (geminiApiKey ? orderedGeminiModels : [])) {
+    const maxAttempts = 1;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) {
+        recordProviderError(model.label, 'budget exhausted');
+        break;
+      }
+
+      const phaseCapMs = Math.min(25_000, providerPlan.perModelTimeoutMs || 25_000);
+      const perModelMs = Math.min(phaseCapMs, Math.max(8000, remaining - 2000));
+      const attemptLabel = model.label;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+
+      try {
+        const geminiBody: Record<string, unknown> = {
+          contents: conversationContents.length > 0
+            ? conversationContents
+            : [{ role: 'user', parts: [{ text: 'Generate the requested output.' }] }],
+          generationConfig: {
+            maxOutputTokens: Math.min(model.maxTokens, isWizardLane ? wizardMaxOutputTokens : 32_768),
+            ...(reasoningEffort === 'none' ? { temperature: 0.2 } : {}),
+            ...(reasoningEffort === 'high' ? { temperature: 0.7 } : {}),
+            ...(forceJsonResponse ? { responseMimeType: 'application/json' } : {}),
+          },
+        };
+
+        if (systemInstructionText) {
+          geminiBody.systemInstruction = { parts: [{ text: systemInstructionText }] };
+        }
+
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}:generateContent?key=${encodeURIComponent(geminiApiKey!)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(geminiBody),
+            signal: controller.signal,
+          },
+        );
+
+        if (resp.status === 429) {
+          const errText = await resp.text().catch(() => '');
+          deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
+          recordProviderError(attemptLabel, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+          continue;
+        }
+
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(attemptLabel, `${resp.status} ${errText.substring(0, 200)}`);
+          if (isRetryableGeminiStatus(resp.status)) continue;
+          break;
+        }
+
+        const data = await resp.json();
+        const parsedContent = extractGeminiText(data);
+
+        if (!parsedContent) {
+          const blockReason = data?.promptFeedback?.blockReason;
+          recordProviderError(attemptLabel, blockReason ? `blocked (${blockReason})` : 'no content');
+          continue;
+        }
+
+        const extracted = extractThinkingTags(parsedContent);
+        if (extracted.reasoning) reasoning = extracted.reasoning;
+        content = extracted.content;
+        modelUsed = `google/${model.id}`;
+        break;
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          recordProviderError(attemptLabel, 'timeout');
+          continue;
+        }
+        recordProviderError(attemptLabel, error instanceof Error ? error.message : 'unknown');
+        continue;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (content) break;
+  }
+
+  if (content) {
+    return { content, reasoning, modelUsed };
+  }
+
     const maxAttempts = isWizardLane ? 2 : 1;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

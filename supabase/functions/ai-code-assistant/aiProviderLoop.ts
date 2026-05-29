@@ -132,7 +132,7 @@ export async function runProviderLoop(opts: {
 
 
   const isWizardLane = taskType === 'wizard_template_react';
-  const totalBudgetMs = isWizardLane ? 145_000 : 145_000;
+  const totalBudgetMs = isWizardLane ? 140_000 : 120_000;
   const wizardMaxOutputTokens = 24_000;
   const startedAt = Date.now();
   const budgetRemaining = () => totalBudgetMs - (Date.now() - startedAt);
@@ -208,10 +208,17 @@ export async function runProviderLoop(opts: {
       const remaining = budgetRemaining();
       if (remaining < 8000) break;
       const controller = new AbortController();
-      const phaseCap = isWizardLane ? 42_000 : (providerPlan.perModelTimeoutMs || 35_000);
+      // Wizard lane generates a full single-page composition (all template
+      // sections inlined into /src/App.tsx). That output regularly runs
+      // 8–18k tokens, so give it more wall-time AND ensure the gateway
+      // doesn't cap the response at its default ~4k tokens (which silently
+      // truncates the composition and triggers the deterministic fallback
+      // because canonical section markers are missing).
+      const phaseCap = isWizardLane ? 90_000 : (providerPlan.perModelTimeoutMs || 35_000);
       const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {
+        const maxCompletionTokens = isWizardLane ? wizardMaxOutputTokens : 16_000;
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -221,6 +228,7 @@ export async function runProviderLoop(opts: {
           body: JSON.stringify({
             model: modelId,
             messages: openAiMessages,
+            max_completion_tokens: maxCompletionTokens,
             ...(forceJsonResponse ? { response_format: { type: 'json_object' } } : {}),
           }),
           signal: controller.signal,
@@ -238,14 +246,18 @@ export async function runProviderLoop(opts: {
         }
         const data = await resp.json();
         const text = data?.choices?.[0]?.message?.content;
+        const finishReason = data?.choices?.[0]?.finish_reason;
         if (typeof text === 'string' && text.trim()) {
           const extracted = extractThinkingTags(text);
           if (extracted.reasoning) reasoning = extracted.reasoning;
           content = extracted.content;
           modelUsed = modelId;
+          if (finishReason && finishReason !== 'stop') {
+            console.warn(`[aiProviderLoop] gateway ${modelId} finish_reason=${finishReason} (output may be truncated)`);
+          }
           break;
         }
-        recordProviderError(`Gateway ${modelId}`, 'no content');
+        recordProviderError(`Gateway ${modelId}`, `no content (finish=${finishReason ?? 'unknown'})`);
       } catch (error) {
         recordProviderError(`Gateway ${modelId}`, error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : 'unknown');
       } finally {

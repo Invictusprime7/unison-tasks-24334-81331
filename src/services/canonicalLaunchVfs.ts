@@ -275,7 +275,14 @@ export function buildCanonicalLaunchArtifacts(
     input.siteBundleSnapshot,
   );
   const siteBundleSnapshot = input.siteBundleSnapshot
-    ? { ...input.siteBundleSnapshot, appContext }
+    ? {
+        ...input.siteBundleSnapshot,
+        vfsFiles: mergedFiles,
+        routerFile: mergedFiles['/src/App.tsx']
+          ? { path: '/src/App.tsx', content: mergedFiles['/src/App.tsx'] }
+          : input.siteBundleSnapshot.routerFile,
+        appContext,
+      }
     : undefined;
   const canonicalPlayground = buildCanonicalPlayground(siteBundleSnapshot, input.canonicalPlayground);
   const metadataFiles = Object.values(CANONICAL_METADATA_FILE_PATHS);

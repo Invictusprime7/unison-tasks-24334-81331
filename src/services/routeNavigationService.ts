@@ -106,7 +106,9 @@ export function resolveNavigationTarget(
 export function deriveFilePath(page: BuilderPage): string {
   if (page.filePath) return page.filePath;
 
-  if (page.isHome) return '/src/App.tsx';
+  // Home page body lives in /src/pages/Home.tsx — /src/App.tsx is reserved
+  // for the canonical HashRouter generated from PageRegistry.
+  if (page.isHome) return '/src/pages/Home.tsx';
 
   const slug = page.path.replace(/^\//, '') || 'custom';
   const componentName = slug

@@ -353,18 +353,16 @@ export const getDefaultVariant = (sectionType: SectionType): SectionVariant | un
  *
  * Pure — returns a new composition; does not mutate the input.
  */
-export const stampDefaultVariants = <T extends { sections: Array<{ id: string; type: SectionType; variantId?: VariantId } & Record<string, unknown>> }>(
+export const stampDefaultVariants = <T extends { sections: ReadonlyArray<{ id: string; type: SectionType; variantId?: VariantId }> }>(
   composition: T,
 ): T => {
-  return {
-    ...composition,
-    sections: composition.sections.map((s) => {
-      if (s.variantId) return s;
-      const def = getDefaultVariant(s.type);
-      if (!def) return s;
-      return { ...s, variantId: def.id };
-    }),
-  } as T;
+  const sections = composition.sections.map((s) => {
+    if (s.variantId) return s;
+    const def = getDefaultVariant(s.type);
+    if (!def) return s;
+    return { ...s, variantId: def.id as VariantId };
+  });
+  return { ...composition, sections } as T;
 };
 
 /** Check if a section type has variants available */

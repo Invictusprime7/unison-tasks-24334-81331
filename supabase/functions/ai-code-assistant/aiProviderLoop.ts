@@ -120,7 +120,8 @@ export async function runProviderLoop(opts: {
   const reasoningEffort = opts.reasoningEffort ?? 'medium';
 
   const geminiApiKey = getGeminiApiKey();
-  if (!geminiApiKey) {
+  const lovableKeyAvailable = Boolean(Deno.env.get("LOVABLE_API_KEY"));
+  if (!geminiApiKey && !lovableKeyAvailable) {
     return {
       content: '',
       reasoning: '',
@@ -128,6 +129,7 @@ export async function runProviderLoop(opts: {
       earlyError: { status: 503, error: missingGeminiKeyMessage() },
     };
   }
+
 
   const isWizardLane = taskType === 'wizard_template_react';
   const totalBudgetMs = isWizardLane ? 145_000 : 145_000;

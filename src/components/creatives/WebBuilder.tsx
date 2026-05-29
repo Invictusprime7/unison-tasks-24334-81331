@@ -2489,11 +2489,18 @@ export default function App() {
         const sectionInfo = templateCustomizer.sections.find(s => s.id === sectionId);
         if (!sectionInfo) continue;
         const tagName = sectionInfo.tagName || 'section';
-        const idx = sectionInfo.order ?? parseInt(sectionId.replace(/^\D+-/, ''), 10);
-        if (isNaN(idx)) continue;
+
+        // findSectionBounds counts occurrences of <tagName> only, but
+        // sectionInfo.order is the index across ALL section-like tags.
+        // Recompute the per-tag index from the customizer section list so
+        // the splice targets the correct DOM region.
+        const typeIndex = templateCustomizer.sections
+          .filter(s => (s.tagName || 'section') === tagName)
+          .findIndex(s => s.id === sectionId);
+        if (typeIndex < 0) continue;
 
         // Find section boundaries in the JSX source
-        const bounds = findSectionBounds(source, tagName, idx);
+        const bounds = findSectionBounds(source, tagName, typeIndex);
         if (!bounds) continue;
 
         // Extract content and render the new variant JSX

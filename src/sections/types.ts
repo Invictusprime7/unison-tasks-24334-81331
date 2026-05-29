@@ -76,6 +76,13 @@ export interface SectionEntry<T extends SectionType = SectionType> {
   className?: string;
   /** Whether this section is hidden */
   hidden?: boolean;
+  /**
+   * Optional variant id for this section instance (e.g. "hero:split-image").
+   * When set, the variant's renderJSX is baked into the generated VFS code
+   * and the variant React component is preferred at edit-time. String typed
+   * to avoid a circular import with src/sections/variants.
+   */
+  variantId?: string;
 }
 
 /** Navigation link */

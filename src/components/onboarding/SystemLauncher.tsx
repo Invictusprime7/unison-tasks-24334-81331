@@ -1241,6 +1241,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         hasCustomInstructions: customPrompt.trim().length > 0,
       });
 
+      // Build the Site Elements Library context (industry-scoped). Previously
+      // only AIBuilderPanel surfaced this — the wizard path never sent it, so
+      // the AI generated structure from scratch without any element library
+      // grounding. Closes the wizard→edge function library gap.
+      let siteElementsLibraryContext = '';
+      try {
+        siteElementsLibraryContext = generateLibraryPrompt({
+          systemType: selectedSystem,
+          maxElements: 14,
+        });
+      } catch (e) {
+        console.warn('[SystemLauncher] generateLibraryPrompt failed; continuing without library context', e);
+      }
+
       // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
       let generationResult: {
         structured: LauncherPayload;
@@ -1285,6 +1299,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               source: resolvedIndustry,
               systemType: selectedSystem,
               systemsBuildContext: hardenedBlueprint,
+              siteElementsLibraryContext: siteElementsLibraryContext || undefined,
             },
           }),
           WIZARD_AI_TIMEOUT_MS,

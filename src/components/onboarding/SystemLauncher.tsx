@@ -1167,7 +1167,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         resolvedIndustry,
         primaryGoal: primaryGoal || 'collect_leads',
         templateLabel: selectedTemplate?.label || system.name,
-        sectionOrder: composition.sections.map((s) => s.type),
+        sectionOrder: templateSectionOrder,
         businessName: brand,
         visualStyleLabel: resolvedPreset.label,
         visualStyleDirective: resolvedPreset.styleDirective,

@@ -46,17 +46,19 @@ const INDUSTRY_FALLBACK: Record<string, string> = {
   'saas': 'agency',
 };
 
-export function getCompositionReactCode(category: LayoutCategory | string): string | null {
-  const industry = CATEGORY_TO_INDUSTRY[category];
+export function getCompositionReactCode(categoryOrTemplateId: LayoutCategory | string): string | null {
+  // Template-ID-first: respect the exact variant the wizard user picked.
+  const direct = getCompositionById(categoryOrTemplateId);
+  if (direct) return compositionToReactCode(direct);
+
+  const industry = CATEGORY_TO_INDUSTRY[categoryOrTemplateId];
   if (!industry) return null;
 
   const compositions = getCompositionsByIndustry(industry);
   if (compositions.length) {
-    // First composition is the premium/dark variant
     return compositionToReactCode(compositions[0]);
   }
 
-  // Fallback to nearest matching industry
   const fallbackIndustry = INDUSTRY_FALLBACK[industry];
   if (fallbackIndustry) {
     const fallbackCompositions = getCompositionsByIndustry(fallbackIndustry);
@@ -73,8 +75,13 @@ export function getCompositionReactCode(category: LayoutCategory | string): stri
  * Used by systems-build to inject structured section/intent info instead of
  * parsing HTML with regex.
  */
-export function getCompositionMeta(category: LayoutCategory | string) {
-  const industry = CATEGORY_TO_INDUSTRY[category];
+export function getCompositionMeta(categoryOrTemplateId: LayoutCategory | string) {
+  // Template-ID-first resolution so each wizard variant exposes its own
+  // section order + intents instead of collapsing to the industry default.
+  const direct = getCompositionById(categoryOrTemplateId);
+  if (direct) return buildMetaFromComposition(direct);
+
+  const industry = CATEGORY_TO_INDUSTRY[categoryOrTemplateId];
   if (!industry) return null;
 
   let compositions = getCompositionsByIndustry(industry);
@@ -123,14 +130,26 @@ export function getCompositionMeta(category: LayoutCategory | string) {
  * and other content that defines the industry. This is injected into the AI prompt
  * to ensure generated sites reflect the correct industry.
  */
-export function getCompositionContentContext(category: LayoutCategory | string): string | null {
-  const industry = CATEGORY_TO_INDUSTRY[category];
-  if (!industry) return null;
+export function getCompositionContentContext(categoryOrTemplateId: LayoutCategory | string): string | null {
+  // 1. Template-ID-first resolution: if caller passed a specific composition id
+  //    (e.g. 'salon-minimal'), honor THAT variant instead of collapsing to the
+  //    industry's first composition. This is what keeps variant-specific
+  //    headlines, services, and hero copy from being flattened across the
+  //    entire industry during wizard generation.
+  let comp = getCompositionById(categoryOrTemplateId);
 
-  const compositions = getCompositionsByIndustry(industry);
-  if (!compositions.length) return null;
+  if (!comp) {
+    const industry = CATEGORY_TO_INDUSTRY[categoryOrTemplateId];
+    if (!industry) return null;
 
-  const comp = compositions[0];
+    let compositions = getCompositionsByIndustry(industry);
+    if (!compositions.length) {
+      const fallbackIndustry = INDUSTRY_FALLBACK[industry];
+      if (fallbackIndustry) compositions = getCompositionsByIndustry(fallbackIndustry);
+    }
+    if (!compositions.length) return null;
+    comp = compositions[0];
+  }
   const lines: string[] = [];
 
   lines.push(`INDUSTRY: ${comp.name} (${comp.industry})`);

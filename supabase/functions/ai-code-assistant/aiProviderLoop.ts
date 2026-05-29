@@ -190,7 +190,7 @@ export async function runProviderLoop(opts: {
     .map(messageToGeminiContent)
     .filter((entry): entry is GeminiContent => Boolean(entry));
 
-  for (const model of orderedGeminiModels) {
+  for (const model of (geminiApiKey ? orderedGeminiModels : [])) {
     const maxAttempts = isWizardLane ? 2 : 1;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

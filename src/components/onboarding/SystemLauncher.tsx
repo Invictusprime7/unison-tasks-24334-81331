@@ -1398,22 +1398,50 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         );
 
         const appSource = normalizedFiles['/src/App.tsx'] || normalizedFiles['src/App.tsx'] || '';
-        const missingSectionMarkers = templateSectionOrder.filter((section) => {
-          if (!section) return false;
-          return !new RegExp(`\\b${section}\\b`, 'i').test(appSource);
-        });
+        // Section presence is a soft signal: the AI may rename, use PascalCase
+        // component names, split into separate files, or rely on data-ut-section
+        // attributes. Match across casing variants before declaring "missing".
+        const sectionMatches = (section: string): boolean => {
+          if (!section) return true;
+          const variants = new Set<string>([
+            section,
+            section.replace(/[-_\s]+/g, ''),
+            section.replace(/[-_\s]+/g, '-'),
+            section.replace(/[-_\s]+/g, '_'),
+          ]);
+          for (const v of variants) {
+            if (!v) continue;
+            const escaped = v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            if (new RegExp(escaped, 'i').test(appSource)) return true;
+          }
+          return false;
+        };
+        const missingSectionMarkers = templateSectionOrder.filter((s) => !sectionMatches(s));
+        const sectionCoverage = templateSectionOrder.length
+          ? 1 - missingSectionMarkers.length / templateSectionOrder.length
+          : 1;
 
-        if (missingSectionMarkers.length > 0) {
+        // Only retry if coverage is catastrophically low. Otherwise warn and
+        // continue so the user isn't blocked by a brittle string match.
+        if (templateSectionOrder.length > 0 && sectionCoverage < 0.25) {
           lastPayloadIssue = {
             kind: 'section',
             invalidFiles: sanitized.invalidFiles,
             allInvalidFiles: sanitized.invalidFiles,
           };
-          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} omitted canonical template sections — retrying`, {
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} omitted most canonical template sections — retrying`, {
             missingSectionMarkers,
+            sectionCoverage,
             templateSectionOrder,
           });
           continue;
+        }
+
+        if (missingSectionMarkers.length > 0) {
+          console.warn('[SystemLauncher] Some template sections not detected by name; continuing launch', {
+            missingSectionMarkers,
+            sectionCoverage,
+          });
         }
 
         if (otherInvalid.length > 0) {

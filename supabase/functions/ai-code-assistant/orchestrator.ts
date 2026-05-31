@@ -158,6 +158,64 @@ function extractBalancedJsonObject(input: string, preferredKey?: string): string
   return null;
 }
 
+function salvagePartialFilesPayload(sanitized: string): LauncherFilesPayload | null {
+  // Tolerant extractor for truncated JSON: scans for complete
+  // "path": "content" pairs inside the top-level "files" object so a cut-off
+  // response still yields whatever files finished streaming.
+  const filesIdx = sanitized.indexOf('"files"');
+  if (filesIdx < 0) return null;
+  const braceStart = sanitized.indexOf('{', filesIdx);
+  if (braceStart < 0) return null;
+
+  const files: Record<string, string> = {};
+  let i = braceStart + 1;
+  while (i < sanitized.length) {
+    // Find next key opening quote
+    while (i < sanitized.length && sanitized[i] !== '"' && sanitized[i] !== '}') i += 1;
+    if (i >= sanitized.length || sanitized[i] === '}') break;
+
+    // Read key string
+    i += 1;
+    const keyStart = i;
+    while (i < sanitized.length && sanitized[i] !== '"') {
+      if (sanitized[i] === '\\') i += 2; else i += 1;
+    }
+    if (i >= sanitized.length) break;
+    const rawKey = sanitized.slice(keyStart, i);
+    i += 1;
+
+    // Skip colon + whitespace
+    while (i < sanitized.length && (sanitized[i] === ':' || sanitized[i] === ' ' || sanitized[i] === '\n' || sanitized[i] === '\r' || sanitized[i] === '\t')) i += 1;
+    if (i >= sanitized.length || sanitized[i] !== '"') break;
+    i += 1;
+
+    // Read value string, honoring escapes
+    const valStart = i;
+    let closed = false;
+    while (i < sanitized.length) {
+      const ch = sanitized[i];
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === '"') { closed = true; break; }
+      i += 1;
+    }
+    if (!closed) break; // Truncated mid-file — stop salvaging
+    const rawVal = sanitized.slice(valStart, i);
+    i += 1;
+
+    try {
+      const key = JSON.parse('"' + rawKey + '"') as string;
+      const val = JSON.parse('"' + rawVal + '"') as string;
+      const path = key.replace(/^\/+/, '');
+      if (path && typeof val === 'string') files[path] = val;
+    } catch { /* skip malformed entry */ }
+
+    // Skip comma + whitespace
+    while (i < sanitized.length && (sanitized[i] === ',' || sanitized[i] === ' ' || sanitized[i] === '\n' || sanitized[i] === '\r' || sanitized[i] === '\t')) i += 1;
+  }
+
+  return Object.keys(files).length > 0 ? { files } : null;
+}
+
 function parseLauncherFilesPayload(rawContent: string): LauncherFilesPayload | null {
   const sanitized = stripLauncherJsonText(rawContent);
   if (!sanitized) return null;
@@ -183,6 +241,16 @@ function parseLauncherFilesPayload(rawContent: string): LauncherFilesPayload | n
     } catch {
       // Try next candidate.
     }
+  }
+
+  // Last-resort: response was truncated before the closing braces. Try to
+  // recover any complete "path": "content" entries that did stream.
+  const salvaged = salvagePartialFilesPayload(sanitized);
+  if (salvaged) {
+    console.warn('[orchestrator] parseLauncherFilesPayload salvaged partial files from truncated JSON', {
+      files: Object.keys(salvaged.files),
+    });
+    return salvaged;
   }
 
   return null;

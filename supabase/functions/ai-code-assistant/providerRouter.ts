@@ -117,13 +117,13 @@ export function buildProviderPlan(
     case "wizard_template_react":
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlashLite, 24000),
-          m(MODELS.geminiFlash, 24000),
-          m(MODELS.openaiMini, 24000),
-          m(MODELS.geminiPro, 24000),
+          m(MODELS.geminiFlash, 48000),
+          m(MODELS.geminiFlashLite, 48000),
+          m(MODELS.openaiMini, 48000),
+          m(MODELS.geminiPro, 48000),
         ],
-        perModelTimeoutMs: 55000,
-        fallbackMaxTokens: 24000,
+        perModelTimeoutMs: 75000,
+        fallbackMaxTokens: 48000,
       };
       break;
 

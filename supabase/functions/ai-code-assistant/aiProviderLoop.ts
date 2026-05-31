@@ -129,7 +129,7 @@ export async function runProviderLoop(opts: {
       content: '',
       reasoning: '',
       modelUsed: undefined,
-      earlyError: { status: 503, error: missingGeminiKeyMessage() },
+      earlyError: { status: 503, error: 'Lovable AI is not configured for this backend.' },
     };
   }
 

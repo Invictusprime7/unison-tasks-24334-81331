@@ -246,7 +246,6 @@ export async function runProviderLoop(opts: {
           const errText = await resp.text().catch(() => '');
           const normalizedErr = errText.toLowerCase();
           const authFailure = resp.status === 401 || resp.status === 403;
-          const retryableGatewayFailure = resp.status === 408 || resp.status === 409 || resp.status === 425 || resp.status === 429 || resp.status >= 500;
           recordProviderError(`Gateway ${modelId}`, `${resp.status} ${errText.substring(0, 200)}`);
           if (resp.status === 429) {
             deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
@@ -256,10 +255,6 @@ export async function runProviderLoop(opts: {
           }
           if (authFailure && /lovable|gateway|api[_\s-]?key|unauthorized|authentication/.test(normalizedErr)) {
             return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 502, error: 'Lovable AI Gateway authentication failed. Rotate the managed AI key and retry.' } };
-          }
-          if (!retryableGatewayFailure && !authFailure) {
-            // Bad model IDs, malformed provider-specific payloads, or policy
-            // errors should not burn the entire model plan. Try the next model.
           }
           continue;
         }

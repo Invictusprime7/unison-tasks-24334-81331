@@ -135,8 +135,8 @@ export async function runProviderLoop(opts: {
 
 
   const isWizardLane = taskType === 'wizard_template_react';
-  const totalBudgetMs = isWizardLane ? 140_000 : 120_000;
-  const wizardMaxOutputTokens = 24_000;
+  const totalBudgetMs = isWizardLane ? 180_000 : 120_000;
+  const wizardMaxOutputTokens = 48_000;
   const startedAt = Date.now();
   const budgetRemaining = () => totalBudgetMs - (Date.now() - startedAt);
 
@@ -217,7 +217,7 @@ export async function runProviderLoop(opts: {
       const controller = new AbortController();
       // Keep every attempt bounded by the single provider plan so routing,
       // fallback, and timeout behavior cannot drift across callers.
-      const phaseCap = providerPlan.perModelTimeoutMs || (isWizardLane ? 45_000 : 35_000);
+      const phaseCap = providerPlan.perModelTimeoutMs || (isWizardLane ? 75_000 : 35_000);
       const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {

@@ -113,16 +113,18 @@ export function buildProviderPlan(
   switch (task.type) {
     // ── Lane A: Wizard (protected — no complexity upgrades) ─────────────
     // Wizard lane favors reliability and complete structured output.
-    // Flash Lite avoids transient Flash high-demand spikes; Flash/Pro remain fallbacks.
+    // Flash Lite avoids transient Flash high-demand spikes; OpenAI is the
+    // immediate cross-family fallback so one slow Gemini lane cannot consume
+    // the whole launch budget.
     case "wizard_template_react":
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 48000),
           m(MODELS.geminiFlashLite, 48000),
           m(MODELS.openaiMini, 48000),
+          m(MODELS.geminiFlash, 48000),
           m(MODELS.geminiPro, 48000),
         ],
-        perModelTimeoutMs: 75000,
+        perModelTimeoutMs: 35000,
         fallbackMaxTokens: 48000,
       };
       break;

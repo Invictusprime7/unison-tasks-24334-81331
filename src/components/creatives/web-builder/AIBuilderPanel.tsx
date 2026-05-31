@@ -1244,10 +1244,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       let response = null;
       let lastError = null;
       
-      // Global timeout: abort the entire request after 150s. Aligned with
-      // server-side TOTAL_BUDGET_MS (135s) + buffer for network/packaging.
+      // Global timeout: abort the entire request after 180s. Aligned with
+      // server-side provider budget + buffer for network/packaging.
       const globalAbort = new AbortController();
-      const globalTimeout = setTimeout(() => globalAbort.abort(), 150_000);
+      const globalTimeout = setTimeout(() => globalAbort.abort(), 180_000);
       
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (globalAbort.signal.aborted) {

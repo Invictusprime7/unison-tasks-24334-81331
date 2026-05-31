@@ -245,7 +245,7 @@ export async function runProviderLoop(opts: {
         if (!resp.ok) {
           const errText = await resp.text().catch(() => '');
           const normalizedErr = errText.toLowerCase();
-          const authFailure = resp.status === 401 || resp.status === 403;
+          const gatewayAuthFailure = resp.status === 401 && /lovable[-_\s]?api[-_\s]?key|gateway key|invalid key|unauthorized/.test(normalizedErr);
           recordProviderError(`Gateway ${modelId}`, `${resp.status} ${errText.substring(0, 200)}`);
           if (resp.status === 429) {
             deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
@@ -253,7 +253,7 @@ export async function runProviderLoop(opts: {
           if (resp.status === 402) {
             return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
           }
-          if (authFailure && /lovable|gateway|api[_\s-]?key|unauthorized|authentication/.test(normalizedErr)) {
+          if (gatewayAuthFailure) {
             return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 502, error: 'Lovable AI Gateway authentication failed. Rotate the managed AI key and retry.' } };
           }
           continue;

@@ -246,15 +246,12 @@ export class AIExecutionBridge {
 
   private resolveProviderFromModel(modelUsed: string | undefined, fallback: ProviderType): ProviderType {
     if (!modelUsed) return fallback;
-    const normalized = modelUsed.toLowerCase();
-    if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
-    return fallback;
+    return 'lovable-gateway';
   }
 
   private estimateCost(provider: ProviderType, inputTokens: number, outputTokens: number): number {
     const estimated1kCost: Record<ProviderType, number> = {
-      gemini: 0.0005,
-      local: 0,
+      'lovable-gateway': 0.001,
     };
     const totalTokens = inputTokens + outputTokens;
     return Number(((totalTokens / 1000) * estimated1kCost[provider]).toFixed(6));
@@ -267,7 +264,7 @@ export class AIExecutionBridge {
 
     const response: AIBridgeResponse = {
       content,
-      provider: 'local',
+      provider: 'lovable-gateway',
       tokensUsed: {
         input: inputTokens,
         output: outputTokens,
@@ -277,7 +274,7 @@ export class AIExecutionBridge {
       latency: Date.now() - startTime,
     };
 
-    session.provider = 'local';
+    session.provider = 'lovable-gateway';
     session.messages.push({ role: 'user', content: userMessage });
     session.messages.push({ role: 'assistant', content: response.content });
     session.messageCount++;

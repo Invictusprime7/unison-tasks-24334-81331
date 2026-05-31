@@ -204,18 +204,20 @@ export async function runProviderLoop(opts: {
 
     const openAiMessages = aiMessages.map((m) => ({
       role: m.role,
-      content: typeof m.content === 'string' ? m.content : coerceGeminiText(m.content),
+      content: typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content
+          : coerceGeminiText(m.content),
     }));
 
     for (const modelId of primaryModels) {
       const remaining = budgetRemaining();
       if (remaining < 8000) break;
       const controller = new AbortController();
-      // Wizard lane generates a full single-page composition (all template
-      // sections inlined into /src/App.tsx). Keep each attempt bounded so a
-      // single overloaded provider family cannot consume the whole edge budget;
-      // cross-provider fallback is more reliable than waiting 90s on one model.
-      const phaseCap = isWizardLane ? 45_000 : (providerPlan.perModelTimeoutMs || 35_000);
+      // Keep every attempt bounded by the single provider plan so routing,
+      // fallback, and timeout behavior cannot drift across callers.
+      const phaseCap = providerPlan.perModelTimeoutMs || (isWizardLane ? 45_000 : 35_000);
       const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -228,7 +230,8 @@ export async function runProviderLoop(opts: {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${lovableKey}`,
+            'Lovable-API-Key': lovableKey,
+            'X-Lovable-AIG-SDK': 'edge-fetch',
           },
           body: JSON.stringify({
             model: modelId,

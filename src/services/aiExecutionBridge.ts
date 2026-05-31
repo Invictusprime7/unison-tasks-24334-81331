@@ -212,8 +212,7 @@ export class AIExecutionBridge {
         break;
       }
 
-      // Last-resort local fallback to avoid blank UX.
-      return this.buildFallbackResponse(session, userMessage, startTime);
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
@@ -257,32 +256,6 @@ export class AIExecutionBridge {
     return Number(((totalTokens / 1000) * estimated1kCost[provider]).toFixed(6));
   }
 
-  private buildFallbackResponse(session: AIBridgeSession, userMessage: string, startTime: number): AIBridgeResponse {
-    const content = `I could not reach the remote AI provider, but I can still help. Start with this command sequence:\n1) diagnose\n2) tree\n3) cat /src/App.tsx\n\nOriginal request: ${userMessage}`;
-    const inputTokens = Math.ceil(userMessage.length / 4);
-    const outputTokens = Math.ceil(content.length / 4);
-
-    const response: AIBridgeResponse = {
-      content,
-      provider: 'lovable-gateway',
-      tokensUsed: {
-        input: inputTokens,
-        output: outputTokens,
-        total: inputTokens + outputTokens,
-      },
-      cost: 0,
-      latency: Date.now() - startTime,
-    };
-
-    session.provider = 'lovable-gateway';
-    session.messages.push({ role: 'user', content: userMessage });
-    session.messages.push({ role: 'assistant', content: response.content });
-    session.messageCount++;
-    session.totalTokens += response.tokensUsed.total;
-    session.updatedAt = Date.now();
-
-    return response;
-  }
 }
 
 /**

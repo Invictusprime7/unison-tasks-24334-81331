@@ -12,7 +12,7 @@
 
 import type { AIRuntimeResult } from '@/types/aiTerminalIntegration';
 
-export type ProviderType = 'gemini' | 'local';
+export type ProviderType = 'lovable-gateway';
 export type RoutingStrategy = 'latency' | 'cost' | 'balanced';
 
 interface ProviderMetrics {
@@ -32,8 +32,7 @@ interface ProviderScore {
 }
 
 const PROVIDER_ENV_CHECKS: Record<ProviderType, boolean> = {
-  gemini: Boolean(import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GOOGLE_API_KEY),
-  local: true,
+  'lovable-gateway': true,
 };
 
 /**
@@ -51,8 +50,7 @@ export class AIProviderRouter {
 
   private initializeProviders(): void {
     const defaults: Record<ProviderType, Omit<ProviderMetrics, 'isHealthy'>> = {
-      gemini: { name: 'gemini', latencyMs: 700, costPer1kTokens: 0.0005, errorRate: 0, requestCount: 0, avgLatityMs: 700 },
-      local: { name: 'local', latencyMs: 100, costPer1kTokens: 0, errorRate: 0, requestCount: 0, avgLatityMs: 100 },
+      'lovable-gateway': { name: 'lovable-gateway', latencyMs: 900, costPer1kTokens: 0.001, errorRate: 0, requestCount: 0, avgLatityMs: 900 },
     };
 
     Object.entries(defaults).forEach(([key, metrics]) => {
@@ -69,11 +67,11 @@ export class AIProviderRouter {
   selectProvider(): ProviderType {
     const scores = this.scoreAllProviders();
     if (scores.length === 0) {
-      return 'local';
+      return 'lovable-gateway';
     }
     const best = scores[0];
     if (!Number.isFinite(best.score)) {
-      return 'local';
+      return 'lovable-gateway';
     }
     return best.provider;
   }

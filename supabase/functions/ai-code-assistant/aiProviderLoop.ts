@@ -129,7 +129,7 @@ export async function runProviderLoop(opts: {
       content: '',
       reasoning: '',
       modelUsed: undefined,
-      earlyError: { status: 503, error: missingGeminiKeyMessage() },
+      earlyError: { status: 503, error: 'Lovable AI is not configured for this backend.' },
     };
   }
 
@@ -204,18 +204,20 @@ export async function runProviderLoop(opts: {
 
     const openAiMessages = aiMessages.map((m) => ({
       role: m.role,
-      content: typeof m.content === 'string' ? m.content : coerceGeminiText(m.content),
+      content: typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content
+          : coerceGeminiText(m.content),
     }));
 
     for (const modelId of primaryModels) {
       const remaining = budgetRemaining();
       if (remaining < 8000) break;
       const controller = new AbortController();
-      // Wizard lane generates a full single-page composition (all template
-      // sections inlined into /src/App.tsx). Keep each attempt bounded so a
-      // single overloaded provider family cannot consume the whole edge budget;
-      // cross-provider fallback is more reliable than waiting 90s on one model.
-      const phaseCap = isWizardLane ? 45_000 : (providerPlan.perModelTimeoutMs || 35_000);
+      // Keep every attempt bounded by the single provider plan so routing,
+      // fallback, and timeout behavior cannot drift across callers.
+      const phaseCap = providerPlan.perModelTimeoutMs || (isWizardLane ? 45_000 : 35_000);
       const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -228,7 +230,8 @@ export async function runProviderLoop(opts: {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${lovableKey}`,
+            'Lovable-API-Key': lovableKey,
+            'X-Lovable-AIG-SDK': 'edge-fetch',
           },
           body: JSON.stringify({
             model: modelId,
@@ -275,8 +278,11 @@ export async function runProviderLoop(opts: {
     }
   }
 
-  // ── Fallback: direct Gemini API ────────────────────────────────────────
-  for (const model of (geminiApiKey ? orderedGeminiModels : [])) {
+  // ── Legacy fallback: direct Gemini API ─────────────────────────────────
+  // Only used when Lovable Gateway is unavailable. When the gateway key exists,
+  // it remains the single AI execution path so callers cannot drift into a
+  // parallel provider stack with different model IDs, auth, or timeout rules.
+  for (const model of (!lovableKey && geminiApiKey ? orderedGeminiModels : [])) {
     const maxAttempts = 1;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -373,7 +379,7 @@ export async function runProviderLoop(opts: {
   }
 
   const errorTrail = providerErrors.slice(-10).join(' | ') || 'no provider attempts completed';
-  const configuredProviders = [geminiApiKey ? 'gemini-direct' : '', lovableKey ? 'lovable-gateway' : ''].filter(Boolean);
+  const configuredProviders = [lovableKey ? 'lovable-gateway' : '', !lovableKey && geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
   const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
   const guidance = configuredProviders.length === 0
     ? missingGeminiKeyMessage()

@@ -159,14 +159,22 @@ export const AIRequestSchema = z.object({
       section_order: z.array(z.string().max(60)).max(30).optional(),
       section_ids: z.array(z.string().max(120)).max(30).optional(),
       page_roles: z.array(z.string().max(60)).max(20).optional(),
-    }).optional(),
+      sections_detail: z.array(z.object({
+        id: z.string().max(120),
+        type: z.string().max(60),
+        variant_id: z.string().max(120).nullish(),
+        variant_name: z.string().max(160).nullish(),
+        variant_description: z.string().max(1_000).nullish(),
+      })).max(30).optional(),
+      seed_code_excerpt: z.string().max(8_000).optional(),
+    }).passthrough().optional(),
     intents: z.array(z.object({
       intent: z.string().max(60),
       target: z.object({ kind: z.string().optional(), ref: z.string().optional() }).optional(),
     })).max(20).optional(),
     template_sections: z.array(z.string().max(60)).max(20).optional(),
     template_intents: z.array(z.string().max(60)).max(20).optional(),
-  }).optional(),
+  }).passthrough().optional(),
   siteElementsLibraryContext: z.string().max(50_000).optional(),
   /** Page topology + intent bindings — lets chat prompts edit routes & wiring. */
   siteContext: z.object({

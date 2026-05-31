@@ -217,7 +217,7 @@ export async function runProviderLoop(opts: {
       const controller = new AbortController();
       // Keep every attempt bounded by the single provider plan so routing,
       // fallback, and timeout behavior cannot drift across callers.
-      const phaseCap = providerPlan.perModelTimeoutMs || (isWizardLane ? 45_000 : 35_000);
+      const phaseCap = providerPlan.perModelTimeoutMs || (isWizardLane ? 75_000 : 35_000);
       const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {

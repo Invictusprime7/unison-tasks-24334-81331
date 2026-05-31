@@ -278,8 +278,11 @@ export async function runProviderLoop(opts: {
     }
   }
 
-  // ── Fallback: direct Gemini API ────────────────────────────────────────
-  for (const model of (geminiApiKey ? orderedGeminiModels : [])) {
+  // ── Legacy fallback: direct Gemini API ─────────────────────────────────
+  // Only used when Lovable Gateway is unavailable. When the gateway key exists,
+  // it remains the single AI execution path so callers cannot drift into a
+  // parallel provider stack with different model IDs, auth, or timeout rules.
+  for (const model of (!lovableKey && geminiApiKey ? orderedGeminiModels : [])) {
     const maxAttempts = 1;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -376,7 +379,7 @@ export async function runProviderLoop(opts: {
   }
 
   const errorTrail = providerErrors.slice(-10).join(' | ') || 'no provider attempts completed';
-  const configuredProviders = [geminiApiKey ? 'gemini-direct' : '', lovableKey ? 'lovable-gateway' : ''].filter(Boolean);
+  const configuredProviders = [lovableKey ? 'lovable-gateway' : '', !lovableKey && geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
   const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
   const guidance = configuredProviders.length === 0
     ? missingGeminiKeyMessage()

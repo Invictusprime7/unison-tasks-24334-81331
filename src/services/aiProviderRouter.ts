@@ -67,11 +67,11 @@ export class AIProviderRouter {
   selectProvider(): ProviderType {
     const scores = this.scoreAllProviders();
     if (scores.length === 0) {
-      return 'local';
+      return 'lovable-gateway';
     }
     const best = scores[0];
     if (!Number.isFinite(best.score)) {
-      return 'local';
+      return 'lovable-gateway';
     }
     return best.provider;
   }

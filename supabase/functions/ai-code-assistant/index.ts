@@ -118,7 +118,9 @@ serve(async (req: Request) => {
         errorType = "provider_not_configured";
         statusCode = 503;
       } else if (hasTimeoutFailure && hasAuthFailure) {
-        userMessage = "AI providers failed due to mixed timeout/auth errors. Verify Gemini keys and retry.";
+        userMessage = message.includes("lovable-gateway")
+          ? "Lovable AI Gateway returned mixed transient timeout/auth responses. Please retry in a moment."
+          : "AI providers failed due to mixed timeout/auth errors. Verify backend AI keys and retry.";
         errorType = "ai_unavailable";
         statusCode = 503;
       } else if (hasTimeoutFailure) {
@@ -126,7 +128,9 @@ serve(async (req: Request) => {
         errorType = "timeout";
         statusCode = 504;
       } else if (hasAuthFailure) {
-        userMessage = "AI provider authentication failed. Please verify Gemini API keys in Supabase secrets.";
+        userMessage = message.includes("lovable-gateway")
+          ? "Lovable AI Gateway authentication failed. Rotate the managed AI key and retry."
+          : "AI provider authentication failed. Please verify backend AI keys.";
         errorType = "provider_auth";
         statusCode = 502;
       } else {

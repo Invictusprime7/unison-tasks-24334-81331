@@ -194,7 +194,8 @@ export async function runProviderLoop(opts: {
     .filter((entry): entry is GeminiContent => Boolean(entry));
 
   // ── Primary path: Lovable AI Gateway (OpenAI-compatible) ──────────────
-  // Faster + has built-in failover. Direct Gemini is used only as fallback.
+  // Single execution path for all configured backends. Direct Gemini only runs
+  // when the managed gateway key is genuinely unavailable.
   const lovableKey = Deno.env.get("LOVABLE_API_KEY");
   if (lovableKey) {
     const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
@@ -243,12 +244,22 @@ export async function runProviderLoop(opts: {
         });
         if (!resp.ok) {
           const errText = await resp.text().catch(() => '');
+          const normalizedErr = errText.toLowerCase();
+          const authFailure = resp.status === 401 || resp.status === 403;
+          const retryableGatewayFailure = resp.status === 408 || resp.status === 409 || resp.status === 425 || resp.status === 429 || resp.status >= 500;
           recordProviderError(`Gateway ${modelId}`, `${resp.status} ${errText.substring(0, 200)}`);
           if (resp.status === 429) {
             deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
           }
           if (resp.status === 402) {
             return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
+          }
+          if (authFailure && /lovable|gateway|api[_\s-]?key|unauthorized|authentication/.test(normalizedErr)) {
+            return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 502, error: 'Lovable AI Gateway authentication failed. Rotate the managed AI key and retry.' } };
+          }
+          if (!retryableGatewayFailure && !authFailure) {
+            // Bad model IDs, malformed provider-specific payloads, or policy
+            // errors should not burn the entire model plan. Try the next model.
           }
           continue;
         }
@@ -381,10 +392,13 @@ export async function runProviderLoop(opts: {
   const errorTrail = providerErrors.slice(-10).join(' | ') || 'no provider attempts completed';
   const configuredProviders = [lovableKey ? 'lovable-gateway' : '', !lovableKey && geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
   const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
+  const hasAuthError = /401|403|invalid[_\s-]?api[_\s-]?key|unauthorized|authentication/.test(errorTrail.toLowerCase());
   const guidance = configuredProviders.length === 0
     ? missingGeminiKeyMessage()
-    : hasTimeoutError
-      ? 'All AI providers timed out. Likely upstream model overload — retry shortly.'
+    : hasTimeoutError && hasAuthError && lovableKey
+      ? 'Gateway routing mixed transient timeout/auth responses; the managed Lovable AI key is configured, so retry with the gateway plan rather than Gemini secrets.'
+      : hasTimeoutError
+        ? 'All AI providers timed out. Likely upstream model overload — retry shortly.'
       : 'AI providers failed to produce a response. Check key validity and edge-function network latency.';
 
 

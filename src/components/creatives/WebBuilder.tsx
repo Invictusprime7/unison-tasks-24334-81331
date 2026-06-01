@@ -102,6 +102,8 @@ import { loadCloudState } from "@/lib/builder/loadCloudState";
 import { attachRuntimeOverlayMessages } from "@/lib/builder/runtimeOverlayMessages";
 import { computeOrphanPageRegistrations } from "@/lib/builder/orphanPageAutoRegister";
 import { loadDesignPreferences } from "@/lib/builder/loadDesignPreferences";
+import { loadBusinessData } from "@/lib/builder/loadBusinessData";
+import { checkBackendInstalled } from "@/lib/builder/checkBackendInstalled";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
@@ -2290,41 +2292,9 @@ export default function ${componentName}Page() {
 
   useEffect(() => {
     let cancelled = false;
-    async function loadBusinessData() {
-      if (!businessId) {
-        if (!cancelled) setBusinessDataContext(null);
-        return;
-      }
-
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData.session) {
-          if (!cancelled) setBusinessDataContext(null);
-          return;
-        }
-
-        const { data: biz, error } = await supabase
-          .from("businesses" as any)
-          .select("id,name")
-          .eq("id", businessId)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        const lines: string[] = [];
-        if (biz?.name) lines.push(`- businessName: ${biz.name}`);
-        if (biz?.id) lines.push(`- businessId: ${biz.id}`);
-        if (currentTemplateCategory) lines.push(`- templateCategory: ${currentTemplateCategory}`);
-        if (currentDesignPreset) lines.push(`- designPreset: ${currentDesignPreset}`);
-
-        if (!cancelled) setBusinessDataContext(lines.length ? lines.join("\n") : null);
-      } catch (e) {
-        console.warn("[WebBuilder] Failed to load business data", e);
-        if (!cancelled) setBusinessDataContext(null);
-      }
-    }
-
-    loadBusinessData();
+    loadBusinessData({ businessId, currentTemplateCategory, currentDesignPreset }).then((ctx) => {
+      if (!cancelled) setBusinessDataContext(ctx);
+    });
     return () => {
       cancelled = true;
     };
@@ -2358,41 +2328,10 @@ export default function ${componentName}Page() {
 
   // Production readiness signal: check if this businessId has been installed
   useEffect(() => {
-    const effectiveBusinessId = businessId || getOrCreatePreviewBusinessId(systemType);
     let cancelled = false;
-
-    async function checkInstalled() {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData.session) {
-          if (!cancelled) setBackendInstalled(false);
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from("business_installs" as any)
-          .select("id")
-          .eq("business_id", effectiveBusinessId)
-          .limit(1);
-
-        if (error) {
-          if (isMissingBusinessInstallsError(error)) {
-            if (!cancelled) setBackendInstalled(false);
-            return;
-          }
-          console.warn("[WebBuilder] business_installs check failed", error);
-          if (!cancelled) setBackendInstalled(false);
-          return;
-        }
-
-        if (!cancelled) setBackendInstalled((data?.length ?? 0) > 0);
-      } catch (e) {
-        console.warn("[WebBuilder] backendInstalled check error", e);
-        if (!cancelled) setBackendInstalled(false);
-      }
-    }
-
-    checkInstalled();
+    checkBackendInstalled({ businessId, systemType }).then((installed) => {
+      if (!cancelled) setBackendInstalled(installed);
+    });
     return () => {
       cancelled = true;
     };

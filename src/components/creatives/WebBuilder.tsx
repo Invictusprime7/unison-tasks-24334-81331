@@ -83,6 +83,18 @@ import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
 import { escapeCSSSelector } from "@/lib/builder/cssSelectorUtils";
 import { extractJsxReturnBody } from "@/lib/builder/jsxMutation";
+import {
+  findElementBoundsInJSX,
+  withSourceManipulation,
+  safeFindElement,
+} from "@/lib/builder/jsxBounds";
+import {
+  type CodeValidationResult,
+  extractStyleBlocks,
+  preserveStyleBlocks,
+  preserveInlineClasses,
+  validateAICodeChange,
+} from "@/lib/builder/aiCodeValidation";
 import { safeOpenExternal } from "@/utils/safeOpenExternal";
 
 function isMissingBusinessInstallsError(error: unknown): boolean {

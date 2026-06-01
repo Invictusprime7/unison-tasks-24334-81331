@@ -220,9 +220,6 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     supportedIndustries: ['ecommerce', 'nonprofit', 'coaching', 'salon', 'local-service'],
     requiresAuth: false,
     minPlan: 'starter',
-    crmEntryStage: 'New Customer',
-    requiresAuth: false,
-    minPlan: 'starter',
   },
 
   auth: {

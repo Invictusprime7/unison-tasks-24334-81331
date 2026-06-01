@@ -99,6 +99,7 @@ import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
+import { fabricObjectsToHtmlCss, buildVfsPageListContext } from "@/lib/builder/exportHelpers";
 import {
   selectEditableEntryPath as selectEditableEntryPathPure,
   computeVfsSignature,
@@ -2433,24 +2434,11 @@ export default function ${componentName}Page() {
   const pageStructureContext = useMemo(() => buildPageStructureContext(previewCode), [previewCode]);
   
   // Build redirect page context from VFS for in-builder AI awareness (React pages)
-  const redirectPageContext = useMemo(() => {
-    const vfsFiles = virtualFS.getSandpackFiles();
-    const pageFiles = Object.keys(vfsFiles).filter(p => 
-      p.match(/\/src\/pages\/\w+\.tsx$/) && p !== '/src/App.tsx'
-    );
-    if (pageFiles.length === 0) return '';
-    
-    const lines = ['\n=== REACT PAGES IN VFS ==='];
-    pageFiles.forEach(p => {
-      const content = vfsFiles[p] || '';
-      const nameMatch = p.match(/\/(\w+)\.tsx$/);
-      const componentName = nameMatch?.[1] || 'Unknown';
-      const exportMatch = content.match(/export default function (\w+)/);
-      lines.push(`- ${p} (${exportMatch?.[1] || componentName}, ${content.length} chars)`);
-    });
-    lines.push('All pages are React components. Apply nav/footer/brand changes across ALL pages.');
-    return lines.join('\n');
-  }, [virtualFS.nodes]);
+  const redirectPageContext = useMemo(
+    () => buildVfsPageListContext(virtualFS.getSandpackFiles()),
+    [virtualFS.nodes],
+  );
+
   
   const backendStateContext = useMemo(() => {
     const lines: string[] = [];
@@ -4673,48 +4661,11 @@ ${sectionsJsx}
     }
     
     if (!fabricCanvas) return;
-    
-    const objects = fabricCanvas.getObjects();
-    let html = '<div class="web-page">\n';
-    let css = '.web-page {\n  min-height: 100vh;\n  position: relative;\n  background: white;\n}\n\n';
-    
-    objects.forEach((obj: FabricCanvas['_objects'][0], index: number) => {
-      const className = `element-${index}`;
-      
-      // Generate HTML
-      if (obj.type === 'text' || obj.type === 'textbox') {
-        html += `  <div class="${className}">${(obj as FabricTextObject).text}</div>\n`;
-      } else if (obj.type === 'rect') {
-        html += `  <div class="${className}"></div>\n`;
-      } else if (obj.type === 'image') {
-        html += `  <img class="${className}" src="${(obj as FabricImageObject).getSrc()}" alt="" />\n`;
-      }
-      
-      // Generate CSS
-      css += `.${className} {\n`;
-      css += `  position: absolute;\n`;
-      css += `  left: ${obj.left}px;\n`;
-      css += `  top: ${obj.top}px;\n`;
-      css += `  width: ${obj.width * (obj.scaleX || 1)}px;\n`;
-      css += `  height: ${obj.height * (obj.scaleY || 1)}px;\n`;
-      
-      if (obj.fill) {
-        css += `  background-color: ${obj.fill};\n`;
-      }
-      const textObj = obj as FabricTextObject;
-      if (textObj.fontSize) {
-        css += `  font-size: ${textObj.fontSize}px;\n`;
-      }
-      if (textObj.fontFamily) {
-        css += `  font-family: ${textObj.fontFamily};\n`;
-      }
-      if (textObj.textAlign) {
-        css += `  text-align: ${textObj.textAlign};\n`;
-      }
-      css += `}\n\n`;
-    });
-    
-    html += '</div>';
+
+    const objects = fabricCanvas.getObjects() as unknown as Parameters<typeof fabricObjectsToHtmlCss>[0];
+    const { html, css } = fabricObjectsToHtmlCss(objects);
+
+
     
     setExportHtml(html);
     setExportCss(css);

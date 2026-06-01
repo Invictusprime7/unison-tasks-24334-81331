@@ -82,7 +82,7 @@ export function fabricObjectsToHtmlCss(objects: FabricExportObject[]): FabricExp
  * Build the AI-prompt redirect/page-context block describing all React pages
  * currently present in the VFS. Pure transform on a file map.
  */
-export function buildRedirectPageContext(vfsFiles: Record<string, string>): string {
+export function buildVfsPageListContext(vfsFiles: Record<string, string>): string {
   const pageFiles = Object.keys(vfsFiles).filter((p) =>
     /\/src\/pages\/\w+\.tsx$/.test(p) && p !== '/src/App.tsx',
   );

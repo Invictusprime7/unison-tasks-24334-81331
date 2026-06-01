@@ -1,7 +1,20 @@
 export type GeminiMessage = { role: string; content: unknown };
 
+function cleanSecretValue(value: string | undefined): string | undefined {
+  const cleaned = value
+    ?.trim()
+    .replace(/^["']+|["']+$/g, "")
+    .replace(/[\r\n\t ]+/g, "");
+  return cleaned || undefined;
+}
+
 export function getGeminiApiKey(): string | undefined {
-  return Deno.env.get("UNISONGEMINI_API_KEY") || Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_API_KEY") || undefined;
+  return (
+    cleanSecretValue(Deno.env.get("UNISONGEMINI_API_KEY")) ||
+    cleanSecretValue(Deno.env.get("GEMINI_API_KEY")) ||
+    cleanSecretValue(Deno.env.get("GOOGLE_API_KEY")) ||
+    undefined
+  );
 }
 
 export function missingGeminiKeyMessage(): string {

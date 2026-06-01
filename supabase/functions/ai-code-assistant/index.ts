@@ -114,13 +114,13 @@ serve(async (req: Request) => {
       const details = detailsMatch?.[1]?.slice(0, 220);
 
       if (configuredNone) {
-        userMessage = "AI providers are not configured on the edge function. Please set GEMINI_API_KEY or GOOGLE_API_KEY in Supabase secrets.";
+        userMessage = "AI providers are not configured on the backend. Please set UNISONGEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY in Lovable Cloud secrets.";
         errorType = "provider_not_configured";
         statusCode = 503;
       } else if (hasTimeoutFailure && hasAuthFailure) {
         userMessage = message.includes("lovable-gateway")
-          ? "Lovable AI Gateway returned mixed transient timeout/auth responses. Please retry in a moment."
-          : "AI providers failed due to mixed timeout/auth errors. Verify backend AI keys and retry.";
+          ? "Lovable AI Gateway and Gemini fallback returned mixed timeout/auth responses. Retry once, then verify the Gemini key if it persists."
+          : "Gemini returned mixed timeout/auth responses. Verify the Gemini key and retry.";
         errorType = "ai_unavailable";
         statusCode = 503;
       } else if (hasTimeoutFailure) {

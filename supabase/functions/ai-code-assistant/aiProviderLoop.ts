@@ -10,6 +10,14 @@ import { coerceGeminiText, extractGeminiText, getGeminiApiKey, missingGeminiKeyM
 type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
 type GeminiContent = { role: string; parts: GeminiPart[] };
 
+function cleanSecretValue(value: string | undefined): string | undefined {
+  const cleaned = value
+    ?.trim()
+    .replace(/^["']+|["']+$/g, '')
+    .replace(/[\r\n\t ]+/g, '');
+  return cleaned || undefined;
+}
+
 function mapGatewayGeminiIdToDirect(id: string): string {
   const normalized = id.replace(/^google\//, '').trim();
   const aliases: Record<string, string> = {
@@ -123,7 +131,7 @@ export async function runProviderLoop(opts: {
   const reasoningEffort = opts.reasoningEffort ?? 'medium';
 
   const geminiApiKey = getGeminiApiKey();
-  const lovableKeyAvailable = Boolean(Deno.env.get("LOVABLE_API_KEY"));
+  const lovableKeyAvailable = Boolean(cleanSecretValue(Deno.env.get("LOVABLE_API_KEY")));
   if (!geminiApiKey && !lovableKeyAvailable) {
     return {
       content: '',
@@ -194,14 +202,17 @@ export async function runProviderLoop(opts: {
     .filter((entry): entry is GeminiContent => Boolean(entry));
 
   // ── Primary path: Lovable AI Gateway (OpenAI-compatible) ──────────────
-  // Single execution path for all configured backends. Direct Gemini only runs
-  // when the managed gateway key is genuinely unavailable.
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  // Try the managed gateway first, then fall through to direct Gemini when the
+  // project also has a Gemini secret configured.
+  const lovableKey = cleanSecretValue(Deno.env.get("LOVABLE_API_KEY"));
   if (lovableKey) {
     const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
-    const primaryModels = gatewayModels.length > 0
+    const plannedGatewayModels = gatewayModels.length > 0
       ? gatewayModels
       : ['google/gemini-3.5-flash', 'openai/gpt-5.4-mini', 'google/gemini-3.1-flash-lite-preview', 'google/gemini-3.1-pro-preview'];
+    const primaryModels = isWizardLane && geminiApiKey
+      ? plannedGatewayModels.slice(0, 2)
+      : plannedGatewayModels;
 
     const openAiMessages = aiMessages.map((m) => ({
       role: m.role,
@@ -251,10 +262,16 @@ export async function runProviderLoop(opts: {
             deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
           }
           if (resp.status === 402) {
-            return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
+            if (!geminiApiKey) {
+              return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
+            }
+            deferredEarlyError ??= { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' };
           }
           if (gatewayAuthFailure) {
-            return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 502, error: 'Lovable AI Gateway authentication failed. Rotate the managed AI key and retry.' } };
+            if (!geminiApiKey) {
+              return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 502, error: 'Lovable AI Gateway authentication failed. Rotate the managed AI key and retry.' } };
+            }
+            deferredEarlyError ??= { status: 502, error: 'Lovable AI Gateway authentication failed. Rotate the managed AI key and retry.' };
           }
           continue;
         }
@@ -285,10 +302,11 @@ export async function runProviderLoop(opts: {
   }
 
   // ── Legacy fallback: direct Gemini API ─────────────────────────────────
-  // Only used when Lovable Gateway is unavailable. When the gateway key exists,
-  // it remains the single AI execution path so callers cannot drift into a
-  // parallel provider stack with different model IDs, auth, or timeout rules.
-  for (const model of (!lovableKey && geminiApiKey ? orderedGeminiModels : [])) {
+  // Direct Gemini fallback uses the same ordered Gemini family from the provider
+  // plan. It runs whenever a Gemini key is configured, including after managed
+  // gateway failures, so a bad gateway/model route cannot disconnect launches
+  // from the user's configured Gemini secret.
+  for (const model of (geminiApiKey ? orderedGeminiModels : [])) {
     const maxAttempts = 1;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -298,7 +316,9 @@ export async function runProviderLoop(opts: {
         break;
       }
 
-      const phaseCapMs = Math.min(25_000, providerPlan.perModelTimeoutMs || 25_000);
+      const phaseCapMs = isWizardLane
+        ? Math.min(45_000, providerPlan.perModelTimeoutMs || 45_000)
+        : Math.min(25_000, providerPlan.perModelTimeoutMs || 25_000);
       const perModelMs = Math.min(phaseCapMs, Math.max(8000, remaining - 2000));
       const attemptLabel = model.label;
       const controller = new AbortController();
@@ -385,13 +405,15 @@ export async function runProviderLoop(opts: {
   }
 
   const errorTrail = providerErrors.slice(-10).join(' | ') || 'no provider attempts completed';
-  const configuredProviders = [lovableKey ? 'lovable-gateway' : '', !lovableKey && geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
+  const configuredProviders = [lovableKey ? 'lovable-gateway' : '', geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
   const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
   const hasAuthError = /401|403|invalid[_\s-]?api[_\s-]?key|unauthorized|authentication/.test(errorTrail.toLowerCase());
   const guidance = configuredProviders.length === 0
     ? missingGeminiKeyMessage()
+    : hasTimeoutError && hasAuthError && lovableKey && geminiApiKey
+      ? 'Managed gateway and direct Gemini both failed; retry shortly, then verify the Gemini secret if this persists.'
     : hasTimeoutError && hasAuthError && lovableKey
-      ? 'Gateway routing mixed transient timeout/auth responses; the managed Lovable AI key is configured, so retry with the gateway plan rather than Gemini secrets.'
+      ? 'Managed gateway returned mixed transient timeout/auth responses; rotate the managed AI key if this persists.'
       : hasTimeoutError
         ? 'All AI providers timed out. Likely upstream model overload — retry shortly.'
       : 'AI providers failed to produce a response. Check key validity and edge-function network latency.';

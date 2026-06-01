@@ -1310,16 +1310,21 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         if (aiError) {
           const retryMsg = await getFunctionErrorMessage(aiError);
           const normalizedRetryMsg = retryMsg.toLowerCase();
+          const isRetryableProviderTimeout =
+            normalizedRetryMsg.includes('timed out') ||
+            normalizedRetryMsg.includes('timeout') ||
+            normalizedRetryMsg.includes('mixed timeout/auth') ||
+            normalizedRetryMsg.includes('transient');
+          const isProviderAuthFailure =
+            normalizedRetryMsg.includes('invalid or expired token') ||
+            normalizedRetryMsg.includes('unauthorized') ||
+            normalizedRetryMsg.includes('authentication');
           const shouldStopRetry =
             retryMsg.includes('402') ||
             normalizedRetryMsg.includes('payment required') ||
             normalizedRetryMsg.includes('credits required') ||
             normalizedRetryMsg.includes('invalid request body') ||
-            normalizedRetryMsg.includes('timed out') ||
-            normalizedRetryMsg.includes('timeout') ||
-            normalizedRetryMsg.includes('invalid or expired token') ||
-            normalizedRetryMsg.includes('unauthorized') ||
-            normalizedRetryMsg.includes('authentication');
+            (isProviderAuthFailure && !isRetryableProviderTimeout);
 
           console.warn(`[SystemLauncher] AI attempt ${attempt + 1} failed:`, retryMsg);
           if (shouldStopRetry) break;

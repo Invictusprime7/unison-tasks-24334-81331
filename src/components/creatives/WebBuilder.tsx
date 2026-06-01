@@ -4594,23 +4594,16 @@ ${sectionsJsx}
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      // Only zoom if Ctrl key is pressed
-      if (e.ctrlKey) {
-        e.preventDefault();
-        const newZoom = computeWheelZoom(zoom, e.deltaY);
-        setZoom(newZoom);
+    return attachWheelZoomGesture(container, {
+      getZoom: () => zoom,
+      onZoom: (next) => {
+        setZoom(next);
         if (fabricCanvas) {
-          fabricCanvas.setZoom(newZoom);
+          fabricCanvas.setZoom(next);
           fabricCanvas.renderAll();
         }
-      }
-      // If Ctrl is not pressed, allow normal scrolling (do nothing)
-    };
-
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
+      },
+    });
   }, [zoom, fabricCanvas]);
 
   // Handle panning with mouse drag

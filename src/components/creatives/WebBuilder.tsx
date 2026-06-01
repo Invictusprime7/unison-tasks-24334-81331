@@ -85,6 +85,7 @@ import { escapeCSSSelector } from "@/lib/builder/cssSelectorUtils";
 import { extractJsxReturnBody } from "@/lib/builder/jsxMutation";
 import {
   findElementBoundsInJSX,
+  findJSXClosingTag,
   withSourceManipulation,
   safeFindElement,
 } from "@/lib/builder/jsxBounds";
@@ -96,22 +97,10 @@ import {
   validateAICodeChange,
 } from "@/lib/builder/aiCodeValidation";
 import { safeOpenExternal } from "@/utils/safeOpenExternal";
-
-function isMissingBusinessInstallsError(error: unknown): boolean {
-  const candidate = error as {
-    code?: string;
-    status?: number;
-    message?: string;
-    details?: string;
-  } | null;
-  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
-  return (
-    candidate?.code === '42P01' ||
-    candidate?.code === 'PGRST205' ||
-    candidate?.status === 404 ||
-    combined.includes('business_installs')
-  );
-}
+import {
+  isMissingBusinessInstallsError,
+  getOrCreatePreviewBusinessId,
+} from "@/lib/builder/previewBusiness";
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
 import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';
@@ -173,19 +162,7 @@ import {
   readBrowserCart,
 } from '@/runtime/browserCartManager';
 
-function getOrCreatePreviewBusinessId(systemType?: string): string {
-  const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
-  try {
-    const existing = localStorage.getItem(key);
-    if (existing) return existing;
-    const id = generateUUID();
-    localStorage.setItem(key, id);
-    return id;
-  } catch {
-    // Fallback when localStorage is unavailable
-    return generateUUID();
-  }
-}
+
 
 // JSX bounds, source manipulation, safe DOM query, and AI code validation
 // extracted to @/lib/builder/{jsxBounds,aiCodeValidation}.ts (Phase C1).

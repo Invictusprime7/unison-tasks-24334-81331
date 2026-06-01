@@ -55,6 +55,7 @@ import {
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
 import { getDefaultVariantId, getVariantById } from "@/sections/variants";
+import { enforceSectionVariantMarkers } from "@/services/enforceSectionVariantMarkers";
 import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
@@ -1527,6 +1528,40 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         generatedFiles['/src/App.tsx'] = generatedFiles['src/App.tsx'];
         delete generatedFiles['src/App.tsx'];
       }
+
+      // ── Enforce stamped variant identity on AI output ────────────────────
+      // The wizard's Style/Template steps already locked a variant_id per
+      // section (sectionsDetail). The AI prompt asks for those markers on each
+      // <section>, but the model is not 100% reliable. This pass guarantees
+      // every top-level <section> carries data-ut-section / data-variant
+      // matching sectionsDetail 1:1 so downstream PageRenderer / VARIANT_REGISTRY
+      // can resolve the chosen layout — without rewriting the AI's JSX.
+      if (sectionsDetail.length > 0) {
+        const appKey = generatedFiles['/src/App.tsx']
+          ? '/src/App.tsx'
+          : generatedFiles['src/App.tsx']
+            ? 'src/App.tsx'
+            : null;
+        if (appKey) {
+          const enforced = enforceSectionVariantMarkers(generatedFiles[appKey], sectionsDetail);
+          generatedFiles[appKey] = enforced.source;
+          console.info('[SystemLauncher] Variant marker enforcement', {
+            expected: enforced.expectedSections,
+            totalSectionsInOutput: enforced.totalSections,
+            stamped: enforced.stamped,
+            repaired: enforced.repaired,
+            injected: enforced.injected,
+            mismatches: enforced.mismatches,
+          });
+          if (enforced.mismatches.length > 0) {
+            console.warn(
+              `[SystemLauncher] ${enforced.mismatches.length} section(s) had missing or mismatched variant markers — repaired against stamped wizard variants`,
+              enforced.mismatches,
+            );
+          }
+        }
+      }
+
 
       const provisionedBusinessId = await installPromise;
 

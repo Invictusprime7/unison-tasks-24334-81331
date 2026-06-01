@@ -105,12 +105,12 @@ import { fabricObjectsToHtmlCss, buildVfsPageListContext } from "@/lib/builder/e
 import { downloadJSON, toggleElementFullscreen } from "@/lib/builder/browserDownload";
 import { scrollPreviewOrContainer, type ScrollCommand } from "@/lib/builder/scrollHelpers";
 import { attachPinchZoomGesture } from "@/lib/builder/pinchZoomGesture";
+import { attachWheelZoomGesture } from "@/lib/builder/wheelZoomGesture";
 import {
   getCanvasWidth as computeCanvasWidth,
   getCanvasHeight as computeCanvasHeight,
   computeZoomIn,
   computeZoomOut,
-  computeWheelZoom,
 } from "@/lib/builder/canvasViewport";
 import {
   selectEditableEntryPath as selectEditableEntryPathPure,

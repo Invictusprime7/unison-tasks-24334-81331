@@ -2029,25 +2029,9 @@ export default function ${componentName}Page() {
     files: Record<string, string>,
     preferredPath?: string | null,
   ): string | null => {
-    if (preferredPath && files[preferredPath]) {
-      return preferredPath;
-    }
-
-    const resolvedEntryPath = resolveLauncherEntryPoint(
-      files,
-      preferredPath || launchEntryPoint,
-    );
-    if (resolvedEntryPath && files[resolvedEntryPath]) {
-      return resolvedEntryPath;
-    }
-
-    return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path))
-      || Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path))
-      || Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path))
-      || (files['/index.html'] ? '/index.html' : null)
-      || Object.keys(files)[0]
-      || null;
+    return selectEditableEntryPathPure(files, preferredPath, launchEntryPoint);
   }, [launchEntryPoint]);
+
 
   const syncBuilderFromFiles = useCallback((
     files: Record<string, string>,

@@ -103,6 +103,7 @@ import { attachRuntimeOverlayMessages } from "@/lib/builder/runtimeOverlayMessag
 import { computeOrphanPageRegistrations } from "@/lib/builder/orphanPageAutoRegister";
 import { loadDesignPreferences } from "@/lib/builder/loadDesignPreferences";
 import { loadBusinessData } from "@/lib/builder/loadBusinessData";
+import { computePageRegistryDiagnostics } from "@/lib/builder/computePageRegistryDiagnostics";
 import { checkBackendInstalled } from "@/lib/builder/checkBackendInstalled";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";

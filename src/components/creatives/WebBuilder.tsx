@@ -95,7 +95,7 @@ import {
   applyElementMoveUp,
   applyElementMoveDown,
 } from "@/lib/builder/elementMutations";
-import { integrateCSSIntoHTML, mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
+import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
 import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";

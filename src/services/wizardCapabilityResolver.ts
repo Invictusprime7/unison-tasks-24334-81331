@@ -24,6 +24,12 @@ import type {
   BindingSectionType,
   BindingSlotRole,
 } from '@/types/playground';
+import {
+  getIntentProfile,
+  isIntentForbidden,
+  missingRequiredIntents,
+  FALLBACK_RECIPES,
+} from '@/platform/core/industryIntentProfiles';
 
 // ============================================================================
 // Business Model → Required Pages

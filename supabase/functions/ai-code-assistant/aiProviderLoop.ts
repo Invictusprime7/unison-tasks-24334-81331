@@ -202,8 +202,8 @@ export async function runProviderLoop(opts: {
     .filter((entry): entry is GeminiContent => Boolean(entry));
 
   // ── Primary path: Lovable AI Gateway (OpenAI-compatible) ──────────────
-  // Single execution path for all configured backends. Direct Gemini only runs
-  // when the managed gateway key is genuinely unavailable.
+  // Try the managed gateway first, then fall through to direct Gemini when the
+  // project also has a Gemini secret configured.
   const lovableKey = cleanSecretValue(Deno.env.get("LOVABLE_API_KEY"));
   if (lovableKey) {
     const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);

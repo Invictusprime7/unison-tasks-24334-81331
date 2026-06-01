@@ -96,6 +96,7 @@ import {
   applyElementMoveDown,
 } from "@/lib/builder/elementMutations";
 import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
+import { assembleSavePayload } from "@/lib/builder/savePayload";
 import {
   type CodeValidationResult,
   extractStyleBlocks,

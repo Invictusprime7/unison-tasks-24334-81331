@@ -2711,109 +2711,32 @@ export default function ${componentName}Page() {
     return previewCode;
   }, [templateCustomizer, previewCode]);
 
-  // Build the v2 save payload — full multi-page VFS round-trip
+  // Build the v2 save payload — full multi-page VFS round-trip.
+  // Pure assembly lives in '@/lib/builder/savePayload' (Phase C3).
   const buildSavePayload = useCallback(() => {
-    const canonicalPlayground = {
+    return assembleSavePayload({
       pageRegistry: creatorPlayground.pageRegistry,
       creatorData: creatorPlayground.creatorData,
-      bindings: playgroundBindings,
-      calendars: playgroundCalendars,
-      popups: playgroundPopups,
-    };
-    const currentFiles = virtualFS.getSandpackFiles();
-    const effectiveBusinessName =
-      creatorPlayground.creatorData.businessInfo.businessName ||
-      currentTemplateName ||
-      projectNameFromState ||
-      systemName ||
-      'Business';
-    const preservedTemplateId =
-      effectiveRouteState?.siteBundleSnapshot?.appContext?.templateId ||
-      effectiveRouteState?.siteBundleSnapshot?.selectedTemplateId ||
-      effectiveRouteState?.runtimeManifest?.appContext?.templateId ||
-      effectiveRouteState?.wizardSelections?.templateId ||
-      undefined;
-    const preservedThemePresetId =
-      effectiveRouteState?.siteBundleSnapshot?.appContext?.themePresetId ||
-      effectiveRouteState?.siteBundleSnapshot?.selectedThemeId ||
-      effectiveRouteState?.runtimeManifest?.appContext?.themePresetId ||
-      effectiveRouteState?.wizardSelections?.themeId ||
-      currentDesignPreset ||
-      undefined;
-    const recompilation = commitToPipeline(
-      {
-        playground: canonicalPlayground,
-        existingVfsFiles: currentFiles,
-        businessName: effectiveBusinessName,
-        industry: effectiveRouteState?.siteBundleSnapshot?.industry,
-        selectedTemplateId: preservedTemplateId,
-        selectedThemeId: preservedThemePresetId,
-        themePresetId: preservedThemePresetId,
-      },
-      'playground-edit',
-    );
-    const launchArtifacts = buildCanonicalLaunchArtifacts({
-      generatedFiles: currentFiles,
-      preferredEntryPoint: launchEntryPoint,
-      siteBundleSnapshot: recompilation.siteBundleSnapshot,
-      compiledPlayground: recompilation.compileResult,
-      canonicalPlayground,
-      businessId: businessId ?? undefined,
-      projectId: projectId ?? undefined,
-      manifestId: currentManifestId || manifestIdFromState || undefined,
-      systemType: activeSystemType || systemType || undefined,
-      systemName: systemName || effectiveBusinessName,
-      templateName: currentTemplateName || effectiveBusinessName,
-      templateCategory: currentTemplateCategory || undefined,
-      templateId: preservedTemplateId,
-      businessName: effectiveBusinessName,
-      industry: recompilation.siteBundleSnapshot.industry,
-      aesthetic: preservedThemePresetId,
-      themePresetId: preservedThemePresetId,
-      backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
-      wizardSelections: effectiveRouteState?.wizardSelections || undefined,
-    });
-
-    return {
-      vfsFiles: launchArtifacts.files,
-      entryPoint: launchArtifacts.entryPoint,
+      playgroundBindings,
+      playgroundCalendars,
+      playgroundPopups,
+      currentFiles: virtualFS.getSandpackFiles(),
+      launchEntryPoint,
       activePagePath,
-      businessId: businessId ?? null,
-      projectId: projectId ?? null,
-      canonicalPlayground: launchArtifacts.canonicalPlayground,
-      siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-      metadata: {
-        // Project identity is strictly the project's own name. Never fall
-        // back to a business/wizard name here — that's how legacy drafts
-        // ended up titled "My Business".
-        name: (
-          projectDisplayName.trim() ||
-          saveProjectName.trim() ||
-          projectNameFromState ||
-          currentTemplateName ||
-          ''
-        ).trim() || `Project ${(projectId || '').slice(0, 8) || 'untitled'}`,
-        projectName: (
-          projectDisplayName.trim() ||
-          saveProjectName.trim() ||
-          projectNameFromState ||
-          currentTemplateName ||
-          ''
-        ).trim() || `Project ${(projectId || '').slice(0, 8) || 'untitled'}`,
-        businessName: effectiveBusinessName,
-        systemType: activeSystemType || systemType || null,
-        templateCategory: currentTemplateCategory || null,
-        aesthetic: currentDesignPreset || null,
-        manifestId: currentManifestId || manifestIdFromState || null,
-        launchSource: effectiveRouteState?.wizardSelections
-          ? 'system_launcher'
-          : effectiveRouteState?.systemsBuildContext
-            ? 'business_launcher'
-            : routeStateHasStructuredProject
-              ? 'launcher'
-              : 'web_builder',
-      },
-    };
+      businessId,
+      projectId,
+      manifestId: currentManifestId || manifestIdFromState || null,
+      systemType: activeSystemType || systemType || null,
+      systemName,
+      templateName: currentTemplateName,
+      templateCategory: currentTemplateCategory,
+      designPreset: currentDesignPreset,
+      projectDisplayName,
+      saveProjectName,
+      projectNameFromState,
+      effectiveRouteState,
+      routeStateHasStructuredProject,
+    });
   }, [
     virtualFS,
     launchEntryPoint,
@@ -2839,6 +2762,7 @@ export default function ${componentName}Page() {
     currentDesignPreset,
     routeStateHasStructuredProject,
   ]);
+
 
   const ensureLauncherDraftSaved = useCallback(async (
     reason: 'launcher_import' | 'interval_autosave',

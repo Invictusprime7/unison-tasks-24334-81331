@@ -95,6 +95,7 @@ import {
   applyElementMoveUp,
   applyElementMoveDown,
 } from "@/lib/builder/elementMutations";
+import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
 import {
   type CodeValidationResult,
   extractStyleBlocks,
@@ -4189,37 +4190,9 @@ ${sectionsJsx}
   };
 
   // Helper to integrate CSS into HTML document
-  const integrateCSSIntoHTML = useCallback((html: string, css: string): string => {
-    if (!css || !css.trim()) return html;
-    
-    const styleTag = `<style>\n${css}\n</style>`;
-    
-    // Check if it's a full HTML document
-    if (html.includes('</head>')) {
-      // Insert CSS before </head>
-      return html.replace('</head>', `${styleTag}\n</head>`);
-    } else if (html.includes('<html') || html.includes('<!DOCTYPE')) {
-      // Has HTML but no head - add before body or at start
-      if (html.includes('<body')) {
-        return html.replace('<body', `<head>${styleTag}</head>\n<body`);
-      }
-      return html.replace(/<html[^>]*>/i, (match) => `${match}\n<head>${styleTag}</head>`);
-    } else {
-      // Fragment - wrap in full document with CSS
-      return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"></script>
-  ${styleTag}
-</head>
-<body>
-${html}
-</body>
-</html>`;
-    }
-  }, []);
+  // integrateCSSIntoHTML moved to '@/lib/builder/htmlIntegration' (Phase C3).
+
+
 
   // Handle loading a saved template
   const handleLoadTemplate = useCallback((template: {
@@ -4271,7 +4244,7 @@ ${html}
     toast.success(`Opened "${template.name}"`, {
       description: 'Template loaded - you can continue editing',
     });
-  }, [templateFiles, integrateCSSIntoHTML, importBuilderFiles, launchEntryPoint]);
+  }, [templateFiles, importBuilderFiles, launchEntryPoint]);
 
   // Handle template selection from LayoutTemplatesPanel (used by FloatingDock)
   const handleSelectTemplate = useCallback((

@@ -55,6 +55,7 @@ import {
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
 import { getDefaultVariantId, getVariantById } from "@/sections/variants";
+import { enforceSectionVariantMarkers } from "@/services/enforceSectionVariantMarkers";
 import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";

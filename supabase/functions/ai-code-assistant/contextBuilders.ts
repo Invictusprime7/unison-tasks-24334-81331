@@ -458,10 +458,10 @@ ADVANCED CSS TOKEN INJECTION (already present in /src/index.css — USE these ut
 - Color expressions for inline styles: hsl(var(--primary) / 0.15) for tints, hsl(var(--foreground) / 0.06) for hairlines, linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent))) for premium fills.
 
 RULES:
-1. Output ONLY valid JSON with this exact top-level shape: {"files": {"src/App.tsx": "...", "src/index.css": "...", "src/pages/<Name>.tsx": "..."}}
+1. Output ONLY valid JSON with this exact top-level shape: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
    The top-level key MUST be "files". Do NOT return "components", "pages", "project", "app", arrays, prose, markdown, or a schema without file contents.
-   Every value inside "files" MUST be a complete source-code string. Include /src/App.tsx (Home composition), /src/index.css, AND one file for EVERY entry in MULTI-PAGE ROSTER above (use the exact file_path).
-2. App.tsx: SINGLE FILE for the HOME page composition, ALL Home sections inline, starts with: import React, { useState } from 'react';. Do NOT include a router — the canonical builder owns routing. Sub-page files use the same single-file pattern.
+   Every value inside "files" MUST be a complete source-code string. Ship ONLY /src/App.tsx (the Home composition) and /src/index.css. Do NOT emit any /src/pages/* files — additional pages are created later, on demand, by the AI Builder using live site context.
+2. App.tsx: SINGLE FILE for the HOME page composition, ALL Home sections inline, starts with: import React, { useState } from 'react';. Do NOT include a router — the canonical builder owns routing.
 3. Use ONLY these imports per file: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
 4. Use Tailwind semantic tokens whenever possible: bg-primary, text-foreground, bg-card, border-border, text-muted-foreground. NEVER hardcode hex colors or Tailwind palette colors (bg-slate-900, text-white, bg-zinc-800, etc.) — those will fight the wizard theme.
 5. For custom color expressions reference CSS vars: style={{ color: 'hsl(var(--primary))' }}, style={{ background: 'hsl(var(--card) / 0.8)' }}.
@@ -474,11 +474,10 @@ RULES:
    - Quote/estimate request: data-ut-intent="quote.request"
    - View pricing/plans: data-ut-intent="nav.anchor" href="#pricing"
    - Learn more: data-ut-intent="nav.anchor" href="#about"
-   - Cross-page navigation: <a href="#/contact" data-ut-intent="nav.goto" data-ut-path="/contact"> (use HashRouter-friendly hrefs that match the MULTI-PAGE ROSTER paths)
    - Phone/call: <a href="tel:..." data-ut-intent="contact.call">
    - Email: <a href="mailto:..." data-ut-intent="contact.email">
    Forms should use: <form data-ut-intent="contact.submit">
-7. Navigation anchor links inside a page: <a href="#sectionId" data-ut-intent="nav.anchor">. Cross-page links use data-ut-intent="nav.goto" with data-ut-path matching the roster.
+7. Navigation anchor links inside the Home page: <a href="#sectionId" data-ut-intent="nav.anchor">. Do NOT emit cross-page links — sub-pages do not yet exist at wizard launch.
 8. Images: use ONLY these VERIFIED Unsplash URLs (they are guaranteed to load):
    HERO/BACKGROUND by industry:
    - Restaurant: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80"

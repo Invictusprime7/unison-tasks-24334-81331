@@ -85,10 +85,16 @@ import { escapeCSSSelector } from "@/lib/builder/cssSelectorUtils";
 import { extractJsxReturnBody } from "@/lib/builder/jsxMutation";
 import {
   findElementBoundsInJSX,
-  findJSXClosingTag,
   withSourceManipulation,
   safeFindElement,
 } from "@/lib/builder/jsxBounds";
+import {
+  applyElementHtmlUpdate,
+  applyElementDelete,
+  applyElementDuplicate,
+  applyElementMoveUp,
+  applyElementMoveDown,
+} from "@/lib/builder/elementMutations";
 import {
   type CodeValidationResult,
   extractStyleBlocks,
@@ -903,54 +909,6 @@ export default function App() {
   }, [applyMutatorAcrossVFS, selectedHTMLElement, setSelectedHTMLElement]);
 
 
-  const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {
-    // AI/contentEditable often returns raw HTML (class=, unclosed <img>, hyphenated SVG attrs).
-    // Convert to JSX-safe markup before splicing into a .tsx file or Babel will explode with
-    // "Expected corresponding JSX closing tag" / "Cannot assign to read only property 'message'".
-    let safeJsx = newJsx;
-    try {
-      safeJsx = htmlToJsx(newJsx);
-    } catch (err) {
-      console.warn('[applyElementHtmlUpdate] htmlToJsx failed, using raw input:', err);
-    }
-    return withSourceManipulation(code, (jsx) => {
-      const bounds = findElementBoundsInJSX(jsx, selector);
-      if (!bounds) {
-        console.warn('[applyElementHtmlUpdate] No match for selector:', selector);
-        return null;
-      }
-      return jsx.substring(0, bounds.start) + safeJsx + jsx.substring(bounds.end);
-    });
-  }, []);
-
-  // Delete an element from TSX source by selector
-  const applyElementDelete = useCallback((code: string, selector: string) => {
-    return withSourceManipulation(code, (jsx) => {
-      const bounds = findElementBoundsInJSX(jsx, selector);
-      if (!bounds) {
-        console.warn('[applyElementDelete] No match for selector:', selector);
-        return null;
-      }
-      // Remove the element and any trailing whitespace/newline
-      const after = jsx.substring(bounds.end).replace(/^\s*\n?/, '');
-      return jsx.substring(0, bounds.start).replace(/\n\s*$/, '\n') + after;
-    });
-  }, []);
-
-  // Duplicate an element in TSX source by selector
-  const applyElementDuplicate = useCallback((code: string, selector: string) => {
-    return withSourceManipulation(code, (jsx) => {
-      const bounds = findElementBoundsInJSX(jsx, selector);
-      if (!bounds) {
-        console.warn('[applyElementDuplicate] No match for selector:', selector);
-        return null;
-      }
-      const element = jsx.substring(bounds.start, bounds.end);
-      // Insert a copy right after the original, preserving indentation
-      return jsx.substring(0, bounds.end) + '\n' + element + jsx.substring(bounds.end);
-    });
-  }, []);
-
   // Handle delete from floating toolbar - updates source code
   const handleFloatingDelete = useCallback((selector: string) => {
     const res = applyElementDelete(previewCode, selector);
@@ -964,7 +922,7 @@ export default function App() {
     setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Element deleted');
-  }, [previewCode, applyElementDelete, clearLivePreviewSelection, setSelectedHTMLElement, recordManualPageEdit]);
+  }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement, recordManualPageEdit]);
 
   // Handle duplicate from floating toolbar - updates source code
   const handleFloatingDuplicate = useCallback((selector: string) => {
@@ -978,27 +936,11 @@ export default function App() {
     setPreviewCode(res.code);
     clearLivePreviewSelection();
     toast.success('Element duplicated');
-  }, [previewCode, applyElementDuplicate, clearLivePreviewSelection, recordManualPageEdit]);
+  }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
 
   // Handle move up - swap element with its previous sibling in TSX source
   const handleFloatingMoveUp = useCallback((selector: string) => {
-    const res = withSourceManipulation(previewCode, (jsx) => {
-      const bounds = findElementBoundsInJSX(jsx, selector);
-      if (!bounds) return null;
-      // Find the previous sibling element (scan backwards from bounds.start)
-      const before = jsx.substring(0, bounds.start);
-      // Find the last element ending before our start
-      const prevMatch = before.match(/.*(<(\w+)\b[^>]*>[\s\S]*<\/\2\s*>)\s*$/);
-      const prevSelfClose = before.match(/.*(<(\w+)\b[^>]*\/>)\s*$/);
-      const prevEl = prevMatch || prevSelfClose;
-      if (!prevEl) return null;
-      const prevStart = before.lastIndexOf(prevEl[1]);
-      if (prevStart === -1) return null;
-      const current = jsx.substring(bounds.start, bounds.end);
-      const prevElement = jsx.substring(prevStart, bounds.start);
-      // Swap: current before previous
-      return jsx.substring(0, prevStart) + current + prevElement + jsx.substring(bounds.end);
-    });
+    const res = applyElementMoveUp(previewCode, selector);
     if (!res.ok) {
       toast.info('Already at the top');
       return;
@@ -1012,23 +954,7 @@ export default function App() {
 
   // Handle move down - swap element with its next sibling in TSX source
   const handleFloatingMoveDown = useCallback((selector: string) => {
-    const res = withSourceManipulation(previewCode, (jsx) => {
-      const bounds = findElementBoundsInJSX(jsx, selector);
-      if (!bounds) return null;
-      // Find the next sibling element (scan forward from bounds.end)
-      const after = jsx.substring(bounds.end);
-      const nextMatch = after.match(/^\s*<(\w+)\b/);
-      if (!nextMatch) return null;
-      const nextTagName = nextMatch[1];
-      const nextStart = bounds.end + (after.length - after.trimStart().length);
-      const nextEnd = findJSXClosingTag(jsx, nextStart, nextTagName);
-      if (nextEnd === -1) return null;
-      const current = jsx.substring(bounds.start, bounds.end);
-      const whitespace = jsx.substring(bounds.end, nextStart);
-      const nextElement = jsx.substring(nextStart, nextEnd);
-      // Swap: next before current
-      return jsx.substring(0, bounds.start) + nextElement + whitespace + current + jsx.substring(nextEnd);
-    });
+    const res = applyElementMoveDown(previewCode, selector);
     if (!res.ok) {
       toast.info('Already at the bottom');
       return;
@@ -1039,6 +965,8 @@ export default function App() {
     clearLivePreviewSelection();
     toast.success('Moved down');
   }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
+
+
 
   // ── Layout-Intent Fast Path bridge for AIBuilderPanel ────────────────────
   // Bundles the deterministic layout-op handlers (selection-aware class edits,

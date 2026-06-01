@@ -710,5 +710,29 @@ export function intentsByNamespace(ns: IntentNamespace): IntentDef[] {
   return Object.values(INTENT_REGISTRY).filter((d) => d.namespace === ns);
 }
 
+/** All intents safe to auto-bind to interactive UI elements (defaults to user-action). */
+export function userActionIntents(): IntentDef[] {
+  return Object.values(INTENT_REGISTRY).filter(
+    (d) => (d.triggerType ?? 'user-action') === 'user-action' && d.status !== 'deprecated',
+  );
+}
+
+/** Returns true when the intent is bindable to a UI element (not a lifecycle event). */
+export function isUserActionIntent(input: string): boolean {
+  const def = getIntentDef(input);
+  if (!def) return false;
+  return (def.triggerType ?? 'user-action') === 'user-action';
+}
+
+/** All capabilities (incl. requiredCapabilities) needed by this intent. */
+export function getIntentCapabilities(input: string): string[] {
+  const def = getIntentDef(input);
+  if (!def) return [];
+  const out = new Set<string>();
+  if (def.capability) out.add(def.capability);
+  for (const cap of def.requiredCapabilities ?? []) out.add(cap);
+  return Array.from(out);
+}
+
 // Convenience alias — lets consumers spell the import as the namespace name.
 export { INTENT_REGISTRY as intentSurfaceRegistry };

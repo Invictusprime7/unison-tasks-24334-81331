@@ -402,11 +402,7 @@ export function buildFastPathSystemPrompt(opts: {
   const bodyFont    = t.bodyFont    || styleSelection.typography?.body_font || 'Inter';
   const headingWeight = t.headingWeight || styleSelection.typography?.heading_weight || '700';
 
-  // Sub-page scaffolding removed: wizard launch ships ONLY Home. Additional
-  // pages are built later by the AI Builder using the live site context.
-  const pageRosterBlock = '';
-
-  return `You are an elite full-stack React designer. Generate a COMPLETE, premium MULTI-PAGE website as a React application.
+  return `You are an elite full-stack React designer. Generate a COMPLETE, premium single-page (Home) React composition.
 
 BUSINESS: "${brandName}" — ${industry}
 TONE: ${tone}
@@ -419,7 +415,6 @@ ${templateSelection.section_ids?.length ? `Section instance IDs: ${templateSelec
 ${templateSelection.page_roles?.length ? `Template page roles available: ${templateSelection.page_roles.join(', ')}` : ''}
 ${templateSelection.sections_detail?.length ? `\nPER-SECTION LAYOUT VARIANTS — LOCKED. Each section below MUST render with the named variant's layout style (not the default). Mirror its structure, alignment, and column grid. Do not collapse to a generic stacked/centered layout.\n${templateSelection.sections_detail.map((s, i) => `  ${i + 1}. <section data-ut-section="${s.id}" data-ut-section-type="${s.type}"${s.variant_id ? ` data-variant="${s.variant_id}"` : ''}> — ${s.type}${s.variant_id ? ` → variant "${s.variant_name || s.variant_id}"${s.variant_description ? ` (${s.variant_description})` : ''}` : ''}`).join('\n')}\n\nMANDATORY DOM CONTRACT FOR SECTIONS:\n- Each section MUST be a top-level <section> element inside the App root.\n- The opening <section> tag MUST carry these three attributes verbatim: data-ut-section, data-ut-section-type, and data-variant (using the exact ids above).\n- Section order MUST match the list 1:1 — no inserts, no reorders, no drops.\n- If you do not honor the variant's distinctive layout (e.g. split-image vs centered vs full-bleed), the launch will be rejected and retried.` : ''}
 ${templateSelection.seed_code_excerpt ? `\nSTRUCTURAL REFERENCE — registered composition for this template (refine, do NOT copy verbatim; preserve section order, intent wiring, and variant layout style; adapt copy to the business; rewrite all visuals with the brand tokens below):\n\`\`\`tsx\n${templateSelection.seed_code_excerpt}\n\`\`\`\n` : ''}
-${pageRosterBlock}
 INTENTS TO WIRE: ${intents}
 
 VISUAL STYLE — LOCKED to the wizard's "${styleLabel}" preset (${themeMode} theme).
@@ -458,10 +453,10 @@ ADVANCED CSS TOKEN INJECTION (already present in /src/index.css — USE these ut
 - Color expressions for inline styles: hsl(var(--primary) / 0.15) for tints, hsl(var(--foreground) / 0.06) for hairlines, linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent))) for premium fills.
 
 RULES:
-1. Output ONLY valid JSON with this exact top-level shape: {"files": {"src/App.tsx": "...", "src/index.css": "...", "src/pages/<Name>.tsx": "..."}}
+1. Output ONLY valid JSON with this exact top-level shape: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
    The top-level key MUST be "files". Do NOT return "components", "pages", "project", "app", arrays, prose, markdown, or a schema without file contents.
-   Every value inside "files" MUST be a complete source-code string. Include /src/App.tsx (Home composition), /src/index.css, AND one file for EVERY entry in MULTI-PAGE ROSTER above (use the exact file_path).
-2. App.tsx: SINGLE FILE for the HOME page composition, ALL Home sections inline, starts with: import React, { useState } from 'react';. Do NOT include a router — the canonical builder owns routing. Sub-page files use the same single-file pattern.
+   Every value inside "files" MUST be a complete source-code string. Ship ONLY /src/App.tsx (the Home composition) and /src/index.css. Do NOT emit any /src/pages/* files — additional pages are created later, on demand, by the AI Builder using live site context.
+2. App.tsx: SINGLE FILE for the HOME page composition, ALL Home sections inline, starts with: import React, { useState } from 'react';. Do NOT include a router — the canonical builder owns routing.
 3. Use ONLY these imports per file: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
 4. Use Tailwind semantic tokens whenever possible: bg-primary, text-foreground, bg-card, border-border, text-muted-foreground. NEVER hardcode hex colors or Tailwind palette colors (bg-slate-900, text-white, bg-zinc-800, etc.) — those will fight the wizard theme.
 5. For custom color expressions reference CSS vars: style={{ color: 'hsl(var(--primary))' }}, style={{ background: 'hsl(var(--card) / 0.8)' }}.
@@ -474,11 +469,10 @@ RULES:
    - Quote/estimate request: data-ut-intent="quote.request"
    - View pricing/plans: data-ut-intent="nav.anchor" href="#pricing"
    - Learn more: data-ut-intent="nav.anchor" href="#about"
-   - Cross-page navigation: <a href="#/contact" data-ut-intent="nav.goto" data-ut-path="/contact"> (use HashRouter-friendly hrefs that match the MULTI-PAGE ROSTER paths)
    - Phone/call: <a href="tel:..." data-ut-intent="contact.call">
    - Email: <a href="mailto:..." data-ut-intent="contact.email">
    Forms should use: <form data-ut-intent="contact.submit">
-7. Navigation anchor links inside a page: <a href="#sectionId" data-ut-intent="nav.anchor">. Cross-page links use data-ut-intent="nav.goto" with data-ut-path matching the roster.
+7. Navigation anchor links inside the Home page: <a href="#sectionId" data-ut-intent="nav.anchor">. Do NOT emit cross-page links — sub-pages do not yet exist at wizard launch.
 8. Images: use ONLY these VERIFIED Unsplash URLs (they are guaranteed to load):
    HERO/BACKGROUND by industry:
    - Restaurant: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80"
@@ -498,7 +492,7 @@ RULES:
 11. THEME-MODE-AWARE STYLING: this is a ${themeMode} theme. ${isDark
     ? 'Use deeper backgrounds with subtle glassmorphism (hsl(var(--card) / 0.6) + backdrop-blur), bright accents, and high-contrast light text.'
     : 'Use light/cream backgrounds, soft shadows, refined serif/clean sans typography, generous whitespace, and dark text on light surfaces. NO dark glassmorphism overlays. NO black panels.'} Responsive (sm:/md:/lg:).
-12. export default function App() — must be the default export of App.tsx. Each sub-page file must default-export a PascalCase React component named after the page (e.g. function Contact() { ... }).
+12. export default function App() — must be the default export of App.tsx.
 13. NO markdown, NO explanations, NO code fences — ONLY the raw JSON object.
 14. CONTRAST RULE: the supplied --foreground / --primary-foreground / --card-foreground tokens are already chosen for legibility against their paired surface. Use them as-is. Never add inline white-on-white or black-on-black combos.
 15. LUCIDE ICONS — only use these VERIFIED icon names: Menu, X, ChevronDown, ChevronRight, ChevronLeft, ArrowRight, ArrowLeft, Star, Heart, Phone, Mail, MapPin, Clock, Calendar, Check, CheckCircle, CheckCircle2, Circle, Plus, Minus, Search, Settings, User, Users, Home, Building, Briefcase, Award, Shield, Zap, Sparkles, Sun, Moon, Eye, Camera, Image, Play, Pause, Volume2, MessageCircle, MessageSquare, Send, Share2, ExternalLink, Download, Upload, RefreshCw, RotateCw, Trash2, Edit, Copy, Bookmark, Flag, Bell, Lock, Unlock, Key, Globe, Wifi, Database, Server, Code, Terminal, GitBranch, Package, Layers, Layout, Grid, List, Filter, BarChart3, TrendingUp, DollarSign, CreditCard, ShoppingCart, ShoppingBag, Truck, Gift, Coffee, Utensils, Scissors, Palette, PenTool, Ruler, Wrench, Hammer, Stethoscope, GraduationCap, BookOpen, Lightbulb, Target, Rocket, Crown, Gem, Flame, Leaf, Droplets, Mountain, Waves, Music, Video, Pin, Radio, AtSign, CloudRain, Rss, Slack, Twitch, Dribbble, Figma, Chrome, Instagram, Facebook, Twitter, Linkedin, Youtube, Github

@@ -24,6 +24,12 @@ import type {
   BindingSectionType,
   BindingSlotRole,
 } from '@/types/playground';
+import {
+  getIntentProfile,
+  isIntentForbidden,
+  missingRequiredIntents,
+  FALLBACK_RECIPES,
+} from '@/platform/core/industryIntentProfiles';
 
 // ============================================================================
 // Business Model → Required Pages
@@ -546,6 +552,47 @@ export function resolveCapabilities(selections: WizardSelections): CapabilityPac
     }
   }
 
+  // 9. Industry intent profile — strip forbidden coreIntents and
+  //    synthesize fallback bindings for missing REQUIRED coreIntents.
+  //    This is the deterministic "platform knows the business" layer.
+  const profile = getIntentProfile(model, overlay);
+
+  // 9a. Drop forbidden bindings (e.g. cart.* on a salon site).
+  const filteredV2 = bindingSpecsV2.filter(
+    (b) => !isIntentForbidden(b.coreIntent, profile),
+  );
+  const filteredLegacy = bindingSpecs.filter((b) => {
+    // Legacy specs don't carry coreIntent — best-effort map by playground intent
+    const inferred = LEGACY_INTENT_TO_CORE[b.intent];
+    return !inferred || !isIntentForbidden(inferred, profile);
+  });
+
+  // 9b. Synthesize fallback bindings for any required coreIntent not yet covered.
+  const coveredCore = new Set(filteredV2.map((b) => b.coreIntent));
+  const missing = missingRequiredIntents(coveredCore, profile);
+  for (const coreIntent of missing) {
+    const recipe = FALLBACK_RECIPES[coreIntent];
+    if (!recipe) continue;
+    // Don't synthesize if the slot is already occupied
+    const slotTaken = filteredV2.some(
+      (b) =>
+        b.sourcePageRole === 'home' &&
+        b.sourceSection === recipe.preferredSection &&
+        b.sourceSlot === recipe.preferredSlot,
+    );
+    if (slotTaken) continue;
+    filteredV2.push({
+      sourcePageRole: 'home',
+      sourceSection: recipe.preferredSection,
+      sourceSlot: recipe.preferredSlot,
+      label: undefined,
+      coreIntent: recipe.coreIntent,
+      intent: coreToPlaygroundIntent(recipe.coreIntent),
+      targetRef: recipe.targetRef,
+      uiAction: recipe.uiAction,
+    });
+  }
+
   return {
     id: `cap_${nanoid(8)}`,
     requiredPages: Array.from(pageSet),
@@ -554,7 +601,44 @@ export function resolveCapabilities(selections: WizardSelections): CapabilityPac
     requiredCalendars: Array.from(calendarSet),
     requiredProducts: Array.from(productSet),
     recommendedPopups: Array.from(popupSet),
-    recommendedBindings: bindingSpecs,
-    recommendedBindingsV2: bindingSpecsV2,
+    recommendedBindings: filteredLegacy,
+    recommendedBindingsV2: filteredV2,
   };
+}
+
+// ============================================================================
+// Helpers — legacy intent ↔ core intent mapping (best effort)
+// ============================================================================
+
+const LEGACY_INTENT_TO_CORE: Partial<Record<PlaygroundBindingIntent, string>> = {
+  'nav.goto_page': 'nav.goto',
+  'form.open': 'lead.capture',
+  'popup.open': 'lead.capture',
+  'calendar.open': 'booking.create',
+  'checkout.start': 'cart.checkout',
+  'product.view': 'nav.goto',
+  'cart.view': 'cart.view',
+  'external.open': 'nav.external',
+  'funnel.goto_step': 'nav.goto',
+};
+
+const CORE_TO_PLAYGROUND_INTENT: Record<string, PlaygroundBindingIntent> = {
+  'nav.goto': 'nav.goto_page',
+  'nav.anchor': 'nav.goto_page',
+  'nav.external': 'external.open',
+  'booking.create': 'calendar.open',
+  'quote.request': 'form.open',
+  'lead.capture': 'form.open',
+  'contact.submit': 'form.open',
+  'newsletter.subscribe': 'form.open',
+  'auth.register': 'popup.open',
+  'auth.login': 'popup.open',
+  'donation.start': 'form.open',
+  'cart.add': 'checkout.start',
+  'cart.checkout': 'checkout.start',
+  'cart.view': 'cart.view',
+};
+
+function coreToPlaygroundIntent(coreIntent: string): PlaygroundBindingIntent {
+  return CORE_TO_PLAYGROUND_INTENT[coreIntent] ?? 'form.open';
 }

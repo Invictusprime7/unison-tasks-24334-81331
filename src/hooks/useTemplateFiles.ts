@@ -199,21 +199,58 @@ export function useTemplateFiles() {
         if (updateError) throw updateError;
         data = updated;
       } else {
+        const insertPayload = {
+          name: trimmedName,
+          user_id: user.id,
+          business_id: payload?.businessId ?? null,
+          code,
+          editor_code: code,
+          vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+          metadata,
+        };
         const { data: inserted, error: insertError } = await supabase
           .from("builder_drafts")
-          .insert({
-            name: trimmedName,
-            user_id: user.id,
-            business_id: payload?.businessId ?? null,
-            code,
-            editor_code: code,
-            vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
-            metadata,
-          })
+          .insert(insertPayload)
           .select("id")
           .single();
-        if (insertError) throw insertError;
-        data = inserted;
+        if (insertError) {
+          // Unique-index collision (idx_builder_drafts_user_unique: one draft per user
+          // when business_id IS NULL). Fall back to updating the existing row so the
+          // save always succeeds and we never lose AI-generated state.
+          if ((insertError as { code?: string }).code === "23505") {
+            let collisionLookup = supabase
+              .from("builder_drafts")
+              .select("id")
+              .eq("user_id", user.id)
+              .order("updated_at", { ascending: false })
+              .limit(1);
+            collisionLookup = payload?.businessId
+              ? collisionLookup.eq("business_id", payload.businessId)
+              : collisionLookup.is("business_id", null);
+            const { data: existing } = await collisionLookup.maybeSingle();
+            if (!existing?.id) throw insertError;
+            const { data: updated, error: updateError } = await supabase
+              .from("builder_drafts")
+              .update({
+                name: trimmedName,
+                business_id: payload?.businessId ?? null,
+                code,
+                editor_code: code,
+                vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+                metadata,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", existing.id)
+              .select("id")
+              .single();
+            if (updateError) throw updateError;
+            data = updated;
+          } else {
+            throw insertError;
+          }
+        } else {
+          data = inserted;
+        }
       }
 
       if (!data) throw new Error("Failed to persist draft");

@@ -6432,14 +6432,30 @@ export default function ${componentName}() {
                   const beforeFiles = virtualFS.getSandpackFiles();
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
-                  if (result.success) {
-                    const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
-                    const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
-                    console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
-                    setViewMode('canvas');
-                    console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,',
-                      Object.keys(result.dependencies.dependencies).length, 'deps');
-                    // Capture an edit snapshot so users can revert/reapply.
+                   if (result.success) {
+                     const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
+                     const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
+                     console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
+                     setViewMode('canvas');
+                     console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,',
+                       Object.keys(result.dependencies.dependencies).length, 'deps');
+                     // Re-hydrate Creator's Playground so newly-added /src/pages/*.tsx files
+                     // register as page tabs / routes in the canonical PageRegistry.
+                     setTimeout(() => {
+                       try {
+                         const latestFiles = virtualFS.getSandpackFiles();
+                         const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
+                         console.log('[WebBuilder] Post-AI playground re-hydrated:', hyd.stats);
+                         if (hyd.stats.pagesDetected > 1) {
+                           toast.success('Routes synced', {
+                             description: `${hyd.stats.pagesDetected} pages registered`,
+                           });
+                         }
+                       } catch (e) {
+                         console.warn('[WebBuilder] Post-AI hydration failed:', e);
+                       }
+                     }, 150);
+                     // Capture an edit snapshot so users can revert/reapply.
                     const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                     if (changedPaths.length > 0) {
                       const promptPreview = applyMeta?.prompt
@@ -6754,6 +6770,16 @@ export default function ${componentName}() {
                   syncBuilderFromFiles(mergedFiles, activePagePath);
                   setViewMode('canvas');
                   setAiPanelOpen(false);
+                  // Re-hydrate playground so AI-added pages become route tabs.
+                  setTimeout(() => {
+                    try {
+                      const latestFiles = virtualFS.getSandpackFiles();
+                      const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
+                      console.log('[WebBuilder] Post-AI (panel) playground re-hydrated:', hyd.stats);
+                    } catch (e) {
+                      console.warn('[WebBuilder] Post-AI hydration failed:', e);
+                    }
+                  }, 150);
                   const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                   if (changedPaths.length > 0) {
                     const promptPreview = applyMeta?.prompt

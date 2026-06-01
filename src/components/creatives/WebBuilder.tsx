@@ -2002,45 +2002,14 @@ export default function ${componentName}Page() {
   const initialCodeRef = useRef<string>(previewCode);
   
   // Cloud state: project settings, entitlements, installed packs
-  const [cloudState, setCloudState] = useState<{
-    project: {
-      id: string | null;
-      name: string | null;
-      slug: string | null;
-      publishStatus: string | null;
-      customDomain: string | null;
-      settings: Record<string, any>;
-    };
-    business: {
-      id: string | null;
-      name: string | null;
-      notificationEmail: string | null;
-      timezone: string | null;
-      brandColor: string | null;
-    };
-    entitlements: Record<string, { limit?: number; enabled?: boolean }>;
-    installedPacks: string[];
-    isLoaded: boolean;
-  }>({
-    project: {
-      id: projectId || null,
-      name: projectNameFromState || null,
-      slug: projectSlug || null,
-      publishStatus: publishStatusFromState || null,
-      customDomain: customDomainFromState || null,
-      settings: {},
-    },
-    business: {
-      id: businessId || null,
-      name: null,
-      notificationEmail: null,
-      timezone: 'UTC',
-      brandColor: null,
-    },
-    entitlements: {},
-    installedPacks: [],
-    isLoaded: false,
-  });
+  const [cloudState, setCloudState] = useState<CloudStateSnapshot>(() => createInitialCloudState({
+    projectId,
+    businessId,
+    projectNameFromState,
+    projectSlug,
+    publishStatusFromState,
+    customDomainFromState,
+  }));
   
   // Load full cloud state when project/business context is available
   useEffect(() => {

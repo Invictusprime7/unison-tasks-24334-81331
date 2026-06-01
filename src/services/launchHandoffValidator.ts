@@ -130,18 +130,22 @@ export function validateLaunchHandoff(
           nextTag = rewriteIntent(nextTag, 'contact.submit');
           repaired += 1;
         } else {
-          // 2. Capability not provisioned → downgrade to contact.submit
+          // 2. Capability not provisioned → downgrade to contact.submit.
+          //    Honor both the single `capability` field and `requiredCapabilities`.
           const def = getIntentDef(canonical);
-          const cap = def?.capability?.toLowerCase();
-          if (cap && !provisioned.has(cap)) {
+          const required = new Set<string>();
+          if (def?.capability) required.add(def.capability.toLowerCase());
+          for (const cap of def?.requiredCapabilities ?? []) required.add(cap.toLowerCase());
+          const missing = Array.from(required).filter((cap) => !provisioned.has(cap));
+          if (missing.length > 0) {
             issues.push({
               severity: 'warn',
               code: 'MISSING_CAPABILITY',
-              message: `Intent "${canonical}" requires capability "${cap}" which is not provisioned; downgraded to contact.submit`,
+              message: `Intent "${canonical}" requires capability "${missing.join('+')}" which is not provisioned; downgraded to contact.submit`,
               filePath,
               slot,
               intent: canonical,
-              capability: cap,
+              capability: missing[0],
             });
             nextTag = rewriteIntent(nextTag, 'contact.submit');
             repaired += 1;

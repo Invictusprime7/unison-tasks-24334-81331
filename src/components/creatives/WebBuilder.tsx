@@ -4672,31 +4672,14 @@ ${sectionsJsx}
     } else if (format === 'react') {
       setExportDialogOpen(true);
     } else if (format === 'json') {
-      const json = JSON.stringify(fabricCanvas.toJSON(), null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'design.json';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadJSON(fabricCanvas.toJSON(), 'design.json');
     }
   };
 
   const toggleFullscreen = async () => {
-    if (!mainContainerRef.current) return;
-
-    try {
-      if (!document.fullscreenElement) {
-        await mainContainerRef.current.requestFullscreen();
-        setIsFullscreen(true);
-      } else {
-        await document.exitFullscreen();
-        setIsFullscreen(false);
-      }
-    } catch (error) {
+    const { isFullscreen: next, error } = await toggleElementFullscreen(mainContainerRef.current);
+    setIsFullscreen(next);
+    if (error) {
       console.error('Error toggling fullscreen:', error);
       toast.error('Failed to toggle fullscreen');
     }

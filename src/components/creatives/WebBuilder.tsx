@@ -3125,7 +3125,7 @@ export default function ${componentName}Page() {
       window.removeEventListener('message', handleRuntimeOverlayMessage);
       window.removeEventListener('intent:cart.view', handleCartViewIntent);
     };
-  }, [mapOverlayIdToConfig, openPreviewCart, refreshPreviewCart]);
+  }, [openPreviewCart, refreshPreviewCart]);
 
   // Listen for INTENT_TRIGGER messages from iframe previews
   useEffect(() => {

@@ -99,6 +99,10 @@ import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import {
+  selectEditableEntryPath as selectEditableEntryPathPure,
+  computeVfsSignature as computeVfsSignaturePure,
+} from "@/lib/builder/vfsHelpers";
+import {
   type CodeValidationResult,
   extractStyleBlocks,
   preserveStyleBlocks,

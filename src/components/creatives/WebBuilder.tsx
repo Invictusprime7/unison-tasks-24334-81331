@@ -101,6 +101,13 @@ import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
 import { fabricObjectsToHtmlCss, buildVfsPageListContext } from "@/lib/builder/exportHelpers";
 import {
+  getCanvasWidth as computeCanvasWidth,
+  getCanvasHeight as computeCanvasHeight,
+  computeZoomIn,
+  computeZoomOut,
+  computeWheelZoom,
+} from "@/lib/builder/canvasViewport";
+import {
   selectEditableEntryPath as selectEditableEntryPathPure,
   computeVfsSignature,
 } from "@/lib/builder/vfsHelpers";
@@ -4612,7 +4619,7 @@ ${sectionsJsx}
 
   const handleZoomIn = () => {
     if (!fabricCanvas) return;
-    const newZoom = Math.min(zoom * 1.2, 2);
+    const newZoom = computeZoomIn(zoom);
     setZoom(newZoom);
     fabricCanvas.setZoom(newZoom);
     fabricCanvas.renderAll();
@@ -4620,27 +4627,14 @@ ${sectionsJsx}
 
   const handleZoomOut = () => {
     if (!fabricCanvas) return;
-    const newZoom = Math.max(zoom / 1.2, 0.1);
+    const newZoom = computeZoomOut(zoom);
     setZoom(newZoom);
     fabricCanvas.setZoom(newZoom);
     fabricCanvas.renderAll();
   };
 
-  const getCanvasWidth = () => {
-    switch (device) {
-      case "tablet": return 768;
-      case "mobile": return 375;
-      default: return 1280;
-    }
-  };
-
-  const getCanvasHeight = () => {
-    switch (device) {
-      case "tablet": return Math.max(1024, canvasHeight);
-      case "mobile": return Math.max(667, canvasHeight);
-      default: return canvasHeight;
-    }
-  };
+  const getCanvasWidth = () => computeCanvasWidth(device);
+  const getCanvasHeight = () => computeCanvasHeight(device, canvasHeight);
 
   const canonicalBuildArtifacts = useMemo(() => {
     const sourceFiles = getSandpackFiles();
@@ -4728,8 +4722,7 @@ ${sectionsJsx}
       // Only zoom if Ctrl key is pressed
       if (e.ctrlKey) {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        const newZoom = Math.max(0.1, Math.min(2, zoom * delta));
+        const newZoom = computeWheelZoom(zoom, e.deltaY);
         setZoom(newZoom);
         if (fabricCanvas) {
           fabricCanvas.setZoom(newZoom);

@@ -99,6 +99,10 @@ import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import {
+  selectEditableEntryPath as selectEditableEntryPathPure,
+  computeVfsSignature,
+} from "@/lib/builder/vfsHelpers";
+import {
   type CodeValidationResult,
   extractStyleBlocks,
   preserveStyleBlocks,
@@ -2029,25 +2033,9 @@ export default function ${componentName}Page() {
     files: Record<string, string>,
     preferredPath?: string | null,
   ): string | null => {
-    if (preferredPath && files[preferredPath]) {
-      return preferredPath;
-    }
-
-    const resolvedEntryPath = resolveLauncherEntryPoint(
-      files,
-      preferredPath || launchEntryPoint,
-    );
-    if (resolvedEntryPath && files[resolvedEntryPath]) {
-      return resolvedEntryPath;
-    }
-
-    return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path))
-      || Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path))
-      || Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path))
-      || (files['/index.html'] ? '/index.html' : null)
-      || Object.keys(files)[0]
-      || null;
+    return selectEditableEntryPathPure(files, preferredPath, launchEntryPoint);
   }, [launchEntryPoint]);
+
 
   const syncBuilderFromFiles = useCallback((
     files: Record<string, string>,
@@ -2164,21 +2152,8 @@ export default function ${componentName}Page() {
   // Track VFS file map signature so we persist multi-file AI edits even when
   // the legacy single-file `previewCode` blob did not change.
   const lastSavedVfsSignatureRef = useRef<string>('');
-  const computeVfsSignature = useCallback((files: Record<string, string>): string => {
-    const keys = Object.keys(files).sort();
-    if (keys.length === 0) return '';
-    let hash = 0;
-    for (const k of keys) {
-      const v = files[k] ?? '';
-      // Cheap stable signature: path + length + last-32-char tail.
-      const tail = v.length > 32 ? v.slice(-32) : v;
-      const seg = `${k}:${v.length}:${tail}|`;
-      for (let i = 0; i < seg.length; i++) {
-        hash = ((hash << 5) - hash + seg.charCodeAt(i)) | 0;
-      }
-    }
-    return `${keys.length}:${hash}`;
-  }, []);
+  // computeVfsSignature moved to '@/lib/builder/vfsHelpers' (Phase C3).
+
   // Keep the current template id in a ref so callbacks always read the
   // latest value without stale-closure issues (avoids re-creating intervals).
   const currentTemplateIdRef = useRef<string | null>(templateFiles.currentTemplateId);

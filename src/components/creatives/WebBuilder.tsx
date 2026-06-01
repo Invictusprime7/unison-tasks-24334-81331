@@ -98,6 +98,7 @@ import {
 import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
+import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
 import {
   selectEditableEntryPath as selectEditableEntryPathPure,
   computeVfsSignature,
@@ -1017,38 +1018,7 @@ export default function App() {
     description?: string | null;
     canvas_data?: Record<string, unknown> | null | unknown;
   }) => {
-    const canvasData = (template.canvas_data || {}) as {
-      html?: string;
-      css?: string;
-      previewCode?: string;
-      js?: string;
-      vfsFiles?: Record<string, string>;
-      entryPoint?: string;
-      activePagePath?: string;
-      canonicalPlayground?: {
-        pageRegistry?: import('@/types/pageRegistry').PageRegistry;
-        creatorData?: import('@/types/creatorData').CreatorData;
-        bindings?: Record<string, import('@/types/playground').PlaygroundBinding>;
-        calendars?: Record<string, import('@/types/playground').PlaygroundCalendar>;
-        popups?: Record<string, import('@/types/playground').PlaygroundPopup>;
-      };
-      siteBundleSnapshot?: {
-        pageRegistry?: import('@/types/pageRegistry').PageRegistry;
-        creatorData?: import('@/types/creatorData').CreatorData;
-        bindings?: Record<string, import('@/types/playground').PlaygroundBinding>;
-        calendars?: Record<string, import('@/types/playground').PlaygroundCalendar>;
-        popups?: Record<string, import('@/types/playground').PlaygroundPopup>;
-      };
-    };
-    const persistedPlayground = canvasData.canonicalPlayground || (
-      canvasData.siteBundleSnapshot ? {
-        pageRegistry: canvasData.siteBundleSnapshot.pageRegistry,
-        creatorData: canvasData.siteBundleSnapshot.creatorData,
-        bindings: canvasData.siteBundleSnapshot.bindings,
-        calendars: canvasData.siteBundleSnapshot.calendars,
-        popups: canvasData.siteBundleSnapshot.popups,
-      } : null
-    );
+    const { canvasData, persistedPlayground, hasVfsFiles } = parseSavedTemplate(template);
 
     if (persistedPlayground?.pageRegistry || persistedPlayground?.creatorData) {
       creatorPlayground.hydrateCanonicalState({
@@ -1060,7 +1030,7 @@ export default function App() {
     if (persistedPlayground?.calendars) setPlaygroundCalendars(persistedPlayground.calendars);
     if (persistedPlayground?.popups) setPlaygroundPopups(persistedPlayground.popups);
 
-    if (canvasData?.vfsFiles && Object.keys(canvasData.vfsFiles).length > 0) {
+    if (hasVfsFiles && canvasData.vfsFiles) {
       const entry = canvasData.entryPoint || launchEntryPoint;
       const preferred = canvasData.activePagePath || entry;
       importBuilderFiles(canvasData.vfsFiles, {
@@ -1078,28 +1048,11 @@ export default function App() {
       return true;
     }
 
-    let code = canvasData?.previewCode || canvasData?.html || '';
+    const code = assembleLegacyHtmlPayload(canvasData);
     if (!code) {
       return false;
     }
 
-    const separateCss = canvasData?.css || '';
-    if (separateCss && !code.includes(separateCss.substring(0, 50))) {
-      if (code.includes('</head>')) {
-        code = code.replace('</head>', `<style>\n${separateCss}\n</style>\n</head>`);
-      } else {
-        code = `<style>\n${separateCss}\n</style>\n${code}`;
-      }
-    }
-    const separateJs = canvasData?.js || '';
-    if (separateJs && !code.includes(separateJs.substring(0, 50))) {
-      const scriptTag = `<script>\n${separateJs}\n</script>`;
-      if (code.includes('</body>')) {
-        code = code.replace('</body>', `${scriptTag}\n</body>`);
-      } else {
-        code = code + `\n${scriptTag}`;
-      }
-    }
     setEditorCode(code);
     setPreviewCode(code);
     setCurrentTemplateName(template.name);
@@ -1113,6 +1066,7 @@ export default function App() {
   // by which point importBuilderFiles is fully initialized.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creatorPlayground, launchEntryPoint]);
+
   
   // Load saved project from URL parameter on mount.
   // Hydrates the FULL VFS (multi-page, router, entry point) when present;

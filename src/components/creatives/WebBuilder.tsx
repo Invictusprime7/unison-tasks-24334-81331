@@ -4244,7 +4244,7 @@ ${sectionsJsx}
     toast.success(`Opened "${template.name}"`, {
       description: 'Template loaded - you can continue editing',
     });
-  }, [templateFiles, integrateCSSIntoHTML, importBuilderFiles, launchEntryPoint]);
+  }, [templateFiles, importBuilderFiles, launchEntryPoint]);
 
   // Handle template selection from LayoutTemplatesPanel (used by FloatingDock)
   const handleSelectTemplate = useCallback((

@@ -98,6 +98,7 @@ import {
 } from "@/lib/builder/elementMutations";
 import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
 import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
+import { loadCloudState } from "@/lib/builder/loadCloudState";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
@@ -2090,105 +2091,25 @@ export default function ${componentName}Page() {
   // Load full cloud state when project/business context is available
   useEffect(() => {
     let cancelled = false;
-    
-    async function loadCloudState() {
-      if (!businessId) {
-        // No business context - running in preview/demo mode
-        if (!cancelled) {
-          setCloudState(prev => ({ ...prev, isLoaded: true }));
-        }
-        return;
+    loadCloudState({
+      businessId,
+      projectId,
+      fallbacks: {
+        projectNameFromState,
+        projectSlug,
+        publishStatusFromState,
+        customDomainFromState,
+      },
+    }).then((result) => {
+      if (cancelled) return;
+      if (result.kind === 'full') {
+        setCloudState(result.snapshot);
+      } else {
+        setCloudState((prev) => ({ ...prev, ...result.patch }));
       }
-      
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData.session) {
-          if (!cancelled) setCloudState(prev => ({ ...prev, isLoaded: true }));
-          return;
-        }
-        
-        // Load business settings
-        // Type cast to handle dynamic table that may not be in generated types yet
-        const { data: bizData } = await supabase
-          .from('businesses' as any)
-          .select('id, name, notification_email, timezone, brand_color, settings')
-          .eq('id', businessId)
-          .maybeSingle() as { data: { id: string; name: string; notification_email: string | null; timezone: string | null; brand_color: string | null; settings: any } | null };
-        
-        // Load project settings if we have a projectId
-        let projectData: { id: string; name: string; slug: string | null; publish_status: string | null; custom_domain: string | null; settings: any } | null = null;
-        if (projectId) {
-          const { data } = await getProjectByIdCompat(projectId);
-          projectData = data
-            ? {
-                id: data.id,
-                name: data.name,
-                slug: data.slug || null,
-                publish_status: data.publish_status || null,
-                custom_domain: data.custom_domain || null,
-                settings: data.settings || {},
-              }
-            : null;
-        }
-        
-        // Load entitlements
-        const { data: entitlementsData } = await supabase
-          .from('entitlements' as any)
-          .select('key, value')
-          .eq('business_id', businessId) as { data: { key: string; value: any }[] | null };
-        
-        // Load installed packs
-        const { data: packsData } = await supabase
-          .from('installed_packs' as any)
-          .select('pack_id')
-          .eq('business_id', businessId)
-          .eq('status', 'active') as { data: { pack_id: string }[] | null };
-        
-        if (!cancelled) {
-          const entitlements: Record<string, { limit?: number; enabled?: boolean }> = {};
-          (entitlementsData || []).forEach((e) => {
-            entitlements[e.key] = typeof e.value === 'string' ? JSON.parse(e.value) : e.value;
-          });
-          
-          setCloudState({
-            project: {
-              id: projectData?.id || projectId || null,
-              name: projectData?.name || projectNameFromState || null,
-              slug: projectData?.slug || projectSlug || null,
-              publishStatus: projectData?.publish_status || publishStatusFromState || null,
-              customDomain: projectData?.custom_domain || customDomainFromState || null,
-              settings: projectData?.settings || {},
-            },
-            business: {
-              id: bizData?.id || businessId || null,
-              name: bizData?.name || null,
-              notificationEmail: bizData?.notification_email || null,
-              timezone: bizData?.timezone || 'UTC',
-              brandColor: bizData?.brand_color || null,
-            },
-            entitlements,
-            installedPacks: (packsData || []).map((p: any) => p.pack_id),
-            isLoaded: true,
-          });
-          
-          console.log('[WebBuilder] Cloud state loaded:', {
-            businessId,
-            projectId,
-            entitlementsCount: Object.keys(entitlements).length,
-            installedPacks: (packsData || []).map((p: any) => p.pack_id),
-          });
-        }
-      } catch (error) {
-        console.warn('[WebBuilder] Failed to load cloud state:', error);
-        if (!cancelled) {
-          setCloudState(prev => ({ ...prev, isLoaded: true }));
-        }
-      }
-    }
-    
-    loadCloudState();
+    });
     return () => { cancelled = true; };
-  }, [businessId, projectId]);
+  }, [businessId, projectId, projectNameFromState, projectSlug, publishStatusFromState, customDomainFromState]);
 
   const playgroundSetupSnapshot = useMemo(() => ({
     publishStatus: cloudState.project.publishStatus,

@@ -218,14 +218,16 @@ export function useTemplateFiles() {
           // when business_id IS NULL). Fall back to updating the existing row so the
           // save always succeeds and we never lose AI-generated state.
           if ((insertError as { code?: string }).code === "23505") {
-            const { data: existing } = await supabase
+            let collisionLookup = supabase
               .from("builder_drafts")
               .select("id")
               .eq("user_id", user.id)
-              .is("business_id", payload?.businessId ? undefined as never : null)
               .order("updated_at", { ascending: false })
-              .limit(1)
-              .maybeSingle();
+              .limit(1);
+            collisionLookup = payload?.businessId
+              ? collisionLookup.eq("business_id", payload.businessId)
+              : collisionLookup.is("business_id", null);
+            const { data: existing } = await collisionLookup.maybeSingle();
             if (!existing?.id) throw insertError;
             const { data: updated, error: updateError } = await supabase
               .from("builder_drafts")

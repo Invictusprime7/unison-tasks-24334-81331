@@ -529,6 +529,75 @@ export function buildComponentBehaviorMap(
     }
   }
 
+  // ── VFS Source Fallback ──
+  // The DOM scan above fails silently when Sandpack's iframe is sandboxed
+  // cross-origin (contentDocument access throws). In that case `elements` is
+  // empty even though the source clearly contains buttons/links/forms, and the
+  // AI prompt ends up saying "0 interactive elements" — so the model never
+  // touches them. Parse interactive JSX out of the source as a backstop.
+  if (elements.length === 0) {
+    const tagRegex = /<\s*(button|a|input|textarea|select|form)\b([^>]*)>/gi;
+    const intentRegex = /<\s*([A-Za-z][\w.]*)\b([^>]*\bdata-ut-intent\s*=\s*["']([^"']+)["'][^>]*)>/gi;
+    const attr = (chunk: string, name: string): string | null => {
+      const m = chunk.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, 'i'));
+      return m ? m[1] : null;
+    };
+
+    for (const [filePath, content] of Object.entries(vfsFiles)) {
+      if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+      let m: RegExpExecArray | null;
+      tagRegex.lastIndex = 0;
+      while ((m = tagRegex.exec(content)) !== null) {
+        const tag = m[1].toLowerCase();
+        const attrs = m[2] || '';
+        const onClick = /\bonClick\s*=/.test(attrs);
+        const intent = attr(attrs, 'data-ut-intent');
+        const cta = attr(attrs, 'data-ut-cta');
+        const id = attr(attrs, 'id');
+        const cls = attr(attrs, 'className');
+        const selectorParts = [tag];
+        if (id) selectorParts.push(`#${id}`);
+        else if (cls) selectorParts.push(`.${cls.split(/\s+/).slice(0, 2).join('.')}`);
+        // Best-effort text content: capture up to closing tag on same line
+        const after = content.slice(m.index + m[0].length, m.index + m[0].length + 200);
+        const textMatch = after.match(/^([^<]{1,80})/);
+        elements.push({
+          selector: selectorParts.join(''),
+          tagName: tag,
+          textContent: (textMatch?.[1] || '').trim(),
+          sourceFile: filePath,
+          handlers: onClick ? ['onClick'] : [],
+          intent,
+          ctaLabel: cta,
+          role: attr(attrs, 'role'),
+          hasInteraction: onClick || !!intent,
+        });
+        if (elements.length >= 60) break;
+      }
+      if (elements.length >= 60) break;
+
+      // Also pick up custom components carrying data-ut-intent (e.g. <CTAButton …>)
+      intentRegex.lastIndex = 0;
+      while ((m = intentRegex.exec(content)) !== null) {
+        const compName = m[1];
+        const attrs = m[2] || '';
+        elements.push({
+          selector: compName,
+          tagName: compName.toLowerCase(),
+          textContent: '',
+          sourceFile: filePath,
+          handlers: [],
+          intent: m[3],
+          ctaLabel: attr(attrs, 'data-ut-cta'),
+          role: attr(attrs, 'role'),
+          hasInteraction: true,
+        });
+        if (elements.length >= 60) break;
+      }
+      if (elements.length >= 60) break;
+    }
+  }
+
   return {
     elements: elements.slice(0, 40), // cap for prompt budget
     stateByFile,

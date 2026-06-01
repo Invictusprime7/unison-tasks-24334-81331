@@ -24,6 +24,7 @@ export type CapabilityId =
   | 'contact'
   | 'newsletter'
   | 'commerce'
+  | 'payments'
   | 'auth'
   | 'lead-capture'
   | 'donation';
@@ -203,6 +204,20 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredOverlays: ['cart-overlay', 'checkout-form'],
     supportedIndustries: ['ecommerce'],
     crmEntryStage: 'New Customer',
+    requiresAuth: false,
+    minPlan: 'starter',
+  },
+
+  payments: {
+    id: 'payments',
+    name: 'Payments',
+    description: 'Stripe-backed payment & checkout sessions (powers commerce + donations + paid bookings).',
+    primaryIntent: 'pay.checkout',
+    supportingIntents: ['pay.success', 'pay.cancel'],
+    requiredTables: ['orders'],
+    requiredWorkflows: [],
+    requiredOverlays: ['checkout-form'],
+    supportedIndustries: ['ecommerce', 'nonprofit', 'coaching', 'salon', 'local-service'],
     requiresAuth: false,
     minPlan: 'starter',
   },

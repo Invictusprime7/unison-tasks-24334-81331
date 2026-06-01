@@ -28,8 +28,12 @@ export const ACTION_INTENTS = Object.values(INTENT_REGISTRY)
   .filter(
     (d) =>
       (d.namespace === 'lead' && d.surface !== 'client') ||
+      d.namespace === 'contact' ||
       d.name === 'newsletter.subscribe' ||
-      d.name === 'booking.create',
+      d.name === 'content.download' ||
+      d.name === 'coupon.claim' ||
+      d.name === 'booking.create' ||
+      d.name === 'donation.start',
   )
   .map((d) => d.name);
 export const AUTOMATION_INTENTS = Object.values(INTENT_REGISTRY)
@@ -37,6 +41,8 @@ export const AUTOMATION_INTENTS = Object.values(INTENT_REGISTRY)
     (d) =>
       d.namespace === 'utility' ||
       d.namespace === 'auth' ||
+      d.namespace === 'account' ||
+      d.namespace === 'ui' ||
       (d.namespace === 'commerce' && d.surface !== 'redirect' && !d.name.startsWith('pay.')) ||
       (d.namespace === 'booking' && d.name !== 'booking.create') ||
       (d.namespace === 'lead' && d.surface === 'client'),

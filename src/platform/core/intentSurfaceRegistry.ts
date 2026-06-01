@@ -13,8 +13,11 @@ export type IntentNamespace =
   | 'commerce'
   | 'booking'
   | 'auth'
+  | 'account'
   | 'lead'
+  | 'contact'
   | 'content'
+  | 'ui'
   | 'utility'
   | 'automation';
 
@@ -30,6 +33,16 @@ export type IntentHandler =
 
 export type IntentStatus = 'stable' | 'preview' | 'deprecated';
 
+/**
+ * Who/what triggers this intent.
+ * - user-action: bound to UI elements (buttons, links, icons) by the Wizard
+ * - system-event: emitted by the platform after a state change (order.created etc.)
+ * - workflow-event: emitted by automation pipelines (booking.reminder etc.)
+ *
+ * Wizard auto-binding MUST only emit user-action intents on interactive elements.
+ */
+export type IntentTriggerType = 'user-action' | 'system-event' | 'workflow-event';
+
 export interface IntentDef {
   /** Canonical name, dot-namespaced (e.g. "commerce.cart.add") */
   name: string;
@@ -44,10 +57,27 @@ export interface IntentDef {
     | 'contact'
     | 'quote'
     | 'newsletter'
-    | 'checkout';
+    | 'checkout'
+    | 'donation'
+    | 'lead'
+    | 'search'
+    | 'menu'
+    | 'cart'
+    | 'account'
+    | 'share'
+    | 'chat'
+    | 'filter'
+    | 'sort';
   handler: IntentHandler;
-  /** Capability that must be enabled for this intent to be publish-ready */
+  /**
+   * Single capability this intent needs to be publish-ready.
+   * Values should map to a CapabilityId in capabilityRegistry.ts.
+   */
   capability?: string;
+  /** Additional capabilities required (e.g. donation → ['donation','payments']). */
+  requiredCapabilities?: string[];
+  /** Default: 'user-action'. Lifecycle/workflow intents must be tagged. */
+  triggerType?: IntentTriggerType;
   status: IntentStatus;
   /** Legacy intent names that resolve to this one */
   aliases?: string[];

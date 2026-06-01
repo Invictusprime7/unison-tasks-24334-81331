@@ -95,7 +95,8 @@ import {
   applyElementMoveUp,
   applyElementMoveDown,
 } from "@/lib/builder/elementMutations";
-import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
+import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
+import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
@@ -3974,12 +3975,8 @@ ${sectionsJsx}
 
   // Clear canvas and reset to initial state
   const handleClearCanvas = () => {
-    const defaultCode = '// AI Web Builder - JavaScript Mode\n// Use vanilla JavaScript to create interactive web experiences\n\n// Example: Create a simple interactive button\nconst createButton = () => {\n  const button = document.createElement("button");\n  button.textContent = "Click Me!";\n  button.style.padding = "12px 24px";\n  button.style.fontSize = "16px";\n  button.style.cursor = "pointer";\n  \n  button.onclick = () => {\n    alert("Hello from Web Builder!");\n  };\n  \n  return button;\n};\n\n// Usage: Uncomment to test\n// document.body.appendChild(createButton());';
-    
-    const defaultPreview = 'import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}';
-    
-    setEditorCode(defaultCode);
-    setPreviewCode(defaultPreview);
+    setEditorCode(CLEARED_EDITOR_CODE);
+    setPreviewCode(CLEARED_PREVIEW_CODE);
     
     // Clear VFS to empty state
     virtualFS.resetToEmpty();
@@ -4014,30 +4011,16 @@ ${sectionsJsx}
     description?: string;
     canvas_data: { html?: string; css?: string; previewCode?: string; js?: string };
   }) => {
-    // Get the base HTML - prefer previewCode as it's the most complete
-    let code = template.canvas_data?.previewCode || template.canvas_data?.html || '';
-    
-    if (!code) {
+    const baseCode = template.canvas_data?.previewCode || template.canvas_data?.html || '';
+    if (!baseCode) {
       toast.error('Template has no content');
       return;
     }
-    
-    // If there's separate CSS that's not in previewCode, integrate it
-    const separateCss = template.canvas_data?.css || '';
-    if (separateCss && !code.includes(separateCss.substring(0, 50))) {
-      code = integrateCSSIntoHTML(code, separateCss);
-    }
-    
-    // If there's separate JS that's not in previewCode, integrate it
-    const separateJs = template.canvas_data?.js || '';
-    if (separateJs && !code.includes(separateJs.substring(0, 50))) {
-      const scriptTag = `<script>\n${separateJs}\n</script>`;
-      if (code.includes('</body>')) {
-        code = code.replace('</body>', `${scriptTag}\n</body>`);
-      } else {
-        code = code + `\n${scriptTag}`;
-      }
-    }
+    const code = mergeCanvasAssets({
+      html: baseCode,
+      css: template.canvas_data?.css,
+      js: template.canvas_data?.js,
+    });
     
     importBuilderFiles(templateToVFSFiles(code, template.name), {
       preferredPath: launchEntryPoint,

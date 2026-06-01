@@ -2152,21 +2152,8 @@ export default function ${componentName}Page() {
   // Track VFS file map signature so we persist multi-file AI edits even when
   // the legacy single-file `previewCode` blob did not change.
   const lastSavedVfsSignatureRef = useRef<string>('');
-  const computeVfsSignature = useCallback((files: Record<string, string>): string => {
-    const keys = Object.keys(files).sort();
-    if (keys.length === 0) return '';
-    let hash = 0;
-    for (const k of keys) {
-      const v = files[k] ?? '';
-      // Cheap stable signature: path + length + last-32-char tail.
-      const tail = v.length > 32 ? v.slice(-32) : v;
-      const seg = `${k}:${v.length}:${tail}|`;
-      for (let i = 0; i < seg.length; i++) {
-        hash = ((hash << 5) - hash + seg.charCodeAt(i)) | 0;
-      }
-    }
-    return `${keys.length}:${hash}`;
-  }, []);
+  // computeVfsSignature moved to '@/lib/builder/vfsHelpers' (Phase C3).
+
   // Keep the current template id in a ref so callbacks always read the
   // latest value without stale-closure issues (avoids re-creating intervals).
   const currentTemplateIdRef = useRef<string | null>(templateFiles.currentTemplateId);

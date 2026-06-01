@@ -97,22 +97,10 @@ import {
   validateAICodeChange,
 } from "@/lib/builder/aiCodeValidation";
 import { safeOpenExternal } from "@/utils/safeOpenExternal";
-
-function isMissingBusinessInstallsError(error: unknown): boolean {
-  const candidate = error as {
-    code?: string;
-    status?: number;
-    message?: string;
-    details?: string;
-  } | null;
-  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
-  return (
-    candidate?.code === '42P01' ||
-    candidate?.code === 'PGRST205' ||
-    candidate?.status === 404 ||
-    combined.includes('business_installs')
-  );
-}
+import {
+  isMissingBusinessInstallsError,
+  getOrCreatePreviewBusinessId,
+} from "@/lib/builder/previewBusiness";
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
 import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';

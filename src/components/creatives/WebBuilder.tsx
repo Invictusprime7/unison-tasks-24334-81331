@@ -1435,44 +1435,12 @@ export default function App() {
 
   // Feed route conflicts + topology validation into diagnostics aggregator
   useEffect(() => {
-    const items: Array<{ domain: 'page-registry'; message: string; severity?: 'error' | 'warning'; code?: string }> = [];
-
-    // Route conflicts
-    for (const conflict of routeConflicts) {
-      items.push({
-        domain: 'page-registry',
-        message: `Duplicate route detected: "${conflict}" — multiple pages share the same path`,
-        severity: 'error',
-        code: 'ROUTE_CONFLICT',
-      });
-    }
-
-    // Topology validation errors (from site plan)
-    const plan = activeSitePlanRef.current;
-    if (plan?.validationErrors?.length) {
-      for (const err of plan.validationErrors) {
-        items.push({
-          domain: 'page-registry',
-          message: err,
-          severity: 'warning',
-          code: 'TOPOLOGY_VALIDATION',
-        });
-      }
-    }
-
-    // Check for missing VFS files (pages in registry but not in VFS)
-    const vfsFiles = virtualFS.getSandpackFiles();
-    for (const page of Object.values(creatorPlayground.pageRegistry.pages)) {
-      if (page.filePath && !vfsFiles[page.filePath]) {
-        items.push({
-          domain: 'page-registry',
-          message: `Page "${page.title}" (${page.filePath}) is registered but missing from VFS`,
-          severity: 'warning',
-          code: 'MISSING_VFS_FILE',
-        });
-      }
-    }
-
+    const items = computePageRegistryDiagnostics({
+      routeConflicts,
+      sitePlan: activeSitePlanRef.current,
+      pageRegistry: creatorPlayground.pageRegistry,
+      vfsFiles: virtualFS.getSandpackFiles(),
+    });
     diagnosticsAggregator.ingestUnisonDiagnostics(items);
   }, [routeConflicts, creatorPlayground.pageRegistry, virtualFS.nodes]);
 

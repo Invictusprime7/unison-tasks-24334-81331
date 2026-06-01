@@ -4619,7 +4619,7 @@ ${sectionsJsx}
 
   const handleZoomIn = () => {
     if (!fabricCanvas) return;
-    const newZoom = Math.min(zoom * 1.2, 2);
+    const newZoom = computeZoomIn(zoom);
     setZoom(newZoom);
     fabricCanvas.setZoom(newZoom);
     fabricCanvas.renderAll();
@@ -4627,27 +4627,14 @@ ${sectionsJsx}
 
   const handleZoomOut = () => {
     if (!fabricCanvas) return;
-    const newZoom = Math.max(zoom / 1.2, 0.1);
+    const newZoom = computeZoomOut(zoom);
     setZoom(newZoom);
     fabricCanvas.setZoom(newZoom);
     fabricCanvas.renderAll();
   };
 
-  const getCanvasWidth = () => {
-    switch (device) {
-      case "tablet": return 768;
-      case "mobile": return 375;
-      default: return 1280;
-    }
-  };
-
-  const getCanvasHeight = () => {
-    switch (device) {
-      case "tablet": return Math.max(1024, canvasHeight);
-      case "mobile": return Math.max(667, canvasHeight);
-      default: return canvasHeight;
-    }
-  };
+  const getCanvasWidth = () => computeCanvasWidth(device);
+  const getCanvasHeight = () => computeCanvasHeight(device, canvasHeight);
 
   const canonicalBuildArtifacts = useMemo(() => {
     const sourceFiles = getSandpackFiles();

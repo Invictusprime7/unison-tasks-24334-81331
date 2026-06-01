@@ -99,6 +99,7 @@ import {
 import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
 import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
 import { loadCloudState } from "@/lib/builder/loadCloudState";
+import { attachRuntimeOverlayMessages } from "@/lib/builder/runtimeOverlayMessages";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
@@ -2831,57 +2832,13 @@ export default function ${componentName}Page() {
 
 
   useEffect(() => {
-    const handleBrowserCartUpdate = () => {
-      refreshPreviewCart();
-    };
-    const handleCartViewIntent = () => openPreviewCart('cart');
-
-    const handleRuntimeOverlayMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'OVERLAY_OPEN') {
-        const overlayId = String(event.data.overlayId || '');
-        const payload = (event.data.payload || {}) as Record<string, unknown>;
-
-        if (overlayId === 'cart') {
-          const requestedStep = payload.step === 'checkout' ? 'checkout' : 'cart';
-          openPreviewCart(requestedStep);
-          return;
-        }
-
-        const nextOverlay = mapOverlayIdToConfig(overlayId, payload);
-        if (nextOverlay) {
-          setActiveRuntimeOverlay(nextOverlay);
-        }
-      }
-
-      if (event.data?.type === 'OVERLAY_CLOSE') {
-        const overlayId = String(event.data.overlayId || '');
-        if (!overlayId || overlayId === 'cart') {
-          setPreviewCartOpen(false);
-          setPreviewCartStep('cart');
-        }
-        if (!overlayId || overlayId !== 'cart') {
-          setActiveRuntimeOverlay(null);
-        }
-      }
-
-      if (event.data?.type === 'TOAST_SHOW' && event.data.toast?.message) {
-        const nextToast = event.data.toast as { type?: string; message: string };
-        if (nextToast.type === 'error') toast.error(nextToast.message);
-        else if (nextToast.type === 'warning') toast.warning(nextToast.message);
-        else if (nextToast.type === 'success') toast.success(nextToast.message);
-        else toast(nextToast.message);
-      }
-    };
-
-    window.addEventListener(BROWSER_CART_EVENT, handleBrowserCartUpdate as EventListener);
-    window.addEventListener('message', handleRuntimeOverlayMessage);
-    window.addEventListener('intent:cart.view', handleCartViewIntent);
-
-    return () => {
-      window.removeEventListener(BROWSER_CART_EVENT, handleBrowserCartUpdate as EventListener);
-      window.removeEventListener('message', handleRuntimeOverlayMessage);
-      window.removeEventListener('intent:cart.view', handleCartViewIntent);
-    };
+    return attachRuntimeOverlayMessages({
+      refreshPreviewCart,
+      openPreviewCart,
+      setActiveRuntimeOverlay,
+      setPreviewCartOpen,
+      setPreviewCartStep,
+    });
   }, [openPreviewCart, refreshPreviewCart]);
 
   // Listen for INTENT_TRIGGER messages from iframe previews

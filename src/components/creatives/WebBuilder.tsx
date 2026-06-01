@@ -102,6 +102,7 @@ import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/sav
 import { fabricObjectsToHtmlCss, buildVfsPageListContext } from "@/lib/builder/exportHelpers";
 import { downloadJSON, toggleElementFullscreen } from "@/lib/builder/browserDownload";
 import { scrollPreviewOrContainer, type ScrollCommand } from "@/lib/builder/scrollHelpers";
+import { attachPinchZoomGesture } from "@/lib/builder/pinchZoomGesture";
 import {
   getCanvasWidth as computeCanvasWidth,
   getCanvasHeight as computeCanvasHeight,
@@ -4757,74 +4758,20 @@ ${sectionsJsx}
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
-
-    let initialDistance = 0;
-    let initialZoom = zoom;
-    let lastTouchCenter = { x: 0, y: 0 };
-    let touchPanOffset = { x: 0, y: 0 };
-
-    const getTouchDistance = (touches: TouchList) => {
-      const dx = touches[0].clientX - touches[1].clientX;
-      const dy = touches[0].clientY - touches[1].clientY;
-      return Math.sqrt(dx * dx + dy * dy);
-    };
-
-    const getTouchCenter = (touches: TouchList) => {
-      return {
-        x: (touches[0].clientX + touches[1].clientX) / 2,
-        y: (touches[0].clientY + touches[1].clientY) / 2,
-      };
-    };
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        initialDistance = getTouchDistance(e.touches);
-        initialZoom = zoom;
-        lastTouchCenter = getTouchCenter(e.touches);
-        touchPanOffset = { ...panOffset };
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        
-        // Pinch zoom
-        const currentDistance = getTouchDistance(e.touches);
-        const scale = currentDistance / initialDistance;
-        const newZoom = Math.max(0.1, Math.min(2, initialZoom * scale));
-        setZoom(newZoom);
+    return attachPinchZoomGesture(container, {
+      getZoom: () => zoom,
+      getPanOffset: () => panOffset,
+      onZoom: (next) => {
+        setZoom(next);
         if (fabricCanvas) {
-          fabricCanvas.setZoom(newZoom);
+          fabricCanvas.setZoom(next);
           fabricCanvas.renderAll();
         }
-
-        // Pan
-        const currentCenter = getTouchCenter(e.touches);
-        const dx = currentCenter.x - lastTouchCenter.x;
-        const dy = currentCenter.y - lastTouchCenter.y;
-        setPanOffset({
-          x: touchPanOffset.x + dx,
-          y: touchPanOffset.y + dy,
-        });
-      }
-    };
-
-    const handleTouchEnd = () => {
-      initialDistance = 0;
-    };
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd);
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-    };
+      },
+      onPan: setPanOffset,
+    });
   }, [zoom, fabricCanvas, panOffset]);
+
 
   console.log('[WebBuilder] About to return JSX...');
 

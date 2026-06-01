@@ -2434,24 +2434,11 @@ export default function ${componentName}Page() {
   const pageStructureContext = useMemo(() => buildPageStructureContext(previewCode), [previewCode]);
   
   // Build redirect page context from VFS for in-builder AI awareness (React pages)
-  const redirectPageContext = useMemo(() => {
-    const vfsFiles = virtualFS.getSandpackFiles();
-    const pageFiles = Object.keys(vfsFiles).filter(p => 
-      p.match(/\/src\/pages\/\w+\.tsx$/) && p !== '/src/App.tsx'
-    );
-    if (pageFiles.length === 0) return '';
-    
-    const lines = ['\n=== REACT PAGES IN VFS ==='];
-    pageFiles.forEach(p => {
-      const content = vfsFiles[p] || '';
-      const nameMatch = p.match(/\/(\w+)\.tsx$/);
-      const componentName = nameMatch?.[1] || 'Unknown';
-      const exportMatch = content.match(/export default function (\w+)/);
-      lines.push(`- ${p} (${exportMatch?.[1] || componentName}, ${content.length} chars)`);
-    });
-    lines.push('All pages are React components. Apply nav/footer/brand changes across ALL pages.');
-    return lines.join('\n');
-  }, [virtualFS.nodes]);
+  const redirectPageContext = useMemo(
+    () => buildVfsPageListContext(virtualFS.getSandpackFiles()),
+    [virtualFS.nodes],
+  );
+
   
   const backendStateContext = useMemo(() => {
     const lines: string[] = [];

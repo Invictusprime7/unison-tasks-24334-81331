@@ -95,6 +95,7 @@ import {
   applyElementMoveUp,
   applyElementMoveDown,
 } from "@/lib/builder/elementMutations";
+import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
 import {
   type CodeValidationResult,
   extractStyleBlocks,

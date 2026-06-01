@@ -405,13 +405,15 @@ export async function runProviderLoop(opts: {
   }
 
   const errorTrail = providerErrors.slice(-10).join(' | ') || 'no provider attempts completed';
-  const configuredProviders = [lovableKey ? 'lovable-gateway' : '', !lovableKey && geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
+  const configuredProviders = [lovableKey ? 'lovable-gateway' : '', geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
   const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
   const hasAuthError = /401|403|invalid[_\s-]?api[_\s-]?key|unauthorized|authentication/.test(errorTrail.toLowerCase());
   const guidance = configuredProviders.length === 0
     ? missingGeminiKeyMessage()
+    : hasTimeoutError && hasAuthError && lovableKey && geminiApiKey
+      ? 'Managed gateway and direct Gemini both failed; retry shortly, then verify the Gemini secret if this persists.'
     : hasTimeoutError && hasAuthError && lovableKey
-      ? 'Gateway routing mixed transient timeout/auth responses; the managed Lovable AI key is configured, so retry with the gateway plan rather than Gemini secrets.'
+      ? 'Managed gateway returned mixed transient timeout/auth responses; rotate the managed AI key if this persists.'
       : hasTimeoutError
         ? 'All AI providers timed out. Likely upstream model overload — retry shortly.'
       : 'AI providers failed to produce a response. Check key validity and edge-function network latency.';

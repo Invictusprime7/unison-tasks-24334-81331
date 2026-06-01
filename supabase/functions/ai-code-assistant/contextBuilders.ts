@@ -402,11 +402,7 @@ export function buildFastPathSystemPrompt(opts: {
   const bodyFont    = t.bodyFont    || styleSelection.typography?.body_font || 'Inter';
   const headingWeight = t.headingWeight || styleSelection.typography?.heading_weight || '700';
 
-  // Sub-page scaffolding removed: wizard launch ships ONLY Home. Additional
-  // pages are built later by the AI Builder using the live site context.
-  const pageRosterBlock = '';
-
-  return `You are an elite full-stack React designer. Generate a COMPLETE, premium MULTI-PAGE website as a React application.
+  return `You are an elite full-stack React designer. Generate a COMPLETE, premium single-page (Home) React composition.
 
 BUSINESS: "${brandName}" — ${industry}
 TONE: ${tone}
@@ -419,7 +415,6 @@ ${templateSelection.section_ids?.length ? `Section instance IDs: ${templateSelec
 ${templateSelection.page_roles?.length ? `Template page roles available: ${templateSelection.page_roles.join(', ')}` : ''}
 ${templateSelection.sections_detail?.length ? `\nPER-SECTION LAYOUT VARIANTS — LOCKED. Each section below MUST render with the named variant's layout style (not the default). Mirror its structure, alignment, and column grid. Do not collapse to a generic stacked/centered layout.\n${templateSelection.sections_detail.map((s, i) => `  ${i + 1}. <section data-ut-section="${s.id}" data-ut-section-type="${s.type}"${s.variant_id ? ` data-variant="${s.variant_id}"` : ''}> — ${s.type}${s.variant_id ? ` → variant "${s.variant_name || s.variant_id}"${s.variant_description ? ` (${s.variant_description})` : ''}` : ''}`).join('\n')}\n\nMANDATORY DOM CONTRACT FOR SECTIONS:\n- Each section MUST be a top-level <section> element inside the App root.\n- The opening <section> tag MUST carry these three attributes verbatim: data-ut-section, data-ut-section-type, and data-variant (using the exact ids above).\n- Section order MUST match the list 1:1 — no inserts, no reorders, no drops.\n- If you do not honor the variant's distinctive layout (e.g. split-image vs centered vs full-bleed), the launch will be rejected and retried.` : ''}
 ${templateSelection.seed_code_excerpt ? `\nSTRUCTURAL REFERENCE — registered composition for this template (refine, do NOT copy verbatim; preserve section order, intent wiring, and variant layout style; adapt copy to the business; rewrite all visuals with the brand tokens below):\n\`\`\`tsx\n${templateSelection.seed_code_excerpt}\n\`\`\`\n` : ''}
-${pageRosterBlock}
 INTENTS TO WIRE: ${intents}
 
 VISUAL STYLE — LOCKED to the wizard's "${styleLabel}" preset (${themeMode} theme).

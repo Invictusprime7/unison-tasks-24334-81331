@@ -1174,26 +1174,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           // reference layout the AI can refine, instead of free-designing
           // from a bare section-name list.
           seed_code_excerpt: seedAppCode ? seedAppCode.slice(0, 6000) : '',
-          // FULL site page roster from the canonical topology plan. Lane A
-          // emits a TSX file per entry, so the wizard's goals step produces
-          // populated Contact / Pricing / Services / Booking pages instead of
-          // empty scaffolded placeholders. Home stays in src/App.tsx.
-          pages_to_generate: (() => {
-            const reg = siteBundleSnapshot?.pageRegistry;
-            if (!reg) return [];
-            return Object.values(reg.pages)
-              .filter((p) => !p.isHome && p.filePath)
-              .slice(0, 12)
-              .map((p) => ({
-                page_id: p.pageId,
-                title: p.title,
-                path: p.path,
-                file_path: p.filePath,
-                page_role: p.pageRole || p.pageType,
-                funnel_role: p.funnelRole,
-                show_in_nav: p.showInNav,
-              }));
-          })(),
+          // Sub-page scaffolding has been removed from the wizard launch.
+          // The launcher now ships ONLY the Home page; additional pages are
+          // generated on-demand by the AI Builder when the user prompts for
+          // them, using the current site context (theme, intents, sections).
+          pages_to_generate: [],
         },
         template_sections: templateSectionOrder,
         template_intents: compositionMeta?.intents,

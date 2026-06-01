@@ -402,15 +402,10 @@ export function buildFastPathSystemPrompt(opts: {
   const bodyFont    = t.bodyFont    || styleSelection.typography?.body_font || 'Inter';
   const headingWeight = t.headingWeight || styleSelection.typography?.heading_weight || '700';
 
-  const pagesToGenerate = templateSelection.pages_to_generate || [];
-  const pageRosterBlock = pagesToGenerate.length
-    ? `\nMULTI-PAGE ROSTER — the wizard goals step planned ${pagesToGenerate.length} sub-page${pagesToGenerate.length === 1 ? '' : 's'} besides Home. You MUST emit a fully designed TSX file for EACH one. Empty placeholders are a launch failure.\n${pagesToGenerate
-        .map(
-          (p, i) =>
-            `  ${i + 1}. ${p.file_path} → "${p.title}"  path=${p.path}  role=${p.page_role || 'custom'}${p.funnel_role ? `  funnel=${p.funnel_role}` : ''}`,
-        )
-        .join('\n')}\n\nPER-PAGE CONTRACT:\n- Each sub-page file default-exports a React component (no router, no <BrowserRouter>, no <Routes>).\n- Each component renders a complete, premium page body: header/navigation strip + 3–6 themed sections + footer-style closing CTA. NEVER ship a single bare heading.\n- Copy must be specific to the business "${brandName}" and industry "${industry}". No lorem ipsum, no "Coming soon".\n- Reuse the brand tokens below (bg-background, text-foreground, bg-card, hsl(var(--primary))) — same palette as Home so navigation between pages feels native.\n- Wire CTAs with data-ut-intent attributes from the wizard intents list.\n- The page imports MUST stay limited to: react, lucide-react, framer-motion. No cross-page imports, no shared component files.\n`
-    : '';
+  // Sub-page scaffolding removed: wizard launch ships ONLY Home. Additional
+  // pages are built later by the AI Builder using the live site context.
+  const pageRosterBlock = '';
+
   return `You are an elite full-stack React designer. Generate a COMPLETE, premium MULTI-PAGE website as a React application.
 
 BUSINESS: "${brandName}" — ${industry}

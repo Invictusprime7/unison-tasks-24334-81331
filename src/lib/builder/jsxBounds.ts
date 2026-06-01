@@ -241,7 +241,7 @@ function attrMatches(attrSegment: string, name: string, value: string | null): b
   return actual === value;
 }
 
-function findJSXClosingTag(source: string, openStart: number, tagName: string): number {
+export function findJSXClosingTag(source: string, openStart: number, tagName: string): number {
   const selfCloseCheck = source.substring(openStart, openStart + 500);
   const selfCloseMatch = selfCloseCheck.match(new RegExp(`^<${tagName}\\b[^>]*/>`, 'i'));
   if (selfCloseMatch) return openStart + selfCloseMatch[0].length;

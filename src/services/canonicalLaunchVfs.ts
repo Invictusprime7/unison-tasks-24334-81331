@@ -172,9 +172,8 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   );
 
   for (const [path, content] of Object.entries(generatedFiles)) {
-    // The registry/router owns every canonical page path. Lane A may return a
-    // single-page App.tsx to enhance Home, but it must never replace registered
-    // sub-pages (Contact/Pricing/Booking/etc.) or the deterministic router.
+    // The registry/router owns App.tsx itself. Lane A may return a
+    // single-page App.tsx to enhance Home; rebase it into the home page file.
     if (path === '/src/App.tsx' || path === '/App.tsx') {
       if (looksLikeCanonicalRouter(content)) continue;
 
@@ -184,10 +183,16 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       continue;
     }
 
+    // AI-generated sub-pages REPLACE the canonical scaffolded placeholder.
+    // The wizard goals step plans 3–8 sub-pages (Contact/Pricing/Services/
+    // Booking/etc.) and Lane A now emits a populated TSX file for each one.
+    // Previously these were dropped, leaving every sub-page empty.
     if (canonicalPagePaths.has(path) && path !== homeFilePath) {
+      merged[path] = content;
       continue;
     }
 
+    // Out-of-registry page modules are rejected — only registered routes ship.
     if (isPageModulePath(path) && !canonicalPagePaths.has(path)) {
       continue;
     }

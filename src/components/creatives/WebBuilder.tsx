@@ -4722,8 +4722,7 @@ ${sectionsJsx}
       // Only zoom if Ctrl key is pressed
       if (e.ctrlKey) {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        const newZoom = Math.max(0.1, Math.min(2, zoom * delta));
+        const newZoom = computeWheelZoom(zoom, e.deltaY);
         setZoom(newZoom);
         if (fabricCanvas) {
           fabricCanvas.setZoom(newZoom);

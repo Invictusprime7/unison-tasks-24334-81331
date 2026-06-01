@@ -100,6 +100,7 @@ import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
 import { fabricObjectsToHtmlCss, buildVfsPageListContext } from "@/lib/builder/exportHelpers";
+import { downloadJSON, toggleElementFullscreen } from "@/lib/builder/browserDownload";
 import {
   getCanvasWidth as computeCanvasWidth,
   getCanvasHeight as computeCanvasHeight,

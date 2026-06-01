@@ -101,6 +101,7 @@ import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
 import { fabricObjectsToHtmlCss, buildVfsPageListContext } from "@/lib/builder/exportHelpers";
 import { downloadJSON, toggleElementFullscreen } from "@/lib/builder/browserDownload";
+import { scrollPreviewOrContainer, type ScrollCommand } from "@/lib/builder/scrollHelpers";
 import {
   getCanvasWidth as computeCanvasWidth,
   getCanvasHeight as computeCanvasHeight,
@@ -4742,50 +4743,9 @@ ${sectionsJsx}
   };
 
   // Scroll navigation functions — post message to iframe or scroll container
-  const postScrollToIframe = useCallback((command: 'top' | 'bottom' | 'up' | 'down') => {
-    const iframe = livePreviewRef.current?.getIframe?.();
-    if (iframe?.contentWindow) {
-      try {
-        const doc = iframe.contentDocument || iframe.contentWindow.document;
-        if (doc) {
-          const scrollable = doc.scrollingElement || doc.documentElement;
-          switch (command) {
-            case 'top':
-              scrollable.scrollTo({ top: 0, behavior: 'smooth' });
-              break;
-            case 'bottom':
-              scrollable.scrollTo({ top: scrollable.scrollHeight, behavior: 'smooth' });
-              break;
-            case 'up':
-              scrollable.scrollBy({ top: -300, behavior: 'smooth' });
-              break;
-            case 'down':
-              scrollable.scrollBy({ top: 300, behavior: 'smooth' });
-              break;
-          }
-          return;
-        }
-      } catch {
-        // Cross-origin — fall through to container scroll
-      }
-    }
-    // Fallback: scroll the outer container
-    if (scrollContainerRef.current) {
-      switch (command) {
-        case 'top':
-          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-          break;
-        case 'bottom':
-          scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' });
-          break;
-        case 'up':
-          scrollContainerRef.current.scrollBy({ top: -300, behavior: 'smooth' });
-          break;
-        case 'down':
-          scrollContainerRef.current.scrollBy({ top: 300, behavior: 'smooth' });
-          break;
-      }
-    }
+  const postScrollToIframe = useCallback((command: ScrollCommand) => {
+    const iframe = livePreviewRef.current?.getIframe?.() ?? null;
+    scrollPreviewOrContainer(iframe, scrollContainerRef.current, command);
   }, []);
 
   const scrollToTop = () => postScrollToIframe('top');

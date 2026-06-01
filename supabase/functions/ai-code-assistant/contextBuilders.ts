@@ -307,6 +307,21 @@ type FastPathBuildContext = {
       variant_description?: string | null;
     }>;
     seed_code_excerpt?: string;
+    /**
+     * Full multi-page roster from the canonical topology plan. The wizard
+     * goals step seeds 3–8 sub-pages (Contact / Pricing / Services / etc.);
+     * Lane A must emit a TSX file for each so they ship populated instead
+     * of falling back to the empty scaffolded placeholder.
+     */
+    pages_to_generate?: Array<{
+      page_id: string;
+      title: string;
+      path: string;
+      file_path: string;
+      page_role?: string;
+      funnel_role?: string;
+      show_in_nav?: boolean;
+    }>;
   };
   /**
    * Fully-resolved HSL token set from the wizard's Style card. When present,

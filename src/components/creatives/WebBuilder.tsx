@@ -83,6 +83,7 @@ import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
 import { escapeCSSSelector } from "@/lib/builder/cssSelectorUtils";
 import { extractJsxReturnBody } from "@/lib/builder/jsxMutation";
+import { applyCustomizerDomPatch } from "@/lib/builder/customizerDomPatch";
 import {
   findElementBoundsInJSX,
   withSourceManipulation,

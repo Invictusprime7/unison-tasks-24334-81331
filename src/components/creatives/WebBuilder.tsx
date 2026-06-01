@@ -100,6 +100,7 @@ import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
 import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
 import { loadCloudState, type CloudStateSnapshot } from "@/lib/builder/loadCloudState";
 import { createInitialCloudState } from "@/lib/builder/createInitialCloudState";
+import { restoreAutosavedDraft } from "@/lib/builder/restoreAutosavedDraft";
 import { attachRuntimeOverlayMessages } from "@/lib/builder/runtimeOverlayMessages";
 import { computeOrphanPageRegistrations } from "@/lib/builder/orphanPageAutoRegister";
 import { loadDesignPreferences } from "@/lib/builder/loadDesignPreferences";

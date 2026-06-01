@@ -2277,33 +2277,11 @@ export default function ${componentName}Page() {
   // Load persisted launcher design preferences (if not already in navigation state)
   useEffect(() => {
     let cancelled = false;
-    async function loadPrefs() {
-      if (!businessId) return;
-      // If we already have a preset from navigation state, don't override it.
-      if (currentDesignPreset) return;
-
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData.session) return;
-
-        const { data, error } = await supabase
-          .from("business_design_preferences" as any)
-          .select("template_category,design_preset")
-          .eq("business_id", businessId)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (!cancelled) {
-          if (data?.design_preset) setCurrentDesignPreset(String(data.design_preset));
-          if (data?.template_category) setCurrentTemplateCategory(String(data.template_category));
-        }
-      } catch (e) {
-        console.warn("[WebBuilder] Failed to load business design preferences", e);
-      }
-    }
-
-    loadPrefs();
+    loadDesignPreferences({ businessId, currentDesignPreset }).then((patch) => {
+      if (cancelled || !patch) return;
+      if (patch.designPreset) setCurrentDesignPreset(patch.designPreset);
+      if (patch.templateCategory) setCurrentTemplateCategory(patch.templateCategory);
+    });
     return () => {
       cancelled = true;
     };

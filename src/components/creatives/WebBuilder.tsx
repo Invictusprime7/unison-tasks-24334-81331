@@ -592,123 +592,30 @@ export default function App() {
   // Auto-apply overrides when customizer state changes (e.g. after image replacement)
   // Patches the iframe DOM in-place to avoid scroll-reset & blink.
   useEffect(() => {
-    console.log('[WebBuilder] Override useEffect triggered, version:', templateCustomizer.overrideVersion, 'isDirty:', templateCustomizer.isDirty);
-    if (templateCustomizer.overrideVersion <= 0 || !templateCustomizer.isDirty) {
-      console.log('[WebBuilder] Override useEffect skipped - conditions not met');
-      return;
-    }
+    if (templateCustomizer.overrideVersion <= 0 || !templateCustomizer.isDirty) return;
 
-    // Use VFSPreview (sole preview engine)
     const iframe = livePreviewRef.current?.getIframe?.() ?? null;
     const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document || null;
 
-    if (!iframeDoc || !iframeDoc.head) {
-      console.log('[WebBuilder] Iframe not ready — applying source-level overrides');
-      // Iframe not ready — apply source-level overrides (image replacements) via TSX
-      const baseSource = templateCustomizer.getOriginalSource() || previewCode;
-      if (!baseSource) return;
-      const customized = templateCustomizer.applyOverrides(baseSource);
-      if (customized !== previewCode) {
-        setPreviewCode(customized);
-        setEditorCode(customized);
-      }
-      return;
-    }
+    const patched = iframeDoc
+      ? applyCustomizerDomPatch({
+          iframeDoc,
+          overrideCSS: templateCustomizer.generateOverrideCSS(),
+          elementOverrides: templateCustomizer.elementOverrides.values(),
+          images: templateCustomizer.images.values(),
+        })
+      : false;
 
-    console.log('[WebBuilder] Patching iframe DOM, elementOverrides count:', templateCustomizer.elementOverrides.size);
-
-    // 0. Ensure color scheme is enforced (prevent dark mode inversion)
-    if (!iframeDoc.querySelector('meta[name="color-scheme"]')) {
-      const colorSchemeMeta = iframeDoc.createElement('meta');
-      colorSchemeMeta.name = 'color-scheme';
-      colorSchemeMeta.content = 'light';
-      iframeDoc.head.insertBefore(colorSchemeMeta, iframeDoc.head.firstChild);
-    }
-    if (!iframeDoc.getElementById('color-scheme-enforcement')) {
-      const colorSchemeStyle = iframeDoc.createElement('style');
-      colorSchemeStyle.id = 'color-scheme-enforcement';
-      colorSchemeStyle.textContent = ':root { color-scheme: light; }';
-      iframeDoc.head.appendChild(colorSchemeStyle);
-    }
-
-    // 1. Inject / update the customizer override CSS in-place
-    const overrideCSS = templateCustomizer.generateOverrideCSS();
-    let styleEl = iframeDoc.getElementById('customizer-overrides') as HTMLStyleElement | null;
-    if (!styleEl) {
-      styleEl = iframeDoc.createElement('style');
-      styleEl.id = 'customizer-overrides';
-      iframeDoc.head.appendChild(styleEl);
-    }
-    styleEl.textContent = overrideCSS;
-
-    // Helper to safely query selectors
-    const safeQuery = (selector: string): Element | null => safeFindElement(iframeDoc, selector);
-
-    // 2. Apply text / image / style element overrides directly on DOM nodes
-    templateCustomizer.elementOverrides.forEach((override) => {
-      try {
-        if (override.textContent !== undefined) {
-          const el = safeQuery(override.selector);
-          if (el) el.textContent = override.textContent;
-        }
-        if (override.imageSrc) {
-          const el = safeQuery(override.selector) as HTMLImageElement | null;
-          if (el) el.setAttribute('src', override.imageSrc);
-        }
-        if (override.styles && Object.keys(override.styles).length) {
-          const el = safeQuery(override.selector) as HTMLElement | null;
-          if (el) {
-            Object.entries(override.styles).forEach(([k, v]) => {
-              el.style.setProperty(
-                k.replace(/([A-Z])/g, '-$1').toLowerCase(),
-                v,
-                'important',
-              );
-            });
-          }
-        }
-        if (override.attributes && Object.keys(override.attributes).length) {
-          const el = safeQuery(override.selector) as HTMLElement | null;
-          if (el) {
-            Object.entries(override.attributes).forEach(([key, value]) => {
-              if (value == null || value === '') {
-                el.removeAttribute(key);
-              } else {
-                el.setAttribute(key, value);
-              }
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('[Customizer] DOM patch failed for', override.selector, e);
-      }
-    });
-
-    // 3. Apply image replacements
-    templateCustomizer.images.forEach((img) => {
-      try {
-        let el = safeQuery(img.selector) as HTMLImageElement | null;
-        if (!el) {
-          const allImgs = iframeDoc.querySelectorAll('img');
-          const idx = parseInt(img.id.replace('img-', ''), 10);
-          if (!isNaN(idx) && idx < allImgs.length) el = allImgs[idx] as HTMLImageElement;
-        }
-        if (el && el.getAttribute('src') !== img.src) {
-          el.setAttribute('src', img.src);
-          if (img.alt) el.setAttribute('alt', img.alt);
-        }
-      } catch { /* ignore selector errors */ }
-    });
-
-    // 4. Keep previewCode AND editorCode in sync — apply TSX source-level overrides (images)
+    // Whether or not the iframe was ready, keep previewCode/editorCode in sync
+    // with source-level overrides (images encoded into the TSX source).
     const baseSource = templateCustomizer.getOriginalSource() || previewCode;
-    if (baseSource) {
-      const customized = templateCustomizer.applyOverrides(baseSource);
-      if (customized !== previewCode) {
-        setPreviewCode(customized);
-        setEditorCode(customized);
-      }
+    if (!baseSource) return;
+    const customized = templateCustomizer.applyOverrides(baseSource);
+    if (customized !== previewCode) {
+      setPreviewCode(customized);
+      setEditorCode(customized);
     }
+    void patched;
   }, [templateCustomizer.overrideVersion]);
 
   // Stable callback for SimplePreview element selection (avoids new ref each render)

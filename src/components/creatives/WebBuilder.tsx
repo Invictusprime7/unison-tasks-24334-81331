@@ -100,6 +100,7 @@ import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
 import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
 import { loadCloudState, type CloudStateSnapshot } from "@/lib/builder/loadCloudState";
 import { createInitialCloudState } from "@/lib/builder/createInitialCloudState";
+import { restoreAutosavedDraft } from "@/lib/builder/restoreAutosavedDraft";
 import { attachRuntimeOverlayMessages } from "@/lib/builder/runtimeOverlayMessages";
 import { computeOrphanPageRegistrations } from "@/lib/builder/orphanPageAutoRegister";
 import { loadDesignPreferences } from "@/lib/builder/loadDesignPreferences";
@@ -2609,49 +2610,15 @@ export default function ${componentName}Page() {
   // If ?id= is present the Supabase load is the authoritative source; restoring a
   // stale localStorage draft here would overwrite the correct project state.
   useEffect(() => {
-    try {
-      // If the user navigated here to open a specific saved project, skip restore.
-      const urlId = new URLSearchParams(location.search).get('id');
-      if (urlId) return;
-
-      // Also skip if incoming route state already carries structured project files.
-      if (routeStateHasStructuredProject) return;
-
-      const savedDraft = localStorage.getItem('webbuilder_autosave_draft');
-      if (savedDraft) {
-        const draft = JSON.parse(savedDraft);
-        const savedTime = new Date(draft.savedAt);
-        const now = new Date();
-        const hoursSinceLastSave = (now.getTime() - savedTime.getTime()) / (1000 * 60 * 60);
-        
-        // Only restore if draft is less than 24 hours old
-        if (hoursSinceLastSave < 24 && draft.code) {
-          // Check if there's meaningful content (not just default)
-          const isDefaultContent = draft.code.includes('AI-generated code will appear here');
-          if (!isDefaultContent) {
-            setShowLauncher(false);
-            setPreviewCode(draft.code);
-            if (draft.editorCode) {
-              setEditorCode(draft.editorCode);
-            }
-            lastSavedCodeRef.current = draft.code;
-            setLastSavedAt(savedTime);
-            toast.info('Draft restored', {
-              description: `Last saved ${format(savedTime, 'MMM d, h:mm a')}`,
-              action: {
-                label: 'Discard',
-                onClick: () => {
-                  localStorage.removeItem('webbuilder_autosave_draft');
-                  setPreviewCode('import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}');
-                },
-              },
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[AutoSave] Error restoring draft:', error);
-    }
+    restoreAutosavedDraft({
+      locationSearch: location.search,
+      routeStateHasStructuredProject,
+      lastSavedCodeRef,
+      setShowLauncher,
+      setPreviewCode,
+      setEditorCode,
+      setLastSavedAt,
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
    

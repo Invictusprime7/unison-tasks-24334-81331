@@ -100,6 +100,7 @@ import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
 import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
 import { loadCloudState } from "@/lib/builder/loadCloudState";
 import { attachRuntimeOverlayMessages } from "@/lib/builder/runtimeOverlayMessages";
+import { computeOrphanPageRegistrations } from "@/lib/builder/orphanPageAutoRegister";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
@@ -1747,30 +1748,9 @@ export default function App() {
   useEffect(() => {
     const files = virtualFS.getSandpackFiles();
     const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
-    const knownFilePaths = new Set(
-      registryPages.map((p) => p.filePath).filter(Boolean) as string[],
-    );
-
-    const orphans = Object.keys(files).filter((p) => {
-      if (!/^\/src\/pages\/[^/]+\.tsx$/.test(p)) return false;
-      // Skip funnels (handled separately) and known files
-      if (p.includes('/pages/funnels/')) return false;
-      if (knownFilePaths.has(p)) return false;
-      // Skip files whose component name matches an existing page title
-      const base = p.split('/').pop()!.replace(/\.tsx$/, '');
-      const slug = base.replace(/Page$/, '').toLowerCase();
-      const hasMatchingTitle = registryPages.some(
-        (rp) => rp.title.toLowerCase().replace(/\s+/g, '') === slug,
-      );
-      return !hasMatchingTitle;
-    });
-
-    if (orphans.length === 0) return;
-
-    for (const filePath of orphans) {
-      const base = filePath.split('/').pop()!.replace(/\.tsx$/, '').replace(/Page$/, '');
-      const title = base.replace(/([A-Z])/g, ' $1').trim().replace(/\b\w/g, (c) => c.toUpperCase()) || 'Page';
-      const route = '/' + base.replace(/([A-Z])/g, '-$1').replace(/^-/, '').toLowerCase();
+    const registrations = computeOrphanPageRegistrations(files, registryPages);
+    if (registrations.length === 0) return;
+    for (const { filePath, title, route } of registrations) {
       console.log(`[WebBuilder] Auto-registering AI page: ${filePath} → ${route}`);
       creatorPlayground.addPage(title, route, 'custom', { filePath, showInNav: true });
     }

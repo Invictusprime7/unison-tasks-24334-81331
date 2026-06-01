@@ -4011,30 +4011,16 @@ ${sectionsJsx}
     description?: string;
     canvas_data: { html?: string; css?: string; previewCode?: string; js?: string };
   }) => {
-    // Get the base HTML - prefer previewCode as it's the most complete
-    let code = template.canvas_data?.previewCode || template.canvas_data?.html || '';
-    
-    if (!code) {
+    const baseCode = template.canvas_data?.previewCode || template.canvas_data?.html || '';
+    if (!baseCode) {
       toast.error('Template has no content');
       return;
     }
-    
-    // If there's separate CSS that's not in previewCode, integrate it
-    const separateCss = template.canvas_data?.css || '';
-    if (separateCss && !code.includes(separateCss.substring(0, 50))) {
-      code = integrateCSSIntoHTML(code, separateCss);
-    }
-    
-    // If there's separate JS that's not in previewCode, integrate it
-    const separateJs = template.canvas_data?.js || '';
-    if (separateJs && !code.includes(separateJs.substring(0, 50))) {
-      const scriptTag = `<script>\n${separateJs}\n</script>`;
-      if (code.includes('</body>')) {
-        code = code.replace('</body>', `${scriptTag}\n</body>`);
-      } else {
-        code = code + `\n${scriptTag}`;
-      }
-    }
+    const code = mergeCanvasAssets({
+      html: baseCode,
+      css: template.canvas_data?.css,
+      js: template.canvas_data?.js,
+    });
     
     importBuilderFiles(templateToVFSFiles(code, template.name), {
       preferredPath: launchEntryPoint,

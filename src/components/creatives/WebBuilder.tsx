@@ -101,6 +101,13 @@ import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
 import { fabricObjectsToHtmlCss, buildVfsPageListContext } from "@/lib/builder/exportHelpers";
 import {
+  getCanvasWidth as computeCanvasWidth,
+  getCanvasHeight as computeCanvasHeight,
+  computeZoomIn,
+  computeZoomOut,
+  computeWheelZoom,
+} from "@/lib/builder/canvasViewport";
+import {
   selectEditableEntryPath as selectEditableEntryPathPure,
   computeVfsSignature,
 } from "@/lib/builder/vfsHelpers";

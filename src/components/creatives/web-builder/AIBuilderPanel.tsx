@@ -1748,14 +1748,55 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         liveStep('validating', `Multi-file output: ${Object.keys(multiFileOutput).length} files detected`, Object.keys(multiFileOutput).join(', '));
         console.log('[AIBuilderPanel] Multi-file output detected:', Object.keys(multiFileOutput));
         
-        // Normalize paths, filter config files, and strip module.exports from component content
+        // Normalize paths, filter config files, and strip module.exports from component content.
+        //
+        // CRITICAL: the live VFS uses `/src/...` layout. If the AI returns bare paths like
+        // `App.tsx` or `pages/Home.tsx`, naive `/${path}` prefixing produces orphan files
+        // (`/App.tsx`) that the preview never imports — the apply "succeeds" silently and
+        // the user sees no change. We re-align AI paths against the existing VFS keys so
+        // edits actually land on the files the preview is rendering.
         const BLOCKED_FILES = /\/(tailwind\.config|postcss\.config|vite\.config|tsconfig|package\.json|package-lock)/i;
+        const ROOT_ENTRY_FILES = /^(index|main)\.(html|tsx|ts|jsx|js|css)$/i;
+        const existingKeys = vfsFiles ? Object.keys(vfsFiles) : [];
+        const existingHasSrc = existingKeys.some((k) => k.startsWith('/src/'));
+
+        const alignPathToVFS = (rawPath: string): string => {
+          // Strip leading "./" and ensure single leading "/"
+          let p = rawPath.replace(/^\.\//, '').replace(/^\/+/, '/');
+          if (!p.startsWith('/')) p = `/${p}`;
+
+          // Exact hit on existing VFS key → keep as-is
+          if (existingKeys.includes(p)) return p;
+
+          // Root-level config/entry files (/index.html, /package.json, etc.) must NOT be
+          // forced under /src/. Preserve them at root.
+          const basename = p.slice(p.lastIndexOf('/') + 1);
+          if (ROOT_ENTRY_FILES.test(basename) && !p.startsWith('/src/')) {
+            // Allow /index.html, /index.css at root only if VFS already has them there
+            if (existingKeys.includes(p)) return p;
+          }
+
+          // If VFS uses /src/ layout and this path isn't already under /src/, /public/,
+          // or /supabase/, try to relocate it under /src/.
+          if (existingHasSrc && !p.startsWith('/src/') && !p.startsWith('/public/') && !p.startsWith('/supabase/')) {
+            const candidate = `/src${p}`;
+            if (existingKeys.includes(candidate)) return candidate;
+            // Even when the exact /src counterpart doesn't exist yet (new file), prefer
+            // the /src/ namespace so the preview's module resolver can find it.
+            if (/\.(tsx|jsx|ts|js|css)$/i.test(p)) return candidate;
+          }
+          return p;
+        };
+
         const normalizedFiles: Record<string, string> = {};
         for (const [path, content] of Object.entries(multiFileOutput)) {
-          const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+          const normalizedPath = alignPathToVFS(path);
           if (BLOCKED_FILES.test(normalizedPath)) {
             console.warn('[AIBuilderPanel] Filtered out config file from AI output:', normalizedPath);
             continue;
+          }
+          if (normalizedPath !== (path.startsWith('/') ? path : `/${path}`)) {
+            console.log('[AIBuilderPanel] Realigned AI path to VFS layout:', path, '→', normalizedPath);
           }
           // Strip module.exports blocks from .tsx/.jsx files
           let fileContent = content;

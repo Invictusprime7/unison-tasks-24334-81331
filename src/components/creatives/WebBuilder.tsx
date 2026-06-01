@@ -99,6 +99,7 @@ import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
+import { fabricObjectsToHtmlCss, buildRedirectPageContext } from "@/lib/builder/exportHelpers";
 import {
   selectEditableEntryPath as selectEditableEntryPathPure,
   computeVfsSignature,

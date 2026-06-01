@@ -85,10 +85,16 @@ import { escapeCSSSelector } from "@/lib/builder/cssSelectorUtils";
 import { extractJsxReturnBody } from "@/lib/builder/jsxMutation";
 import {
   findElementBoundsInJSX,
-  findJSXClosingTag,
   withSourceManipulation,
   safeFindElement,
 } from "@/lib/builder/jsxBounds";
+import {
+  applyElementHtmlUpdate,
+  applyElementDelete,
+  applyElementDuplicate,
+  applyElementMoveUp,
+  applyElementMoveDown,
+} from "@/lib/builder/elementMutations";
 import {
   type CodeValidationResult,
   extractStyleBlocks,

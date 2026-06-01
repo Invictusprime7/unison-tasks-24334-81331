@@ -97,6 +97,7 @@ import {
 } from "@/lib/builder/elementMutations";
 import { integrateCSSIntoHTML } from "@/lib/builder/htmlIntegration";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
+import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import {
   type CodeValidationResult,
   extractStyleBlocks,

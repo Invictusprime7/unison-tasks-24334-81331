@@ -99,6 +99,7 @@ import {
 import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
 import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
 import { loadCloudState } from "@/lib/builder/loadCloudState";
+import { attachRuntimeOverlayMessages } from "@/lib/builder/runtimeOverlayMessages";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";

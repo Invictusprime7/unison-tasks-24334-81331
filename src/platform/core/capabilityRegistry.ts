@@ -24,6 +24,7 @@ export type CapabilityId =
   | 'contact'
   | 'newsletter'
   | 'commerce'
+  | 'payments'
   | 'auth'
   | 'lead-capture'
   | 'donation';

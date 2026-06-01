@@ -6770,6 +6770,16 @@ export default function ${componentName}() {
                   syncBuilderFromFiles(mergedFiles, activePagePath);
                   setViewMode('canvas');
                   setAiPanelOpen(false);
+                  // Re-hydrate playground so AI-added pages become route tabs.
+                  setTimeout(() => {
+                    try {
+                      const latestFiles = virtualFS.getSandpackFiles();
+                      const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
+                      console.log('[WebBuilder] Post-AI (panel) playground re-hydrated:', hyd.stats);
+                    } catch (e) {
+                      console.warn('[WebBuilder] Post-AI hydration failed:', e);
+                    }
+                  }, 150);
                   const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                   if (changedPaths.length > 0) {
                     const promptPreview = applyMeta?.prompt

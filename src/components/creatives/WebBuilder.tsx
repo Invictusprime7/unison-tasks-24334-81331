@@ -162,19 +162,7 @@ import {
   readBrowserCart,
 } from '@/runtime/browserCartManager';
 
-function getOrCreatePreviewBusinessId(systemType?: string): string {
-  const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
-  try {
-    const existing = localStorage.getItem(key);
-    if (existing) return existing;
-    const id = generateUUID();
-    localStorage.setItem(key, id);
-    return id;
-  } catch {
-    // Fallback when localStorage is unavailable
-    return generateUUID();
-  }
-}
+
 
 // JSX bounds, source manipulation, safe DOM query, and AI code validation
 // extracted to @/lib/builder/{jsxBounds,aiCodeValidation}.ts (Phase C1).

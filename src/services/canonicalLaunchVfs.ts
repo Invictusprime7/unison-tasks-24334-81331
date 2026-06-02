@@ -214,13 +214,32 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     // The registry/router owns App.tsx itself. Lane A may return a
     // single-page App.tsx to enhance Home; rebase it into the home page file.
     if (path === '/src/App.tsx' || path === '/App.tsx') {
-      if (looksLikeCanonicalRouter(content)) continue;
+      if (looksLikeCanonicalRouter(content)) {
+        const extracted = tryExtractHomeFromRouterModule(content);
+        if (extracted && canonicalFiles['/src/App.tsx']) {
+          merged[homeFilePath] = rebaseAppModuleForHomePage(extracted);
+          console.warn(
+            '[canonicalLaunchVfs] AI emitted router-shaped App.tsx — extracted home route element into',
+            homeFilePath,
+          );
+        } else {
+          console.warn(
+            '[canonicalLaunchVfs] AI emitted router-shaped App.tsx with no extractable home route — Home will fall back to the canonical placeholder',
+            { homeFilePath, contentPreview: content.slice(0, 240) },
+          );
+        }
+        continue;
+      }
 
       const trimmed = typeof content === 'string' ? content.trim() : '';
       const looksRenderable =
         trimmed.length >= 24 &&
         (/export\s+default/.test(trimmed) || /return\s*\(/.test(trimmed) || /<main|<div|<section/i.test(trimmed));
       if (!looksRenderable) {
+        console.warn(
+          '[canonicalLaunchVfs] AI App.tsx did not look renderable — Home will fall back to the canonical placeholder',
+          { trimmedLength: trimmed.length, contentPreview: trimmed.slice(0, 240) },
+        );
         continue;
       }
 

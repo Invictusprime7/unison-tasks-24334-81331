@@ -40,7 +40,7 @@ export const NavbarMinimalDark: React.FC<BaseSectionProps<'navbar'>> = ({ sectio
             <a
               key={i}
               href={link.href}
-              data-intent={link.intent}
+              data-ut-intent={link.intent}
               className="text-sm transition-colors hover:text-white"
               style={{
                 fontFamily: theme.typography.bodyFont,
@@ -53,7 +53,7 @@ export const NavbarMinimalDark: React.FC<BaseSectionProps<'navbar'>> = ({ sectio
           {cta && (
             <a
               href={cta.href || '#'}
-              data-intent={cta.intent}
+              data-ut-intent={cta.intent}
               className="text-sm px-5 py-1.5 transition-all hover:opacity-90"
               style={{
                 background: hsl(theme.colors.primary),

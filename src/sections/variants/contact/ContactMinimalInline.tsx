@@ -50,7 +50,7 @@ export const ContactMinimalInline: React.FC<BaseSectionProps<'contact'>> = ({ se
 
         <form
           data-demo-form="true"
-          data-intent="contact.submit"
+          data-ut-intent="contact.submit"
           className="flex gap-3 mb-6"
           style={{ maxWidth: '36rem', margin: '0 auto' }}
         >

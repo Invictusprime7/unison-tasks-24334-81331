@@ -185,7 +185,7 @@ export const NavbarSection: React.FC<BaseSectionProps<'navbar'>> = ({ section, t
               <a
                 key={i}
                 href={link.href}
-                data-intent={link.intent}
+                data-ut-intent={link.intent}
                 className="text-sm transition-colors hover:opacity-80"
                 style={{
                   fontFamily: theme.typography.bodyFont,
@@ -204,7 +204,7 @@ export const NavbarSection: React.FC<BaseSectionProps<'navbar'>> = ({ section, t
                     window.location.href = cta.href;
                   }
                 }}
-                data-intent={cta.intent}
+                data-ut-intent={cta.intent}
                 className="text-sm px-4 py-2 rounded-md transition-all hover:opacity-90"
                 style={{
                   background: hsl(theme.colors.primary),

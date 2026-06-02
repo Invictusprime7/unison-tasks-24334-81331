@@ -46,7 +46,7 @@ export const ContactSplitCard: React.FC<BaseSectionProps<'contact'>> = ({ sectio
         )}
 
         <div className="grid gap-8 items-start" style={{ gridTemplateColumns: '1fr 1fr', maxWidth: '56rem', margin: '0 auto' }}>
-          <form data-demo-form="true" data-intent="contact.submit" className="flex flex-col gap-3">
+          <form data-demo-form="true" data-ut-intent="contact.submit" className="flex flex-col gap-3">
             <input type="text" placeholder="Your name" style={inputStyle} />
             <input type="email" placeholder="your@email.com" style={inputStyle} />
             <textarea placeholder="Your message..." rows={5} style={inputStyle} />

@@ -38,7 +38,7 @@ export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, t
               {brand}
             </h3>
             {newsletter && (
-              <form data-demo-form="true" data-intent="newsletter.subscribe" className="flex gap-2 mt-3">
+              <form data-demo-form="true" data-ut-intent="newsletter.subscribe" className="flex gap-2 mt-3">
                 <input
                   type="email"
                   placeholder="your@email.com"

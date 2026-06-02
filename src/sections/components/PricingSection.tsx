@@ -34,7 +34,7 @@ export const PricingSection: React.FC<BaseSectionProps<'pricing'>> = ({ section,
               </ul>
               <a
                 href={tier.cta.href || '#'}
-                data-intent={tier.cta.intent}
+                data-ut-intent={tier.cta.intent}
                 className="block text-center text-sm font-medium py-2.5 transition-all hover:opacity-90"
                 style={{
                   background: tier.highlighted ? hsl(theme.colors.primary) : 'transparent',

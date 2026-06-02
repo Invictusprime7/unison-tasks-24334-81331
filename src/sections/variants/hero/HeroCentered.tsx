@@ -67,7 +67,7 @@ export const HeroCentered: React.FC<BaseSectionProps<'hero'>> = ({ section, them
               <a
                 key={i}
                 href={c.href || '#'}
-                data-intent={c.intent}
+                data-ut-intent={c.intent}
                 className="inline-block text-sm font-medium px-6 py-3 transition-all hover:opacity-90"
                 style={
                   c.variant === 'outline'

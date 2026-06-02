@@ -34,7 +34,7 @@ export const FooterDarkBand: React.FC<BaseSectionProps<'footer'>> = ({ section, 
               {brand}
             </h3>
             {newsletter && (
-              <form data-demo-form="true" data-intent="newsletter.subscribe" className="flex gap-2 mt-4" style={{ maxWidth: '20rem' }}>
+              <form data-demo-form="true" data-ut-intent="newsletter.subscribe" className="flex gap-2 mt-4" style={{ maxWidth: '20rem' }}>
                 <input
                   type="email"
                   placeholder="your@email.com"

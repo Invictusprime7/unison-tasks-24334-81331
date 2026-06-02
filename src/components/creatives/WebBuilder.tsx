@@ -107,6 +107,7 @@ import { loadDesignPreferences } from "@/lib/builder/loadDesignPreferences";
 import { loadBusinessData } from "@/lib/builder/loadBusinessData";
 import { computePageRegistryDiagnostics } from "@/lib/builder/computePageRegistryDiagnostics";
 import { checkBackendInstalled } from "@/lib/builder/checkBackendInstalled";
+import { hydrateCloudState } from "@/lib/builder/hydrateCloudState";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
@@ -2014,8 +2015,7 @@ export default function ${componentName}Page() {
   
   // Load full cloud state when project/business context is available
   useEffect(() => {
-    let cancelled = false;
-    loadCloudState({
+    return hydrateCloudState({
       businessId,
       projectId,
       fallbacks: {
@@ -2024,15 +2024,8 @@ export default function ${componentName}Page() {
         publishStatusFromState,
         customDomainFromState,
       },
-    }).then((result) => {
-      if (cancelled) return;
-      if (result.kind === 'full') {
-        setCloudState(result.snapshot);
-      } else {
-        setCloudState((prev) => ({ ...prev, ...result.patch }));
-      }
+      setCloudState,
     });
-    return () => { cancelled = true; };
   }, [businessId, projectId, projectNameFromState, projectSlug, publishStatusFromState, customDomainFromState]);
 
   const playgroundSetupSnapshot = useMemo(() => ({

@@ -1312,6 +1312,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         blueprint: blueprint as any,
         vfsFiles: wiredVfsFiles,
         aesthetic: resolvedPreset.id,
+        themePresetId: resolvedPreset.id,
+        templateId: selectedTemplate?.id,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         intentRuntime: true,

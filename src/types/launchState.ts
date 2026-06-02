@@ -69,6 +69,11 @@ export interface LaunchState {
   
   // Aesthetic/theme info
   aesthetic?: string;
+  /** Resolved wizard Style-card preset id (canonical SoT for /src/index.css) */
+  themePresetId?: string;
+  /** Resolved wizard Template-card id (structural contract for AI generation) */
+  templateId?: string;
+  
   
   // Intent system binding
   preloadedIntents: string[];
@@ -141,6 +146,8 @@ export function createLaunchState(
     templateName: input.templateName,
     templateCategory: input.templateCategory,
     aesthetic: input.aesthetic,
+    themePresetId: input.themePresetId,
+    templateId: input.templateId,
     vfsFiles: input.vfsFiles,
     preloadedIntents: input.preloadedIntents || [],
     startInPreview: input.startInPreview ?? true,

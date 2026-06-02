@@ -107,6 +107,7 @@ import { loadDesignPreferences } from "@/lib/builder/loadDesignPreferences";
 import { loadBusinessData } from "@/lib/builder/loadBusinessData";
 import { computePageRegistryDiagnostics } from "@/lib/builder/computePageRegistryDiagnostics";
 import { checkBackendInstalled } from "@/lib/builder/checkBackendInstalled";
+import { hydrateCloudState } from "@/lib/builder/hydrateCloudState";
 import { assembleSavePayload } from "@/lib/builder/savePayload";
 import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
 import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";

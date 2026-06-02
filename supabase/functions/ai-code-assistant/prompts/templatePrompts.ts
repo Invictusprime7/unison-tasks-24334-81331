@@ -340,6 +340,7 @@ ${premiumCssBlock}
 13. **NO module.exports / require()** — ESM only.
 14. **CLOSE EVERY JSX TAG** — div requires /div, fragments require closed tags.
 15. **ONE TOP-LEVEL DEFAULT EXPORT PER FILE** — and it must appear at the very top level (column 0), never nested.
+16. **AI IMAGE MARKERS** — On every hero background <img>, feature card <img>, and section illustration <img>, add a \`data-ai-image="<concise vivid prompt for this image, tailored to the business>"\` attribute alongside the existing Unsplash \`src=\`. The platform will replace the src with a generated photoreal image post-build; if generation fails the Unsplash src remains as fallback. Do NOT add this marker to logos, avatars, or icons.
 
 ## OUTPUT FORMAT (MANDATORY):
 Return a JSON object with ALL files:

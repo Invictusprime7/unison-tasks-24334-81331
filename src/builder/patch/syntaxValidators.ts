@@ -27,6 +27,10 @@ export interface SyntaxValidationResult {
   errors: string[];
   /** Files for which we stripped unused imports as a soft repair. */
   repairedFiles: string[];
+  /** Files where we auto-closed unclosed JSX tags as a soft repair. */
+  jsxRepairedFiles?: string[];
+  /** Human-readable repair notes (e.g. "appended </div></section>"). */
+  repairWarnings?: string[];
 }
 
 const TSX_RE = /\.(tsx|jsx|ts|js)$/;
@@ -42,12 +46,36 @@ export function validateTsxSyntax(
 ): SyntaxValidationResult {
   const errors: string[] = [];
   const repairedFiles: string[] = [];
+  const jsxRepairedFiles: string[] = [];
+  const repairWarnings: string[] = [];
 
   // Use @babel/parser directly (exposed via Babel.packages.parser in
   // babel-standalone) so we control the plugin set explicitly. Going
   // through Babel.transform with preset chains caused JSX in .tsx files
   // to be parsed as regex literals — the parser API avoids that entirely.
   const parser = (Babel as unknown as { packages?: { parser?: { parse: (src: string, opts: unknown) => unknown } } }).packages?.parser;
+
+  const tryParse = (src: string, isTSX: boolean): string | null => {
+    try {
+      if (parser) {
+        parser.parse(src, {
+          sourceType: 'module',
+          allowReturnOutsideFunction: true,
+          errorRecovery: false,
+          plugins: isTSX ? ['jsx', 'typescript'] : ['typescript'],
+        });
+      } else {
+        Babel.transform(src, {
+          filename: 'tmp.tsx',
+          presets: [['typescript', { allExtensions: true, isTSX }], ['react', { runtime: 'automatic' }]],
+          compact: true,
+        });
+      }
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  };
 
   for (const [path, content] of Object.entries(files)) {
     if (!TSX_RE.test(path)) continue;
@@ -64,29 +92,30 @@ export function validateTsxSyntax(
       const midFence = source.search(/\n```[\w]*\s*\n/);
       if (midFence > 0) source = source.slice(0, midFence);
       source = source.replace(/^```[\w]*\s*$/gm, '');
-      // Write the cleaned content back so downstream pipeline uses clean source
       if (source !== content) files[path] = source;
     }
 
-    try {
-      if (parser) {
-        parser.parse(source, {
-          sourceType: 'module',
-          allowReturnOutsideFunction: true,
-          errorRecovery: false,
-          plugins: isTSX ? ['jsx', 'typescript'] : ['typescript'],
-        });
-      } else {
-        // Fallback — should not happen with babel-standalone.
-        Babel.transform(source, {
-          filename: path,
-          presets: [['typescript', { allExtensions: true, isTSX }], ['react', { runtime: 'automatic' }]],
-          compact: true,
-        });
+    let parseErr = tryParse(source, isTSX);
+
+    // Auto-repair pass: if the parse failure looks like an unclosed JSX tag,
+    // do a deterministic stack scan and append the missing closers. Only
+    // accept the repair if it actually makes the file parse cleanly.
+    if (parseErr && isTSX && /Expected corresponding JSX closing tag/i.test(parseErr)) {
+      const repair = repairUnclosedJsxTags(source);
+      if (repair) {
+        const reErr = tryParse(repair.source, isTSX);
+        if (!reErr) {
+          source = repair.source;
+          files[path] = source;
+          jsxRepairedFiles.push(path);
+          repairWarnings.push(`jsx-repair: ${path}: appended ${repair.appended}`);
+          parseErr = null;
+        }
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const shortMsg = msg.split('\n').slice(0, 3).join(' | ');
+    }
+
+    if (parseErr) {
+      const shortMsg = parseErr.split('\n').slice(0, 3).join(' | ');
       errors.push(`syntax: ${path}: ${shortMsg}`);
       continue;
     }
@@ -95,14 +124,83 @@ export function validateTsxSyntax(
     // local binding name never appears again in the source). This is a
     // soft repair — if anything changed, we surface the path so callers
     // can decide whether to keep the rewrite.
-    const stripped = stripUnusedImports(content);
-    if (stripped !== content) {
+    const stripped = stripUnusedImports(source);
+    if (stripped !== source) {
       files[path] = stripped;
       repairedFiles.push(path);
     }
   }
 
-  return { ok: errors.length === 0, errors, repairedFiles };
+  return {
+    ok: errors.length === 0,
+    errors,
+    repairedFiles,
+    jsxRepairedFiles,
+    repairWarnings,
+  };
+}
+
+// Void HTML elements that must not have an explicit closing tag.
+const VOID_TAGS = new Set([
+  'br', 'hr', 'img', 'input', 'meta', 'link', 'area', 'base',
+  'col', 'embed', 'param', 'source', 'track', 'wbr',
+]);
+
+/**
+ * Best-effort scan that masks out strings, template literals, and comments
+ * so the tag-matching regex below doesn't trip on JSX-like fragments that
+ * are actually part of string content.
+ */
+function maskNonCode(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length))
+    .replace(/`(?:\\.|[^`\\])*`/g, (m) => '`' + ' '.repeat(Math.max(0, m.length - 2)) + '`')
+    .replace(/"(?:\\.|[^"\\])*"/g, (m) => '"' + ' '.repeat(Math.max(0, m.length - 2)) + '"')
+    .replace(/'(?:\\.|[^'\\])*'/g, (m) => "'" + ' '.repeat(Math.max(0, m.length - 2)) + "'");
+}
+
+/**
+ * Detect and auto-close unclosed JSX tags. Returns the repaired source and a
+ * short description of what was appended, or null when no safe repair is
+ * possible. Only operates on HTML-ish lowercased tags + capitalized React
+ * components; ignores void elements; bails out if more than 5 closers would
+ * be needed (likely a structural error the AI should re-author).
+ */
+function repairUnclosedJsxTags(source: string): { source: string; appended: string } | null {
+  const masked = maskNonCode(source);
+  const tagRe = /<\/?([A-Za-z][\w.-]*)\b[^<>]*?(\/?)>/g;
+  const stack: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(masked)) !== null) {
+    const full = m[0];
+    const name = m[1];
+    const selfClose = m[2] === '/';
+    const isClose = full.startsWith('</');
+    if (isClose) {
+      const idx = stack.lastIndexOf(name);
+      if (idx >= 0) stack.splice(idx, 1);
+    } else if (!selfClose && !VOID_TAGS.has(name.toLowerCase())) {
+      stack.push(name);
+    }
+  }
+  if (stack.length === 0 || stack.length > 5) return null;
+
+  const closers = stack.reverse().map((t) => `</${t}>`).join('');
+
+  // Insert closers immediately after the last existing JSX closing/self-closing
+  // tag in the source — that's almost always inside the same JSX expression
+  // that is missing the closer.
+  const lastCloseRe = /<\/[A-Za-z][\w.-]*\s*>|<[A-Za-z][\w.-]*\b[^<>]*\/>/g;
+  let lastEnd = -1;
+  let lm: RegExpExecArray | null;
+  while ((lm = lastCloseRe.exec(masked)) !== null) {
+    lastEnd = lm.index + lm[0].length;
+  }
+  if (lastEnd < 0) return null;
+
+  const repaired = source.slice(0, lastEnd) + closers + source.slice(lastEnd);
+  return { source: repaired, appended: closers };
 }
 
 const IMPORT_RE = /^\s*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"][^'"]+['"];?\s*$/;

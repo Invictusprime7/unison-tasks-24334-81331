@@ -2191,7 +2191,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               } else {
                 // Dry-run passed: live-apply safe patches, hold high-risk patches for review.
                 transactionalBlocked = true;
-                const requiresManualReview = Boolean(responseMeta?.requiresApproval) || plan.riskLevel === 'high';
+                const requiresManualReview = forceReview || Boolean(responseMeta?.requiresApproval) || plan.riskLevel === 'high';
                 if (!requiresManualReview) {
                   console.log('[AIBuilderPanel] Transactional dry-run passed; live-applying patch:', Object.keys(filesForApply));
                   vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });

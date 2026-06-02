@@ -3,7 +3,7 @@
  * 
  * Every page add/remove/rename/home-toggle atomically:
  *  1. Updates PageRegistry
- *  2. Scaffolds/moves/deletes VFS file
+ *  2. Moves/deletes existing VFS files when page files change
  *  3. Regenerates App.tsx via canonical router
  *  4. Runs conflict validation
  *  5. Navigates preview if needed
@@ -13,7 +13,7 @@
 
 import type { PageRegistry, BuilderPage, BuilderPageType } from '@/types/pageRegistry';
 import { createBuilderPage } from '@/types/pageRegistry';
-import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
+import { generateCanonicalRouterForFiles } from '@/utils/topologyRouterGenerator';
 import { deriveFilePath } from './routeNavigationService';
 import { validatePageTopology, type TopologyValidationResult } from './pageTopologyValidator';
 
@@ -183,11 +183,14 @@ export function applyTopologyChange(
     }
   }
 
-  // Regenerate canonical router
-  const routerCode = generateCanonicalRouter(updated, businessName);
-  if (routerCode) {
-    filesToImport['/src/App.tsx'] = routerCode;
-  }
+  // Regenerate canonical router for file-backed pages only. Newly added pages
+  // become routable after the AI Builder writes their component file.
+  const routerCode = generateCanonicalRouterForFiles(
+    updated,
+    { ...vfsFiles, ...filesToImport },
+    businessName,
+  );
+  if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
 
   // Validate
   const validation = validatePageTopology(updated, { ...vfsFiles, ...filesToImport });
@@ -212,7 +215,7 @@ export function syncTopologyAndRouter(
   vfsFiles: Record<string, string>,
   businessName?: string,
 ): { routerCode: string; validation: TopologyValidationResult } {
-  const routerCode = generateCanonicalRouter(registry, businessName);
+  const routerCode = generateCanonicalRouterForFiles(registry, vfsFiles, businessName);
   const mergedFiles = routerCode ? { ...vfsFiles, '/src/App.tsx': routerCode } : vfsFiles;
   const validation = validatePageTopology(registry, mergedFiles);
   return { routerCode, validation };

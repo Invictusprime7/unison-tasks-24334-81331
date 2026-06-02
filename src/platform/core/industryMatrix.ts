@@ -209,7 +209,7 @@ export const INDUSTRY_MATRIX: Record<string, IndustryProfile> = {
     systemType: 'content',
     layoutCategories: ['nonprofit'],
     defaultCapabilities: ['donation', 'contact', 'newsletter'],
-    primaryIntent: 'pay.checkout',
+    primaryIntent: 'donation.start',
     crmPipeline: {
       name: 'Donor Pipeline',
       stages: ['Prospect', 'First-time Donor', 'Recurring Donor', 'Major Donor', 'Lapsed'],

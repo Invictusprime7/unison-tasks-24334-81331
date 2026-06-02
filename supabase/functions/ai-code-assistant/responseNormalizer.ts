@@ -25,7 +25,9 @@ export function extractThinkingTags(raw: string): { reasoning: string; content: 
  * Post-process AI output: strip blocked config files from JSON multi-file output.
  */
 export function postProcessContent(content: string): string {
-  if (!content.includes('"files"') || !content.includes('"src/App.tsx"')) {
+  // Run sanitizer for any multi-file payload. Restricting this to App.tsx
+  // lets section-only retries bypass cleanup and return malformed TSX.
+  if (!content.includes('"files"')) {
     return content;
   }
 

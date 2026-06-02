@@ -27,19 +27,16 @@ export const PAY_INTENTS = Object.values(INTENT_REGISTRY)
 export const ACTION_INTENTS = Object.values(INTENT_REGISTRY)
   .filter(
     (d) =>
-      (d.namespace === 'lead' && d.surface !== 'client') ||
-      d.name === 'newsletter.subscribe' ||
-      d.name === 'booking.create',
+      d.triggerType === 'user-action' &&
+      (d.handler === 'intent-exec' || d.handler === 'workflow-trigger') &&
+      d.surface !== 'client',
   )
   .map((d) => d.name);
 export const AUTOMATION_INTENTS = Object.values(INTENT_REGISTRY)
   .filter(
     (d) =>
-      d.namespace === 'utility' ||
-      d.namespace === 'auth' ||
-      (d.namespace === 'commerce' && d.surface !== 'redirect' && !d.name.startsWith('pay.')) ||
-      (d.namespace === 'booking' && d.name !== 'booking.create') ||
-      (d.namespace === 'lead' && d.surface === 'client'),
+      d.triggerType === 'system-event' ||
+      d.triggerType === 'workflow-event',
   )
   .map((d) => d.name);
 

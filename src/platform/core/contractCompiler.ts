@@ -39,6 +39,7 @@ import { getIndustryProfile } from './industryMatrix';
 import { getCompositionsByIndustry } from '@/sections/templates';
 import { buildRoutePolicy, isOverlayIntent, type RoutePolicy } from './routePolicy';
 import { resolveSlotBindings, type SlotBindingPolicy } from './slotBindingPolicy';
+import { getIntentRequiredCapabilities } from './intentSurfaceRegistry';
 import { validateProvisioning, type ProvisioningReport } from './provisioningValidator';
 
 // ============================================================================
@@ -333,6 +334,7 @@ export function compileContract(
       },
       params: {},
       source: 'slot-policy',
+      requiredCapabilities: getIntentRequiredCapabilities(binding.intent),
       readiness: backendInstalled ? 'publish-ready' : 'preview-ready',
     });
   }

@@ -73,7 +73,7 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
       { capability: 'booking', intent: 'booking.create' },
       { capability: 'commerce', intent: 'nav.goto' }, // → /shop
       { capability: 'quoting', intent: 'quote.request' },
-      { capability: 'donation', intent: 'pay.checkout' },
+      { capability: 'donation', intent: 'donation.start' },
       { capability: 'lead-capture', intent: 'lead.capture' },
       { capability: 'contact', intent: 'contact.submit' },
     ],
@@ -97,7 +97,7 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
       { capability: 'booking', intent: 'booking.create' },
       { capability: 'commerce', intent: 'nav.goto' },
       { capability: 'quoting', intent: 'quote.request' },
-      { capability: 'donation', intent: 'pay.checkout' },
+      { capability: 'donation', intent: 'donation.start' },
       { capability: 'contact', intent: 'contact.submit' },
     ],
     fallbackIntent: 'nav.anchor',
@@ -165,7 +165,7 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
       { capability: 'booking', intent: 'booking.create' },
       { capability: 'commerce', intent: 'nav.goto' },
       { capability: 'quoting', intent: 'quote.request' },
-      { capability: 'donation', intent: 'pay.checkout' },
+      { capability: 'donation', intent: 'donation.start' },
       { capability: 'contact', intent: 'contact.submit' },
     ],
     fallbackIntent: 'contact.submit',
@@ -206,19 +206,19 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     section: 'navbar',
     slot: 'icon-search',
     intentPriority: [],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'search.open',
   },
   {
     section: 'navbar',
     slot: 'icon-user',
     intentPriority: [],
-    fallbackIntent: 'auth.login',
+    fallbackIntent: 'account.open',
   },
   {
     section: 'navbar',
     slot: 'icon-menu',
     intentPriority: [],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'menu.open',
   },
   {
     section: 'navbar',
@@ -226,7 +226,7 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     intentPriority: [
       { capability: 'commerce', intent: 'cart.view' },
     ],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'cart.view',
   },
 
   // ── Shop Grid Icon Slots ──────────────────────────────────────────────
@@ -234,25 +234,25 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     section: 'shop-grid',
     slot: 'icon-filter',
     intentPriority: [
-      { capability: 'commerce', intent: 'nav.anchor' },
+      { capability: 'commerce', intent: 'filter.open' },
     ],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'filter.open',
   },
   {
     section: 'shop-grid',
     slot: 'icon-sort',
     intentPriority: [
-      { capability: 'commerce', intent: 'nav.anchor' },
+      { capability: 'commerce', intent: 'sort.open' },
     ],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'sort.open',
   },
   {
     section: 'shop-grid',
     slot: 'icon-favorite',
     intentPriority: [
-      { capability: 'commerce', intent: 'cart.add' },
+      { capability: 'commerce', intent: 'favorite.toggle' },
     ],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'favorite.toggle',
   },
 ];
 

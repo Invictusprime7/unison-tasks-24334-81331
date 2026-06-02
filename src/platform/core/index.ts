@@ -27,6 +27,7 @@ export * from './provisioningValidator';
 export * from './intentNormalizer';
 export * from './slotBindingPolicy';
 export * from './industryMatrix';
+export * from './industryIntentProfiles';
 export * from './integrityReport';
 export * from './iconIntentRegistry';
 export * from './siteTopologyPlanner';

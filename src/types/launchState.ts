@@ -146,6 +146,8 @@ export function createLaunchState(
     templateName: input.templateName,
     templateCategory: input.templateCategory,
     aesthetic: input.aesthetic,
+    themePresetId: input.themePresetId,
+    templateId: input.templateId,
     vfsFiles: input.vfsFiles,
     preloadedIntents: input.preloadedIntents || [],
     startInPreview: input.startInPreview ?? true,

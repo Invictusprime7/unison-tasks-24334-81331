@@ -8,7 +8,6 @@
 import { fixJsxVoidElements, fixJsxStyleStrings } from './aiCodeCleaner';
 import { htmlDocToReactComponentWithCSS } from './htmlToJsx';
 import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
-import { extractLauncherPayload } from '@/utils/launcherPayload';
 
 // ============================================================================
 // Embedded CSS Extraction
@@ -70,6 +69,9 @@ export function templateToVFSFiles(
     .replace(/[^a-zA-Z0-9]/g, '')
     .replace(/^([a-z])/, (m) => m.toUpperCase()) || 'Template';
 
+  // Fix void HTML elements and style strings for JSX compatibility
+  const code = fixJsxStyleStrings(fixJsxVoidElements(templateCode));
+
   const mainTSX = `import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -84,21 +86,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
   // Single source of truth: the wizard's token injection system.
   const baseCSS = buildDefaultThemedIndexCss();
-
-  const structuredPayload = extractLauncherPayload(templateCode);
-  if (structuredPayload) {
-    const structuredFiles = { ...structuredPayload.files };
-    if (!structuredFiles['/src/main.tsx']) {
-      structuredFiles['/src/main.tsx'] = mainTSX;
-    }
-    if (!structuredFiles['/src/index.css']) {
-      structuredFiles['/src/index.css'] = baseCSS;
-    }
-    return structuredFiles;
-  }
-
-  // Fix void HTML elements and style strings for JSX compatibility
-  const code = fixJsxStyleStrings(fixJsxVoidElements(templateCode));
 
   // Legacy HTML documents — auto-migrate to React/TSX component
   if (code.includes('<!DOCTYPE') || code.includes('<html')) {

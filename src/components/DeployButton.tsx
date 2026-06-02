@@ -30,7 +30,6 @@ import GateVerdictStrip from '@/components/web-builder/GateVerdictStrip';
 import PublishBlockersList from '@/components/web-builder/PublishBlockersList';
 import type { CompiledContract } from '@/platform/core';
 import { isPublishReady } from '@/platform/core';
-import { safeOpenExternal } from '@/utils/safeOpenExternal';
 
 interface DeployButtonProps {
   /** File map to deploy (path -> content) */
@@ -74,11 +73,7 @@ export function DeployButton({
           action: response.url
             ? {
                 label: 'Open',
-                onClick: () => {
-                  if (!safeOpenExternal(response.url, '_blank')) {
-                    toast.error('Invalid deployment URL returned.');
-                  }
-                },
+                onClick: () => window.open(response.url, '_blank'),
               }
             : undefined,
         });
@@ -244,11 +239,7 @@ export function DeployButton({
                       <Button
                         size="icon"
                         variant="outline"
-                        onClick={() => {
-                          if (!safeOpenExternal(result.url, '_blank')) {
-                            toast.error('Invalid deployment URL returned.');
-                          }
-                        }}
+                        onClick={() => window.open(result.url, '_blank')}
                       >
                         <ExternalLink className="h-4 w-4" />
                       </Button>

@@ -151,54 +151,14 @@ Typography:
 ${buttonLabels}
 ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
 
-    const sectionOrder = Array.isArray((blueprint.site as { sections?: unknown[] } | undefined)?.sections)
-      ? ((blueprint.site as { sections?: unknown[] }).sections || []).filter((section): section is string => typeof section === "string")
-      : ["hero", "services", "about", "testimonials", "cta", "contact", "footer"];
-    const systemsBuildContext = {
-      version: "1.0",
-      identity: {
-        industry: blueprint.identity.industry,
-        business_model: blueprint.identity.business_model,
-        primary_goal: blueprint.identity.primary_goal,
-        locale: blueprint.identity.locale,
-      },
-      brand: blueprint.brand,
-      style_selection: {
-        preset_id: blueprint.brand.tone || "brand-directed",
-        preset_label: blueprint.brand.tone || "Brand directed",
-        palette_hex: blueprint.brand.palette,
-        typography: {
-          heading_font: blueprint.brand.typography?.heading,
-          body_font: blueprint.brand.typography?.body,
-        },
-      },
-      template_selection: {
-        template_id: templateId || "systems-build",
-        template_label: templateId || blueprint.brand.business_name,
-        description: `AI-generated ${blueprint.identity.industry} site`,
-        industry: blueprint.identity.industry,
-        section_order: sectionOrder,
-        seed_code_excerpt: templateHtml ? templateHtml.substring(0, 6000) : undefined,
-      },
-      template_sections: sectionOrder,
-      intents: (blueprint.intents || []).map((intent) => ({
-        intent: typeof intent === "string"
-          ? intent
-          : ((intent as { intent?: string; type?: string })?.intent || (intent as { intent?: string; type?: string })?.type || "cta.primary"),
-      })),
-    };
-
-    // Call ai-code-assistant with the caller's JWT. Using the anon key as a
-    // Bearer token fails in ai-code-assistant's in-code auth and surfaces to
-    // the browser as a generic edge-function send failure.
+    // Call ai-code-assistant
     const aiUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-code-assistant`;
-    const callerAuthHeader = req.headers.get("authorization") || "";
 
     const aiResponse = await fetch(aiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": callerAuthHeader,
+        "Authorization": `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`,
       },
       body: JSON.stringify({
         messages: [{ role: "user", content: reactPrompt }],
@@ -208,7 +168,8 @@ ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
         aesthetic: blueprint.brand.tone || "modern professional",
         source: blueprint.identity.industry,
         savePattern: true,
-        systemsBuildContext,
+        currentCode: templateHtml ? templateHtml.substring(0, 80000) : undefined,
+        templateAction: templateHtml ? "use-as-schema" : undefined,
       }),
     });
 

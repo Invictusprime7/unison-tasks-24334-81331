@@ -3,7 +3,6 @@ import type { PageNode } from "@/schemas/SiteGraph";
 import { type BrandColors, defaultBrand } from "@/types/brand";
 import { handleIntent } from "@/runtime/intentRouter";
 import { classifyIntent } from "@/runtime/intentClassifier";
-import { safeOpenExternal } from "@/utils/safeOpenExternal";
 
 /** Local section type derived from PageNode */
 type PageSection = PageNode["sections"][number];
@@ -629,7 +628,7 @@ export function PageRenderer({
         return;
       }
       if (intent === 'nav.external' && payload?.url) {
-        safeOpenExternal(String(payload.url), '_blank');
+        window.open(String(payload.url), '_blank', 'noopener');
         return;
       }
       // Other immediate intents — fire a DOM event for parent to catch

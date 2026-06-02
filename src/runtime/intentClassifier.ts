@@ -117,27 +117,10 @@ const PREFIX_LANES: Array<[string, IntentLane]> = [
 const LANE_OVERRIDES: Record<string, IntentClassification> = {
   'auth.login':      { lane: 'backend',   emitsEvent: false, requiresBusinessId: false, requiresNetwork: true },
   'auth.register':   { lane: 'backend',   emitsEvent: false, requiresBusinessId: false, requiresNetwork: true },
-  'auth.logout':     { lane: 'backend',   emitsEvent: false, requiresBusinessId: false, requiresNetwork: true },
-  'account.open':    { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'menu.open':       { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'search.open':     { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'filter.open':     { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'sort.open':       { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'share.open':      { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'favorite.toggle': { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'chat.open':       { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'contact.call':    { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'contact.email':   { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'contact.sms':     { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'location.directions': { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'product.view':    { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
   'cart.add':        { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
   'cart.view':       { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'cart.update':     { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
-  'cart.remove':     { lane: 'immediate', emitsEvent: false, requiresBusinessId: false, requiresNetwork: false },
   'cart.checkout':   { lane: 'backend',   emitsEvent: false, requiresBusinessId: true,  requiresNetwork: true },
   'cart.abandoned':  { lane: 'automatable', emitsEvent: true, requiresBusinessId: true, requiresNetwork: true },
-  'donation.start':  { lane: 'backend',   emitsEvent: false, requiresBusinessId: true, requiresNetwork: true },
 };
 
 // ============================================================================

@@ -12,7 +12,6 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { useVirtualFileSystem, VirtualFile, VirtualFolder, VirtualNode } from '@/hooks/useVirtualFileSystem';
-import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 import { usePreviewService, PreviewSession, PreviewServiceState } from '@/hooks/usePreviewService';
 import { 
   parseSavedProject, 
@@ -233,14 +232,14 @@ export function VFSProvider({
   const undoSnapshot = useCallback((): boolean => {
     const snapshot = vfsSnapshotManager.undo();
     if (!snapshot) return false;
-    liveVFSCommit.writeFiles(snapshot.files, 'system-restore', vfs.importFiles);
+    vfs.importFiles(snapshot.files);
     return true;
   }, [vfs]);
 
   const redoSnapshot = useCallback((): boolean => {
     const snapshot = vfsSnapshotManager.redo();
     if (!snapshot) return false;
-    liveVFSCommit.writeFiles(snapshot.files, 'system-restore', vfs.importFiles);
+    vfs.importFiles(snapshot.files);
     return true;
   }, [vfs]);
 
@@ -257,7 +256,7 @@ export function VFSProvider({
     try {
       const project = parseSavedProject(data);
       if (project) {
-        liveVFSCommit.writeFiles(project.files, 'system-restore', vfs.importFiles);
+        vfs.importFiles(project.files);
         console.log('[VFSContext] Imported saved project:', project.name, Object.keys(project.files).length, 'files');
       }
       return project;
@@ -275,7 +274,7 @@ export function VFSProvider({
         splitComponents: true,
         useTypeScript: true,
       });
-      liveVFSCommit.writeFiles(result.files, 'system-restore', vfs.importFiles);
+      vfs.importFiles(result.files);
       console.log('[VFSContext] Imported webpage:', sourceUrl || 'unknown', Object.keys(result.files).length, 'files');
       return result;
     } catch (err) {
@@ -290,7 +289,7 @@ export function VFSProvider({
         projectName: projectName || 'Generated',
         preferReact: true,
       });
-      liveVFSCommit.writeFiles(result.files, 'system-restore', vfs.importFiles);
+      vfs.importFiles(result.files);
       console.log('[VFSContext] Imported code:', result.componentName, Object.keys(result.files).length, 'files');
       return result;
     } catch (err) {
@@ -330,8 +329,7 @@ export function VFSProvider({
     getOpenFiles: vfs.getOpenFiles,
     getNodePath: vfs.getNodePath,
     getSandpackFiles: vfs.getSandpackFiles,
-    importFiles: (files: Record<string, string>) =>
-      liveVFSCommit.writeFiles(files, 'playground-edit', vfs.importFiles),
+    importFiles: vfs.importFiles,
     resetToEmpty: vfs.resetToEmpty,
     loadDefaultTemplate: vfs.loadDefaultTemplate,
     

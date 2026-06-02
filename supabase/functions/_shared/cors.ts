@@ -13,35 +13,6 @@ const TRUSTED_ORIGINS: string[] = [
   "https://unisontasks.com",
 ];
 
-const DEFAULT_ALLOWED_HEADERS = [
-  "authorization",
-  "x-client-info",
-  "x-supabase-api-version",
-  "apikey",
-  "content-type",
-  "accept",
-  "accept-language",
-  "cache-control",
-  "pragma",
-  "prefer",
-  "x-request-id",
-  "x-dev-mode-user",
-];
-
-function getAllowedHeaders(req: Request): string {
-  const requestedHeaders = req.headers.get("access-control-request-headers");
-  if (!requestedHeaders) return DEFAULT_ALLOWED_HEADERS.join(", ");
-
-  const headers = new Set(DEFAULT_ALLOWED_HEADERS);
-  requestedHeaders
-    .split(",")
-    .map((header) => header.trim().toLowerCase())
-    .filter(Boolean)
-    .forEach((header) => headers.add(header));
-
-  return Array.from(headers).join(", ");
-}
-
 /**
  * Build CORS headers based on the request origin.
  * - In production: only allows registered origins
@@ -73,20 +44,15 @@ export function getCorsHeaders(req: Request): Record<string, string> {
     isLovableOrigin = false;
   }
 
-  // Edge Function calls from supabase-js are browser preflighted. If the
-  // response omits Access-Control-Allow-Origin (or omits one requested header),
-  // the browser fails before the function body runs and the client only sees
-  // "Failed to send a request to the Edge Function". Auth is enforced in code,
-  // so reflecting trusted origins and falling back to * for non-browser/server
-  // callers is safe for these JSON APIs.
   const allowedOrigin =
     allowedOrigins.includes(origin) || isLocalDev || isLovableOrigin
       ? origin
-      : (origin ? "*" : "*");
+      : "";
 
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
-    "Access-Control-Allow-Headers": getAllowedHeaders(req),
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-request-id, x-dev-mode-user",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",

@@ -107,25 +107,6 @@ function isMissingUserSettingsError(error: unknown): boolean {
   );
 }
 
-function isMissingBusinessMembersError(error: unknown): boolean {
-  const candidate = error as {
-    code?: string;
-    status?: number;
-    message?: string;
-    details?: string;
-  } | null;
-  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
-  return (
-    candidate?.code === '42P01' ||
-    candidate?.code === 'PGRST205' ||
-    candidate?.code === 'PGRST204' ||
-    candidate?.status === 404 ||
-    combined.includes('business_members') ||
-    combined.includes('could not find the table') ||
-    combined.includes('schema cache')
-  );
-}
-
 interface DashboardSnapshot {
   profileName: string;
   businesses: BusinessSummary[];
@@ -815,7 +796,6 @@ export default function CloudDashboard() {
   const [activeTab, setActiveTab] = useState<CloudTab>('overview');
   const [cloudStatus, setCloudStatus] = useState<'online' | 'syncing' | 'offline'>('online');
   const [contextRailOpen, setContextRailOpen] = useState(false);
-  const [supportsBusinessMembers, setSupportsBusinessMembers] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     projects: 0,
     assets: 0,
@@ -899,28 +879,20 @@ export default function CloudDashboard() {
           .select('id, name, industry, website, updated_at, created_at')
           .eq('owner_id', user.id)
           .order('updated_at', { ascending: false }),
-        supportsBusinessMembers
-          ? supabase
-              .from('business_members')
-              .select('business:businesses(id, name, industry, website, updated_at, created_at)')
-              .eq('user_id', user.id)
-          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from('business_members')
+          .select('business:businesses(id, name, industry, website, updated_at, created_at)')
+          .eq('user_id', user.id),
         supabase.from('user_settings').select('settings').eq('user_id', user.id).limit(1),
         supabase.from('project_assets').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
       ]);
-
-      let safeMemberBusinessesResult = memberBusinessesResult;
-      if (memberBusinessesResult.error && isMissingBusinessMembersError(memberBusinessesResult.error)) {
-        setSupportsBusinessMembers(false);
-        safeMemberBusinessesResult = { data: [], error: null } as typeof memberBusinessesResult;
-      }
 
       if (userSettingsResult.error && !isMissingUserSettingsError(userSettingsResult.error)) {
         throw userSettingsResult.error;
       }
 
       const ownedBusinesses = (ownedBusinessesResult.data || []) as unknown as BusinessSummary[];
-      const memberBusinesses = ((safeMemberBusinessesResult.data || []) as unknown as Array<{ business?: BusinessSummary | null }>)
+      const memberBusinesses = ((memberBusinessesResult.data || []) as unknown as Array<{ business?: BusinessSummary | null }>)
         .map((entry) => entry.business)
         .filter(Boolean) as BusinessSummary[];
 

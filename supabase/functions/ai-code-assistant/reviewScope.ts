@@ -45,14 +45,10 @@ export function checkEditScope(opts: {
 
   const patchPaths = Object.keys(patchFiles).map(normalizeVfsPath);
 
-  // Rule 1: If we have a resolved target file AND it already exists in the
-  // VFS, the patch MUST include it. If it doesn't exist yet, the resolver
-  // was speculative — allow the AI to create/choose the actual file.
+  // Rule 1: If we have a resolved target file, patch MUST include it
   if (targetFile) {
     const normTarget = normalizeVfsPath(targetFile);
-    const existingNorm = existingFiles.map(normalizeVfsPath);
-    const targetExists = existingNorm.includes(normTarget);
-    if (targetExists && !patchPaths.includes(normTarget)) {
+    if (!patchPaths.includes(normTarget)) {
       return {
         inScope: false,
         reason: `Scoped edit resolved to ${normTarget} but AI did not update that file.`,

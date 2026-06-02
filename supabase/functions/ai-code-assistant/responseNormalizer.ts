@@ -25,9 +25,7 @@ export function extractThinkingTags(raw: string): { reasoning: string; content: 
  * Post-process AI output: strip blocked config files from JSON multi-file output.
  */
 export function postProcessContent(content: string): string {
-  // Run sanitizer for any multi-file payload. Restricting this to App.tsx
-  // lets section-only retries bypass cleanup and return malformed TSX.
-  if (!content.includes('"files"')) {
+  if (!content.includes('"files"') || !content.includes('"src/App.tsx"')) {
     return content;
   }
 
@@ -55,14 +53,6 @@ export function postProcessContent(content: string): string {
           // Strip surrounding markdown code fences
           cleaned = cleaned.replace(/^\s*```(?:tsx|jsx|ts|js|typescript|javascript)?\s*\n?/i, "");
           cleaned = cleaned.replace(/\n?```\s*$/i, "");
-          // Strip any remaining mid-content fence markers and trailing prose after them.
-          // Handles cases where the AI closes a code fence in the middle of the output.
-          const midFence = cleaned.search(/\n```[\w]*\s*\n/);
-          if (midFence > 0) {
-            cleaned = cleaned.slice(0, midFence);
-          }
-          // Also remove any orphaned standalone ``` lines that weren't caught above.
-          cleaned = cleaned.replace(/^```[\w]*\s*$/gm, "");
           // Strip module.exports leaks (Tailwind/PostCSS config bleed-through)
           if (/\bmodule\.exports\b/.test(cleaned)) {
             cleaned = cleaned

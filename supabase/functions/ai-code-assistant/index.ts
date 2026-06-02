@@ -34,7 +34,7 @@ serve(async (req: Request) => {
       return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
     }
 
-    const { data: rawBody, error: parseError } = await safeParseBody(req, 8_388_608);
+    const { data: rawBody, error: parseError } = await safeParseBody(req, 4_194_304);
     if (parseError || !rawBody) {
       const status = parseError?.includes("exceeds") ? 413 : 400;
       console.error("[ai-code-assistant] body parse failed", { parseError, status });
@@ -63,24 +63,7 @@ serve(async (req: Request) => {
       debugMode: parsed.data.debugMode ?? false,
       vfsFiles: parsed.data.vfsFiles,
       launchBrief: parsed.data.launchBrief,
-      wizardLaunch: parsed.data.wizardLaunch ?? false,
     });
-
-    if (parsed.data.wizardLaunch) {
-      const sbc = parsed.data.systemsBuildContext as Record<string, unknown> | undefined;
-      const templateSelection = sbc?.template_selection as Record<string, unknown> | undefined;
-      const styleSelection = sbc?.style_selection as Record<string, unknown> | undefined;
-      const sectionOrder = Array.isArray(templateSelection?.section_order)
-        ? templateSelection?.section_order.length
-        : 0;
-      console.log('[ai-code-assistant] wizardLaunch payload diagnostics', {
-        hasSystemsBuildContext: Boolean(sbc),
-        hasTemplateSelection: Boolean(templateSelection),
-        templateSectionOrderCount: sectionOrder,
-        hasStylePresetId: Boolean(styleSelection?.preset_id),
-        hasThemeTokens: Boolean(sbc?.theme_tokens),
-      });
-    }
 
     console.log(
       `[ai-code-assistant] task=${task.type} fastPath=${task.fastPath} elapsed-classify=${Date.now() - startMs}ms`,
@@ -104,59 +87,34 @@ serve(async (req: Request) => {
     const message = error instanceof Error ? error.message : "Unknown error";
     let userMessage = message;
     let errorType = "unknown";
-    let statusCode = 500;
 
     if (message.includes("All AI providers failed") || message.includes("All AI models failed")) {
       const configuredNone = message.includes("Configured providers: none");
       const hasAuthFailure = /401|403|invalid[_\s-]?api[_\s-]?key|unauthorized|authentication/i.test(message);
-      const hasTimeoutFailure = /\btimeout\b|timed out|abort/i.test(message);
       const detailsMatch = message.match(/Last errors:\s*(.+)$/i);
       const details = detailsMatch?.[1]?.slice(0, 220);
 
       if (configuredNone) {
-        userMessage = "No AI provider is configured. Set OPENAI_API_KEY, LOVABLE_API_KEY, or a Gemini key in Supabase secrets.";
+        userMessage = "AI providers are not configured on the edge function. Please set LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in Supabase secrets.";
         errorType = "provider_not_configured";
-        statusCode = 503;
-      } else if (hasTimeoutFailure && hasAuthFailure) {
-        const hasOpenAI = message.includes("openai-direct") || message.includes("OpenAI");
-        const hasGateway = message.includes("lovable-gateway") || message.includes("Gateway");
-        if (hasOpenAI && hasGateway) {
-          userMessage = "All AI providers failed with mixed timeout/auth errors. Verify OPENAI_API_KEY and LOVABLE_API_KEY in Supabase secrets, then retry.";
-        } else if (hasOpenAI) {
-          userMessage = "OpenAI returned mixed timeout/auth errors. Verify OPENAI_API_KEY in Supabase secrets and retry.";
-        } else if (hasGateway) {
-          userMessage = "Lovable AI Gateway returned mixed timeout/auth errors. Verify LOVABLE_API_KEY or set OPENAI_API_KEY as fallback.";
-        } else {
-          userMessage = "AI providers failed due to mixed timeout/auth errors. Verify API keys in Supabase secrets and retry.";
-        }
-        errorType = "ai_unavailable";
-        statusCode = 503;
-      } else if (hasTimeoutFailure) {
-        userMessage = "AI provider request timed out. Please retry in a moment.";
-        errorType = "timeout";
-        statusCode = 504;
       } else if (hasAuthFailure) {
-        userMessage = "AI provider authentication failed. Verify OPENAI_API_KEY or LOVABLE_API_KEY in Supabase secrets.";
+        userMessage = "AI provider authentication failed. Please verify gateway/provider API keys in Supabase secrets.";
         errorType = "provider_auth";
-        statusCode = 502;
       } else {
         userMessage = details
           ? `AI providers failed to produce a response. ${details}`
           : "AI providers failed to produce a response. Please retry in a moment.";
         errorType = "ai_unavailable";
-        statusCode = 503;
       }
     } else if (message.includes("network") || message.includes("fetch")) {
       userMessage = "Network error connecting to AI service. Please check your connection and try again.";
       errorType = "network";
-      statusCode = 503;
     } else if (message.includes("JSON") || message.includes("parse")) {
       userMessage = "Received invalid response from AI service. Please try again.";
       errorType = "parse_error";
-      statusCode = 502;
     }
 
-    return errorResponse(userMessage, statusCode, corsHeaders, {
+    return errorResponse(userMessage, 500, corsHeaders, {
       errorType,
       details: message !== userMessage ? message : undefined,
     });

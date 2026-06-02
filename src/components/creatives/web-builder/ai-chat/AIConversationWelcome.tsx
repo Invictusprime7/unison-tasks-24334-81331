@@ -59,24 +59,6 @@ const SUGGESTION_GROUPS = [
       'Fix layout issues in the navbar',
     ],
   },
-  {
-    label: 'Debug',
-    icon: Bug,
-    items: [
-      'Debug why this button click does nothing',
-      'Find and fix console/runtime errors',
-      'Repair broken route navigation',
-    ],
-  },
-  {
-    label: 'SEO & Global',
-    icon: Globe,
-    items: [
-      'Improve SEO metadata for all pages',
-      'Add social sharing Open Graph tags',
-      'Set canonical URLs and robots guidance',
-    ],
-  },
 ];
 
 export const AIConversationWelcome: React.FC<Props> = ({ onSelectPrompt, templateName, className }) => {

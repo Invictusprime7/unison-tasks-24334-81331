@@ -4,7 +4,6 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
-import { callGeminiText, getGeminiApiKey, cleanJsonText } from "../_shared/gemini.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -35,15 +34,19 @@ serve(async (req) => {
       return errorResponse("prompt is required", 400, corsHeaders);
     }
 
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    if (!getGeminiApiKey()) {
+    if (!LOVABLE_API_KEY) {
+      console.warn("LOVABLE_API_KEY not configured - AI features unavailable in local development");
       return secureJsonResponse(
-        { error: "AI features are not available. Configure the Gemini API key.", isLocalDevelopment: true },
+        { 
+          error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
+          isLocalDevelopment: true
+        },
         503,
         corsHeaders
       );
     }
-
 
     // Generate unique template variation based on prompt and optional seed
     const variation: TemplateVariation = generateVariation(prompt, variationSeed);
@@ -195,26 +198,52 @@ PREMIUM QUALITY REQUIREMENTS:
 
 OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explanations.`;
 
-    let messageContent = "";
-    try {
-      messageContent = await callGeminiText({
-        systemPrompt,
-        userPrompt: prompt,
-        model: "gemini-2.5-flash",
-        responseMimeType: "application/json",
-        maxOutputTokens: 8192,
-        timeoutMs: 120_000,
-      });
-    } catch (err) {
-      console.error("Gemini error:", err);
-      return errorResponse(`AI Gateway error: ${err instanceof Error ? err.message : 'unknown'}`, 503, corsHeaders);
+    // Use AbortController with extended timeout for template generation
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
+
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-pro",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" }
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
+      }
+      if (response.status === 402) {
+        return errorResponse("Payment required. Please add credits to your Lovable workspace.", 402, corsHeaders);
+      }
+      if (response.status === 401) {
+        console.error("AI gateway authentication failed");
+        return errorResponse("AI service authentication failed. Please check API configuration.", 401, corsHeaders);
+      }
+      const errorText = await response.text();
+      console.error("AI Gateway error:", response.status, errorText);
+      return errorResponse(`AI Gateway error: ${response.status}`, 503, corsHeaders);
     }
 
+    const data = await response.json();
+    const messageContent = data.choices[0]?.message?.content;
+    
     if (!messageContent) {
       console.error("No message content from AI");
       throw new Error("No template generated");
     }
-    messageContent = cleanJsonText(messageContent);
 
     console.log("AI Response:", messageContent.substring(0, 200) + "...");
 

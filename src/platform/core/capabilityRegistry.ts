@@ -24,7 +24,6 @@ export type CapabilityId =
   | 'contact'
   | 'newsletter'
   | 'commerce'
-  | 'payments'
   | 'auth'
   | 'lead-capture'
   | 'donation';
@@ -79,7 +78,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     name: 'Booking & Scheduling',
     description: 'Online appointment booking with confirmation and reminders',
     primaryIntent: 'booking.create',
-    supportingIntents: ['booking.reschedule', 'booking.cancel', 'contact.submit'],
+    supportingIntents: ['contact.submit'],
     requiredTables: ['services', 'availability_slots', 'bookings'],
     requiredWorkflows: [
       {
@@ -109,7 +108,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     name: 'Quote Requests',
     description: 'Structured quote/estimate request forms with pipeline tracking',
     primaryIntent: 'quote.request',
-    supportingIntents: ['contact.submit', 'lead.capture', 'proposal.request'],
+    supportingIntents: ['contact.submit', 'lead.capture'],
     requiredTables: ['leads', 'crm_leads'],
     requiredWorkflows: [
       {
@@ -132,7 +131,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     name: 'Contact Forms',
     description: 'General contact/inquiry forms with CRM integration',
     primaryIntent: 'contact.submit',
-    supportingIntents: ['contact.call', 'contact.email', 'contact.sms', 'location.directions', 'lead.capture'],
+    supportingIntents: ['lead.capture'],
     requiredTables: ['leads'],
     requiredWorkflows: [
       {
@@ -158,7 +157,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     name: 'Newsletter & Waitlist',
     description: 'Email collection for newsletters, waitlists, and updates',
     primaryIntent: 'newsletter.subscribe',
-    supportingIntents: ['coupon.claim'],
+    supportingIntents: [],
     requiredTables: ['leads'],
     requiredWorkflows: [
       {
@@ -183,16 +182,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     name: 'E-Commerce',
     description: 'Product catalog, cart, and checkout',
     primaryIntent: 'cart.add',
-    supportingIntents: [
-      'product.view',
-      'cart.view',
-      'cart.update',
-      'cart.remove',
-      'cart.checkout',
-      'pay.checkout',
-      'favorite.toggle',
-      'contact.submit',
-    ],
+    supportingIntents: ['cart.checkout', 'pay.checkout', 'contact.submit'],
     requiredTables: ['products', 'cart_items', 'orders'],
     requiredWorkflows: [
       {
@@ -217,26 +207,12 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     minPlan: 'starter',
   },
 
-  payments: {
-    id: 'payments',
-    name: 'Payments',
-    description: 'Stripe-backed payment & checkout sessions (powers commerce + donations + paid bookings).',
-    primaryIntent: 'pay.checkout',
-    supportingIntents: ['pay.success', 'pay.cancel'],
-    requiredTables: ['orders'],
-    requiredWorkflows: [],
-    requiredOverlays: ['checkout-form'],
-    supportedIndustries: ['ecommerce', 'nonprofit', 'coaching', 'salon', 'local-service'],
-    requiresAuth: false,
-    minPlan: 'starter',
-  },
-
   auth: {
     id: 'auth',
     name: 'Authentication',
     description: 'User signup and login',
     primaryIntent: 'auth.register',
-    supportingIntents: ['auth.login', 'auth.logout', 'account.open'],
+    supportingIntents: ['auth.login'],
     requiredTables: ['profiles'],
     requiredWorkflows: [],
     requiredOverlays: ['auth-modal'],
@@ -253,13 +229,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     name: 'Lead Capture',
     description: 'Structured lead capture with pipeline integration',
     primaryIntent: 'lead.capture',
-    supportingIntents: [
-      'contact.submit',
-      'demo.request',
-      'consultation.request',
-      'content.download',
-      'volunteer.signup',
-    ],
+    supportingIntents: ['contact.submit'],
     requiredTables: ['leads', 'crm_leads', 'crm_contacts'],
     requiredWorkflows: [
       {
@@ -281,8 +251,8 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'donation',
     name: 'Donations',
     description: 'Accept donations with acknowledgment workflows',
-    primaryIntent: 'donation.start',
-    supportingIntents: ['pay.checkout', 'contact.submit', 'newsletter.subscribe'],
+    primaryIntent: 'pay.checkout',
+    supportingIntents: ['contact.submit', 'newsletter.subscribe'],
     requiredTables: ['orders'],
     requiredWorkflows: [
       {

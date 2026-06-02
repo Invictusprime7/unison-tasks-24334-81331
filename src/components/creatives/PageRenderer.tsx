@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Pencil, Save, X } from 'lucide-react';
-import { safeOpenExternal } from '@/utils/safeOpenExternal';
 
 interface PageRendererProps {
   schema: PageSchema;
@@ -151,7 +150,7 @@ export const PageRenderer: React.FC<PageRendererProps> = ({
         return (
           <Button
             className={baseClasses}
-            onClick={() => component.props?.href && safeOpenExternal(String(component.props.href), '_blank')}
+            onClick={() => component.props?.href && window.open(component.props.href, '_blank')}
           >
             {component.content}
           </Button>

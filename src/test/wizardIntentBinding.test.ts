@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getIntentDef } from '@/platform/core';
-import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
+import { getIntentProfile as getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { resolveCapabilities } from '@/services/wizardCapabilityResolver';
 import { applyWizardBindingsToVfs } from '@/services/wizardBindingBridge';
 import type { BusinessModel, IndustryOverlay, WizardSelections } from '@/types/playground';

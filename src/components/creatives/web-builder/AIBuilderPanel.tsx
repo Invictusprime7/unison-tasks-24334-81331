@@ -788,6 +788,22 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       const prompt = `${detail.prompt}${targetLine}`;
       pendingPromptRef.current = prompt;
       setInput(prompt);
+      // Approval-gated: do NOT auto-send. Surface a toast so the user
+      // explicitly approves a page-generation triggered by navigation.
+      const labelHint = detail.label || detail.pageName || 'new page';
+      toast.warning(`Generate page: "${labelHint}"?`, {
+        description: 'Review the prompt and click Send, or Approve to run now.',
+        duration: 12000,
+        action: {
+          label: 'Approve & Run',
+          onClick: () => {
+            if (isLoading) return;
+            requireReviewRef.current = true;
+            pendingPromptRef.current = null;
+            handleSend();
+          },
+        },
+      });
     };
 
     window.addEventListener('unison:generate-page', onGeneratePage as EventListener);

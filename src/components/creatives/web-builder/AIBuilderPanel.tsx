@@ -731,13 +731,23 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         hrefHint,
       ].filter(Boolean).join('\n');
 
-      toast.info(`Wiring "${label}"…`, {
-        description: 'AI Builder is configuring this action. Click again in a moment.',
-        duration: 4000,
-      });
-
+      // Approval-gated: stage the prompt and ask the user to confirm before
+      // the AI Builder rewrites their site in response to a stray click.
       setInput(prompt);
       pendingPromptRef.current = prompt;
+      toast.warning(`Unwired click on "${label}"`, {
+        description: 'AI Builder can wire this — review the prompt and click Send, or Approve to run now.',
+        duration: 12000,
+        action: {
+          label: 'Approve & Run',
+          onClick: () => {
+            if (isLoading) return;
+            requireReviewRef.current = true; // force review-modal path on apply
+            pendingPromptRef.current = null;
+            handleSend();
+          },
+        },
+      });
     };
 
     window.addEventListener('lovable:unwired-click', onUnwiredClick as EventListener);

@@ -63,7 +63,7 @@ import { templateToVFSFiles, elementToVFSPatch } from "@/utils/templateToVFS";
 import { htmlToJsx } from "@/utils/htmlToJsx";
 import { setDefaultBusinessId, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
 import { buildRedirectPageContext } from "@/utils/redirectPageGenerator";
-import { scaffoldMultiPageVFS } from "@/utils/multiPageScaffolder";
+// scaffoldMultiPageVFS was removed; topologyVFSScaffolder owns multi-page scaffolding now.
 import { classifyLabel, type ElementContext } from "@/utils/redirectLabelClassifier";
 import { resolvePreviewAction, type PageInventory } from "@/utils/previewActionResolver";
 import { IntentPipelineOverlay, type PipelineConfig } from "./web-builder/IntentPipelineOverlay";

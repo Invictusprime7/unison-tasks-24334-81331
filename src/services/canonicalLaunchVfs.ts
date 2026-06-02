@@ -177,6 +177,20 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     merged[path] = content;
   }
 
+  // Ensure a canonical router exists at /src/App.tsx. Without this the
+  // preview's Sandpack bundle has no entry composition and renders blank.
+  // We regenerate from the page registry whenever:
+  //   • no App.tsx survived the merge, or
+  //   • the surviving App.tsx is not a recognizable router (e.g. an AI
+  //     composition that slipped through outside the rebase branch).
+  const existingApp = merged['/src/App.tsx'];
+  if (!existingApp || !looksLikeCanonicalRouter(existingApp)) {
+    const generatedRouter = generateCanonicalRouter(snapshot.pageRegistry, snapshot.businessName);
+    if (generatedRouter) {
+      merged['/src/App.tsx'] = generatedRouter;
+    }
+  }
+
   return merged;
 }
 

@@ -18,7 +18,7 @@ export const dealStageWorkflow = inngest.createFunction(
   { 
     id: "deal-stage-workflow",
     name: "Deal Stage Change Handler",
-    retries: 3,,
+    retries: 3,
     triggers: [{ event: "crm/deal.stage.changed" }],
   },
   
@@ -105,7 +105,7 @@ export const leadFollowUpWorkflow = inngest.createFunction(
   {
     id: "lead-follow-up-workflow",
     name: "Lead Follow-up Sequence",
-    retries: 3,,
+    retries: 3,
     triggers: [{ event: "crm/lead.created" }],
   },
   
@@ -164,7 +164,7 @@ export const bookingReminderWorkflow = inngest.createFunction(
   {
     id: "booking-reminder-workflow",
     name: "Booking Reminder Sequence",
-    retries: 3,,
+    retries: 3,
     triggers: [{ event: "booking/created" }],
   },
   
@@ -229,7 +229,7 @@ export const reviewRequestWorkflow = inngest.createFunction(
   {
     id: "review-request-workflow",
     name: "Post-Service Review Request",
-    retries: 2,,
+    retries: 2,
     triggers: [{ event: "booking/completed" }],
   },
   
@@ -267,7 +267,7 @@ export const noShowFollowUpWorkflow = inngest.createFunction(
   {
     id: "no-show-follow-up-workflow",
     name: "No-Show Follow-up",
-    retries: 2,,
+    retries: 2,
     triggers: [{ event: "booking/no.show" }],
   },
   
@@ -299,7 +299,7 @@ export const formSubmissionWorkflow = inngest.createFunction(
   {
     id: "form-submission-workflow",
     name: "Form Submission Handler",
-    retries: 3,,
+    retries: 3,
     triggers: [{ event: "form/submitted" }],
   },
   
@@ -353,7 +353,7 @@ export const cartAbandonmentWorkflow = inngest.createFunction(
   {
     id: "cart-abandonment-workflow",
     name: "Cart Abandonment Recovery",
-    retries: 3,,
+    retries: 3,
     triggers: [{ event: "cart/abandoned" }],
   },
   
@@ -412,7 +412,7 @@ export const orderFulfillmentWorkflow = inngest.createFunction(
   {
     id: "order-fulfillment-workflow",
     name: "Order Fulfillment Sequence",
-    retries: 3,,
+    retries: 3,
     triggers: [{ event: "order/created" }],
   },
   
@@ -462,7 +462,7 @@ export const newsletterWelcomeWorkflow = inngest.createFunction(
   {
     id: "newsletter-welcome-workflow",
     name: "Newsletter Welcome Sequence",
-    retries: 3,,
+    retries: 3,
     triggers: [{ event: "newsletter/subscribed" }],
   },
   
@@ -513,7 +513,7 @@ export const automationTriggerWorkflow = inngest.createFunction(
   {
     id: "automation-trigger-workflow",
     name: "Automation Trigger Handler",
-    retries: 3,,
+    retries: 3,
     triggers: [{ event: "automation/trigger" }],
   },
   

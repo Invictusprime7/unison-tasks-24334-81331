@@ -1525,7 +1525,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           toast.error('AI returned no usable files. Please retry launch.');
           return;
         }
-        // 'app' kind no longer surfaces — App.tsx is deterministic, not AI-owned.
+        if (lastPayloadIssue?.kind === 'app') {
+          console.error('[SystemLauncher] Aborting launch — AI never produced a valid App.tsx', lastPayloadIssue);
+          toast.error('AI omitted the home composition. Please retry launch.');
+          return;
+        }
 
         if (lastPayloadIssue?.kind === 'section') {
           console.error('[SystemLauncher] Aborting launch — malformed AI section files after retries', lastPayloadIssue);

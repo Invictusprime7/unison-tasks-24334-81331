@@ -1206,16 +1206,21 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // template imports). Threaded into normalizeLauncherFiles so non-store industries
   // never silently land on the 'modern' default.
   const resolvedThemePresetId = useMemo<string | null>(() => {
-    const raw = effectiveRouteState?.designPreset
+    const raw = effectiveRouteState?.themePresetId
+      || effectiveRouteState?.designPreset
       || effectiveRouteState?.aesthetic
       || (effectiveRouteState?.runtimeManifest?.appContext as { themePresetId?: string } | undefined)?.themePresetId
       || null;
     return raw && isValidAesthetic(raw) ? raw : raw || null;
-  }, [effectiveRouteState?.designPreset, effectiveRouteState?.aesthetic, effectiveRouteState?.runtimeManifest?.appContext]);
+  }, [effectiveRouteState?.themePresetId, effectiveRouteState?.designPreset, effectiveRouteState?.aesthetic, effectiveRouteState?.runtimeManifest?.appContext]);
   const [currentTemplateCategory, setCurrentTemplateCategory] = useState<string | null>(
     effectiveRouteState?.templateCategory || null
   );
-  const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null);
+  const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(
+    effectiveRouteState?.templateId
+      || (effectiveRouteState?.runtimeManifest?.appContext as { templateId?: string } | undefined)?.templateId
+      || null
+  );
   const [currentManifestId, setCurrentManifestId] = useState<string | null>(
     effectiveRouteState?.manifestId || null
   );

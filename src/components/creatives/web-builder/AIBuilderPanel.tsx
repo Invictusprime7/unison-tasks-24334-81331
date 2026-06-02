@@ -2448,9 +2448,28 @@ export default function App() {
             console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
             toast.warning('⚠️ Patch flagged for review — check warnings');
           } else if (forceReview) {
-            console.warn('[AIBuilderPanel] forceReview set — single-file auto-apply skipped');
-            toast.warning('Review required', {
-              description: `Edit to ${singleFilePath} ready — open View Edits to apply.`,
+            console.warn('[AIBuilderPanel] forceReview set — surfacing actionable Apply toast (single-file)');
+            const singleFiles = { [singleFilePath]: generatedCode };
+            toast.warning(`Review required`, {
+              description: `Edit to ${singleFilePath} ready. Click Apply Now to commit.`,
+              duration: 20000,
+              action: onApplyToVFS ? {
+                label: 'Apply Now',
+                onClick: () => {
+                  vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
+                  onApplyToVFS(singleFiles, {
+                    prompt: userContent,
+                    model: modelUsed,
+                    summary: responseMeta?.reviewSummary,
+                    actionType: responseMeta?.actionType,
+                    origin: 'single-file',
+                    requiresApproval: responseMeta?.requiresApproval,
+                    warnings: responseMeta?.warnings,
+                  });
+                  vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
+                  toast.success(isSurgicalEdit ? `✅ Edit applied` : `✅ Code applied`);
+                },
+              } : undefined,
             });
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });

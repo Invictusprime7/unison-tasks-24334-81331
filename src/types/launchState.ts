@@ -69,6 +69,11 @@ export interface LaunchState {
   
   // Aesthetic/theme info
   aesthetic?: string;
+  /** Resolved wizard Style-card preset id (canonical SoT for /src/index.css) */
+  themePresetId?: string;
+  /** Resolved wizard Template-card id (structural contract for AI generation) */
+  templateId?: string;
+  
   
   // Intent system binding
   preloadedIntents: string[];

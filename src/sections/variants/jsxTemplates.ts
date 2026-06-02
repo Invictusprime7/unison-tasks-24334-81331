@@ -330,7 +330,7 @@ ${c.heading ? `          <div style={{ textAlign: 'center', marginBottom: '2.5re
             <h2 style={{ ...headingStyle, fontSize: 'clamp(1.5rem, 3vw, 2.25rem)', marginBottom: '0.75rem' }}>${esc(c.heading)}</h2>
 ${c.subheading ? `            <p style={{ ...bodyStyle }}>${esc(c.subheading)}</p>\n` : ''}\
           </div>\n` : ''}\
-          <form data-demo-form="true" data-intent="contact.submit" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <form data-demo-form="true" data-ut-intent="contact.submit" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <input type="text" placeholder="Your name" ${inputStr} />
             <input type="email" placeholder="your@email.com" ${inputStr} />
             <textarea placeholder="How can we help?" rows={4} ${inputStr} />
@@ -349,7 +349,7 @@ ${c.heading ? `          <div style={{ textAlign: 'center', marginBottom: '3rem'
 ${c.subheading ? `            <p style={{ ...bodyStyle, maxWidth: '32rem', margin: '0 auto' }}>${esc(c.subheading)}</p>\n` : ''}\
           </div>\n` : ''}\
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', alignItems: 'start' }}>
-            <form data-demo-form="true" data-intent="contact.submit" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <form data-demo-form="true" data-ut-intent="contact.submit" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <input type="text" placeholder="Your name" ${inputStr} />
               <input type="email" placeholder="your@email.com" ${inputStr} />
               <textarea placeholder="Your message..." rows={5} ${inputStr} />
@@ -370,7 +370,7 @@ export function contactMinimalInlineJSX(c: ExtractedSectionContent): string {
         <div style={{ ...containerStyle, maxWidth: '48rem', textAlign: 'center' }}>
 ${c.heading ? `          <h2 style={{ ...headingStyle, fontSize: 'clamp(1.5rem, 3vw, 2.25rem)', marginBottom: '0.75rem' }}>${esc(c.heading)}</h2>\n` : ''}\
 ${c.subheading ? `          <p style={{ ...bodyStyle, marginBottom: '2rem', maxWidth: '28rem', margin: '0 auto 2rem' }}>${esc(c.subheading)}</p>\n` : ''}\
-          <form data-demo-form="true" data-intent="contact.submit" style={{ display: 'flex', gap: '0.75rem', maxWidth: '36rem', margin: '0 auto 1.5rem' }}>
+          <form data-demo-form="true" data-ut-intent="contact.submit" style={{ display: 'flex', gap: '0.75rem', maxWidth: '36rem', margin: '0 auto 1.5rem' }}>
             <input type="email" placeholder="your@email.com" ${inputStr} />
             <input type="text" placeholder="Message" ${inputStr} />
             <button type="submit" style={{ flexShrink: 0, padding: '0.65rem 1.5rem', border: 'none', borderRadius: THEME.radius, background: hsl(THEME.colors.primary), color: hsl(THEME.colors.primaryForeground), fontFamily: THEME.typography.bodyFont, fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' }}>Send</button>

@@ -33,7 +33,7 @@ export const AboutSection: React.FC<BaseSectionProps<'about'>> = ({ section, the
         {cta && (
           <a
             href={cta.href || '#'}
-            data-intent={cta.intent}
+            data-ut-intent={cta.intent}
             className="inline-block mt-6 text-sm font-medium px-6 py-3 transition-all hover:opacity-90"
             style={{
               background: hsl(theme.colors.primary),

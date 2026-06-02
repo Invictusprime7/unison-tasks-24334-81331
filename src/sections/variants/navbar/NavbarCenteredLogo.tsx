@@ -33,7 +33,7 @@ export const NavbarCenteredLogo: React.FC<BaseSectionProps<'navbar'>> = ({ secti
             <a
               key={i}
               href={link.href}
-              data-intent={link.intent}
+              data-ut-intent={link.intent}
               className="text-sm transition-colors hover:opacity-80"
               style={{ fontFamily: theme.typography.bodyFont, color: hsl(theme.colors.mutedForeground) }}
             >
@@ -61,7 +61,7 @@ export const NavbarCenteredLogo: React.FC<BaseSectionProps<'navbar'>> = ({ secti
             <a
               key={i}
               href={link.href}
-              data-intent={link.intent}
+              data-ut-intent={link.intent}
               className="text-sm transition-colors hover:opacity-80"
               style={{ fontFamily: theme.typography.bodyFont, color: hsl(theme.colors.mutedForeground) }}
             >
@@ -71,7 +71,7 @@ export const NavbarCenteredLogo: React.FC<BaseSectionProps<'navbar'>> = ({ secti
           {cta && (
             <a
               href={cta.href || '#'}
-              data-intent={cta.intent}
+              data-ut-intent={cta.intent}
               className="text-sm px-4 py-2 ml-auto transition-all hover:opacity-90"
               style={{
                 background: hsl(theme.colors.primary),

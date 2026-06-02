@@ -45,7 +45,7 @@ export const ContactCentered: React.FC<BaseSectionProps<'contact'>> = ({ section
           </div>
         )}
 
-        <form data-demo-form="true" data-intent="contact.submit" className="flex flex-col gap-3">
+        <form data-demo-form="true" data-ut-intent="contact.submit" className="flex flex-col gap-3">
           <input type="text" placeholder="Your name" style={inputStyle} />
           <input type="email" placeholder="your@email.com" style={inputStyle} />
           <textarea placeholder="How can we help?" rows={4} style={inputStyle} />

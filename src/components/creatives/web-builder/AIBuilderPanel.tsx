@@ -647,6 +647,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPromptRef = useRef<string | null>(null);
+  // When true, the next handleSend was triggered by a non-explicit user action
+  // (e.g. a stray click on an unwired button) — force review modal, never auto-apply.
+  const requireReviewRef = useRef<boolean>(false);
   const [promptDraft, setPromptDraft] = useState('');
 
   // Phase B — transactional patch review modal state.

@@ -8,6 +8,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { LaunchProvider } from "@/contexts/LaunchContext";
 import { AppRouteElement } from "@/routes/AppRouteElement";
 import { appRoutes } from "@/routes/routeConfig";
+import { SupabaseBootstrap } from "@/hooks/useSupabaseBootstrap";
 
 const queryClient = new QueryClient();
 
@@ -18,6 +19,7 @@ const App = () => (
         <TooltipProvider>
           <LaunchProvider>
             <Sonner />
+            <SupabaseBootstrap />
             <BrowserRouter>
             <Routes>
               {appRoutes.map((route) => (

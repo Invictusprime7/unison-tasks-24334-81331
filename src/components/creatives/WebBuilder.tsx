@@ -1095,6 +1095,8 @@ interface WebBuilderRouteState {
   generatedTemplate?: any;
   templateName?: string;
   templateCategory?: string;
+  templateId?: string;
+  themePresetId?: string;
   designPreset?: string;
   aesthetic?: string;
   startInPreview?: boolean;

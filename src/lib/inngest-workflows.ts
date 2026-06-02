@@ -19,9 +19,8 @@ export const dealStageWorkflow = inngest.createFunction(
     id: "deal-stage-workflow",
     name: "Deal Stage Change Handler",
     retries: 3,
-    triggers: [{ event: "crm/deal.stage.changed" }],
   },
-  
+    { event: "crm/deal.stage.changed" },
   async ({ event, step  }: any) => {
     const { dealId, businessId, newStage, previousStage, contactEmail } = event.data;
 
@@ -106,9 +105,8 @@ export const leadFollowUpWorkflow = inngest.createFunction(
     id: "lead-follow-up-workflow",
     name: "Lead Follow-up Sequence",
     retries: 3,
-    triggers: [{ event: "crm/lead.created" }],
   },
-  
+    { event: "crm/lead.created" },
   async ({ event, step  }: any) => {
     const { leadId, businessId, email, phone } = event.data;
 
@@ -165,9 +163,8 @@ export const bookingReminderWorkflow = inngest.createFunction(
     id: "booking-reminder-workflow",
     name: "Booking Reminder Sequence",
     retries: 3,
-    triggers: [{ event: "booking/created" }],
   },
-  
+    { event: "booking/created" },
   async ({ event, step  }: any) => {
     const { bookingId, businessId, contactEmail, scheduledAt, service } = event.data;
     
@@ -230,9 +227,8 @@ export const reviewRequestWorkflow = inngest.createFunction(
     id: "review-request-workflow",
     name: "Post-Service Review Request",
     retries: 2,
-    triggers: [{ event: "booking/completed" }],
   },
-  
+    { event: "booking/completed" },
   async ({ event, step  }: any) => {
     const { bookingId, businessId, contactEmail } = event.data;
 
@@ -268,9 +264,8 @@ export const noShowFollowUpWorkflow = inngest.createFunction(
     id: "no-show-follow-up-workflow",
     name: "No-Show Follow-up",
     retries: 2,
-    triggers: [{ event: "booking/no.show" }],
   },
-  
+    { event: "booking/no.show" },
   async ({ event, step  }: any) => {
     const { bookingId, businessId, contactEmail } = event.data;
 
@@ -300,9 +295,8 @@ export const formSubmissionWorkflow = inngest.createFunction(
     id: "form-submission-workflow",
     name: "Form Submission Handler",
     retries: 3,
-    triggers: [{ event: "form/submitted" }],
   },
-  
+    { event: "form/submitted" },
   async ({ event, step  }: any) => {
     const { formId, businessId, submissionId, email, data } = event.data;
 
@@ -354,9 +348,8 @@ export const cartAbandonmentWorkflow = inngest.createFunction(
     id: "cart-abandonment-workflow",
     name: "Cart Abandonment Recovery",
     retries: 3,
-    triggers: [{ event: "cart/abandoned" }],
   },
-  
+    { event: "cart/abandoned" },
   async ({ event, step  }: any) => {
     const { cartId, businessId, customerEmail, items, total } = event.data;
 
@@ -413,9 +406,8 @@ export const orderFulfillmentWorkflow = inngest.createFunction(
     id: "order-fulfillment-workflow",
     name: "Order Fulfillment Sequence",
     retries: 3,
-    triggers: [{ event: "order/created" }],
   },
-  
+    { event: "order/created" },
   async ({ event, step  }: any) => {
     const { orderId, businessId, customerEmail, items, total } = event.data;
 
@@ -463,9 +455,8 @@ export const newsletterWelcomeWorkflow = inngest.createFunction(
     id: "newsletter-welcome-workflow",
     name: "Newsletter Welcome Sequence",
     retries: 3,
-    triggers: [{ event: "newsletter/subscribed" }],
   },
-  
+    { event: "newsletter/subscribed" },
   async ({ event, step  }: any) => {
     const { subscriptionId, businessId, email, source } = event.data;
 
@@ -514,9 +505,8 @@ export const automationTriggerWorkflow = inngest.createFunction(
     id: "automation-trigger-workflow",
     name: "Automation Trigger Handler",
     retries: 3,
-    triggers: [{ event: "automation/trigger" }],
   },
-  
+    { event: "automation/trigger" },
   async ({ event, step  }: any) => {
     const { automationId, businessId, triggerId, triggerType, payload } = event.data;
 

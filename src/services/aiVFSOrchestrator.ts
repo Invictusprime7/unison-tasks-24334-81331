@@ -61,6 +61,12 @@ export interface AIApplyOptions {
   onDepsResolved?: (deps: ExtractedDependencies) => void;
   /** Callback after VFS write */
   onFilesWritten?: (paths: string[]) => void;
+  /**
+   * Force a full preview iframe refresh after apply. Default false — surgical
+   * edits rely on VFS/HMR reactivity so live preview state (route, scroll,
+   * cart, form input) is preserved across AI edits.
+   */
+  forceRefresh?: boolean;
 }
 
 /** VFS interface (subset needed by this service) */

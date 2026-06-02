@@ -4801,25 +4801,40 @@ export default function ${componentName}() {
                      const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                      const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
                      console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
-                     setViewMode('canvas');
+                     // NOTE: deliberately NOT calling setViewMode('canvas') here.
+                     // Surgical AI edits must preserve the user's current view
+                     // (split/code/canvas) and the live preview state — the
+                     // user did not ask to switch panels.
                      console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,',
                        Object.keys(result.dependencies.dependencies).length, 'deps');
-                     // Re-hydrate Creator's Playground so newly-added /src/pages/*.tsx files
-                     // register as page tabs / routes in the canonical PageRegistry.
-                     setTimeout(() => {
-                       try {
-                         const latestFiles = virtualFS.getSandpackFiles();
-                         const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
-                         console.log('[WebBuilder] Post-AI playground re-hydrated:', hyd.stats);
-                         if (hyd.stats.pagesDetected > 1) {
-                           toast.success('Routes synced', {
-                             description: `${hyd.stats.pagesDetected} pages registered`,
-                           });
+                     // Re-hydrate Creator's Playground ONLY when /src/pages/*
+                     // files were added or removed. Re-hydrating on every edit
+                     // bumps the PageRegistry version and forces a router
+                     // rebuild, which resets in-page route + scroll + form
+                     // state in the live preview.
+                     const isPage = (p: string) => /^\/src\/pages\/.+\.tsx$/.test(p);
+                     const beforePages = new Set(Object.keys(beforeFiles).filter(isPage));
+                     const afterPages = new Set(Object.keys(mergedFiles).filter(isPage));
+                     const pageSetChanged =
+                       beforePages.size !== afterPages.size ||
+                       [...afterPages].some((p) => !beforePages.has(p)) ||
+                       [...beforePages].some((p) => !afterPages.has(p));
+                     if (pageSetChanged) {
+                       setTimeout(() => {
+                         try {
+                           const latestFiles = virtualFS.getSandpackFiles();
+                           const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
+                           console.log('[WebBuilder] Post-AI playground re-hydrated:', hyd.stats);
+                           if (hyd.stats.pagesDetected > beforePages.size) {
+                             toast.success('Routes synced', {
+                               description: `${hyd.stats.pagesDetected} pages registered`,
+                             });
+                           }
+                         } catch (e) {
+                           console.warn('[WebBuilder] Post-AI hydration failed:', e);
                          }
-                       } catch (e) {
-                         console.warn('[WebBuilder] Post-AI hydration failed:', e);
-                       }
-                     }, 150);
+                       }, 150);
+                     }
                      // Capture an edit snapshot so users can revert/reapply.
                     const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                     if (changedPaths.length > 0) {

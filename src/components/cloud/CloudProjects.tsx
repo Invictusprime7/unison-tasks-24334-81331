@@ -14,7 +14,7 @@ import {
   MoreVertical, Copy, Star, FileText, Home, Download,
   Building2, Users, Loader2, Paintbrush, ArrowLeft,
   BarChart3, Target, Kanban, Workflow, Zap, UserCircle,
-  Search, Grid3X3, List, Edit3, Eye, ChevronDown
+  Search, Grid3X3, List, Edit3, Eye, ChevronDown, Database
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -69,6 +69,7 @@ import { CRMWorkflows } from '@/components/crm/CRMWorkflows';
 import { CRMFormSubmissions } from '@/components/crm/CRMFormSubmissions';
 import { CRMOverview } from '@/components/crm/CRMOverview';
 import { CloudTeams } from './CloudTeams';
+import { CloudDatabase } from './CloudDatabase';
 import { BusinessAutomationSettings } from '@/components/crm/BusinessAutomationSettings';
 import { ProjectSettingsPanel } from '@/components/project/ProjectSettingsPanel';
 
@@ -169,7 +170,7 @@ const transformBusiness = (data: Record<string, unknown>): Business => ({
 });
 
 type ViewMode = 'grid' | 'list';
-type BusinessSection = 'projects' | 'crm' | 'automations' | 'team' | 'settings';
+type BusinessSection = 'projects' | 'crm' | 'automations' | 'team' | 'settings' | 'database';
 type CRMSubTab = 'overview' | 'contacts' | 'leads' | 'pipeline' | 'workflows' | 'forms';
 
 interface CloudProjectsLocationState {
@@ -1131,6 +1132,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                 { id: 'automations', label: 'Automations', icon: Zap },
                 { id: 'team', label: 'Team', icon: Users },
                 { id: 'settings', label: 'Settings', icon: Settings },
+                { id: 'database', label: 'Database', icon: Database },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -2103,6 +2105,13 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                     </Card>
                   </div>
                 </div>
+              )}
+
+              {activeSection === 'database' && (
+                <CloudDatabase
+                  businessId={selectedBusiness.id}
+                  businessName={selectedBusiness.name}
+                />
               )}
             </div>
           </>

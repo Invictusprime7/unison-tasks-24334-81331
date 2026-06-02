@@ -1397,11 +1397,27 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             aiAppInvalid: aiAppInvalidFlag,
             invalidFiles: sanitized.invalidFiles,
           };
+          // On non-final attempts, retry so the AI gets a chance to emit a
+          // proper App.tsx composition. On the FINAL attempt, don't block the
+          // launch — App.tsx is owned by the deterministic canonical router
+          // and the merge will rebase any AI home composition from the other
+          // returned files. Synthesize a minimal App.tsx placeholder so the
+          // sanitizer + downstream merge have a valid entry to work with.
+          if (attempt < MAX_RETRIES) {
+            console.warn(
+              `[SystemLauncher] AI attempt ${attempt + 1} produced no valid /src/App.tsx — retrying so the home composition isn't lost`,
+              lastPayloadIssue,
+            );
+            continue;
+          }
           console.warn(
-            `[SystemLauncher] AI attempt ${attempt + 1} produced no valid /src/App.tsx — retrying so the home composition isn't lost`,
+            `[SystemLauncher] AI final attempt produced no /src/App.tsx — synthesizing placeholder; canonical router will overwrite`,
             lastPayloadIssue,
           );
-          continue;
+          const placeholderApp = `export default function App() {\n  return <div data-ut-section="home" />;\n}\n`;
+          sanitized.files['/src/App.tsx'] = placeholderApp;
+          structured.files['/src/App.tsx'] = placeholderApp;
+          normalizedFiles['/src/App.tsx'] = placeholderApp;
         }
 
         const otherInvalid = sanitized.invalidFiles.filter(

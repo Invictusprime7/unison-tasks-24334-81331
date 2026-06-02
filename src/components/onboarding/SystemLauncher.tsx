@@ -1113,34 +1113,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
         }
 
-        // App.tsx is OWNED by the deterministic canonical router. The AI Lane A
-        // contract returns a single-page composition under /src/App.tsx (sections
-        // inlined, NO router) — that content is the home page body. We KEEP the
-        // AI App.tsx so the canonical merge can rebase it into the home page file
-        // (mergeGeneratedVfsWithCanonicalSnapshot does this when the AI file
-        // doesn't look like a router). After merge we force-overwrite App.tsx
-        // with the canonical router from compiledPlayground.
-        // Only drop AI App.tsx if the sanitizer flagged it as syntactically invalid.
+        // App.tsx is OWNED by the deterministic canonical router. Lane A
+        // typically returns the home composition inlined under /src/App.tsx,
+        // which mergeGeneratedVfsWithCanonicalSnapshot rebases into the
+        // canonical home page file (e.g. /src/pages/Home.tsx). However, the AI
+        // may also legitimately emit the composition directly under page or
+        // section files when honoring the multi-page contract. Accept the
+        // generation when EITHER a valid App.tsx OR at least one valid
+        // page/section file is present — never gate solely on App.tsx, because
+        // doing so forces unrecoverable retries when the AI follows the
+        // "router is deterministic, don't author App.tsx" rule.
         const aiAppInvalidFlag =
           sanitized.invalidFiles.includes('/src/App.tsx') ||
           sanitized.invalidFiles.includes('src/App.tsx');
-        const aiAppMissing =
-          !sanitized.files['/src/App.tsx'] && !sanitized.files['src/App.tsx'];
+        const aiAppPresent =
+          !!sanitized.files['/src/App.tsx'] || !!sanitized.files['src/App.tsx'];
+        const hasOtherValidFile = Object.keys(sanitized.files).some(
+          (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
+        );
 
-        // CRITICAL: the AI's App.tsx carries the wizard composition that gets
-        // rebased into /src/pages/Home.tsx by mergeGeneratedVfsWithCanonicalSnapshot.
-        // If it's missing or invalid, the home route silently falls back to the
-        // canonical placeholder (the "generic fallback layout" symptom). Force a
-        // retry instead of degrading silently.
-        if (aiAppInvalidFlag || aiAppMissing) {
+        if ((!aiAppPresent || aiAppInvalidFlag) && !hasOtherValidFile) {
           lastPayloadIssue = {
             kind: 'app',
-            aiAppMissing,
+            aiAppMissing: !aiAppPresent,
             aiAppInvalid: aiAppInvalidFlag,
             invalidFiles: sanitized.invalidFiles,
           };
           console.warn(
-            `[SystemLauncher] AI attempt ${attempt + 1} produced no valid /src/App.tsx — retrying so the home composition isn't lost`,
+            `[SystemLauncher] AI attempt ${attempt + 1} produced no usable composition (no valid App.tsx and no page/section files) — retrying`,
             lastPayloadIssue,
           );
           continue;

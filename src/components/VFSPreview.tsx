@@ -204,6 +204,18 @@ const SandpackErrorListener: React.FC<{
   return null;
 };
 
+const SandpackStatusProbe: React.FC<{
+  onStatusChange: (status: string) => void;
+}> = ({ onStatusChange }) => {
+  const { sandpack } = useSandpack();
+
+  useEffect(() => {
+    onStatusChange(String(sandpack.status || 'unknown'));
+  }, [sandpack.status, onStatusChange]);
+
+  return null;
+};
+
 function isSandpackTimeoutError(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
@@ -263,6 +275,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const [logs, setLogs] = useState<string[]>([]);
   const [sandpackKey, setSandpackKey] = useState(0);
   const [sandpackDependencyMode, setSandpackDependencyMode] = useState<'auto' | 'base-only'>('base-only');
+  const [sandpackTimedOut, setSandpackTimedOut] = useState(false);
+  const [sandpackStatus, setSandpackStatus] = useState<string>('idle');
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const startAttemptedRef = useRef(false);
   const sandpackRecoveryAttemptedRef = useRef(false);
@@ -702,12 +716,14 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     if (sandpackDependencyMode !== 'base-only') {
       console.warn('[VFSPreview] Sandpack timeout detected; retrying with minimal dependency set');
+      setSandpackTimedOut(false);
       setSandpackDependencyMode('base-only');
       setSandpackKey((k) => k + 1);
       return;
     }
 
     console.warn('[VFSPreview] Sandpack timeout detected in minimal mode; forcing one in-place remount retry');
+    setSandpackTimedOut(true);
     setSandpackKey((k) => k + 1);
   }, [backend, onError, sandpackDependencyMode]);
   
@@ -719,10 +735,38 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const handleRestart = useCallback(() => {
     sandpackRecoveryAttemptedRef.current = false;
     sandpackDependencyEscalatedRef.current = false;
+    setSandpackTimedOut(false);
+    setSandpackStatus('idle');
     setSandpackDependencyMode('base-only');
     setBackend('sandpack');
     setSandpackKey(k => k + 1);
   }, []);
+
+  useEffect(() => {
+    if (backend !== 'sandpack') return;
+    setSandpackTimedOut(false);
+    setSandpackStatus('idle');
+  }, [backend, sandpackKey, sandpackDependencyMode]);
+
+  useEffect(() => {
+    if (backend !== 'sandpack') return;
+    if (sandpackStatus === 'running') {
+      setSandpackTimedOut(false);
+      return;
+    }
+
+    // 90 s gives Sandpack enough time to download packages + boot the nodebox
+    // on first launch.  The previous 15 s fired before startup completed for
+    // wizard-generated multi-page sites, creating a perpetual reload loop.
+    const timeoutId = window.setTimeout(() => {
+      if (sandpackStatus === 'running') return;
+      console.warn('[VFSPreview] Sandpack runtime timed out before running state; showing timeout fallback');
+      setSandpackTimedOut(true);
+      onError?.('Sandpack runtime timed out while starting.');
+    }, 90000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [backend, sandpackStatus, onError]);
   
   const handleOpenInNewTab = useCallback(() => {
     // Sandpack: locate the preview iframe rendered by SandpackPreview and reuse its src
@@ -967,8 +1011,30 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   style={{ height: '100%', minHeight: 0 }}
                 />
               </SandpackLayout>
+              <SandpackStatusProbe onStatusChange={setSandpackStatus} />
               <SandpackErrorListener onError={handleSandpackError} />
             </SandpackProvider>
+
+            {sandpackTimedOut && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/95">
+                <div className="max-w-md px-6 text-center space-y-3">
+                  <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+                  <p className="text-sm text-muted-foreground">
+                    Sandpack runtime timed out while contacting its backend. Preview fallback is active.
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <Button size="sm" onClick={handleRestart}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry Preview
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleOpenInNewTab}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Open Runtime
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </SandpackErrorBoundary>
         )}
         

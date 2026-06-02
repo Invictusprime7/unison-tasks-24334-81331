@@ -132,12 +132,13 @@ export async function runProviderLoop(opts: {
 
   const geminiApiKey = getGeminiApiKey();
   const lovableKeyAvailable = Boolean(cleanSecretValue(Deno.env.get("LOVABLE_API_KEY")));
-  if (!geminiApiKey && !lovableKeyAvailable) {
+  const openaiApiKey = cleanSecretValue(Deno.env.get("OPENAI_API_KEY"));
+  if (!geminiApiKey && !lovableKeyAvailable && !openaiApiKey) {
     return {
       content: '',
       reasoning: '',
       modelUsed: undefined,
-      earlyError: { status: 503, error: 'Lovable AI is not configured for this backend.' },
+      earlyError: { status: 503, error: 'No AI provider is configured. Set OPENAI_API_KEY, LOVABLE_API_KEY, or a Gemini key in Supabase secrets.' },
     };
   }
 
@@ -301,6 +302,93 @@ export async function runProviderLoop(opts: {
     }
   }
 
+  // ── Intermediate fallback: Direct OpenAI API ────────────────────────────
+  // Runs when the Lovable gateway fails and OPENAI_API_KEY is configured.
+  // Uses gpt-4o for wizard lane (needs long output), gpt-4o-mini otherwise.
+  if (openaiApiKey) {
+    const openaiModels = isWizardLane
+      ? [
+          { id: 'gpt-4o', maxTokens: wizardMaxOutputTokens },
+          { id: 'gpt-4o-mini', maxTokens: 32_000 },
+        ]
+      : [
+          { id: 'gpt-4o-mini', maxTokens: 16_000 },
+          { id: 'gpt-4o', maxTokens: 32_000 },
+        ];
+
+    const openAiMessages = aiMessages.map((m) => ({
+      role: m.role,
+      content: typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content
+          : coerceGeminiText(m.content),
+    }));
+
+    for (const model of openaiModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) break;
+      const phaseCap = isWizardLane ? 90_000 : 45_000;
+      const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiApiKey}`,
+          },
+          body: JSON.stringify({
+            model: model.id,
+            messages: openAiMessages,
+            max_completion_tokens: model.maxTokens,
+            ...(forceJsonResponse ? { response_format: { type: 'json_object' } } : {}),
+          }),
+          signal: controller.signal,
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(`OpenAI ${model.id}`, `${resp.status} ${errText.substring(0, 200)}`);
+          if (resp.status === 401 || resp.status === 403) {
+            deferredEarlyError ??= { status: 502, error: 'OpenAI authentication failed. Verify OPENAI_API_KEY in Supabase secrets.' };
+            break;
+          }
+          if (resp.status === 429) {
+            deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
+          }
+          if (resp.status === 402) {
+            deferredEarlyError ??= { status: 402, error: 'OpenAI credits exhausted. Add credits to your OpenAI account.' };
+            break;
+          }
+          continue;
+        }
+        const data = await resp.json();
+        const text = data?.choices?.[0]?.message?.content;
+        const finishReason = data?.choices?.[0]?.finish_reason;
+        if (typeof text === 'string' && text.trim()) {
+          const extracted = extractThinkingTags(text);
+          if (extracted.reasoning) reasoning = extracted.reasoning;
+          content = extracted.content;
+          modelUsed = model.id;
+          if (finishReason && finishReason !== 'stop') {
+            console.warn(`[aiProviderLoop] OpenAI ${model.id} finish_reason=${finishReason} (output may be truncated)`);
+          }
+          break;
+        }
+        recordProviderError(`OpenAI ${model.id}`, `no content (finish=${finishReason ?? 'unknown'})`);
+      } catch (error) {
+        recordProviderError(`OpenAI ${model.id}`, error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : 'unknown');
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (content) {
+      return { content, reasoning, modelUsed };
+    }
+  }
+
   // ── Legacy fallback: direct Gemini API ─────────────────────────────────
   // Direct Gemini fallback uses the same ordered Gemini family from the provider
   // plan. It runs whenever a Gemini key is configured, including after managed
@@ -405,15 +493,17 @@ export async function runProviderLoop(opts: {
   }
 
   const errorTrail = providerErrors.slice(-10).join(' | ') || 'no provider attempts completed';
-  const configuredProviders = [lovableKey ? 'lovable-gateway' : '', geminiApiKey ? 'gemini-direct' : ''].filter(Boolean);
+  const configuredProviders = [
+    lovableKey ? 'lovable-gateway' : '',
+    openaiApiKey ? 'openai-direct' : '',
+    geminiApiKey ? 'gemini-direct' : '',
+  ].filter(Boolean);
   const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
   const hasAuthError = /401|403|invalid[_\s-]?api[_\s-]?key|unauthorized|authentication/.test(errorTrail.toLowerCase());
   const guidance = configuredProviders.length === 0
-    ? missingGeminiKeyMessage()
-    : hasTimeoutError && hasAuthError && lovableKey && geminiApiKey
-      ? 'Managed gateway and direct Gemini both failed; retry shortly, then verify the Gemini secret if this persists.'
-    : hasTimeoutError && hasAuthError && lovableKey
-      ? 'Managed gateway returned mixed transient timeout/auth responses; rotate the managed AI key if this persists.'
+    ? 'No AI provider is configured. Set OPENAI_API_KEY, LOVABLE_API_KEY, or a Gemini key in Supabase secrets.'
+    : hasTimeoutError && hasAuthError
+      ? 'All configured AI providers returned mixed timeout/auth errors. Verify keys in Supabase secrets and retry.'
       : hasTimeoutError
         ? 'All AI providers timed out. Likely upstream model overload — retry shortly.'
       : 'AI providers failed to produce a response. Check key validity and edge-function network latency.';

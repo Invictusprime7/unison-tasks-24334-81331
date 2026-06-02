@@ -44,6 +44,7 @@ import {
   FileCode2,
   X,
   MessageSquare,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AIConversationMessage } from './ai-chat/AIConversationMessage';
@@ -94,12 +95,14 @@ import {
   extractRawHtmlFromMixed,
 } from '@/lib/ai/aiResponseParsing';
 import { wrapHtmlInReactComponent } from '@/lib/ai/htmlToReactSafety';
-import { normalizeLauncherFilesPayload } from '@/utils/launcherPayload';
+import { extractLauncherPayload, normalizeLauncherFilesPayload } from '@/utils/launcherPayload';
 import {
   getScopedEditAutoApplyBlockReason,
+  getPreviewCodeLeakReason,
   looksLikeGeneratedCode,
   looksLikeAIProse,
 } from '@/lib/ai/aiPatchGuards';
+import { fixSvgStringChildren } from '@/utils/aiCodeCleaner';
 
 // stripModuleExportsBlocks, stripInlineCodeRefs, extractRawHtmlFromMixed,
 // wrapHtmlInReactComponent, getScopedEditAutoApplyBlockReason now live in
@@ -472,6 +475,113 @@ function injectPreviewImageIntoFiles(
   };
 }
 
+type AIBuilderIconKey =
+  | 'analyze'
+  | 'generate'
+  | 'debug'
+  | 'deploy'
+  | 'code'
+  | 'send'
+  | 'loading'
+  | 'next'
+  | 'expand'
+  | 'back'
+  | 'preview'
+  | 'warning'
+  | 'success'
+  | 'failure'
+  | 'refresh'
+  | 'terminal'
+  | 'database'
+  | 'file'
+  | 'delete'
+  | 'copy'
+  | 'run'
+  | 'brain'
+  | 'zap'
+  | 'attach'
+  | 'image'
+  | 'text'
+  | 'snippet'
+  | 'close'
+  | 'chat';
+
+const AI_BUILDER_ICON_REGISTRY: Record<AIBuilderIconKey, LucideIcon> = {
+  analyze: Brain,
+  generate: Sparkles,
+  debug: Bug,
+  deploy: ExternalLink,
+  code: Code2,
+  send: Send,
+  loading: Loader2,
+  next: ChevronRight,
+  expand: ChevronDown,
+  back: ChevronLeft,
+  preview: Eye,
+  warning: AlertTriangle,
+  success: CheckCircle2,
+  failure: XCircle,
+  refresh: RefreshCw,
+  terminal: Terminal,
+  database: Database,
+  file: FileCode,
+  delete: Trash2,
+  copy: Copy,
+  run: Play,
+  brain: Brain,
+  zap: Zap,
+  attach: Paperclip,
+  image: ImageIcon,
+  text: FileText,
+  snippet: FileCode2,
+  close: X,
+  chat: MessageSquare,
+};
+
+type AIBuilderQuickAction = {
+  id: 'analyze' | 'generate' | 'debug' | 'deploy' | 'attach';
+  label: string;
+  icon: AIBuilderIconKey;
+  prompt?: string;
+  tab?: 'code' | 'debug';
+};
+
+const AI_BUILDER_QUICK_ACTIONS: AIBuilderQuickAction[] = [
+  {
+    id: 'analyze',
+    label: 'Analyze',
+    icon: 'analyze',
+    prompt: 'Analyze the current page and list UX/CSS improvements with highest impact first.',
+    tab: 'code',
+  },
+  {
+    id: 'generate',
+    label: 'Generate',
+    icon: 'generate',
+    prompt: 'Generate a modern section update that matches the current theme and keeps layout stable.',
+    tab: 'code',
+  },
+  {
+    id: 'debug',
+    label: 'Debug',
+    icon: 'debug',
+    tab: 'debug',
+  },
+  {
+    id: 'deploy',
+    label: 'Preview',
+    icon: 'deploy',
+    prompt: 'Prepare this build for preview: verify broken intents, routes, and responsive issues.',
+    tab: 'code',
+  },
+  {
+    id: 'attach',
+    label: 'Attach',
+    icon: 'attach',
+    tab: 'code',
+  },
+];
+
 // Old ThinkingStepItem and MessageItem components removed — replaced by ai-chat/ sub-components
 
 
@@ -505,6 +615,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   layoutOps,
   pageRegistry,
 }) => {
+  const isWizardLaunchContext = Boolean(
+    systemsBuildContext?.template_selection?.template_id ||
+      systemsBuildContext?.style_selection?.preset_id ||
+      systemsBuildContext?.theme_tokens?.presetId,
+  );
+
   // Hydrate persisted messages synchronously so a refresh never wipes history.
   const [messages, setMessages] = useState<Message[]>(() => {
     const persisted = loadAIHistory(projectId).messages;
@@ -531,6 +647,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPromptRef = useRef<string | null>(null);
+  const [promptDraft, setPromptDraft] = useState('');
 
   // Phase B — transactional patch review modal state.
   const [pendingPatch, setPendingPatch] = useState<{
@@ -635,6 +752,42 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     } catch { /* noop */ }
 
     return () => window.removeEventListener('lovable:unwired-click', onUnwiredClick as EventListener);
+  }, [isLoading]);
+
+  // Page hydration: WebBuilder queues missing-route generation here instead of
+  // writing deterministic scaffold pages.
+  useEffect(() => {
+    const onGeneratePage = (evt: Event) => {
+      const detail = (evt as CustomEvent).detail as {
+        prompt?: string;
+        pageName?: string;
+        label?: string;
+        targetPath?: string;
+      } | undefined;
+
+      if (!detail?.prompt || isLoading) return;
+
+      const targetLine = detail.targetPath
+        ? `\n\nWrite the new page to \`${detail.targetPath}\`. Return a JSON files payload when router changes are needed.`
+        : '';
+      const prompt = `${detail.prompt}${targetLine}`;
+      pendingPromptRef.current = prompt;
+      setInput(prompt);
+    };
+
+    window.addEventListener('unison:generate-page', onGeneratePage as EventListener);
+
+    try {
+      const w = window as unknown as { __unisonPageGenerationQueue?: unknown[] };
+      const queue = Array.isArray(w.__unisonPageGenerationQueue) ? w.__unisonPageGenerationQueue : [];
+      if (queue.length > 0 && !isLoading) {
+        const latest = queue[queue.length - 1];
+        w.__unisonPageGenerationQueue = [];
+        onGeneratePage(new CustomEvent('unison:generate-page', { detail: latest }));
+      }
+    } catch { /* noop */ }
+
+    return () => window.removeEventListener('unison:generate-page', onGeneratePage as EventListener);
   }, [isLoading]);
 
 
@@ -968,7 +1121,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       liveStep('analyzing', 'Parsing natural language request...');
 
       const rawInput = _userContent;
-      const { enhancedPrompt: intelligentPrompt, analysis: promptAnalysis, isSurgical: detectedSurgical, isBehavioral: detectedBehavioral, isFullGen: isFullGeneration, isDebug: detectedDebug } = enhancePromptForAI(rawInput);
+      const { enhancedPrompt: intelligentPrompt, analysis, isSurgical: detectedSurgical, isBehavioral: detectedBehavioral, isFullGen: isFullGeneration, isDebug: detectedDebug } = enhancePromptForAI(rawInput);
+      const promptAnalysis: AnalyzedPrompt = analysis;
       const isSurgicalEdit = detectedSurgical && !!currentCode;
       const isBehavioralEdit = detectedBehavioral && !!currentCode;
       const isDebugMode = detectedDebug && !!currentCode;
@@ -1005,7 +1159,19 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         installedWorkflows: [],
       };
       
-      const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContent, projectContext);
+      // Strip the canonical intent vocabulary list from the prompt before entity extraction.
+      // Click-to-Wire prompts enumerate all intent names (e.g. "newsletter.subscribe") so
+      // the AI can pick the right one — but entityResolver.extractEntities scans the full
+      // string and false-matches aliases like 'subscribe' → newsletter.subscribe,
+      // causing the capability validator to flag missing capabilities (e.g. "newsletter")
+      // and producing a wrong task plan (page.add instead of intent.bind).
+      // The actual AI call always uses the unmodified _userContent — this only affects the
+      // local NL → task plan translation shown in the UI progress steps.
+      const _userContentForNL = _userContent.replace(
+        /\([^)]*\b(?:newsletter\.subscribe|auth\.register|pay\.checkout|booking\.create)\b[^)]*\)/g,
+        '(intent-vocab)',
+      );
+      const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContentForNL, projectContext);
       
       liveStep('analyzing', `Plan: ${taskPlan.steps.length} steps · route: ${taskPlan.route}`,
         `Confidence: ${Math.round(taskPlan.intent.confidence * 100)}% · Complexity: ${taskPlan.estimatedComplexity}`
@@ -1136,6 +1302,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         if (design?.effects?.shadows) lines.push(`Shadows: ${design.effects.shadows}`);
         if (design?.content?.writing_style) lines.push(`Writing Style: ${design.content.writing_style}`);
         if (identity?.industry) lines.push(`Industry: ${identity.industry.replace(/_/g, ' ')}`);
+        if (systemsBuildContext.template_selection?.template_label) {
+          lines.push(`Locked template: ${systemsBuildContext.template_selection.template_label}`);
+        }
+        if (systemsBuildContext.template_selection?.section_order?.length) {
+          lines.push(`Locked sections: ${systemsBuildContext.template_selection.section_order.join(' -> ')}`);
+        }
+        if (systemsBuildContext.style_selection?.preset_label) {
+          lines.push(`Locked style: ${systemsBuildContext.style_selection.preset_label}`);
+        }
         return lines.length > 1 ? lines.join('\n') : '';
       })();
 
@@ -1376,6 +1551,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               templateName,
               templateAction,
               launchBrief,
+              wizardLaunch: isWizardLaunchContext,
               generateImage: requestedImageGeneration,
               imagePlacement: requestedImagePlacement,
               userDesignProfile: userDesignProfile ?? undefined,
@@ -1507,7 +1683,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
-      const directResponseFiles = normalizeLauncherFilesPayload(response.data?.files);
+      const contentPayload = extractLauncherPayload(response.data?.content);
+      const codePayload = extractLauncherPayload(response.data?.code);
+      const responsePayload = extractLauncherPayload(response.data?.response);
+      const directResponseFiles =
+        normalizeLauncherFilesPayload(response.data?.files) ||
+        contentPayload?.files ||
+        codePayload?.files ||
+        responsePayload?.files ||
+        null;
       const generatedImageSrc = typeof response.data?.generatedImage === 'string' ? response.data.generatedImage : '';
       const attachedImageSrc = !generatedImageSrc && shouldInsertAttachedImageForPrompt(userContent)
         ? (_attachments.find((attachment) => typeof attachment.data === 'string')?.data || '')
@@ -1557,6 +1741,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       let generatedCode: string | null = null;
       let explanationText = '';
       let multiFileOutput: Record<string, string> | null = null;
+      let blockedPreviewLeakReason: string | null = null;
 
       if (directResponseFiles) {
         multiFileOutput = directResponseFiles;
@@ -1800,8 +1985,26 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
           // Strip module.exports blocks from .tsx/.jsx files
           let fileContent = content;
-          if (/\.(tsx|jsx)$/.test(normalizedPath) && content.includes('module.exports')) {
-            fileContent = stripModuleExportsBlocks(content);
+          if (/\.(tsx|jsx)$/.test(normalizedPath)) {
+            if (content.includes('module.exports')) {
+              fileContent = stripModuleExportsBlocks(fileContent);
+            }
+            // Strip any markdown code fences that leaked into file content.
+            // Use [\w-]* to match ALL language tags (html, python, etc.), not just
+            // tsx/jsx/ts/js — getPreviewCodeLeakReason blocks ANY fence marker so
+            // we must strip them all before the leak check below.
+            fileContent = fileContent.replace(/^\s*```[\w-]*\s*\n?/im, '');
+            fileContent = fileContent.replace(/\n?```\s*$/m, '');
+            const midFenceIdx = fileContent.search(/\n```[\w-]*\s*\n/);
+            if (midFenceIdx > 0) {
+              fileContent = fileContent.slice(0, midFenceIdx);
+            }
+            fileContent = fileContent.replace(/^```[\w-]*\s*$/gm, '');
+            // Pre-sanitize SVG template-literal children so dangerouslySetInnerHTML
+            // rewrites are in place before the leak guard inspects the file.
+            if (fileContent.includes('<svg')) {
+              fileContent = fixSvgStringChildren(fileContent);
+            }
           }
           normalizedFiles[normalizedPath] = fileContent;
         }
@@ -1816,6 +2019,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             )
           : normalizedFiles;
 
+        const previewLeakReasons = Object.entries(filesForApply)
+          .map(([path, content]) => getPreviewCodeLeakReason(content, path))
+          .filter((reason): reason is string => Boolean(reason));
+
         // Check if approval is recommended before auto-applying
         const shouldBlock = responseMeta?.requiresApproval &&
           responseMeta.warnings?.some(w => w.severity === 'error');
@@ -1828,7 +2035,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           existingFileKeys: vfsFiles ? Object.keys(vfsFiles) : [],
         }) : null;
 
-        if (scopeBlockReason) {
+        if (previewLeakReasons.length > 0) {
+          blockedPreviewLeakReason = previewLeakReasons[0];
+          explanationText = `AI output blocked: ${blockedPreviewLeakReason}`;
+          multiFileOutput = null;
+          console.warn('[AIBuilderPanel] PREVIEW CODE LEAK BLOCK:', previewLeakReasons);
+          toast.error('AI output blocked', {
+            description: 'Generated files looked like source code strings would render in preview.',
+          });
+        } else if (scopeBlockReason) {
           console.warn('[AIBuilderPanel] SCOPE BLOCK:', scopeBlockReason);
           toast.warning(`⚠️ Edit blocked: ${scopeBlockReason}`);
         } else if (shouldBlock) {
@@ -2016,7 +2231,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       }
 
       // SAFETY NET 2: If generatedCode is raw CSS (:root, body {, @import, etc.), wrap in React component
-      if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{\/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
+      if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
         console.warn('[AIBuilderPanel] Safety net: detected raw CSS being applied as TSX — wrapping in React component');
         const cssJsonStr = JSON.stringify(generatedCode);
         generatedCode = `import React from 'react';
@@ -2039,6 +2254,37 @@ export default function App() {
       // If site analysis resolved a specific component file, use that path
       // to avoid overwriting the entire App.tsx with a single component's code.
       const singleFilePath = resolvedTargetFile || defaultTargetFile || '/src/App.tsx';
+
+      if (generatedCode) {
+        const preflightCode = deterministicImageSrc
+          ? injectPreviewImageIntoReactSource(
+              stripModuleExportsBlocks(generatedCode),
+              deterministicImageSrc,
+              userContent,
+              deterministicImagePlacement,
+            )
+          : stripModuleExportsBlocks(generatedCode);
+        const previewLeakReason = getPreviewCodeLeakReason(preflightCode, singleFilePath);
+        const isCode = looksLikeGeneratedCode(preflightCode);
+        const isProse = looksLikeAIProse(preflightCode);
+
+        if (previewLeakReason || !isCode || (isProse && !preflightCode.includes('dangerouslySetInnerHTML'))) {
+          blockedPreviewLeakReason =
+            previewLeakReason ||
+            `${singleFilePath} does not look like renderable React/HTML source.`;
+          explanationText = `AI output blocked: ${blockedPreviewLeakReason}`;
+          console.warn('[AIBuilderPanel] REJECTED generated code before preview apply:', {
+            reason: blockedPreviewLeakReason,
+            preview: preflightCode.slice(0, 200),
+          });
+          toast.error('AI output blocked', {
+            description: 'Generated code did not pass preview safety validation.',
+          });
+          generatedCode = null;
+        } else {
+          generatedCode = preflightCode;
+        }
+      }
 
       // Determine VFS edits from response
       const edits: VFSEdit[] = [];
@@ -2093,7 +2339,7 @@ export default function App() {
         m.id === streamingId
           ? {
               ...m,
-              content: explanationText || aiContent,
+              content: explanationText || blockedPreviewLeakReason || aiContent,
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
               meta: responseMeta,
@@ -2329,6 +2575,7 @@ export default function App() {
           debugMode: true,
           systemType,
           templateName,
+          wizardLaunch: isWizardLaunchContext,
           systemsBuildContext: systemsBuildContext ?? undefined,
           previewDiagnostics: diagnostics,
           vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
@@ -2495,6 +2742,58 @@ export default function App() {
 
   // Whether to show conversational welcome (no real messages yet)
   const hasConversation = messages.some(m => m.role === 'user');
+  const latestTaskPlan = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const plan = messages[i]?.taskPlan;
+      if (plan) return plan;
+    }
+    return null;
+  }, [messages]);
+  const lastActivityLabel = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message && !message.isStreaming) {
+        return formatTimestamp(message.timestamp);
+      }
+    }
+    return null;
+  }, [messages]);
+  const headerStateIcon: AIBuilderIconKey = isLoading
+    ? 'loading'
+    : activeTab === 'debug'
+      ? 'debug'
+      : 'chat';
+  const HeaderStateIcon = AI_BUILDER_ICON_REGISTRY[headerStateIcon];
+
+  const handleQuickAction = useCallback((action: AIBuilderQuickAction) => {
+    if (action.id === 'attach') {
+      fileInputRef.current?.click();
+      return;
+    }
+    if (action.tab) setActiveTab(action.tab);
+    if (!action.prompt) return;
+    pendingPromptRef.current = action.prompt;
+    setInput(action.prompt);
+  }, []);
+
+  const handlePromptDraftApply = useCallback(() => {
+    const trimmedDraft = promptDraft.trim();
+    if (!trimmedDraft) return;
+    setInput((current) => {
+      const next = current.trim()
+        ? `${trimmedDraft}\n\n${current.trim()}`
+        : trimmedDraft;
+      return next;
+    });
+    setPromptDraft('');
+  }, [promptDraft]);
+
+  const handleHiddenFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.currentTarget.files;
+    if (!files?.length) return;
+    await addFiles(files);
+    event.currentTarget.value = '';
+  }, [addFiles]);
 
   return (
     <div className={cn(
@@ -2504,13 +2803,18 @@ export default function App() {
       {/* Header */}
       <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border bg-card/50">
         <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 border border-border flex items-center justify-center shadow-sm">
-          <Sparkles className="w-4 h-4 text-primary" />
+          <HeaderStateIcon className={cn('w-4 h-4 text-primary', isLoading && 'animate-spin')} />
         </div>
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-semibold text-foreground">AI Builder</h2>
           <p className="text-[11px] text-muted-foreground truncate">
             {templateName || 'New Project'}{systemType ? ` · ${systemType}` : ''}
           </p>
+          {lastActivityLabel && (
+            <p className="text-[10px] text-muted-foreground/70 truncate">
+              Updated {lastActivityLabel}
+            </p>
+          )}
         </div>
         {onClose && (
           <Button
@@ -2551,54 +2855,122 @@ export default function App() {
 
         {/* Chat Tab */}
         <TabsContent value="code" className="flex-1 flex flex-col m-0 min-h-0 data-[state=inactive]:hidden">
-          {/* Messages or Welcome */}
-          <ScrollArea className="flex-1" ref={scrollRef}>
-            <div className="py-3 px-3">
-              {!hasConversation ? (
-                <AIConversationWelcome
-                  onSelectPrompt={(prompt) => {
-                    pendingPromptRef.current = prompt;
-                    setInput(prompt);
-                  }}
-                  templateName={templateName}
-                />
-              ) : (
-                messages.map((msg) => (
-                  <AIConversationMessage
-                    key={msg.id}
-                    message={msg}
-                    onViewEdits={handleViewEdits}
-                    onRetryError={handleFixError}
-                  />
-                ))
-              )}
-              {isLoading && messages[messages.length - 1]?.role === 'user' && !messages.some(m => m.isStreaming) && (
-                <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  <span>Processing...</span>
+          <div
+            className="flex-1 flex flex-col min-h-0 relative"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleHiddenFileChange} />
+
+            {/* Config-driven quick actions */}
+            <div className="px-3 pt-3 pb-1 flex items-center gap-2 overflow-x-auto">
+            {AI_BUILDER_QUICK_ACTIONS.map((action) => {
+              const ActionIcon = AI_BUILDER_ICON_REGISTRY[action.icon];
+              const isActive = (action.tab === 'debug' && activeTab === 'debug') || (action.tab !== 'debug' && activeTab === 'code');
+              return (
+                <Button
+                  key={action.id}
+                  type="button"
+                  variant={isActive ? 'secondary' : 'outline'}
+                  size="sm"
+                  onClick={() => handleQuickAction(action)}
+                  className="h-7 px-2.5 text-[11px] gap-1.5 whitespace-nowrap"
+                >
+                  <ActionIcon className="w-3.5 h-3.5" />
+                  {action.label}
+                </Button>
+              );
+            })}
+          </div>
+
+            {/* Draft enhancer */}
+            <div className="px-3 pt-1 pb-2">
+              <div className="rounded-xl border border-border/70 bg-card/60 p-2.5">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-foreground">Prompt Draft</p>
+                    <p className="text-[10px] text-muted-foreground truncate">Prepended to the next message for richer generation context.</p>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" className="h-7 text-[11px]" onClick={handlePromptDraftApply}>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Apply
+                  </Button>
                 </div>
-              )}
+                <Textarea
+                  value={promptDraft}
+                  onChange={(e) => setPromptDraft(e.target.value)}
+                  placeholder="Add style rules, CSS direction, spacing constraints, or implementation notes..."
+                  className="min-h-20 resize-none bg-background/80 text-sm"
+                />
+              </div>
             </div>
-          </ScrollArea>
 
-          {/* AI Gateway Options */}
-          <AIGatewayOptions
-            config={gatewayConfig}
-            onChange={setGatewayConfig}
-            className="flex-shrink-0 border-t border-border"
-          />
+            {/* Active task plan summary */}
+            {isLoading && latestTaskPlan && (
+              <div className="px-3 pb-2">
+                <TaskPlanSteps plan={latestTaskPlan} className="mb-0" />
+              </div>
+            )}
 
-          {/* Input */}
-          <AIConversationInput
-            input={input}
-            onInputChange={setInput}
-            onSend={handleSend}
-            isLoading={isLoading}
-            droppedFiles={droppedFiles}
-            onAddFiles={addFiles}
-            onRemoveFile={removeFile}
-            previewRef={previewRef}
-          />
+            {/* Messages or Welcome */}
+            <ScrollArea className="flex-1" ref={scrollRef}>
+              <div className="py-3 px-3">
+                {!hasConversation ? (
+                  <AIConversationWelcome
+                    onSelectPrompt={(prompt) => {
+                      pendingPromptRef.current = prompt;
+                      setInput(prompt);
+                    }}
+                    templateName={templateName}
+                  />
+                ) : (
+                  messages.map((msg) => (
+                    <AIConversationMessage
+                      key={msg.id}
+                      message={msg}
+                      onViewEdits={handleViewEdits}
+                      onRetryError={handleFixError}
+                    />
+                  ))
+                )}
+                {isLoading && messages[messages.length - 1]?.role === 'user' && !messages.some(m => m.isStreaming) && (
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <span>Processing...</span>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+
+            {isDragging && (
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-t-2xl border-2 border-dashed border-primary/50 bg-background/80 backdrop-blur-sm">
+                <div className="rounded-xl border border-border bg-card px-4 py-3 text-center shadow-lg">
+                  <p className="text-sm font-medium text-foreground">Drop files to attach</p>
+                  <p className="text-[11px] text-muted-foreground">Images, text, and code files will be added to the next prompt.</p>
+                </div>
+              </div>
+            )}
+
+            {/* AI Gateway Options */}
+            <AIGatewayOptions
+              config={gatewayConfig}
+              onChange={setGatewayConfig}
+              className="flex-shrink-0 border-t border-border"
+            />
+
+            {/* Input */}
+            <AIConversationInput
+              input={input}
+              onInputChange={setInput}
+              onSend={handleSend}
+              isLoading={isLoading}
+              droppedFiles={droppedFiles}
+              onAddFiles={addFiles}
+              onRemoveFile={removeFile}
+              previewRef={previewRef}
+            />
+          </div>
         </TabsContent>
 
         {/* Debug Tab */}

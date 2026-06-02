@@ -43,7 +43,10 @@ export async function logTransactionalAttempt(
       execution_time_ms: input.executionTimeMs ?? null,
     });
     if (error) {
-      console.warn('[patch:telemetry] insert failed:', error.message);
+      // Silently skip RLS denials (policy may not be applied yet) — this is best-effort telemetry only.
+      if (!error.message?.includes('row-level security')) {
+        console.warn('[patch:telemetry] insert failed:', error.message);
+      }
     }
   } catch (err) {
     console.warn('[patch:telemetry] unexpected error:', err);

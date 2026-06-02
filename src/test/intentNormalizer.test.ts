@@ -10,7 +10,7 @@ describe('normalizePlaygroundIntent', () => {
   it('maps navigation intents to nav.goto', () => {
     expect(normalizePlaygroundIntent('nav.goto_page')).toBe('nav.goto');
     expect(normalizePlaygroundIntent('funnel.goto_step')).toBe('nav.goto');
-    expect(normalizePlaygroundIntent('product.view')).toBe('nav.goto');
+    expect(normalizePlaygroundIntent('product.view')).toBe('product.view');
   });
 
   it('maps form.open to contact.submit by default', () => {

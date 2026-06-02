@@ -73,3 +73,90 @@ export function looksLikeAIProse(content: string): boolean {
     content.slice(0, 300),
   );
 }
+
+function hasCodeDumpToken(content: string): boolean {
+  return /\b(import\s+React|export\s+default|function\s+App|ReactDOM\.createRoot|className=|dangerouslySetInnerHTML)\b/.test(content) ||
+    /<!DOCTYPE\s+html|<html[\s>]|```(?:tsx|jsx|ts|js|html|css)?/i.test(content) ||
+    /["']files["']\s*:\s*\{/.test(content);
+}
+
+function looksLikeSerializedFilesPayload(content: string): boolean {
+  const trimmed = content.trim();
+  return (
+    /^\{[\s\S]*["']files["']\s*:\s*\{/.test(trimmed) ||
+    /^```json\s*\n?\{[\s\S]*["']files["']\s*:\s*\{/i.test(trimmed)
+  );
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findCodeDumpVariables(content: string): string[] {
+  const variables = new Set<string>();
+  const assignmentRegex =
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]+)?=\s*(`[\s\S]*?`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = assignmentRegex.exec(content)) !== null) {
+    if (hasCodeDumpToken(match[2] || '')) {
+      variables.add(match[1]);
+    }
+  }
+
+  return Array.from(variables);
+}
+
+function rendersCodeDumpVariable(content: string, variableName: string): boolean {
+  const name = escapeRegex(variableName);
+  const codeElementPattern = new RegExp(
+    `<(?:pre|code|textarea)\\b[^>]*>[\\s\\S]{0,6000}\\{\\s*${name}\\s*\\}[\\s\\S]{0,6000}<\\/(?:pre|code|textarea)>`,
+    'i',
+  );
+  if (codeElementPattern.test(content)) return true;
+
+  const codeClassPattern = new RegExp(
+    `<[A-Za-z][\\w.:-]*\\b[^>]*className\\s*=\\s*["'][^"']*(?:whitespace-pre|font-mono|language-|syntax|highlight)[^"']*["'][^>]*>[\\s\\S]{0,6000}\\{\\s*${name}\\s*\\}[\\s\\S]{0,6000}<\\/`,
+    'i',
+  );
+  return codeClassPattern.test(content);
+}
+
+function rendersInlineCodeDumpLiteral(content: string): boolean {
+  const renderedBlocks = content.match(
+    /<(?:pre|code|textarea)\b[^>]*>[\s\S]{0,8000}<\/(?:pre|code|textarea)>/gi,
+  ) || [];
+
+  return renderedBlocks.some((block) => {
+    const literalMatch = block.match(/\{\s*(`[\s\S]*?`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*\}/);
+    return Boolean(literalMatch && hasCodeDumpToken(literalMatch[1] || ''));
+  });
+}
+
+/**
+ * Production preview guard: returns a reason when generated source is likely
+ * to render raw code/JSON strings instead of a website UI.
+ */
+export function getPreviewCodeLeakReason(content: string, path = 'generated file'): string | null {
+  if (!content || typeof content !== 'string') return null;
+
+  const trimmed = content.trim();
+  if (looksLikeSerializedFilesPayload(trimmed)) {
+    return `${path} is a serialized files payload, not renderable source.`;
+  }
+
+  if (/^```[\w-]*\s*\n/.test(trimmed) || /\n```\s*$/.test(trimmed)) {
+    return `${path} still contains markdown code fences.`;
+  }
+
+  const codeDumpVariables = findCodeDumpVariables(trimmed);
+  const rendersCodeDump = codeDumpVariables.some((variableName) =>
+    rendersCodeDumpVariable(trimmed, variableName),
+  ) || rendersInlineCodeDumpLiteral(trimmed);
+
+  if (rendersCodeDump) {
+    return `${path} appears to render source code or JSON as page content.`;
+  }
+
+  return null;
+}

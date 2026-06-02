@@ -68,6 +68,12 @@ export interface WizardSelections {
   templateId?: string;
   themeId?: string;
   /**
+   * Primary intent from the industry profile (e.g. 'booking.create', 'contact.submit').
+   * Forwarded to the topology planner so the materializer's internal planSiteTopology
+   * call produces the same page set as the SystemLauncher's direct call.
+   */
+  primaryIntent?: string;
+  /**
    * Wizard hands off a Home-only site; the in-Builder AI authors every other
    * page/route/funnel from user prompts. Skips capability-driven page expansion.
    */

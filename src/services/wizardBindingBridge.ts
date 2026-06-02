@@ -535,7 +535,7 @@ export function buildWizardBindingGuide(snapshot: SiteBundleSnapshot): string {
     );
   }
 
-  lines.push('Every internal page link must still use `data-ut-intent="nav.goto"` or `data-ut-intent="nav.goto_page"` with `data-ut-path`.');
+  lines.push('Every internal page link must use `data-ut-intent="nav.goto"` with `data-ut-path`.');
   lines.push('Every product/cart CTA must include product payload attrs when real product data exists.');
 
   return lines.join('\n');

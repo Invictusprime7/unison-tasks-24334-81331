@@ -177,6 +177,14 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     if (path === '/src/App.tsx' || path === '/App.tsx') {
       if (looksLikeCanonicalRouter(content)) continue;
 
+      const trimmed = typeof content === 'string' ? content.trim() : '';
+      const looksRenderable =
+        trimmed.length >= 24 &&
+        (/export\s+default/.test(trimmed) || /return\s*\(/.test(trimmed) || /<main|<div|<section/i.test(trimmed));
+      if (!looksRenderable) {
+        continue;
+      }
+
       if (canonicalFiles['/src/App.tsx']) {
         merged[homeFilePath] = rebaseAppModuleForHomePage(content);
       }

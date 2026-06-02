@@ -19,7 +19,7 @@
  *   Launcher → compileLauncherOutputForPreview() → Sandpack overlay (combines both steps)
  */
 
-import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
+import { ensureReactImports, sanitizeSvgElements, fixSvgStringChildren } from '@/utils/aiCodeCleaner';
 import { LAUNCHER_BASE_THEME } from '@/sections/themes';
 import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
@@ -4953,6 +4953,8 @@ export function prepareSandpackFiles(
       processedContent = ensureReactImports(processedContent);
       // Fix broken SVG elements (dc.path, svg.circle, etc.)
       processedContent = sanitizeSvgElements(processedContent);
+      // Fix SVG template-literal strings rendered as visible text (dangerouslySetInnerHTML)
+      processedContent = fixSvgStringChildren(processedContent);
       // Repair `=> ({ children })` and `return { children: x }` style returns
       // before the JSX runtime pragma pass so the rewritten JSX is normalized.
       processedContent = repairConciseArrowChildren(processedContent);

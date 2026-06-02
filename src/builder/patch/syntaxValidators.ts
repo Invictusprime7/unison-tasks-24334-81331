@@ -52,9 +52,25 @@ export function validateTsxSyntax(
   for (const [path, content] of Object.entries(files)) {
     if (!TSX_RE.test(path)) continue;
     const isTSX = /\.(tsx|jsx)$/.test(path);
+
+    // Pre-parse fence strip: remove markdown code fences that may have leaked
+    // into the file content from AI responses. This handles mid-content fences
+    // (the primary cause of "Unexpected token (N:1)" parse errors) in addition
+    // to the leading/trailing fences already stripped by the server normalizer.
+    let source = content;
+    if (isTSX) {
+      source = source.replace(/^\s*```(?:tsx|jsx|ts|js|typescript|javascript)?\s*\n?/im, '');
+      source = source.replace(/\n?```\s*$/m, '');
+      const midFence = source.search(/\n```[\w]*\s*\n/);
+      if (midFence > 0) source = source.slice(0, midFence);
+      source = source.replace(/^```[\w]*\s*$/gm, '');
+      // Write the cleaned content back so downstream pipeline uses clean source
+      if (source !== content) files[path] = source;
+    }
+
     try {
       if (parser) {
-        parser.parse(content, {
+        parser.parse(source, {
           sourceType: 'module',
           allowReturnOutsideFunction: true,
           errorRecovery: false,
@@ -62,7 +78,7 @@ export function validateTsxSyntax(
         });
       } else {
         // Fallback — should not happen with babel-standalone.
-        Babel.transform(content, {
+        Babel.transform(source, {
           filename: path,
           presets: [['typescript', { allExtensions: true, isTSX }], ['react', { runtime: 'automatic' }]],
           compact: true,

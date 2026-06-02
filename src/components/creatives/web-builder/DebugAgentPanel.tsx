@@ -419,6 +419,7 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
         <div className="flex items-center gap-2">
           <Bug className="w-4 h-4 text-destructive" />
           <span className="text-sm font-semibold text-foreground">Debug</span>
+          <Bot className="w-3.5 h-3.5 text-muted-foreground" />
           {session && (
             <Badge variant="outline" className={cn(
               'text-[9px] h-4',
@@ -440,6 +441,12 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
             <button onClick={handleReset} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted">
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
+          )}
+          {session?.status === 'running' && (
+            <Badge variant="secondary" className="text-[9px] h-4 px-1.5 gap-1">
+              <Sparkles className="w-2.5 h-2.5" />
+              AI
+            </Badge>
           )}
         </div>
       </div>

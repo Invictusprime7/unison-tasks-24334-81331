@@ -96,11 +96,11 @@ function applyComplexityUpgrade(
  */
 export function buildProviderPlan(
   task: ClassifiedTask,
-  hasLovableKey: boolean,
+  hasConfiguredTextProvider: boolean,
   overrides?: GatewayOverrides,
   complexity: PromptComplexity = "moderate",
 ): ProviderPlan {
-  if (!hasLovableKey) {
+  if (!hasConfiguredTextProvider) {
     return {
       gatewayModels: [],
       perModelTimeoutMs: 25000,
@@ -178,9 +178,9 @@ export function buildProviderPlan(
       break;
 
     // ── Lane B: Default ─────────────────────────────────────────────────
-    default:
     // ── Launch Desk ──────────────────────────────────────────────────────
     case "launch_desk":
+    default:
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),

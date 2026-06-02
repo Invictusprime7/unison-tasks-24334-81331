@@ -22,6 +22,7 @@ import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 import { getGraphSummaryForAI } from '@/services/importGraphAnalyzer';
 import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
 import { detectSlotBindingViolations } from '@/services/aiBindingTool';
+import { getPreviewCodeLeakReason } from '@/lib/ai/aiPatchGuards';
 
 // ============================================================================
 // Types
@@ -117,6 +118,11 @@ function validateAIFileEdits(
       continue;
     }
     const previousContent = getExistingContent(currentFiles, path);
+    const previewLeakReason = getPreviewCodeLeakReason(nextContent, path);
+    if (previewLeakReason) {
+      errors.push(`[${path}] ${previewLeakReason}`);
+      continue;
+    }
     for (const violation of detectSlotBindingViolations(previousContent, nextContent)) {
       errors.push(`[${path}] ${violation.reason}`);
     }

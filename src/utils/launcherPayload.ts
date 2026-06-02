@@ -9,6 +9,17 @@ export function sanitizeLauncherResponseText(rawContent: unknown): string {
     .replace(/\n?```\s*$/i, '')
     .trim();
 
+  for (let i = 0; i < 2; i += 1) {
+    if (!/^"(?:[\s\S])*"$/.test(sanitized)) break;
+    try {
+      const parsed = JSON.parse(sanitized);
+      if (typeof parsed !== 'string') break;
+      sanitized = parsed.trim();
+    } catch {
+      break;
+    }
+  }
+
   if (!sanitized.startsWith('{') && sanitized.includes('{"files"')) {
     sanitized = sanitized.slice(sanitized.indexOf('{"files"'));
   }

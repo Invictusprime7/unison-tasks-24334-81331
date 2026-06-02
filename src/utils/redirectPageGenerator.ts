@@ -14,6 +14,8 @@
  * 5. Context is shared with in-builder AI for site-wide awareness
  */
 
+import { generateRichEditorialPageFallback } from './richEditorialFallback';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -138,7 +140,14 @@ function parseJsonFiles(files: Record<string, string>): MultiPageParseResult {
     path: '/',
     fileName: '/src/App.tsx',
     componentName: 'App',
-    content: mainContent || 'export default function App() { return <div>Home</div>; }',
+    content: mainContent || generateRichEditorialPageFallback({
+      componentName: 'App',
+      pageTitle: 'Home',
+      businessName: 'Home',
+      pageRole: 'home',
+      navigationMode: 'hash',
+      includeImports: false,
+    }),
     label: 'Home',
     isMain: true,
   };
@@ -405,16 +414,24 @@ ${routes}
 `;
   }
 
-  return `import { BrowserRouter, Routes, Route } from 'react-router-dom';
+  return `import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 ${imports}
 
 function HomePage() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <h1 className="text-4xl font-bold p-8">Home</h1>
-    </div>
+    <HomeFallback />
   );
 }
+
+${generateRichEditorialPageFallback({
+  componentName: 'HomeFallback',
+  pageTitle: 'Home',
+  businessName: 'Home',
+  pageRole: 'home',
+  navigationMode: 'router',
+  exportDefault: false,
+  includeImports: false,
+})}
 
 export default function App() {
   return (

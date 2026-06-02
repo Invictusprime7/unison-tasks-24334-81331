@@ -49,7 +49,7 @@ export async function validateAIService(): Promise<AIServiceStatus> {
           isConfigured: false,
           hasAPIKey: false,
           functionAvailable: true,
-          error: 'Gemini API key not configured. Set UNISONGEMINI_API_KEY in backend secrets.'
+          error: 'AI API key not configured. Set OPENAI_API_KEY, UNISONGEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY in backend secrets.'
         };
       }
       
@@ -122,7 +122,7 @@ export function getAIErrorMessage(error: any): string {
   }
   
   if (errorStr.includes('api key') || errorStr.includes('not configured') || errorStr.includes('503')) {
-    return 'AI service not configured. Set the Gemini API key in backend secrets.';
+    return 'AI service not configured. Set OPENAI_API_KEY, UNISONGEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY in backend secrets.';
   }
   
   if (errorStr.includes('rate limit') || errorStr.includes('429')) {

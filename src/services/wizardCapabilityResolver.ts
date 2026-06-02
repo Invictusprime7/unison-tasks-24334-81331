@@ -305,7 +305,7 @@ const INDUSTRY_AUGMENTS: Partial<Record<IndustryOverlay, IndustryAugment>> = {
   nonprofit: {
     extraForms: ['volunteer'],
     extraBindingsV2: [
-      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get Involved', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'volunteer', uiAction: 'overlay' },
+      { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Donate Now', coreIntent: 'donation.start', intent: 'checkout.start', targetRef: 'donation', uiAction: 'navigate', payloadTemplate: { donationType: 'one-time' } },
       { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Contact Our Team', coreIntent: 'contact.submit', intent: 'form.open', targetRef: 'contact', uiAction: 'overlay' },
     ],
   },
@@ -342,11 +342,11 @@ const INDUSTRY_AUGMENTS: Partial<Record<IndustryOverlay, IndustryAugment>> = {
 /** Icons that appear on every wizard-generated site regardless of model */
 const UNIVERSAL_ICON_BINDINGS: PlaygroundBindingSpecV2[] = [
   // Search icon in navbar — inline-expand search field
-  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-search', label: 'Search', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'search', uiAction: 'overlay', payloadTemplate: { iconKey: 'search', interactive: 'search-field', uiBehavior: 'inline-expand' } },
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-search', label: 'Search', coreIntent: 'search.open', intent: 'nav.goto_page', targetRef: 'search', uiAction: 'overlay', payloadTemplate: { iconKey: 'search', interactive: 'search-field', uiBehavior: 'inline-expand' } },
   // User/account icon in navbar — dropdown auth menu
-  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-user', label: 'Account', coreIntent: 'auth.login', intent: 'nav.goto_page', targetRef: 'auth', uiAction: 'overlay', payloadTemplate: { iconKey: 'user', interactive: 'user-menu', uiBehavior: 'dropdown' } },
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-user', label: 'Account', coreIntent: 'account.open', intent: 'nav.goto_page', targetRef: 'auth', uiAction: 'overlay', payloadTemplate: { iconKey: 'user', interactive: 'user-menu', uiBehavior: 'dropdown' } },
   // Mobile menu hamburger
-  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-menu', label: 'Menu', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'mobile-nav', uiAction: 'overlay', payloadTemplate: { iconKey: 'menu', interactive: 'mobile-menu', uiBehavior: 'overlay' } },
+  { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-menu', label: 'Menu', coreIntent: 'menu.open', intent: 'nav.goto_page', targetRef: 'mobile-nav', uiAction: 'overlay', payloadTemplate: { iconKey: 'menu', interactive: 'mobile-menu', uiBehavior: 'overlay' } },
 ];
 
 /** Ecommerce-specific icon bindings */
@@ -354,11 +354,11 @@ const ECOMMERCE_ICON_BINDINGS: PlaygroundBindingSpecV2[] = [
   // Cart icon in navbar — opens cart drawer with badge
   { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'icon-cart', label: 'Cart', coreIntent: 'cart.view', intent: 'cart.view', targetRef: 'cart-overlay', uiAction: 'overlay', payloadTemplate: { iconKey: 'cart', interactive: 'cart-drawer', uiBehavior: 'overlay', hasBadge: true } },
   // Filter icon on shop grid
-  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-filter', label: 'Filter', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'filter', uiAction: 'overlay', payloadTemplate: { iconKey: 'filter', interactive: 'filter-panel', uiBehavior: 'inline-expand' } },
+  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-filter', label: 'Filter', coreIntent: 'filter.open', intent: 'nav.goto_page', targetRef: 'filter', uiAction: 'overlay', payloadTemplate: { iconKey: 'filter', interactive: 'filter-panel', uiBehavior: 'inline-expand' } },
   // Sort icon on shop grid
-  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-sort', label: 'Sort', coreIntent: 'nav.anchor', intent: 'nav.goto_page', targetRef: 'sort', uiAction: 'overlay', payloadTemplate: { iconKey: 'sort', interactive: 'sort-dropdown', uiBehavior: 'dropdown' } },
+  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-sort', label: 'Sort', coreIntent: 'sort.open', intent: 'nav.goto_page', targetRef: 'sort', uiAction: 'overlay', payloadTemplate: { iconKey: 'sort', interactive: 'sort-dropdown', uiBehavior: 'dropdown' } },
   // Favorite icon on product cards
-  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-favorite', label: 'Favorite', coreIntent: 'cart.add', intent: 'checkout.start', targetRef: 'favorites', uiAction: 'state', payloadTemplate: { iconKey: 'favorite', interactive: 'favorites-drawer', uiBehavior: 'state-toggle' } },
+  { sourcePageRole: 'shop', sourceSection: 'shop-grid', sourceSlot: 'icon-favorite', label: 'Favorite', coreIntent: 'favorite.toggle', intent: 'checkout.start', targetRef: 'favorites', uiAction: 'state', payloadTemplate: { iconKey: 'favorite', interactive: 'favorites-drawer', uiBehavior: 'state-toggle' } },
 ];
 
 /** Booking-specific icon bindings */
@@ -407,7 +407,7 @@ const MODEL_BINDINGS_V2: Record<BusinessModel, PlaygroundBindingSpecV2[]> = {
     { sourcePageRole: 'home', sourceSection: 'navbar', sourceSlot: 'primary-cta', label: 'Start Trial', coreIntent: 'auth.register', intent: 'popup.open', targetRef: 'auth-register', uiAction: 'overlay' },
   ],
   nonprofit: [
-    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Get Involved', coreIntent: 'lead.capture', intent: 'form.open', targetRef: 'volunteer', uiAction: 'overlay' },
+    { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'primary-cta', label: 'Donate Now', coreIntent: 'donation.start', intent: 'checkout.start', targetRef: 'donation', uiAction: 'navigate', payloadTemplate: { donationType: 'one-time' } },
     { sourcePageRole: 'home', sourceSection: 'hero', sourceSlot: 'secondary-cta', label: 'Contact Our Team', coreIntent: 'contact.submit', intent: 'form.open', targetRef: 'contact', uiAction: 'overlay' },
   ],
   general: [

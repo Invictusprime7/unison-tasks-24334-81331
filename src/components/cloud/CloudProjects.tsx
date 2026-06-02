@@ -132,6 +132,29 @@ interface Business {
   settings?: Json;
 }
 
+function isMissingBusinessMembersTable(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+  } | null;
+  const text = [candidate?.message, candidate?.details]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    candidate?.status === 404 ||
+    candidate?.code === '42P01' ||
+    candidate?.code === 'PGRST204' ||
+    candidate?.code === 'PGRST205' ||
+    text.includes('could not find the table') ||
+    text.includes('business_members') ||
+    text.includes('schema cache')
+  );
+}
+
 const transformBusiness = (data: Record<string, unknown>): Business => ({
   id: data.id as string,
   name: data.name as string,
@@ -161,6 +184,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const [supportsBusinessMembers, setSupportsBusinessMembers] = useState(true);
   const [businessSelectionMode, setBusinessSelectionMode] = useState(false);
   const [selectedBusinessIds, setSelectedBusinessIds] = useState<string[]>([]);
   const [activeSection, setActiveSection] = useState<BusinessSection>('projects');
@@ -288,16 +312,26 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
         .eq('owner_id', userId)
         .order('created_at', { ascending: false });
 
-      const { data: memberBusinesses, error: memberError } = await supabase
-        .from('business_members')
-        .select('business:businesses(*)')
-        .eq('user_id', userId);
+      const { data: memberBusinesses, error: memberError } = supportsBusinessMembers
+        ? await supabase
+            .from('business_members')
+            .select('business:businesses(*)')
+            .eq('user_id', userId)
+        : { data: [], error: null };
 
-      if (ownedError && memberError) {
+      let safeMemberBusinesses = memberBusinesses;
+      let safeMemberError = memberError;
+      if (memberError && isMissingBusinessMembersTable(memberError)) {
+        setSupportsBusinessMembers(false);
+        safeMemberBusinesses = [];
+        safeMemberError = null;
+      }
+
+      if (ownedError && safeMemberError) {
         setBusinesses([]);
       } else {
         const owned = (ownedBusinesses || []).map(transformBusiness);
-        const memberOf = (memberBusinesses || [])
+        const memberOf = (safeMemberBusinesses || [])
           .map((m: any) => m.business)
           .filter(Boolean)
           .map(transformBusiness);

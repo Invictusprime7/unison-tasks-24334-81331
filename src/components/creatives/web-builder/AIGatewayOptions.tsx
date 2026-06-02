@@ -59,7 +59,8 @@ export const AIGatewayOptions = ({ config: ext, onChange, className }: AIGateway
   const update = useCallback(
     (patch: Partial<GatewayConfig>) => {
       const next = { ...cfg, ...patch };
-      onChange ? onChange(next) : setInternal(next);
+      if (onChange) onChange(next);
+      else setInternal(next);
     },
     [cfg, onChange],
   );

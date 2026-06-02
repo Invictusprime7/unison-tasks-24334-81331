@@ -23,6 +23,7 @@ import {
   fixJsxVoidElements,
   fixJsxStyleStrings,
   sanitizeSvgElements,
+  fixSvgStringChildren,
 } from "@/utils/aiCodeCleaner";
 
 export interface SanitizeResult {
@@ -197,6 +198,16 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
     }
   } catch (e) {
     issues.push(`sanitizeSvgElements failed: ${(e as Error).message}`);
+  }
+
+  try {
+    const next = fixSvgStringChildren(code);
+    if (next !== code) {
+      code = next;
+      applied.push("fixSvgStringChildren");
+    }
+  } catch (e) {
+    issues.push(`fixSvgStringChildren failed: ${(e as Error).message}`);
   }
 
   try {

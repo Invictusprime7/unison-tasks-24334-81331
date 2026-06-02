@@ -291,6 +291,7 @@ export function materializePlayground(
     minimal: selections.minimalScaffold === true,
     selectedTemplateId: selections.templateId,
     selectedThemeId: selections.themeId,
+    primaryIntent: selections.primaryIntent,
   });
   const pageRegistry = populateRegistryFromTopology(sitePlan);
 

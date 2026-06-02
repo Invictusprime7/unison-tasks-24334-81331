@@ -165,7 +165,7 @@ export function executeCanonicalPipeline(
 
   // Stage 4: Compile playground → VFS + router + bindings
   // Pass the wizard's Template + Style card selections so subpage scaffolds are
-  // real role-filtered themed compositions instead of generic placeholders.
+  // real role-filtered themed compositions with editorial fallback scaffolds.
   const compileResult = livePlaygroundSync.compile(
     existingVfsFiles,
     selections.businessName,

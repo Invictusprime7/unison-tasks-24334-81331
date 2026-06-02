@@ -114,13 +114,21 @@ serve(async (req: Request) => {
       const details = detailsMatch?.[1]?.slice(0, 220);
 
       if (configuredNone) {
-        userMessage = "AI providers are not configured on the backend. Please set UNISONGEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY in Lovable Cloud secrets.";
+        userMessage = "No AI provider is configured. Set OPENAI_API_KEY, LOVABLE_API_KEY, or a Gemini key in Supabase secrets.";
         errorType = "provider_not_configured";
         statusCode = 503;
       } else if (hasTimeoutFailure && hasAuthFailure) {
-        userMessage = message.includes("lovable-gateway")
-          ? "Lovable AI Gateway and Gemini fallback returned mixed timeout/auth responses. Retry once, then verify the Gemini key if it persists."
-          : "Gemini returned mixed timeout/auth responses. Verify the Gemini key and retry.";
+        const hasOpenAI = message.includes("openai-direct") || message.includes("OpenAI");
+        const hasGateway = message.includes("lovable-gateway") || message.includes("Gateway");
+        if (hasOpenAI && hasGateway) {
+          userMessage = "All AI providers failed with mixed timeout/auth errors. Verify OPENAI_API_KEY and LOVABLE_API_KEY in Supabase secrets, then retry.";
+        } else if (hasOpenAI) {
+          userMessage = "OpenAI returned mixed timeout/auth errors. Verify OPENAI_API_KEY in Supabase secrets and retry.";
+        } else if (hasGateway) {
+          userMessage = "Lovable AI Gateway returned mixed timeout/auth errors. Verify LOVABLE_API_KEY or set OPENAI_API_KEY as fallback.";
+        } else {
+          userMessage = "AI providers failed due to mixed timeout/auth errors. Verify API keys in Supabase secrets and retry.";
+        }
         errorType = "ai_unavailable";
         statusCode = 503;
       } else if (hasTimeoutFailure) {
@@ -128,9 +136,7 @@ serve(async (req: Request) => {
         errorType = "timeout";
         statusCode = 504;
       } else if (hasAuthFailure) {
-        userMessage = message.includes("lovable-gateway")
-          ? "Lovable AI Gateway authentication failed. Rotate the managed AI key and retry."
-          : "AI provider authentication failed. Please verify backend AI keys.";
+        userMessage = "AI provider authentication failed. Verify OPENAI_API_KEY or LOVABLE_API_KEY in Supabase secrets.";
         errorType = "provider_auth";
         statusCode = 502;
       } else {

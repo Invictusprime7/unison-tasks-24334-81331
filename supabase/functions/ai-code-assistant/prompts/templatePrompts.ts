@@ -398,6 +398,7 @@ export function Hero() {
       <div className="absolute inset-0">
         <img 
           src="https://images.unsplash.com/photo-1560066984-138dadb4c035?w=1920&q=80" 
+          data-ai-image="cinematic hero background for this business, photoreal, dramatic lighting, wide shot"
           alt="Hero background" 
           className="w-full h-full object-cover"
         />

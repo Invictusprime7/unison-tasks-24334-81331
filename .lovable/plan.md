@@ -1,153 +1,74 @@
-# Builder Refactor — Headless Controllers, then Transactional Patches
+# Fix: Topology Registry Overriding SiteBundle Composition
 
-Two structural changes, sequenced to land safely without breaking the live builder.
+## Problem (confirmed in code)
 
-**Targets today** (lines):
-- `src/components/creatives/WebBuilder.tsx` — 7,794
-- `src/components/creatives/web-builder/AIBuilderPanel.tsx` — 2,281
-- `src/components/onboarding/SystemLauncher.tsx` — 1,985
+Wizard generates a rich `SiteBundleSnapshot.composition` (feature-card grids, product collections, gallery items, floating flex layouts). The downstream pipeline then **flattens it**:
 
-These are the three orchestration monoliths.
+1. **`src/utils/topologyVFSScaffolder.ts` → `buildRoleComposition()` (lines 79–114)**
+   - Iterates `template.sectionPool[role]` (a fixed list of `SectionType`s) instead of `bundle.composition.sections[]`.
+   - `byType = new Map<SectionType, SectionEntry>()` with **"first match wins"** — every duplicate section of the same type is silently dropped. A template with 6 feature-card sections becomes 1.
+2. **`src/services/wizardPlaygroundMaterializer.ts`**
+   - Re-builds the PageRegistry from `siteTopologyPlanner` output (industry-matrix template defaults), then treats that registry as authoritative — bundle item arrays are never threaded into the page-role composition.
+3. **`src/utils/designVariation.ts`**
+   - Randomizer flips `sections.use_*` flags as boolean coinflips, so feature/testimonial/gallery sections can be removed entirely from a generated page even when the bundle had them.
+4. **`composition.layout`** (floating/flex-grid tokens) is dropped on the floor — `compositionToReactCode` is called with the sub-composition built from `template`, never with bundle layout tokens.
 
----
+Net result: preview shows sparse skeleton pages with one hero, one CTA, and three stub cards — regardless of how rich the bundle is.
 
-## Phase A — Headless Controllers (Item 3)
+## Goal
 
-Goal: turn WebBuilder/AIBuilderPanel/SystemLauncher into UI shells that read from controllers. No behavior change — pure extraction with green tests at every step.
-
-### A1. Establish controller contracts
-
-New folder: `src/builder/controllers/`
-
-```text
-src/builder/
-  controllers/
-    BuilderSessionProvider.tsx     // React context, single source for sessionId/projectId/draft
-    PreviewRuntimeController.ts    // wraps unifiedPreviewPipeline + sandpack lifecycle
-    PageTopologyController.ts      // wraps pageTopologyOrchestrator + validator
-    PlaygroundSyncController.ts    // wraps playgroundHydrator + playgroundCompiler
-    AIPatchTransactionService.ts   // (Phase B) scratch-VFS + repair loop
-    IntentReadinessController.ts   // wraps intentReadinessService
-    LaunchStateController.ts       // wraps deploymentService + gate verdict
-    VFSCommitService.ts            // wraps vfsSnapshotManager + workspacePatchEngine commit
-  hooks/
-    useBuilderSession.ts
-    usePreviewRuntime.ts
-    usePageTopology.ts
-    usePlaygroundSync.ts
-    useIntentReadiness.ts
-    useLaunchState.ts
-```
-
-Each controller is a plain class/object (not a React hook file — hooks live only in `hooks/`, per project rules). Hooks are thin `useSyncExternalStore` wrappers over controller state.
-
-### A2. Extraction order (one PR-sized step each)
-
-1. **BuilderSessionProvider** — lift `sessionId`, `projectId`, `draftId`, `currentUserId` out of WebBuilder into context. Replace ~30 prop drills.
-2. **PreviewRuntimeController** — move preview reload/iframe/sandpack effects out of WebBuilder. Existing `unifiedPreviewPipeline` becomes its backing service.
-3. **PageTopologyController** — move page CRUD, slug validation, route generation. Backed by existing `pageTopologyOrchestrator` + `pageTopologyValidator`.
-4. **PlaygroundSyncController** — move playground↔VFS sync effects out of CreatorPlaygroundModal/WebBuilder.
-5. **IntentReadinessController** — move readiness polling/dispatch (already a service, just needs a controller façade + hook).
-6. **LaunchStateController** — move publish gate + DeployButton state.
-7. **VFSCommitService** — final commit path; sets the seam Phase B plugs into.
-
-Each step: extract → swap call sites → run `npm test` + `lint:single-source-of-truth` → confirm preview still mounts → next.
-
-### A3. Acceptance for Phase A
-
-- `WebBuilder.tsx` drops below ~2,000 lines (pure shell + layout).
-- `AIBuilderPanel.tsx` drops below ~800 lines.
-- All 229 tests green; no new files under `src/hooks/` for behavioral hooks (rules require inline hooks in components; controller hooks live in `src/builder/hooks/`).
-- No behavior changes visible to users.
-
----
-
-## Phase B — Transactional PatchPlan (Item 2)
-
-Lands on the seams created in Phase A. `AIPatchTransactionService` is the new spine; `VFSCommitService` is its only write surface.
-
-### B1. Types (ship first, used everywhere downstream)
-
-`src/builder/patch/types.ts`:
-
-```ts
-export type PatchIntent =
-  | "modify_component"
-  | "add_page"
-  | "wire_button"
-  | "update_style"
-  | "repair_error";
-
-export type FilePatch =
-  | { kind: "create"; path: string; content: string }
-  | { kind: "replace"; path: string; content: string }
-  | { kind: "edit";    path: string; hunks: UnifiedHunk[] }
-  | { kind: "delete";  path: string };
-
-export interface PatchPlan {
-  intent: PatchIntent;
-  targetFiles: string[];
-  expectedSymbols: string[];
-  routeChanges?: RoutePatch[];
-  bindingChanges?: IntentBindingPatch[];
-  edits: FilePatch[];
-  riskLevel: "low" | "medium" | "high";
-  rationale: string;        // for diff UI
-  promptHash: string;       // dedupe + telemetry
-}
-```
-
-Zod schema next to it; reject anything malformed before touching the VFS.
-
-### B2. Lifecycle
+Invert the authority so the **Execution Hierarchy** holds in practice:
 
 ```text
-prompt
-  → AI returns PatchPlan (JSON, strict mode)
-  → Zod validate
-  → AIPatchTransactionService.apply(plan):
-      1. fork scratch VFS from current snapshot
-      2. apply edits via workspacePatchEngine (already validates hunks)
-      3. parse TSX (existing parser) — collect syntax errors
-      4. importGraphAnalyzer — missing/circular checks
-      5. PageTopologyController.validate(routeChanges)
-      6. IntentReadinessController.validate(bindingChanges)
-      7. sandpack dry-compile in hidden iframe (reuse PreviewRuntimeController in "scratch" mode)
-      8. if any step fails → repair loop (max 2 retries, escalating model)
-      9. produce DiffReport
-  → user sees diff + "Apply"
-  → VFSCommitService.commit(scratchSnapshot)
+Contracts > Schemas > SiteBundle > Runtime > UI
 ```
 
-### B3. Implementation order
+- **Topology** owns: page identity, route, nav order, role assignment.
+- **SiteBundle composition** owns: section presence, section *count*, per-section item arrays (cards/products/gallery/testimonials), and layout tokens.
+- **Variation** owns: style only (spacing, button shape, image treatment, background flourishes). Never content quantity, never section removal.
 
-1. **Types + Zod schema** — land standalone, no consumers yet.
-2. **Scope: `modify_component` + `repair_error`** — covers ~80% of edits and the failure path. Wire through AIBuilderPanel as an opt-in flag (`transactional: true`).
-3. **Scratch VFS** — extend `vfsSnapshotManager` with `fork()` + `discard()`. Add a hidden sandpack instance for dry-compile.
-4. **Repair loop** — 2 retries. Retry 1: same model, error context appended. Retry 2: escalate to `openai/gpt-5.5` with full diff + compile errors. After that, surface the diff with errors highlighted; do not commit.
-5. **Diff UI** — minimal: file tree + per-file unified diff + Apply/Discard. Reuse existing diff viewer if present.
-6. **Flip flag default to true** once `modify_component`/`repair_error` are stable in dogfood.
-7. **Expand to `add_page`, `wire_button`, `update_style`** — each gets its own validator and route/binding handling. `add_page` goes through PageTopologyController; `wire_button` through intent binding service; `update_style` is the safest (CSS/Tailwind class swap only).
+## Changes
 
-### B4. Acceptance for Phase B
+### 1. `src/utils/topologyVFSScaffolder.ts`
+- Replace `buildRoleComposition()`:
+  - Drop the `Map<SectionType, SectionEntry>` "first match wins" pattern.
+  - Iterate `template.sections` (or `bundle.composition.sections` when threaded) in source order, keep **every** section whose type is in the role pool, in the order they appear.
+  - Stop using `sectionPool` as the iteration source; use it only as a filter set.
+  - Preserve every `SectionEntry` field including `items`, `cards`, `products`, `gallery`, `layout`.
+- Add a `bundle?: SiteBundleSnapshot` param to `scaffoldMissingTopologyPages*` and thread it from the materializer so scaffolding can use the live bundle composition instead of the static template.
 
-- Syntax errors in committed VFS drop to ~0 (any survivor is a bug in the validator, not the AI).
-- Repair-loop telemetry on `intent_execution_log` shows retry count per intent.
-- Old non-transactional path removed once all five intents are live.
+### 2. `src/services/wizardPlaygroundMaterializer.ts`
+- When materializing pages, attach the full `bundle.composition.sections` slice for that page role onto the PageRegistry entry (new field `composition` on `BuilderPage`, or a side-channel map keyed by pageId).
+- Pass `bundle` through to `scaffoldMissingTopologyPagesWithRouter` so the scaffolder no longer falls back to the matrix template for item counts.
 
----
+### 3. `src/utils/designVariation.ts`
+- Split into:
+  - `styleVariation` — keeps `palette_shift`, `button_style`, `image_treatment`, `section_spacing`, `card_radius`, `decorative_flourish`, `use_counter_animations`.
+  - **Remove** the `sections.use_testimonials/use_features/use_gallery/use_cta` boolean flags. Section presence is decided by `bundle.composition.sections`, never the randomizer.
+- Update every call-site to consume only `styleVariation`.
 
-## Risks & guardrails
+### 4. `src/sections/PageRenderer.ts` (or `compositionToReactCode`)
+- Ensure `composition.layout` (floating flex-grid tokens, masonry, bento) is emitted onto the section wrapper className. Today it's likely dropped — verify and patch.
+- Confirm item-array renderers (feature cards, product cards, gallery tiles) `.map()` over the full `items` / `cards` / `products` arrays without `.slice(0, N)` caps.
 
-- **WebBuilder churn**: Phase A touches the largest file in the repo. Mitigation: one extraction per commit, tests green between each.
-- **Scratch sandpack cost**: hidden iframe per edit. Mitigation: reuse a single warm scratch instance, debounce.
-- **Repair-loop infinite-fix temptation**: hard cap at 2 retries (your slider answer). After that, human decides.
-- **Memory updates**: after Phase A lands, add `mem://architecture/builder/headless-controllers`; after Phase B, add `mem://architecture/ai-assistant/transactional-patch-lifecycle`. Do not pre-write — only after each phase ships.
+### 5. Integrity check (`src/services/integrity` or platform/core)
+- Add a single deterministic invariant: for every page in the registry, the rendered section count and per-section item count must equal the bundle composition. Fail loud in dev console + add to IntegrityReport, do not silently repair.
 
----
+### 6. Memory updates
+- Promote a Core rule: **"SiteBundle composition is the sole source for section presence + item counts. Topology owns page identity only. Variation is style-only."**
+- Add a detailed memory entry under `mem://architecture/site-os/composition-authority`.
 
-## What I'll do next if you approve
+## Out of scope (deliberately)
+- No changes to wizard prompts or AI generation — bundles are already rich, the bug is purely in the post-bundle pipeline.
+- No changes to industry matrices or template registry contents.
+- No new abstractions or YAML formats. End-to-end hardening only.
 
-Start Phase A1 — `BuilderSessionProvider` extraction. That's the smallest, lowest-risk step and unblocks everything else. Estimated ~1 focused pass: new provider file, swap context in WebBuilder + AIBuilderPanel + CreatorPlaygroundModal, run tests.
+## Verification
+- Unit: `topologyVFSScaffolder.test.ts` — assert a template with 6 feature sections scaffolds 6 sections, not 1.
+- Unit: `designVariation.test.ts` — assert no `sections.use_*` keys in output.
+- Smoke: regenerate a salon + a store + a portfolio site through the wizard and confirm feature cards, products, gallery tiles, and floating layouts all render in preview.
+- Integrity: dev-mode warning fires when section count drifts.
 
-Reply "go" to start A1, or tell me to adjust scope/ordering first.
+## Risk
+- `BuilderPage.composition` is a new field; the registry persists to `builder_drafts.metadata`, so existing drafts won't have it. Hydration must fall back gracefully — if `composition` is missing, regenerate it from the persisted bundle on load (no editorial fallback, per the Preview Persistence rule).
+- Removing `sections.use_*` flags is a breaking change to `designVariation` consumers. Audit all call-sites in one pass.

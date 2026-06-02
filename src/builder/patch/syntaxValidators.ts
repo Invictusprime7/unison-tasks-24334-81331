@@ -27,6 +27,10 @@ export interface SyntaxValidationResult {
   errors: string[];
   /** Files for which we stripped unused imports as a soft repair. */
   repairedFiles: string[];
+  /** Files where we auto-closed unclosed JSX tags as a soft repair. */
+  jsxRepairedFiles?: string[];
+  /** Human-readable repair notes (e.g. "appended </div></section>"). */
+  repairWarnings?: string[];
 }
 
 const TSX_RE = /\.(tsx|jsx|ts|js)$/;

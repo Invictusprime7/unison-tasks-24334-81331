@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { getIntentDef } from '@/platform/core';
-import { getIntentProfile as getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
+import { getIntentProfile } from '@/platform/core/industryIntentProfiles';
+
+const getIndustryIntentProfile = (overlay: any) =>
+  getIntentProfile('general' as any, overlay);
 import { resolveCapabilities } from '@/services/wizardCapabilityResolver';
 import { applyWizardBindingsToVfs } from '@/services/wizardBindingBridge';
 import type { BusinessModel, IndustryOverlay, WizardSelections } from '@/types/playground';

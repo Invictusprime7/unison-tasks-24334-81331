@@ -1139,6 +1139,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       vfsFiles: launch.vfsFiles,
       templateName: launch.templateName,
       templateCategory: launch.templateCategory,
+      templateId: launch.templateId,
+      themePresetId: launch.themePresetId,
       aesthetic: launch.aesthetic,
       startInPreview: launch.startInPreview,
       systemType: launch.systemType,

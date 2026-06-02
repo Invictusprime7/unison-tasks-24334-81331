@@ -673,11 +673,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     return () => { off(); };
   }, [pendingPatch]);
 
-  // Auto-send when a welcome prompt is selected
+  // Auto-send REMOVED — all queued prompts (welcome, click-to-wire, page-gen)
+  // now require an explicit user action (Send click or toast "Run AI" button).
+  // This prevents unintentional UI clicks from triggering AI patches/edits.
   useEffect(() => {
-    if (pendingPromptRef.current && input === pendingPromptRef.current && !isLoading) {
+    if (pendingPromptRef.current && input === pendingPromptRef.current) {
+      // Just clear the marker; do NOT auto-send.
       pendingPromptRef.current = null;
-      handleSend();
     }
   }, [input]);
 

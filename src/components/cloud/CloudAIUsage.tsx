@@ -4,14 +4,14 @@
  * Shows total request counts, model usage, and per-provider error rates
  * (highlighting 429 rate-limits and 402 payment-required errors).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase as supabaseClient } from '@/integrations/supabase/client';
 // Cast to any to bypass TS deep-instantiation issues on the large generated Database type.
 const supabase = supabaseClient as any;
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, ShieldAlert, Activity, AlertTriangle, Zap } from 'lucide-react';
+import { Loader2, RefreshCw, ShieldAlert, Activity, AlertTriangle, Zap, Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AIRequestLog {
@@ -45,6 +45,10 @@ export function CloudAIUsage({ userId }: Props) {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [range, setRange] = useState<Range>('24h');
   const [error, setError] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState(false);
+  // Keep a ref so the realtime callback always reads the current range without needing to re-subscribe
+  const rangeRef = useRef<Range>('24h');
+  useEffect(() => { rangeRef.current = range; }, [range]);
 
   const checkRole = async () => {
     const { data, error: roleErr } = await supabase
@@ -90,6 +94,32 @@ export function CloudAIUsage({ userId }: Props) {
     if (isAdmin) fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
+
+  // Realtime subscription — prepend new rows as they arrive
+  useEffect(() => {
+    if (!isAdmin) return;
+    const channel = (supabase as any)
+      .channel('ai_request_logs_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ai_request_logs' },
+        (payload: { new: AIRequestLog }) => {
+          const newLog = payload.new;
+          const since = Date.now() - (RANGES.find((r) => r.id === rangeRef.current)?.ms ?? 86400000);
+          if (new Date(newLog.created_at).getTime() >= since) {
+            setLogs((prev) => [newLog, ...prev.slice(0, 1999)]);
+          }
+        },
+      )
+      .subscribe((status: string) => {
+        setIsLive(status === 'SUBSCRIBED');
+      });
+    return () => {
+      setIsLive(false);
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   const stats = useMemo(() => {
     const total = logs.length;
@@ -175,7 +205,15 @@ export function CloudAIUsage({ userId }: Props) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-white">AI Usage</h2>
+          <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
+            AI Usage
+            {isLive && (
+              <span className="flex items-center gap-1 rounded-full border border-lime-500/30 bg-lime-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-lime-400">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-lime-400" />
+                Live
+              </span>
+            )}
+          </h2>
           <p className="text-sm text-white/55">
             Unison Tasks AI request volume, model usage, and provider error rates.
           </p>
@@ -210,13 +248,19 @@ export function CloudAIUsage({ userId }: Props) {
       )}
 
       {/* Top metrics */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <Metric label="Total requests" value={stats.total} icon={Activity} tone="cyan" />
         <Metric
           label="Error rate"
           value={`${stats.errorRate.toFixed(1)}%`}
           icon={AlertTriangle}
           tone={stats.errorRate > 10 ? 'red' : stats.errorRate > 2 ? 'amber' : 'lime'}
+        />
+        <Metric
+          label="Avg latency"
+          value={stats.avgLatency ? `${stats.avgLatency} ms` : '—'}
+          icon={Timer}
+          tone={stats.avgLatency > 5000 ? 'red' : stats.avgLatency > 2000 ? 'amber' : 'cyan'}
         />
         <Metric label="429 Rate-limited" value={stats.rate429} icon={Zap} tone={stats.rate429 ? 'amber' : 'lime'} />
         <Metric label="402 Payment" value={stats.rate402} icon={Zap} tone={stats.rate402 ? 'red' : 'lime'} />

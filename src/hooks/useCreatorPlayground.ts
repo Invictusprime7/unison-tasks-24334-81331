@@ -104,6 +104,22 @@ export function useCreatorPlayground(
   const addPage = useCallback((
     title: string, path: string, pageType: BuilderPageType, options?: Partial<BuilderPage>
   ): BuilderPage => {
+    // Idempotent guard — prevent duplicate registry entries that would
+    // surface as duplicate routes in the deterministic router. Compare
+    // normalized route AND filePath (case-insensitive) so the wizard's
+    // multiple hydration paths (canonical snapshot → topology → orphan
+    // scan) converge on a single page instead of stacking.
+    const normRoute = (path ?? '').toLowerCase().trim();
+    const normFile = (options?.filePath ?? '').toLowerCase().trim();
+    const existing = Object.values(pageRegistry.pages).find(p => {
+      if (normRoute && (p.path ?? '').toLowerCase().trim() === normRoute) return true;
+      if (normFile && (p.filePath ?? '').toLowerCase().trim() === normFile) return true;
+      return false;
+    });
+    if (existing) {
+      return existing;
+    }
+
     const pageId = `page_${nanoid(8)}`;
     const navOrder = Object.keys(pageRegistry.pages).length;
     const page = createBuilderPage(pageId, title, path, pageType, { navOrder, ...options });
@@ -120,6 +136,7 @@ export function useCreatorPlayground(
     setIsDirty(true);
     return page;
   }, [pageRegistry.pages]);
+
 
   const updatePage = useCallback((pageId: string, updates: Partial<BuilderPage>) => {
     setPageRegistry(prev => {

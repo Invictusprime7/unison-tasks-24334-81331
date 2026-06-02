@@ -2235,10 +2235,34 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           if (transactionalBlocked) {
             // Skip auto-apply; user reviews via the diff modal (or View Edits).
           } else if (forceReview) {
-            // Click-driven prompt without a dry-run modal — hold for explicit review.
-            console.warn('[AIBuilderPanel] forceReview set — skipping auto-apply, awaiting manual review');
-            toast.warning('Review required', {
-              description: `${Object.keys(filesForApply).length} file(s) ready — open View Edits to apply.`,
+            // Click-driven prompt without a dry-run modal — surface an
+            // actionable Apply toast so approvals actually reach the VFS
+            // + Playground (instead of silently waiting in View Edits).
+            console.warn('[AIBuilderPanel] forceReview set — surfacing actionable Apply toast');
+            const fileCount = Object.keys(filesForApply).length;
+            toast.warning(`Review required (${fileCount} file${fileCount > 1 ? 's' : ''})`, {
+              description: 'AI edit ready. Click Apply Now to commit to the project.',
+              duration: 20000,
+              action: onApplyToVFS ? {
+                label: 'Apply Now',
+                onClick: () => {
+                  vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
+                  onApplyToVFS(filesForApply, {
+                    prompt: userContent,
+                    model: modelUsed,
+                    summary: responseMeta?.reviewSummary,
+                    actionType: responseMeta?.actionType,
+                    origin: 'multi-file',
+                    requiresApproval: responseMeta?.requiresApproval,
+                    warnings: responseMeta?.warnings,
+                  });
+                  vfsEventBus.emit('ai:apply:complete', {
+                    filesWritten: Object.keys(filesForApply),
+                    source: 'multi-file',
+                  });
+                  toast.success(`✅ Applied ${fileCount} file${fileCount > 1 ? 's' : ''}`);
+                },
+              } : undefined,
             });
           } else if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(filesForApply));
@@ -2424,9 +2448,28 @@ export default function App() {
             console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
             toast.warning('⚠️ Patch flagged for review — check warnings');
           } else if (forceReview) {
-            console.warn('[AIBuilderPanel] forceReview set — single-file auto-apply skipped');
-            toast.warning('Review required', {
-              description: `Edit to ${singleFilePath} ready — open View Edits to apply.`,
+            console.warn('[AIBuilderPanel] forceReview set — surfacing actionable Apply toast (single-file)');
+            const singleFiles = { [singleFilePath]: generatedCode };
+            toast.warning(`Review required`, {
+              description: `Edit to ${singleFilePath} ready. Click Apply Now to commit.`,
+              duration: 20000,
+              action: onApplyToVFS ? {
+                label: 'Apply Now',
+                onClick: () => {
+                  vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
+                  onApplyToVFS(singleFiles, {
+                    prompt: userContent,
+                    model: modelUsed,
+                    summary: responseMeta?.reviewSummary,
+                    actionType: responseMeta?.actionType,
+                    origin: 'single-file',
+                    requiresApproval: responseMeta?.requiresApproval,
+                    warnings: responseMeta?.warnings,
+                  });
+                  vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
+                  toast.success(isSurgicalEdit ? `✅ Edit applied` : `✅ Code applied`);
+                },
+              } : undefined,
             });
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });

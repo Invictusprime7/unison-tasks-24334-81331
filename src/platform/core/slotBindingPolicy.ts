@@ -206,21 +206,19 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     section: 'navbar',
     slot: 'icon-search',
     intentPriority: [],
-    fallbackIntent: 'search.open',
+    fallbackIntent: 'nav.anchor',
   },
   {
     section: 'navbar',
     slot: 'icon-user',
-    intentPriority: [
-      { capability: 'auth', intent: 'account.open' },
-    ],
-    fallbackIntent: 'account.open',
+    intentPriority: [],
+    fallbackIntent: 'auth.login',
   },
   {
     section: 'navbar',
     slot: 'icon-menu',
     intentPriority: [],
-    fallbackIntent: 'menu.open',
+    fallbackIntent: 'nav.anchor',
   },
   {
     section: 'navbar',
@@ -228,47 +226,33 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     intentPriority: [
       { capability: 'commerce', intent: 'cart.view' },
     ],
-    fallbackIntent: 'cart.view',
-  },
-  {
-    section: 'navbar',
-    slot: 'icon-chat',
-    intentPriority: [],
-    fallbackIntent: 'chat.open',
-  },
-  {
-    section: 'navbar',
-    slot: 'icon-share',
-    intentPriority: [],
-    fallbackIntent: 'share.open',
-  },
-  {
-    section: 'navbar',
-    slot: 'icon-calendar',
-    intentPriority: [
-      { capability: 'booking', intent: 'booking.create' },
-    ],
-    fallbackIntent: 'booking.create',
+    fallbackIntent: 'nav.anchor',
   },
 
   // ── Shop Grid Icon Slots ──────────────────────────────────────────────
   {
     section: 'shop-grid',
     slot: 'icon-filter',
-    intentPriority: [],
-    fallbackIntent: 'filter.open',
+    intentPriority: [
+      { capability: 'commerce', intent: 'nav.anchor' },
+    ],
+    fallbackIntent: 'nav.anchor',
   },
   {
     section: 'shop-grid',
     slot: 'icon-sort',
-    intentPriority: [],
-    fallbackIntent: 'sort.open',
+    intentPriority: [
+      { capability: 'commerce', intent: 'nav.anchor' },
+    ],
+    fallbackIntent: 'nav.anchor',
   },
   {
     section: 'shop-grid',
     slot: 'icon-favorite',
-    intentPriority: [],
-    fallbackIntent: 'favorite.toggle',
+    intentPriority: [
+      { capability: 'commerce', intent: 'cart.add' },
+    ],
+    fallbackIntent: 'nav.anchor',
   },
 ];
 

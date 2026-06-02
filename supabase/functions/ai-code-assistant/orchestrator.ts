@@ -31,7 +31,6 @@ import {
   buildVfsFilesContext,
   buildFastPathSystemPrompt,
   buildUserDBContext,
-  buildSiteContextBlock,
   type UserDBContext,
 } from "./contextBuilders.ts";
 import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditReinforcement } from "./prompts/editPrompts.ts";
@@ -59,273 +58,8 @@ interface CodePattern {
   code_snippet: string;
 }
 
-function buildAttachmentMessages(attachments?: unknown[]): Array<{ role: 'user'; content: unknown[] }> {
-  if (!Array.isArray(attachments) || attachments.length === 0) return [];
-
-  const imageParts = attachments
-    .map((attachment) => {
-      if (!attachment || typeof attachment !== 'object') return null;
-      const item = attachment as { type?: unknown; name?: unknown; data?: unknown; preview?: unknown; dataUrl?: unknown };
-      const data = item.data || item.preview || item.dataUrl;
-      if (item.type !== 'image' || typeof data !== 'string') return null;
-      return {
-        type: 'image_url',
-        image_url: { url: data },
-        name: typeof item.name === 'string' ? item.name : 'attached image',
-      };
-    })
-    .filter((part): part is { type: string; image_url: { url: string }; name: string } => Boolean(part));
-
-  if (imageParts.length === 0) return [];
-
-  return [{
-    role: 'user',
-    content: [
-      {
-        type: 'text',
-        text: `Use the attached image${imageParts.length > 1 ? 's' : ''} as visual context for layout, colors, typography, spacing, and asset placement. Preserve the user's written instructions as the source of truth.`,
-      },
-      ...imageParts,
-    ],
-  }];
-}
-
 export interface OrchestratorResult {
   response: Response;
-}
-
-type LauncherFilesPayload = { files: Record<string, string> };
-
-function stripLauncherJsonText(rawContent: string): string {
-  let sanitized = rawContent
-    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-    .trim()
-    .replace(/^```json?\s*\n?/i, '')
-    .replace(/^```(?:html|tsx|jsx|typescript|javascript)?\s*\n?/i, '')
-    .replace(/\n?```\s*$/i, '')
-    .trim();
-
-  if (!sanitized.startsWith('{') && sanitized.includes('{"files"')) {
-    sanitized = sanitized.slice(sanitized.indexOf('{"files"'));
-  }
-
-  return sanitized.trim();
-}
-
-function extractBalancedJsonObject(input: string, preferredKey?: string): string | null {
-  if (!input) return null;
-
-  const seedIndex = preferredKey ? input.indexOf(preferredKey) : 0;
-  const searchStart = seedIndex >= 0 ? seedIndex : 0;
-  const openAt = input.lastIndexOf('{', searchStart);
-  const startIndex = openAt >= 0 ? openAt : input.indexOf('{');
-  if (startIndex < 0) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = startIndex; i < input.length; i += 1) {
-    const ch = input[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === '\\') {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (ch === '{') {
-      depth += 1;
-      continue;
-    }
-
-    if (ch === '}') {
-      depth -= 1;
-      if (depth === 0) return input.slice(startIndex, i + 1).trim();
-    }
-  }
-
-  return null;
-}
-
-function salvagePartialFilesPayload(sanitized: string): LauncherFilesPayload | null {
-  // Tolerant extractor for truncated JSON: scans for complete
-  // "path": "content" pairs inside the top-level "files" object so a cut-off
-  // response still yields whatever files finished streaming.
-  const filesIdx = sanitized.indexOf('"files"');
-  if (filesIdx < 0) return null;
-  const braceStart = sanitized.indexOf('{', filesIdx);
-  if (braceStart < 0) return null;
-
-  const files: Record<string, string> = {};
-  let i = braceStart + 1;
-  while (i < sanitized.length) {
-    // Find next key opening quote
-    while (i < sanitized.length && sanitized[i] !== '"' && sanitized[i] !== '}') i += 1;
-    if (i >= sanitized.length || sanitized[i] === '}') break;
-
-    // Read key string
-    i += 1;
-    const keyStart = i;
-    while (i < sanitized.length && sanitized[i] !== '"') {
-      if (sanitized[i] === '\\') i += 2; else i += 1;
-    }
-    if (i >= sanitized.length) break;
-    const rawKey = sanitized.slice(keyStart, i);
-    i += 1;
-
-    // Skip colon + whitespace
-    while (i < sanitized.length && (sanitized[i] === ':' || sanitized[i] === ' ' || sanitized[i] === '\n' || sanitized[i] === '\r' || sanitized[i] === '\t')) i += 1;
-    if (i >= sanitized.length || sanitized[i] !== '"') break;
-    i += 1;
-
-    // Read value string, honoring escapes
-    const valStart = i;
-    let closed = false;
-    while (i < sanitized.length) {
-      const ch = sanitized[i];
-      if (ch === '\\') { i += 2; continue; }
-      if (ch === '"') { closed = true; break; }
-      i += 1;
-    }
-    if (!closed) break; // Truncated mid-file — stop salvaging
-    const rawVal = sanitized.slice(valStart, i);
-    i += 1;
-
-    try {
-      const key = JSON.parse('"' + rawKey + '"') as string;
-      const val = JSON.parse('"' + rawVal + '"') as string;
-      const path = key.replace(/^\/+/, '');
-      if (path && typeof val === 'string') files[path] = val;
-    } catch { /* skip malformed entry */ }
-
-    // Skip comma + whitespace
-    while (i < sanitized.length && (sanitized[i] === ',' || sanitized[i] === ' ' || sanitized[i] === '\n' || sanitized[i] === '\r' || sanitized[i] === '\t')) i += 1;
-  }
-
-  return Object.keys(files).length > 0 ? { files } : null;
-}
-
-function parseLauncherFilesPayload(rawContent: string): LauncherFilesPayload | null {
-  const sanitized = stripLauncherJsonText(rawContent);
-  if (!sanitized) return null;
-
-  const candidates = [
-    sanitized,
-    extractBalancedJsonObject(sanitized, '"files"'),
-    extractBalancedJsonObject(sanitized),
-  ].filter((value): value is string => Boolean(value));
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as { files?: Record<string, unknown> };
-      if (!parsed?.files || typeof parsed.files !== 'object') continue;
-
-      const files = Object.fromEntries(
-        Object.entries(parsed.files)
-          .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
-          .map(([path, content]) => [path.replace(/^\/+/, ''), content]),
-      );
-
-      if (Object.keys(files).length > 0) return { files };
-    } catch {
-      // Try next candidate.
-    }
-  }
-
-  // Last-resort: response was truncated before the closing braces. Try to
-  // recover any complete "path": "content" entries that did stream.
-  const salvaged = salvagePartialFilesPayload(sanitized);
-  if (salvaged) {
-    console.warn('[orchestrator] parseLauncherFilesPayload salvaged partial files from truncated JSON', {
-      files: Object.keys(salvaged.files),
-    });
-    return salvaged;
-  }
-
-  return null;
-}
-
-function hardenWizardSystemsBuildContext(raw: AIRequest['systemsBuildContext']): {
-  context: AIRequest['systemsBuildContext'];
-  hasExplicitTemplateContract: boolean;
-  hasExplicitStyleContract: boolean;
-} {
-  const ctx = (raw || {}) as Record<string, unknown>;
-  const templateSelection = ((ctx.template_selection as Record<string, unknown>) || {});
-  const styleSelection = ((ctx.style_selection as Record<string, unknown>) || {});
-  const themeTokens = ((ctx.theme_tokens as Record<string, unknown>) || {});
-
-  const fallbackSections = ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
-  const explicitTemplateSections = Array.isArray(ctx.template_sections)
-    ? ctx.template_sections.filter((s): s is string => typeof s === 'string')
-    : [];
-  const explicitSelectionOrder = Array.isArray(templateSelection.section_order)
-    ? (templateSelection.section_order as unknown[]).filter((s): s is string => typeof s === 'string')
-    : [];
-  const hasExplicitTemplateContract =
-    explicitSelectionOrder.length > 0 || explicitTemplateSections.length > 0;
-  const sectionOrder = explicitSelectionOrder.length > 0
-    ? explicitSelectionOrder
-    : (explicitTemplateSections.length > 0 ? explicitTemplateSections : fallbackSections);
-
-  const presetId =
-    (styleSelection.preset_id as string | undefined) ||
-    (themeTokens.presetId as string | undefined) ||
-    undefined;
-  const presetLabel =
-    (styleSelection.preset_label as string | undefined) ||
-    (themeTokens.presetLabel as string | undefined) ||
-    undefined;
-  const styleDirective =
-    (styleSelection.style_directive as string | undefined) ||
-    (themeTokens.styleDirective as string | undefined) ||
-    undefined;
-  const hasExplicitStyleContract = Boolean(
-    styleSelection.preset_id ||
-    themeTokens.presetId,
-  );
-
-  const hardened: Record<string, unknown> = {
-    ...ctx,
-    template_selection: {
-      ...templateSelection,
-      section_order: sectionOrder,
-    },
-    template_sections: sectionOrder,
-    style_selection: {
-      ...styleSelection,
-      ...(presetId ? { preset_id: presetId } : {}),
-      ...(presetLabel ? { preset_label: presetLabel } : {}),
-      ...(styleDirective ? { style_directive: styleDirective } : {}),
-    },
-    theme_tokens: {
-      ...themeTokens,
-      ...(presetId ? { presetId } : {}),
-      ...(presetLabel ? { presetLabel } : {}),
-      ...(styleDirective ? { styleDirective } : {}),
-    },
-  };
-
-  if (explicitSelectionOrder.length === 0 || explicitTemplateSections.length === 0) {
-    console.warn('[orchestrator] Hardened wizard context: repaired missing template section contract');
-  }
-
-  return {
-    context: hardened as AIRequest['systemsBuildContext'],
-    hasExplicitTemplateContract,
-    hasExplicitStyleContract,
-  };
 }
 
 // ── Main Orchestrator Entry ─────────────────────────────────────────────────
@@ -336,15 +70,6 @@ export function runAssistantOrchestrator(
   corsHeaders: Record<string, string>,
   userId?: string,
 ): Promise<Response> {
-  // Hard guard: wizardLaunch can ONLY be served by Lane A. If the classifier
-  // ever returns anything else with wizardLaunch set, force Lane A and log
-  // loudly so we catch any regression in routing logic.
-  if (parsed.wizardLaunch && task.type !== "wizard_template_react") {
-    console.error(
-      `[orchestrator] wizardLaunch=true but classifier routed to ${task.type}; forcing Lane A`,
-    );
-    return runWizardLane(parsed, { ...task, type: "wizard_template_react", fastPath: true }, corsHeaders);
-  }
   if (task.type === "wizard_template_react") {
     return runWizardLane(parsed, task, corsHeaders);
   }
@@ -365,51 +90,15 @@ async function runWizardLane(
 ): Promise<Response> {
   console.log('[orchestrator] LANE A: wizard fast path');
 
-  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
-  const { messages, systemsBuildContext, templateName, source, imagePlacement, siteElementsLibraryContext } = parsed;
-  const {
-    context: hardenedContext,
-    hasExplicitTemplateContract,
-    hasExplicitStyleContract,
-  } = hardenWizardSystemsBuildContext(systemsBuildContext);
-
-  // Strict guard for explicit wizard-launch requests from the 4-step launcher.
-  // If template/style registry selections are missing, fail fast instead of
-  // silently falling back to a generic output profile.
-  if (parsed.wizardLaunch && (!hasExplicitTemplateContract || !hasExplicitStyleContract)) {
-    console.error('[orchestrator] Lane A contract missing for wizardLaunch', {
-      hasExplicitTemplateContract,
-      hasExplicitStyleContract,
-      hasTemplateSelection: Boolean((systemsBuildContext as Record<string, unknown> | undefined)?.template_selection),
-      hasStyleSelection: Boolean((systemsBuildContext as Record<string, unknown> | undefined)?.style_selection),
-      hasThemeTokens: Boolean((systemsBuildContext as Record<string, unknown> | undefined)?.theme_tokens),
-    });
-    return new Response(
-      JSON.stringify({
-        error: 'Wizard launch contract missing template/style selections. Please relaunch from the wizard and select template + style cards.',
-      }),
-      {
-        status: 422,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
-    );
-  }
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  const { messages, systemsBuildContext, templateName, source, imagePlacement } = parsed;
 
   // Fast path system prompt — no research, no memory, no patterns
-  const baseSystemPrompt = buildFastPathSystemPrompt({
-    systemsBuildContext: hardenedContext ?? {},
+  const finalSystemPrompt = buildFastPathSystemPrompt({
+    systemsBuildContext: systemsBuildContext ?? {},
     templateName: templateName ?? undefined,
     source: source ?? undefined,
   });
-
-  // Inject the Site Elements Library knowledge base. Previously only the
-  // Builder lane consumed this — wizard launches generated structure
-  // without any element-library grounding, which made every industry
-  // collapse to the same generic layout. (Audit gap fix.)
-  const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, false);
-  const finalSystemPrompt = elementsLibraryBlock
-    ? `${baseSystemPrompt}\n${elementsLibraryBlock}`
-    : baseSystemPrompt;
 
   const processedMessages = compactMessages(messages);
   const aiMessages = [
@@ -418,13 +107,12 @@ async function runWizardLane(
   ];
 
   // Provider plan — protected, no user overrides
-  const providerPlan = buildProviderPlan(task, hasLovableKey);
+  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY));
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
     navPageGen: false,
-    forceJsonResponse: true,
-    taskType: task.type,
+    lovableApiKey: LOVABLE_API_KEY ?? undefined,
   });
 
   if (providerResult.earlyError) {
@@ -437,31 +125,19 @@ async function runWizardLane(
     );
   }
 
-  const processedContent = postProcessContent(providerResult.content);
-  const launcherPayload = parseLauncherFilesPayload(processedContent);
-  const content = launcherPayload ? JSON.stringify(launcherPayload) : processedContent;
-
-  if (!launcherPayload) {
-    console.warn('[orchestrator] Lane A returned content without a parseable files payload', {
-      modelUsed: providerResult.modelUsed,
-      preview: processedContent.slice(0, 240),
-    });
-  }
+  const content = postProcessContent(providerResult.content);
 
   // Fire-and-forget learning session
   saveLearningSession(parsed, content);
 
-  const responseBody = {
-    ...buildResponseBody({
+  const responseBody = buildResponseBody({
     content,
     reasoning: providerResult.reasoning,
     generatedImageUrl: '',
     imagePlacement: imagePlacement ?? undefined,
     mode: 'template-react',
     modelUsed: providerResult.modelUsed,
-    }),
-    ...(launcherPayload ? { files: launcherPayload.files } : {}),
-  };
+  });
 
   return new Response(
     JSON.stringify(responseBody),
@@ -484,7 +160,7 @@ async function runLaunchDeskLane(
 ): Promise<Response> {
   console.log('[orchestrator] LANE C: launch_desk');
 
-  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   const { messages, launchBrief } = parsed;
 
   const systemPrompt = buildLaunchDeskSystemPrompt();
@@ -504,11 +180,12 @@ async function runLaunchDeskLane(
     { role: 'user', content: userContent },
   ];
 
-  const providerPlan = buildProviderPlan(task, hasLovableKey);
+  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY));
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
     navPageGen: false,
+    lovableApiKey: LOVABLE_API_KEY ?? undefined,
   });
 
   if (providerResult.earlyError) {
@@ -550,7 +227,7 @@ async function runBuilderLane(
     'builder_generate'
   })`);
 
-  const hasLovableKey = Boolean(Deno.env.get("LOVABLE_API_KEY"));
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   const {
     messages, mode, savePattern = true, generateImage = false, imagePlacement,
     currentCode, editMode = false, debugMode: _debugMode = false,
@@ -559,7 +236,6 @@ async function runBuilderLane(
     siteElementsLibraryContext, surgicalEdit = false,
     componentBehaviorContext, vfsFiles, gatewayOptions,
     previewDiagnostics, previewSnapshot, recentChangedFiles,
-    siteContext, attachments,
   } = parsed;
 
   // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
@@ -605,7 +281,6 @@ async function runBuilderLane(
   // ── 3a. User DB context (history + drafts) — non-blocking ──────────────
   const userDBCtx = userId && !task.fastPath ? await fetchUserContext(userId).catch(() => null) : null;
   const userDBContextBlock = buildUserDBContext(userDBCtx);
-  const siteContextBlock = buildSiteContextBlock(siteContext);
 
   // ── 4. Base system prompt ──────────────────────────────────────────────
   let basePrompt: string;
@@ -639,19 +314,17 @@ async function runBuilderLane(
     ? runNavResearch(systemType, navPageName ?? undefined, navLabel ?? undefined)
     : Promise.resolve('');
 
-  const [research, industryPageContext] = await Promise.all([
-    researchPromise, navResearchPromise,
-  ]);
-
-  // Keep Gemini calls sequential. Image generation and text/code generation use
-  // the same upstream API quota, so running them concurrently can turn one user
-  // action into competing provider calls.
-  const imageResult = await generateImageIfNeeded({
+  const imagePromise = generateImageIfNeeded({
     userPrompt: userPromptText.toLowerCase(),
     generateImage,
     imagePlacement: imagePlacement ?? undefined,
     fastTemplateReact: false,
+    lovableApiKey: Deno.env.get('OPENAI_API_KEY') ?? undefined,
   });
+
+  const [research, industryPageContext, imageResult] = await Promise.all([
+    researchPromise, navResearchPromise, imagePromise,
+  ]);
 
   const researchContext = formatResearchContext(research);
 
@@ -754,15 +427,6 @@ async function runBuilderLane(
     finalSystemPrompt += preprocessed.intentSummary;
   }
 
-  // Inject site topology + intent bindings so chat prompts can edit routes & wiring.
-  if (siteContextBlock) {
-    finalSystemPrompt += `\n${siteContextBlock}`;
-  }
-
-
-
-
-
   // Inject live preview DOM snapshot for context awareness
   if (previewSnapshot) {
     finalSystemPrompt += `\n\n${previewSnapshot}\nUse this to understand what the user currently sees and which elements/sections exist in the live preview.`;
@@ -778,24 +442,19 @@ async function runBuilderLane(
     finalSystemPrompt += `\n\n${userDBContextBlock}`;
   }
 
-  const attachmentMessages = buildAttachmentMessages(attachments);
-  if (attachmentMessages.length > 0) {
-    console.log(`[orchestrator] Forwarding ${attachmentMessages[0].content.length - 1} image attachment(s) to Gemini`);
-  }
-
   const aiMessages = [
     { role: 'system', content: finalSystemPrompt },
     ...processedMessages,
-    ...attachmentMessages,
   ];
 
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────
   console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
-  const providerPlan = buildProviderPlan(task, hasLovableKey, gatewayOptions, preprocessed.complexity.tier);
+  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY), gatewayOptions, preprocessed.complexity.tier);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
     navPageGen,
+    lovableApiKey: LOVABLE_API_KEY ?? undefined,
     reasoningEffort: gatewayOptions?.reasoningEffort,
   });
 
@@ -858,17 +517,11 @@ async function runBuilderLane(
 
   if (savePattern) saveLearningSession(parsed, content, userId);
 
-  const responseContent = reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content;
-  const responseFilesPayload = reviewResult
-    ? { files: reviewResult.cleanedFiles }
-    : parseLauncherFilesPayload(responseContent);
-
-  const responseBody = {
-    ...buildResponseBody({
-    content: responseContent,
+  const responseBody = buildResponseBody({
+    content: reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content,
     reasoning: providerResult.reasoning,
     generatedImageUrl: imageResult.generatedImageUrl,
-    imagePlacement: imageResult.imagePlacement ?? imagePlacement ?? undefined,
+    imagePlacement: imagePlacement ?? undefined,
     debugMode: _debugMode,
     mode: mode ?? undefined,
     modelUsed: providerResult.modelUsed,
@@ -877,9 +530,7 @@ async function runBuilderLane(
     removedFiles: reviewResult?.removedFiles,
     reviewSummary: reviewResult?.reviewSummary,
     applyState: applyState as Record<string, unknown> | undefined,
-    }),
-    ...(responseFilesPayload ? { files: responseFilesPayload.files } : {}),
-  };
+  });
 
   return new Response(
     JSON.stringify(responseBody),

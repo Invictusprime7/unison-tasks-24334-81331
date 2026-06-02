@@ -105,14 +105,6 @@ export interface GeneratedSitePlan {
    */
   selectedTemplateId?: string;
   /**
-   * Canonical Style card id selected in the SystemLauncher wizard. Must match
-   * one of the six entries in THEME_PRESETS (modern, editorial, futuristic,
-   * minimalist, bold, organic). Carried through the plan so every downstream
-   * derivation (registry, runtime manifest, AI builder context) references
-   * the same aesthetic the user picked — no silent drift.
-   */
-  selectedThemeId?: string;
-  /**
    * When true, the plan was produced in "minimal" mode: ONLY a Home page.
    * Every additional page/funnel/route is expected to be authored by the
    * in-Builder AI assistant in response to user prompts. Downstream stages
@@ -197,12 +189,6 @@ export function planSiteTopology(
     /** Template composition id selected by the wizard chip — drives sub-page scaffolding. */
     selectedTemplateId?: string;
     /**
-     * Style card id from the SystemLauncher wizard — one of the six canonical
-     * THEME_PRESETS entries. Recorded on the plan so the registry/runtime
-     * stay in lockstep with the user's aesthetic pick.
-     */
-    selectedThemeId?: string;
-    /**
      * Minimal mode: produce ONLY a Home page. The in-Builder AI assistant is
      * responsible for adding every other page/route/funnel on user prompt.
      * Used by the Wizard Launcher to hand a clean canvas to the Builder.
@@ -210,12 +196,8 @@ export function planSiteTopology(
     minimal?: boolean;
   }
 ): GeneratedSitePlan {
-  const normalizedThemeId = normalizeWizardThemeId(options?.selectedThemeId);
-
   if (options?.minimal) {
-    const plan = planMinimalHomeTopology(businessName, industryKey, options.selectedTemplateId);
-    plan.selectedThemeId = normalizedThemeId;
-    return plan;
+    return planMinimalHomeTopology(businessName, industryKey, options.selectedTemplateId);
   }
 
   const profile = getIndustryProfile(industryKey);
@@ -223,33 +205,10 @@ export function planSiteTopology(
     // Fallback: generic site with home + contact
     const generic = planGenericTopology(businessName);
     if (options?.selectedTemplateId) generic.selectedTemplateId = options.selectedTemplateId;
-    generic.selectedThemeId = normalizedThemeId;
     return generic;
   }
 
-  const plan = planFromProfile(profile, businessName, options);
-  plan.selectedThemeId = normalizedThemeId;
-  return plan;
-}
-
-/**
- * Canonical list of Style card ids exposed in the SystemLauncher wizard.
- * Kept in sync with src/components/onboarding/themePresets.ts. Duplicated here
- * (rather than imported) to keep the platform/core layer free of UI deps.
- */
-const CANONICAL_WIZARD_THEME_IDS = new Set<string>([
-  'modern',
-  'editorial',
-  'futuristic',
-  'minimalist',
-  'bold',
-  'organic',
-]);
-
-function normalizeWizardThemeId(themeId?: string): string | undefined {
-  if (!themeId) return undefined;
-  const id = themeId.toLowerCase().trim();
-  return CANONICAL_WIZARD_THEME_IDS.has(id) ? id : undefined;
+  return planFromProfile(profile, businessName, options);
 }
 
 /**

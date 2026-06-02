@@ -63,49 +63,6 @@ function looksLikeCanonicalRouter(content: string): boolean {
   return /react-router-dom|<Routes\b|<Route\b|BrowserRouter|HashRouter|createBrowserRouter/.test(content);
 }
 
-/**
- * Lane-A is supposed to return a single-page App.tsx (no router). When the
- * model violates that contract and wraps the home composition in a router,
- * the previous merge step silently dropped the entire AI payload — producing
- * the "deterministic placeholder + themed CSS" symptom users report as
- * "fallback site after wizard launch".
- *
- * This helper salvages the AI output by:
- *   1. Locating the home route (`<Route path="/" element={...} />` or `index`).
- *   2. Extracting that element expression.
- *   3. Rewriting the module to export a single component that renders the
- *      extracted element, preserving every non-router import so the referenced
- *      component (and its dependencies) still resolves.
- *
- * Returns null when no home route can be identified — caller falls back to
- * skipping the file (previous behavior).
- */
-function tryExtractHomeFromRouterModule(content: string): string | null {
-  const routeRegex =
-    /<Route\b(?=[^>]*?(?:path\s*=\s*(?:["']\/+?["']|\{\s*["']\/+?["']\s*\})|\sindex(?:\s|=|\b)))[^>]*?element\s*=\s*\{([\s\S]*?)\}\s*\/?>/;
-  const match = content.match(routeRegex);
-  if (!match) return null;
-  const element = match[1].trim();
-  if (!element) return null;
-
-  const importLines = content
-    .split('\n')
-    .filter((line) => /^\s*import\s/.test(line) && !/react-router/i.test(line));
-
-  return [
-    ...importLines,
-    '',
-    'export default function HomeRoute() {',
-    `  return (${element});`,
-    '}',
-    '',
-  ].join('\n');
-}
-
-function isPageModulePath(path: string): boolean {
-  return /^\/src\/pages\/[^/]+\.(tsx|jsx|ts|js)$/i.test(path);
-}
-
 function buildCanonicalPlayground(
   siteBundleSnapshot?: SiteBundleSnapshot,
   canonicalPlayground?: PlaygroundState | Record<string, unknown> | null,
@@ -148,7 +105,7 @@ function buildRuntimeAppContext(
     businessName: input.businessName || siteBundleSnapshot?.businessName || undefined,
     templateName: input.templateName || undefined,
     templateCategory: input.templateCategory || undefined,
-    templateId: input.templateId || siteBundleSnapshot?.selectedTemplateId || undefined,
+    templateId: input.templateId || undefined,
     systemType: input.systemType || undefined,
     systemName: input.systemName || undefined,
     industry: input.industry || siteBundleSnapshot?.industry || undefined,
@@ -157,11 +114,7 @@ function buildRuntimeAppContext(
     wizardSelections: input.wizardSelections
       ? (JSON.parse(JSON.stringify(input.wizardSelections)) as Record<string, unknown>)
       : undefined,
-    themePresetId:
-      input.themePresetId ||
-      siteBundleSnapshot?.selectedThemeId ||
-      (input.aesthetic as string | undefined) ||
-      undefined,
+    themePresetId: input.themePresetId || (input.aesthetic as string | undefined) || undefined,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -184,8 +137,6 @@ function serializeSiteBundleSnapshot(siteBundleSnapshot?: SiteBundleSnapshot) {
     componentInstances: siteBundleSnapshot.componentInstances,
     routes: siteBundleSnapshot.routes,
     homeRoute: siteBundleSnapshot.homeRoute,
-    selectedTemplateId: siteBundleSnapshot.selectedTemplateId,
-    selectedThemeId: siteBundleSnapshot.selectedThemeId,
     createdAt: siteBundleSnapshot.createdAt,
     appContext: siteBundleSnapshot.appContext,
     routerFile: siteBundleSnapshot.routerFile
@@ -204,62 +155,16 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
-  const canonicalPagePaths = new Set(
-    registryPages
-      .map((page) => page.filePath)
-      .filter((path): path is string => Boolean(path)),
-  );
 
   for (const [path, content] of Object.entries(generatedFiles)) {
-    // The registry/router owns App.tsx itself. Lane A may return a
-    // single-page App.tsx to enhance Home; rebase it into the home page file.
-    if (path === '/src/App.tsx' || path === '/App.tsx') {
-      if (looksLikeCanonicalRouter(content)) {
-        const extracted = tryExtractHomeFromRouterModule(content);
-        if (extracted && canonicalFiles['/src/App.tsx']) {
-          merged[homeFilePath] = rebaseAppModuleForHomePage(extracted);
-          console.warn(
-            '[canonicalLaunchVfs] AI emitted router-shaped App.tsx — extracted home route element into',
-            homeFilePath,
-          );
-        } else {
-          console.warn(
-            '[canonicalLaunchVfs] AI emitted router-shaped App.tsx with no extractable home route — Home will fall back to the canonical placeholder',
-            { homeFilePath, contentPreview: content.slice(0, 240) },
-          );
-        }
-        continue;
-      }
+    const shouldMoveLegacyAppIntoHome =
+      (path === '/src/App.tsx' || path === '/App.tsx') &&
+      canonicalFiles['/src/App.tsx'] &&
+      !generatedFiles[homeFilePath] &&
+      !looksLikeCanonicalRouter(content);
 
-      const trimmed = typeof content === 'string' ? content.trim() : '';
-      const looksRenderable =
-        trimmed.length >= 24 &&
-        (/export\s+default/.test(trimmed) || /return\s*\(/.test(trimmed) || /<main|<div|<section/i.test(trimmed));
-      if (!looksRenderable) {
-        console.warn(
-          '[canonicalLaunchVfs] AI App.tsx did not look renderable — Home will fall back to the canonical placeholder',
-          { trimmedLength: trimmed.length, contentPreview: trimmed.slice(0, 240) },
-        );
-        continue;
-      }
-
-      if (canonicalFiles['/src/App.tsx']) {
-        merged[homeFilePath] = rebaseAppModuleForHomePage(content);
-      }
-      continue;
-    }
-
-    // AI-generated sub-pages REPLACE the canonical scaffolded placeholder.
-    // The wizard goals step plans 3–8 sub-pages (Contact/Pricing/Services/
-    // Booking/etc.) and Lane A now emits a populated TSX file for each one.
-    // Previously these were dropped, leaving every sub-page empty.
-    if (canonicalPagePaths.has(path) && path !== homeFilePath) {
-      merged[path] = content;
-      continue;
-    }
-
-    // Out-of-registry page modules are rejected — only registered routes ship.
-    if (isPageModulePath(path) && !canonicalPagePaths.has(path)) {
+    if (shouldMoveLegacyAppIntoHome) {
+      merged[homeFilePath] = rebaseAppModuleForHomePage(content);
       continue;
     }
 
@@ -306,54 +211,27 @@ export function buildCanonicalLaunchArtifacts(
   input: BuildCanonicalLaunchArtifactsInput,
 ): CanonicalLaunchArtifacts {
   const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
-  const wizardSelections = input.wizardSelections ?? null;
   const resolvedThemePresetId =
-    input.themePresetId ||
-    wizardSelections?.themeId ||
-    input.siteBundleSnapshot?.selectedThemeId ||
-    (input.aesthetic as string | undefined) ||
-    null;
+    input.themePresetId || (input.aesthetic as string | undefined) || null;
   const normalizedFiles = normalizeLauncherFiles(input.generatedFiles, {
     entryPoint: input.preferredEntryPoint,
     themePresetId: resolvedThemePresetId,
   });
 
-  // NOTE: bindings are applied AFTER merging with the canonical snapshot so
-  // that scaffolded sub-pages (About/Contact/etc.) — which the AI never
-  // generates directly — also receive their data-ut-* binding stamps.
-  const canonicalFiles = input.compiledPlayground?.vfsFiles || input.siteBundleSnapshot?.vfsFiles || {};
-  const preBindingFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(normalizedFiles, canonicalFiles, input.siteBundleSnapshot)
-    : { ...normalizedFiles };
-
   const bindingApplication = input.siteBundleSnapshot
-    ? applyWizardBindingsToVfs(preBindingFiles, input.siteBundleSnapshot)
+    ? applyWizardBindingsToVfs(normalizedFiles, input.siteBundleSnapshot)
     : null;
-  const mergedFiles = bindingApplication?.files || preBindingFiles;
+
+  const canonicalFiles = input.compiledPlayground?.vfsFiles || input.siteBundleSnapshot?.vfsFiles || {};
+  const boundFiles = bindingApplication?.files || normalizedFiles;
+  const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
+    ? mergeGeneratedVfsWithCanonicalSnapshot(boundFiles, canonicalFiles, input.siteBundleSnapshot)
+    : { ...boundFiles };
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
-  const appContext = buildRuntimeAppContext(
-    {
-      ...input,
-      templateId:
-        input.templateId ||
-        wizardSelections?.templateId ||
-        input.siteBundleSnapshot?.selectedTemplateId ||
-        undefined,
-      themePresetId: resolvedThemePresetId,
-    },
-    entryPoint,
-    input.siteBundleSnapshot,
-  );
+  const appContext = buildRuntimeAppContext(input, entryPoint, input.siteBundleSnapshot);
   const siteBundleSnapshot = input.siteBundleSnapshot
-    ? {
-        ...input.siteBundleSnapshot,
-        vfsFiles: mergedFiles,
-        routerFile: mergedFiles['/src/App.tsx']
-          ? { path: '/src/App.tsx', content: mergedFiles['/src/App.tsx'] }
-          : input.siteBundleSnapshot.routerFile,
-        appContext,
-      }
+    ? { ...input.siteBundleSnapshot, appContext }
     : undefined;
   const canonicalPlayground = buildCanonicalPlayground(siteBundleSnapshot, input.canonicalPlayground);
   const metadataFiles = Object.values(CANONICAL_METADATA_FILE_PATHS);

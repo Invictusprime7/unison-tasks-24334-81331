@@ -17,34 +17,10 @@ interface ProjectsListProps {
   userId: string;
 }
 
-function isMissingBusinessMembersTable(error: unknown): boolean {
-  const candidate = error as {
-    code?: string;
-    status?: number;
-    message?: string;
-    details?: string;
-  } | null;
-  const text = [candidate?.message, candidate?.details]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  return (
-    candidate?.status === 404 ||
-    candidate?.code === '42P01' ||
-    candidate?.code === 'PGRST204' ||
-    candidate?.code === 'PGRST205' ||
-    text.includes('could not find the table') ||
-    text.includes('business_members') ||
-    text.includes('schema cache')
-  );
-}
-
 export const ProjectsList = ({ userId }: ProjectsListProps) => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [supportsBusinessMembers, setSupportsBusinessMembers] = useState(true);
 
   useEffect(() => {
     fetchProjects();
@@ -84,29 +60,19 @@ export const ProjectsList = ({ userId }: ProjectsListProps) => {
           .from('businesses')
           .select('id')
           .eq('owner_id', userId),
-        supportsBusinessMembers
-          ? supabase
-              .from('business_members')
-              .select('business:businesses(id)')
-              .eq('user_id', userId)
-          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from('business_members')
+          .select('business:businesses(id)')
+          .eq('user_id', userId),
       ]);
 
-      let safeMemberBusinesses = memberBusinesses;
-      let safeMemberError = memberError;
-      if (memberError && isMissingBusinessMembersTable(memberError)) {
-        setSupportsBusinessMembers(false);
-        safeMemberBusinesses = [];
-        safeMemberError = null;
-      }
-
-      if (ownedError && safeMemberError) {
-        throw ownedError || safeMemberError;
+      if (ownedError && memberError) {
+        throw ownedError || memberError;
       }
 
       const accessibleBusinessIds = Array.from(new Set([
         ...((ownedBusinesses || []).map((business: any) => business.id as string)),
-        ...((safeMemberBusinesses || [])
+        ...((memberBusinesses || [])
           .map((entry: any) => entry.business?.id)
           .filter((businessId: string | undefined): businessId is string => Boolean(businessId))),
       ]));

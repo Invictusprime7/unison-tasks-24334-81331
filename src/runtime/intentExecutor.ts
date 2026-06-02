@@ -266,85 +266,6 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
     return { ok: true, ui: { scrollTo: anchor } };
   },
 
-  // ============ PREVIEW-SAFE UI BEHAVIOR ============
-  'menu.open': async (ctx) => ({
-    ok: true,
-    ui: { openModal: 'mobile-menu', openModalPayload: ctx.payload as Record<string, unknown> },
-    events: [{ name: 'menu.opened', payload: ctx.payload || {}, timestamp: Date.now() }],
-  }),
-
-  'search.open': async (ctx) => ({
-    ok: true,
-    ui: { openModal: 'search', openModalPayload: ctx.payload as Record<string, unknown> },
-    events: [{ name: 'search.opened', payload: ctx.payload || {}, timestamp: Date.now() }],
-  }),
-
-  'filter.open': async (ctx) => ({
-    ok: true,
-    ui: { openModal: 'filter', openModalPayload: ctx.payload as Record<string, unknown> },
-    events: [{ name: 'filter.opened', payload: ctx.payload || {}, timestamp: Date.now() }],
-  }),
-
-  'sort.open': async (ctx) => ({
-    ok: true,
-    ui: { openModal: 'sort', openModalPayload: ctx.payload as Record<string, unknown> },
-    events: [{ name: 'sort.opened', payload: ctx.payload || {}, timestamp: Date.now() }],
-  }),
-
-  'share.open': async (ctx) => {
-    const sharePayload = {
-      title: ctx.payload?.title as string | undefined,
-      text: ctx.payload?.text as string | undefined,
-      url: (ctx.payload?.url as string | undefined) || (typeof window !== 'undefined' ? window.location.href : undefined),
-    };
-    if (typeof navigator !== 'undefined' && navigator.share && sharePayload.url) {
-      await navigator.share(sharePayload).catch(() => undefined);
-    }
-    return {
-      ok: true,
-      ui: { openModal: 'share', openModalPayload: sharePayload },
-      events: [{ name: 'share.opened', payload: sharePayload, timestamp: Date.now() }],
-    };
-  },
-
-  'favorite.toggle': async (ctx) => ({
-    ok: true,
-    data: { productId: ctx.payload?.productId, favorite: true },
-    toast: { type: 'success', message: 'Saved' },
-    events: [{ name: 'favorite.toggled', payload: ctx.payload || {}, timestamp: Date.now() }],
-  }),
-
-  'chat.open': async (ctx) => ({
-    ok: true,
-    ui: { openModal: 'chat', openModalPayload: ctx.payload as Record<string, unknown> },
-    events: [{ name: 'chat.opened', payload: ctx.payload || {}, timestamp: Date.now() }],
-  }),
-
-  'contact.call': async (ctx) => {
-    const phone = (ctx.payload?.phone as string) || (ctx.payload?.phoneNumber as string) || '';
-    if (phone && typeof window !== 'undefined') window.location.href = `tel:${phone}`;
-    return { ok: true, events: [{ name: 'contact.call', payload: { phone }, timestamp: Date.now() }] };
-  },
-
-  'contact.email': async (ctx) => {
-    const email = (ctx.payload?.email as string) || '';
-    if (email && typeof window !== 'undefined') window.location.href = `mailto:${email}`;
-    return { ok: true, events: [{ name: 'contact.email', payload: { email }, timestamp: Date.now() }] };
-  },
-
-  'contact.sms': async (ctx) => {
-    const phone = (ctx.payload?.phone as string) || (ctx.payload?.phoneNumber as string) || '';
-    if (phone && typeof window !== 'undefined') window.location.href = `sms:${phone}`;
-    return { ok: true, events: [{ name: 'contact.sms', payload: { phone }, timestamp: Date.now() }] };
-  },
-
-  'location.directions': async (ctx) => {
-    const address = (ctx.payload?.address as string) || (ctx.payload?.location as string) || '';
-    const url = (ctx.payload?.url as string) || (address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : '');
-    if (url && typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer');
-    return { ok: true, events: [{ name: 'location.directions', payload: { address, url }, timestamp: Date.now() }] };
-  },
-
   // ============ PAYMENT ============
   'pay.checkout': async (ctx) => {
     const managers = ctx.managers;
@@ -396,7 +317,7 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
       ok: true,
       data: result,
       ui: { navigate: result.url },
-      events: [{ name: 'checkout.started', payload: { items: items?.length ?? 0 }, timestamp: Date.now() }],
+      events: [{ name: 'checkout.started', payload: { items: items.length }, timestamp: Date.now() }],
     };
   },
 
@@ -588,48 +509,7 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
     };
   },
 
-  'demo.request': async (ctx) => INTENT_HANDLERS['lead.capture']({
-    ...ctx,
-    payload: { ...ctx.payload, source: 'demo_request' },
-  }),
-
-  'consultation.request': async (ctx) => INTENT_HANDLERS['lead.capture']({
-    ...ctx,
-    payload: { ...ctx.payload, source: 'consultation_request' },
-  }),
-
-  'proposal.request': async (ctx) => INTENT_HANDLERS['quote.request']({
-    ...ctx,
-    payload: { ...ctx.payload, source: 'proposal_request' },
-  }),
-
-  'coupon.claim': async (ctx) => INTENT_HANDLERS['newsletter.subscribe']({
-    ...ctx,
-    payload: { ...ctx.payload, source: 'coupon_claim' },
-  }),
-
-  'content.download': async (ctx) => {
-    const url = (ctx.payload?.url as string) || (ctx.payload?.downloadUrl as string) || '';
-    if (url && typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer');
-    return {
-      ok: true,
-      events: [{ name: 'content.downloaded', payload: ctx.payload || {}, timestamp: Date.now() }],
-    };
-  },
-
-  'volunteer.signup': async (ctx) => INTENT_HANDLERS['lead.capture']({
-    ...ctx,
-    payload: { ...ctx.payload, source: 'volunteer_signup' },
-  }),
-
   // ============ CART ============
-  'product.view': async (ctx) => {
-    const productId = (ctx.payload?.productId as string) || ctx.element?.dataset.productId;
-    const path = (ctx.payload?.path as string) || (productId ? `/product/${productId}` : '/shop');
-    ctx.managers?.navigation?.goto(path, ctx.payload);
-    return { ok: true, ui: { navigate: path } };
-  },
-
   'cart.add': async (ctx) => {
     const managers = ctx.managers;
     const payload = ctx.payload || {};
@@ -688,34 +568,6 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
     };
   },
 
-  'cart.update': async (ctx) => {
-    const productId = (ctx.payload?.productId as string) || ctx.element?.dataset.productId;
-    const quantity = Number(ctx.payload?.quantity ?? ctx.element?.dataset.quantity ?? 1);
-    if (!productId) {
-      return { ok: false, error: { code: 'MISSING_PRODUCT', message: 'Product not found' } };
-    }
-    const result = await ctx.managers?.cart?.update(productId, quantity);
-    return {
-      ok: true,
-      data: result,
-      events: [{ name: 'cart.item_updated', payload: { productId, quantity }, timestamp: Date.now() }],
-    };
-  },
-
-  'cart.remove': async (ctx) => {
-    const productId = (ctx.payload?.productId as string) || ctx.element?.dataset.productId;
-    if (!productId) {
-      return { ok: false, error: { code: 'MISSING_PRODUCT', message: 'Product not found' } };
-    }
-    const result = await ctx.managers?.cart?.remove(productId);
-    return {
-      ok: true,
-      data: result,
-      toast: { type: 'info', message: 'Item removed' },
-      events: [{ name: 'cart.item_removed', payload: { productId }, timestamp: Date.now() }],
-    };
-  },
-
   'cart.checkout': async (ctx) => {
     // Redirect to checkout flow
     const cart = await ctx.managers?.cart?.get();
@@ -730,11 +582,6 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
     // Trigger the payment checkout
     return INTENT_HANDLERS['pay.checkout'](ctx);
   },
-
-  'donation.start': async (ctx) => INTENT_HANDLERS['pay.checkout']({
-    ...ctx,
-    payload: { ...ctx.payload, donationType: ctx.payload?.donationType || 'one-time' },
-  }),
 
   'cart.abandoned': async (ctx) => {
     // Emits event for automation
@@ -779,22 +626,6 @@ const INTENT_HANDLERS: Record<CoreIntent, IntentHandler> = {
       ok: true,
       ui: { openModal: overlayId },
     };
-  },
-
-  'auth.logout': async () => ({
-    ok: true,
-    toast: { type: 'info', message: 'Signed out' },
-    events: [{ name: 'auth.logout', payload: {}, timestamp: Date.now() }],
-  }),
-
-  'account.open': async (ctx) => {
-    if (ctx.managers?.auth?.isAuthenticated()) {
-      return {
-        ok: true,
-        ui: { openModal: 'account-menu' },
-      };
-    }
-    return INTENT_HANDLERS['auth.login'](ctx);
   },
 
   // ============ GENERIC BUTTON/FORM ============

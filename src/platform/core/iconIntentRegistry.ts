@@ -97,7 +97,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   search: {
     iconKey: 'search',
     lucideIcon: 'Search',
-    coreIntent: 'search.open',
+    coreIntent: 'nav.anchor',
     ariaLabel: 'Search',
     description: 'Opens a search field for site-wide content search',
     behaviorByPlacement: {
@@ -134,7 +134,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   user: {
     iconKey: 'user',
     lucideIcon: 'User',
-    coreIntent: 'account.open',
+    coreIntent: 'auth.login',
     ariaLabel: 'Account',
     description: 'Opens user account menu or auth modal',
     behaviorByPlacement: {
@@ -150,7 +150,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   menu: {
     iconKey: 'menu',
     lucideIcon: 'Menu',
-    coreIntent: 'menu.open',
+    coreIntent: 'nav.anchor',
     ariaLabel: 'Menu',
     description: 'Opens mobile navigation drawer',
     behaviorByPlacement: {
@@ -192,7 +192,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   filter: {
     iconKey: 'filter',
     lucideIcon: 'Filter',
-    coreIntent: 'filter.open',
+    coreIntent: 'nav.anchor',
     ariaLabel: 'Filter',
     description: 'Opens filter panel for refining results',
     behaviorByPlacement: {
@@ -208,7 +208,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   sort: {
     iconKey: 'sort',
     lucideIcon: 'ArrowUpDown',
-    coreIntent: 'sort.open',
+    coreIntent: 'nav.anchor',
     ariaLabel: 'Sort',
     description: 'Opens sort options dropdown',
     behaviorByPlacement: {
@@ -222,7 +222,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   share: {
     iconKey: 'share',
     lucideIcon: 'Share2',
-    coreIntent: 'share.open',
+    coreIntent: 'nav.external',
     ariaLabel: 'Share',
     description: 'Opens share sheet with social/copy options',
     behaviorByPlacement: {
@@ -237,7 +237,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   favorite: {
     iconKey: 'favorite',
     lucideIcon: 'Heart',
-    coreIntent: 'favorite.toggle',
+    coreIntent: 'cart.add',
     ariaLabel: 'Add to favorites',
     description: 'Toggles favorite/wishlist state or opens favorites drawer',
     behaviorByPlacement: {
@@ -312,7 +312,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   chat: {
     iconKey: 'chat',
     lucideIcon: 'MessageCircle',
-    coreIntent: 'chat.open',
+    coreIntent: 'contact.submit',
     ariaLabel: 'Chat',
     description: 'Opens live chat widget or contact form',
     behaviorByPlacement: {
@@ -420,7 +420,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   map: {
     iconKey: 'map',
     lucideIcon: 'MapPin',
-    coreIntent: 'location.directions',
+    coreIntent: 'nav.external',
     ariaLabel: 'View on map',
     description: 'Opens map view or links to external map',
     behaviorByPlacement: {
@@ -435,12 +435,11 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   phone: {
     iconKey: 'phone',
     lucideIcon: 'Phone',
-    coreIntent: 'contact.call',
+    coreIntent: 'nav.external',
     ariaLabel: 'Call',
     description: 'Initiates phone call via tel: link',
     behaviorByPlacement: {},
     defaultBehavior: 'navigate',
-    requiredCapability: 'contact',
     interactiveComponent: 'none',
   },
 
@@ -448,7 +447,7 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
   email: {
     iconKey: 'email',
     lucideIcon: 'Mail',
-    coreIntent: 'contact.email',
+    coreIntent: 'contact.submit',
     ariaLabel: 'Email',
     description: 'Opens email client or contact form',
     behaviorByPlacement: {
@@ -457,7 +456,6 @@ export const ICON_INTENT_REGISTRY: Record<string, IconIntentDefinition> = {
       card: 'overlay',
     },
     defaultBehavior: 'navigate',
-    requiredCapability: 'contact',
     interactiveComponent: 'none',
   },
 

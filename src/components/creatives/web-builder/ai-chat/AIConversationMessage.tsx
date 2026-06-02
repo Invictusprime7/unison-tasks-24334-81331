@@ -196,11 +196,10 @@ const FileEditList: React.FC<{ edits: VFSEdit[]; onViewEdits?: (e: VFSEdit[]) =>
 // ── Main Message Component ─────────────────────────────────────
 export const AIConversationMessage: React.FC<Props> = ({ message, onViewEdits, onRetryError }) => {
   const [copied, setCopied] = useState(false);
-  const messageMeta: MessageMeta | undefined = message.meta;
 
   const compactMode =
-    (messageMeta?.actionType?.toLowerCase().includes('debug') ?? false) ||
-    (messageMeta?.actionType?.toLowerCase().includes('patch') ?? false) ||
+    (message.meta?.actionType?.toLowerCase().includes('debug') ?? false) ||
+    (message.meta?.actionType?.toLowerCase().includes('patch') ?? false) ||
     (message.edits?.length ?? 0) >= 6;
 
   const hasLongContent = (message.content?.length ?? 0) > 420;
@@ -208,7 +207,7 @@ export const AIConversationMessage: React.FC<Props> = ({ message, onViewEdits, o
 
   const statusLabel = message.isStreaming
     ? 'Thinking...'
-    : messageMeta?.requiresApproval
+    : message.meta?.requiresApproval
       ? 'Review suggested'
       : (message.thinking?.some((s) => s.type === 'error') ?? false)
         ? 'Needs attention'
@@ -262,9 +261,9 @@ export const AIConversationMessage: React.FC<Props> = ({ message, onViewEdits, o
         {/* Header */}
         <div className={cn("flex items-center gap-2 mb-1", compactMode && "mb-0.5")}>
           <span className="text-xs font-semibold text-foreground">Unison AI</span>
-          {messageMeta?.modelUsed && (
+          {message.meta?.modelUsed && (
             <Badge variant="secondary" className="text-[9px] h-4 px-1.5 font-mono">
-              {messageMeta.modelUsed.split('/').pop()}
+              {message.meta.modelUsed.split('/').pop()}
             </Badge>
           )}
           <span className="text-[10px] text-muted-foreground/50 ml-auto">
@@ -310,38 +309,38 @@ export const AIConversationMessage: React.FC<Props> = ({ message, onViewEdits, o
                     <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                   )}
                   <span className="font-medium text-foreground/85">{statusLabel}</span>
-                  {messageMeta?.actionType && (
-                    <span className="ml-auto rounded border border-border px-1.5 py-0.5">{messageMeta.actionType}</span>
+                  {message.meta?.actionType && (
+                    <span className="ml-auto rounded border border-border px-1.5 py-0.5">{message.meta.actionType}</span>
                   )}
                 </div>
               </div>
             )}
 
             {/* Meta badges */}
-            {messageMeta && !message.isStreaming && (
+            {message.meta && !message.isStreaming && (
               <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                {messageMeta.actionType && (
+                {message.meta.actionType && (
                   <Badge variant="outline" className="text-[10px] h-4 px-1.5">
-                    {messageMeta.actionType}
+                    {message.meta.actionType}
                   </Badge>
                 )}
-                {messageMeta.requiresApproval && (
+                {message.meta.requiresApproval && (
                   <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-amber-500/40 text-amber-600 dark:text-amber-400 animate-pulse">
                     ⚠ Review recommended
                   </Badge>
                 )}
-                {messageMeta.filesDetected && messageMeta.filesDetected.length > 0 && (
+                {message.meta.filesDetected && message.meta.filesDetected.length > 0 && (
                   <span className="text-[10px] text-muted-foreground/60">
-                    {messageMeta.filesDetected.length} file{messageMeta.filesDetected.length > 1 ? 's' : ''}
+                    {message.meta.filesDetected.length} file{message.meta.filesDetected.length > 1 ? 's' : ''}
                   </span>
                 )}
               </div>
             )}
 
             {/* Warnings */}
-            {messageMeta?.warnings && messageMeta.warnings.length > 0 && !message.isStreaming && (
+            {message.meta?.warnings && message.meta.warnings.length > 0 && !message.isStreaming && (
               <div className="mb-2 space-y-1">
-                {messageMeta.warnings.slice(0, 3).map((w, i) => (
+                {message.meta.warnings.slice(0, 3).map((w, i) => (
                   <div key={i} className={cn(
                     "flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md",
                     w.severity === 'error' && "bg-destructive/10 text-destructive",

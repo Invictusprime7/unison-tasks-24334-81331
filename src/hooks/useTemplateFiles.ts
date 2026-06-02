@@ -7,7 +7,7 @@
  * Backward compat: API surface preserved. Legacy `design_templates` rows still
  * load via fallback path (read-only). New saves always go to `builder_drafts`.
  */
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Json } from "@/integrations/supabase/types";
@@ -76,47 +76,6 @@ const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateDa
   ...(payload?.siteBundleSnapshot ? { siteBundleSnapshot: payload.siteBundleSnapshot as Record<string, unknown> } : {}),
 });
 
-function isSupabaseTableOrColumnMissing(error: unknown): boolean {
-  const candidate = error as {
-    code?: string;
-    status?: number;
-    message?: string;
-    details?: string;
-  } | null;
-  const text = [candidate?.message, candidate?.details]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  return (
-    candidate?.status === 404 ||
-    candidate?.code === '42P01' ||
-    candidate?.code === '42703' ||
-    candidate?.code === 'PGRST204' ||
-    candidate?.code === 'PGRST205' ||
-    text.includes('could not find the table') ||
-    text.includes('column') ||
-    text.includes('relation') ||
-    text.includes('schema cache')
-  );
-}
-
-function isRecoverableBuilderDraftWriteError(error: unknown): boolean {
-  const candidate = error as { status?: number; message?: string } | null;
-  const message = (candidate?.message || '').toLowerCase();
-
-  if (isSupabaseTableOrColumnMissing(error)) return true;
-  if (candidate?.status === 400 && (
-    message.includes('bad request') ||
-    message.includes('json') ||
-    message.includes('invalid input')
-  )) {
-    return true;
-  }
-
-  return false;
-}
-
 /** Convert a builder_drafts row to a SavedTemplate envelope. */
 const draftRowToTemplate = (row: any): SavedTemplate => {
   const meta = (row.metadata || {}) as Record<string, any>;
@@ -145,17 +104,6 @@ const draftRowToTemplate = (row: any): SavedTemplate => {
 export function useTemplateFiles() {
   const [loading, setLoading] = useState(false);
   const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null);
-  const cloudDraftWritesDisabledRef = useRef(false);
-  const cloudDraftWarningShownRef = useRef(false);
-
-  const disableCloudDraftWrites = useCallback((reason: unknown) => {
-    cloudDraftWritesDisabledRef.current = true;
-    if (!cloudDraftWarningShownRef.current) {
-      cloudDraftWarningShownRef.current = true;
-      console.warn('[useTemplateFiles] Disabling cloud builder_drafts writes due to schema/API mismatch:', reason);
-      toast.warning('Cloud draft persistence unavailable in this environment. Continuing in local runtime mode.');
-    }
-  }, []);
 
   const saveTemplate = useCallback(async (
     name: string,
@@ -251,58 +199,21 @@ export function useTemplateFiles() {
         if (updateError) throw updateError;
         data = updated;
       } else {
-        const insertPayload = {
-          name: trimmedName,
-          user_id: user.id,
-          business_id: payload?.businessId ?? null,
-          code,
-          editor_code: code,
-          vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
-          metadata,
-        };
         const { data: inserted, error: insertError } = await supabase
           .from("builder_drafts")
-          .insert(insertPayload)
+          .insert({
+            name: trimmedName,
+            user_id: user.id,
+            business_id: payload?.businessId ?? null,
+            code,
+            editor_code: code,
+            vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+            metadata,
+          })
           .select("id")
           .single();
-        if (insertError) {
-          // Unique-index collision (idx_builder_drafts_user_unique: one draft per user
-          // when business_id IS NULL). Fall back to updating the existing row so the
-          // save always succeeds and we never lose AI-generated state.
-          if ((insertError as { code?: string }).code === "23505") {
-            let collisionLookup = supabase
-              .from("builder_drafts")
-              .select("id")
-              .eq("user_id", user.id)
-              .order("updated_at", { ascending: false })
-              .limit(1);
-            collisionLookup = payload?.businessId
-              ? collisionLookup.eq("business_id", payload.businessId)
-              : collisionLookup.is("business_id", null);
-            const { data: existing } = await collisionLookup.maybeSingle();
-            if (!existing?.id) throw insertError;
-            const { data: updated, error: updateError } = await supabase
-              .from("builder_drafts")
-              .update({
-                name: trimmedName,
-                business_id: payload?.businessId ?? null,
-                code,
-                editor_code: code,
-                vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
-                metadata,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", existing.id)
-              .select("id")
-              .single();
-            if (updateError) throw updateError;
-            data = updated;
-          } else {
-            throw insertError;
-          }
-        } else {
-          data = inserted;
-        }
+        if (insertError) throw insertError;
+        data = inserted;
       }
 
       if (!data) throw new Error("Failed to persist draft");
@@ -334,10 +245,6 @@ export function useTemplateFiles() {
   ): Promise<boolean> => {
     setLoading(true);
     try {
-      if (cloudDraftWritesDisabledRef.current) {
-        return true;
-      }
-
       if (id.startsWith("local-")) {
         const localTemplates = getLocalTemplates();
         const index = localTemplates.findIndex(t => t.id === id);
@@ -402,13 +309,7 @@ export function useTemplateFiles() {
         .update(updatePatch)
         .eq("id", id);
 
-      if (error) {
-        if (isRecoverableBuilderDraftWriteError(error)) {
-          disableCloudDraftWrites(error);
-          return true;
-        }
-        throw error;
-      }
+      if (error) throw error;
       await syncCanonicalComponentGraph({
         projectId: payload?.projectId ?? null,
         draftId: id,
@@ -423,7 +324,7 @@ export function useTemplateFiles() {
     } finally {
       setLoading(false);
     }
-  }, [disableCloudDraftWrites]);
+  }, []);
 
   const ensureDraft = useCallback(async (
     name: string,
@@ -535,10 +436,6 @@ export function useTemplateFiles() {
   const autoSave = useCallback(async (code: string, payload?: SaveProjectPayload): Promise<boolean> => {
     if (!currentTemplateId) return false;
     try {
-      if (cloudDraftWritesDisabledRef.current) {
-        return true;
-      }
-
       if (currentTemplateId.startsWith("local-")) {
         const localTemplates = getLocalTemplates();
         const index = localTemplates.findIndex(t => t.id === currentTemplateId);
@@ -592,13 +489,7 @@ export function useTemplateFiles() {
         .from("builder_drafts")
         .update(updatePatch)
         .eq("id", currentTemplateId);
-      if (error) {
-        if (isRecoverableBuilderDraftWriteError(error)) {
-          disableCloudDraftWrites(error);
-          return true;
-        }
-        throw error;
-      }
+      if (error) throw error;
       await syncCanonicalComponentGraph({
         projectId: payload?.projectId ?? null,
         draftId: currentTemplateId,
@@ -609,7 +500,7 @@ export function useTemplateFiles() {
       console.error("Auto-save failed:", error);
       return false;
     }
-  }, [currentTemplateId, disableCloudDraftWrites]);
+  }, [currentTemplateId]);
 
   const clearCurrentTemplate = useCallback(() => {
     setCurrentTemplateId(null);

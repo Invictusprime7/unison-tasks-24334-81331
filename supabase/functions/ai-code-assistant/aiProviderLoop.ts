@@ -1,106 +1,10 @@
 /**
- * AI provider call loop — Lovable AI Gateway first, direct Gemini fallback.
+ * AI provider call loop — gateway + direct API fallbacks.
  * Returns content, reasoning, and the model that succeeded.
  */
 
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
-import { coerceGeminiText, extractGeminiText, getGeminiApiKey, missingGeminiKeyMessage } from "../_shared/gemini.ts";
-
-type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
-type GeminiContent = { role: string; parts: GeminiPart[] };
-
-function cleanSecretValue(value: string | undefined): string | undefined {
-  const cleaned = value
-    ?.trim()
-    .replace(/^["']+|["']+$/g, '')
-    .replace(/[\r\n\t ]+/g, '');
-  return cleaned || undefined;
-}
-
-function mapGatewayGeminiIdToDirect(id: string): string {
-  const normalized = id.replace(/^google\//, '').trim();
-  const aliases: Record<string, string> = {
-    'gemini-3.5-flash': 'gemini-2.5-flash',
-    'gemini-3.1-flash-lite-preview': 'gemini-2.5-flash-lite',
-    'gemini-3.1-pro-preview': 'gemini-2.5-pro',
-    'gemini-3-flash-preview': 'gemini-2.5-flash',
-    'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
-    'gemini-2.5-flash': 'gemini-2.5-flash',
-    'gemini-2.5-pro': 'gemini-2.5-pro',
-  };
-  return aliases[normalized] ?? normalized;
-}
-
-function isRetryableGeminiStatus(status: number): boolean {
-  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
-}
-
-function retryDelayMs(attempt: number): number {
-  return 900 * (attempt + 1);
-}
-
-function parseDataUrl(value: string): { mimeType: string; data: string } | null {
-  const match = value.match(/^data:([^;,]+);base64,(.+)$/);
-  if (!match) return null;
-  return { mimeType: match[1], data: match[2] };
-}
-
-function openAIContentPartToGemini(part: unknown): GeminiPart[] {
-  if (typeof part === 'string') return part.trim() ? [{ text: part }] : [];
-  if (!part || typeof part !== 'object') return [];
-
-  const candidate = part as {
-    type?: unknown;
-    text?: unknown;
-    image_url?: { url?: unknown };
-    imageUrl?: { url?: unknown };
-    data?: unknown;
-    mimeType?: unknown;
-    mime_type?: unknown;
-    name?: unknown;
-  };
-
-  if (candidate.type === 'text' && typeof candidate.text === 'string') {
-    return candidate.text.trim() ? [{ text: candidate.text }] : [];
-  }
-
-  if (typeof candidate.text === 'string' && candidate.text.trim()) {
-    return [{ text: candidate.text }];
-  }
-
-  const imageUrl = candidate.image_url?.url || candidate.imageUrl?.url || candidate.data;
-  if (
-    (candidate.type === 'image_url' || candidate.type === 'input_image' || candidate.type === 'image') &&
-    typeof imageUrl === 'string'
-  ) {
-    const dataUrl = parseDataUrl(imageUrl);
-    if (dataUrl) return [{ inlineData: dataUrl }];
-
-    // Gemini direct API cannot fetch arbitrary browser URLs as inline media.
-    // Preserve the reference as text instead of silently dropping it.
-    return [{
-      text: `Attached image reference${typeof candidate.name === 'string' ? ` (${candidate.name})` : ''}: ${imageUrl}`,
-    }];
-  }
-
-  const maybeData = typeof candidate.data === 'string' ? parseDataUrl(candidate.data) : null;
-  if (maybeData) return [{ inlineData: maybeData }];
-
-  return [];
-}
-
-function messageToGeminiContent(message: { role: string; content: unknown }): GeminiContent | null {
-  const role = message.role === 'assistant' ? 'model' : 'user';
-  const parts = Array.isArray(message.content)
-    ? message.content.flatMap(openAIContentPartToGemini)
-    : openAIContentPartToGemini(message.content);
-
-  if (parts.length > 0) return { role, parts };
-
-  const text = coerceGeminiText(message.content).trim();
-  return text ? { role, parts: [{ text }] } : null;
-}
 
 export interface ProviderEarlyError {
   status: number;
@@ -112,7 +16,7 @@ export interface ProviderCallResult {
   reasoning: string;
   /** Which model produced the successful response */
   modelUsed?: string;
-  /** Non-null when we should return an early HTTP error */
+  /** Non-null when we should return an early HTTP error (rate limit, payment required) */
   earlyError?: ProviderEarlyError;
 }
 
@@ -120,398 +24,323 @@ export async function runProviderLoop(opts: {
   aiMessages: Array<{ role: string; content: unknown }>;
   providerPlan: ProviderPlan;
   navPageGen: boolean;
-  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
-  /** Force JSON response mode for wizard lanes. */
-  forceJsonResponse?: boolean;
-  /** Task type — used to choose the right model budget from providerPlan */
-  taskType?: string;
+  lovableApiKey?: string;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, forceJsonResponse, taskType } = opts;
-  void opts.navPageGen;
-  const reasoningEffort = opts.reasoningEffort ?? 'medium';
-
-  const geminiApiKey = getGeminiApiKey();
-  const lovableKeyAvailable = Boolean(cleanSecretValue(Deno.env.get("LOVABLE_API_KEY")));
-  const openaiApiKey = cleanSecretValue(Deno.env.get("OPENAI_API_KEY"));
-  if (!geminiApiKey && !lovableKeyAvailable && !openaiApiKey) {
-    return {
-      content: '',
-      reasoning: '',
-      modelUsed: undefined,
-      earlyError: { status: 503, error: 'No AI provider is configured. Set OPENAI_API_KEY, LOVABLE_API_KEY, or a Gemini key in Supabase secrets.' },
-    };
-  }
-
-
-  const isWizardLane = taskType === 'wizard_template_react';
-  const totalBudgetMs = isWizardLane ? 180_000 : 120_000;
-  const wizardMaxOutputTokens = 48_000;
-  const startedAt = Date.now();
-  const budgetRemaining = () => totalBudgetMs - (Date.now() - startedAt);
-
-  const providerErrors: string[] = [];
-  let deferredEarlyError: ProviderEarlyError | undefined;
+  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort } = opts;
   let content = '';
+  let lastError = '';
   let reasoning = '';
   let modelUsed: string | undefined;
 
+  // Global wall-clock budget so we don't exceed the client's timeout window.
+  // Client global abort fires at 150s; reserve ~15s for response packaging/network.
+  const TOTAL_BUDGET_MS = 135_000;
+  const startedAt = Date.now();
+  const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
+  const hasDirectOpenAI = Boolean(Deno.env.get('OPENAI_API_KEY'));
+  const providerErrors: string[] = [];
+  let deferredEarlyError: ProviderEarlyError | undefined;
   const recordProviderError = (label: string, detail: string) => {
-    providerErrors.push(`${label}: ${detail}`);
+    const message = `${label}: ${detail}`;
+    providerErrors.push(message);
+    lastError = message;
   };
 
-  const geminiModelsFromPlan = (providerPlan.gatewayModels || [])
-    .filter((model) => model.id.startsWith('google/'))
-    .map((model) => ({
-      id: mapGatewayGeminiIdToDirect(model.id),
-      maxTokens: model.maxTokens,
-      label: `Gemini ${mapGatewayGeminiIdToDirect(model.id)}`,
-    }))
-    .filter((model, index, models) => models.findIndex((candidate) => candidate.id === model.id) === index);
-
-  const geminiModels = geminiModelsFromPlan.length > 0
-    ? geminiModelsFromPlan
-    : [
-        { id: 'gemini-2.5-flash-lite', maxTokens: providerPlan.fallbackMaxTokens, label: 'Gemini gemini-2.5-flash-lite' },
-        { id: 'gemini-2.5-flash', maxTokens: providerPlan.fallbackMaxTokens, label: 'Gemini gemini-2.5-flash' },
-        { id: 'gemini-2.5-pro', maxTokens: providerPlan.fallbackMaxTokens, label: 'Gemini gemini-2.5-pro' },
-      ];
-
-  const orderedGeminiModels = isWizardLane
-    ? [...geminiModels]
-        .sort((a, b) => {
-          const score = (id: string) => {
-            if (id.includes('flash-lite')) return 0;
-            if (id.includes('flash')) return 1;
-            if (id.includes('pro')) return 2;
-            return 3;
-          };
-          return score(a.id) - score(b.id);
-        })
-        .slice(0, 3)
-    : geminiModels;
-
-  const systemInstructionText = aiMessages
-    .filter((message) => message.role === 'system')
-    .map((message) => coerceGeminiText(message.content))
-    .filter(Boolean)
-    .join('\n\n')
-    .trim();
-
-  const conversationContents = aiMessages
-    .filter((message) => message.role !== 'system')
-    .map(messageToGeminiContent)
-    .filter((entry): entry is GeminiContent => Boolean(entry));
-
-  // ── Primary path: Lovable AI Gateway (OpenAI-compatible) ──────────────
-  // Try the managed gateway first, then fall through to direct Gemini when the
-  // project also has a Gemini secret configured.
-  const lovableKey = cleanSecretValue(Deno.env.get("LOVABLE_API_KEY"));
-  if (lovableKey) {
-    const gatewayModels = (providerPlan.gatewayModels || []).map((m) => m.id);
-    const plannedGatewayModels = gatewayModels.length > 0
-      ? gatewayModels
-      : ['google/gemini-3.5-flash', 'openai/gpt-5.4-mini', 'google/gemini-3.1-flash-lite-preview', 'google/gemini-3.1-pro-preview'];
-    const primaryModels = isWizardLane && geminiApiKey
-      ? plannedGatewayModels.slice(0, 2)
-      : plannedGatewayModels;
-
-    const openAiMessages = aiMessages.map((m) => ({
-      role: m.role,
-      content: typeof m.content === 'string'
-        ? m.content
-        : Array.isArray(m.content)
-          ? m.content
-          : coerceGeminiText(m.content),
-    }));
-
-    for (const modelId of primaryModels) {
-      const remaining = budgetRemaining();
-      if (remaining < 8000) break;
-      const controller = new AbortController();
-      // Keep every attempt bounded by the single provider plan so routing,
-      // fallback, and timeout behavior cannot drift across callers.
-      const phaseCap = providerPlan.perModelTimeoutMs || (isWizardLane ? 75_000 : 35_000);
-      const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const modelSpec = (providerPlan.gatewayModels || []).find((model) => model.id === modelId);
-        const maxCompletionTokens = Math.min(
-          modelSpec?.maxTokens ?? (isWizardLane ? wizardMaxOutputTokens : 16_000),
-          isWizardLane ? wizardMaxOutputTokens : 32_000,
-        );
-        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Lovable-API-Key': lovableKey,
-            'X-Lovable-AIG-SDK': 'edge-fetch',
-          },
-          body: JSON.stringify({
-            model: modelId,
-            messages: openAiMessages,
-            max_completion_tokens: maxCompletionTokens,
-            ...(forceJsonResponse ? { response_format: { type: 'json_object' } } : {}),
-          }),
-          signal: controller.signal,
-        });
-        if (!resp.ok) {
-          const errText = await resp.text().catch(() => '');
-          const normalizedErr = errText.toLowerCase();
-          const gatewayAuthFailure = resp.status === 401 && /lovable[-_\s]?api[-_\s]?key|gateway key|invalid key|unauthorized/.test(normalizedErr);
-          recordProviderError(`Gateway ${modelId}`, `${resp.status} ${errText.substring(0, 200)}`);
-          if (resp.status === 429) {
-            deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
-          }
-          if (resp.status === 402) {
-            if (!geminiApiKey) {
-              return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' } };
-            }
-            deferredEarlyError ??= { status: 402, error: 'AI credits exhausted. Add credits in Settings > Workspace > Usage.' };
-          }
-          if (gatewayAuthFailure) {
-            if (!geminiApiKey) {
-              return { content: '', reasoning: '', modelUsed: undefined, earlyError: { status: 502, error: 'Lovable AI Gateway authentication failed. Rotate the managed AI key and retry.' } };
-            }
-            deferredEarlyError ??= { status: 502, error: 'Lovable AI Gateway authentication failed. Rotate the managed AI key and retry.' };
-          }
-          continue;
-        }
-        const data = await resp.json();
-        const text = data?.choices?.[0]?.message?.content;
-        const finishReason = data?.choices?.[0]?.finish_reason;
-        if (typeof text === 'string' && text.trim()) {
-          const extracted = extractThinkingTags(text);
-          if (extracted.reasoning) reasoning = extracted.reasoning;
-          content = extracted.content;
-          modelUsed = modelId;
-          if (finishReason && finishReason !== 'stop') {
-            console.warn(`[aiProviderLoop] gateway ${modelId} finish_reason=${finishReason} (output may be truncated)`);
-          }
-          break;
-        }
-        recordProviderError(`Gateway ${modelId}`, `no content (finish=${finishReason ?? 'unknown'})`);
-      } catch (error) {
-        recordProviderError(`Gateway ${modelId}`, error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : 'unknown');
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    }
-
-    if (content) {
-      return { content, reasoning, modelUsed };
-    }
-  }
-
-  // ── Intermediate fallback: Direct OpenAI API ────────────────────────────
-  // Runs when the Lovable gateway fails and OPENAI_API_KEY is configured.
-  // Uses gpt-4o for wizard lane (needs long output), gpt-4o-mini otherwise.
-  if (openaiApiKey) {
-    const openaiModels = isWizardLane
-      ? [
-          { id: 'gpt-4o', maxTokens: wizardMaxOutputTokens },
-          { id: 'gpt-4o-mini', maxTokens: 32_000 },
-        ]
-      : [
-          { id: 'gpt-4o-mini', maxTokens: 16_000 },
-          { id: 'gpt-4o', maxTokens: 32_000 },
-        ];
-
-    const openAiMessages = aiMessages.map((m) => ({
-      role: m.role,
-      content: typeof m.content === 'string'
-        ? m.content
-        : Array.isArray(m.content)
-          ? m.content
-          : coerceGeminiText(m.content),
-    }));
-
+  // ── Phase 1: Direct OpenAI API (PRIMARY) ─────────────────────────────
+  // OpenAI is the primary provider when available
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  if (OPENAI_API_KEY) {
+    const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
+    const openaiModels = [
+      ...(configuredOpenAIModel
+        ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
+        : []),
+      { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
+      { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },
+    ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
+    
     for (const model of openaiModels) {
       const remaining = budgetRemaining();
-      if (remaining < 8000) break;
-      const phaseCap = isWizardLane ? 90_000 : 45_000;
-      const timeoutMs = Math.min(phaseCap, Math.max(12_000, remaining - 2000));
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      if (remaining < 8000) {
+        console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining OpenAI models`);
+        lastError = lastError || 'budget exhausted before all models tried';
+        break;
+      }
+      const perModelMs = Math.min(25000, Math.max(8000, remaining - 2000));
       try {
+        console.log(`[AI-Hybrid] Trying PRIMARY OpenAI ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        
+        const requestBody: Record<string, unknown> = {
+          model: model.id,
+          messages: aiMessages,
+          max_completion_tokens: model.maxTokens,
+        };
+        
         const resp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openaiApiKey}`,
           },
-          body: JSON.stringify({
-            model: model.id,
-            messages: openAiMessages,
-            max_completion_tokens: model.maxTokens,
-            ...(forceJsonResponse ? { response_format: { type: 'json_object' } } : {}),
-          }),
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
         });
-        if (!resp.ok) {
-          const errText = await resp.text().catch(() => '');
-          recordProviderError(`OpenAI ${model.id}`, `${resp.status} ${errText.substring(0, 200)}`);
-          if (resp.status === 401 || resp.status === 403) {
-            deferredEarlyError ??= { status: 502, error: 'OpenAI authentication failed. Verify OPENAI_API_KEY in Supabase secrets.' };
-            break;
-          }
-          if (resp.status === 429) {
-            deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
-          }
-          if (resp.status === 402) {
-            deferredEarlyError ??= { status: 402, error: 'OpenAI credits exhausted. Add credits to your OpenAI account.' };
-            break;
-          }
-          continue;
-        }
-        const data = await resp.json();
-        const text = data?.choices?.[0]?.message?.content;
-        const finishReason = data?.choices?.[0]?.finish_reason;
-        if (typeof text === 'string' && text.trim()) {
-          const extracted = extractThinkingTags(text);
-          if (extracted.reasoning) reasoning = extracted.reasoning;
-          content = extracted.content;
-          modelUsed = model.id;
-          if (finishReason && finishReason !== 'stop') {
-            console.warn(`[aiProviderLoop] OpenAI ${model.id} finish_reason=${finishReason} (output may be truncated)`);
-          }
-          break;
-        }
-        recordProviderError(`OpenAI ${model.id}`, `no content (finish=${finishReason ?? 'unknown'})`);
-      } catch (error) {
-        recordProviderError(`OpenAI ${model.id}`, error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : 'unknown');
-      } finally {
         clearTimeout(timeoutId);
-      }
-    }
 
-    if (content) {
-      return { content, reasoning, modelUsed };
-    }
-  }
-
-  // ── Legacy fallback: direct Gemini API ─────────────────────────────────
-  // Direct Gemini fallback uses the same ordered Gemini family from the provider
-  // plan. It runs whenever a Gemini key is configured, including after managed
-  // gateway failures, so a bad gateway/model route cannot disconnect launches
-  // from the user's configured Gemini secret.
-  for (const model of (geminiApiKey ? orderedGeminiModels : [])) {
-    const maxAttempts = 1;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const remaining = budgetRemaining();
-      if (remaining < 8000) {
-        recordProviderError(model.label, 'budget exhausted');
-        break;
-      }
-
-      const phaseCapMs = isWizardLane
-        ? Math.min(45_000, providerPlan.perModelTimeoutMs || 45_000)
-        : Math.min(25_000, providerPlan.perModelTimeoutMs || 25_000);
-      const perModelMs = Math.min(phaseCapMs, Math.max(8000, remaining - 2000));
-      const attemptLabel = model.label;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), perModelMs);
-
-      try {
-        const geminiBody: Record<string, unknown> = {
-          contents: conversationContents.length > 0
-            ? conversationContents
-            : [{ role: 'user', parts: [{ text: 'Generate the requested output.' }] }],
-          generationConfig: {
-            maxOutputTokens: Math.min(model.maxTokens, isWizardLane ? wizardMaxOutputTokens : 32_768),
-            ...(reasoningEffort === 'none' ? { temperature: 0.2 } : {}),
-            ...(reasoningEffort === 'high' ? { temperature: 0.7 } : {}),
-            ...(forceJsonResponse ? { responseMimeType: 'application/json' } : {}),
-          },
-        };
-
-        if (systemInstructionText) {
-          geminiBody.systemInstruction = { parts: [{ text: systemInstructionText }] };
-        }
-
-        const resp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}:generateContent?key=${encodeURIComponent(geminiApiKey!)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(geminiBody),
-            signal: controller.signal,
-          },
-        );
-
-        if (resp.status === 429) {
+        if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
-          deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
-          recordProviderError(attemptLabel, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
-          continue;
-        }
-
-        if (!resp.ok) {
-          const errText = await resp.text().catch(() => '');
-          recordProviderError(attemptLabel, `${resp.status} ${errText.substring(0, 200)}`);
-          if (isRetryableGeminiStatus(resp.status)) continue;
+          const earlyError: ProviderEarlyError = resp.status === 429
+            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
+            : { status: 402, error: 'Payment required. Please add credits to your OpenAI account.' };
+          recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+          if (!lovableApiKey) {
+            return { content: '', reasoning: '', modelUsed: undefined, earlyError };
+          }
+          deferredEarlyError ??= earlyError;
+          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying Lovable gateway fallback...`);
           break;
         }
 
-        const data = await resp.json();
-        const parsedContent = extractGeminiText(data);
+        if (!resp.ok) {
+          const errText = await resp.text();
+          console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 300)}`);
+          if (resp.status === 400) {
+            console.error(`[AI-Hybrid] 400 Bad Request for ${model.id}. Request body keys: ${Object.keys(requestBody).join(', ')}`);
+          }
+          recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
+          continue;
+        }
 
+        const responseText = await resp.text();
+        if (!responseText || responseText.trim() === '') {
+          console.warn(`[AI-Hybrid] ${model.label} returned empty response, trying next...`);
+          recordProviderError(model.label, 'empty response');
+          continue;
+        }
+
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          console.warn(`[AI-Hybrid] ${model.label} returned invalid JSON, trying next...`);
+          recordProviderError(model.label, 'invalid JSON');
+          continue;
+        }
+
+        const parsedContent = data.choices?.[0]?.message?.content || '';
         if (!parsedContent) {
-          const blockReason = data?.promptFeedback?.blockReason;
-          recordProviderError(attemptLabel, blockReason ? `blocked (${blockReason})` : 'no content');
+          console.warn(`[AI-Hybrid] ${model.label} returned no content, trying next...`);
+          recordProviderError(model.label, 'no content');
           continue;
         }
 
         const extracted = extractThinkingTags(parsedContent);
-        if (extracted.reasoning) reasoning = extracted.reasoning;
+        if (extracted.reasoning) {
+          reasoning = extracted.reasoning;
+          console.log(`[AI-Hybrid] Thinking tags extracted from ${model.label}: ${extracted.reasoning.length} chars`);
+        }
         content = extracted.content;
-        modelUsed = `google/${model.id}`;
+        modelUsed = model.id;
+        console.log(`[AI-Hybrid] Success with PRIMARY ${model.label}`);
         break;
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          recordProviderError(attemptLabel, 'timeout');
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
+          recordProviderError(model.label, 'timeout');
           continue;
         }
-        recordProviderError(attemptLabel, error instanceof Error ? error.message : 'unknown');
+        console.warn(`[AI-Hybrid] ${model.label} failed:`, err);
+        recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
         continue;
-      } finally {
-        clearTimeout(timeoutId);
       }
     }
-
-    if (content) break;
   }
 
-  if (content) {
-    return { content, reasoning, modelUsed };
+  // ── Phase 2: Lovable AI Gateway (FALLBACK) ───────────────────────────
+  // Lovable gateway is secondary fallback if OpenAI is unavailable or fails
+  if (!content && lovableApiKey) {
+    // Log total prompt size for debugging
+    const totalChars = aiMessages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
+    console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
+    
+    for (const model of providerPlan.gatewayModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) {
+        console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining gateway models`);
+        lastError = lastError || 'budget exhausted before all models tried';
+        break;
+      }
+      // Per-model timeout = min(configured, half of remaining budget) so that a
+      // single slow model can't burn the entire budget and starve fallbacks.
+      const halfBudget = Math.max(15000, Math.floor(remaining / 2));
+      const perModelMs = Math.min(providerPlan.perModelTimeoutMs, halfBudget, Math.max(8000, remaining - 2000));
+      try {
+        console.log(`[AI-Hybrid] Trying FALLBACK gateway model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+
+        const usesCompletionTokens = model.id.includes('gpt-5');
+        const reqBody: Record<string, unknown> = {
+          model: model.id,
+          ...(usesCompletionTokens
+            ? { max_completion_tokens: model.maxTokens }
+            : { max_tokens: model.maxTokens }),
+          messages: aiMessages,
+        };
+        // Only send reasoning parameter for supported models and only via the correct API format
+        // The Lovable AI Gateway passes `reasoning` through for OpenAI models only
+        if (reasoningEffort && reasoningEffort !== "none" && model.id.startsWith('openai/')) {
+          reqBody.reasoning = { effort: reasoningEffort };
+        }
+
+        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(reqBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (resp.status === 429 || resp.status === 402) {
+          const errText = await resp.text().catch(() => '');
+          const earlyError: ProviderEarlyError = resp.status === 429
+            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
+            : { status: 402, error: 'Payment required. Please add credits to your workspace.' };
+          recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+          deferredEarlyError ??= earlyError;
+          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next provider...`);
+          break;
+        }
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 300)}`);
+          // For 400 errors, log full detail to help diagnose parameter issues
+          if (resp.status === 400) {
+            console.error(`[AI-Hybrid] 400 Bad Request for ${model.id}. Request body keys: ${Object.keys(reqBody).join(', ')}`);
+          }
+          recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
+          continue;
+        }
+
+        const responseText = await resp.text();
+        if (!responseText || responseText.trim() === '') {
+          console.warn(`[AI-Hybrid] ${model.label} returned empty response, trying next...`);
+          recordProviderError(model.label, 'empty response');
+          continue;
+        }
+
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          console.warn(`[AI-Hybrid] ${model.label} returned invalid JSON, trying next...`);
+          recordProviderError(model.label, 'invalid JSON');
+          continue;
+        }
+
+        const parsedContent = data.choices?.[0]?.message?.content || '';
+        if (!parsedContent) {
+          console.warn(`[AI-Hybrid] ${model.label} returned no content, trying next...`);
+          recordProviderError(model.label, 'no content');
+          continue;
+        }
+
+        const extracted = extractThinkingTags(parsedContent);
+        if (extracted.reasoning) {
+          reasoning = extracted.reasoning;
+          console.log(`[AI-Hybrid] Thinking tags extracted from ${model.label}: ${extracted.reasoning.length} chars`);
+        }
+        content = extracted.content;
+        modelUsed = model.id;
+        console.log(`[AI-Hybrid] Success with FALLBACK ${model.label}`);
+        break;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
+          recordProviderError(model.label, 'timeout');
+          continue;
+        }
+        console.warn(`[AI-Hybrid] ${model.label} failed:`, err);
+        recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
+        continue;
+      }
+    }
   }
 
+  // ── Phase 3: Direct Anthropic API fallback ───────────────────────────
+  if (!content) {
+    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+    if (ANTHROPIC_API_KEY) {
+      const remaining = budgetRemaining();
+      if (remaining >= 8000) {
+        const perModelMs = Math.min(28000, Math.max(8000, remaining - 2000));
+        try {
+          const systemMsg = (aiMessages.find((m) => m.role === 'system')?.content as string) || '';
+          const userMsgs = aiMessages.filter((m) => m.role !== 'system');
+          console.log(`[AI-Hybrid] Trying direct Anthropic claude-sonnet-4-5 (timeout: ${perModelMs / 1000}s)...`);
 
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+          const resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-5',
+              max_tokens: providerPlan.fallbackMaxTokens,
+              system: systemMsg,
+              messages: userMsgs,
+            }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
 
-  if (deferredEarlyError && providerErrors.length === 1) {
-    return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
+          if (!resp.ok) {
+            const errText = await resp.text();
+            recordProviderError('Anthropic claude-sonnet-4-5', `${resp.status} ${errText.substring(0, 200)}`);
+          } else {
+            const data = await resp.json();
+            const blocks = Array.isArray(data.content) ? data.content : [];
+            const textBlock = blocks.find((b: { type?: string; text?: string }) => b.type === 'text');
+            const parsedContent = textBlock?.text || '';
+            if (parsedContent) {
+              const extracted = extractThinkingTags(parsedContent);
+              if (extracted.reasoning) reasoning = extracted.reasoning;
+              content = extracted.content;
+              modelUsed = 'claude-sonnet-4-5';
+              console.log('[AI-Hybrid] Success with direct Anthropic claude-sonnet-4-5');
+            } else {
+              recordProviderError('Anthropic claude-sonnet-4-5', 'no content');
+            }
+          }
+        } catch (err) {
+          recordProviderError('Anthropic claude-sonnet-4-5', err instanceof Error ? err.message : 'unknown');
+        }
+      }
+    }
   }
 
-  const errorTrail = providerErrors.slice(-10).join(' | ') || 'no provider attempts completed';
-  const configuredProviders = [
-    lovableKey ? 'lovable-gateway' : '',
-    openaiApiKey ? 'openai-direct' : '',
-    geminiApiKey ? 'gemini-direct' : '',
-  ].filter(Boolean);
-  const hasTimeoutError = /timeout|timed out|aborterror|aborted/.test(errorTrail.toLowerCase());
-  const hasAuthError = /401|403|invalid[_\s-]?api[_\s-]?key|unauthorized|authentication/.test(errorTrail.toLowerCase());
-  const guidance = configuredProviders.length === 0
-    ? 'No AI provider is configured. Set OPENAI_API_KEY, LOVABLE_API_KEY, or a Gemini key in Supabase secrets.'
-    : hasTimeoutError && hasAuthError
-      ? 'All configured AI providers returned mixed timeout/auth errors. Verify keys in Supabase secrets and retry.'
-      : hasTimeoutError
-        ? 'All AI providers timed out. Likely upstream model overload — retry shortly.'
-      : 'AI providers failed to produce a response. Check key validity and edge-function network latency.';
+  if (!content) {
+    if (deferredEarlyError && providerErrors.length === 1) {
+      return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
+    }
+    const configuredProviders = [
+      lovableApiKey ? 'lovable-gateway' : '',
+      hasDirectOpenAI ? 'openai' : '',
+    ].filter(Boolean);
+    const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';
+    throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure LOVABLE_API_KEY and OPENAI_API_KEY are valid Supabase secrets.`);
+  }
 
-
-  throw new Error(
-    `All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. ${guidance}`,
-  );
+  return { content, reasoning, modelUsed };
 }
-
-export default runProviderLoop;

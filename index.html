@@ -62,28 +62,14 @@
     </style>
 
     <script>
-      // If startup is slow, keep a visible fallback state instead of removing
-      // the loader and leaving a blank screen.
+      // Prevent infinite loading with max timeout fallback
       setTimeout(() => {
         const placeholder = document.querySelector('.loading-placeholder');
-        if (!placeholder) return;
-
-        console.warn('Loading timeout - showing fallback state');
-        placeholder.innerHTML = `
-          <div style="text-align:center;font-family:system-ui;max-width:520px;padding:24px;">
-            <h2 style="margin:0 0 10px;color:#e5e7eb;font-size:20px;">Still loading...</h2>
-            <p style="margin:0 0 16px;color:#9ca3af;line-height:1.5;">
-              Startup is taking longer than expected. You can keep waiting or reload.
-            </p>
-            <button
-              style="background:#2563eb;color:white;border:0;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer;"
-              onclick="window.location.reload()"
-            >
-              Reload
-            </button>
-          </div>
-        `;
-      }, 12000);
+        if (placeholder) {
+          console.warn('Loading timeout - removing placeholder');
+          placeholder.remove();
+        }
+      }, 3000);
     </script>
   </body>
 </html>

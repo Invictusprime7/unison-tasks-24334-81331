@@ -3,7 +3,6 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString, isValidUrl } from "../_shared/validate.ts";
-import { callGeminiText, cleanJsonText } from "../_shared/gemini.ts";
 
 type ResearchPayload = {
   query: string;
@@ -150,8 +149,8 @@ async function callLovableAI(opts: {
   href?: string;
   pageTitle?: string;
 }): Promise<{ summary?: string; keyPoints?: string[]; relevanceByUrl?: Record<string, string> }> {
-
-
+  const key = Deno.env.get("LOVABLE_API_KEY");
+  if (!key) throw new Error("LOVABLE_API_KEY is not configured");
 
   const sources = opts.articles.map((a, i) => ({
     n: i + 1,
@@ -175,24 +174,41 @@ async function callLovableAI(opts: {
     videos: opts.videos.slice(0, 5).map((v) => v.url),
   };
 
-  let content = "";
-  try {
-    content = await callGeminiText({
-      systemPrompt: system,
-      userPrompt: JSON.stringify(user),
-      model: "gemini-2.5-flash",
-      responseMimeType: "application/json",
+  // Use AbortController with extended timeout for AI synthesis
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
+
+  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      // User asked for "ChatGPT intelligence" → use an OpenAI-family model through the gateway.
+      model: "openai/gpt-5-mini",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: JSON.stringify(user) },
+      ],
       temperature: 0.3,
-      maxOutputTokens: 4096,
-      timeoutMs: 90_000,
-    });
-  } catch (err) {
-    console.error("[research] Gemini error", err);
-    throw new Error(err instanceof Error ? err.message : "AI gateway error");
+    }),
+    signal: controller.signal,
+  });
+
+  clearTimeout(timeoutId);
+
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    if (resp.status === 429) throw new Error("Rate limited. Please try again in a moment.");
+    if (resp.status === 402) throw new Error("AI credits depleted. Please add credits to continue.");
+    console.error("[research] AI gateway error", resp.status, t);
+    throw new Error("AI gateway error");
   }
 
+  const json = await resp.json();
+  const content = json?.choices?.[0]?.message?.content as string | undefined;
   if (!content) return {};
-  content = cleanJsonText(content);
 
   try {
     const parsed = JSON.parse(content);

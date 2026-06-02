@@ -146,7 +146,6 @@ export const AIConversationInput: React.FC<Props> = ({
   }, [previewRef, droppedFiles.length, onAddFiles]);
 
   const canSend = (input.trim() || droppedFiles.length > 0) && !isLoading;
-  const SendButtonIcon = droppedFiles.length > 0 ? Send : ArrowUp;
 
   return (
     <div className={cn("p-3 border-t border-border bg-background/95 backdrop-blur-sm", className)}>
@@ -245,7 +244,7 @@ export const AIConversationInput: React.FC<Props> = ({
             {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <SendButtonIcon className="w-4 h-4" />
+              <ArrowUp className="w-4 h-4" />
             )}
           </Button>
         </div>

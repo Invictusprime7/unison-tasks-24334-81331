@@ -92,9 +92,10 @@ export const INTENT_ALIASES: Record<string, CoreIntent> = {
   'reserve': 'booking.create',
   'reservation.create': 'booking.create',
   'reservation.make': 'booking.create',
+  'demo.request': 'booking.create', // Demo requests are bookings
   'demo.book': 'booking.create',
   'call.schedule': 'booking.create',
-  'consultation.book': 'consultation.request',
+  'consultation.book': 'booking.create',
 
   // ============ QUOTE ALIASES ============
   'quote.submit': 'quote.request',
@@ -111,12 +112,8 @@ export const INTENT_ALIASES: Record<string, CoreIntent> = {
   'shop.open_cart': 'cart.view',
   'cart.open': 'cart.view',
   'cart.show': 'cart.view',
-  'cart.change_quantity': 'cart.update',
-  'cart.delete_item': 'cart.remove',
   'checkout.open': 'cart.checkout',
-  'shop.view_product': 'product.view',
-  'product.favorite': 'favorite.toggle',
-  'wishlist.add': 'favorite.toggle',
+  'shop.view_product': 'cart.add', // View → potential add
 
   // ============ AUTH ALIASES ============
   'auth.sign_in': 'auth.login',
@@ -129,9 +126,8 @@ export const INTENT_ALIASES: Record<string, CoreIntent> = {
   'signup': 'auth.register',
   'register': 'auth.register',
   'user.register': 'auth.register',
-  'auth.sign_out': 'auth.logout',
-  'logout': 'auth.logout',
-  'user.account': 'account.open',
+  'auth.sign_out': 'auth.login', // Sign out redirects to login
+  'logout': 'auth.login',
 
   // ============ TRIAL/DEMO ALIASES (SaaS) ============
   'trial.start': 'auth.register', // Free trial = registration
@@ -141,19 +137,17 @@ export const INTENT_ALIASES: Record<string, CoreIntent> = {
   'demo.watch': 'nav.goto', // Video demo is navigation
 
   // ============ COMMUNICATION ALIASES ============
-  'call.now': 'contact.call',
-  'call.open': 'contact.call',
-  'phone.call': 'contact.call',
-  'email.now': 'contact.email',
-  'email.open': 'contact.email',
-  'sms.send': 'contact.sms',
-  'directions.open': 'location.directions',
-  'map.open': 'location.directions',
+  'call.now': 'button.click', // Phone call via button click handler
+  'call.open': 'button.click',
+  'phone.call': 'button.click',
+  'email.now': 'button.click',
+  'email.open': 'button.click',
+  'sms.send': 'button.click',
 
   // ============ SOCIAL/SHARE ALIASES ============
-  'social.share': 'share.open',
-  'share': 'share.open',
-  'share.page': 'share.open',
+  'social.share': 'button.click',
+  'share': 'button.click',
+  'share.page': 'button.click',
 
   // ============ FORM SPECIFIC ALIASES ============
   'form.contact': 'contact.submit',
@@ -167,8 +161,6 @@ export const INTENT_ALIASES: Record<string, CoreIntent> = {
   'pricing.view': 'nav.goto',
   'resume.download': 'nav.external',
   'download': 'nav.external',
-  'donate.now': 'donation.start',
-  'donate.start': 'donation.start',
   'view.more': 'nav.goto',
   'learn.more': 'nav.goto',
   'get.started': 'auth.register',
@@ -218,13 +210,6 @@ export function normalizeIntent(intent: string): CoreIntent | string {
       'lead': 'lead.capture',
       'newsletter': 'newsletter.subscribe',
       'auth': 'auth.login',
-      'account': 'account.open',
-      'search': 'search.open',
-      'filter': 'filter.open',
-      'sort': 'sort.open',
-      'favorite': 'favorite.toggle',
-      'location': 'location.directions',
-      'donation': 'donation.start',
       'form': 'form.submit',
     };
     

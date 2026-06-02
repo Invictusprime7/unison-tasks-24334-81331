@@ -52,7 +52,7 @@ import { LayoutTemplatesPanel } from "./web-builder/LayoutTemplatesPanel";
 import { FloatingDock } from "./web-builder/FloatingDock";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useVFSSafe } from "@/hooks/useVFSContext";
+import { useVFS } from "@/hooks/useVFSContext";
 import { FileExplorer } from "./code-editor/FileExplorer";
 import { ModernFileExplorer } from "./code-editor/ModernFileExplorer";
 import { EditorTabs } from "./code-editor/EditorTabs";
@@ -63,6 +63,7 @@ import { templateToVFSFiles, elementToVFSPatch } from "@/utils/templateToVFS";
 import { htmlToJsx } from "@/utils/htmlToJsx";
 import { setDefaultBusinessId, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
 import { buildRedirectPageContext } from "@/utils/redirectPageGenerator";
+import { scaffoldMultiPageVFS } from "@/utils/multiPageScaffolder";
 import { classifyLabel, type ElementContext } from "@/utils/redirectLabelClassifier";
 import { resolvePreviewAction, type PageInventory } from "@/utils/previewActionResolver";
 import { IntentPipelineOverlay, type PipelineConfig } from "./web-builder/IntentPipelineOverlay";
@@ -80,64 +81,22 @@ import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import { extractCleanCode, looksLikeCode, ensureReactImports } from "@/utils/aiCodeCleaner";
 import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
-import { escapeCSSSelector } from "@/lib/builder/cssSelectorUtils";
-import { extractJsxReturnBody } from "@/lib/builder/jsxMutation";
-import { applyCustomizerDomPatch } from "@/lib/builder/customizerDomPatch";
-import {
-  findElementBoundsInJSX,
-  withSourceManipulation,
-  safeFindElement,
-} from "@/lib/builder/jsxBounds";
-import {
-  applyElementHtmlUpdate,
-  applyElementDelete,
-  applyElementDuplicate,
-  applyElementMoveUp,
-  applyElementMoveDown,
-} from "@/lib/builder/elementMutations";
-import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
-import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
-import { clearBuilderState } from "@/lib/builder/clearBuilderState";
-import { loadCloudState, type CloudStateSnapshot } from "@/lib/builder/loadCloudState";
-import { createInitialCloudState } from "@/lib/builder/createInitialCloudState";
-import { restoreAutosavedDraft } from "@/lib/builder/restoreAutosavedDraft";
-import { attachRuntimeOverlayMessages } from "@/lib/builder/runtimeOverlayMessages";
-import { computeOrphanPageRegistrations } from "@/lib/builder/orphanPageAutoRegister";
-import { loadDesignPreferences } from "@/lib/builder/loadDesignPreferences";
-import { loadBusinessData } from "@/lib/builder/loadBusinessData";
-import { computePageRegistryDiagnostics } from "@/lib/builder/computePageRegistryDiagnostics";
-import { checkBackendInstalled } from "@/lib/builder/checkBackendInstalled";
-import { hydrateCloudState } from "@/lib/builder/hydrateCloudState";
-import { assembleSavePayload } from "@/lib/builder/savePayload";
-import { mapOverlayIdToConfig } from "@/lib/builder/overlayMapping";
-import { parseSavedTemplate, assembleLegacyHtmlPayload } from "@/lib/builder/savedTemplateParsing";
-import { fabricObjectsToHtmlCss, buildVfsPageListContext } from "@/lib/builder/exportHelpers";
-import { downloadJSON, toggleElementFullscreen } from "@/lib/builder/browserDownload";
-import { scrollPreviewOrContainer, type ScrollCommand } from "@/lib/builder/scrollHelpers";
-import { attachPinchZoomGesture } from "@/lib/builder/pinchZoomGesture";
-import { attachWheelZoomGesture } from "@/lib/builder/wheelZoomGesture";
-import {
-  getCanvasWidth as computeCanvasWidth,
-  getCanvasHeight as computeCanvasHeight,
-  computeZoomIn,
-  computeZoomOut,
-} from "@/lib/builder/canvasViewport";
-import {
-  selectEditableEntryPath as selectEditableEntryPathPure,
-  computeVfsSignature,
-} from "@/lib/builder/vfsHelpers";
-import {
-  type CodeValidationResult,
-  extractStyleBlocks,
-  preserveStyleBlocks,
-  preserveInlineClasses,
-  validateAICodeChange,
-} from "@/lib/builder/aiCodeValidation";
-import { safeOpenExternal } from "@/utils/safeOpenExternal";
-import {
-  isMissingBusinessInstallsError,
-  getOrCreatePreviewBusinessId,
-} from "@/lib/builder/previewBusiness";
+
+function isMissingBusinessInstallsError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+  } | null;
+  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
+  return (
+    candidate?.code === '42P01' ||
+    candidate?.code === 'PGRST205' ||
+    candidate?.status === 404 ||
+    combined.includes('business_installs')
+  );
+}
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
 import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';
@@ -145,7 +104,6 @@ import { swapSectionVariant } from '@/utils/sectionSwapper';
 import type { VariantId } from '@/sections/variants/types';
 import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { ElementIntentInspector } from "./web-builder/ElementIntentInspector";
-import { IntentHealthPill } from "./web-builder/IntentHealthPill";
 import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
@@ -178,13 +136,15 @@ import { publishCreatorDataForUnison, writeCanonicalsToVFS } from '@/services/un
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {
+  applyStructuralChange,
+  syncRouterAndValidate,
+  regenerateRouter,
+  patchVFS,
+  resolveNavigationTarget,
+  deriveFilePath,
   scaffoldMissingTopologyPagesWithRouter,
   getTopologyPagesForAIGeneration,
 } from '@/services/unifiedPreviewPipeline';
-import { livePreviewRuntime } from '@/builder/controllers/PreviewRuntimeController';
-import { livePageTopology } from '@/builder/controllers/PageTopologyController';
-import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
-
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
 import { buildIntentReadinessReport } from '@/services/intentReadinessService';
@@ -199,11 +159,799 @@ import {
   readBrowserCart,
 } from '@/runtime/browserCartManager';
 
+function getOrCreatePreviewBusinessId(systemType?: string): string {
+  const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const id = generateUUID();
+    localStorage.setItem(key, id);
+    return id;
+  } catch {
+    // Fallback when localStorage is unavailable
+    return generateUUID();
+  }
+}
 
+/**
+ * Escape special characters in CSS selectors (e.g., Tailwind brackets like `min-h-[85vh]`)
+ */
+function escapeCSSSelector(selector: string): string {
+  return selector.replace(/(\.)([^.\s#>+~:[\]]+)/g, (match, dot, className) => {
+    const escaped = className
+      .replace(/\[/g, '\\[')
+      .replace(/\]/g, '\\]')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)')
+      .replace(/:/g, '\\:')
+      .replace(/\//g, '\\/');
+    return dot + escaped;
+  });
+}
 
-// JSX bounds, source manipulation, safe DOM query, and AI code validation
-// extracted to @/lib/builder/{jsxBounds,aiCodeValidation}.ts (Phase C1).
+/**
+ * Extract the JSX return body from a React component.
+ * Handles both `return (...)` and arrow `=> (...)` patterns.
+ */
+function extractJsxReturnBody(code: string): { jsx: string; before: string; after: string } | null {
+  let returnIdx = code.search(/return\s*\(/);
+  if (returnIdx === -1) {
+    returnIdx = code.search(/=>\s*\(/);
+  }
+  if (returnIdx === -1) return null;
 
+  const parenStart = code.indexOf('(', returnIdx);
+  let depth = 0;
+  let parenEnd = -1;
+  let inString: string | null = null;
+  let escaped = false;
+  for (let i = parenStart; i < code.length; i++) {
+    const ch = code[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\') { escaped = true; continue; }
+    if (inString) {
+      if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { inString = ch; continue; }
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) { parenEnd = i; break; }
+    }
+  }
+  if (parenEnd === -1) return null;
+
+  const jsx = code.slice(parenStart + 1, parenEnd).trim();
+  const before = code.slice(0, parenStart + 1);
+  const after = code.slice(parenEnd);
+  return { jsx, before, after };
+}
+
+/**
+ * Find an element's start and end offsets in a JSX source string by a CSS-like selector.
+ * Supports: tag, #id, tag:nth-of-type(n), and nested selectors with >.
+ * Returns the character offsets in the source, or null if not found.
+ */
+function findElementBoundsInJSX(
+  source: string,
+  selector: string
+): { start: number; end: number } | null {
+  if (!selector) return null;
+
+  // Selectors from the runtime can be comma-separated alternates,
+  // e.g. `[data-ut-binding-key="x"], [data-element-key="x"]`. Try each.
+  const alternates = splitTopLevelCommas(selector);
+  for (const alt of alternates) {
+    const result = findBoundsForSingleSelector(source, alt.trim());
+    if (result) return result;
+  }
+  return null;
+}
+
+function splitTopLevelCommas(input: string): string[] {
+  const out: string[] = [];
+  let buf = '';
+  let bracket = 0;
+  let paren = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (quote) {
+      if (ch === '\\') { buf += ch + (input[++i] ?? ''); continue; }
+      if (ch === quote) quote = null;
+      buf += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; buf += ch; continue; }
+    if (ch === '[') bracket++;
+    else if (ch === ']') bracket--;
+    else if (ch === '(') paren++;
+    else if (ch === ')') paren--;
+    if (ch === ',' && bracket === 0 && paren === 0) {
+      out.push(buf);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) out.push(buf);
+  return out;
+}
+
+function findBoundsForSingleSelector(
+  source: string,
+  selector: string
+): { start: number; end: number } | null {
+  // Parse the selector into segments. Split on `>` at top level only so
+  // attribute selectors like `[data-x="a > b"]` aren't broken.
+  const allParts = splitTopLevelCombinator(selector)
+    .map(s => s.trim())
+    .filter(s => s && s !== 'body' && s !== 'html');
+
+  if (allParts.length === 0) return null;
+
+  // Try the full path first; if no match, progressively drop leading segments.
+  for (let drop = 0; drop < allParts.length; drop++) {
+    const result = findBoundsForParts(source, allParts.slice(drop));
+    if (result) return result;
+  }
+  // Final fallback: try just the leaf segment with index 0 (best-effort)
+  const leaf = allParts[allParts.length - 1];
+  if (leaf) {
+    const stripped = leaf.replace(/:nth-of-type\(\d+\)/, '');
+    if (stripped !== leaf) {
+      const result = findBoundsForParts(source, [stripped]);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
+function splitTopLevelCombinator(input: string): string[] {
+  const out: string[] = [];
+  let buf = '';
+  let bracket = 0;
+  let paren = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (quote) {
+      if (ch === '\\') { buf += ch + (input[++i] ?? ''); continue; }
+      if (ch === quote) quote = null;
+      buf += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; buf += ch; continue; }
+    if (ch === '[') bracket++;
+    else if (ch === ']') bracket--;
+    else if (ch === '(') paren++;
+    else if (ch === ')') paren--;
+    if (ch === '>' && bracket === 0 && paren === 0) {
+      out.push(buf);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) out.push(buf);
+  return out;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Parse leading `[name="value"]` / `[name=value]` / `[name]` selectors. */
+function parseAttributeSelectors(part: string): { attrs: Array<{ name: string; value: string | null }>; rest: string } {
+  const attrs: Array<{ name: string; value: string | null }> = [];
+  let rest = part;
+  const re = /\[([a-zA-Z_:][\w:.-]*)\s*(?:([~|^$*]?)=\s*(?:"([^"]*)"|'([^']*)'|([^\]]+)))?\]/;
+  while (true) {
+    const m = rest.match(re);
+    if (!m) break;
+    const value = m[3] ?? m[4] ?? m[5] ?? null;
+    attrs.push({ name: m[1], value: value !== null ? value.trim() : null });
+    rest = (rest.slice(0, m.index!) + rest.slice(m.index! + m[0].length)).trim();
+  }
+  return { attrs, rest };
+}
+
+function findBoundsForParts(
+  source: string,
+  parts: string[]
+): { start: number; end: number } | null {
+  if (parts.length === 0) return null;
+
+  let searchSource = source;
+  let baseOffset = 0;
+
+  for (let pi = 0; pi < parts.length; pi++) {
+    const part = parts[pi];
+    const isLast = pi === parts.length - 1;
+
+    // Extract any [attr=...] selectors first
+    const { attrs, rest } = parseAttributeSelectors(part);
+
+    let tagName = '';
+    let nthIndex = 0; // 0-based
+    let id = '';
+
+    const idMatch = rest.match(/#([a-zA-Z0-9_-]+)/);
+    if (idMatch) {
+      id = idMatch[1];
+      tagName = rest.split('#')[0] || '';
+    }
+
+    const nthMatch = rest.match(/:nth-of-type\((\d+)\)/);
+    if (nthMatch) {
+      nthIndex = parseInt(nthMatch[1], 10) - 1;
+      tagName = rest.split(':')[0] || tagName;
+    }
+
+    if (!tagName && !id) {
+      tagName = rest.split('.')[0].split(':')[0].split('[')[0];
+    }
+
+    // If we have neither tag/id nor any attribute selector, this part is unusable
+    if (!tagName && !id && attrs.length === 0) return null;
+
+    let start = -1;
+    let end = -1;
+    let foundTag = '';
+
+    if (id) {
+      const idPattern = new RegExp(`<(\\w+)\\b[^>]*\\bid=["'{]${escapeRegex(id)}["'}][^>]*>`, 'i');
+      const idFound = idPattern.exec(searchSource);
+      if (!idFound) return null;
+      foundTag = idFound[1];
+      start = baseOffset + idFound.index;
+      end = findJSXClosingTag(source, start, foundTag);
+    } else if (attrs.length > 0) {
+      // Match an opening tag carrying every required attribute.
+      // Optionally constrained by tagName.
+      const tagPart = tagName ? escapeRegex(tagName) : '[A-Za-z][\\w.-]*';
+      // Walk every opening tag and test attributes
+      const openRe = new RegExp(`<(${tagPart})\\b([^>]*)>`, 'gi');
+      let m: RegExpExecArray | null;
+      let count = 0;
+      while ((m = openRe.exec(searchSource)) !== null) {
+        const attrSegment = m[2] || '';
+        const allMatch = attrs.every(a => attrMatches(attrSegment, a.name, a.value));
+        if (!allMatch) continue;
+        if (nthMatch && count !== nthIndex) { count++; continue; }
+        foundTag = m[1];
+        start = baseOffset + m.index;
+        end = findJSXClosingTag(source, start, foundTag);
+        break;
+      }
+      if (start === -1) return null;
+    } else {
+      // tag + optional nth
+      const tagPattern = new RegExp(`<${escapeRegex(tagName)}\\b`, 'gi');
+      let match: RegExpExecArray | null;
+      let count = 0;
+      while ((match = tagPattern.exec(searchSource)) !== null) {
+        if (count === nthIndex) {
+          start = baseOffset + match.index;
+          foundTag = tagName;
+          end = findJSXClosingTag(source, start, tagName);
+          break;
+        }
+        count++;
+      }
+      if (start === -1) return null;
+    }
+
+    if (end === -1) return null;
+    if (isLast) return { start, end };
+    const openEnd = source.indexOf('>', start) + 1;
+    searchSource = source.substring(openEnd, end);
+    baseOffset = openEnd;
+  }
+
+  return null;
+}
+
+function attrMatches(attrSegment: string, name: string, value: string | null): boolean {
+  // Match name="value" / name='value' / name={"value"} / name (boolean)
+  const re = new RegExp(`\\b${escapeRegex(name)}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|\\{\\s*['"\`]([^'"\`]*)['"\`]\\s*\\})`, 'i');
+  const m = attrSegment.match(re);
+  if (!m) {
+    if (value === null) {
+      // boolean attribute presence
+      return new RegExp(`\\b${escapeRegex(name)}\\b`, 'i').test(attrSegment);
+    }
+    return false;
+  }
+  if (value === null) return true;
+  const actual = m[1] ?? m[2] ?? m[3] ?? '';
+  return actual === value;
+}
+
+/**
+ * Find the closing tag offset for a JSX element, handling nested same-tag elements.
+ */
+function findJSXClosingTag(source: string, openStart: number, tagName: string): number {
+  // Check for self-closing tag first
+  const selfCloseCheck = source.substring(openStart, openStart + 500);
+  const selfCloseMatch = selfCloseCheck.match(new RegExp(`^<${tagName}\\b[^>]*/>`,'i'));
+  if (selfCloseMatch) return openStart + selfCloseMatch[0].length;
+
+  const lcTag = tagName.toLowerCase();
+  let depth = 0;
+  let i = openStart;
+
+  while (i < source.length) {
+    const openMatch = source.substring(i).match(new RegExp(`^<${lcTag}\\b`, 'i'));
+    if (openMatch) {
+      const afterOpen = source.substring(i).match(new RegExp(`^<${lcTag}\\b[^>]*/>`,'i'));
+      if (afterOpen) {
+        i += afterOpen[0].length;
+        continue;
+      }
+      depth++;
+      i += openMatch[0].length;
+      continue;
+    }
+
+    const closeMatch = source.substring(i).match(new RegExp(`^<\\/${lcTag}\\s*>`, 'i'));
+    if (closeMatch) {
+      depth--;
+      if (depth === 0) {
+        return i + closeMatch[0].length;
+      }
+      i += closeMatch[0].length;
+      continue;
+    }
+
+    // Skip string literals
+    if (source[i] === '"' || source[i] === "'") {
+      const q = source[i];
+      i++;
+      while (i < source.length && source[i] !== q) {
+        if (source[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (source[i] === '`') {
+      i++;
+      while (i < source.length && source[i] !== '`') {
+        if (source[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+
+    i++;
+  }
+  return -1;
+}
+
+/**
+ * Perform a source-level manipulation on TSX code.
+ * The operation receives the return body JSX and returns modified JSX, or null on failure.
+ * For TSX: extracts return body, applies op, reconstructs.
+ */
+function withSourceManipulation(
+  code: string,
+  sourceOp: (jsx: string) => string | null
+): { ok: true; code: string } | { ok: false; code: string } {
+  const trimmed = (code || '').trim();
+  if (!trimmed) return { ok: false, code };
+
+  const extracted = extractJsxReturnBody(trimmed);
+  if (!extracted) {
+    // Try operating on the code directly (e.g., JSX fragment)
+    const result = sourceOp(trimmed);
+    if (result === null) return { ok: false, code };
+    return { ok: true, code: result };
+  }
+
+  const result = sourceOp(extracted.jsx);
+  if (result === null) return { ok: false, code };
+
+  const newCode = `${extracted.before}\n    ${result}\n  ${extracted.after}`;
+  return { ok: true, code: newCode };
+}
+
+/**
+ * Safely query a selector with escaping, trying multiple fallback strategies
+ */
+function safeFindElement(doc: Document, selector: string): Element | null {
+  // Strategy 1: Try escaped selector
+  try {
+    const escaped = escapeCSSSelector(selector);
+    const el = doc.querySelector(escaped);
+    if (el) return el;
+  } catch { /* noop */ }
+
+  // Strategy 2: Strip html > body prefix with escaping
+  try {
+    const stripped = selector
+      .replace(/^html\s*>\s*body[^\s>]*\s*>\s*/, '')
+      .replace(/^body[^\s>]*\s*>\s*/, '');
+    if (stripped !== selector) {
+      const escaped = escapeCSSSelector(stripped);
+      const el = doc.querySelector(escaped);
+      if (el) return el;
+    }
+  } catch { /* noop */ }
+
+  // Strategy 3: Remove all :nth-child() qualifiers with escaping
+  try {
+    const noNth = selector.replace(/:nth-child\(\d+\)/g, '');
+    const escaped = escapeCSSSelector(noNth);
+    const el = doc.querySelector(escaped);
+    if (el) return el;
+    
+    const strippedNoNth = noNth
+      .replace(/^html\s*>\s*body[^\s>]*\s*>\s*/, '')
+      .replace(/^body[^\s>]*\s*>\s*/, '');
+    if (strippedNoNth !== noNth) {
+      const escapedStripped = escapeCSSSelector(strippedNoNth);
+      const el2 = doc.querySelector(escapedStripped);
+      if (el2) return el2;
+    }
+  } catch { /* noop */ }
+
+  // Strategy 4: Tag-only path fallback (most permissive)
+  try {
+    const tagPath = selector
+      .split(/\s*>\s*/)
+      .map(part => part.replace(/[.#:[][^\s>]*/g, '').trim())
+      .filter(Boolean)
+      .filter(t => t !== 'html' && t !== 'body')
+      .join(' > ');
+    if (tagPath) {
+      const el = doc.querySelector(tagPath);
+      if (el) return el;
+    }
+  } catch { /* noop */ }
+
+  return null;
+}
+
+/**
+ * Build a context-aware prompt for dynamic React page generation.
+ * Called when user clicks a redirect-worthy button and the target page
+ * doesn't exist in VFS yet. Output is a React/TSX component.
+ */
+function buildDynamicPagePrompt(
+  pageName: string,
+  _pageContext: string,
+  navLabel: string,
+  mainPageCode: string,
+  options?: {
+    businessContext?: string | null;
+    designProfile?: {
+      dominantStyle?: string;
+      industryHints?: string[];
+    };
+  }
+): string {
+  // Extract Tailwind class patterns from main page for consistency
+  const colorMatch = mainPageCode.match(/(?:bg-|text-|from-|to-)([a-z]+-\d+)/g);
+  const colors = colorMatch ? [...new Set(colorMatch)].slice(0, 10).join(', ') : 'blue, purple, gray';
+
+  // Extract CSS variable usage
+  const cssVarMatch = mainPageCode.match(/hsl\(var\(--[\w-]+\)\)/g);
+  const cssVars = cssVarMatch ? [...new Set(cssVarMatch)].slice(0, 8).join(', ') : '';
+
+  const pagePrompts: Record<string, string> = {
+    checkout: `Create a checkout page component with:
+- Order summary section with cart items and prices
+- Shipping address form (name, email, address, city, state, zip)
+- Payment section with card input fields
+- Order total with subtotal, shipping, tax breakdown
+- "Complete Purchase" button with onClick={() => alert('Order placed!')}
+- Trust badges and secure payment icons
+- Back to home link using Link from react-router-dom`,
+
+    cart: `Create a shopping cart page component with:
+- Cart items list with product images, names, quantities, prices
+- Quantity adjusters (+/- buttons)
+- Remove item buttons
+- Subtotal calculation
+- "Proceed to Checkout" link to /checkout
+- "Continue Shopping" link back to /
+- Empty cart state`,
+
+    booking: `Create a booking/appointment page component with:
+- Service selection cards
+- Date picker calendar UI (use native date input)
+- Available time slots grid
+- Customer info form (name, email, phone)
+- Special requests textarea
+- "Confirm Booking" button with form submit handler
+- Cancellation policy notice`,
+
+    contact: `Create a contact page component with:
+- Contact form (name, email, phone, subject, message) with useState
+- Form validation and submit handler
+- Business contact info section (address, phone, email, hours)
+- Map placeholder
+- Social media links`,
+
+    services: `Create a services page component with:
+- Hero section with services overview
+- Individual service cards with icons, descriptions, pricing
+- "Book Now" buttons linking to /booking
+- Service comparison or FAQ section
+- CTA to contact for custom quotes`,
+
+    about: `Create an about page component with:
+- Company story/mission section
+- Team member profiles with photos and bios
+- Company values or philosophy
+- Timeline or milestones
+- Awards/certifications section
+- CTA to contact or learn more`,
+
+    products: `Create a products catalog page component with:
+- Product grid with images, names, prices using .map()
+- Filter/sort controls using useState
+- "Add to Cart" buttons
+- Product quick view capability
+- Pagination or load more
+- Featured products section`,
+
+    login: `Create a login page component with:
+- Login form (email, password) with useState
+- "Sign In" button with form submit handler
+- "Forgot Password" link
+- "Create Account" link to /signup
+- Social login buttons (Google, Apple)
+- Remember me checkbox`,
+
+    signup: `Create a registration page component with:
+- Signup form (name, email, password, confirm password) with useState
+- Password strength indicator
+- Terms & conditions checkbox
+- "Create Account" button with form submit handler
+- Already have account? Sign in link to /login
+- Social signup options`,
+
+    pricing: `Create a pricing page component with:
+- 3 pricing tiers (Basic, Pro, Enterprise) as a data array
+- Feature comparison table
+- Toggle for monthly/yearly pricing using useState
+- "Get Started" buttons
+- FAQ about billing
+- Money-back guarantee notice`,
+
+    gallery: `Create a gallery/portfolio page component with:
+- Masonry or grid image gallery
+- Category filter tabs using useState
+- Lightbox-style image viewing with useState
+- Project descriptions
+- Client testimonials
+- CTA to inquire about projects`,
+  };
+
+  const specificPrompt = pagePrompts[pageName.toLowerCase()] ||
+    `Create a complete ${navLabel || pageName} page component with relevant content, interactive elements using useState, and call-to-action buttons.`;
+
+  return `🚀 CREATE A REACT PAGE COMPONENT: "${navLabel || pageName.toUpperCase()}"
+
+This page is part of a multi-page React website using react-router-dom.
+The user clicked "${navLabel}" from the main page.
+
+${specificPrompt}
+
+📋 CRITICAL REQUIREMENTS:
+
+1. **REACT COMPONENT** — Export a default function component. Use React hooks (useState, useEffect) for interactivity.
+2. **IMPORTS** — Only import from: 'react', 'react-router-dom' (Link, useNavigate). NO external UI libraries.
+3. **TAILWIND CSS** — Use Tailwind utility classes for all styling. Use semantic CSS variables: hsl(var(--background)), hsl(var(--foreground)), hsl(var(--primary)), hsl(var(--primary-foreground)), hsl(var(--muted)), hsl(var(--muted-foreground)), hsl(var(--border)), hsl(var(--card)), hsl(var(--accent)).
+4. **MATCH MAIN PAGE STYLING** — Use similar Tailwind classes: ${colors}${cssVars ? `\n   CSS vars found: ${cssVars}` : ''}
+5. **NAVIGATION** — Include a header with <Link to="/"> for home and links to other pages.
+6. **BACK BUTTON** — Include a prominent <Link to="/">← Back to Home</Link> in the header.
+7. **REAL CONTENT** — Write actual text, not "Lorem ipsum" placeholders.
+8. **RESPONSIVE** — Mobile-first with md: and lg: breakpoints.
+9. **FOOTER** — Match the main page footer style.
+10. **NO HTML DOCUMENTS** — Do NOT output <!DOCTYPE html> or <html> tags. This is a React component.
+11. **INTENT WIRING** — Wire ALL interactive buttons with data-ut-intent attributes:
+    - Contact/form buttons: data-ut-intent="contact.submit"
+    - Booking buttons: data-ut-intent="booking.create"
+    - Newsletter: data-ut-intent="newsletter.subscribe"
+    - CTA buttons: data-ut-intent="cta.primary"
+    - Quote requests: data-ut-intent="quote.request"
+    - Forms: <form data-ut-intent="contact.submit">
+    - Anchor links: <a href="#section" data-ut-intent="nav.anchor">
+
+${options?.businessContext ? `📊 BUSINESS CONTEXT:\n${options.businessContext}` : ''}
+
+${options?.designProfile?.dominantStyle ? `🎨 USER DESIGN PREFERENCES:
+- Dominant Style: ${options.designProfile.dominantStyle}
+- Industry: ${options.designProfile.industryHints?.join(', ') || 'general'}
+Match the user's established design preferences.` : ''}
+
+CONTEXT FROM MAIN PAGE (extract styling patterns):
+${mainPageCode.substring(0, 2000)}
+
+OUTPUT: A single React/TSX component file. No markdown fences, no explanations. Just the code starting with import statements.`;
+}
+
+/**
+ * Validate AI-generated code against the original template to detect destructive changes.
+ * Returns warnings if the AI significantly altered the template structure.
+ */
+interface CodeValidationResult {
+  isValid: boolean;
+  warnings: string[];
+  severity: 'ok' | 'warning' | 'critical';
+  sectionDiff: number;
+  contentLoss: number;
+}
+
+/**
+ * Extract all <style> blocks from HTML source.
+ */
+function extractStyleBlocks(html: string): string[] {
+  const regex = /<style[^>]*>[\s\S]*?<\/style>/gi;
+  return html.match(regex) || [];
+}
+
+/**
+ * Preserve the original template's <style> blocks in the AI-generated output.
+ * This prevents the AI from silently rewriting CSS custom properties, color palettes,
+ * font stacks, and animation keyframes that define the template's visual identity.
+ */
+function preserveStyleBlocks(originalCode: string, aiCode: string): string {
+  const origStyles = extractStyleBlocks(originalCode);
+  const aiStyles = extractStyleBlocks(aiCode);
+
+  // If original had style blocks and AI changed or removed them, restore originals
+  if (origStyles.length === 0) return aiCode;
+
+  // Replace AI style blocks with original ones (same count → 1:1 swap)
+  let result = aiCode;
+  if (aiStyles.length === origStyles.length) {
+    for (let i = 0; i < origStyles.length; i++) {
+      result = result.replace(aiStyles[i], origStyles[i]);
+    }
+  } else if (aiStyles.length < origStyles.length) {
+    // AI removed style blocks — replace what's there and append the rest
+    for (let i = 0; i < aiStyles.length; i++) {
+      result = result.replace(aiStyles[i], origStyles[i]);
+    }
+    // Inject missing style blocks before </head> or before </style> of last match
+    const remaining = origStyles.slice(aiStyles.length).join('\n');
+    const headClose = result.indexOf('</head>');
+    if (headClose !== -1) {
+      result = result.slice(0, headClose) + '\n' + remaining + '\n' + result.slice(headClose);
+    }
+  } else {
+    // AI added extra style blocks — keep originals, drop AI additions
+    for (let i = 0; i < origStyles.length; i++) {
+      result = result.replace(aiStyles[i], origStyles[i]);
+    }
+    // Remove any extra AI style blocks (but keep script-only additions like ai-style-overrides)
+    for (let i = origStyles.length; i < aiStyles.length; i++) {
+      // Keep AI-injected override blocks (functional additions), remove visual rewrites
+      if (!aiStyles[i].includes('ai-style-overrides')) {
+        result = result.replace(aiStyles[i], '');
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Preserve inline class attributes from the original template on elements that the AI
+ * should not have modified. Compares elements by tag+id or tag+data-section and restores
+ * the original class attribute when the AI changed it without a corresponding structural change.
+ */
+function preserveInlineClasses(originalCode: string, aiCode: string): string {
+  // Build a map of element id/data-section → class attribute from original
+  const classMap = new Map<string, string>();
+  const classRegex = /<(\w+)\s+[^>]*?((?:id|data-section)="[^"]*")[^>]*?class="([^"]*)"/gi;
+  let match: RegExpExecArray | null;
+  
+  while ((match = classRegex.exec(originalCode)) !== null) {
+    const key = `${match[1].toLowerCase()}|${match[2]}`;
+    classMap.set(key, match[3]);
+  }
+  
+  if (classMap.size === 0) return aiCode;
+  
+  // For each identifiable element in AI output, check if classes changed
+  let result = aiCode;
+  const aiClassRegex = /<(\w+)\s+[^>]*?((?:id|data-section)="[^"]*")[^>]*?class="([^"]*)"/gi;
+  const replacements: Array<{ from: string; to: string }> = [];
+  
+  while ((match = aiClassRegex.exec(aiCode)) !== null) {
+    const key = `${match[1].toLowerCase()}|${match[2]}`;
+    const origClass = classMap.get(key);
+    if (origClass && origClass !== match[3]) {
+      // AI changed classes on this element — restore original
+      replacements.push({
+        from: match[0],
+        to: match[0].replace(`class="${match[3]}"`, `class="${origClass}"`)
+      });
+    }
+  }
+  
+  for (const rep of replacements) {
+    result = result.replace(rep.from, rep.to);
+  }
+  
+  return result;
+}
+
+function validateAICodeChange(originalCode: string, newCode: string): CodeValidationResult {
+  const warnings: string[] = [];
+  
+  if (!originalCode || !newCode) {
+    return { isValid: true, warnings: [], severity: 'ok', sectionDiff: 0, contentLoss: 0 };
+  }
+  
+  // Count sections in original vs new
+  const origSections = (originalCode.match(/<section/gi) || []).length;
+  const newSections = (newCode.match(/<section/gi) || []).length;
+  const sectionDiff = origSections - newSections;
+  
+  if (sectionDiff > 0) {
+    warnings.push(`${sectionDiff} section(s) removed from template`);
+  }
+  
+  // Check if header/footer were removed
+  const origHasHeader = /<header/i.test(originalCode);
+  const newHasHeader = /<header/i.test(newCode);
+  const origHasFooter = /<footer/i.test(originalCode);
+  const newHasFooter = /<footer/i.test(newCode);
+  
+  if (origHasHeader && !newHasHeader) {
+    warnings.push('Header section was removed');
+  }
+  if (origHasFooter && !newHasFooter) {
+    warnings.push('Footer section was removed');
+  }
+  
+  // Check for significant content length reduction (more than 30%)
+  const origLength = originalCode.length;
+  const newLength = newCode.length;
+  const contentLoss = origLength > 0 ? Math.round(((origLength - newLength) / origLength) * 100) : 0;
+  
+  if (contentLoss > 30) {
+    warnings.push(`Template content reduced by ${contentLoss}% - possible data loss`);
+  }
+  
+  // Check for script/style preservation
+  const origScripts = (originalCode.match(/<script/gi) || []).length;
+  const newScripts = (newCode.match(/<script/gi) || []).length;
+  if (origScripts > newScripts) {
+    warnings.push(`${origScripts - newScripts} script block(s) removed - functionality may be broken`);
+  }
+  
+  const origStyles = (originalCode.match(/<style/gi) || []).length;
+  const newStyles = (newCode.match(/<style/gi) || []).length;
+  if (origStyles > newStyles) {
+    warnings.push(`${origStyles - newStyles} style block(s) removed - styling may be affected`);
+  }
+  
+  // Determine severity
+  let severity: 'ok' | 'warning' | 'critical' = 'ok';
+  if (warnings.length > 0) {
+    severity = 'warning';
+  }
+  if (sectionDiff > 2 || contentLoss > 50 || (!newHasHeader && origHasHeader) || (!newHasFooter && origHasFooter)) {
+    severity = 'critical';
+  }
+  
+  return {
+    isValid: severity !== 'critical',
+    warnings,
+    severity,
+    sectionDiff,
+    contentLoss,
+  };
+}
 
 // Define SelectedElement interface to match HTMLElementPropertiesPanel expected type
 interface SelectedElement {
@@ -552,19 +1300,14 @@ export default function App() {
   const hasIncomingContent = !!(
     effectiveRouteState?.vfsFiles ||
     effectiveRouteState?.generatedCode ||
-    effectiveRouteState?.generatedTemplate ||
-    effectiveRouteState?.siteBundleSnapshot ||
-    effectiveRouteState?.materializedPlayground ||
-    effectiveRouteState?.siteBundle
+    effectiveRouteState?.generatedTemplate
   );
   const [showLauncher, setShowLauncher] = useState(!hasIncomingContent);
   const routeStateHasStructuredProject = !!(
     effectiveRouteState?.vfsFiles ||
     effectiveRouteState?.generatedCode ||
     effectiveRouteState?.generatedTemplate ||
-    effectiveRouteState?.siteBundle ||
-    effectiveRouteState?.siteBundleSnapshot ||
-    effectiveRouteState?.materializedPlayground
+    effectiveRouteState?.siteBundle
   );
 
   // Collapse all panels when on mobile to ensure full-width canvas
@@ -603,30 +1346,123 @@ export default function App() {
   // Auto-apply overrides when customizer state changes (e.g. after image replacement)
   // Patches the iframe DOM in-place to avoid scroll-reset & blink.
   useEffect(() => {
-    if (templateCustomizer.overrideVersion <= 0 || !templateCustomizer.isDirty) return;
+    console.log('[WebBuilder] Override useEffect triggered, version:', templateCustomizer.overrideVersion, 'isDirty:', templateCustomizer.isDirty);
+    if (templateCustomizer.overrideVersion <= 0 || !templateCustomizer.isDirty) {
+      console.log('[WebBuilder] Override useEffect skipped - conditions not met');
+      return;
+    }
 
+    // Use VFSPreview (sole preview engine)
     const iframe = livePreviewRef.current?.getIframe?.() ?? null;
     const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document || null;
 
-    const patched = iframeDoc
-      ? applyCustomizerDomPatch({
-          iframeDoc,
-          overrideCSS: templateCustomizer.generateOverrideCSS(),
-          elementOverrides: templateCustomizer.elementOverrides.values(),
-          images: templateCustomizer.images.values(),
-        })
-      : false;
-
-    // Whether or not the iframe was ready, keep previewCode/editorCode in sync
-    // with source-level overrides (images encoded into the TSX source).
-    const baseSource = templateCustomizer.getOriginalSource() || previewCode;
-    if (!baseSource) return;
-    const customized = templateCustomizer.applyOverrides(baseSource);
-    if (customized !== previewCode) {
-      setPreviewCode(customized);
-      setEditorCode(customized);
+    if (!iframeDoc || !iframeDoc.head) {
+      console.log('[WebBuilder] Iframe not ready — applying source-level overrides');
+      // Iframe not ready — apply source-level overrides (image replacements) via TSX
+      const baseSource = templateCustomizer.getOriginalSource() || previewCode;
+      if (!baseSource) return;
+      const customized = templateCustomizer.applyOverrides(baseSource);
+      if (customized !== previewCode) {
+        setPreviewCode(customized);
+        setEditorCode(customized);
+      }
+      return;
     }
-    void patched;
+
+    console.log('[WebBuilder] Patching iframe DOM, elementOverrides count:', templateCustomizer.elementOverrides.size);
+
+    // 0. Ensure color scheme is enforced (prevent dark mode inversion)
+    if (!iframeDoc.querySelector('meta[name="color-scheme"]')) {
+      const colorSchemeMeta = iframeDoc.createElement('meta');
+      colorSchemeMeta.name = 'color-scheme';
+      colorSchemeMeta.content = 'light';
+      iframeDoc.head.insertBefore(colorSchemeMeta, iframeDoc.head.firstChild);
+    }
+    if (!iframeDoc.getElementById('color-scheme-enforcement')) {
+      const colorSchemeStyle = iframeDoc.createElement('style');
+      colorSchemeStyle.id = 'color-scheme-enforcement';
+      colorSchemeStyle.textContent = ':root { color-scheme: light; }';
+      iframeDoc.head.appendChild(colorSchemeStyle);
+    }
+
+    // 1. Inject / update the customizer override CSS in-place
+    const overrideCSS = templateCustomizer.generateOverrideCSS();
+    let styleEl = iframeDoc.getElementById('customizer-overrides') as HTMLStyleElement | null;
+    if (!styleEl) {
+      styleEl = iframeDoc.createElement('style');
+      styleEl.id = 'customizer-overrides';
+      iframeDoc.head.appendChild(styleEl);
+    }
+    styleEl.textContent = overrideCSS;
+
+    // Helper to safely query selectors
+    const safeQuery = (selector: string): Element | null => safeFindElement(iframeDoc, selector);
+
+    // 2. Apply text / image / style element overrides directly on DOM nodes
+    templateCustomizer.elementOverrides.forEach((override) => {
+      try {
+        if (override.textContent !== undefined) {
+          const el = safeQuery(override.selector);
+          if (el) el.textContent = override.textContent;
+        }
+        if (override.imageSrc) {
+          const el = safeQuery(override.selector) as HTMLImageElement | null;
+          if (el) el.setAttribute('src', override.imageSrc);
+        }
+        if (override.styles && Object.keys(override.styles).length) {
+          const el = safeQuery(override.selector) as HTMLElement | null;
+          if (el) {
+            Object.entries(override.styles).forEach(([k, v]) => {
+              el.style.setProperty(
+                k.replace(/([A-Z])/g, '-$1').toLowerCase(),
+                v,
+                'important',
+              );
+            });
+          }
+        }
+        if (override.attributes && Object.keys(override.attributes).length) {
+          const el = safeQuery(override.selector) as HTMLElement | null;
+          if (el) {
+            Object.entries(override.attributes).forEach(([key, value]) => {
+              if (value == null || value === '') {
+                el.removeAttribute(key);
+              } else {
+                el.setAttribute(key, value);
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('[Customizer] DOM patch failed for', override.selector, e);
+      }
+    });
+
+    // 3. Apply image replacements
+    templateCustomizer.images.forEach((img) => {
+      try {
+        let el = safeQuery(img.selector) as HTMLImageElement | null;
+        if (!el) {
+          const allImgs = iframeDoc.querySelectorAll('img');
+          const idx = parseInt(img.id.replace('img-', ''), 10);
+          if (!isNaN(idx) && idx < allImgs.length) el = allImgs[idx] as HTMLImageElement;
+        }
+        if (el && el.getAttribute('src') !== img.src) {
+          el.setAttribute('src', img.src);
+          if (img.alt) el.setAttribute('alt', img.alt);
+        }
+      } catch { /* ignore selector errors */ }
+    });
+
+    // 4. Keep previewCode AND editorCode in sync — apply TSX source-level overrides (images)
+    const baseSource = templateCustomizer.getOriginalSource() || previewCode;
+    if (baseSource) {
+      const customized = templateCustomizer.applyOverrides(baseSource);
+      if (customized !== previewCode) {
+        setPreviewCode(customized);
+        setEditorCode(customized);
+      }
+    }
   }, [templateCustomizer.overrideVersion]);
 
   // Stable callback for SimplePreview element selection (avoids new ref each render)
@@ -719,7 +1555,7 @@ export default function App() {
       try {
         const activePath = snapshotCtxRef.current.activePagePath;
         if (activePath && (activePath.endsWith('.tsx') || activePath.endsWith('.jsx'))) {
-          liveVFSCommit.writeFiles({ [activePath]: next }, 'playground-edit', virtualFS.importFiles);
+          virtualFS.importFiles({ [activePath]: next });
         }
       } catch (err) {
         console.warn('[applyMutatorAcrossVFS] direct VFS write failed:', err);
@@ -747,7 +1583,7 @@ export default function App() {
               meta: { origin: 'floating-toolbar' },
             });
           } catch (err) { console.warn('[applyMutatorAcrossVFS] snapshot failed:', err); }
-          liveVFSCommit.writeFiles({ [path]: attempt }, 'playground-edit', virtualFS.importFiles);
+          virtualFS.importFiles({ [path]: attempt });
           return { ok: true };
         }
       }
@@ -847,6 +1683,54 @@ export default function App() {
   }, [applyMutatorAcrossVFS, selectedHTMLElement, setSelectedHTMLElement]);
 
 
+  const applyElementHtmlUpdate = useCallback((code: string, selector: string, newJsx: string) => {
+    // AI/contentEditable often returns raw HTML (class=, unclosed <img>, hyphenated SVG attrs).
+    // Convert to JSX-safe markup before splicing into a .tsx file or Babel will explode with
+    // "Expected corresponding JSX closing tag" / "Cannot assign to read only property 'message'".
+    let safeJsx = newJsx;
+    try {
+      safeJsx = htmlToJsx(newJsx);
+    } catch (err) {
+      console.warn('[applyElementHtmlUpdate] htmlToJsx failed, using raw input:', err);
+    }
+    return withSourceManipulation(code, (jsx) => {
+      const bounds = findElementBoundsInJSX(jsx, selector);
+      if (!bounds) {
+        console.warn('[applyElementHtmlUpdate] No match for selector:', selector);
+        return null;
+      }
+      return jsx.substring(0, bounds.start) + safeJsx + jsx.substring(bounds.end);
+    });
+  }, []);
+
+  // Delete an element from TSX source by selector
+  const applyElementDelete = useCallback((code: string, selector: string) => {
+    return withSourceManipulation(code, (jsx) => {
+      const bounds = findElementBoundsInJSX(jsx, selector);
+      if (!bounds) {
+        console.warn('[applyElementDelete] No match for selector:', selector);
+        return null;
+      }
+      // Remove the element and any trailing whitespace/newline
+      const after = jsx.substring(bounds.end).replace(/^\s*\n?/, '');
+      return jsx.substring(0, bounds.start).replace(/\n\s*$/, '\n') + after;
+    });
+  }, []);
+
+  // Duplicate an element in TSX source by selector
+  const applyElementDuplicate = useCallback((code: string, selector: string) => {
+    return withSourceManipulation(code, (jsx) => {
+      const bounds = findElementBoundsInJSX(jsx, selector);
+      if (!bounds) {
+        console.warn('[applyElementDuplicate] No match for selector:', selector);
+        return null;
+      }
+      const element = jsx.substring(bounds.start, bounds.end);
+      // Insert a copy right after the original, preserving indentation
+      return jsx.substring(0, bounds.end) + '\n' + element + jsx.substring(bounds.end);
+    });
+  }, []);
+
   // Handle delete from floating toolbar - updates source code
   const handleFloatingDelete = useCallback((selector: string) => {
     const res = applyElementDelete(previewCode, selector);
@@ -860,7 +1744,7 @@ export default function App() {
     setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Element deleted');
-  }, [previewCode, clearLivePreviewSelection, setSelectedHTMLElement, recordManualPageEdit]);
+  }, [previewCode, applyElementDelete, clearLivePreviewSelection, setSelectedHTMLElement, recordManualPageEdit]);
 
   // Handle duplicate from floating toolbar - updates source code
   const handleFloatingDuplicate = useCallback((selector: string) => {
@@ -874,11 +1758,27 @@ export default function App() {
     setPreviewCode(res.code);
     clearLivePreviewSelection();
     toast.success('Element duplicated');
-  }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
+  }, [previewCode, applyElementDuplicate, clearLivePreviewSelection, recordManualPageEdit]);
 
   // Handle move up - swap element with its previous sibling in TSX source
   const handleFloatingMoveUp = useCallback((selector: string) => {
-    const res = applyElementMoveUp(previewCode, selector);
+    const res = withSourceManipulation(previewCode, (jsx) => {
+      const bounds = findElementBoundsInJSX(jsx, selector);
+      if (!bounds) return null;
+      // Find the previous sibling element (scan backwards from bounds.start)
+      const before = jsx.substring(0, bounds.start);
+      // Find the last element ending before our start
+      const prevMatch = before.match(/.*(<(\w+)\b[^>]*>[\s\S]*<\/\2\s*>)\s*$/);
+      const prevSelfClose = before.match(/.*(<(\w+)\b[^>]*\/>)\s*$/);
+      const prevEl = prevMatch || prevSelfClose;
+      if (!prevEl) return null;
+      const prevStart = before.lastIndexOf(prevEl[1]);
+      if (prevStart === -1) return null;
+      const current = jsx.substring(bounds.start, bounds.end);
+      const prevElement = jsx.substring(prevStart, bounds.start);
+      // Swap: current before previous
+      return jsx.substring(0, prevStart) + current + prevElement + jsx.substring(bounds.end);
+    });
     if (!res.ok) {
       toast.info('Already at the top');
       return;
@@ -892,7 +1792,23 @@ export default function App() {
 
   // Handle move down - swap element with its next sibling in TSX source
   const handleFloatingMoveDown = useCallback((selector: string) => {
-    const res = applyElementMoveDown(previewCode, selector);
+    const res = withSourceManipulation(previewCode, (jsx) => {
+      const bounds = findElementBoundsInJSX(jsx, selector);
+      if (!bounds) return null;
+      // Find the next sibling element (scan forward from bounds.end)
+      const after = jsx.substring(bounds.end);
+      const nextMatch = after.match(/^\s*<(\w+)\b/);
+      if (!nextMatch) return null;
+      const nextTagName = nextMatch[1];
+      const nextStart = bounds.end + (after.length - after.trimStart().length);
+      const nextEnd = findJSXClosingTag(jsx, nextStart, nextTagName);
+      if (nextEnd === -1) return null;
+      const current = jsx.substring(bounds.start, bounds.end);
+      const whitespace = jsx.substring(bounds.end, nextStart);
+      const nextElement = jsx.substring(nextStart, nextEnd);
+      // Swap: next before current
+      return jsx.substring(0, bounds.start) + nextElement + whitespace + current + jsx.substring(nextEnd);
+    });
     if (!res.ok) {
       toast.info('Already at the bottom');
       return;
@@ -903,8 +1819,6 @@ export default function App() {
     clearLivePreviewSelection();
     toast.success('Moved down');
   }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
-
-
 
   // ── Layout-Intent Fast Path bridge for AIBuilderPanel ────────────────────
   // Bundles the deterministic layout-op handlers (selection-aware class edits,
@@ -948,7 +1862,38 @@ export default function App() {
     description?: string | null;
     canvas_data?: Record<string, unknown> | null | unknown;
   }) => {
-    const { canvasData, persistedPlayground, hasVfsFiles } = parseSavedTemplate(template);
+    const canvasData = (template.canvas_data || {}) as {
+      html?: string;
+      css?: string;
+      previewCode?: string;
+      js?: string;
+      vfsFiles?: Record<string, string>;
+      entryPoint?: string;
+      activePagePath?: string;
+      canonicalPlayground?: {
+        pageRegistry?: import('@/types/pageRegistry').PageRegistry;
+        creatorData?: import('@/types/creatorData').CreatorData;
+        bindings?: Record<string, import('@/types/playground').PlaygroundBinding>;
+        calendars?: Record<string, import('@/types/playground').PlaygroundCalendar>;
+        popups?: Record<string, import('@/types/playground').PlaygroundPopup>;
+      };
+      siteBundleSnapshot?: {
+        pageRegistry?: import('@/types/pageRegistry').PageRegistry;
+        creatorData?: import('@/types/creatorData').CreatorData;
+        bindings?: Record<string, import('@/types/playground').PlaygroundBinding>;
+        calendars?: Record<string, import('@/types/playground').PlaygroundCalendar>;
+        popups?: Record<string, import('@/types/playground').PlaygroundPopup>;
+      };
+    };
+    const persistedPlayground = canvasData.canonicalPlayground || (
+      canvasData.siteBundleSnapshot ? {
+        pageRegistry: canvasData.siteBundleSnapshot.pageRegistry,
+        creatorData: canvasData.siteBundleSnapshot.creatorData,
+        bindings: canvasData.siteBundleSnapshot.bindings,
+        calendars: canvasData.siteBundleSnapshot.calendars,
+        popups: canvasData.siteBundleSnapshot.popups,
+      } : null
+    );
 
     if (persistedPlayground?.pageRegistry || persistedPlayground?.creatorData) {
       creatorPlayground.hydrateCanonicalState({
@@ -960,7 +1905,7 @@ export default function App() {
     if (persistedPlayground?.calendars) setPlaygroundCalendars(persistedPlayground.calendars);
     if (persistedPlayground?.popups) setPlaygroundPopups(persistedPlayground.popups);
 
-    if (hasVfsFiles && canvasData.vfsFiles) {
+    if (canvasData?.vfsFiles && Object.keys(canvasData.vfsFiles).length > 0) {
       const entry = canvasData.entryPoint || launchEntryPoint;
       const preferred = canvasData.activePagePath || entry;
       importBuilderFiles(canvasData.vfsFiles, {
@@ -978,11 +1923,28 @@ export default function App() {
       return true;
     }
 
-    const code = assembleLegacyHtmlPayload(canvasData);
+    let code = canvasData?.previewCode || canvasData?.html || '';
     if (!code) {
       return false;
     }
 
+    const separateCss = canvasData?.css || '';
+    if (separateCss && !code.includes(separateCss.substring(0, 50))) {
+      if (code.includes('</head>')) {
+        code = code.replace('</head>', `<style>\n${separateCss}\n</style>\n</head>`);
+      } else {
+        code = `<style>\n${separateCss}\n</style>\n${code}`;
+      }
+    }
+    const separateJs = canvasData?.js || '';
+    if (separateJs && !code.includes(separateJs.substring(0, 50))) {
+      const scriptTag = `<script>\n${separateJs}\n</script>`;
+      if (code.includes('</body>')) {
+        code = code.replace('</body>', `${scriptTag}\n</body>`);
+      } else {
+        code = code + `\n${scriptTag}`;
+      }
+    }
     setEditorCode(code);
     setPreviewCode(code);
     setCurrentTemplateName(template.name);
@@ -996,7 +1958,6 @@ export default function App() {
   // by which point importBuilderFiles is fully initialized.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creatorPlayground, launchEntryPoint]);
-
   
   // Load saved project from URL parameter on mount.
   // Hydrates the FULL VFS (multi-page, router, entry point) when present;
@@ -1177,17 +2138,7 @@ export default function App() {
   );
   
   // Virtual file system for code editor
-  const virtualFS = useVFSSafe();
-  if (!virtualFS) {
-    return (
-      <div className="h-full w-full flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
-          <p className="text-sm text-muted-foreground">Loading builder context...</p>
-        </div>
-      </div>
-    );
-  }
+  const virtualFS = useVFS();
   // Destructure stable callbacks for use in dependency arrays (avoids re-render loops)
   const {
     nodes: vfsNodes,
@@ -1211,10 +2162,7 @@ export default function App() {
     publishCreatorDataForUnison(creatorDataForUnison);
     // Then write canonical contents back into the live VFS so the code
     // editor / deploy bundle / AI context all match what the preview runs.
-    writeCanonicalsToVFS(
-      (files) => liveVFSCommit.writeFiles(files, 'system-restore', vfsImportFiles),
-      { creatorData: creatorDataForUnison },
-    );
+    writeCanonicalsToVFS(vfsImportFiles, { creatorData: creatorDataForUnison });
   }, [creatorDataForUnison, vfsImportFiles]);
 
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
@@ -1314,7 +2262,7 @@ export default function App() {
           const existingFiles = virtualFS.getSandpackFiles();
           const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, registry);
           if (Object.keys(missingFiles).length > 0) {
-            liveVFSCommit.writeFiles(missingFiles, 'system-restore', virtualFS.importFiles);
+            virtualFS.importFiles(missingFiles);
           }
           // Trigger AI generation for placeholder pages
           const pagesToGenerate = getTopologyPagesForAIGeneration(dbPlan, existingFiles);
@@ -1334,28 +2282,6 @@ export default function App() {
         creatorData: materializedState?.creatorData,
       });
       console.log(`[WebBuilder] Hydrated canonical PageRegistry: ${Object.keys(canonicalRegistry.pages).length} pages`);
-    }
-
-    // CANONICAL VFS AUTHORITY:
-    // SiteBundleSnapshot.vfsFiles is the post-merge, post-bound, post-router
-    // output of canonicalLaunchVfs. It MUST overwrite any stale VFS state on
-    // first hydration — otherwise the builder previews a divergent tree from
-    // what the launcher just produced (broken sections, missing bindings,
-    // wrong router). We only overwrite once per mount (gated by the early
-    // return above on non-empty registry).
-    if (snapshot?.vfsFiles && Object.keys(snapshot.vfsFiles).length > 0) {
-      const existingFiles = virtualFS.getSandpackFiles();
-      const filesToWrite: Record<string, string> = {};
-      for (const [path, content] of Object.entries(snapshot.vfsFiles)) {
-        if (typeof content !== 'string') continue;
-        if (existingFiles[path] !== content) {
-          filesToWrite[path] = content;
-        }
-      }
-      if (Object.keys(filesToWrite).length > 0) {
-        liveVFSCommit.writeFiles(filesToWrite, 'system-restore', virtualFS.importFiles);
-        console.log(`[WebBuilder] Imported ${Object.keys(filesToWrite).length} canonical snapshot files (authoritative)`);
-      }
     }
 
     if (sitePlan && sitePlan.pages.length > 0) {
@@ -1387,12 +2313,11 @@ export default function App() {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }
 
-      // Auto-scaffold placeholders + router for any pages still missing
-      // after the canonical snapshot import above.
+      // Auto-scaffold placeholders + router for missing pages
       const existingFiles = virtualFS.getSandpackFiles();
       const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, canonicalRegistry || populateRegistryFromTopology(sitePlan));
       if (Object.keys(missingFiles).length > 0) {
-        liveVFSCommit.writeFiles(missingFiles, 'system-restore', virtualFS.importFiles);
+        virtualFS.importFiles(missingFiles);
         console.log(`[WebBuilder] Scaffolded ${Object.keys(missingFiles).length} placeholder pages:`, Object.keys(missingFiles));
       }
 
@@ -1408,11 +2333,19 @@ export default function App() {
           }, idx * 1500); // 1.5s stagger between pages
         });
       }
-    } else if (!snapshot?.vfsFiles || Object.keys(snapshot.vfsFiles).length === 0) {
-      // Fallback: seed single Home page when there's neither plan nor snapshot
+    } else if (snapshot?.vfsFiles && Object.keys(snapshot.vfsFiles).length > 0) {
+      const existingFiles = virtualFS.getSandpackFiles();
+      const missingSnapshotFiles = Object.fromEntries(
+        Object.entries(snapshot.vfsFiles).filter(([path]) => !existingFiles[path])
+      ) as Record<string, string>;
+      if (Object.keys(missingSnapshotFiles).length > 0) {
+        virtualFS.importFiles(missingSnapshotFiles);
+        console.log(`[WebBuilder] Imported ${Object.keys(missingSnapshotFiles).length} canonical snapshot files`);
+      }
+    } else {
+      // Fallback: seed single Home page
       creatorPlayground.addPage("Home", "/", "home", { showInNav: true, isHome: true });
     }
-
   }, []); // run once on mount
 
   // Route conflict detection from playground registry
@@ -1439,12 +2372,44 @@ export default function App() {
 
   // Feed route conflicts + topology validation into diagnostics aggregator
   useEffect(() => {
-    const items = computePageRegistryDiagnostics({
-      routeConflicts,
-      sitePlan: activeSitePlanRef.current,
-      pageRegistry: creatorPlayground.pageRegistry,
-      vfsFiles: virtualFS.getSandpackFiles(),
-    });
+    const items: Array<{ domain: 'page-registry'; message: string; severity?: 'error' | 'warning'; code?: string }> = [];
+
+    // Route conflicts
+    for (const conflict of routeConflicts) {
+      items.push({
+        domain: 'page-registry',
+        message: `Duplicate route detected: "${conflict}" — multiple pages share the same path`,
+        severity: 'error',
+        code: 'ROUTE_CONFLICT',
+      });
+    }
+
+    // Topology validation errors (from site plan)
+    const plan = activeSitePlanRef.current;
+    if (plan?.validationErrors?.length) {
+      for (const err of plan.validationErrors) {
+        items.push({
+          domain: 'page-registry',
+          message: err,
+          severity: 'warning',
+          code: 'TOPOLOGY_VALIDATION',
+        });
+      }
+    }
+
+    // Check for missing VFS files (pages in registry but not in VFS)
+    const vfsFiles = virtualFS.getSandpackFiles();
+    for (const page of Object.values(creatorPlayground.pageRegistry.pages)) {
+      if (page.filePath && !vfsFiles[page.filePath]) {
+        items.push({
+          domain: 'page-registry',
+          message: `Page "${page.title}" (${page.filePath}) is registered but missing from VFS`,
+          severity: 'warning',
+          code: 'MISSING_VFS_FILE',
+        });
+      }
+    }
+
     diagnosticsAggregator.ingestUnisonDiagnostics(items);
   }, [routeConflicts, creatorPlayground.pageRegistry, virtualFS.nodes]);
 
@@ -1460,14 +2425,8 @@ export default function App() {
   const lastSyncedRegistryVersionRef = useRef<number>(-1);
   useEffect(() => {
     const registry = creatorPlayground.pageRegistry;
-    if (!registry) return;
-    // Mirror current registry into the singleton topology controller so other
-    // modules (debug agent, AI patch lifecycle, intent inspector) can read
-    // topology without prop-drilling through WebBuilder.
-    livePageTopology.setRegistry(registry);
-    if (Object.keys(registry.pages).length === 0) return;
+    if (!registry || Object.keys(registry.pages).length === 0) return;
     if (lastSyncedRegistryVersionRef.current === registry.version) return;
-
     try {
       const currentFiles = virtualFS.getSandpackFiles();
       const filesToImport: Record<string, string> = {};
@@ -1483,14 +2442,14 @@ export default function App() {
         }
       }
 
-      const result = livePreviewRuntime.syncRouterIntoVFS(
-        registry,
-        currentFiles,
-        launchEntryPoint,
-        (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
-        filesToImport,
-      );
-
+      const mergedForRouter = { ...currentFiles, ...filesToImport };
+      const result = syncRouterAndValidate(registry, mergedForRouter);
+      if (result.routerCode) {
+        filesToImport[launchEntryPoint] = result.routerCode;
+      }
+      if (Object.keys(filesToImport).length > 0) {
+        virtualFS.importFiles(filesToImport);
+      }
       lastSyncedRegistryVersionRef.current = registry.version;
       if (result.validation && !result.validation.valid) {
         console.warn('[WebBuilder] Topology validation issues after registry sync:', result.validation.issues);
@@ -1540,18 +2499,11 @@ export default function App() {
         const sectionInfo = templateCustomizer.sections.find(s => s.id === sectionId);
         if (!sectionInfo) continue;
         const tagName = sectionInfo.tagName || 'section';
-
-        // findSectionBounds counts occurrences of <tagName> only, but
-        // sectionInfo.order is the index across ALL section-like tags.
-        // Recompute the per-tag index from the customizer section list so
-        // the splice targets the correct DOM region.
-        const typeIndex = templateCustomizer.sections
-          .filter(s => (s.tagName || 'section') === tagName)
-          .findIndex(s => s.id === sectionId);
-        if (typeIndex < 0) continue;
+        const idx = sectionInfo.order ?? parseInt(sectionId.replace(/^\D+-/, ''), 10);
+        if (isNaN(idx)) continue;
 
         // Find section boundaries in the JSX source
-        const bounds = findSectionBounds(source, tagName, typeIndex);
+        const bounds = findSectionBounds(source, tagName, idx);
         if (!bounds) continue;
 
         // Extract content and render the new variant JSX
@@ -1607,12 +2559,11 @@ export default function App() {
     }
 
     const vfsFiles = virtualFS.getSandpackFiles();
-    const resolved = livePageTopology.resolveNavigation(
+    const resolved = resolveNavigationTarget(
       { pageId },
-      vfsFiles,
       creatorPlayground.pageRegistry,
+      vfsFiles,
     );
-
 
     // Update all three state slices
     setActivePageId(pageId);
@@ -1630,7 +2581,7 @@ export default function App() {
 
     // If file doesn't exist in VFS, trigger AI generation as fallback
     if (!resolved.existsInVFS && !page.isHome) {
-      const fp = resolved.filePath || livePageTopology.deriveFilePath(page);
+      const fp = resolved.filePath || deriveFilePath(page);
       const pageName = fp.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || page.title.toLowerCase();
       creatorPlayground.updatePage(pageId, { filePath: fp });
       triggerPageGenRef.current(pageName, page.title, null);
@@ -1692,21 +2643,21 @@ export default function App() {
     if (page.filePath && vfsFiles[page.filePath]) {
       const next = { ...vfsFiles };
       delete next[page.filePath];
-      liveVFSCommit.writeFiles(next, 'playground-edit', virtualFS.importFiles);
+      virtualFS.importFiles(next);
     }
     creatorPlayground.removePage(pageId);
 
     // The registry-version effect regenerates the router automatically,
     // but doing it inline keeps file removal + router update atomic.
-    livePreviewRuntime.syncRouterIntoVFS(
+    const result = syncRouterAndValidate(
       { ...creatorPlayground.pageRegistry, pages: Object.fromEntries(
         Object.entries(creatorPlayground.pageRegistry.pages).filter(([id]) => id !== pageId)
       ) },
       virtualFS.getSandpackFiles(),
-      launchEntryPoint,
-      (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
     );
-
+    if (result.routerCode) {
+      virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
+    }
 
     if (activePagePath === page.filePath) {
       handleSelectPage(launchEntryPoint);
@@ -1723,9 +2674,30 @@ export default function App() {
   useEffect(() => {
     const files = virtualFS.getSandpackFiles();
     const registryPages = Object.values(creatorPlayground.pageRegistry.pages);
-    const registrations = computeOrphanPageRegistrations(files, registryPages);
-    if (registrations.length === 0) return;
-    for (const { filePath, title, route } of registrations) {
+    const knownFilePaths = new Set(
+      registryPages.map((p) => p.filePath).filter(Boolean) as string[],
+    );
+
+    const orphans = Object.keys(files).filter((p) => {
+      if (!/^\/src\/pages\/[^/]+\.tsx$/.test(p)) return false;
+      // Skip funnels (handled separately) and known files
+      if (p.includes('/pages/funnels/')) return false;
+      if (knownFilePaths.has(p)) return false;
+      // Skip files whose component name matches an existing page title
+      const base = p.split('/').pop()!.replace(/\.tsx$/, '');
+      const slug = base.replace(/Page$/, '').toLowerCase();
+      const hasMatchingTitle = registryPages.some(
+        (rp) => rp.title.toLowerCase().replace(/\s+/g, '') === slug,
+      );
+      return !hasMatchingTitle;
+    });
+
+    if (orphans.length === 0) return;
+
+    for (const filePath of orphans) {
+      const base = filePath.split('/').pop()!.replace(/\.tsx$/, '').replace(/Page$/, '');
+      const title = base.replace(/([A-Z])/g, ' $1').trim().replace(/\b\w/g, (c) => c.toUpperCase()) || 'Page';
+      const route = '/' + base.replace(/([A-Z])/g, '-$1').replace(/^-/, '').toLowerCase();
       console.log(`[WebBuilder] Auto-registering AI page: ${filePath} → ${route}`);
       creatorPlayground.addPage(title, route, 'custom', { filePath, showInNav: true });
     }
@@ -1765,7 +2737,7 @@ export default function ${componentName}Page() {
   );
 }
 `;
-    liveVFSCommit.writeFiles({ [path]: newPageCode }, 'playground-edit', vfsImportFiles);
+    vfsImportFiles({ [path]: newPageCode });
     openBuilderFile(path, newPageCode);
     toast.success(`Page "${label}" created`);
   }, [getSandpackFiles, openBuilderFile, vfsImportFiles]);
@@ -1777,7 +2749,7 @@ export default function ${componentName}Page() {
     const allFiles = getSandpackFiles();
     delete allFiles[path];
     // Re-import without the deleted page
-    liveVFSCommit.writeFiles(allFiles, 'playground-edit', vfsImportFiles);
+    vfsImportFiles(allFiles);
     // Switch back to main page if we deleted the active one
     if (activePagePath === path) {
       handleSelectPage(launchEntryPoint);
@@ -1864,9 +2836,25 @@ export default function ${componentName}Page() {
     files: Record<string, string>,
     preferredPath?: string | null,
   ): string | null => {
-    return selectEditableEntryPathPure(files, preferredPath, launchEntryPoint);
-  }, [launchEntryPoint]);
+    if (preferredPath && files[preferredPath]) {
+      return preferredPath;
+    }
 
+    const resolvedEntryPath = resolveLauncherEntryPoint(
+      files,
+      preferredPath || launchEntryPoint,
+    );
+    if (resolvedEntryPath && files[resolvedEntryPath]) {
+      return resolvedEntryPath;
+    }
+
+    return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path))
+      || Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path) && !/\/(main|index)\.(tsx|jsx)$/.test(path))
+      || Object.keys(files).find((path) => /\.(tsx|jsx)$/.test(path))
+      || (files['/index.html'] ? '/index.html' : null)
+      || Object.keys(files)[0]
+      || null;
+  }, [launchEntryPoint]);
 
   const syncBuilderFromFiles = useCallback((
     files: Record<string, string>,
@@ -1922,7 +2910,7 @@ export default function ${componentName}Page() {
       }
     }
 
-    liveVFSCommit.writeFiles(normalizedFiles, 'system-restore', vfsImportFiles);
+    vfsImportFiles(normalizedFiles);
     const syncedEntry = syncBuilderFromFiles(
       normalizedFiles,
       options?.preferredPath || normalizedEntryPoint || null,
@@ -1963,7 +2951,7 @@ export default function ${componentName}Page() {
             [targetPath]: previewCode,
           };
 
-      liveVFSCommit.writeFiles(importPayload, 'playground-edit', virtualFSRef.current.importFiles);
+      virtualFSRef.current.importFiles(importPayload);
       lastSyncedCodeRef.current = previewCode;
     }
   }, [previewCode, activePagePath, launchEntryPoint, routeStateHasStructuredProject, resolvedThemePresetId]);
@@ -1983,8 +2971,21 @@ export default function ${componentName}Page() {
   // Track VFS file map signature so we persist multi-file AI edits even when
   // the legacy single-file `previewCode` blob did not change.
   const lastSavedVfsSignatureRef = useRef<string>('');
-  // computeVfsSignature moved to '@/lib/builder/vfsHelpers' (Phase C3).
-
+  const computeVfsSignature = useCallback((files: Record<string, string>): string => {
+    const keys = Object.keys(files).sort();
+    if (keys.length === 0) return '';
+    let hash = 0;
+    for (const k of keys) {
+      const v = files[k] ?? '';
+      // Cheap stable signature: path + length + last-32-char tail.
+      const tail = v.length > 32 ? v.slice(-32) : v;
+      const seg = `${k}:${v.length}:${tail}|`;
+      for (let i = 0; i < seg.length; i++) {
+        hash = ((hash << 5) - hash + seg.charCodeAt(i)) | 0;
+      }
+    }
+    return `${keys.length}:${hash}`;
+  }, []);
   // Keep the current template id in a ref so callbacks always read the
   // latest value without stale-closure issues (avoids re-creating intervals).
   const currentTemplateIdRef = useRef<string | null>(templateFiles.currentTemplateId);
@@ -2004,29 +3005,148 @@ export default function ${componentName}Page() {
   const initialCodeRef = useRef<string>(previewCode);
   
   // Cloud state: project settings, entitlements, installed packs
-  const [cloudState, setCloudState] = useState<CloudStateSnapshot>(() => createInitialCloudState({
-    projectId,
-    businessId,
-    projectNameFromState,
-    projectSlug,
-    publishStatusFromState,
-    customDomainFromState,
-  }));
+  const [cloudState, setCloudState] = useState<{
+    project: {
+      id: string | null;
+      name: string | null;
+      slug: string | null;
+      publishStatus: string | null;
+      customDomain: string | null;
+      settings: Record<string, any>;
+    };
+    business: {
+      id: string | null;
+      name: string | null;
+      notificationEmail: string | null;
+      timezone: string | null;
+      brandColor: string | null;
+    };
+    entitlements: Record<string, { limit?: number; enabled?: boolean }>;
+    installedPacks: string[];
+    isLoaded: boolean;
+  }>({
+    project: {
+      id: projectId || null,
+      name: projectNameFromState || null,
+      slug: projectSlug || null,
+      publishStatus: publishStatusFromState || null,
+      customDomain: customDomainFromState || null,
+      settings: {},
+    },
+    business: {
+      id: businessId || null,
+      name: null,
+      notificationEmail: null,
+      timezone: 'UTC',
+      brandColor: null,
+    },
+    entitlements: {},
+    installedPacks: [],
+    isLoaded: false,
+  });
   
   // Load full cloud state when project/business context is available
   useEffect(() => {
-    return hydrateCloudState({
-      businessId,
-      projectId,
-      fallbacks: {
-        projectNameFromState,
-        projectSlug,
-        publishStatusFromState,
-        customDomainFromState,
-      },
-      setCloudState,
-    });
-  }, [businessId, projectId, projectNameFromState, projectSlug, publishStatusFromState, customDomainFromState]);
+    let cancelled = false;
+    
+    async function loadCloudState() {
+      if (!businessId) {
+        // No business context - running in preview/demo mode
+        if (!cancelled) {
+          setCloudState(prev => ({ ...prev, isLoaded: true }));
+        }
+        return;
+      }
+      
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          if (!cancelled) setCloudState(prev => ({ ...prev, isLoaded: true }));
+          return;
+        }
+        
+        // Load business settings
+        // Type cast to handle dynamic table that may not be in generated types yet
+        const { data: bizData } = await supabase
+          .from('businesses' as any)
+          .select('id, name, notification_email, timezone, brand_color, settings')
+          .eq('id', businessId)
+          .maybeSingle() as { data: { id: string; name: string; notification_email: string | null; timezone: string | null; brand_color: string | null; settings: any } | null };
+        
+        // Load project settings if we have a projectId
+        let projectData: { id: string; name: string; slug: string | null; publish_status: string | null; custom_domain: string | null; settings: any } | null = null;
+        if (projectId) {
+          const { data } = await getProjectByIdCompat(projectId);
+          projectData = data
+            ? {
+                id: data.id,
+                name: data.name,
+                slug: data.slug || null,
+                publish_status: data.publish_status || null,
+                custom_domain: data.custom_domain || null,
+                settings: data.settings || {},
+              }
+            : null;
+        }
+        
+        // Load entitlements
+        const { data: entitlementsData } = await supabase
+          .from('entitlements' as any)
+          .select('key, value')
+          .eq('business_id', businessId) as { data: { key: string; value: any }[] | null };
+        
+        // Load installed packs
+        const { data: packsData } = await supabase
+          .from('installed_packs' as any)
+          .select('pack_id')
+          .eq('business_id', businessId)
+          .eq('status', 'active') as { data: { pack_id: string }[] | null };
+        
+        if (!cancelled) {
+          const entitlements: Record<string, { limit?: number; enabled?: boolean }> = {};
+          (entitlementsData || []).forEach((e) => {
+            entitlements[e.key] = typeof e.value === 'string' ? JSON.parse(e.value) : e.value;
+          });
+          
+          setCloudState({
+            project: {
+              id: projectData?.id || projectId || null,
+              name: projectData?.name || projectNameFromState || null,
+              slug: projectData?.slug || projectSlug || null,
+              publishStatus: projectData?.publish_status || publishStatusFromState || null,
+              customDomain: projectData?.custom_domain || customDomainFromState || null,
+              settings: projectData?.settings || {},
+            },
+            business: {
+              id: bizData?.id || businessId || null,
+              name: bizData?.name || null,
+              notificationEmail: bizData?.notification_email || null,
+              timezone: bizData?.timezone || 'UTC',
+              brandColor: bizData?.brand_color || null,
+            },
+            entitlements,
+            installedPacks: (packsData || []).map((p: any) => p.pack_id),
+            isLoaded: true,
+          });
+          
+          console.log('[WebBuilder] Cloud state loaded:', {
+            businessId,
+            projectId,
+            entitlementsCount: Object.keys(entitlements).length,
+            installedPacks: (packsData || []).map((p: any) => p.pack_id),
+          });
+        }
+      } catch (error) {
+        console.warn('[WebBuilder] Failed to load cloud state:', error);
+        if (!cancelled) {
+          setCloudState(prev => ({ ...prev, isLoaded: true }));
+        }
+      }
+    }
+    
+    loadCloudState();
+    return () => { cancelled = true; };
+  }, [businessId, projectId]);
 
   const playgroundSetupSnapshot = useMemo(() => ({
     publishStatus: cloudState.project.publishStatus,
@@ -2191,11 +3311,24 @@ export default function ${componentName}Page() {
   const pageStructureContext = useMemo(() => buildPageStructureContext(previewCode), [previewCode]);
   
   // Build redirect page context from VFS for in-builder AI awareness (React pages)
-  const redirectPageContext = useMemo(
-    () => buildVfsPageListContext(virtualFS.getSandpackFiles()),
-    [virtualFS.nodes],
-  );
-
+  const redirectPageContext = useMemo(() => {
+    const vfsFiles = virtualFS.getSandpackFiles();
+    const pageFiles = Object.keys(vfsFiles).filter(p => 
+      p.match(/\/src\/pages\/\w+\.tsx$/) && p !== '/src/App.tsx'
+    );
+    if (pageFiles.length === 0) return '';
+    
+    const lines = ['\n=== REACT PAGES IN VFS ==='];
+    pageFiles.forEach(p => {
+      const content = vfsFiles[p] || '';
+      const nameMatch = p.match(/\/(\w+)\.tsx$/);
+      const componentName = nameMatch?.[1] || 'Unknown';
+      const exportMatch = content.match(/export default function (\w+)/);
+      lines.push(`- ${p} (${exportMatch?.[1] || componentName}, ${content.length} chars)`);
+    });
+    lines.push('All pages are React components. Apply nav/footer/brand changes across ALL pages.');
+    return lines.join('\n');
+  }, [virtualFS.nodes]);
   
   const backendStateContext = useMemo(() => {
     const lines: string[] = [];
@@ -2213,11 +3346,33 @@ export default function ${componentName}Page() {
   // Load persisted launcher design preferences (if not already in navigation state)
   useEffect(() => {
     let cancelled = false;
-    loadDesignPreferences({ businessId, currentDesignPreset }).then((patch) => {
-      if (cancelled || !patch) return;
-      if (patch.designPreset) setCurrentDesignPreset(patch.designPreset);
-      if (patch.templateCategory) setCurrentTemplateCategory(patch.templateCategory);
-    });
+    async function loadPrefs() {
+      if (!businessId) return;
+      // If we already have a preset from navigation state, don't override it.
+      if (currentDesignPreset) return;
+
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) return;
+
+        const { data, error } = await supabase
+          .from("business_design_preferences" as any)
+          .select("template_category,design_preset")
+          .eq("business_id", businessId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (!cancelled) {
+          if (data?.design_preset) setCurrentDesignPreset(String(data.design_preset));
+          if (data?.template_category) setCurrentTemplateCategory(String(data.template_category));
+        }
+      } catch (e) {
+        console.warn("[WebBuilder] Failed to load business design preferences", e);
+      }
+    }
+
+    loadPrefs();
     return () => {
       cancelled = true;
     };
@@ -2225,9 +3380,41 @@ export default function ${componentName}Page() {
 
   useEffect(() => {
     let cancelled = false;
-    loadBusinessData({ businessId, currentTemplateCategory, currentDesignPreset }).then((ctx) => {
-      if (!cancelled) setBusinessDataContext(ctx);
-    });
+    async function loadBusinessData() {
+      if (!businessId) {
+        if (!cancelled) setBusinessDataContext(null);
+        return;
+      }
+
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          if (!cancelled) setBusinessDataContext(null);
+          return;
+        }
+
+        const { data: biz, error } = await supabase
+          .from("businesses" as any)
+          .select("id,name")
+          .eq("id", businessId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        const lines: string[] = [];
+        if (biz?.name) lines.push(`- businessName: ${biz.name}`);
+        if (biz?.id) lines.push(`- businessId: ${biz.id}`);
+        if (currentTemplateCategory) lines.push(`- templateCategory: ${currentTemplateCategory}`);
+        if (currentDesignPreset) lines.push(`- designPreset: ${currentDesignPreset}`);
+
+        if (!cancelled) setBusinessDataContext(lines.length ? lines.join("\n") : null);
+      } catch (e) {
+        console.warn("[WebBuilder] Failed to load business data", e);
+        if (!cancelled) setBusinessDataContext(null);
+      }
+    }
+
+    loadBusinessData();
     return () => {
       cancelled = true;
     };
@@ -2261,10 +3448,41 @@ export default function ${componentName}Page() {
 
   // Production readiness signal: check if this businessId has been installed
   useEffect(() => {
+    const effectiveBusinessId = businessId || getOrCreatePreviewBusinessId(systemType);
     let cancelled = false;
-    checkBackendInstalled({ businessId, systemType }).then((installed) => {
-      if (!cancelled) setBackendInstalled(installed);
-    });
+
+    async function checkInstalled() {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          if (!cancelled) setBackendInstalled(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("business_installs" as any)
+          .select("id")
+          .eq("business_id", effectiveBusinessId)
+          .limit(1);
+
+        if (error) {
+          if (isMissingBusinessInstallsError(error)) {
+            if (!cancelled) setBackendInstalled(false);
+            return;
+          }
+          console.warn("[WebBuilder] business_installs check failed", error);
+          if (!cancelled) setBackendInstalled(false);
+          return;
+        }
+
+        if (!cancelled) setBackendInstalled((data?.length ?? 0) > 0);
+      } catch (e) {
+        console.warn("[WebBuilder] backendInstalled check error", e);
+        if (!cancelled) setBackendInstalled(false);
+      }
+    }
+
+    checkInstalled();
     return () => {
       cancelled = true;
     };
@@ -2302,32 +3520,91 @@ export default function ${componentName}Page() {
     return previewCode;
   }, [templateCustomizer, previewCode]);
 
-  // Build the v2 save payload — full multi-page VFS round-trip.
-  // Pure assembly lives in '@/lib/builder/savePayload' (Phase C3).
+  // Build the v2 save payload — full multi-page VFS round-trip
   const buildSavePayload = useCallback(() => {
-    return assembleSavePayload({
+    const canonicalPlayground = {
       pageRegistry: creatorPlayground.pageRegistry,
       creatorData: creatorPlayground.creatorData,
-      playgroundBindings,
-      playgroundCalendars,
-      playgroundPopups,
-      currentFiles: virtualFS.getSandpackFiles(),
-      launchEntryPoint,
-      activePagePath,
-      businessId,
-      projectId,
-      manifestId: currentManifestId || manifestIdFromState || null,
-      systemType: activeSystemType || systemType || null,
-      systemName,
-      templateName: currentTemplateName,
-      templateCategory: currentTemplateCategory,
-      designPreset: currentDesignPreset,
-      projectDisplayName,
-      saveProjectName,
-      projectNameFromState,
-      effectiveRouteState,
-      routeStateHasStructuredProject,
+      bindings: playgroundBindings,
+      calendars: playgroundCalendars,
+      popups: playgroundPopups,
+    };
+    const currentFiles = virtualFS.getSandpackFiles();
+    const effectiveBusinessName =
+      creatorPlayground.creatorData.businessInfo.businessName ||
+      currentTemplateName ||
+      projectNameFromState ||
+      systemName ||
+      'Business';
+    const recompilation = commitToPipeline(
+      {
+        playground: canonicalPlayground,
+        existingVfsFiles: currentFiles,
+        businessName: effectiveBusinessName,
+        industry: effectiveRouteState?.siteBundleSnapshot?.industry,
+      },
+      'playground-edit',
+    );
+    const launchArtifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: currentFiles,
+      preferredEntryPoint: launchEntryPoint,
+      siteBundleSnapshot: recompilation.siteBundleSnapshot,
+      compiledPlayground: recompilation.compileResult,
+      canonicalPlayground,
+      businessId: businessId ?? undefined,
+      projectId: projectId ?? undefined,
+      manifestId: currentManifestId || manifestIdFromState || undefined,
+      systemType: activeSystemType || systemType || undefined,
+      systemName: systemName || effectiveBusinessName,
+      templateName: currentTemplateName || effectiveBusinessName,
+      templateCategory: currentTemplateCategory || undefined,
+      businessName: effectiveBusinessName,
+      industry: recompilation.siteBundleSnapshot.industry,
+      aesthetic: currentDesignPreset || undefined,
+      backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
+      wizardSelections: effectiveRouteState?.wizardSelections || undefined,
     });
+
+    return {
+      vfsFiles: launchArtifacts.files,
+      entryPoint: launchArtifacts.entryPoint,
+      activePagePath,
+      businessId: businessId ?? null,
+      projectId: projectId ?? null,
+      canonicalPlayground: launchArtifacts.canonicalPlayground,
+      siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+      metadata: {
+        // Project identity is strictly the project's own name. Never fall
+        // back to a business/wizard name here — that's how legacy drafts
+        // ended up titled "My Business".
+        name: (
+          projectDisplayName.trim() ||
+          saveProjectName.trim() ||
+          projectNameFromState ||
+          currentTemplateName ||
+          ''
+        ).trim() || `Project ${(projectId || '').slice(0, 8) || 'untitled'}`,
+        projectName: (
+          projectDisplayName.trim() ||
+          saveProjectName.trim() ||
+          projectNameFromState ||
+          currentTemplateName ||
+          ''
+        ).trim() || `Project ${(projectId || '').slice(0, 8) || 'untitled'}`,
+        businessName: effectiveBusinessName,
+        systemType: activeSystemType || systemType || null,
+        templateCategory: currentTemplateCategory || null,
+        aesthetic: currentDesignPreset || null,
+        manifestId: currentManifestId || manifestIdFromState || null,
+        launchSource: effectiveRouteState?.wizardSelections
+          ? 'system_launcher'
+          : effectiveRouteState?.systemsBuildContext
+            ? 'business_launcher'
+            : routeStateHasStructuredProject
+              ? 'launcher'
+              : 'web_builder',
+      },
+    };
   }, [
     virtualFS,
     launchEntryPoint,
@@ -2353,7 +3630,6 @@ export default function ${componentName}Page() {
     currentDesignPreset,
     routeStateHasStructuredProject,
   ]);
-
 
   const ensureLauncherDraftSaved = useCallback(async (
     reason: 'launcher_import' | 'interval_autosave',
@@ -2603,15 +3879,49 @@ export default function ${componentName}Page() {
   // If ?id= is present the Supabase load is the authoritative source; restoring a
   // stale localStorage draft here would overwrite the correct project state.
   useEffect(() => {
-    restoreAutosavedDraft({
-      locationSearch: location.search,
-      routeStateHasStructuredProject,
-      lastSavedCodeRef,
-      setShowLauncher,
-      setPreviewCode,
-      setEditorCode,
-      setLastSavedAt,
-    });
+    try {
+      // If the user navigated here to open a specific saved project, skip restore.
+      const urlId = new URLSearchParams(location.search).get('id');
+      if (urlId) return;
+
+      // Also skip if incoming route state already carries structured project files.
+      if (routeStateHasStructuredProject) return;
+
+      const savedDraft = localStorage.getItem('webbuilder_autosave_draft');
+      if (savedDraft) {
+        const draft = JSON.parse(savedDraft);
+        const savedTime = new Date(draft.savedAt);
+        const now = new Date();
+        const hoursSinceLastSave = (now.getTime() - savedTime.getTime()) / (1000 * 60 * 60);
+        
+        // Only restore if draft is less than 24 hours old
+        if (hoursSinceLastSave < 24 && draft.code) {
+          // Check if there's meaningful content (not just default)
+          const isDefaultContent = draft.code.includes('AI-generated code will appear here');
+          if (!isDefaultContent) {
+            setShowLauncher(false);
+            setPreviewCode(draft.code);
+            if (draft.editorCode) {
+              setEditorCode(draft.editorCode);
+            }
+            lastSavedCodeRef.current = draft.code;
+            setLastSavedAt(savedTime);
+            toast.info('Draft restored', {
+              description: `Last saved ${format(savedTime, 'MMM d, h:mm a')}`,
+              action: {
+                label: 'Discard',
+                onClick: () => {
+                  localStorage.removeItem('webbuilder_autosave_draft');
+                  setPreviewCode('import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}');
+                },
+              },
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[AutoSave] Error restoring draft:', error);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
    
@@ -2625,18 +3935,102 @@ export default function ${componentName}Page() {
     setPreviewCartOpen(true);
   }, [refreshPreviewCart]);
 
-  // mapOverlayIdToConfig moved to '@/lib/builder/overlayMapping' (Phase C3).
-
+  const mapOverlayIdToConfig = useCallback((
+    overlayId: string,
+    payload?: Record<string, unknown>,
+  ): OverlayConfig | null => {
+    switch (overlayId) {
+      case 'auth-login':
+        return { type: 'auth-login', payload };
+      case 'auth-register':
+        return { type: 'auth-register', payload };
+      case 'booking':
+      case 'booking_intake':
+      case 'consultation_intake':
+      case 'reservation':
+      case 'patient_intake':
+        return { type: 'booking', payload };
+      case 'contact':
+      case 'lead':
+      case 'lead-capture':
+      case 'project_inquiry':
+      case 'property_inquiry':
+      case 'volunteer':
+      case 'demo_request':
+        return { type: 'contact', payload };
+      case 'quote':
+      case 'quote_request':
+        return { type: 'quote', payload };
+      case 'newsletter':
+      case 'waitlist':
+        return { type: 'newsletter', payload };
+      case 'checkout':
+      case 'payments-setup':
+        return { type: 'checkout', payload };
+      case 'booking-confirmation':
+      case 'order-confirmation':
+      case 'confirmation':
+        return { type: 'confirmation', payload };
+      case 'upgrade':
+        return { type: 'upgrade', payload };
+      default:
+        return null;
+    }
+  }, []);
 
   useEffect(() => {
-    return attachRuntimeOverlayMessages({
-      refreshPreviewCart,
-      openPreviewCart,
-      setActiveRuntimeOverlay,
-      setPreviewCartOpen,
-      setPreviewCartStep,
-    });
-  }, [openPreviewCart, refreshPreviewCart]);
+    const handleBrowserCartUpdate = () => {
+      refreshPreviewCart();
+    };
+    const handleCartViewIntent = () => openPreviewCart('cart');
+
+    const handleRuntimeOverlayMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OVERLAY_OPEN') {
+        const overlayId = String(event.data.overlayId || '');
+        const payload = (event.data.payload || {}) as Record<string, unknown>;
+
+        if (overlayId === 'cart') {
+          const requestedStep = payload.step === 'checkout' ? 'checkout' : 'cart';
+          openPreviewCart(requestedStep);
+          return;
+        }
+
+        const nextOverlay = mapOverlayIdToConfig(overlayId, payload);
+        if (nextOverlay) {
+          setActiveRuntimeOverlay(nextOverlay);
+        }
+      }
+
+      if (event.data?.type === 'OVERLAY_CLOSE') {
+        const overlayId = String(event.data.overlayId || '');
+        if (!overlayId || overlayId === 'cart') {
+          setPreviewCartOpen(false);
+          setPreviewCartStep('cart');
+        }
+        if (!overlayId || overlayId !== 'cart') {
+          setActiveRuntimeOverlay(null);
+        }
+      }
+
+      if (event.data?.type === 'TOAST_SHOW' && event.data.toast?.message) {
+        const nextToast = event.data.toast as { type?: string; message: string };
+        if (nextToast.type === 'error') toast.error(nextToast.message);
+        else if (nextToast.type === 'warning') toast.warning(nextToast.message);
+        else if (nextToast.type === 'success') toast.success(nextToast.message);
+        else toast(nextToast.message);
+      }
+    };
+
+    window.addEventListener(BROWSER_CART_EVENT, handleBrowserCartUpdate as EventListener);
+    window.addEventListener('message', handleRuntimeOverlayMessage);
+    window.addEventListener('intent:cart.view', handleCartViewIntent);
+
+    return () => {
+      window.removeEventListener(BROWSER_CART_EVENT, handleBrowserCartUpdate as EventListener);
+      window.removeEventListener('message', handleRuntimeOverlayMessage);
+      window.removeEventListener('intent:cart.view', handleCartViewIntent);
+    };
+  }, [mapOverlayIdToConfig, openPreviewCart, refreshPreviewCart]);
 
   // Listen for INTENT_TRIGGER messages from iframe previews
   useEffect(() => {
@@ -2828,12 +4222,11 @@ export default function ${componentName}Page() {
       if (intent === 'nav.goto_page') {
         const targetPageId = (payload as any)?.targetPageId;
         const vfsFiles = virtualFS.getSandpackFiles();
-        const resolved = livePageTopology.resolveNavigation(
+        const resolved = resolveNavigationTarget(
           { targetPageId, label: buttonLabel },
-          vfsFiles,
           creatorPlayground.pageRegistry,
+          vfsFiles,
         );
-
 
         if (!resolved.existsInRegistry) {
           const sitePlan = activeSitePlanRef.current;
@@ -2845,12 +4238,11 @@ export default function ${componentName}Page() {
               buttonLabel || ''
             );
             if (fallbackRoute) {
-              const resolved2 = livePageTopology.resolveNavigation(
+              const resolved2 = resolveNavigationTarget(
                 { route: fallbackRoute },
-                vfsFiles,
                 creatorPlayground.pageRegistry,
+                vfsFiles,
               );
-
               if (resolved2.pageId) {
                 navigateToBuilderPage(resolved2.pageId);
                 sendResultToIframe({ success: true });
@@ -2896,12 +4288,11 @@ export default function ${componentName}Page() {
         }
         if (path) {
           const vfsFiles = virtualFS.getSandpackFiles();
-          const resolved = livePageTopology.resolveNavigation(
+          const resolved = resolveNavigationTarget(
             { route: path, label: buttonLabel },
-            vfsFiles,
             creatorPlayground.pageRegistry,
+            vfsFiles,
           );
-
           if (resolved.pageId) {
             navigateToBuilderPage(resolved.pageId);
             if (source && requestId) {
@@ -2925,62 +4316,15 @@ export default function ${componentName}Page() {
 
       console.log('[WebBuilder] Resolved action:', resolvedAction);
 
-      // ── Helper: dispatch unwired-click → AI Builder wires asynchronously ──
-      // Per the click-to-wire UX: unwired buttons no longer auto-open
-      // deterministic overlays. The click is acknowledged immediately and
-      // the AI Builder receives an event with full context to (a) wire the
-      // correct intent for the button label, or (b) scaffold a contextual
-      // page route if none exists. The NEXT click executes the now-wired
-      // intent. Builder-preview only — the published runtime never reaches
-      // this handler.
-      const dispatchUnwiredClick = (reason: 'overlay-fallback' | 'no-binding') => {
-        try {
-          const detail = {
-            intent,
-            buttonLabel,
-            suggestedPageType: classification.suggestedPageType ?? null,
-            category: classification.category,
-            elementContext: elementCtx,
-            payload: payload as Record<string, unknown> | undefined,
-            reason,
-            currentPageId: (creatorPlayground as any)?.activePageId ?? null,
-            queuedAt: Date.now(),
-          };
-          // Queue on window so AIBuilderPanel can flush it on mount even if
-          // the panel was closed at click time (wizard-launched sites default
-          // to panel closed). The live listener handles the open-panel case.
-          try {
-            const w = window as unknown as { __lovableUnwiredQueue?: unknown[] };
-            w.__lovableUnwiredQueue = Array.isArray(w.__lovableUnwiredQueue) ? w.__lovableUnwiredQueue : [];
-            w.__lovableUnwiredQueue.push(detail);
-            if (w.__lovableUnwiredQueue.length > 5) w.__lovableUnwiredQueue.shift();
-          } catch { /* noop */ }
-
-          // Auto-open the AI panel so the listener mounts and the toast is visible.
-          if (!aiPanelOpen) {
-            try { setAiPanelOpen(true); } catch { /* noop */ }
-          }
-
-          window.dispatchEvent(new CustomEvent('lovable:unwired-click', { detail }));
-        } catch (err) {
-          console.warn('[WebBuilder] Failed to dispatch unwired-click:', err);
-        }
-      };
-
       switch (resolvedAction.action) {
 
-        // ── Acknowledge ────────────────────────────────────────────────────
-        // If the preview already handled it, just confirm. Otherwise this is
-        // a truly unwired button → hand off to the AI Builder.
+        // ── Acknowledge: preview already handled it, just confirm ─────────
         case 'acknowledge': {
-          if (!inPreviewHandled) {
-            dispatchUnwiredClick('no-binding');
-          }
           sendResultToIframe({ success: true });
           return;
         }
 
-        // ── Cart: explicit cart intents stay wired and execute now ────────
+        // ── Scroll: send INTENT_COMMAND to the iframe ──────────────────────
         case 'cart': {
           if (intent === 'cart.add' || intent === 'cart.view') {
             void handleIntent(intent, {
@@ -3006,14 +4350,22 @@ export default function ${componentName}Page() {
           return;
         }
 
-        // ── Overlay fallback REPLACED by AI wiring ────────────────────────
-        // Deterministic overlays (auth/booking/contact/quote/newsletter/
-        // checkout) are no longer auto-opened for unwired buttons. The AI
-        // Builder receives the click context and adds explicit wiring (or
-        // scaffolds a page) so the NEXT click executes correctly.
         case 'overlay': {
-          dispatchUnwiredClick('overlay-fallback');
-          sendResultToIframe({ success: true });
+          const overlayPayload = {
+            ...(payload as Record<string, unknown>),
+            businessId,
+            siteId: projectId,
+            projectId,
+            source: (payload as Record<string, unknown> | undefined)?.source
+              || (intent === 'lead.capture' ? 'lead_capture' : intent),
+          };
+          const overlayConfig = mapOverlayIdToConfig(resolvedAction.overlayId, overlayPayload);
+          if (overlayConfig) {
+            setActiveRuntimeOverlay(overlayConfig);
+            sendResultToIframe({ success: true, ui: { openModal: resolvedAction.overlayId } });
+            return;
+          }
+          sendResultToIframe({ success: false, error: `Unsupported overlay: ${resolvedAction.overlayId}` });
           return;
         }
 
@@ -3126,7 +4478,7 @@ export default function ${componentName}Page() {
     vfsResetToEmpty();
     const entryContent = options?.entryContent ?? files[activePath] ?? '';
     openBuilderFile(activePath, entryContent);
-    liveVFSCommit.writeFiles(files, 'system-restore', vfsImportFiles);
+    vfsImportFiles(files);
   }, [launchEntryPoint, openBuilderFile, vfsImportFiles, vfsResetToEmpty]);
 
   // Auto AI page generation on button click is REMOVED.
@@ -3556,27 +4908,68 @@ ${sectionsJsx}
     });
   };
 
-  const handleClearCanvas = useCallback(() => {
-    clearBuilderState({
-      setEditorCode,
-      setPreviewCode,
-      resetVFS: virtualFS.resetToEmpty,
-      clearCurrentTemplate: templateFiles.clearCurrentTemplate,
-      setCurrentTemplateName,
-      setSaveProjectName,
-      setSaveProjectDescription,
-      fabricCanvas,
+  // Clear canvas and reset to initial state
+  const handleClearCanvas = () => {
+    const defaultCode = '// AI Web Builder - JavaScript Mode\n// Use vanilla JavaScript to create interactive web experiences\n\n// Example: Create a simple interactive button\nconst createButton = () => {\n  const button = document.createElement("button");\n  button.textContent = "Click Me!";\n  button.style.padding = "12px 24px";\n  button.style.fontSize = "16px";\n  button.style.cursor = "pointer";\n  \n  button.onclick = () => {\n    alert("Hello from Web Builder!");\n  };\n  \n  return button;\n};\n\n// Usage: Uncomment to test\n// document.body.appendChild(createButton());';
+    
+    const defaultPreview = 'import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}';
+    
+    setEditorCode(defaultCode);
+    setPreviewCode(defaultPreview);
+    
+    // Clear VFS to empty state
+    virtualFS.resetToEmpty();
+    
+    // Clear current template state
+    templateFiles.clearCurrentTemplate();
+    setCurrentTemplateName(null);
+    setSaveProjectName("");
+    setSaveProjectDescription("");
+    
+    // Clear fabric canvas if it exists
+    if (fabricCanvas) {
+      fabricCanvas.clear();
+      fabricCanvas.backgroundColor = '#ffffff';
+      fabricCanvas.renderAll();
+    }
+    
+    toast('Canvas Cleared!', {
+      description: 'Starting fresh with a clean slate',
     });
-  }, [
-    virtualFS.resetToEmpty,
-    templateFiles.clearCurrentTemplate,
-    fabricCanvas,
-  ]);
+  };
 
   // Helper to integrate CSS into HTML document
-  // integrateCSSIntoHTML moved to '@/lib/builder/htmlIntegration' (Phase C3).
-
-
+  const integrateCSSIntoHTML = useCallback((html: string, css: string): string => {
+    if (!css || !css.trim()) return html;
+    
+    const styleTag = `<style>\n${css}\n</style>`;
+    
+    // Check if it's a full HTML document
+    if (html.includes('</head>')) {
+      // Insert CSS before </head>
+      return html.replace('</head>', `${styleTag}\n</head>`);
+    } else if (html.includes('<html') || html.includes('<!DOCTYPE')) {
+      // Has HTML but no head - add before body or at start
+      if (html.includes('<body')) {
+        return html.replace('<body', `<head>${styleTag}</head>\n<body`);
+      }
+      return html.replace(/<html[^>]*>/i, (match) => `${match}\n<head>${styleTag}</head>`);
+    } else {
+      // Fragment - wrap in full document with CSS
+      return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  ${styleTag}
+</head>
+<body>
+${html}
+</body>
+</html>`;
+    }
+  }, []);
 
   // Handle loading a saved template
   const handleLoadTemplate = useCallback((template: {
@@ -3585,16 +4978,30 @@ ${sectionsJsx}
     description?: string;
     canvas_data: { html?: string; css?: string; previewCode?: string; js?: string };
   }) => {
-    const baseCode = template.canvas_data?.previewCode || template.canvas_data?.html || '';
-    if (!baseCode) {
+    // Get the base HTML - prefer previewCode as it's the most complete
+    let code = template.canvas_data?.previewCode || template.canvas_data?.html || '';
+    
+    if (!code) {
       toast.error('Template has no content');
       return;
     }
-    const code = mergeCanvasAssets({
-      html: baseCode,
-      css: template.canvas_data?.css,
-      js: template.canvas_data?.js,
-    });
+    
+    // If there's separate CSS that's not in previewCode, integrate it
+    const separateCss = template.canvas_data?.css || '';
+    if (separateCss && !code.includes(separateCss.substring(0, 50))) {
+      code = integrateCSSIntoHTML(code, separateCss);
+    }
+    
+    // If there's separate JS that's not in previewCode, integrate it
+    const separateJs = template.canvas_data?.js || '';
+    if (separateJs && !code.includes(separateJs.substring(0, 50))) {
+      const scriptTag = `<script>\n${separateJs}\n</script>`;
+      if (code.includes('</body>')) {
+        code = code.replace('</body>', `${scriptTag}\n</body>`);
+      } else {
+        code = code + `\n${scriptTag}`;
+      }
+    }
     
     importBuilderFiles(templateToVFSFiles(code, template.name), {
       preferredPath: launchEntryPoint,
@@ -3614,7 +5021,7 @@ ${sectionsJsx}
     toast.success(`Opened "${template.name}"`, {
       description: 'Template loaded - you can continue editing',
     });
-  }, [templateFiles, importBuilderFiles, launchEntryPoint]);
+  }, [templateFiles, integrateCSSIntoHTML, importBuilderFiles, launchEntryPoint]);
 
   // Handle template selection from LayoutTemplatesPanel (used by FloatingDock)
   const handleSelectTemplate = useCallback((
@@ -4101,7 +5508,7 @@ ${sectionsJsx}
       const patchedFiles = elementToVFSPatch(currentFiles, wrappedJsx, element.name, launchEntryPoint);
       
       // Apply to VFS — triggers Sandpack rebundle
-      liveVFSCommit.writeFiles(patchedFiles, 'playground-edit', vfsImportFiles);
+      vfsImportFiles(patchedFiles);
       
       // Update previewCode/editorCode to stay in sync
       const updatedApp = patchedFiles[launchEntryPoint];
@@ -4179,7 +5586,7 @@ ${sectionsJsx}
 
   const handleZoomIn = () => {
     if (!fabricCanvas) return;
-    const newZoom = computeZoomIn(zoom);
+    const newZoom = Math.min(zoom * 1.2, 2);
     setZoom(newZoom);
     fabricCanvas.setZoom(newZoom);
     fabricCanvas.renderAll();
@@ -4187,14 +5594,27 @@ ${sectionsJsx}
 
   const handleZoomOut = () => {
     if (!fabricCanvas) return;
-    const newZoom = computeZoomOut(zoom);
+    const newZoom = Math.max(zoom / 1.2, 0.1);
     setZoom(newZoom);
     fabricCanvas.setZoom(newZoom);
     fabricCanvas.renderAll();
   };
 
-  const getCanvasWidth = () => computeCanvasWidth(device);
-  const getCanvasHeight = () => computeCanvasHeight(device, canvasHeight);
+  const getCanvasWidth = () => {
+    switch (device) {
+      case "tablet": return 768;
+      case "mobile": return 375;
+      default: return 1280;
+    }
+  };
+
+  const getCanvasHeight = () => {
+    switch (device) {
+      case "tablet": return Math.max(1024, canvasHeight);
+      case "mobile": return Math.max(667, canvasHeight);
+      default: return canvasHeight;
+    }
+  };
 
   const canonicalBuildArtifacts = useMemo(() => {
     const sourceFiles = getSandpackFiles();
@@ -4215,11 +5635,48 @@ ${sectionsJsx}
     }
     
     if (!fabricCanvas) return;
-
-    const objects = fabricCanvas.getObjects() as unknown as Parameters<typeof fabricObjectsToHtmlCss>[0];
-    const { html, css } = fabricObjectsToHtmlCss(objects);
-
-
+    
+    const objects = fabricCanvas.getObjects();
+    let html = '<div class="web-page">\n';
+    let css = '.web-page {\n  min-height: 100vh;\n  position: relative;\n  background: white;\n}\n\n';
+    
+    objects.forEach((obj: FabricCanvas['_objects'][0], index: number) => {
+      const className = `element-${index}`;
+      
+      // Generate HTML
+      if (obj.type === 'text' || obj.type === 'textbox') {
+        html += `  <div class="${className}">${(obj as FabricTextObject).text}</div>\n`;
+      } else if (obj.type === 'rect') {
+        html += `  <div class="${className}"></div>\n`;
+      } else if (obj.type === 'image') {
+        html += `  <img class="${className}" src="${(obj as FabricImageObject).getSrc()}" alt="" />\n`;
+      }
+      
+      // Generate CSS
+      css += `.${className} {\n`;
+      css += `  position: absolute;\n`;
+      css += `  left: ${obj.left}px;\n`;
+      css += `  top: ${obj.top}px;\n`;
+      css += `  width: ${obj.width * (obj.scaleX || 1)}px;\n`;
+      css += `  height: ${obj.height * (obj.scaleY || 1)}px;\n`;
+      
+      if (obj.fill) {
+        css += `  background-color: ${obj.fill};\n`;
+      }
+      const textObj = obj as FabricTextObject;
+      if (textObj.fontSize) {
+        css += `  font-size: ${textObj.fontSize}px;\n`;
+      }
+      if (textObj.fontFamily) {
+        css += `  font-family: ${textObj.fontFamily};\n`;
+      }
+      if (textObj.textAlign) {
+        css += `  text-align: ${textObj.textAlign};\n`;
+      }
+      css += `}\n\n`;
+    });
+    
+    html += '</div>';
     
     setExportHtml(html);
     setExportCss(css);
@@ -4231,14 +5688,31 @@ ${sectionsJsx}
     } else if (format === 'react') {
       setExportDialogOpen(true);
     } else if (format === 'json') {
-      downloadJSON(fabricCanvas.toJSON(), 'design.json');
+      const json = JSON.stringify(fabricCanvas.toJSON(), null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'design.json';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     }
   };
 
   const toggleFullscreen = async () => {
-    const { isFullscreen: next, error } = await toggleElementFullscreen(mainContainerRef.current);
-    setIsFullscreen(next);
-    if (error) {
+    if (!mainContainerRef.current) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await mainContainerRef.current.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch (error) {
       console.error('Error toggling fullscreen:', error);
       toast.error('Failed to toggle fullscreen');
     }
@@ -4260,16 +5734,24 @@ ${sectionsJsx}
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
-    return attachWheelZoomGesture(container, {
-      getZoom: () => zoom,
-      onZoom: (next) => {
-        setZoom(next);
+
+    const handleWheel = (e: WheelEvent) => {
+      // Only zoom if Ctrl key is pressed
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.max(0.1, Math.min(2, zoom * delta));
+        setZoom(newZoom);
         if (fabricCanvas) {
-          fabricCanvas.setZoom(next);
+          fabricCanvas.setZoom(newZoom);
           fabricCanvas.renderAll();
         }
-      },
-    });
+      }
+      // If Ctrl is not pressed, allow normal scrolling (do nothing)
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
   }, [zoom, fabricCanvas]);
 
   // Handle panning with mouse drag
@@ -4294,9 +5776,50 @@ ${sectionsJsx}
   };
 
   // Scroll navigation functions — post message to iframe or scroll container
-  const postScrollToIframe = useCallback((command: ScrollCommand) => {
-    const iframe = livePreviewRef.current?.getIframe?.() ?? null;
-    scrollPreviewOrContainer(iframe, scrollContainerRef.current, command);
+  const postScrollToIframe = useCallback((command: 'top' | 'bottom' | 'up' | 'down') => {
+    const iframe = livePreviewRef.current?.getIframe?.();
+    if (iframe?.contentWindow) {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        if (doc) {
+          const scrollable = doc.scrollingElement || doc.documentElement;
+          switch (command) {
+            case 'top':
+              scrollable.scrollTo({ top: 0, behavior: 'smooth' });
+              break;
+            case 'bottom':
+              scrollable.scrollTo({ top: scrollable.scrollHeight, behavior: 'smooth' });
+              break;
+            case 'up':
+              scrollable.scrollBy({ top: -300, behavior: 'smooth' });
+              break;
+            case 'down':
+              scrollable.scrollBy({ top: 300, behavior: 'smooth' });
+              break;
+          }
+          return;
+        }
+      } catch {
+        // Cross-origin — fall through to container scroll
+      }
+    }
+    // Fallback: scroll the outer container
+    if (scrollContainerRef.current) {
+      switch (command) {
+        case 'top':
+          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+          break;
+        case 'bottom':
+          scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' });
+          break;
+        case 'up':
+          scrollContainerRef.current.scrollBy({ top: -300, behavior: 'smooth' });
+          break;
+        case 'down':
+          scrollContainerRef.current.scrollBy({ top: 300, behavior: 'smooth' });
+          break;
+      }
+    }
   }, []);
 
   const scrollToTop = () => postScrollToIframe('top');
@@ -4308,20 +5831,74 @@ ${sectionsJsx}
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
-    return attachPinchZoomGesture(container, {
-      getZoom: () => zoom,
-      getPanOffset: () => panOffset,
-      onZoom: (next) => {
-        setZoom(next);
+
+    let initialDistance = 0;
+    let initialZoom = zoom;
+    let lastTouchCenter = { x: 0, y: 0 };
+    let touchPanOffset = { x: 0, y: 0 };
+
+    const getTouchDistance = (touches: TouchList) => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const getTouchCenter = (touches: TouchList) => {
+      return {
+        x: (touches[0].clientX + touches[1].clientX) / 2,
+        y: (touches[0].clientY + touches[1].clientY) / 2,
+      };
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        initialDistance = getTouchDistance(e.touches);
+        initialZoom = zoom;
+        lastTouchCenter = getTouchCenter(e.touches);
+        touchPanOffset = { ...panOffset };
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        
+        // Pinch zoom
+        const currentDistance = getTouchDistance(e.touches);
+        const scale = currentDistance / initialDistance;
+        const newZoom = Math.max(0.1, Math.min(2, initialZoom * scale));
+        setZoom(newZoom);
         if (fabricCanvas) {
-          fabricCanvas.setZoom(next);
+          fabricCanvas.setZoom(newZoom);
           fabricCanvas.renderAll();
         }
-      },
-      onPan: setPanOffset,
-    });
-  }, [zoom, fabricCanvas, panOffset]);
 
+        // Pan
+        const currentCenter = getTouchCenter(e.touches);
+        const dx = currentCenter.x - lastTouchCenter.x;
+        const dy = currentCenter.y - lastTouchCenter.y;
+        setPanOffset({
+          x: touchPanOffset.x + dx,
+          y: touchPanOffset.y + dy,
+        });
+      }
+    };
+
+    const handleTouchEnd = () => {
+      initialDistance = 0;
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [zoom, fabricCanvas, panOffset]);
 
   console.log('[WebBuilder] About to return JSX...');
 
@@ -4365,7 +5942,7 @@ ${sectionsJsx}
             projectId={projectId ?? null}
             onRevert={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
-              liveVFSCommit.writeFiles(snap.before, 'system-restore', virtualFS.importFiles);
+              virtualFS.importFiles(snap.before);
               syncBuilderFromFiles(snap.before, activePagePath);
               pushAISnapshot(projectId ?? null, {
                 label: `Revert · ${snap.label}`,
@@ -4378,7 +5955,7 @@ ${sectionsJsx}
             }}
             onReapply={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
-              liveVFSCommit.writeFiles(snap.after, 'system-restore', virtualFS.importFiles);
+              virtualFS.importFiles(snap.after);
               syncBuilderFromFiles(snap.after, activePagePath);
               pushAISnapshot(projectId ?? null, {
                 label: `Reapply · ${snap.label}`,
@@ -4577,7 +6154,6 @@ ${sectionsJsx}
               <Save className="h-3.5 w-3.5 mr-1.5" />
               <span className="text-xs font-bold">{currentTemplateName ? 'Update' : 'Save'}</span>
             </Button>
-            <IntentHealthPill report={playgroundReadinessReport} />
             <DeployButton
               files={canonicalBuildArtifacts?.deployFiles || {}}
               defaultSiteName={currentTemplateName || 'unison-site'}
@@ -4589,11 +6165,7 @@ ${sectionsJsx}
                   description: `Live at ${url}`,
                   action: {
                     label: 'Open',
-                    onClick: () => {
-                      if (!safeOpenExternal(url, '_blank')) {
-                        toast.error('Invalid deployment URL returned.');
-                      }
-                    },
+                    onClick: () => window.open(url, '_blank'),
                   },
                 });
               }}
@@ -4711,8 +6283,8 @@ ${sectionsJsx}
           creatorPlayground.updatePage(pageId, { filePath: vfsPath });
           
           // Regenerate canonical router first so the route is registered
-          livePreviewRuntime.regenerateRouterIntoVFS(creatorPlayground.pageRegistry, launchEntryPoint, (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles));
-
+          const routerCode = regenerateRouter(creatorPlayground.pageRegistry);
+          if (routerCode) virtualFS.importFiles({ [launchEntryPoint]: routerCode });
           
           // Then trigger AI generation
           triggerPageGenRef.current(pageName, label, null);
@@ -4728,13 +6300,13 @@ ${sectionsJsx}
           // Regen canonical router so the deleted route is dropped from App.tsx
           // immediately (the registry-version effect would also catch this, but
           // doing it inline keeps file removal + router update atomic).
-          livePreviewRuntime.syncRouterIntoVFS(
+          const result = syncRouterAndValidate(
             creatorPlayground.pageRegistry,
             virtualFS.getSandpackFiles(),
-            launchEntryPoint,
-            (files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles),
           );
-
+          if (result.routerCode) {
+            virtualFS.importFiles({ [launchEntryPoint]: result.routerCode });
+          }
         }}
         onFunnelCreate={(funnelId, stepPages) => {
           // Auto-scaffold all funnel step pages in VFS
@@ -4763,7 +6335,7 @@ export default function ${componentName}() {
 }
 `;
           });
-          liveVFSCommit.writeFiles(newFiles, 'playground-edit', virtualFS.importFiles);
+          virtualFS.importFiles(newFiles);
           toast.success(`Funnel scaffolded: ${stepPages.length} pages created in VFS`);
         }}
       />
@@ -4797,45 +6369,14 @@ export default function ${componentName}() {
                   const beforeFiles = virtualFS.getSandpackFiles();
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
-                   if (result.success) {
-                     const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
-                     const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
-                     console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
-                     // NOTE: deliberately NOT calling setViewMode('canvas') here.
-                     // Surgical AI edits must preserve the user's current view
-                     // (split/code/canvas) and the live preview state — the
-                     // user did not ask to switch panels.
-                     console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,',
-                       Object.keys(result.dependencies.dependencies).length, 'deps');
-                     // Re-hydrate Creator's Playground ONLY when /src/pages/*
-                     // files were added or removed. Re-hydrating on every edit
-                     // bumps the PageRegistry version and forces a router
-                     // rebuild, which resets in-page route + scroll + form
-                     // state in the live preview.
-                     const isPage = (p: string) => /^\/src\/pages\/.+\.tsx$/.test(p);
-                     const beforePages = new Set(Object.keys(beforeFiles).filter(isPage));
-                     const afterPages = new Set(Object.keys(mergedFiles).filter(isPage));
-                     const pageSetChanged =
-                       beforePages.size !== afterPages.size ||
-                       [...afterPages].some((p) => !beforePages.has(p)) ||
-                       [...beforePages].some((p) => !afterPages.has(p));
-                     if (pageSetChanged) {
-                       setTimeout(() => {
-                         try {
-                           const latestFiles = virtualFS.getSandpackFiles();
-                           const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
-                           console.log('[WebBuilder] Post-AI playground re-hydrated:', hyd.stats);
-                           if (hyd.stats.pagesDetected > beforePages.size) {
-                             toast.success('Routes synced', {
-                               description: `${hyd.stats.pagesDetected} pages registered`,
-                             });
-                           }
-                         } catch (e) {
-                           console.warn('[WebBuilder] Post-AI hydration failed:', e);
-                         }
-                       }, 150);
-                     }
-                     // Capture an edit snapshot so users can revert/reapply.
+                  if (result.success) {
+                    const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
+                    const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
+                    console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
+                    setViewMode('canvas');
+                    console.log('[WebBuilder] AI→VFS orchestrator applied:', result.filesWritten.length, 'files,',
+                      Object.keys(result.dependencies.dependencies).length, 'deps');
+                    // Capture an edit snapshot so users can revert/reapply.
                     const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                     if (changedPaths.length > 0) {
                       const promptPreview = applyMeta?.prompt
@@ -4997,7 +6538,7 @@ export default function ${componentName}() {
                     // Get current VFS files and patch with new element
                     const currentFiles = virtualFS.getSandpackFiles();
                     const patchFiles = elementToVFSPatch(currentFiles, html, 'FunctionalBlock', launchEntryPoint);
-                    liveVFSCommit.writeFiles(patchFiles, 'playground-edit', virtualFS.importFiles);
+                    virtualFS.importFiles(patchFiles);
                     
                     // Update legacy state
                     const newAppCode = patchFiles[launchEntryPoint] || '';
@@ -5148,27 +6689,8 @@ export default function ${componentName}() {
                 if (result.success) {
                   const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                   syncBuilderFromFiles(mergedFiles, activePagePath);
-                  // Preserve current view mode and keep the AI panel open —
-                  // surgical edits must not yank the user out of their context.
-                  // Only re-hydrate the playground when /src/pages/* changed.
-                  const isPage = (p: string) => /^\/src\/pages\/.+\.tsx$/.test(p);
-                  const beforePages = new Set(Object.keys(beforeFiles).filter(isPage));
-                  const afterPages = new Set(Object.keys(mergedFiles).filter(isPage));
-                  const pageSetChanged =
-                    beforePages.size !== afterPages.size ||
-                    [...afterPages].some((p) => !beforePages.has(p)) ||
-                    [...beforePages].some((p) => !afterPages.has(p));
-                  if (pageSetChanged) {
-                    setTimeout(() => {
-                      try {
-                        const latestFiles = virtualFS.getSandpackFiles();
-                        const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
-                        console.log('[WebBuilder] Post-AI (panel) playground re-hydrated:', hyd.stats);
-                      } catch (e) {
-                        console.warn('[WebBuilder] Post-AI hydration failed:', e);
-                      }
-                    }, 150);
-                  }
+                  setViewMode('canvas');
+                  setAiPanelOpen(false);
                   const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                   if (changedPaths.length > 0) {
                     const promptPreview = applyMeta?.prompt
@@ -5346,7 +6868,6 @@ export default function ${componentName}() {
                       className="w-full h-full min-h-0 flex-1"
                       showToolbar={false}
                       autoStart={true}
-                      forceBackend="sandpack"
                       showBackendIndicator={false}
                       device={device}
                       enableSelection={builderMode === 'select'}
@@ -5445,7 +6966,7 @@ export default function ${componentName}() {
                   getActiveFile={virtualFS.getActiveFile}
                   getOpenFiles={virtualFS.getOpenFiles}
                   updateFileContent={virtualFS.updateFileContent}
-                  importFiles={(files) => liveVFSCommit.writeFiles(files, 'playground-edit', virtualFS.importFiles)}
+                  importFiles={virtualFS.importFiles}
                   loadDefaultTemplate={virtualFS.loadDefaultTemplate}
                   getSandpackFiles={virtualFS.getSandpackFiles}
                   modifiedFiles={modifiedFiles}
@@ -5460,13 +6981,13 @@ export default function ${componentName}() {
                   onUndo={() => {
                     const snap = vfsSnapshotManager.undo();
                     if (!snap) return false;
-                    liveVFSCommit.writeFiles(snap.files, 'system-restore', virtualFS.importFiles);
+                    virtualFS.importFiles(snap.files);
                     return true;
                   }}
                   onRedo={() => {
                     const snap = vfsSnapshotManager.redo();
                     if (!snap) return false;
-                    liveVFSCommit.writeFiles(snap.files, 'system-restore', virtualFS.importFiles);
+                    virtualFS.importFiles(snap.files);
                     return true;
                   }}
                   canUndo={vfsSnapshotManager.canUndo}
@@ -5560,7 +7081,6 @@ export default function ${componentName}() {
                         className="w-full h-full min-h-0 flex-1"
                         showToolbar={false}
                         autoStart={true}
-                        forceBackend="sandpack"
                         showBackendIndicator={false}
                         device={device}
                         enableSelection={builderMode === 'select'}
@@ -5862,7 +7382,7 @@ export default function ${componentName}() {
                           meta: { origin: 'floating-toolbar-ai', actionType: 'element-edit' },
                         });
                       } catch (err) { console.warn('[onAIEditComplete] snapshot failed:', err); }
-                      liveVFSCommit.writeFiles({ [path]: attempt.code }, 'ai-builder', virtualFS.importFiles);
+                      virtualFS.importFiles({ [path]: attempt.code });
                       setSelectedHTMLElement(null);
                       toast.success(`Element updated by AI in ${path.split('/').pop()}`);
                       return true;

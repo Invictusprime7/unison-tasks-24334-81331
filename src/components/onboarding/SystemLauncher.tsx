@@ -38,6 +38,10 @@ import {
   planSiteTopology,
   type GeneratedSitePlan,
 } from "@/platform/core/siteTopologyPlanner";
+import {
+  generateDesignVariation,
+  randomFontPairing,
+} from "@/utils/designVariation";
 // (aiCodeCleaner imports removed alongside the wizard fast-path enrichment)
 import { sanitizeGeneratedFiles } from "@/utils/tsxSanitizer";
 import { type LauncherHandoff } from "@/types/runtimeManifest";
@@ -54,17 +58,12 @@ import {
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
-import { getDefaultVariantId, getVariantById } from "@/sections/variants";
-import { enforceSectionVariantMarkers } from "@/services/enforceSectionVariantMarkers";
-import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
-import { extractLauncherPayload, normalizeLauncherFilesPayload } from "@/utils/launcherPayload";
-import { validateLaunchHandoff } from "@/services/launchHandoffValidator";
-import { liveLaunchState } from "@/builder/controllers/LaunchStateController";
+import { extractLauncherPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 
 // ============================================================================
@@ -364,7 +363,7 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
 const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
-const WIZARD_AI_TIMEOUT_MS = 180_000;
+const WIZARD_AI_TIMEOUT_MS = 150_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 
 function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
@@ -384,38 +383,33 @@ function buildWizardAiSeedPrompt(opts: {
   headingFont: string;
   headingWeight: string;
   bodyFont: string;
-  templateGuidance: string;
-  compositionContext: string;
   canonicalIntents: string[];
   customInstructionsRaw: string;
 }): string {
   const customInstructionsPresent = opts.customInstructionsRaw.trim().length > 0;
 
-  const hasSectionHints = opts.sectionOrder.length > 0;
   return [
-    `You are an elite web developer. Design and build a complete, production-ready single-page React (TSX) website for "${opts.businessName}" — a ${opts.resolvedIndustry} business.`,
+    `Generate a complete, production-ready website for "${opts.businessName}" — a ${opts.resolvedIndustry} business.`,
     ``,
-    `WIZARD INPUTS (use these as the creative brief; YOU decide the final structure):`,
+    `BUSINESS INPUTS (from wizard, all binding):`,
     `1. Industry / System: ${opts.industrySystemName} (${opts.resolvedIndustry})`,
     `2. Primary Goal: ${opts.primaryGoal || 'collect_leads'}`,
-    `3. Template inspiration: ${opts.templateLabel}`,
-    hasSectionHints ? `   Suggested section flow (inspiration only — adapt, expand, or reorder as the design demands): ${opts.sectionOrder.join(' → ')}` : `   No fixed section order — choose the sections that best serve the business goal.`,
+    `3. Template (LOCKED layout): ${opts.templateLabel}`,
+    `   Required section order — render in this exact sequence: ${opts.sectionOrder.join(' → ')}`,
     `4. Business Name: ${opts.businessName}`,
     `5. Visual Style preset (LOCKED aesthetic): ${opts.visualStyleLabel} — ${opts.visualStyleDirective}`,
     `   Headings: ${opts.headingFont} (${opts.headingWeight}). Body: ${opts.bodyFont}.`,
-    opts.templateGuidance ? `Template inspiration details (guidance, not contract):\n${opts.templateGuidance}` : ``,
-    opts.compositionContext ? `Reference composition (for inspiration; you may diverge to produce a better site):\n${opts.compositionContext}` : ``,
     customInstructionsPresent
-      ? `6. Custom instructions from user (HIGHEST priority for copy/tone and structural overrides): included verbatim below`
+      ? `6. Custom instructions from user (HIGHEST priority for copy/tone): included verbatim below`
       : `6. Custom instructions: (none)`,
     customInstructionsPresent ? `--- BEGIN VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
     customInstructionsPresent ? opts.customInstructionsRaw : ``,
     customInstructionsPresent ? `--- END VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
     ``,
-    `DESIGN AUTHORITY: You are the primary designer. Add, remove, reorder, or reinvent sections to produce the best possible site for this business. Template/composition data above is INSPIRATION, not a contract.`,
-    `AESTHETIC CONTRACT (hard): Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
-    `CONTENT CONTRACT (hard): Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
-    `WIRING CONTRACT (hard): Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
+    `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
+    `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
+    `CONTENT CONTRACT: Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
+    `Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
   ].filter(Boolean).join('\n');
 }
 
@@ -441,106 +435,6 @@ function buildTemplateGuidance(card: TemplateCardData | null): string {
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-function ensureWizardLaneAContract(opts: {
-  blueprint: Record<string, any>;
-  sectionOrder: string[];
-  pageRoles: string[];
-  preset: ThemePreset;
-}) {
-  const sectionOrder = opts.sectionOrder.length > 0
-    ? opts.sectionOrder
-    : ['hero', 'services', 'about', 'testimonials', 'cta', 'contact', 'footer'];
-
-  const templateSelection = {
-    ...(opts.blueprint.template_selection || {}),
-    section_order:
-      Array.isArray(opts.blueprint.template_selection?.section_order) &&
-      opts.blueprint.template_selection.section_order.length > 0
-        ? opts.blueprint.template_selection.section_order
-        : sectionOrder,
-    page_roles:
-      Array.isArray(opts.blueprint.template_selection?.page_roles) &&
-      opts.blueprint.template_selection.page_roles.length > 0
-        ? opts.blueprint.template_selection.page_roles
-        : opts.pageRoles,
-  };
-
-  const styleSelection = {
-    ...(opts.blueprint.style_selection || {}),
-    preset_id: opts.blueprint.style_selection?.preset_id || opts.preset.id,
-    preset_label: opts.blueprint.style_selection?.preset_label || opts.preset.label,
-    style_directive: opts.blueprint.style_selection?.style_directive || opts.preset.styleDirective,
-  };
-
-  const themeTokens = {
-    ...(opts.blueprint.theme_tokens || {}),
-    presetId: opts.blueprint.theme_tokens?.presetId || styleSelection.preset_id,
-    presetLabel: opts.blueprint.theme_tokens?.presetLabel || styleSelection.preset_label,
-    styleDirective: opts.blueprint.theme_tokens?.styleDirective || styleSelection.style_directive,
-  };
-
-  return {
-    ...opts.blueprint,
-    template_selection: templateSelection,
-    template_sections: templateSelection.section_order,
-    style_selection: styleSelection,
-    theme_tokens: themeTokens,
-  };
-}
-
-function buildLockedWizardDesign(opts: {
-  preset: ThemePreset;
-  template: TemplateCardData;
-  sectionOrder: string[];
-}) {
-  const lowerDirective = opts.preset.styleDirective.toLowerCase();
-  const isMinimal = opts.preset.id === 'minimalist' || lowerDirective.includes('minimal');
-  const isBold = opts.preset.id === 'bold' || lowerDirective.includes('oversized');
-  const isFuturistic = opts.preset.id === 'futuristic' || lowerDirective.includes('glassmorphism');
-  const heroStyle = opts.template.traits[0] || opts.template.sectionTypes[0] || 'premium image-first hero';
-
-  return {
-    layout: {
-      hero_style: heroStyle,
-      section_spacing: isMinimal ? 'airy' : isBold ? 'dramatic' : 'balanced',
-      max_width: isBold ? '1440px' : '1200px',
-      navigation_style: opts.sectionOrder.includes('navbar') ? 'template-navbar' : 'minimal',
-    },
-    effects: {
-      animations: !isMinimal,
-      scroll_animations: !isMinimal,
-      hover_effects: true,
-      gradient_backgrounds: opts.preset.id !== 'minimalist',
-      glassmorphism: isFuturistic,
-      shadows: isMinimal ? 'subtle' : isBold ? 'dramatic' : 'medium',
-    },
-    images: {
-      style: opts.template.traits.includes('editorial') ? 'editorial' : 'photographic',
-      aspect_ratio: '16:9',
-      overlay_style: isFuturistic ? 'glass' : 'soft',
-    },
-    buttons: {
-      style: isBold ? 'bold' : isMinimal ? 'outline' : 'rounded',
-      size: isBold ? 'large' : 'medium',
-      hover_effect: !isMinimal ? 'lift' : 'subtle',
-    },
-    sections: {
-      include_stats: opts.sectionOrder.includes('stats'),
-      include_testimonials: opts.sectionOrder.includes('testimonials'),
-      include_faq: opts.sectionOrder.includes('faq'),
-      include_cta_banner: opts.sectionOrder.includes('cta'),
-      include_newsletter: opts.sectionOrder.includes('blog-preview'),
-      include_social_proof: opts.sectionOrder.includes('logo-cloud') || opts.sectionOrder.includes('testimonials'),
-      use_counter_animations: !isMinimal && opts.sectionOrder.includes('stats'),
-    },
-    content: {
-      density: isBold ? 'high-impact' : isMinimal ? 'sparse' : 'balanced',
-      use_icons: opts.preset.id !== 'editorial',
-      writing_style: opts.preset.id,
-    },
-  };
 }
 
 function getGenerationCategory(
@@ -896,6 +790,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         ...(compositionMeta?.intents || []),
       ]));
 
+      const fonts = randomFontPairing();
+      const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
 
       // ── Provision backend in background (non-blocking) ──
@@ -904,11 +800,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemType: installSystemType,
         businessName: businessName.trim(),
         templateName: selectedTemplate?.label || system.name,
-        // Authoritative IDs so install-system can reconstruct exactly which
-        // template + style + industry were chosen (audit gap fix).
-        templateId: selectedTemplate?.id,
-        themeId: selectedTheme?.id,
-        industry: generationCategory,
         templateCategory: generationCategory,
         designPreset: selectedTheme?.id || undefined,
       };
@@ -928,16 +819,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return null;
         });
 
-      // ── Plan topology (FULL: industry-profile driven) ──
-      // The Wizard seeds the canonical multi-page topology from the resolved
-      // IndustryProfile so the Builder hands off a complete site (Home + all
-      // capability/industry pages). The in-Builder AI then refines per prompt.
-      // NOTE: `minimal: true` is intentionally OFF — minimal mode produced a
-      // Home-only fallback and silently bypassed planFromProfile.
+      // ── Plan topology (MINIMAL: Home only) ──
+      // The Wizard hands off a clean canvas. The in-Builder AI assistant is
+      // the sole author of every additional page/route/funnel/tab from user
+      // prompts (registry → VFS sync handles the rest).
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: selectedTemplate?.id,
-        selectedThemeId: selectedTheme?.id,
+        minimal: true,
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
@@ -953,9 +842,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
         templateId: selectedTemplate?.id,
         themeId: selectedTheme?.id,
-        minimalScaffold: false,
+        minimalScaffold: true,
       };
-
 
       const pipelineResult = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
       const {
@@ -972,28 +860,25 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
       }
 
-      // ── Resolve composition (OPTIONAL inspiration) from selected Template card ──
-      // Template selection provides creative inspiration; AI is the primary
-      // designer. A missing registered composition is NOT a hard failure —
-      // the AI generates structure from the wizard inputs directly.
+      // ── Resolve composition from selected Template card only ──
+      // Template selection is a hard structural contract for AI generation.
       if (!selectedTemplate?.id) {
         toast.error("Please select a template before launching.");
         return;
       }
       let composition = getCompositionById(selectedTemplate.id);
       if (!composition) {
-        console.info(
-          `[SystemLauncher] No registered composition for "${selectedTemplate.label}" — AI will design structure from wizard inputs.`,
+        toast.error(
+          `Selected template "${selectedTemplate.label}" has no registered composition. Please choose another template.`,
         );
+        return;
       }
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) ──
       // Explicit user selection > industry mapping. Never falls through.
       const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
       const themedTokens = themePresetToThemeTokens(resolvedPreset);
-      if (composition) {
-        composition = { ...composition, theme: themedTokens };
-      }
+      composition = { ...composition, theme: themedTokens };
 
       const themeTrace = {
         resolvedPresetId: resolvedPreset.id,
@@ -1015,72 +900,35 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         })
         .filter((s): s is { platform: string; url: string } => !!s);
 
-      if (composition) {
-        composition = {
-          ...composition,
-          sections: composition.sections.map((sec) => {
-            if (sec.type === 'navbar') {
-              return { ...sec, props: { ...(sec.props as any), brand } } as typeof sec;
-            }
-            if (sec.type === 'footer') {
-              const existing = ((sec.props as any).socials || []) as { platform: string; url: string }[];
-              const merged = userSocials.length > 0
-                ? userSocials
-                : existing.filter((s) => s && s.url && s.url !== '#');
-              return {
-                ...sec,
-                props: { ...(sec.props as any), brand, socials: merged },
-              } as typeof sec;
-            }
-            return sec;
-          }),
-        };
-        // Stamp default section variantIds so the variant-aware pipeline
-        // (PageRenderer/compositionToReactCode) carries real variant identity
-        // from the wizard through to the AI prompt and post-launch VARIANT_REGISTRY
-        // overrides. Prior to this, compositions had no variantId and every
-        // industry collapsed to the default visual layout.
-        composition = {
-          ...composition,
-          sections: composition.sections.map((sec) => {
-            if (sec.variantId) return sec;
-            const defId = getDefaultVariantId(sec.type);
-            return defId ? ({ ...sec, variantId: defId } as typeof sec) : sec;
-          }),
-        };
-      }
+      composition = {
+        ...composition,
+        sections: composition.sections.map((sec) => {
+          if (sec.type === 'navbar') {
+            return { ...sec, props: { ...(sec.props as any), brand } } as typeof sec;
+          }
+          if (sec.type === 'footer') {
+            const existing = ((sec.props as any).socials || []) as { platform: string; url: string }[];
+            // Prefer user-supplied URLs; fall back to template's existing entries
+            // for any platforms the user did not fill in. If the user supplied
+            // any socials at all, they become the canonical list.
+            const merged = userSocials.length > 0
+              ? userSocials
+              : existing.filter((s) => s && s.url && s.url !== '#');
+            return {
+              ...sec,
+              props: { ...(sec.props as any), brand, socials: merged },
+            } as typeof sec;
+          }
+          return sec;
+        }),
+      };
 
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);
 
-      // Deterministic seed App.tsx — only built when a composition is registered.
-      // When AI is the primary designer (no composition), the seed is omitted and
-      // the AI structure becomes the source of truth. The seed is variant-aware:
-      // section.variantId stamped above is honored by compositionToReactCode.
-      const seedAppCode = composition ? compositionToReactCode(composition) : '';
-      const templateSectionOrder = composition ? composition.sections.map((s) => s.type) : [];
-      const pageRolesHint = composition?.pageRoles ?? [];
-      const sectionIdsHint = composition ? composition.sections.map((s) => s.id) : [];
-      // Per-section detail surfaced to the AI: section identity + chosen
-      // variant + variant description. Closes the variant-disconnect gap.
-      const sectionsDetail = composition
-        ? composition.sections.map((s) => {
-            const v = s.variantId ? getVariantById(s.variantId as any) : undefined;
-            return {
-              id: s.id,
-              type: s.type,
-              variant_id: s.variantId || null,
-              variant_name: v?.name || null,
-              variant_description: v?.description || null,
-            };
-          })
-        : [];
-      const templateGuidance = buildTemplateGuidance(selectedTemplate);
-      const lockedWizardDesign = buildLockedWizardDesign({
-        preset: resolvedPreset,
-        template: selectedTemplate,
-        sectionOrder: templateSectionOrder,
-      });
+      // Deterministic seed App.tsx — used as `currentCode` context to anchor
+      // the AI to the picked template's section structure.
+      const seedAppCode = compositionToReactCode(composition);
 
       // ── Blueprint enriched with Style card palette + custom instructions ──
       const blueprint = {
@@ -1088,17 +936,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         launcherPolicy: {
           implementationModel: WIZARD_IMPLEMENTATION_MODEL,
           generationMode: "ai-tsx",
-          // AI is the primary designer; template composition is inspiration.
-          enforceTemplateComposition: false,
+          enforceTemplateComposition: true,
           enforceThemeCssOverride: true,
           deterministicFallbackAllowed: false,
-          aiPrimaryDesigner: true,
-          resolvedTemplateSeedChars: seedAppCode.length,
         },
         identity: {
           industry: resolvedIndustry,
           business_model: system.id,
-          primary_goal: primaryGoal || "collect_leads",
+          primary_goal: industryProfile
+            ? industryProfile.defaultCapabilities.includes("booking")
+              ? "bookings"
+              : "leads"
+            : "Generate leads and grow the business",
         },
         brand: {
           business_name: brand,
@@ -1118,25 +967,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             foreground: resolvedPreset.palette.fg,
           },
         },
-        design: lockedWizardDesign,
-        style_selection: {
-          preset_id: resolvedPreset.id,
-          preset_label: resolvedPreset.label,
-          style_directive: resolvedPreset.styleDirective,
-          palette_hex: {
-            background: resolvedPreset.palette.bg,
-            foreground: resolvedPreset.palette.fg,
-            primary: resolvedPreset.palette.accent,
-            secondary: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
-            accent: resolvedPreset.palette.accent2 || resolvedPreset.palette.accent,
-          },
-          typography: {
-            heading_font: resolvedPreset.typography.headingFont,
-            body_font: resolvedPreset.typography.bodyFont,
-            heading_weight: resolvedPreset.typography.headingWeight,
-            body_weight: themedTokens.typography.bodyWeight,
-          },
-        },
+        design,
         // Fully-resolved HSL token set (Style card → ThemePresetTokens). The
         // edge-function fast-path consumes these so the AI's App.tsx inline
         // styles stay in lockstep with the themed /src/index.css that the
@@ -1155,111 +986,37 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           styleDirective: resolvedPreset.styleDirective,
         },
         intents: canonicalIntents.map((i: string) => ({ intent: i })),
-        // Template hints — passed to the AI as inspiration, NOT as a hard contract.
-        template_selection: {
-          template_id: selectedTemplate.id,
-          template_label: selectedTemplate.label,
-          description: selectedTemplate.description,
-          industry: selectedTemplate.industry,
-          traits: selectedTemplate.traits,
-          section_order: templateSectionOrder,
-          section_ids: sectionIdsHint,
-          page_roles: pageRolesHint,
-          // Per-section identity + chosen variant (default-stamped). Lets the
-          // AI know which visual variant each section should mirror, restoring
-          // the variant signal that was previously lost between the wizard
-          // and the edge-function prompt.
-          sections_detail: sectionsDetail,
-          // Trimmed structural seed from the registered composition. Acts as a
-          // reference layout the AI can refine, instead of free-designing
-          // from a bare section-name list.
-          seed_code_excerpt: seedAppCode ? seedAppCode.slice(0, 6000) : '',
-          // Sub-page scaffolding has been removed from the wizard launch.
-          // The launcher now ships ONLY the Home page; additional pages are
-          // generated on-demand by the AI Builder when the user prompts for
-          // them, using the current site context (theme, intents, sections).
-          pages_to_generate: [],
-        },
-        template_sections: templateSectionOrder,
+        // The Template card's section order — passed to the AI as a hard contract
+        template_sections: composition.sections.map((s) => s.type),
         template_intents: compositionMeta?.intents,
       };
-
-      const hardenedBlueprint = ensureWizardLaneAContract({
-        blueprint,
-        sectionOrder: templateSectionOrder,
-        pageRoles: pageRolesHint,
-        preset: resolvedPreset,
-      });
-
-      // Only the style/theme contract is hard. Section order is inspiration —
-      // the AI is now the structural authority.
-      const hasStyleContract =
-        Boolean(hardenedBlueprint.style_selection?.preset_id) &&
-        Boolean(hardenedBlueprint.theme_tokens?.presetId);
-
-      if (!hasStyleContract) {
-        toast.error('Wizard launcher style contract is incomplete. Please restart launch.');
-        console.error('[SystemLauncher] Lane A style contract integrity check failed', {
-          styleSelection: hardenedBlueprint.style_selection,
-          themeTokens: hardenedBlueprint.theme_tokens,
-        });
-        return;
-      }
 
       toast("Generating your site with AI…", {
         description: `${resolvedIndustry} • ${selectedTemplate?.label || system.name} • ${resolvedPreset.label}`,
       });
 
       // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
-      const compositionContext = getCompositionContentContext(selectedTemplate.id) || getCompositionContentContext(generationCategory) || '';
       const aiUserPrompt = buildWizardAiSeedPrompt({
         industrySystemName: system.name,
         resolvedIndustry,
         primaryGoal: primaryGoal || 'collect_leads',
         templateLabel: selectedTemplate?.label || system.name,
-        sectionOrder: templateSectionOrder,
+        sectionOrder: composition.sections.map((s) => s.type),
         businessName: brand,
         visualStyleLabel: resolvedPreset.label,
         visualStyleDirective: resolvedPreset.styleDirective,
         headingFont: resolvedPreset.typography.headingFont,
         headingWeight: resolvedPreset.typography.headingWeight,
         bodyFont: resolvedPreset.typography.bodyFont,
-        templateGuidance,
-        compositionContext,
         canonicalIntents,
         customInstructionsRaw: customPrompt,
       });
 
-      // Inject the slot-bound INTERACTION WIRING CONTRACT so the AI stamps
-      // data-ut-* markers on every CTA/intent. Without this, the post-launch
-      // bindingApplication falls through to fragile label-text matching and
-      // most slots end up in missingBindings.
-      const bindingGuide = siteBundleSnapshot
-        ? buildWizardBindingGuide(siteBundleSnapshot)
-        : '';
-      const aiUserPromptWithBindings = bindingGuide
-        ? `${aiUserPrompt}\n\n${bindingGuide}`
-        : aiUserPrompt;
-
       console.info('[WizardLaunch] Implementation model', {
         policy: WIZARD_IMPLEMENTATION_MODEL,
-        sectionCount: composition?.sections.length ?? 0,
+        sectionCount: composition.sections.length,
         hasCustomInstructions: customPrompt.trim().length > 0,
       });
-
-      // Build the Site Elements Library context (industry-scoped). Previously
-      // only AIBuilderPanel surfaced this — the wizard path never sent it, so
-      // the AI generated structure from scratch without any element library
-      // grounding. Closes the wizard→edge function library gap.
-      let siteElementsLibraryContext = '';
-      try {
-        siteElementsLibraryContext = generateLibraryPrompt({
-          systemType: selectedSystem,
-          maxElements: 14,
-        });
-      } catch (e) {
-        console.warn('[SystemLauncher] generateLibraryPrompt failed; continuing without library context', e);
-      }
 
       // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
       let generationResult: {
@@ -1275,7 +1032,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aiAppMissing?: boolean;
         aiAppInvalid?: boolean;
       } | null = null;
-      const MAX_RETRIES = 1;
+      const MAX_RETRIES = 2;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
@@ -1292,20 +1049,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const result = await withTimeout(
           supabase.functions.invoke('ai-code-assistant', {
             body: {
-              messages: [{ role: 'user', content: aiUserPromptWithBindings }],
+              messages: [{ role: 'user', content: aiUserPrompt }],
               mode: 'template-react',
-              // Hard signal: ALWAYS route to Lane A (wizard_template_react).
-              // This flag bypasses every other classifier branch so that the
-              // hardened 6-card aesthetic payload (theme_tokens + sections +
-              // intents) is the SOLE generation context. Without it, an
-              // accidental `currentCode` or `editMode` could route to Lane B.
-              wizardLaunch: true,
               templateName: selectedTemplate?.label || system.name,
               aesthetic: resolvedPreset.id,
               source: resolvedIndustry,
               systemType: selectedSystem,
-              systemsBuildContext: hardenedBlueprint,
-              siteElementsLibraryContext: siteElementsLibraryContext || undefined,
+              systemsBuildContext: blueprint,
             },
           }),
           WIZARD_AI_TIMEOUT_MS,
@@ -1315,21 +1065,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         if (aiError) {
           const retryMsg = await getFunctionErrorMessage(aiError);
           const normalizedRetryMsg = retryMsg.toLowerCase();
-          const isRetryableProviderTimeout =
-            normalizedRetryMsg.includes('timed out') ||
-            normalizedRetryMsg.includes('timeout') ||
-            normalizedRetryMsg.includes('mixed timeout/auth') ||
-            normalizedRetryMsg.includes('transient');
-          const isProviderAuthFailure =
-            normalizedRetryMsg.includes('invalid or expired token') ||
-            normalizedRetryMsg.includes('unauthorized') ||
-            normalizedRetryMsg.includes('authentication');
           const shouldStopRetry =
             retryMsg.includes('402') ||
             normalizedRetryMsg.includes('payment required') ||
             normalizedRetryMsg.includes('credits required') ||
             normalizedRetryMsg.includes('invalid request body') ||
-            (isProviderAuthFailure && !isRetryableProviderTimeout);
+            normalizedRetryMsg.includes('timed out') ||
+            normalizedRetryMsg.includes('timeout') ||
+            normalizedRetryMsg.includes('invalid or expired token') ||
+            normalizedRetryMsg.includes('unauthorized') ||
+            normalizedRetryMsg.includes('authentication');
 
           console.warn(`[SystemLauncher] AI attempt ${attempt + 1} failed:`, retryMsg);
           if (shouldStopRetry) break;
@@ -1344,10 +1089,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           break;
         }
         const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
-        const directFiles = normalizeLauncherFilesPayload(aiData?.files);
-        const structured = directFiles
-          ? ({ files: directFiles } as LauncherPayload)
-          : extractLauncherPayload(aiContent);
+        const structured = extractLauncherPayload(aiContent);
 
         if (!structured?.files || Object.keys(structured.files).length === 0) {
           lastPayloadIssue = {
@@ -1408,53 +1150,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
         );
 
-        const appSource = normalizedFiles['/src/App.tsx'] || normalizedFiles['src/App.tsx'] || '';
-        // Section presence is a soft signal: the AI may rename, use PascalCase
-        // component names, split into separate files, or rely on data-ut-section
-        // attributes. Match across casing variants before declaring "missing".
-        const sectionMatches = (section: string): boolean => {
-          if (!section) return true;
-          const variants = new Set<string>([
-            section,
-            section.replace(/[-_\s]+/g, ''),
-            section.replace(/[-_\s]+/g, '-'),
-            section.replace(/[-_\s]+/g, '_'),
-          ]);
-          for (const v of variants) {
-            if (!v) continue;
-            const escaped = v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            if (new RegExp(escaped, 'i').test(appSource)) return true;
-          }
-          return false;
-        };
-        const missingSectionMarkers = templateSectionOrder.filter((s) => !sectionMatches(s));
-        const sectionCoverage = templateSectionOrder.length
-          ? 1 - missingSectionMarkers.length / templateSectionOrder.length
-          : 1;
-
-        // Only retry if coverage is catastrophically low. Otherwise warn and
-        // continue so the user isn't blocked by a brittle string match.
-        if (templateSectionOrder.length > 0 && sectionCoverage < 0.25) {
-          lastPayloadIssue = {
-            kind: 'section',
-            invalidFiles: sanitized.invalidFiles,
-            allInvalidFiles: sanitized.invalidFiles,
-          };
-          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} omitted most canonical template sections — retrying`, {
-            missingSectionMarkers,
-            sectionCoverage,
-            templateSectionOrder,
-          });
-          continue;
-        }
-
-        if (missingSectionMarkers.length > 0) {
-          console.warn('[SystemLauncher] Some template sections not detected by name; continuing launch', {
-            missingSectionMarkers,
-            sectionCoverage,
-          });
-        }
-
         if (otherInvalid.length > 0) {
           // Non-entry malformed files are tolerated for launch so users can still
           // enter the builder and iterate. App.tsx remains the hard validity gate.
@@ -1468,56 +1163,47 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         break;
       }
 
+
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);
         const normalizedMsg = msg.toLowerCase();
-        // Distinguish user-session auth failures from AI provider auth failures.
-        // Provider/key errors contain "provider authentication" / "api key" /
-        // "gateway" and must NOT bounce the user to /auth.
-        const isProviderAuthError =
-          normalizedMsg.includes('provider authentication') ||
-          normalizedMsg.includes('api key') ||
-          normalizedMsg.includes('gateway') ||
-          normalizedMsg.includes('lovable_api_key') ||
-          normalizedMsg.includes('openai_api_key');
-        const isUserSessionError =
-          !isProviderAuthError &&
-          (normalizedMsg.includes('invalid or expired token') ||
-            normalizedMsg.includes('jwt') ||
-            normalizedMsg.includes('missing or invalid authorization') ||
-            normalizedMsg.includes('unauthorized') ||
-            msg.includes('401'));
-
-        if (isUserSessionError) {
+        if (
+          normalizedMsg.includes('invalid or expired token') ||
+          normalizedMsg.includes('unauthorized') ||
+          normalizedMsg.includes('authentication') ||
+          msg.includes('401')
+        ) {
           toast.error('Session expired. Please sign in again.');
           navigate('/auth');
           return;
         }
-        toast.error(
-          isProviderAuthError
-            ? 'AI generation provider is unavailable. Please retry in a moment.'
-            : msg || 'AI generation failed. Please retry in a moment.',
-        );
-        console.error('[SystemLauncher] AI generation failed; deterministic fallback is disabled:', msg);
-        return;
+        if (msg.includes('429')) {
+          toast.error('AI is rate-limited. Please wait a moment and try again.');
+          return;
+        } else if (msg.includes('402')) {
+          toast.error('AI credits required. Please add credits to continue.');
+          return;
+        } else {
+          toast.error(`AI generation failed: ${msg || 'unknown error'}`);
+          return;
+        }
       }
-
 
       if (!generationResult) {
         if (lastPayloadIssue?.kind === 'empty') {
+          toast.error('AI returned no usable files after retrying. Please try again.');
           console.error('[SystemLauncher] AI payload missing files:', lastPayloadIssue.aiContentPreview);
-          toast.error('AI returned no usable files. Please retry launch.');
           return;
         }
         // 'app' kind no longer surfaces — App.tsx is deterministic, not AI-owned.
 
         if (lastPayloadIssue?.kind === 'section') {
+          toast.error('AI returned malformed section files after retrying. Please try again.');
           console.error('[SystemLauncher] Aborting launch — malformed AI section files after retries', lastPayloadIssue);
-          toast.error('AI omitted required sections. Please retry launch.');
           return;
         }
 
-        toast.error('AI generation produced no launchable result. Please retry launch.');
+        toast.error('AI generation failed. Please try again.');
         console.error('[SystemLauncher] AI generation produced no launchable result.');
         return;
       }
@@ -1538,52 +1224,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         generatedFiles['/src/App.tsx'] = generatedFiles['src/App.tsx'];
         delete generatedFiles['src/App.tsx'];
       }
-
-      // ── Inject AI-generated images for data-ai-image markers ─────────────
-      // Hero / feature <img> tags annotated by the prompt are replaced with
-      // gpt-image-2 base64 PNGs in parallel. Failures fall back to the
-      // original (Unsplash) src so the launch never blocks on image gen.
-      try {
-        const { injectWizardImages } = await import('@/services/wizardImageInjector');
-        const injected = await injectWizardImages(generatedFiles);
-        Object.assign(generatedFiles, injected.files);
-      } catch (e) {
-        console.warn('[SystemLauncher] image injection skipped:', (e as Error).message);
-      }
-
-      // ── Enforce stamped variant identity on AI output ────────────────────
-      // The wizard's Style/Template steps already locked a variant_id per
-      // section (sectionsDetail). The AI prompt asks for those markers on each
-      // <section>, but the model is not 100% reliable. This pass guarantees
-      // every top-level <section> carries data-ut-section / data-variant
-      // matching sectionsDetail 1:1 so downstream PageRenderer / VARIANT_REGISTRY
-      // can resolve the chosen layout — without rewriting the AI's JSX.
-      if (sectionsDetail.length > 0) {
-        const appKey = generatedFiles['/src/App.tsx']
-          ? '/src/App.tsx'
-          : generatedFiles['src/App.tsx']
-            ? 'src/App.tsx'
-            : null;
-        if (appKey) {
-          const enforced = enforceSectionVariantMarkers(generatedFiles[appKey], sectionsDetail);
-          generatedFiles[appKey] = enforced.source;
-          console.info('[SystemLauncher] Variant marker enforcement', {
-            expected: enforced.expectedSections,
-            totalSectionsInOutput: enforced.totalSections,
-            stamped: enforced.stamped,
-            repaired: enforced.repaired,
-            injected: enforced.injected,
-            mismatches: enforced.mismatches,
-          });
-          if (enforced.mismatches.length > 0) {
-            console.warn(
-              `[SystemLauncher] ${enforced.mismatches.length} section(s) had missing or mismatched variant markers — repaired against stamped wizard variants`,
-              enforced.mismatches,
-            );
-          }
-        }
-      }
-
 
       const provisionedBusinessId = await installPromise;
 
@@ -1615,30 +1255,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const canonicalRouterCode =
         compiledPlayground?.vfsFiles?.['/src/App.tsx'] ||
         siteBundleSnapshot?.vfsFiles?.['/src/App.tsx'];
-      const wiredVfsFilesPreSweep = canonicalRouterCode
+      const wiredVfsFiles = canonicalRouterCode
         ? { ...launchArtifacts.files, '/src/App.tsx': canonicalRouterCode }
         : launchArtifacts.files;
       const runtimeManifest = launchArtifacts.runtimeManifest;
-
-      // ── Pre-handoff structural sweep ──────────────────────────────────────
-      // Repairs broken data-ut-* stamps BEFORE the Builder ever sees them so
-      // intents never render as "error code" in the published site. Unknown
-      // intents downgrade to contact.submit; stale target page ids are stripped;
-      // capability-gated stamps without the underlying capability are softened.
-      const provisionedCapabilities =
-        industryProfile?.defaultCapabilities?.map(String) ?? [];
-      const handoffReport = validateLaunchHandoff({
-        files: wiredVfsFilesPreSweep,
-        snapshot: launchArtifacts.siteBundleSnapshot,
-        provisionedCapabilities,
-      });
-      const wiredVfsFiles = handoffReport.files;
-      if (handoffReport.repaired > 0) {
-        console.warn(
-          `[SystemLauncher] Repaired ${handoffReport.repaired}/${handoffReport.scanned} stamped intents before handoff`,
-          handoffReport.issues,
-        );
-      }
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
         console.log(
@@ -1647,16 +1267,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
       // Persist generated bindings → site_intent_bindings (launcher-native wiring).
-      // Failures and partial persists are promoted to launcher diagnostics so the
-      // Builder surface can show a yellow chip instead of silently dropping rows.
+      // Best-effort; failures never block launch.
       const launchProjectId =
         (launchArtifacts.siteBundleSnapshot as { projectId?: string } | undefined)?.projectId;
-      type PersistDiagnostic = {
-        severity: 'info' | 'warn' | 'error';
-        code: 'PERSIST_PARTIAL' | 'PERSIST_ZERO' | 'PERSIST_FAILED';
-        message: string;
-      };
-      const persistDiagnostics: PersistDiagnostic[] = [];
       if (provisionedBusinessId && launchProjectId) {
         try {
           const { persistGeneratedBindings } = await import('@/services/persistGeneratedBindings');
@@ -1666,62 +1279,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             files: wiredVfsFiles,
           });
           console.log('[SystemLauncher] Persisted generated bindings', result);
-          if (result.attempted > 0 && result.persisted < result.attempted) {
-            persistDiagnostics.push({
-              severity: 'warn',
-              code: 'PERSIST_PARTIAL',
-              message: `Only ${result.persisted}/${result.attempted} intent bindings were saved; some buttons may not fire.`,
-            });
-          } else if (result.attempted === 0) {
-            // VFS contains stamps but harvester found none → catastrophic mismatch
-            const hasStamps = Object.values(wiredVfsFiles).some(
-              (c) => typeof c === 'string' && c.includes('data-ut-intent'),
-            );
-            if (hasStamps) {
-              persistDiagnostics.push({
-                severity: 'warn',
-                code: 'PERSIST_ZERO',
-                message:
-                  'Site contains interactive elements but no intent bindings were persisted.',
-              });
-            }
-          }
         } catch (err) {
           console.warn('[SystemLauncher] persistGeneratedBindings failed (non-fatal)', err);
-          persistDiagnostics.push({
-            severity: 'warn',
-            code: 'PERSIST_FAILED',
-            message: 'Could not save intent bindings; buttons will fall back to navigation only.',
-          });
         }
-      } else if (!provisionedBusinessId || !launchProjectId) {
-        persistDiagnostics.push({
-          severity: 'warn',
-          code: 'PERSIST_FAILED',
-          message:
-            'Business profile not provisioned; intent bindings were not saved. Buttons will navigate but not fire workflows.',
-        });
       }
-
-      // Push the merged diagnostic set to the live launch-state controller so
-      // the Builder surface (DeployButton, LaunchDesk, AIBuilderPanel) can chip.
-      const combinedDiagnostics = [
-        ...handoffReport.issues.map((i) => ({
-          severity: i.severity,
-          code: i.code,
-          message: i.message,
-          meta: {
-            filePath: i.filePath,
-            slot: i.slot,
-            intent: i.intent,
-            targetPageId: i.targetPageId,
-            capability: i.capability,
-          },
-        })),
-        ...persistDiagnostics,
-      ];
-      liveLaunchState.setLauncherDiagnostics(combinedDiagnostics);
-
 
       const navState = {
         templateName: `${brand} Site`,
@@ -1740,7 +1301,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
         pipelineManifest,
         wizardSelections,
-        systemsBuildContext: hardenedBlueprint,
       };
 
       const launchState = createLaunchState({
@@ -1750,7 +1310,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         templateName: `${brand} Site`,
         templateCategory: generationCategory as any,
         blueprint: blueprint as any,
-        systemsBuildContext: hardenedBlueprint as any,
         vfsFiles: wiredVfsFiles,
         aesthetic: resolvedPreset.id,
         preloadedIntents: canonicalIntents,

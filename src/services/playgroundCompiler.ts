@@ -214,33 +214,25 @@ export function compilePlayground(
   const registry = state.pageRegistry;
   const pages = Object.values(registry.pages);
 
-  // 1. Ensure all pages have filePath (registry retains the planned topology
-  //    so AI Builder prompts can reason about it later as site context).
+  // 1. Ensure all pages have filePath
   for (const page of pages) {
     if (!page.filePath) {
       page.filePath = deriveFilePath(page);
     }
   }
 
-  const homePage = pages.find((page) => page.isHome) || pages[0] || null;
-
-  // 2. Generate canonical router — HOME ONLY. Sub-page scaffolding is removed
-  //    from the wizard launch; the AI Builder will add additional pages (and
-  //    extend the router) on demand when the user prompts for them. Routing
-  //    sub-pages now would import files we no longer generate, breaking the
-  //    preview.
-  const homeOnlyRegistry = homePage
-    ? { ...registry, pages: { [homePage.pageId]: homePage } }
-    : registry;
-  const routerContent = generateCanonicalRouter(homeOnlyRegistry, businessName);
+  // 2. Generate canonical router
+  const routerContent = generateCanonicalRouter(registry, businessName);
   const routerFile = {
     path: '/src/App.tsx',
     content: routerContent,
   };
 
-  // 3. Resolve the deterministic Template+Theme used to scaffold the Home page.
-  //    Sub-pages no longer ship at launch, so the composition is only used for
-  //    Home (and as theme context the AI Builder reads later).
+  // 3. Resolve the deterministic Template+Theme used to scaffold every page.
+  //    The Wizard's Template card and Style card are the single, durable source
+  //    of truth for non-AI page bodies. If a composition exists, we ALWAYS
+  //    render real role-filtered content (themed by the resolved style preset)
+  //    instead of a generic placeholder.
   const activeTemplate = resolveActiveTemplate(options);
   const themedComposition = (() => {
     if (!activeTemplate) return null;
@@ -256,57 +248,56 @@ export function compilePlayground(
     return { ...activeTemplate, theme: themedTokens } as TemplateComposition;
   })();
 
-  // 4. Collect VFS files — HOME ONLY. Other registered pages are intentionally
-  //    not scaffolded; AI Builder will create them later in response to user
-  //    prompts using the current site context.
+  // 4. Collect VFS files — preserve existing, scaffold missing
   const vfsFiles: Record<string, string> = {};
 
+  // Always include the router
   if (routerContent) {
     vfsFiles['/src/App.tsx'] = routerContent;
   }
 
-  if (homePage) {
-    const fp = homePage.filePath!;
+  const homePage = pages.find((page) => page.isHome) || null;
+
+  // For each page, check if file already exists in VFS
+  for (const page of pages) {
+    const fp = page.filePath!;
     const existingPageFile = existingVfsFiles[fp];
 
     if (existingPageFile) {
-      vfsFiles[fp] = existingPageFile;
-    } else {
+      vfsFiles[fp] = existingVfsFiles[fp];
+      continue;
+    }
+
+    // Preserve pre-router single-page launcher output by moving App.tsx into the home page file.
+    if (page.isHome) {
       const legacyHomeSource = existingVfsFiles['/src/App.tsx'] || existingVfsFiles['/App.tsx'];
       if (legacyHomeSource) {
         vfsFiles[fp] = rebaseHomeModuleForPageFile(legacyHomeSource);
-      } else if (themedComposition) {
-        const subComposition = buildRoleComposition(themedComposition, homePage, businessName);
-        if (subComposition) {
-          vfsFiles[fp] = compositionToReactCode(subComposition);
-        } else {
-          vfsFiles[fp] = generatePlaygroundPagePlaceholder(homePage, businessName, homePage);
-        }
-      } else {
-        vfsFiles[fp] = generatePlaygroundPagePlaceholder(homePage, businessName, homePage);
+        continue;
       }
     }
-  }
 
-  // 5. Preserve any pre-existing AI-authored page files the caller passed in
-  //    (e.g. pages the AI Builder created in a previous turn). We only skip
-  //    auto-scaffolding new placeholders; we do not delete real content.
-  for (const page of pages) {
-    if (page === homePage) continue;
-    const fp = page.filePath!;
-    if (existingVfsFiles[fp]) {
-      vfsFiles[fp] = existingVfsFiles[fp];
+    // Preferred path: render a real role-filtered themed composition for this page.
+    if (themedComposition) {
+      const subComposition = buildRoleComposition(themedComposition, page, businessName);
+      if (subComposition) {
+        vfsFiles[fp] = compositionToReactCode(subComposition);
+        continue;
+      }
     }
+
+    // Last-resort fallback (no template/composition resolvable): generic placeholder.
+    vfsFiles[fp] = generatePlaygroundPagePlaceholder(page, businessName, homePage);
   }
 
-  // 6. Build binding manifest
+  // 4. Build binding manifest
   const bindingManifest: Record<string, PlaygroundBinding> = { ...state.bindings };
 
-  // 7. Build preview manifest — only routes whose file we shipped.
-  const homeRoute = homePage?.path || '/';
+  // 5. Build preview manifest
+  const homeRoute = pages.find(p => p.isHome)?.path || '/';
   const routes = pages
-    .filter((p) => !p.isHome && vfsFiles[p.filePath!])
-    .map((p) => p.path)
+    .filter(p => !p.isHome)
+    .map(p => p.path)
     .sort();
 
   return {

@@ -3557,31 +3557,22 @@ ${sectionsJsx}
     });
   };
 
-  // Clear canvas and reset to initial state
-  const handleClearCanvas = () => {
-    setEditorCode(CLEARED_EDITOR_CODE);
-    setPreviewCode(CLEARED_PREVIEW_CODE);
-    
-    // Clear VFS to empty state
-    virtualFS.resetToEmpty();
-    
-    // Clear current template state
-    templateFiles.clearCurrentTemplate();
-    setCurrentTemplateName(null);
-    setSaveProjectName("");
-    setSaveProjectDescription("");
-    
-    // Clear fabric canvas if it exists
-    if (fabricCanvas) {
-      fabricCanvas.clear();
-      fabricCanvas.backgroundColor = '#ffffff';
-      fabricCanvas.renderAll();
-    }
-    
-    toast('Canvas Cleared!', {
-      description: 'Starting fresh with a clean slate',
+  const handleClearCanvas = useCallback(() => {
+    clearBuilderState({
+      setEditorCode,
+      setPreviewCode,
+      resetVFS: virtualFS.resetToEmpty,
+      clearCurrentTemplate: templateFiles.clearCurrentTemplate,
+      setCurrentTemplateName,
+      setSaveProjectName,
+      setSaveProjectDescription,
+      fabricCanvas,
     });
-  };
+  }, [
+    virtualFS.resetToEmpty,
+    templateFiles.clearCurrentTemplate,
+    fabricCanvas,
+  ]);
 
   // Helper to integrate CSS into HTML document
   // integrateCSSIntoHTML moved to '@/lib/builder/htmlIntegration' (Phase C3).

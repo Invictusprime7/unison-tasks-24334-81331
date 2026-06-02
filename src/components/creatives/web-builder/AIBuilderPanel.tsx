@@ -977,6 +977,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   // Send message to AI
   const handleSend = async () => {
     if ((!input.trim() && droppedFiles.length === 0) || isLoading) return;
+    // Snapshot + clear the review-required flag so it only applies to THIS send.
+    // When set, every apply path routes through the diff modal instead of auto-applying.
+    const forceReview = requireReviewRef.current;
+    requireReviewRef.current = false;
 
     // Build file context suffix
     const fileContext = droppedFiles.length > 0 ? (() => {

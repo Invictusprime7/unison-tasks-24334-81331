@@ -63,6 +63,45 @@ function looksLikeCanonicalRouter(content: string): boolean {
   return /react-router-dom|<Routes\b|<Route\b|BrowserRouter|HashRouter|createBrowserRouter/.test(content);
 }
 
+/**
+ * Lane-A is supposed to return a single-page App.tsx (no router). When the
+ * model violates that contract and wraps the home composition in a router,
+ * the previous merge step silently dropped the entire AI payload — producing
+ * the "deterministic placeholder + themed CSS" symptom users report as
+ * "fallback site after wizard launch".
+ *
+ * This helper salvages the AI output by:
+ *   1. Locating the home route (`<Route path="/" element={...} />` or `index`).
+ *   2. Extracting that element expression.
+ *   3. Rewriting the module to export a single component that renders the
+ *      extracted element, preserving every non-router import so the referenced
+ *      component (and its dependencies) still resolves.
+ *
+ * Returns null when no home route can be identified — caller falls back to
+ * skipping the file (previous behavior).
+ */
+function tryExtractHomeFromRouterModule(content: string): string | null {
+  const routeRegex =
+    /<Route\b(?=[^>]*?(?:path\s*=\s*(?:["']\/+?["']|\{\s*["']\/+?["']\s*\})|\sindex(?:\s|=|\b)))[^>]*?element\s*=\s*\{([\s\S]*?)\}\s*\/?>/;
+  const match = content.match(routeRegex);
+  if (!match) return null;
+  const element = match[1].trim();
+  if (!element) return null;
+
+  const importLines = content
+    .split('\n')
+    .filter((line) => /^\s*import\s/.test(line) && !/react-router/i.test(line));
+
+  return [
+    ...importLines,
+    '',
+    'export default function HomeRoute() {',
+    `  return (${element});`,
+    '}',
+    '',
+  ].join('\n');
+}
+
 function isPageModulePath(path: string): boolean {
   return /^\/src\/pages\/[^/]+\.(tsx|jsx|ts|js)$/i.test(path);
 }

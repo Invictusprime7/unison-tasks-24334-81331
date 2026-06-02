@@ -2234,6 +2234,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
           if (transactionalBlocked) {
             // Skip auto-apply; user reviews via the diff modal (or View Edits).
+          } else if (forceReview) {
+            // Click-driven prompt without a dry-run modal — hold for explicit review.
+            console.warn('[AIBuilderPanel] forceReview set — skipping auto-apply, awaiting manual review');
+            toast.warning('Review required', {
+              description: `${Object.keys(filesForApply).length} file(s) ready — open View Edits to apply.`,
+            });
           } else if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(filesForApply));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });

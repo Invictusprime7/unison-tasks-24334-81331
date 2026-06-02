@@ -5,6 +5,7 @@ import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from 
 import { createRuntimeManifest, type RuntimeAppContext, type RuntimeManifest } from '@/types/runtimeManifest';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
+import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 
 export const CANONICAL_METADATA_FILE_PATHS = {

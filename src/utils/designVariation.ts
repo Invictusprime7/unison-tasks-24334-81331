@@ -133,14 +133,19 @@ export function generateDesignVariation(): DesignVariation {
       hover_effect: pick(HOVER_EFFECTS),
     },
     sections: {
-      include_stats: coinFlip(0.7),
-      include_testimonials: coinFlip(0.85),
-      include_faq: coinFlip(0.65),
-      include_cta_banner: coinFlip(0.8),
-      include_newsletter: coinFlip(0.6),
-      include_social_proof: coinFlip(0.75),
+      // AUTHORITY RULE: Section presence is owned by SiteBundle composition,
+      // never by the design randomizer. These flags MUST stay `true` so the
+      // variation layer can never strip a section the bundle declared.
+      // Only `use_counter_animations` remains a style coinflip.
+      include_stats: true,
+      include_testimonials: true,
+      include_faq: true,
+      include_cta_banner: true,
+      include_newsletter: true,
+      include_social_proof: true,
       use_counter_animations: coinFlip(0.6),
     },
+
     content: {
       density: pick(CONTENT_DENSITIES),
       use_icons: coinFlip(0.9),

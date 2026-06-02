@@ -70,9 +70,19 @@ function resolveActiveTemplate(plan: GeneratedSitePlan): TemplateComposition | n
 
 /**
  * Build a synthetic sub-composition for a given page role by filtering the
- * template's source sections through the per-role pool. Sections retain their
- * original props (so industry copy, chips, intents survive), but the page
- * shows only the role-appropriate subset in pool order.
+ * template's source sections through the per-role pool.
+ *
+ * **Authority rule (Execution Hierarchy):** SiteBundle / template composition
+ * owns section *presence* and *count*. The role pool is used **only as a filter
+ * set** — we iterate every section in `template.sections` in source order and
+ * keep it if its type is allowed for this role. This preserves repeated
+ * sections (e.g. multiple feature-card grids, product collections, gallery
+ * tiles) and their full `items` / `cards` / `products` / `layout` payloads.
+ *
+ * Previously this function used a `Map<SectionType, SectionEntry>` with
+ * "first match wins", collapsing every duplicate into a single section and
+ * producing sparse skeleton pages regardless of bundle richness. Do not
+ * reintroduce that pattern.
  *
  * Returns null if no usable sections can be assembled (caller falls back to spinner).
  */
@@ -81,27 +91,27 @@ function buildRoleComposition(
   role: PageRole,
   page: PageRouteNode
 ): TemplateComposition | null {
-  const pool: SectionType[] =
+  const poolList: SectionType[] =
     template.sectionPool?.[role as TemplatePageRole] ??
     DEFAULT_ROLE_SECTION_POOL[role] ??
     DEFAULT_ROLE_SECTION_POOL.custom;
+  const allowedTypes = new Set<SectionType>(poolList);
 
-  // Index template sections by type. First match wins for each type slot.
-  const byType = new Map<SectionType, SectionEntry>();
-  for (const s of template.sections) {
-    if (!byType.has(s.type)) byType.set(s.type, s);
-  }
-
+  // Iterate template sections in source order and keep every section whose
+  // type is in the allowed set. Duplicates are preserved with unique ids so
+  // React keys + intent slots stay distinct. All section payload fields
+  // (items, cards, products, gallery, layout, props) are passed through.
   const filtered: SectionEntry[] = [];
-  pool.forEach((type, idx) => {
-    const source = byType.get(type);
-    if (!source) return;
-    // Clone with a unique id per page so React keys + intent slots stay distinct.
+  const typeCounters = new Map<SectionType, number>();
+  for (const source of template.sections) {
+    if (!allowedTypes.has(source.type)) continue;
+    const idx = typeCounters.get(source.type) ?? 0;
+    typeCounters.set(source.type, idx + 1);
     filtered.push({
       ...source,
-      id: `${page.id}-${type}-${idx}`,
+      id: `${page.id}-${source.type}-${idx}`,
     });
-  });
+  }
 
   if (filtered.length === 0) return null;
 
@@ -112,6 +122,7 @@ function buildRoleComposition(
     sections: filtered,
   };
 }
+
 
 // ============================================================================
 // Core: Scaffold missing pages from topology

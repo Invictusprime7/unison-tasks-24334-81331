@@ -5148,18 +5148,27 @@ export default function ${componentName}() {
                 if (result.success) {
                   const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                   syncBuilderFromFiles(mergedFiles, activePagePath);
-                  setViewMode('canvas');
-                  setAiPanelOpen(false);
-                  // Re-hydrate playground so AI-added pages become route tabs.
-                  setTimeout(() => {
-                    try {
-                      const latestFiles = virtualFS.getSandpackFiles();
-                      const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
-                      console.log('[WebBuilder] Post-AI (panel) playground re-hydrated:', hyd.stats);
-                    } catch (e) {
-                      console.warn('[WebBuilder] Post-AI hydration failed:', e);
-                    }
-                  }, 150);
+                  // Preserve current view mode and keep the AI panel open —
+                  // surgical edits must not yank the user out of their context.
+                  // Only re-hydrate the playground when /src/pages/* changed.
+                  const isPage = (p: string) => /^\/src\/pages\/.+\.tsx$/.test(p);
+                  const beforePages = new Set(Object.keys(beforeFiles).filter(isPage));
+                  const afterPages = new Set(Object.keys(mergedFiles).filter(isPage));
+                  const pageSetChanged =
+                    beforePages.size !== afterPages.size ||
+                    [...afterPages].some((p) => !beforePages.has(p)) ||
+                    [...beforePages].some((p) => !afterPages.has(p));
+                  if (pageSetChanged) {
+                    setTimeout(() => {
+                      try {
+                        const latestFiles = virtualFS.getSandpackFiles();
+                        const hyd = creatorPlayground.hydrateFromVFS(virtualFS.nodes, latestFiles);
+                        console.log('[WebBuilder] Post-AI (panel) playground re-hydrated:', hyd.stats);
+                      } catch (e) {
+                        console.warn('[WebBuilder] Post-AI hydration failed:', e);
+                      }
+                    }, 150);
+                  }
                   const changedPaths = diffChangedPaths(beforeFiles, mergedFiles);
                   if (changedPaths.length > 0) {
                     const promptPreview = applyMeta?.prompt

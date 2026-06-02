@@ -29,20 +29,21 @@ async function generateOne(prompt: string): Promise<string | null> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), PER_IMAGE_TIMEOUT_MS);
     const { data, error } = await supabase.functions.invoke("generate-image", {
-      body: { prompt, size: "1024x1024", quality: "low" },
+      body: { prompt, width: 1280, height: 720, style: "photography", quality: "high" },
     });
     clearTimeout(t);
     if (error) {
       console.warn("[wizardImageInjector] generate-image error:", error.message);
       return null;
     }
-    const b64 =
-      (data as { b64_json?: string; image?: string; data?: Array<{ b64_json?: string }> })
-        ?.b64_json ||
-      (data as { image?: string })?.image ||
-      (data as { data?: Array<{ b64_json?: string }> })?.data?.[0]?.b64_json;
-    if (!b64) return null;
-    return b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`;
+    const d = data as { imageUrl?: string; url?: string; base64?: string; b64_json?: string; error?: string };
+    if (d?.error) {
+      console.warn("[wizardImageInjector] generate-image returned error:", d.error);
+      return null;
+    }
+    const raw = d?.imageUrl || d?.url || d?.base64 || d?.b64_json;
+    if (!raw) return null;
+    return raw.startsWith("data:") || raw.startsWith("http") ? raw : `data:image/png;base64,${raw}`;
   } catch (e) {
     console.warn("[wizardImageInjector] generation threw:", (e as Error).message);
     return null;

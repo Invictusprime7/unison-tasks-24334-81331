@@ -1,8 +1,8 @@
 /**
- * VFSPreview - Sandpack-Only Preview Component
+ * VFSPreview - Unified preview with iframe-first runtime
  * 
- * All previews use Sandpack in-browser React/TypeScript bundling.
- * No static HTML fallback — everything renders as live React.
+ * Primary path uses iframe-based Vite preview (local or runtime session).
+ * Sandpack remains an explicit fallback backend.
  * 
  * Features:
  * - Sandpack in-browser bundling (primary and only engine)
@@ -14,6 +14,7 @@
 
 import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useRef, useMemo, Component, type ReactNode, type ErrorInfo } from 'react';
 import { cn } from '@/lib/utils';
+import { liveVFSCommit } from '@/builder/controllers/VFSCommitService';
 import { 
   RefreshCw, 
   ExternalLink, 
@@ -61,6 +62,17 @@ interface PreviewServiceFacade {
 
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
+const MINIMAL_SANDPACK_DEPENDENCIES: Record<string, string> = {
+  react: '^18.3.1',
+  'react-dom': '^18.3.1',
+  'react-router-dom': '^6.20.0',
+  clsx: 'latest',
+  'tailwind-merge': 'latest',
+  'class-variance-authority': 'latest',
+  'lucide-react': 'latest',
+  'framer-motion': 'latest',
+  sonner: 'latest',
+};
 
 export interface VFSPreviewProps {
   /** VFS nodes for file content */
@@ -78,7 +90,7 @@ export interface VFSPreviewProps {
   /** Auto-start Docker preview */
   autoStart?: boolean;
   /** Force a specific backend (kept for compatibility) */
-  forceBackend?: 'docker' | 'sandpack';
+  forceBackend?: 'docker' | 'local' | 'sandpack';
   /** Callback when preview is ready */
   onReady?: () => void;
   /** Callback on error */
@@ -192,6 +204,29 @@ const SandpackErrorListener: React.FC<{
   return null;
 };
 
+const SandpackStatusProbe: React.FC<{
+  onStatusChange: (status: string) => void;
+}> = ({ onStatusChange }) => {
+  const { sandpack } = useSandpack();
+
+  useEffect(() => {
+    onStatusChange(String(sandpack.status || 'unknown'));
+  }, [sandpack.status, onStatusChange]);
+
+  return null;
+};
+
+function isSandpackTimeoutError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('time_out') ||
+    normalized.includes('timed out') ||
+    normalized.includes("couldn't connect to server") ||
+    normalized.includes('cannot connect to the runtime') ||
+    normalized.includes('sandpack cannot connect')
+  );
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -234,12 +269,18 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 }, ref) => {
   const { launch } = useLaunch();
   const vfsContext = useVFSSafe();
-  // State - default to 'sandpack' — no HTML fallback
+  // Sandpack-only runtime to avoid backend conflicts.
   const [backend, setBackend] = useState<PreviewBackend>('sandpack');
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [sandpackKey, setSandpackKey] = useState(0);
+  const [sandpackDependencyMode, setSandpackDependencyMode] = useState<'auto' | 'base-only'>('base-only');
+  const [sandpackTimedOut, setSandpackTimedOut] = useState(false);
+  const [sandpackStatus, setSandpackStatus] = useState<string>('idle');
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const startAttemptedRef = useRef(false);
+  const sandpackRecoveryAttemptedRef = useRef(false);
+  const sandpackDependencyEscalatedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
   const localPreviewService = usePreviewService();
@@ -267,11 +308,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   // AI execution and terminal bridge
   const previewAI = usePreviewAI();
   
-  // Check if Docker gateway is explicitly configured (local dev only)
-  const dockerGatewayConfigured = !!import.meta.env.VITE_PREVIEW_GATEWAY_URL;
-  
-  // Check if local Vite server is configured
-  const localViteConfigured = !!LOCAL_PREVIEW_URL;
+  const dockerRuntimeAvailable = false;
   
   // Convert nodes to files - ALWAYS recompute to ensure we have latest
   const files = useMemo(() => {
@@ -280,11 +317,40 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [nodes, propFiles]);
   
   const { sandpackFiles, dependencies: sandpackDeps } = useMemo(() => {
-    return buildPreviewArtifacts({
+    if (backend !== 'sandpack') {
+      return { sandpackFiles: {} as Record<string, string>, dependencies: {} as Record<string, string> };
+    }
+    const built = buildPreviewArtifacts({
       sourceFiles: files,
       launchState: launch,
+      dependencyMode: sandpackDependencyMode,
+      baseDependencies: sandpackDependencyMode === 'base-only' ? MINIMAL_SANDPACK_DEPENDENCIES : undefined,
     });
-  }, [files, launch]);
+    // Sandpack's `vite-react-ts` template provides its own package.json, vite.config,
+    // tsconfig, tailwind/postcss config. Injecting our IDE-flavored versions overrides
+    // those defaults inside the nodebox and can prevent vite from starting on :5173
+    // ("server couldn't be reached"). Strip them — they remain visible in the editor
+    // (which reads from `nodes` directly), but the runtime gets the template's defaults.
+    const SANDPACK_CONFIG_BLOCKLIST = new Set([
+      '/package.json',
+      '/vite.config.ts',
+      '/vite.config.js',
+      '/tsconfig.json',
+      '/tsconfig.app.json',
+      '/tsconfig.node.json',
+      '/tailwind.config.ts',
+      '/tailwind.config.js',
+      '/postcss.config.js',
+      '/postcss.config.cjs',
+    ]);
+    const filtered: Record<string, string> = {};
+    for (const [p, c] of Object.entries(built.sandpackFiles)) {
+      if (SANDPACK_CONFIG_BLOCKLIST.has(p)) continue;
+      filtered[p] = c;
+    }
+    return { sandpackFiles: filtered, dependencies: built.dependencies };
+  }, [backend, files, launch, sandpackDependencyMode]);
+
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
   useEffect(() => {
@@ -309,7 +375,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       });
 
       if (Object.keys(changedFiles).length > 0) {
-        vfsContext.importFiles(changedFiles);
+        liveVFSCommit.writeFiles(changedFiles, 'system-restore', vfsContext.importFiles);
       }
     });
   }, [canUseContextPreview, vfsContext]);
@@ -358,17 +424,27 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     }
   }, []);
 
-  // Resolve a target window for posting bridge messages (Sandpack iframe or docker iframe)
-  const getPreviewWindow = useCallback((): Window | null => {
+  // Resolve Sandpack window if currently mounted.
+  const getSandpackWindow = useCallback((): Window | null => {
     if (sandpackIframeRef.current?.contentWindow) return sandpackIframeRef.current.contentWindow;
     const sp = document.querySelector('iframe.sp-preview-iframe, .sp-preview iframe') as HTMLIFrameElement | null;
     if (sp?.contentWindow) {
       sandpackIframeRef.current = sp;
       return sp.contentWindow;
     }
-    if (iframeRef.current?.contentWindow) return iframeRef.current.contentWindow;
     return null;
   }, []);
+
+  // Resolve a target window for posting bridge messages for the active backend only.
+  const getPreviewWindow = useCallback((): Window | null => {
+    if (backend === 'sandpack') {
+      return getSandpackWindow();
+    }
+    if ((backend === 'docker' || backend === 'local') && iframeRef.current?.contentWindow) {
+      return iframeRef.current.contentWindow;
+    }
+    return null;
+  }, [backend, getSandpackWindow]);
 
   const clearSelectedElement = useCallback(() => {
     clearDirectPreviewSelection();
@@ -499,10 +575,29 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     };
   }, [backend, clearDirectPreviewSelection, enableSelection, onElementSelect]);
 
+  // Keep one active runtime: if iframe backend is not active, stop runtime session to silence cross-runtime chatter.
+  useEffect(() => {
+    if (backend === 'docker' || backend === 'loading') return;
+    if (!dockerService.session || dockerService.session.status !== 'running') return;
+    if (canUseContextPreview) return;
+
+    void dockerService.stopSession().catch((err) => {
+      console.warn('[VFSPreview] Failed to stop inactive runtime session', err);
+    });
+  }, [backend, canUseContextPreview, dockerService]);
+
   useEffect(() => {
     const handlePreviewMessage = (event: MessageEvent) => {
       const data = event.data;
       if (!data?.type) return;
+
+      const sandpackWindow = getSandpackWindow();
+      const iframeWindow = iframeRef.current?.contentWindow ?? null;
+      const fromSandpack = !!sandpackWindow && event.source === sandpackWindow;
+      const fromIframe = !!iframeWindow && event.source === iframeWindow;
+
+      if (backend === 'sandpack' && !fromSandpack) return;
+      if ((backend === 'docker' || backend === 'local') && !fromIframe) return;
 
       // ── Selection bridge ────────────────────────────────────────────────
       if (data.type === 'EDIT_MODE_BRIDGE_READY' || data.type === 'EDIT_MODE_READY') {
@@ -565,45 +660,19 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
-  }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
+  }, [backend, onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection, getSandpackWindow]);
   
-  // Initialize backend — Docker for local dev, Sandpack for production
+  // Force Sandpack runtime and stop any stale external runtime session.
   useEffect(() => {
     if (startAttemptedRef.current) return;
     startAttemptedRef.current = true;
-
-    if (forceBackend === 'sandpack') {
-      setBackend('sandpack');
-      onReady?.();
-      return;
-    }
-
-    if (localViteConfigured) {
-      setBackend('local');
-      onReady?.();
-      return;
-    }
-
-    if (dockerGatewayConfigured && autoStart) {
-      setBackend('loading');
-      dockerService.startSession(nodes).then((session) => {
-        if (session) {
-          setBackend('docker');
-        } else {
-          setBackend('sandpack');
-        }
-        onReady?.();
-      }).catch(() => {
-        setBackend('sandpack');
-        onReady?.();
-      });
-      return;
-    }
-
-    // Default: always Sandpack
     setBackend('sandpack');
     onReady?.();
-  }, [autoStart, dockerGatewayConfigured, dockerService, forceBackend, localViteConfigured, nodes, onReady]);
+    if (!canUseContextPreview && dockerService.session?.status === 'running') {
+      void dockerService.stopSession().catch(() => undefined);
+    }
+  }, [canUseContextPreview, dockerService, onReady]);
+
   
   // Sync file changes to Docker when running
   useEffect(() => {
@@ -616,21 +685,47 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   // Handlers
   const handleStartDocker = useCallback(async () => {
-    if (!dockerGatewayConfigured) {
-      onError?.('Docker gateway not configured');
+    setBackend('sandpack');
+    onError?.('External preview runtimes are disabled. Using Sandpack runtime.');
+  }, [onError]);
+
+  const handleSandpackError = useCallback((errorMsg: string) => {
+    onError?.(errorMsg);
+
+    if (backend !== 'sandpack') return;
+
+    const lowerMsg = errorMsg.toLowerCase();
+    const looksLikeMissingModule =
+      lowerMsg.includes('cannot find module') ||
+      lowerMsg.includes('failed to resolve import') ||
+      lowerMsg.includes('does not provide an export named') ||
+      lowerMsg.includes('module not found');
+
+    if (looksLikeMissingModule && sandpackDependencyMode === 'base-only' && !sandpackDependencyEscalatedRef.current) {
+      sandpackDependencyEscalatedRef.current = true;
+      console.warn('[VFSPreview] Missing module/export in minimal Sandpack mode; escalating to full dependency extraction');
+      setSandpackDependencyMode('auto');
+      setSandpackKey((k) => k + 1);
       return;
     }
-    setBackend('loading');
-    try {
-      await dockerService.startSession(nodes);
-      setBackend('docker');
-      onReady?.();
-    } catch (err) {
-      console.error('[VFSPreview] Failed to start Docker:', err);
-      setBackend('sandpack');
-      onError?.('Failed to start Docker preview, using Sandpack');
+
+    if (!isSandpackTimeoutError(errorMsg)) return;
+    if (sandpackRecoveryAttemptedRef.current) return;
+
+    sandpackRecoveryAttemptedRef.current = true;
+
+    if (sandpackDependencyMode !== 'base-only') {
+      console.warn('[VFSPreview] Sandpack timeout detected; retrying with minimal dependency set');
+      setSandpackTimedOut(false);
+      setSandpackDependencyMode('base-only');
+      setSandpackKey((k) => k + 1);
+      return;
     }
-  }, [dockerGatewayConfigured, dockerService, nodes, onReady, onError]);
+
+    console.warn('[VFSPreview] Sandpack timeout detected in minimal mode; forcing one in-place remount retry');
+    setSandpackTimedOut(true);
+    setSandpackKey((k) => k + 1);
+  }, [backend, onError, sandpackDependencyMode]);
   
   const handleStopDocker = useCallback(async () => {
     await dockerService.stopSession();
@@ -638,27 +733,42 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [dockerService]);
   
   const handleRestart = useCallback(() => {
-    if (backend === 'docker') {
-      const entryPath = resolveLauncherEntryPoint(
-        files,
-        launch?.runtimeManifest?.entryPoint || launch?.entryPoint,
-      );
-      dockerService.patchFile(entryPath, files[entryPath] || '');
-    } else {
-      // Force Sandpack remount
-      setSandpackKey(k => k + 1);
+    sandpackRecoveryAttemptedRef.current = false;
+    sandpackDependencyEscalatedRef.current = false;
+    setSandpackTimedOut(false);
+    setSandpackStatus('idle');
+    setSandpackDependencyMode('base-only');
+    setBackend('sandpack');
+    setSandpackKey(k => k + 1);
+  }, []);
+
+  useEffect(() => {
+    if (backend !== 'sandpack') return;
+    setSandpackTimedOut(false);
+    setSandpackStatus('idle');
+  }, [backend, sandpackKey, sandpackDependencyMode]);
+
+  useEffect(() => {
+    if (backend !== 'sandpack') return;
+    if (sandpackStatus === 'running') {
+      setSandpackTimedOut(false);
+      return;
     }
-  }, [backend, dockerService, files, launch]);
+
+    // 90 s gives Sandpack enough time to download packages + boot the nodebox
+    // on first launch.  The previous 15 s fired before startup completed for
+    // wizard-generated multi-page sites, creating a perpetual reload loop.
+    const timeoutId = window.setTimeout(() => {
+      if (sandpackStatus === 'running') return;
+      console.warn('[VFSPreview] Sandpack runtime timed out before running state; showing timeout fallback');
+      setSandpackTimedOut(true);
+      onError?.('Sandpack runtime timed out while starting.');
+    }, 90000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [backend, sandpackStatus, onError]);
   
   const handleOpenInNewTab = useCallback(() => {
-    if (backend === 'docker' && dockerService.session?.iframeUrl) {
-      window.open(dockerService.session.iframeUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    if (backend === 'local' && LOCAL_PREVIEW_URL) {
-      window.open(LOCAL_PREVIEW_URL, '_blank', 'noopener,noreferrer');
-      return;
-    }
     // Sandpack: locate the preview iframe rendered by SandpackPreview and reuse its src
     try {
       const root = (iframeRef.current?.closest?.('.sp-wrapper') as HTMLElement | null)
@@ -675,28 +785,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       console.error('[VFSPreview] openInNewTab failed:', err);
       onError?.('Failed to open preview in new tab.');
     }
-  }, [backend, dockerService.session, onError]);
+  }, [onError]);
 
   // Navigate preview to a hash route via postMessage
   const handleNavigateToRoute = useCallback((route: string) => {
-    const iframe = iframeRef.current;
-    if (!iframe?.contentWindow) {
-      // Try to find Sandpack iframe
-      const container = iframe?.closest?.('.sp-layout') || document.querySelector('.sp-preview-iframe');
-      const spIframe = container as HTMLIFrameElement;
-      if (spIframe?.contentWindow) {
-        spIframe.contentWindow.postMessage({ type: 'NAV_ROUTE', route }, '*');
-        return;
-      }
-      // Broadcast to all iframes as fallback
-      const allIframes = document.querySelectorAll('iframe');
-      allIframes.forEach(f => {
-        try { f.contentWindow?.postMessage({ type: 'NAV_ROUTE', route }, '*'); } catch (_e) { /* cross-origin iframe */ }
-      });
-      return;
-    }
-    iframe.contentWindow.postMessage({ type: 'NAV_ROUTE', route }, '*');
-  }, []);
+    const spWindow = getSandpackWindow();
+    spWindow?.postMessage({ type: 'NAV_ROUTE', route }, '*');
+  }, [getSandpackWindow]);
 
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
@@ -716,6 +811,36 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     if (backend === 'local' && LOCAL_PREVIEW_URL) return LOCAL_PREVIEW_URL;
     return null;
   }, [backend, dockerService.session]);
+
+  // Guard against blank frame when runtime backend is selected without a concrete iframe URL.
+  useEffect(() => {
+    if ((backend !== 'docker' && backend !== 'local') || dockerUrl) return;
+    console.warn('[VFSPreview] Active iframe backend has no URL; switching to Sandpack fallback');
+    setBackend('sandpack');
+    onError?.('Runtime preview URL missing; using Sandpack fallback.');
+  }, [backend, dockerUrl, onError]);
+
+  useEffect(() => {
+    if (backend !== 'docker' && backend !== 'local') {
+      setIframeLoaded(false);
+      return;
+    }
+    setIframeLoaded(false);
+  }, [backend, dockerUrl]);
+
+  // If iframe never finishes loading, avoid staying on a blank frame.
+  useEffect(() => {
+    if ((backend !== 'docker' && backend !== 'local') || !dockerUrl || iframeLoaded) return;
+
+    const timeoutId = window.setTimeout(() => {
+      if (iframeLoaded) return;
+      console.warn('[VFSPreview] Iframe load timed out; switching to Sandpack fallback');
+      setBackend('sandpack');
+      onError?.('Runtime preview timed out; using Sandpack fallback.');
+    }, 12000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [backend, dockerUrl, iframeLoaded, onError]);
   
   return (
     <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
@@ -730,11 +855,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                 backend === 'local' && 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
                 backend === 'sandpack' && 'bg-purple-500/20 text-purple-600 dark:text-purple-400',
                 backend === 'loading' && 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
+                backend === 'none' && 'bg-red-500/20 text-red-600 dark:text-red-400',
               )}>
                 {backend === 'docker' && <><Server className="h-3 w-3" /> Docker HMR</>}
                 {backend === 'local' && <><Server className="h-3 w-3" /> Local Vite</>}
                 {backend === 'sandpack' && <><Zap className="h-3 w-3" /> React Live</>}
                 {backend === 'loading' && <><Loader2 className="h-3 w-3 animate-spin" /> Starting...</>}
+                {backend === 'none' && <><AlertCircle className="h-3 w-3" /> Runtime Unavailable</>}
               </div>
             )}
             
@@ -755,7 +882,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           </div>
           
           <div className="flex items-center gap-1">
-            {dockerGatewayConfigured && (
+            {dockerRuntimeAvailable && (
               <>
                 {backend === 'docker' ? (
                   <Button size="sm" variant="ghost" onClick={handleStopDocker} className="h-7 px-2 gap-1 text-xs" title="Stop Docker preview">
@@ -805,6 +932,17 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
             </div>
           </div>
         )}
+
+        {backend === 'none' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
+            <div className="text-center space-y-3 max-w-md px-6">
+              <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+              <p className="text-sm text-muted-foreground">
+                Preview runtime is unavailable. Configure local Vite (`VITE_LOCAL_PREVIEW_URL`) or preview gateway runtime to use iframe multi-page preview routing.
+              </p>
+            </div>
+          </div>
+        )}
         
         {/* Docker / Local Vite iframe */}
         {(backend === 'docker' || backend === 'local') && dockerUrl && (
@@ -812,8 +950,17 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
             className="w-full h-full flex justify-center overflow-hidden bg-muted"
             style={{ padding: device !== 'desktop' ? '16px' : 0 }}
           >
+            {!iframeLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
+                <div className="text-center space-y-3">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                  <p className="text-sm text-muted-foreground">Loading Vite runtime preview...</p>
+                </div>
+              </div>
+            )}
             <iframe
               ref={iframeRef}
+              key={`${backend}:${dockerUrl}`}
               src={dockerUrl}
               className="h-full border-0 bg-white transition-all duration-300"
               style={{
@@ -824,9 +971,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                 pointerEvents: enableSelection ? 'auto' : undefined,
               }}
               title="VFS Preview"
-              sandbox={enableSelection
-                ? 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals'
-                : 'allow-scripts allow-forms allow-popups allow-modals'}
+              onLoad={() => {
+                setIframeLoaded(true);
+                onReady?.();
+              }}
+              sandbox="allow-scripts allow-forms allow-popups allow-modals"
             />
           </div>
         )}
@@ -862,8 +1011,30 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   style={{ height: '100%', minHeight: 0 }}
                 />
               </SandpackLayout>
-              <SandpackErrorListener onError={onError} />
+              <SandpackStatusProbe onStatusChange={setSandpackStatus} />
+              <SandpackErrorListener onError={handleSandpackError} />
             </SandpackProvider>
+
+            {sandpackTimedOut && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/95">
+                <div className="max-w-md px-6 text-center space-y-3">
+                  <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+                  <p className="text-sm text-muted-foreground">
+                    Sandpack runtime timed out while contacting its backend. Preview fallback is active.
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <Button size="sm" onClick={handleRestart}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry Preview
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleOpenInNewTab}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Open Runtime
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </SandpackErrorBoundary>
         )}
         

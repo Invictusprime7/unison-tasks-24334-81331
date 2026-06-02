@@ -124,6 +124,9 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           role: 'assistant',
           content: `🔧 **Auto-Fix Applied:**\n\n${response.explanation || 'Fix generated. Review the changes below.'}`
         }]);
+        if (response.template) {
+          setPendingTemplates(prev => new Map(prev).set(messageIndex, response.template));
+        }
       } else {
         setMessages(prev => [...prev, {
           role: 'assistant',
@@ -285,10 +288,19 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         setMessages(prev => [...prev, assistantMessage]);
         setPendingTemplates(prev => new Map(prev).set(messageIndex, response.template));
       } else {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: 'Sorry, I encountered an error creating that template. Please try again with a different prompt.'
-        }]);
+        // Fallback: if template-json path fails, attempt direct canvas generation.
+        const designResponse = await generateDesign(userInput, hasCurrentTemplate ? 'modify' : 'create');
+        if (designResponse) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: `✅ **Canvas Design Applied:**\n\n${designResponse.explanation || 'Objects were generated directly on canvas.'}`,
+          }]);
+        } else {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error creating that template. Please try again with a different prompt.'
+          }]);
+        }
       }
     }
   };
@@ -458,6 +470,12 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
       {/* Quick Prompts */}
       <div className="p-3 bg-[#0d0d18]">
+        {!fabricCanvas && (
+          <div className="mb-2 flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            Canvas not ready yet — template generation still works.
+          </div>
+        )}
         <p className="text-xs text-lime-400/60 mb-2 font-medium">Quick actions:</p>
         <div className="flex flex-wrap gap-2">
           {quickPrompts.map((prompt) => (

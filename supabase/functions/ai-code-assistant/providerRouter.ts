@@ -13,7 +13,7 @@ export interface ModelSpec {
 }
 
 export interface ProviderPlan {
-  /** Ordered list of gateway models to try (via Lovable AI Gateway) */
+  /** Ordered list of Lovable AI Gateway models to try before direct Gemini fallback */
   gatewayModels: ModelSpec[];
   /** Per-model timeout in ms */
   perModelTimeoutMs: number;
@@ -32,13 +32,13 @@ export interface GatewayOverrides {
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // Lovable AI Gateway models. Gemini Flash is much faster than GPT-5
-  // (which uses heavy reasoning + frequently times out at 50s).
-  geminiFlash: { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
-  geminiFlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
-  geminiPro: { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  gpt4oMini: { id: "openai/gpt-5-mini", label: "GPT-5 Mini" },
-  gpt4o: { id: "openai/gpt-5", label: "GPT-5" },
+  // Gateway-first models. Keep multiple provider families here so transient
+  // Gemini demand spikes do not take the builder down.
+  geminiFlash: { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+  geminiFlashLite: { id: "google/gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite" },
+  geminiPro: { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
+  openaiMini: { id: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini" },
+  openaiNano: { id: "openai/gpt-5.4-nano", label: "GPT-5.4 Nano" },
 } as const;
 
 function m(spec: typeof MODELS[keyof typeof MODELS], maxTokens: number): ModelSpec {
@@ -62,18 +62,18 @@ function applyComplexityUpgrade(
   }
 
   if (complexity === "advanced") {
-    // Advanced: lead with FAST Gemini, then GPT-5 family as fallback.
+    // Advanced: lead with fast Gemini, then cross-provider fallback, then Pro.
     const advancedTokens = Math.min(baseMaxTokens + 8000, 48000);
     const advancedModels: ModelSpec[] = [
       m(MODELS.geminiFlash, advancedTokens),
-      m(MODELS.gpt4oMini, advancedTokens),
-      m(MODELS.gpt4o, advancedTokens),
+      m(MODELS.openaiMini, advancedTokens),
+      m(MODELS.geminiPro, advancedTokens),
     ];
     return { models: advancedModels, timeoutBoostMs: 5000 };
   }
 
   // Complex: append Pro-tier as fallback (don't prepend — fast models first)
-  const hasPro = models.some(mm => mm.id === MODELS.geminiPro.id || mm.id === MODELS.gpt4o.id);
+  const hasPro = models.some(mm => mm.id === MODELS.geminiPro.id);
   if (!hasPro) {
     const complexTokens = Math.min(baseMaxTokens + 4000, 40000);
     const upgraded: ModelSpec[] = [
@@ -96,11 +96,11 @@ function applyComplexityUpgrade(
  */
 export function buildProviderPlan(
   task: ClassifiedTask,
-  hasLovableKey: boolean,
+  hasConfiguredTextProvider: boolean,
   overrides?: GatewayOverrides,
   complexity: PromptComplexity = "moderate",
 ): ProviderPlan {
-  if (!hasLovableKey) {
+  if (!hasConfiguredTextProvider) {
     return {
       gatewayModels: [],
       perModelTimeoutMs: 25000,
@@ -112,15 +112,20 @@ export function buildProviderPlan(
 
   switch (task.type) {
     // ── Lane A: Wizard (protected — no complexity upgrades) ─────────────
+    // Wizard lane favors reliability and complete structured output.
+    // Flash Lite avoids transient Flash high-demand spikes; OpenAI is the
+    // immediate cross-family fallback so one slow Gemini lane cannot consume
+    // the whole launch budget.
     case "wizard_template_react":
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 16000),
-          m(MODELS.gpt4oMini, 16000),
-          m(MODELS.gpt4o, 16000),
+          m(MODELS.geminiFlashLite, 48000),
+          m(MODELS.openaiMini, 48000),
+          m(MODELS.geminiFlash, 48000),
+          m(MODELS.geminiPro, 48000),
         ],
-        perModelTimeoutMs: 45000,
-        fallbackMaxTokens: 16000,
+        perModelTimeoutMs: 35000,
+        fallbackMaxTokens: 48000,
       };
       break;
 
@@ -130,7 +135,7 @@ export function buildProviderPlan(
         gatewayModels: [
           m(MODELS.geminiFlashLite, 12000),
           m(MODELS.geminiFlash, 12000),
-          m(MODELS.gpt4oMini, 12000),
+          m(MODELS.openaiNano, 12000),
         ],
         perModelTimeoutMs: 30000,
         fallbackMaxTokens: 10000,
@@ -141,8 +146,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 24000),
-          m(MODELS.gpt4oMini, 24000),
-          m(MODELS.gpt4o, 24000),
+          m(MODELS.openaiMini, 24000),
         ],
         perModelTimeoutMs: 40000,
         fallbackMaxTokens: 24000,
@@ -154,8 +158,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -167,8 +170,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -176,14 +178,13 @@ export function buildProviderPlan(
       break;
 
     // ── Lane B: Default ─────────────────────────────────────────────────
-    default:
     // ── Launch Desk ──────────────────────────────────────────────────────
     case "launch_desk":
+    default:
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
+          m(MODELS.openaiMini, 32000),
         ],
         perModelTimeoutMs: 45000,
         fallbackMaxTokens: 32000,
@@ -201,7 +202,7 @@ export function buildProviderPlan(
 
   // Apply user overrides (Lane B only — wizard is protected)
   if (overrides && task.type !== "wizard_template_react") {
-    if (overrides.autoModelSelection === false && overrides.selectedModelId) {
+    if (overrides.autoModelSelection === false && overrides.selectedModelId?.startsWith("google/gemini-")) {
       const tokens = overrides.maxTokens ?? plan.gatewayModels[0]?.maxTokens ?? 32000;
       const modelId = overrides.selectedModelId;
       const label = modelId.split("/").pop() ?? modelId;

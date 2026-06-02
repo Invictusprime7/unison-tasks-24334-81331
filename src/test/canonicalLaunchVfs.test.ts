@@ -100,4 +100,27 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files["/src/pages/Home.tsx"]).toBeUndefined();
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
   });
+
+  it("falls back to snapshot template/theme ids when app context fields are omitted", () => {
+    const snapshot = {
+      ...createSnapshot(),
+      selectedTemplateId: "agency-luxe-a",
+      selectedThemeId: "editorial",
+    };
+
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        "/src/App.tsx": "export default function App(){ return <main>Snapshot Identity</main>; }",
+      },
+      preferredEntryPoint: "/src/App.tsx",
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      businessName: "Acme Co",
+      industry: "agency",
+      backendRequired: false,
+    });
+
+    expect(artifacts.appContext.templateId).toBe("agency-luxe-a");
+    expect(artifacts.appContext.themePresetId).toBe("editorial");
+  });
 });

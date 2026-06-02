@@ -13,8 +13,11 @@ export type IntentNamespace =
   | 'commerce'
   | 'booking'
   | 'auth'
+  | 'account'
   | 'lead'
+  | 'contact'
   | 'content'
+  | 'ui'
   | 'utility'
   | 'automation';
 
@@ -30,6 +33,16 @@ export type IntentHandler =
 
 export type IntentStatus = 'stable' | 'preview' | 'deprecated';
 
+/**
+ * Who/what triggers this intent.
+ * - user-action: bound to UI elements (buttons, links, icons) by the Wizard
+ * - system-event: emitted by the platform after a state change (order.created etc.)
+ * - workflow-event: emitted by automation pipelines (booking.reminder etc.)
+ *
+ * Wizard auto-binding MUST only emit user-action intents on interactive elements.
+ */
+export type IntentTriggerType = 'user-action' | 'system-event' | 'workflow-event';
+
 export interface IntentDef {
   /** Canonical name, dot-namespaced (e.g. "commerce.cart.add") */
   name: string;
@@ -44,10 +57,27 @@ export interface IntentDef {
     | 'contact'
     | 'quote'
     | 'newsletter'
-    | 'checkout';
+    | 'checkout'
+    | 'donation'
+    | 'lead'
+    | 'search'
+    | 'menu'
+    | 'cart'
+    | 'account'
+    | 'share'
+    | 'chat'
+    | 'filter'
+    | 'sort';
   handler: IntentHandler;
-  /** Capability that must be enabled for this intent to be publish-ready */
+  /**
+   * Single capability this intent needs to be publish-ready.
+   * Values should map to a CapabilityId in capabilityRegistry.ts.
+   */
   capability?: string;
+  /** Additional capabilities required (e.g. donation → ['donation','payments']). */
+  requiredCapabilities?: string[];
+  /** Default: 'user-action'. Lifecycle/workflow intents must be tagged. */
+  triggerType?: IntentTriggerType;
   status: IntentStatus;
   /** Legacy intent names that resolve to this one */
   aliases?: string[];
@@ -110,6 +140,30 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     description: 'Open the registration overlay.',
   },
 
+  // ── Account (universal) ────────────────────────────────────────────────
+  'account.open': {
+    name: 'account.open',
+    namespace: 'account',
+    surface: 'overlay',
+    overlayId: 'account',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['account.menu', 'profile.open'],
+    description: 'Open the account menu; routes to login/register when signed out.',
+  },
+  'auth.logout': {
+    name: 'auth.logout',
+    namespace: 'auth',
+    surface: 'client',
+    handler: 'client',
+    capability: 'auth',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['auth.signout', 'auth.sign_out', 'logout'],
+    description: 'Sign the current user out.',
+  },
+
   // ── Commerce (store) ───────────────────────────────────────────────────
   'cart.add': {
     name: 'cart.add',
@@ -117,6 +171,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'inline',
     handler: 'client',
     capability: 'commerce',
+    triggerType: 'user-action',
     status: 'stable',
     description: 'Add a product to the cart.',
   },
@@ -124,10 +179,33 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     name: 'cart.view',
     namespace: 'commerce',
     surface: 'overlay',
+    overlayId: 'cart',
     handler: 'client',
     capability: 'commerce',
+    triggerType: 'user-action',
     status: 'stable',
+    aliases: ['cart.open'],
     description: 'Open the cart drawer.',
+  },
+  'cart.update': {
+    name: 'cart.update',
+    namespace: 'commerce',
+    surface: 'inline',
+    handler: 'client',
+    capability: 'commerce',
+    triggerType: 'user-action',
+    status: 'preview',
+    description: 'Update quantity of an item in the cart.',
+  },
+  'cart.remove': {
+    name: 'cart.remove',
+    namespace: 'commerce',
+    surface: 'inline',
+    handler: 'client',
+    capability: 'commerce',
+    triggerType: 'user-action',
+    status: 'preview',
+    description: 'Remove an item from the cart.',
   },
   'cart.checkout': {
     name: 'cart.checkout',
@@ -135,6 +213,8 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'redirect',
     handler: 'stripe-checkout',
     capability: 'commerce',
+    requiredCapabilities: ['commerce', 'payments'],
+    triggerType: 'user-action',
     status: 'stable',
     aliases: ['checkout.start'],
     description: 'Begin checkout from the current cart.',
@@ -145,6 +225,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'workflow-trigger',
     capability: 'commerce',
+    triggerType: 'system-event',
     status: 'preview',
     description: 'Timer-based cart abandonment automation trigger.',
   },
@@ -155,6 +236,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     overlayId: 'checkout',
     handler: 'stripe-checkout',
     capability: 'payments',
+    triggerType: 'user-action',
     status: 'stable',
     description: 'Start a payment / subscription checkout.',
   },
@@ -164,6 +246,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'client',
     capability: 'payments',
+    triggerType: 'system-event',
     status: 'stable',
     description: 'Post-checkout success handler.',
   },
@@ -173,6 +256,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'client',
     capability: 'payments',
+    triggerType: 'system-event',
     status: 'stable',
     description: 'Post-checkout cancellation handler.',
   },
@@ -182,8 +266,19 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'client',
     capability: 'commerce',
+    triggerType: 'user-action',
     status: 'preview',
     description: 'Open a product detail view.',
+  },
+  'favorite.toggle': {
+    name: 'favorite.toggle',
+    namespace: 'commerce',
+    surface: 'inline',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'preview',
+    aliases: ['product.favorite', 'wishlist.toggle'],
+    description: 'Toggle favorite / wishlist on an item.',
   },
   'order.created': {
     name: 'order.created',
@@ -191,6 +286,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'workflow-trigger',
     capability: 'commerce',
+    triggerType: 'system-event',
     status: 'preview',
     description: 'Order placed automation trigger.',
   },
@@ -200,6 +296,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'workflow-trigger',
     capability: 'commerce',
+    triggerType: 'workflow-event',
     status: 'preview',
     description: 'Order shipped automation trigger.',
   },
@@ -209,6 +306,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'workflow-trigger',
     capability: 'commerce',
+    triggerType: 'workflow-event',
     status: 'preview',
     description: 'Order delivered automation trigger.',
   },
@@ -221,9 +319,37 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     overlayId: 'booking',
     handler: 'intent-exec',
     capability: 'booking',
+    triggerType: 'user-action',
     status: 'stable',
-    aliases: ['reservation.submit', 'booking.book', 'booking.start'],
+    aliases: [
+      'reservation.submit',
+      'booking.book',
+      'booking.start',
+      'calendar.open',
+      'reservation.create',
+    ],
     description: 'Open the booking flow.',
+  },
+  'booking.reschedule': {
+    name: 'booking.reschedule',
+    namespace: 'booking',
+    surface: 'overlay',
+    overlayId: 'booking',
+    handler: 'intent-exec',
+    capability: 'booking',
+    triggerType: 'user-action',
+    status: 'preview',
+    description: 'Reschedule an existing booking.',
+  },
+  'booking.cancel': {
+    name: 'booking.cancel',
+    namespace: 'booking',
+    surface: 'inline',
+    handler: 'intent-exec',
+    capability: 'booking',
+    triggerType: 'user-action',
+    status: 'preview',
+    description: 'Cancel an existing booking.',
   },
   'booking.confirmed': {
     name: 'booking.confirmed',
@@ -231,6 +357,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'workflow-trigger',
     capability: 'booking',
+    triggerType: 'system-event',
     status: 'preview',
     description: 'Booking confirmation automation trigger.',
   },
@@ -240,6 +367,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'workflow-trigger',
     capability: 'booking',
+    triggerType: 'workflow-event',
     status: 'preview',
     description: 'Reminder automation trigger.',
   },
@@ -249,6 +377,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'workflow-trigger',
     capability: 'booking',
+    triggerType: 'system-event',
     status: 'preview',
     description: 'Booking cancellation automation trigger.',
   },
@@ -258,30 +387,23 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'client',
     handler: 'workflow-trigger',
     capability: 'booking',
+    triggerType: 'workflow-event',
     status: 'preview',
     description: 'No-show automation trigger.',
   },
 
-  // ── Lead (agency / portfolio / contact-driven flows) ───────────────────
+  // ── Lead (sales / pipeline) ────────────────────────────────────────────
   'lead.capture': {
     name: 'lead.capture',
     namespace: 'lead',
     surface: 'overlay',
-    overlayId: 'contact',
+    overlayId: 'lead',
     handler: 'intent-exec',
-    capability: 'crm',
+    capability: 'lead-capture',
+    triggerType: 'user-action',
     status: 'stable',
-    description: 'Capture a lead via overlay form.',
-  },
-  'contact.submit': {
-    name: 'contact.submit',
-    namespace: 'lead',
-    surface: 'overlay',
-    overlayId: 'contact',
-    handler: 'intent-exec',
-    capability: 'crm',
-    status: 'stable',
-    description: 'Submit the contact form.',
+    aliases: ['demo.request', 'consultation.request'],
+    description: 'Capture a lead via overlay form (also covers demo / consultation requests).',
   },
   'quote.request': {
     name: 'quote.request',
@@ -289,16 +411,19 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     surface: 'overlay',
     overlayId: 'quote',
     handler: 'intent-exec',
-    capability: 'crm',
+    capability: 'quoting',
+    triggerType: 'user-action',
     status: 'stable',
-    description: 'Request a quote / estimate.',
+    aliases: ['proposal.request', 'estimate.request'],
+    description: 'Request a quote / estimate / proposal.',
   },
   'deal.won': {
     name: 'deal.won',
     namespace: 'lead',
     surface: 'client',
     handler: 'workflow-trigger',
-    capability: 'crm',
+    capability: 'lead-capture',
+    triggerType: 'system-event',
     status: 'preview',
     description: 'Deal-won automation trigger.',
   },
@@ -307,7 +432,8 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     namespace: 'lead',
     surface: 'client',
     handler: 'workflow-trigger',
-    capability: 'crm',
+    capability: 'lead-capture',
+    triggerType: 'system-event',
     status: 'preview',
     description: 'Deal-lost automation trigger.',
   },
@@ -316,7 +442,8 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     namespace: 'lead',
     surface: 'client',
     handler: 'workflow-trigger',
-    capability: 'crm',
+    capability: 'lead-capture',
+    triggerType: 'workflow-event',
     status: 'preview',
     description: 'Proposal-sent automation trigger.',
   },
@@ -325,22 +452,192 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     namespace: 'lead',
     surface: 'client',
     handler: 'workflow-trigger',
-    capability: 'crm',
+    capability: 'lead-capture',
+    triggerType: 'system-event',
     status: 'preview',
     description: 'Job-completed automation trigger.',
   },
 
-  // ── Content (universal) ────────────────────────────────────────────────
+  // ── Contact (local business — universal) ───────────────────────────────
+  'contact.submit': {
+    name: 'contact.submit',
+    namespace: 'contact',
+    surface: 'overlay',
+    overlayId: 'contact',
+    handler: 'intent-exec',
+    capability: 'contact',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['form.open', 'popup.open', 'inquiry.submit'],
+    description: 'Submit the contact form / open contact overlay.',
+  },
+  'contact.call': {
+    name: 'contact.call',
+    namespace: 'contact',
+    surface: 'redirect',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['phone.call', 'click.call'],
+    description: 'Initiate a phone call via tel: redirect.',
+  },
+  'contact.email': {
+    name: 'contact.email',
+    namespace: 'contact',
+    surface: 'redirect',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['mailto.open'],
+    description: 'Open the user\'s email client via mailto: redirect.',
+  },
+  'contact.sms': {
+    name: 'contact.sms',
+    namespace: 'contact',
+    surface: 'redirect',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['sms.send', 'text.us'],
+    description: 'Start an SMS via sms: redirect.',
+  },
+  'location.directions': {
+    name: 'location.directions',
+    namespace: 'contact',
+    surface: 'redirect',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['map.open', 'directions.open'],
+    description: 'Open external map / directions to the business.',
+  },
+
+  // ── Content / Marketing (universal) ────────────────────────────────────
   'newsletter.subscribe': {
     name: 'newsletter.subscribe',
     namespace: 'content',
     surface: 'overlay',
     overlayId: 'newsletter',
     handler: 'intent-exec',
-    capability: 'marketing',
+    capability: 'newsletter',
+    triggerType: 'user-action',
     status: 'stable',
-    aliases: ['waitlist.join'],
+    aliases: ['waitlist.join', 'subscribe'],
     description: 'Subscribe to a newsletter / waitlist.',
+  },
+  'content.download': {
+    name: 'content.download',
+    namespace: 'content',
+    surface: 'inline',
+    handler: 'intent-exec',
+    capability: 'lead-capture',
+    triggerType: 'user-action',
+    status: 'preview',
+    aliases: ['lead-magnet.download', 'asset.download'],
+    description: 'Download a lead magnet / gated asset (captures lead).',
+  },
+  'coupon.claim': {
+    name: 'coupon.claim',
+    namespace: 'content',
+    surface: 'overlay',
+    overlayId: 'newsletter',
+    handler: 'intent-exec',
+    capability: 'newsletter',
+    triggerType: 'user-action',
+    status: 'preview',
+    aliases: ['promo.claim', 'discount.claim'],
+    description: 'Claim a promo / discount code (captures email).',
+  },
+
+  // ── Donation / Nonprofit ───────────────────────────────────────────────
+  'donation.start': {
+    name: 'donation.start',
+    namespace: 'commerce',
+    surface: 'redirect',
+    overlayId: 'donation',
+    handler: 'stripe-checkout',
+    capability: 'donation',
+    requiredCapabilities: ['donation', 'payments'],
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['donate.start', 'donate.now'],
+    description: 'Begin a donation checkout flow.',
+  },
+  'volunteer.signup': {
+    name: 'volunteer.signup',
+    namespace: 'lead',
+    surface: 'overlay',
+    overlayId: 'lead',
+    handler: 'intent-exec',
+    capability: 'lead-capture',
+    triggerType: 'user-action',
+    status: 'preview',
+    description: 'Sign up to volunteer (nonprofit).',
+  },
+
+  // ── UI behavior (client-only, no backend) ──────────────────────────────
+  'menu.open': {
+    name: 'menu.open',
+    namespace: 'ui',
+    surface: 'overlay',
+    overlayId: 'menu',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['nav.menu', 'drawer.open', 'hamburger.open'],
+    description: 'Open the mobile navigation drawer.',
+  },
+  'search.open': {
+    name: 'search.open',
+    namespace: 'ui',
+    surface: 'overlay',
+    overlayId: 'search',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'stable',
+    aliases: ['search.toggle'],
+    description: 'Open the search overlay / input.',
+  },
+  'filter.open': {
+    name: 'filter.open',
+    namespace: 'ui',
+    surface: 'overlay',
+    overlayId: 'filter',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'preview',
+    description: 'Open the filter panel.',
+  },
+  'sort.open': {
+    name: 'sort.open',
+    namespace: 'ui',
+    surface: 'overlay',
+    overlayId: 'sort',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'preview',
+    description: 'Open the sort dropdown.',
+  },
+  'share.open': {
+    name: 'share.open',
+    namespace: 'ui',
+    surface: 'overlay',
+    overlayId: 'share',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'preview',
+    description: 'Open the share sheet.',
+  },
+  'chat.open': {
+    name: 'chat.open',
+    namespace: 'ui',
+    surface: 'overlay',
+    overlayId: 'chat',
+    handler: 'client',
+    triggerType: 'user-action',
+    status: 'preview',
+    aliases: ['support.open', 'livechat.open'],
+    description: 'Open the chat / support widget.',
   },
 
   // ── Utility automation triggers (generic) ──────────────────────────────
@@ -349,6 +646,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     namespace: 'utility',
     surface: 'client',
     handler: 'workflow-trigger',
+    triggerType: 'user-action',
     status: 'stable',
     description: 'Generic button click automation trigger.',
   },
@@ -357,6 +655,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     namespace: 'utility',
     surface: 'client',
     handler: 'workflow-trigger',
+    triggerType: 'user-action',
     status: 'stable',
     description: 'Generic form submit automation trigger.',
   },
@@ -409,6 +708,30 @@ export function activeIntentNames(): string[] {
 /** Intent names filtered by namespace. */
 export function intentsByNamespace(ns: IntentNamespace): IntentDef[] {
   return Object.values(INTENT_REGISTRY).filter((d) => d.namespace === ns);
+}
+
+/** All intents safe to auto-bind to interactive UI elements (defaults to user-action). */
+export function userActionIntents(): IntentDef[] {
+  return Object.values(INTENT_REGISTRY).filter(
+    (d) => (d.triggerType ?? 'user-action') === 'user-action' && d.status !== 'deprecated',
+  );
+}
+
+/** Returns true when the intent is bindable to a UI element (not a lifecycle event). */
+export function isUserActionIntent(input: string): boolean {
+  const def = getIntentDef(input);
+  if (!def) return false;
+  return (def.triggerType ?? 'user-action') === 'user-action';
+}
+
+/** All capabilities (incl. requiredCapabilities) needed by this intent. */
+export function getIntentCapabilities(input: string): string[] {
+  const def = getIntentDef(input);
+  if (!def) return [];
+  const out = new Set<string>();
+  if (def.capability) out.add(def.capability);
+  for (const cap of def.requiredCapabilities ?? []) out.add(cap);
+  return Array.from(out);
 }
 
 // Convenience alias — lets consumers spell the import as the namespace name.

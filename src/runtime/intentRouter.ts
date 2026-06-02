@@ -852,9 +852,21 @@ export async function handleIntent(intent: string, payload: IntentPayload): Prom
       return canonicalResult;
     }
 
+    // No DB binding + no canonical handler → degrade gracefully for end-users
+    // on freshly-launched sites. Keep the error for diagnostics, but ship a
+    // neutral UI affordance instead of surfacing "error code" to a visitor.
+    console.warn(
+      `[IntentRouter] No canonical handler for ${normalized}; degrading to neutral UI.`,
+    );
     return {
       success: false,
       error: `No canonical handler configured for ${normalized}`,
+      ui: {
+        toast: {
+          type: 'info',
+          message: 'Thanks — we received your interest and will follow up shortly.',
+        },
+      },
     };
   }
 

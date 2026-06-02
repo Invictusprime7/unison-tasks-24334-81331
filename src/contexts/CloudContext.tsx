@@ -9,7 +9,7 @@
  * - Real-time updates via Supabase subscriptions
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase as _sb } from '@/integrations/supabase/client';
 const supabase: any = _sb;
 import { User } from '@supabase/supabase-js';
@@ -73,6 +73,53 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   // Usage state
   const [usageStats, setUsageStats] = useState<CloudUsageStats | null>(null);
   const [hasOrganizationMembersTable, setHasOrganizationMembersTable] = useState(true);
+  const optionalSecurityTablesRef = useRef<{ userSessions: boolean | null; loginHistory: boolean | null }>({
+    userSessions: null,
+    loginHistory: null,
+  });
+
+  const loadOwnedOrganizationsFallback = useCallback(async () => {
+    if (!user) return;
+
+    const { data: ownedOrganizations, error: ownedError } = await supabase
+      .from('organizations' as any)
+      .select('*')
+      .eq('owner_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (ownedError) {
+      console.warn('[CloudProvider] organizations fallback query failed:', ownedError.message);
+      setOrganizations([]);
+      return;
+    }
+
+    const fallbackOrgs: CloudOrganization[] = (ownedOrganizations || []).map((org: any) => {
+      const billing = org.billing as any || {};
+      return {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        description: org.description,
+        logoUrl: org.logo,
+        website: org.website,
+        industry: org.industry,
+        size: org.size,
+        ownerId: org.owner_id,
+        plan: billing.plan || 'free',
+        memberCount: org.member_count || 0,
+        projectCount: org.project_count || 0,
+        storageUsed: org.storage_used || 0,
+        status: org.status || 'active',
+        createdAt: org.created_at,
+        updatedAt: org.updated_at,
+      };
+    });
+
+    setOrganizations(fallbackOrgs);
+    if (!currentOrganization && fallbackOrgs.length > 0) {
+      setCurrentOrganization(fallbackOrgs[0]);
+    }
+  }, [currentOrganization, user]);
 
   // Fetch user profile
   const refreshProfile = useCallback(async () => {
@@ -89,6 +136,11 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     
     try {
+      if (!hasOrganizationMembersTable) {
+        await loadOwnedOrganizationsFallback();
+        return;
+      }
+
       const { data: memberships, error: memberError } = await supabase
         .from('organization_members' as any)
         .select(`
@@ -117,53 +169,11 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
         .eq('is_active', true);
 
       if (memberError) {
-        if (isMissingTableError(memberError.message)) {
-          setHasOrganizationMembersTable(false);
-
-          // Fallback for environments that only have organizations, without membership table.
-          const { data: ownedOrganizations, error: ownedError } = await supabase
-            .from('organizations' as any)
-            .select('*')
-            .eq('owner_id', user.id)
-            .order('created_at', { ascending: false });
-
-          if (ownedError) {
-            console.warn('[CloudProvider] organizations fallback query failed:', ownedError.message);
-            setOrganizations([]);
-            return;
-          }
-
-          const fallbackOrgs: CloudOrganization[] = (ownedOrganizations || []).map((org: any) => {
-            const billing = org.billing as any || {};
-            return {
-              id: org.id,
-              name: org.name,
-              slug: org.slug,
-              description: org.description,
-              logoUrl: org.logo,
-              website: org.website,
-              industry: org.industry,
-              size: org.size,
-              ownerId: org.owner_id,
-              plan: billing.plan || 'free',
-              memberCount: org.member_count || 0,
-              projectCount: org.project_count || 0,
-              storageUsed: org.storage_used || 0,
-              status: org.status || 'active',
-              createdAt: org.created_at,
-              updatedAt: org.updated_at,
-            };
-          });
-
-          setOrganizations(fallbackOrgs);
-          if (!currentOrganization && fallbackOrgs.length > 0) {
-            setCurrentOrganization(fallbackOrgs[0]);
-          }
-          return;
-        }
-
-        // Non-schema errors are still logged.
-        console.warn('[CloudProvider] organization_members query failed:', memberError.message);
+        // Fallback for environments where membership join path is unavailable
+        // due to missing tables, relationship issues, or RLS/proxy errors.
+        setHasOrganizationMembersTable(false);
+        console.warn('[CloudProvider] organization_members query failed, switching to organizations fallback:', memberError.message);
+        await loadOwnedOrganizationsFallback();
         return;
       }
 
@@ -203,7 +213,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Error loading organizations:', error);
     }
-  }, [user, currentOrganization]);
+  }, [user, hasOrganizationMembersTable, loadOwnedOrganizationsFallback]);
 
   // Fetch team members for current organization
   const refreshTeam = useCallback(async () => {
@@ -320,15 +330,24 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     try {
       // Fetch active sessions (table may not exist yet â€” graceful fallback)
       let sessionsData: any[] | null = null;
-      try {
-        const { data, error } = await supabase
-          .from('user_sessions' as any)
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('is_active', true)
-          .order('last_active', { ascending: false });
-        if (!error) sessionsData = data;
-      } catch { /* table may not exist */ }
+      if (optionalSecurityTablesRef.current.userSessions !== false) {
+        try {
+          const { data, error } = await supabase
+            .from('user_sessions' as any)
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('is_active', true)
+            .order('last_active', { ascending: false });
+          if (!error) {
+            sessionsData = data;
+            optionalSecurityTablesRef.current.userSessions = true;
+          } else {
+            optionalSecurityTablesRef.current.userSessions = false;
+          }
+        } catch {
+          optionalSecurityTablesRef.current.userSessions = false;
+        }
+      }
 
       if (sessionsData) {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
@@ -347,15 +366,24 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
 
       // Fetch login history (table may not exist yet â€” graceful fallback)
       let historyData: any[] | null = null;
-      try {
-        const { data, error } = await supabase
-          .from('login_history' as any)
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(20);
-        if (!error) historyData = data;
-      } catch { /* table may not exist */ }
+      if (optionalSecurityTablesRef.current.loginHistory !== false) {
+        try {
+          const { data, error } = await supabase
+            .from('login_history' as any)
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+          if (!error) {
+            historyData = data;
+            optionalSecurityTablesRef.current.loginHistory = true;
+          } else {
+            optionalSecurityTablesRef.current.loginHistory = false;
+          }
+        } catch {
+          optionalSecurityTablesRef.current.loginHistory = false;
+        }
+      }
 
       if (historyData) {
         setLoginHistory(historyData.map((h: any) => ({

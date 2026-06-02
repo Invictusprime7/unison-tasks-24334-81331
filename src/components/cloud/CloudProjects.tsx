@@ -132,6 +132,29 @@ interface Business {
   settings?: Json;
 }
 
+function isMissingBusinessMembersTable(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+  } | null;
+  const text = [candidate?.message, candidate?.details]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    candidate?.status === 404 ||
+    candidate?.code === '42P01' ||
+    candidate?.code === 'PGRST204' ||
+    candidate?.code === 'PGRST205' ||
+    text.includes('could not find the table') ||
+    text.includes('business_members') ||
+    text.includes('schema cache')
+  );
+}
+
 const transformBusiness = (data: Record<string, unknown>): Business => ({
   id: data.id as string,
   name: data.name as string,
@@ -161,6 +184,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const [supportsBusinessMembers, setSupportsBusinessMembers] = useState(true);
   const [businessSelectionMode, setBusinessSelectionMode] = useState(false);
   const [selectedBusinessIds, setSelectedBusinessIds] = useState<string[]>([]);
   const [activeSection, setActiveSection] = useState<BusinessSection>('projects');
@@ -288,16 +312,26 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
         .eq('owner_id', userId)
         .order('created_at', { ascending: false });
 
-      const { data: memberBusinesses, error: memberError } = await supabase
-        .from('business_members')
-        .select('business:businesses(*)')
-        .eq('user_id', userId);
+      const { data: memberBusinesses, error: memberError } = supportsBusinessMembers
+        ? await supabase
+            .from('business_members')
+            .select('business:businesses(*)')
+            .eq('user_id', userId)
+        : { data: [], error: null };
 
-      if (ownedError && memberError) {
+      let safeMemberBusinesses = memberBusinesses;
+      let safeMemberError = memberError;
+      if (memberError && isMissingBusinessMembersTable(memberError)) {
+        setSupportsBusinessMembers(false);
+        safeMemberBusinesses = [];
+        safeMemberError = null;
+      }
+
+      if (ownedError && safeMemberError) {
         setBusinesses([]);
       } else {
         const owned = (ownedBusinesses || []).map(transformBusiness);
-        const memberOf = (memberBusinesses || [])
+        const memberOf = (safeMemberBusinesses || [])
           .map((m: any) => m.business)
           .filter(Boolean)
           .map(transformBusiness);
@@ -995,7 +1029,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
         <ScrollArea className="flex-1 -mx-2">
           <div className="px-2 space-y-1">
             {businesses.map((business) => (
-              <button
+              <div
                 key={business.id}
                 onClick={() => {
                   if (businessSelectionMode && business.owner_id === userId) {
@@ -1005,6 +1039,18 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                   setSelectedBusiness(business);
                   setActiveSection('projects');
                 }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  if (businessSelectionMode && business.owner_id === userId) {
+                    toggleBusinessSelection(business.id);
+                    return;
+                  }
+                  setSelectedBusiness(business);
+                  setActiveSection('projects');
+                }}
+                role="button"
+                tabIndex={0}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all group",
                   selectedBusiness?.id === business.id
@@ -1047,7 +1093,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         </ScrollArea>

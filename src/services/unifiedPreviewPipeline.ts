@@ -10,10 +10,11 @@
  * this module. Direct imports of pageTopologyOrchestrator or generateCanonicalRouter
  * from components are a code smell.
  * 
- * Lifecycle:  Registry Update → VFS Scaffold → Router Regeneration → Preview Reload
+ * Lifecycle: Registry update -> AI page hydration -> router regeneration -> preview reload
  */
 
 import type { PageRegistry, BuilderPage } from '@/types/pageRegistry';
+import type { GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import type { PlaygroundState } from '@/types/playground';
 import {
   applyTopologyChange,
@@ -33,10 +34,9 @@ import {
 } from './routeNavigationService';
 import { validatePageTopology, type TopologyValidationResult } from './pageTopologyValidator';
 import {
-  scaffoldMissingTopologyPages,
-  scaffoldMissingTopologyPagesWithRouter,
   getTopologyPagesForAIGeneration,
   getMissingTopologyPages,
+  scaffoldMissingTopologyPages,
 } from '@/utils/topologyVFSScaffolder';
 
 // ============================================================================
@@ -51,11 +51,30 @@ export {
   deriveFilePath,
   deriveRouteFromLabel,
   validatePageTopology,
-  scaffoldMissingTopologyPages,
-  scaffoldMissingTopologyPagesWithRouter,
   getTopologyPagesForAIGeneration,
   getMissingTopologyPages,
 };
+
+/**
+ * Scaffold missing topology page modules and patch the canonical router.
+ * This guarantees the preview can render immediately after launcher handoff.
+ */
+export function scaffoldMissingTopologyPagesWithRouter(
+  plan: GeneratedSitePlan,
+  existingFiles: Record<string, string>,
+  registry: PageRegistry,
+): Record<string, string> {
+  const scaffolded = scaffoldMissingTopologyPages(plan, existingFiles);
+  const merged = { ...existingFiles, ...scaffolded };
+  const withRouter = patchVFSWithRouter(merged, registry, plan.businessName);
+
+  const updates: Record<string, string> = { ...scaffolded };
+  if (withRouter['/src/App.tsx'] && withRouter['/src/App.tsx'] !== existingFiles['/src/App.tsx']) {
+    updates['/src/App.tsx'] = withRouter['/src/App.tsx'];
+  }
+
+  return updates;
+}
 
 // ============================================================================
 // Preview State
@@ -128,9 +147,10 @@ export function fullRebuildFromPlayground(
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
   industry?: string,
+  options?: { selectedTemplateId?: string; selectedThemeId?: string; themePresetId?: string },
 ) {
   return commitToPipeline(
-    { playground, existingVfsFiles, businessName, industry },
+    { playground, existingVfsFiles, businessName, industry, ...options },
     'playground-edit',
   );
 }

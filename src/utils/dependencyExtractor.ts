@@ -232,6 +232,10 @@ export function extractDependencies(files: Record<string, string>): ExtractedDep
   };
 }
 
+export interface SandpackDependencyOptions {
+  includeUnknownLatest?: boolean;
+}
+
 /**
  * Merge extracted dependencies with base Sandpack dependencies
  * Returns a combined dependency map safe for Sandpack customSetup
@@ -253,16 +257,25 @@ export function mergeDependencies(
  */
 export function getDependenciesForSandpack(
   files: Record<string, string>,
-  baseDependencies: Record<string, string> = {}
+  baseDependencies: Record<string, string> = {},
+  options: SandpackDependencyOptions = {}
 ): {
   dependencies: Record<string, string>;
   extractionInfo: ExtractedDependencies;
 } {
+  const { includeUnknownLatest = true } = options;
   const extractionInfo = extractDependencies(files);
-  const dependencies = mergeDependencies(extractionInfo.dependencies, baseDependencies);
+  const filteredExtracted = includeUnknownLatest
+    ? extractionInfo.dependencies
+    : Object.fromEntries(
+        Object.entries(extractionInfo.dependencies).filter(([pkg]) =>
+          extractionInfo.unresolved.indexOf(pkg) === -1 || pkg in baseDependencies,
+        ),
+      );
+  const dependencies = mergeDependencies(filteredExtracted, baseDependencies);
   
   // Log for debugging
-  if (extractionInfo.unresolved.length > 0) {
+  if (includeUnknownLatest && extractionInfo.unresolved.length > 0) {
     console.warn('[DependencyExtractor] Unresolved packages (using latest):', extractionInfo.unresolved);
   }
   

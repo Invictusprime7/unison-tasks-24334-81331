@@ -2,11 +2,10 @@
  * Topology Router Generator
  * 
  * Generates/patches a canonical App.tsx in VFS that includes a HashRouter
- * with routes for ALL pages in the PageRegistry. This ensures scaffolded
- * pages are truly live — not just files in the VFS.
+ * with routes for file-backed pages in the PageRegistry.
  * 
  * Called whenever:
- *   - A page is scaffolded (topologyVFSScaffolder)
+ *   - AI Builder hydrates a missing page file
  *   - A page is added/removed via PageRouteBar or CreatorPlayground
  *   - The site topology is initialized from a GeneratedSitePlan
  */
@@ -45,6 +44,29 @@ export function generateCanonicalRouter(
 }
 
 /**
+ * Generate a canonical App.tsx only for pages whose component files are present
+ * in VFS. Missing pages are intentionally left out until the AI Builder writes
+ * their route component.
+ */
+export function generateCanonicalRouterForFiles(
+  registry: PageRegistry,
+  existingFiles: Record<string, string>,
+  businessName?: string,
+): string {
+  const pages = Object.values(registry.pages)
+    .filter((page) => {
+      const filePath = page.filePath || derivePageFilePath(page);
+      return Boolean(filePath && existingFiles[filePath]);
+    })
+    .sort((a, b) => a.navOrder - b.navOrder);
+
+  if (pages.length === 0) return '';
+
+  const routes = pagesToRoutes(pages);
+  return buildRouterCode(routes, businessName);
+}
+
+/**
  * Generate a canonical App.tsx from a GeneratedSitePlan (before registry is populated).
  */
 export function generateCanonicalRouterFromPlan(plan: GeneratedSitePlan): string {
@@ -66,7 +88,7 @@ export function patchVFSWithRouter(
   registry: PageRegistry,
   businessName?: string
 ): Record<string, string> {
-  const routerCode = generateCanonicalRouter(registry, businessName);
+  const routerCode = generateCanonicalRouterForFiles(registry, existingFiles, businessName);
   if (!routerCode) return existingFiles;
   return { ...existingFiles, '/src/App.tsx': routerCode };
 }
@@ -102,6 +124,15 @@ function pagesToRoutes(pages: BuilderPage[]): RouteEntry[] {
       isHome: p.isHome,
     };
   });
+}
+
+function derivePageFilePath(page: BuilderPage): string {
+  const slug = page.path.replace(/^\//, '') || 'Home';
+  const componentName = slug
+    .replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase())
+    .replace(/^(.)/, (_, c: string) => c.toUpperCase())
+    .replace(/[^a-zA-Z0-9]/g, '') || 'Page';
+  return `/src/pages/${componentName}.tsx`;
 }
 
 function extractComponentName(filePath: string): string {

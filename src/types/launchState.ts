@@ -91,6 +91,11 @@ export interface LaunchState {
   compiledPlayground?: PlaygroundCompileResult;
   pipelineManifest?: RuntimeManifest;
   wizardSelections?: WizardSelections;
+  /**
+   * When true, WebBuilder keeps wizard topology metadata available but does not
+   * auto-hydrate page registry/routes on initial launch.
+   */
+  deferTopologyHydration?: boolean;
   
   // Timestamps
   createdAt?: string;
@@ -158,6 +163,7 @@ export function createLaunchState(
     compiledPlayground: input.compiledPlayground,
     pipelineManifest: input.pipelineManifest,
     wizardSelections: input.wizardSelections,
+    deferTopologyHydration: input.deferTopologyHydration,
     blueprint: input.blueprint || {
       version: '1.0',
       identity: {

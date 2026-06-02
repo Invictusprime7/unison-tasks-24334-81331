@@ -34,11 +34,13 @@ import type { SiteBundle, SiteManifest, RouteDef, NavItem } from '@/types/siteBu
 import { resolveCapabilities } from '@/services/wizardCapabilityResolver';
 import { materializePlayground } from '@/services/wizardPlaygroundMaterializer';
 import { validatePlayground, getValidationSummary } from '@/services/playgroundValidationService';
-import { compilePlayground } from '@/services/playgroundCompiler';
+import { livePlaygroundSync } from '@/builder/controllers/PlaygroundSyncController';
 import { createRuntimeManifest } from '@/types/runtimeManifest';
 import { validateComposition } from '@/services/componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
 import { assertWithinCommit } from './pipelineGuard';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
 
 // ============================================================================
 // Pipeline Result
@@ -102,6 +104,10 @@ export interface SiteBundleSnapshot {
   routes: string[];
   homeRoute: string;
 
+  /** Sticky wizard template/style identity for non-wizard recompiles. */
+  selectedTemplateId?: string;
+  selectedThemeId?: string;
+
   /** Timestamp */
   createdAt: string;
 
@@ -159,12 +165,17 @@ export function executeCanonicalPipeline(
 
   // Stage 4: Compile playground → VFS + router + bindings
   // Pass the wizard's Template + Style card selections so subpage scaffolds are
-  // real role-filtered themed compositions instead of generic placeholders.
-  const compileResult = compilePlayground(playground, existingVfsFiles, selections.businessName, {
-    selectedTemplateId: selections.templateId,
-    selectedThemeId: selections.themeId,
-    industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
-  });
+  // real role-filtered themed compositions with editorial fallback scaffolds.
+  const compileResult = livePlaygroundSync.compile(
+    existingVfsFiles,
+    selections.businessName,
+    {
+      selectedTemplateId: selections.templateId,
+      selectedThemeId: selections.themeId,
+      industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
+    },
+    playground,
+  );
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
@@ -215,21 +226,21 @@ export function recompileFromPlayground(
     for (const v of validations.filter(v => v.severity === 'warning')) warnings.push(v.message);
   }
 
-  const compileResult = compilePlayground(playground, existingVfsFiles, businessName, {
-    selectedTemplateId: options?.selectedTemplateId,
-    selectedThemeId: options?.selectedThemeId,
-    industry: industry || null,
-  });
+  const compileResult = livePlaygroundSync.compile(
+    existingVfsFiles,
+    businessName,
+    {
+      selectedTemplateId: options?.selectedTemplateId,
+      selectedThemeId: options?.selectedThemeId,
+      industry: industry || null,
+    },
+    playground,
+  );
 
   // Re-emit themed /src/index.css from the wizard's preset so any in-builder
   // recompile keeps the Style-card tokens locked across all industries.
   const presetId = options?.themePresetId || options?.selectedThemeId;
   if (presetId) {
-    // Lazy require to avoid a circular dep with onboarding modules.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { THEME_PRESETS } = require('@/components/onboarding/themePresets');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } = require('@/components/onboarding/themePresetToIndexCss');
     const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId) || DEFAULT_PREVIEW_THEME_PRESET;
     compileResult.vfsFiles['/src/index.css'] = buildThemedIndexCss(preset);
   }
@@ -237,7 +248,12 @@ export function recompileFromPlayground(
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
     compileResult,
-    { businessName: businessName || '', industry: industry || 'general' } as any,
+    {
+      businessName: businessName || '',
+      industry: industry || 'general',
+      templateId: options?.selectedTemplateId,
+      themeId: options?.selectedThemeId || options?.themePresetId,
+    },
   );
 
   const runtimeManifest = deriveRuntimeManifest(siteBundleSnapshot);
@@ -262,7 +278,13 @@ export function recompileFromPlayground(
 function projectToSiteBundleSnapshot(
   playground: PlaygroundState,
   compileResult: PlaygroundCompileResult,
-  selections: { businessName: string; industryOverlay?: string; industry?: string },
+  selections: {
+    businessName: string;
+    industryOverlay?: string;
+    industry?: string;
+    templateId?: string;
+    themeId?: string;
+  },
 ): SiteBundleSnapshot {
   const registry = compileResult.pageRouteRegistry;
   const pages = Object.values(registry.pages);
@@ -310,6 +332,8 @@ function projectToSiteBundleSnapshot(
     componentInstances: playground.creatorData.componentInstances,
     routes: compileResult.previewManifest.routes,
     homeRoute: compileResult.previewManifest.homeRoute,
+    selectedTemplateId: selections.templateId,
+    selectedThemeId: selections.themeId,
     createdAt: new Date().toISOString(),
   };
 }

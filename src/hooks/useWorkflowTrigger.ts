@@ -15,6 +15,32 @@ interface TriggerWorkflowParams {
   data?: Record<string, unknown>;
 }
 
+function isOptionalWorkflowTableError(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    status?: number;
+    message?: string;
+    details?: string;
+  } | null;
+  const text = [candidate?.message, candidate?.details]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    candidate?.status === 404 ||
+    candidate?.status === 400 ||
+    candidate?.code === '42P01' ||
+    candidate?.code === '42703' ||
+    candidate?.code === 'PGRST204' ||
+    candidate?.code === 'PGRST205' ||
+    text.includes('could not find the table') ||
+    text.includes('schema cache') ||
+    text.includes('column') ||
+    text.includes('relation')
+  );
+}
+
 export const useWorkflowTrigger = () => {
   const triggerWorkflow = useCallback(async ({ event, workflowId, data = {} }: TriggerWorkflowParams) => {
     try {
@@ -60,6 +86,10 @@ export const useWorkflowTrigger = () => {
         .eq('is_active', true);
 
       if (queryError) {
+        if (isOptionalWorkflowTableError(queryError)) {
+          console.warn('crm_workflows unavailable; skipping trigger lookup for event:', event);
+          return null;
+        }
         console.error('Error querying workflows:', queryError);
         return null;
       }

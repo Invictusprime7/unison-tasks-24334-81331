@@ -19,7 +19,7 @@
  *   Launcher → compileLauncherOutputForPreview() → Sandpack overlay (combines both steps)
  */
 
-import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
+import { ensureReactImports, sanitizeSvgElements, fixSvgStringChildren } from '@/utils/aiCodeCleaner';
 import { LAUNCHER_BASE_THEME } from '@/sections/themes';
 import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
@@ -27,6 +27,7 @@ import { buildDefaultThemedIndexCss, buildThemedIndexCss, DEFAULT_PREVIEW_THEME_
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 
 const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
+const DEBUG_SANDPACK_PREP = Boolean(import.meta.env.VITE_DEBUG_SANDPACK_PREP);
 
 const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 
@@ -1265,57 +1266,92 @@ const PORTRAIT_IMAGES = [
 ];
 
 /**
- * Replace broken/fake Unsplash URLs and empty image sources with real contextual images.
- * Catches patterns like photo-1234567890 (sequential digits = fake), empty src, and placeholder.com.
+ * Replace broken/fake image URLs and empty image sources with real contextual
+ * images. Catches:
+ *   - Unsplash photo IDs that don't match the strict `<10digits>-<12hex>` shape
+ *     (the AI loves to hallucinate plausible-looking IDs that 404).
+ *   - source.unsplash.com (deprecated redirector, frequently dead).
+ *   - via.placeholder.com / placeholder.com / placehold.it.
+ *   - Hallucinated pexels / pixabay / freepik direct image links.
+ *   - Empty src / srcSet attributes and `background-image: url('')`.
+ *   - Avatar generators (randomuser / pravatar / ui-avatars).
+ *
+ * Operates on raw TSX/CSS source — safe to run after AI generation and before
+ * Sandpack mounts the VFS.
  */
 function repairBrokenImageUrls(code: string): string {
   let imgIndex = 0;
   const fallbackImages = CONTEXTUAL_IMAGES.default;
-
-  // Fix fake Unsplash URLs (sequential digits like photo-1234567890)
-  code = code.replace(
-    /https:\/\/images\.unsplash\.com\/photo-(\d{10,})\?[^"'\s)]+/g,
-    (match, photoId) => {
-      // Check if digits are sequential (fake) — e.g. 1234567890
-      const isSequential = /^0?1234/.test(photoId) || /^(\d)\1+$/.test(photoId);
-      if (isSequential) {
-        const replacement = fallbackImages[imgIndex % fallbackImages.length];
-        imgIndex++;
-        return replacement;
-      }
-      return match;
-    }
-  );
-
-  // Fix placeholder.com URLs
-  code = code.replace(
-    /https?:\/\/(?:via\.)?placeholder\.com\/[^"'\s)]+/g,
-    () => {
-      const replacement = fallbackImages[imgIndex % fallbackImages.length];
-      imgIndex++;
-      return replacement;
-    }
-  );
-
-  // Fix empty src attributes
-  code = code.replace(/src=["']\s*["']/g, () => {
-    const replacement = fallbackImages[imgIndex % fallbackImages.length];
+  const nextFallback = () => {
+    const u = fallbackImages[imgIndex % fallbackImages.length];
     imgIndex++;
-    return `src="${replacement}"`;
-  });
+    return u;
+  };
 
-  // Fix avatar/portrait placeholder URLs (small images in testimonials)
+  // Canonical Unsplash CDN format: photo-<10 digits>-<12 hex>.
+  // Anything else under images.unsplash.com is almost certainly hallucinated.
+  const UNSPLASH_OK = /^photo-\d{10}-[0-9a-f]{12}$/i;
+  code = code.replace(
+    /https:\/\/images\.unsplash\.com\/(photo-[A-Za-z0-9_-]+)(\?[^"'\s)`]*)?/g,
+    (match, slug) => (UNSPLASH_OK.test(slug) ? match : nextFallback()),
+  );
+
+  // Deprecated source.unsplash.com redirector — replace wholesale.
+  code = code.replace(
+    /https?:\/\/source\.unsplash\.com\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+
+  // placeholder.com / placehold.it variants.
+  code = code.replace(
+    /https?:\/\/(?:via\.)?placeholder\.com\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+  code = code.replace(
+    /https?:\/\/placehold\.(?:it|co)\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+
+  // Hallucinated pexels / pixabay / freepik direct asset URLs. Real Pexels CDN
+  // is `images.pexels.com/photos/<id>/...`; AI often emits the SEO page URL
+  // (`www.pexels.com/photo/...`) which 404s as an <img>.
+  code = code.replace(
+    /https?:\/\/(?:www\.)?pexels\.com\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+  code = code.replace(
+    /https?:\/\/(?:cdn\.)?pixabay\.com\/(?!photo\/[\d/]+\/[a-z0-9-]+_\d+\.(?:jpg|png|webp))[^"'\s)`]+/gi,
+    () => nextFallback(),
+  );
+  code = code.replace(
+    /https?:\/\/(?:img|images?)\.freepik\.com\/[^"'\s)`]+/g,
+    () => nextFallback(),
+  );
+
+  // Empty src / srcSet attributes.
+  code = code.replace(/src=["']\s*["']/g, () => `src="${nextFallback()}"`);
+  code = code.replace(/srcSet=["']\s*["']/g, () => `srcSet="${nextFallback()}"`);
+
+  // Empty CSS background-image declarations.
+  code = code.replace(
+    /background(?:-image)?\s*:\s*url\(\s*(["']?)\s*\1\s*\)/g,
+    () => `background-image: url('${nextFallback()}')`,
+  );
+
+  // Avatar generators in testimonial cards — these are reachable, but they
+  // serve placeholder grey blobs that look broken in marketing layouts.
   code = code.replace(
     /src=["'](https?:\/\/(?:randomuser|i\.pravatar|ui-avatars)[^"']*?)["']/g,
     () => {
       const replacement = PORTRAIT_IMAGES[imgIndex % PORTRAIT_IMAGES.length];
       imgIndex++;
       return `src="${replacement}"`;
-    }
+    },
   );
 
   return code;
 }
+
 
 /**
  * Parse an HSL CSS variable value like "222.2 84% 4.9%" and return the lightness as a number.
@@ -1369,7 +1405,9 @@ function enforceContrastInCSS(css: string): string {
           new RegExp(`(${fgVar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:\\s*)${fgVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
           `$1${newFgVal}`
         );
-        console.warn(`[contrast-fix] ${fgVar}: ${fgVal} → ${newFgVal} (bg lightness: ${bgL}%)`);
+        if (DEBUG_SANDPACK_PREP) {
+          console.warn(`[contrast-fix] ${fgVar}: ${fgVal} → ${newFgVal} (bg lightness: ${bgL}%)`);
+        }
       }
     }
   }
@@ -3358,7 +3396,9 @@ function matchSectionGenerator(componentName: string): string | null {
   // Last resort: fuzzy matching - find the closest match
   const fuzzyMatch = findClosestSectionKey(componentName);
   if (fuzzyMatch) {
-    console.warn(`[matchSectionGenerator] Fuzzy match: "${componentName}" → "${fuzzyMatch}"`);
+    if (DEBUG_SANDPACK_PREP) {
+      console.warn(`[matchSectionGenerator] Fuzzy match: "${componentName}" → "${fuzzyMatch}"`);
+    }
     return fuzzyMatch;
   }
   
@@ -4116,7 +4156,26 @@ export function processCode(code: string, filePath: string): string {
     'Rocket','Sparkles','Wand','Bot','Brain','Lightbulb','Flame','Crown',
     'Gem','HandHeart','Headphones','Languages','Laugh','PaintBucket','Palette',
     'Puzzle','Receipt','Scale','ScrollText','Shrub','Wrench',
+    // Nature / eco / lifestyle
+    'Leaf','Trees','TreePine','TreeDeciduous','Sprout','Flower','Flower2','Mountain',
+    'MountainSnow','Snowflake','Droplet','Droplets','Waves','Sunflower','Apple',
+    'Carrot','Cherry','Citrus','Egg','Fish','Beef','Wheat','Salad','Soup','Utensils',
+    'UtensilsCrossed','ChefHat','CookingPot','Pizza','Coffee','Wine','Beer','GlassWater',
+    // Commerce / business extras
+    'Store','Building','Building2','Factory','Warehouse','Landmark','Banknote','Wallet',
+    'HandCoins','PiggyBank','Coins','DollarSign','Euro','BadgeCheck','BadgePercent',
+    'Percent','Tags','Ticket','Gift',
+    // Communication / social extras
+    'AtSign','MessagesSquare','Linkedin','Twitch','Slack','Discord','Dribbble','Figma',
+    // UI extras
+    'ArrowUpRight','ArrowDownRight','ArrowUpLeft','ArrowDownLeft','ChevronsRight',
+    'ChevronsLeft','ChevronsUp','ChevronsDown','CornerUpRight','CornerDownRight',
+    'Plus','Minus','Divide','Equal','Hash','Asterisk','Dot','Ellipsis','Quote',
+    'Pin','PinOff','Bookmark','BookmarkPlus','Book','BookOpen','GraduationCap',
+    'Backpack','Brush','Scissors','Ruler','Calculator','ClipboardCheck','ClipboardList',
+    'FileCheck','FilePlus','FileSearch','FolderOpen','FolderPlus','FolderSearch',
   ]);
+
 
   // Find all PascalCase identifiers used in the body (outside imports/declarations)
   const bodyWithoutDecls = code.replace(/^(?:import\s+.*|const\s+\w+\s*=).*$/gm, '');
@@ -4543,10 +4602,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       version: '0.0.1',
       type: 'module',
       scripts: {
-        dev: 'vite',
+        dev: 'vite --host 0.0.0.0 --port 5173',
+        start: 'vite --host 0.0.0.0 --port 5173',
         build: 'tsc && vite build',
-        preview: 'vite preview',
+        preview: 'vite preview --host 0.0.0.0 --port 5173',
       },
+
       dependencies: detectedDeps,
       devDependencies: {
         '@vitejs/plugin-react-swc': '^3.5.0',
@@ -4599,6 +4660,8 @@ export default defineConfig({
 });
 `;
   }
+
+
 
   if (!out['/tailwind.config.ts']) {
     out['/tailwind.config.ts'] = `import type { Config } from 'tailwindcss';
@@ -4683,7 +4746,7 @@ function isProseOnlyModule(content: string): boolean {
   // declaration, JSDoc/pragma block, or a meaningful keyword → not prose.
   if (/<[A-Za-z/!?]/.test(trimmed)) return false;
   if (/\b(import|export|function|class|const|let|var|return|=>|interface|type|enum)\b/.test(trimmed)) return false;
-  if (/^\s*\/[\*/]/.test(trimmed)) return false;
+  if (/^\s*\/[*/]/.test(trimmed)) return false;
   if (/[{};]/.test(trimmed)) return false;
   // Looks like a sentence: contains alphabetic words and (often) ends with a period.
   return /[A-Za-z]/.test(trimmed) && /\s/.test(trimmed);
@@ -4890,6 +4953,8 @@ export function prepareSandpackFiles(
       processedContent = ensureReactImports(processedContent);
       // Fix broken SVG elements (dc.path, svg.circle, etc.)
       processedContent = sanitizeSvgElements(processedContent);
+      // Fix SVG template-literal strings rendered as visible text (dangerouslySetInnerHTML)
+      processedContent = fixSvgStringChildren(processedContent);
       // Repair `=> ({ children })` and `return { children: x }` style returns
       // before the JSX runtime pragma pass so the rewritten JSX is normalized.
       processedContent = repairConciseArrowChildren(processedContent);
@@ -5055,7 +5120,9 @@ export function prepareSandpackFiles(
         .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
       if (fixed !== content) {
         sandpackFiles[filePath] = fixed;
-        console.warn(`[sandpackFilePrep] Stripped Router wrapper from ${filePath} (RouterGuard provides one)`);
+        if (DEBUG_SANDPACK_PREP) {
+          console.warn(`[sandpackFilePrep] Stripped Router wrapper from ${filePath} (RouterGuard provides one)`);
+        }
       }
     }
   }
@@ -5139,8 +5206,15 @@ export function prepareSandpackFiles(
     sandpackFiles['/template.css'] = '/* template styles */\n';
   }
 
-  // Ensure index.html exists with Tailwind CDN + semantic theme config
-  if (!sandpackFiles['/index.html']) {
+  // Ensure index.html exists with Tailwind CDN + semantic theme config.
+  // Also replace empty / whitespace-only / mount-target-missing index.html files —
+  // an empty index.html leaves Sandpack with nothing to mount and renders a blank canvas.
+  const existingIndexHtml = sandpackFiles['/index.html'];
+  const indexHtmlIsUsable =
+    typeof existingIndexHtml === 'string' &&
+    existingIndexHtml.trim().length > 0 &&
+    /id=["']root["']/.test(existingIndexHtml);
+  if (!indexHtmlIsUsable) {
     sandpackFiles['/index.html'] = PREVIEW_INDEX_HTML;
   }
 

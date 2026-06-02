@@ -12,8 +12,8 @@ import React, { useEffect } from 'react';
 import type { TemplateComposition, SectionEntry, SectionType } from './types';
 import { getSectionComponent } from './registry';
 import { themeToCSS, hsl } from './themeUtils';
-import { resolveVariantComponent } from './variants';
-import type { ActiveVariantMap } from './variants';
+import { resolveVariantComponent, getVariantById } from './variants';
+import type { ActiveVariantMap, ExtractedSectionContent } from './variants';
 import { resolveThemeTokens } from './themes';
 
 interface PageRendererProps {
@@ -56,11 +56,16 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
       {template.sections
         .filter(s => !s.hidden)
         .map(section => {
-          // Check if a variant override is active for this section instance
+          // Per-section variant lookup: prefer runtime activeVariants override,
+          // then fall back to any variantId baked into the section entry.
+          const mergedVariants: ActiveVariantMap = {
+            ...(section.variantId ? { [section.id]: section.variantId as ActiveVariantMap[string] } : {}),
+            ...activeVariants,
+          };
           const VariantComponent = resolveVariantComponent(
             section.type,
             section.id,
-            activeVariants
+            mergedVariants
           );
           const Component = VariantComponent || getSectionComponent(section.type);
           if (!Component) {
@@ -69,7 +74,7 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
           }
           return (
             <Component
-              key={`${section.id}-${activeVariants[section.id] || 'default'}`}
+              key={`${section.id}-${mergedVariants[section.id] || 'default'}`}
               section={section as SectionEntry<any>}
               theme={theme}
             />
@@ -80,13 +85,76 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
 };
 
 /**
+ * Map a section's props to the ExtractedSectionContent shape that variant
+ * renderJSX functions expect. Best-effort: covers hero/cta/services/navbar/
+ * footer/contact/features prop shapes used across the section registry.
+ */
+function sectionPropsToVariantContent(section: SectionEntry): ExtractedSectionContent {
+  const p: Record<string, unknown> = (section.props as Record<string, unknown>) || {};
+  const ctas = (p.ctas as Array<{ label?: string; href?: string; variant?: string; intent?: string }> | undefined) || [];
+  const links = (p.links as Array<{ label?: string; href?: string }> | undefined) || [];
+  const items = (p.items as Array<{ title?: string; label?: string; question?: string }> | undefined) || [];
+  return {
+    heading: (p.headline as string) || (p.title as string) || undefined,
+    subheading: (p.subheadline as string) || (p.description as string) || undefined,
+    badge: (p.badge as string) || undefined,
+    brandName: (p.brand as string) || undefined,
+    imageSrc: (p.image as string) || (p.imageSrc as string) || undefined,
+    imageAlt: (p.imageAlt as string) || '',
+    ctaButtons: ctas.length
+      ? ctas.map((c, i) => ({
+          text: c.label || '',
+          href: c.href || '#',
+          isPrimary: i === 0 || c.variant !== 'outline',
+        }))
+      : undefined,
+    navLinks: links.length
+      ? links.map(l => ({ text: l.label || '', href: l.href || '#' }))
+      : undefined,
+    listItems: items.length
+      ? items.map(it => it.title || it.label || it.question || '').filter(Boolean)
+      : undefined,
+  };
+}
+
+/**
  * Serialize a TemplateComposition into a self-contained React/TSX string
  * for the VFS. This generates code that imports from the sections library.
+ *
+ * When activeVariants is provided (or sections carry a baked-in variantId),
+ * each overridden section is emitted as a dedicated inline function component
+ * generated from the variant's renderJSX output, and the App() body prefers
+ * those overrides by section id before falling back to SECTION_MAP[type].
  */
-export const compositionToReactCode = (template: TemplateComposition): string => {
+export const compositionToReactCode = (
+  template: TemplateComposition,
+  activeVariants: ActiveVariantMap = {}
+): string => {
   const sectionsJson = JSON.stringify(template.sections, null, 2);
   const themeJson = JSON.stringify(resolveThemeTokens(template.theme), null, 2);
   const globalStylesJson = JSON.stringify(template.globalStyles || '');
+
+  // Build variant override components (id -> generated function name)
+  const variantFnSources: string[] = [];
+  const variantOverrideEntries: string[] = [];
+  for (const section of template.sections) {
+    const variantId = activeVariants[section.id] || section.variantId;
+    if (!variantId) continue;
+    const variant = getVariantById(variantId as ActiveVariantMap[string]);
+    if (!variant?.renderJSX) continue;
+    try {
+      const content = sectionPropsToVariantContent(section);
+      const jsxBody = variant.renderJSX(content);
+      const fnName = 'Variant_' + section.id.replace(/[^a-zA-Z0-9]/g, '_');
+      variantFnSources.push(`function ${fnName}({ props }) { return (<>\n${jsxBody}\n      </>); }`);
+      variantOverrideEntries.push(`${JSON.stringify(section.id)}: ${fnName}`);
+    } catch (err) {
+      console.warn('[compositionToReactCode] variant bake failed', section.id, variantId, err);
+    }
+  }
+  const variantOverrideMap = `const VARIANT_OVERRIDES = { ${variantOverrideEntries.join(', ')} };`;
+  const variantInlineBlock = variantFnSources.join('\n\n');
+  // sectionsJson / themeJson / globalStylesJson declared above in the variant scan block
 
   return `import React, { useEffect } from 'react';
 import { Instagram, Facebook, Twitter, Linkedin, Youtube, Github, Twitch, Dribbble, Figma, Globe } from 'lucide-react';
@@ -358,6 +426,12 @@ function FAQ({ props }) {
 const SECTION_MAP = { navbar: Navbar, hero: Hero, services: Services, features: Services, testimonials: Testimonials, cta: CTA, contact: Contact, footer: Footer, stats: Stats, team: Team, faq: FAQ, pricing: Services, about: Hero, gallery: Services, 'logo-cloud': Stats, 'blog-preview': Services, 'before-after': Services };
 
 // ============================================================================
+// Variant Overrides (per-section, by id)
+// ============================================================================
+${variantInlineBlock}
+${variantOverrideMap}
+
+// ============================================================================
 // App
 // ============================================================================
 export default function App() {
@@ -380,7 +454,7 @@ export default function App() {
   return (
     <div>
       {SECTIONS.filter(s => !s.hidden).map(s => {
-        const C = SECTION_MAP[s.type];
+        const C = VARIANT_OVERRIDES[s.id] || SECTION_MAP[s.type];
         if (!C) return null;
         return <C key={s.id} props={s.props} />;
       })}

@@ -47,6 +47,7 @@ export function classifyTask(opts: {
   debugMode: boolean;
   vfsFiles?: Record<string, string>;
   launchBrief?: unknown;
+  wizardLaunch?: boolean;
 }): ClassifiedTask {
   const {
     mode,
@@ -60,9 +61,26 @@ export function classifyTask(opts: {
     debugMode,
     vfsFiles,
     launchBrief,
+    wizardLaunch,
   } = opts;
 
-  // ── Wizard fast path ──────────────────────────────────────────────────
+  // ── Wizard fast path (HARD-LOCKED) ────────────────────────────────────
+  // The wizardLaunch flag, set by the Launcher overlay, ALWAYS forces Lane A.
+  // No other field (currentCode, editMode, templateAction, …) can override
+  // this. This guarantees the hardened 6-card aesthetic payload is the sole
+  // generation context for wizard launches.
+  if (wizardLaunch) {
+    return {
+      type: "wizard_template_react",
+      fastPath: true,
+      shouldUseMemory: false,
+      shouldUseCompactContext: true,
+      prefersJsonOutput: true,
+      skipResearch: true,
+      skipThinking: true,
+    };
+  }
+
   // ── Launch Desk ───────────────────────────────────────────────────────
   if (mode === "launch-desk" || Boolean(launchBrief)) {
     return {

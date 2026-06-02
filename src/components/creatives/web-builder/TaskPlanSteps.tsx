@@ -254,6 +254,7 @@ const PlanStepRow: React.FC<{ step: PlanStep; isLast: boolean }> = ({ step, isLa
     <div className={cn(
       'flex items-center gap-2 py-0.5 group transition-all duration-300',
       step.status === 'running' && 'bg-primary/5 rounded px-1 -mx-1',
+      isLast && 'pb-0',
     )}>
       {/* Step type icon */}
       <div className={cn(

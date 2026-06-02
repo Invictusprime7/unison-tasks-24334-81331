@@ -7,7 +7,7 @@ import Landing from "@/pages/Landing";
 import NotFound from "@/pages/NotFound";
 
 const Pricing = lazy(() => import("@/pages/Pricing"));
-const Index = lazy(() => import("@/pages/Index"));
+const Index = lazy(() => import("@/pages/Dashboard"));
 const CheckoutSuccess = lazy(() => import("@/pages/CheckoutSuccess"));
 const CheckoutCancel = lazy(() => import("@/pages/CheckoutCancel"));
 const WebBuilderPage = lazy(() => import("@/pages/WebBuilderPage"));

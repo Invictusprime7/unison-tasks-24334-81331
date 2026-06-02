@@ -41,6 +41,9 @@ jobs:
       - name: Lint pipeline bypass (commitToPipeline enforcement)
         run: npm run lint:pipeline-bypass
 
+      - name: Lint VFS write bypass (liveVFSCommit enforcement)
+        run: npm run lint:vfs-write-bypass
+
       - name: Lint single source of truth (brainstem import guard)
         run: npm run lint:single-source-of-truth
 

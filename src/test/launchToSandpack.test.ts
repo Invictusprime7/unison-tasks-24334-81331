@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { planSiteTopology } from "@/platform/core/siteTopologyPlanner";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { commitToPipeline } from "@/platform/core";
 import { getCompositionsBySystemType } from "@/sections/templates";
@@ -220,7 +219,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(indexCode).not.toContain("Safe_Route");
   });
 
-  it("replaces canonical placeholder pages with the selected template scaffold before preview compilation", () => {
+  it("does not synthesize route page files before AI Builder hydration", () => {
     const templateId = getCompositionsBySystemType("booking")[0]?.id;
     expect(templateId).toBeTruthy();
 
@@ -237,10 +236,6 @@ describe("launchStateToSandpackFiles", () => {
     };
 
     const pipeline = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
-    const sitePlan = planSiteTopology("salon", "Vela Salon", {
-      selectedTemplateId: templateId,
-    });
-
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/App.tsx": "export default function App(){ return <main>Generated Home</main>; }",
@@ -260,9 +255,6 @@ describe("launchStateToSandpackFiles", () => {
       wizardSelections,
     });
 
-    const servicesPage = artifacts.files["/src/pages/Services.tsx"] || "";
-    expect(servicesPage).toContain("export default function");
-    expect(servicesPage).not.toContain("This page was scaffolded from the canonical playground");
-    expect(servicesPage).not.toContain("Page Ready");
+    expect(artifacts.files["/src/pages/Services.tsx"]).toBeUndefined();
   });
 });

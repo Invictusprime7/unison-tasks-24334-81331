@@ -105,9 +105,12 @@ export function useAIVFS(
 
         setLastResult(result);
 
-        // Auto-refresh preview after successful apply
-        if (result.success && previewRef.current?.refresh) {
-          // Small delay to let VFS propagate
+        // Preserve live preview state by default — surgical AI edits flow
+        // through VFS/HMR and should NOT trigger a full iframe reload. A full
+        // refresh resets the in-page route, scroll, cart, and form input,
+        // which the user did not ask for. Callers can opt back in with
+        // `forceRefresh: true` when a structural change actually requires it.
+        if (result.success && options.forceRefresh && previewRef.current?.refresh) {
           setTimeout(() => {
             previewRef.current?.refresh?.();
           }, 100);

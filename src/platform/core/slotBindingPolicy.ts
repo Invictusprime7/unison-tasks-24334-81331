@@ -206,19 +206,21 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     section: 'navbar',
     slot: 'icon-search',
     intentPriority: [],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'search.open',
   },
   {
     section: 'navbar',
     slot: 'icon-user',
-    intentPriority: [],
-    fallbackIntent: 'auth.login',
+    intentPriority: [
+      { capability: 'auth', intent: 'account.open' },
+    ],
+    fallbackIntent: 'account.open',
   },
   {
     section: 'navbar',
     slot: 'icon-menu',
     intentPriority: [],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'menu.open',
   },
   {
     section: 'navbar',
@@ -226,33 +228,47 @@ const SLOT_BINDING_RULES: SlotBindingRule[] = [
     intentPriority: [
       { capability: 'commerce', intent: 'cart.view' },
     ],
-    fallbackIntent: 'nav.anchor',
+    fallbackIntent: 'cart.view',
+  },
+  {
+    section: 'navbar',
+    slot: 'icon-chat',
+    intentPriority: [],
+    fallbackIntent: 'chat.open',
+  },
+  {
+    section: 'navbar',
+    slot: 'icon-share',
+    intentPriority: [],
+    fallbackIntent: 'share.open',
+  },
+  {
+    section: 'navbar',
+    slot: 'icon-calendar',
+    intentPriority: [
+      { capability: 'booking', intent: 'booking.create' },
+    ],
+    fallbackIntent: 'booking.create',
   },
 
   // ── Shop Grid Icon Slots ──────────────────────────────────────────────
   {
     section: 'shop-grid',
     slot: 'icon-filter',
-    intentPriority: [
-      { capability: 'commerce', intent: 'nav.anchor' },
-    ],
-    fallbackIntent: 'nav.anchor',
+    intentPriority: [],
+    fallbackIntent: 'filter.open',
   },
   {
     section: 'shop-grid',
     slot: 'icon-sort',
-    intentPriority: [
-      { capability: 'commerce', intent: 'nav.anchor' },
-    ],
-    fallbackIntent: 'nav.anchor',
+    intentPriority: [],
+    fallbackIntent: 'sort.open',
   },
   {
     section: 'shop-grid',
     slot: 'icon-favorite',
-    intentPriority: [
-      { capability: 'commerce', intent: 'cart.add' },
-    ],
-    fallbackIntent: 'nav.anchor',
+    intentPriority: [],
+    fallbackIntent: 'favorite.toggle',
   },
 ];
 

@@ -251,23 +251,30 @@ function collectJsxCandidates(
   return candidates;
 }
 
+/**
+ * Canonicalize whatever the Playground binding declared into a runtime intent
+ * that the Unison registry recognizes. Legacy playground dialects
+ * (nav.goto_page, calendar.open, form.open, popup.open, external.open,
+ * checkout.start) NEVER reach the DOM — only canonical intent names ship.
+ */
 function getDomIntent(binding: PlaygroundBinding): string {
+  // Prefer an explicitly-set canonical intent if it already exists.
+  if (binding.coreIntent) return binding.coreIntent;
+
   switch (binding.intent) {
     case 'nav.goto_page':
-      return 'nav.goto_page';
+      return 'nav.goto';
     case 'external.open':
       return 'nav.external';
     case 'checkout.start':
-      if (binding.coreIntent === 'cart.add') return 'cart.add';
-      if (binding.coreIntent === 'cart.checkout') return 'cart.checkout';
-      if (binding.coreIntent === 'pay.checkout') return 'pay.checkout';
-      return binding.coreIntent || 'pay.checkout';
+      return 'cart.checkout';
     case 'calendar.open':
+      return 'booking.create';
     case 'form.open':
     case 'popup.open':
-      return binding.coreIntent || 'button.click';
+      return 'contact.submit';
     default:
-      return binding.coreIntent || binding.intent;
+      return binding.intent;
   }
 }
 
@@ -528,7 +535,7 @@ export function buildWizardBindingGuide(snapshot: SiteBundleSnapshot): string {
     );
   }
 
-  lines.push('Every internal page link must still use `data-ut-intent="nav.goto"` or `data-ut-intent="nav.goto_page"` with `data-ut-path`.');
+  lines.push('Every internal page link must use `data-ut-intent="nav.goto"` with `data-ut-path`.');
   lines.push('Every product/cart CTA must include product payload attrs when real product data exists.');
 
   return lines.join('\n');

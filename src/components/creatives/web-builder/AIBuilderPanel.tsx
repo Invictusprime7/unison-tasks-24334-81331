@@ -647,6 +647,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPromptRef = useRef<string | null>(null);
+  // When true, the next handleSend was triggered by a non-explicit user action
+  // (e.g. a stray click on an unwired button) — force review modal, never auto-apply.
+  const requireReviewRef = useRef<boolean>(false);
   const [promptDraft, setPromptDraft] = useState('');
 
   // Phase B — transactional patch review modal state.
@@ -670,11 +673,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     return () => { off(); };
   }, [pendingPatch]);
 
-  // Auto-send when a welcome prompt is selected
+  // Auto-send REMOVED — all queued prompts (welcome, click-to-wire, page-gen)
+  // now require an explicit user action (Send click or toast "Run AI" button).
+  // This prevents unintentional UI clicks from triggering AI patches/edits.
   useEffect(() => {
-    if (pendingPromptRef.current && input === pendingPromptRef.current && !isLoading) {
+    if (pendingPromptRef.current && input === pendingPromptRef.current) {
+      // Just clear the marker; do NOT auto-send.
       pendingPromptRef.current = null;
-      handleSend();
     }
   }, [input]);
 
@@ -726,13 +731,23 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         hrefHint,
       ].filter(Boolean).join('\n');
 
-      toast.info(`Wiring "${label}"…`, {
-        description: 'AI Builder is configuring this action. Click again in a moment.',
-        duration: 4000,
-      });
-
+      // Approval-gated: stage the prompt and ask the user to confirm before
+      // the AI Builder rewrites their site in response to a stray click.
       setInput(prompt);
       pendingPromptRef.current = prompt;
+      toast.warning(`Unwired click on "${label}"`, {
+        description: 'AI Builder can wire this — review the prompt and click Send, or Approve to run now.',
+        duration: 12000,
+        action: {
+          label: 'Approve & Run',
+          onClick: () => {
+            if (isLoading) return;
+            requireReviewRef.current = true; // force review-modal path on apply
+            pendingPromptRef.current = null;
+            handleSend();
+          },
+        },
+      });
     };
 
     window.addEventListener('lovable:unwired-click', onUnwiredClick as EventListener);
@@ -773,6 +788,22 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       const prompt = `${detail.prompt}${targetLine}`;
       pendingPromptRef.current = prompt;
       setInput(prompt);
+      // Approval-gated: do NOT auto-send. Surface a toast so the user
+      // explicitly approves a page-generation triggered by navigation.
+      const labelHint = detail.label || detail.pageName || 'new page';
+      toast.warning(`Generate page: "${labelHint}"?`, {
+        description: 'Review the prompt and click Send, or Approve to run now.',
+        duration: 12000,
+        action: {
+          label: 'Approve & Run',
+          onClick: () => {
+            if (isLoading) return;
+            requireReviewRef.current = true;
+            pendingPromptRef.current = null;
+            handleSend();
+          },
+        },
+      });
     };
 
     window.addEventListener('unison:generate-page', onGeneratePage as EventListener);
@@ -946,6 +977,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   // Send message to AI
   const handleSend = async () => {
     if ((!input.trim() && droppedFiles.length === 0) || isLoading) return;
+    // Snapshot + clear the review-required flag so it only applies to THIS send.
+    // When set, every apply path routes through the diff modal instead of auto-applying.
+    const forceReview = requireReviewRef.current;
+    requireReviewRef.current = false;
 
     // Build file context suffix
     const fileContext = droppedFiles.length > 0 ? (() => {
@@ -2156,7 +2191,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               } else {
                 // Dry-run passed: live-apply safe patches, hold high-risk patches for review.
                 transactionalBlocked = true;
-                const requiresManualReview = Boolean(responseMeta?.requiresApproval) || plan.riskLevel === 'high';
+                const requiresManualReview = forceReview || Boolean(responseMeta?.requiresApproval) || plan.riskLevel === 'high';
                 if (!requiresManualReview) {
                   console.log('[AIBuilderPanel] Transactional dry-run passed; live-applying patch:', Object.keys(filesForApply));
                   vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
@@ -2199,6 +2234,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
           if (transactionalBlocked) {
             // Skip auto-apply; user reviews via the diff modal (or View Edits).
+          } else if (forceReview) {
+            // Click-driven prompt without a dry-run modal — hold for explicit review.
+            console.warn('[AIBuilderPanel] forceReview set — skipping auto-apply, awaiting manual review');
+            toast.warning('Review required', {
+              description: `${Object.keys(filesForApply).length} file(s) ready — open View Edits to apply.`,
+            });
           } else if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(filesForApply));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
@@ -2382,6 +2423,11 @@ export default function App() {
           if (hasBlockingWarning) {
             console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
             toast.warning('⚠️ Patch flagged for review — check warnings');
+          } else if (forceReview) {
+            console.warn('[AIBuilderPanel] forceReview set — single-file auto-apply skipped');
+            toast.warning('Review required', {
+              description: `Edit to ${singleFilePath} ready — open View Edits to apply.`,
+            });
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });

@@ -1539,6 +1539,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         delete generatedFiles['src/App.tsx'];
       }
 
+      // ── Inject AI-generated images for data-ai-image markers ─────────────
+      // Hero / feature <img> tags annotated by the prompt are replaced with
+      // gpt-image-2 base64 PNGs in parallel. Failures fall back to the
+      // original (Unsplash) src so the launch never blocks on image gen.
+      try {
+        const { injectWizardImages } = await import('@/services/wizardImageInjector');
+        const injected = await injectWizardImages(generatedFiles);
+        Object.assign(generatedFiles, injected.files);
+      } catch (e) {
+        console.warn('[SystemLauncher] image injection skipped:', (e as Error).message);
+      }
+
       // ── Enforce stamped variant identity on AI output ────────────────────
       // The wizard's Style/Template steps already locked a variant_id per
       // section (sectionsDetail). The AI prompt asks for those markers on each

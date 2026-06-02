@@ -190,11 +190,20 @@ function getScopedEditAutoApplyBlockReason(opts: {
   const normalizePath = (p: string) => (p.startsWith('/') ? p : `/${p}`);
   const paths = Object.keys(opts.files).map(normalizePath);
 
-  // If we resolved a target, the patch must include it
+  // NOTE: We intentionally do NOT hard-block when the AI omitted the
+  // heuristically-resolved target file. The resolver is a best-effort
+  // hint, and topology-driven multi-page sites frequently route a
+  // surgical edit to a sibling/child file (e.g. a section component
+  // imported by the page). Blocking those silently was the root cause
+  // of "AI builder surgical/behavioral edits no longer apply". Surface
+  // a console warning instead and let the apply proceed.
   if (opts.resolvedTargetFile) {
     const normTarget = normalizePath(opts.resolvedTargetFile);
     if (!paths.includes(normTarget)) {
-      return `Scoped edit did not update the resolved target file (${normTarget}).`;
+      console.warn(
+        `[AIBuilderPanel] Scoped edit did not touch resolved target ${normTarget}; ` +
+          `applying anyway against: ${paths.join(', ')}`,
+      );
     }
   }
 

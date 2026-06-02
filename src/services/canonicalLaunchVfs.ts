@@ -157,9 +157,14 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
 
   for (const [path, content] of Object.entries(generatedFiles)) {
+    // Rebase any non-router App.tsx into the home page file whenever the AI
+    // hasn't already produced a dedicated home page. This must NOT be gated on
+    // `canonicalFiles['/src/App.tsx']` — when the canonical snapshot ships no
+    // router, the AI's inlined composition would otherwise stay at /src/App.tsx
+    // and get clobbered downstream by the WebBuilder's canonical router sync,
+    // leaving the home route pointing at a placeholder.
     const shouldMoveLegacyAppIntoHome =
       (path === '/src/App.tsx' || path === '/App.tsx') &&
-      canonicalFiles['/src/App.tsx'] &&
       !generatedFiles[homeFilePath] &&
       !looksLikeCanonicalRouter(content);
 

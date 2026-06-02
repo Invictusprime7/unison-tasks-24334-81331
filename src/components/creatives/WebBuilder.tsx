@@ -98,6 +98,7 @@ import {
 } from "@/lib/builder/elementMutations";
 import { mergeCanvasAssets } from "@/lib/builder/htmlIntegration";
 import { CLEARED_EDITOR_CODE, CLEARED_PREVIEW_CODE } from "@/lib/builder/clearedCanvasDefaults";
+import { clearBuilderState } from "@/lib/builder/clearBuilderState";
 import { loadCloudState, type CloudStateSnapshot } from "@/lib/builder/loadCloudState";
 import { createInitialCloudState } from "@/lib/builder/createInitialCloudState";
 import { restoreAutosavedDraft } from "@/lib/builder/restoreAutosavedDraft";

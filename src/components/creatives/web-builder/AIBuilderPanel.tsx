@@ -2423,6 +2423,11 @@ export default function App() {
           if (hasBlockingWarning) {
             console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
             toast.warning('⚠️ Patch flagged for review — check warnings');
+          } else if (forceReview) {
+            console.warn('[AIBuilderPanel] forceReview set — single-file auto-apply skipped');
+            toast.warning('Review required', {
+              description: `Edit to ${singleFilePath} ready — open View Edits to apply.`,
+            });
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });

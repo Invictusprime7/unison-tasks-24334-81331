@@ -445,6 +445,23 @@ async function runBuilderLane(
     finalSystemPrompt += `\n\n${userDBContextBlock}`;
   }
 
+  // Inject Wizard Launch seed (multi-page contract, theme tokens, intents).
+  // When present, this turn is the visitor's first generation after completing
+  // the System Launcher — same brain as the AIBuilderPanel, seeded with the
+  // 4 wizard selections.
+  if (wizardSeed) {
+    const seedBlock = buildWizardSeedContext(wizardSeed);
+    if (seedBlock) {
+      finalSystemPrompt += `\n\n${seedBlock}`;
+      console.log('[orchestrator] wizard-seed context injected', {
+        pages: (wizardSeed.canonical?.pages || []).length,
+        capabilities: (wizardSeed.canonical?.capabilities || []).length,
+        intents: (wizardSeed.canonical?.intents || []).length,
+        hasBindingGuide: !!wizardSeed.bindingGuide,
+      });
+    }
+  }
+
   const aiMessages = [
     { role: 'system', content: finalSystemPrompt },
     ...processedMessages,

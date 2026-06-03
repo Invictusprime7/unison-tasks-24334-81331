@@ -385,3 +385,172 @@ export function buildUserDBContext(ctx: UserDBContext | null): string {
   lines.push('Use this history to generate consistent, personalized output.');
   return lines.join('\n');
 }
+
+// ── Wizard Seed context (Lane B wizard-launch) ────────────────────────────────
+
+export interface WizardSeedShape {
+  version?: string;
+  source?: string;
+  business?: {
+    name?: string;
+    industry?: string;
+    primaryGoal?: string;
+    tagline?: string;
+    tone?: string;
+    [k: string]: unknown;
+  };
+  template?: {
+    id?: string;
+    label?: string;
+    sections?: string[];
+    [k: string]: unknown;
+  };
+  theme?: {
+    presetId?: string;
+    presetLabel?: string;
+    styleDirective?: string;
+    isDark?: boolean;
+    headingFont?: string;
+    bodyFont?: string;
+    tokens?: Record<string, string | number | boolean | undefined>;
+    [k: string]: unknown;
+  };
+  canonical?: {
+    pages?: Array<{ slug?: string; role?: string; title?: string; path?: string }>;
+    capabilities?: string[];
+    intents?: string[];
+    [k: string]: unknown;
+  };
+  generation?: {
+    scaffoldMode?: string;
+    customInstructions?: string;
+    socials?: Array<{ platform: string; url: string }>;
+    [k: string]: unknown;
+  };
+  bindingGuide?: string;
+  [k: string]: unknown;
+}
+
+/**
+ * Builds a structured "wizard seed" prompt block for Lane B wizard launches.
+ * Encodes the 4-step wizard intent (business → template → theme → canonical
+ * topology) + a multi-file output contract so the Builder brain emits one TSX
+ * file per registered page instead of an inlined single-page App.tsx.
+ */
+export function buildWizardSeedContext(seed: WizardSeedShape | undefined): string {
+  if (!seed) return '';
+  const lines: string[] = [
+    '',
+    '═══════════════════════════════════════════════════════════════',
+    '🚀 WIZARD LAUNCH SEED — Multi-Page Site Generation (Lane B)',
+    '═══════════════════════════════════════════════════════════════',
+    'Initial site-generation turn for a visitor who just completed the',
+    'System Launcher wizard. You are the SAME brain that powers the',
+    'in-Builder AI assistant — apply full design intelligence, memory,',
+    'and research. Honor the 4 wizard selections as a hard contract.',
+    '',
+  ];
+
+  const b = seed.business || {};
+  if (b.name || b.industry || b.primaryGoal || b.tagline || b.tone) {
+    lines.push('── BUSINESS (Step 1: Industry/System) ──');
+    if (b.name)        lines.push(`Name: ${b.name}`);
+    if (b.industry)    lines.push(`Industry: ${b.industry}`);
+    if (b.primaryGoal) lines.push(`Primary Goal: ${b.primaryGoal}`);
+    if (b.tagline)     lines.push(`Tagline: "${b.tagline}"`);
+    if (b.tone)        lines.push(`Tone: ${b.tone}`);
+    lines.push('');
+  }
+
+  const t = seed.template || {};
+  if (t.label || (t.sections && t.sections.length)) {
+    lines.push('── TEMPLATE (Step 2: Composition) ──');
+    if (t.label) lines.push(`Template: ${t.label}${t.id ? ` (${t.id})` : ''}`);
+    if (t.sections?.length) lines.push(`Section order (home page): ${t.sections.join(' → ')}`);
+    lines.push('');
+  }
+
+  const th = seed.theme || {};
+  if (th.presetLabel || th.tokens || th.styleDirective) {
+    lines.push('── THEME (Step 3: Style) — LOCKED ──');
+    if (th.presetLabel) lines.push(`Preset: ${th.presetLabel}${th.presetId ? ` (${th.presetId})` : ''}`);
+    if (typeof th.isDark === 'boolean') lines.push(`Mode: ${th.isDark ? 'DARK' : 'LIGHT'}`);
+    if (th.headingFont || th.bodyFont)  lines.push(`Typography: ${th.headingFont || 'auto'} / ${th.bodyFont || 'auto'}`);
+    if (th.styleDirective) lines.push(`Directive: ${th.styleDirective}`);
+    if (th.tokens) {
+      const keys = ['primary','primaryForeground','secondary','accent','background','foreground','muted','mutedForeground','border','card','radius'];
+      const rendered = keys
+        .map((k) => {
+          const v = (th.tokens as Record<string, unknown>)[k];
+          return v == null ? null : `  --${k.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${v}`;
+        })
+        .filter(Boolean)
+        .join('\n');
+      if (rendered) lines.push('HSL tokens (use as CSS vars, no hsl() wrapper):\n' + rendered);
+    }
+    lines.push('Themed /src/index.css is force-applied post-generation; use semantic tokens.');
+    lines.push('');
+  }
+
+  const c = seed.canonical || {};
+  const pages = c.pages || [];
+  if (pages.length) {
+    lines.push('── CANONICAL TOPOLOGY (Step 4: Pages) — HARD CONTRACT ──');
+    lines.push('Emit ONE TSX file per page below. Shared chrome (navbar, footer)');
+    lines.push('lives under /src/sections/ and is imported by every page.');
+    for (const p of pages) {
+      const slug = p.slug || 'home';
+      const path = p.path || (slug === 'home' ? '/src/pages/Home.tsx' : `/src/pages/${slug.replace(/(^|-)([a-z])/g, (_, _s, l) => l.toUpperCase())}.tsx`);
+      lines.push(`  • ${p.title || slug}  →  ${path}${p.role ? `   [${p.role}]` : ''}`);
+    }
+    lines.push('');
+  }
+  if (c.capabilities?.length) lines.push(`Capabilities: ${c.capabilities.join(', ')}`);
+  if (c.intents?.length)      lines.push(`Wired intents: ${c.intents.join(', ')}`);
+  if (c.capabilities?.length || c.intents?.length) lines.push('');
+
+  const g = seed.generation || {};
+  if (g.customInstructions) {
+    lines.push('── VISITOR INSTRUCTIONS (verbatim) ──');
+    lines.push(g.customInstructions);
+    lines.push('');
+  }
+  if (g.socials?.length) {
+    lines.push(`Footer socials: ${g.socials.map((s) => `${s.platform}=${s.url}`).join(' | ')}`);
+    lines.push('');
+  }
+
+  if (seed.bindingGuide) {
+    lines.push('── INTENT BINDING GUIDE ──');
+    lines.push(seed.bindingGuide.slice(0, 6000));
+    lines.push('');
+  }
+
+  lines.push('── OUTPUT CONTRACT (MULTI-FILE JSON) ──');
+  lines.push('Respond with ONLY a raw JSON object (no markdown fences, no prose):');
+  lines.push('{');
+  lines.push('  "files": {');
+  lines.push('    "/src/pages/Home.tsx": "…",');
+  lines.push('    "/src/pages/<OtherPage>.tsx": "…",   // one per canonical page above');
+  lines.push('    "/src/sections/SiteNavbar.tsx": "…", // shared chrome');
+  lines.push('    "/src/sections/SiteFooter.tsx": "…"');
+  lines.push('  }');
+  lines.push('}');
+  lines.push('');
+  lines.push('RULES:');
+  lines.push('1. DO NOT author /src/App.tsx — the deterministic router owns it.');
+  lines.push('2. Every page imports SiteNavbar + SiteFooter from "../sections/...".');
+  lines.push('3. Use Tailwind semantic tokens (bg-primary, text-foreground, bg-card, border-border).');
+  lines.push('   For raw colors use hsl(var(--token)). Never hardcode hex.');
+  lines.push('4. Every interactive CTA needs a data-ut-intent attribute mapped to the');
+  lines.push('   wired intents above (contact.submit, booking.create, lead.capture,');
+  lines.push('   newsletter.subscribe, quote.request, cart.checkout, nav.anchor, …).');
+  lines.push('5. Use only react, lucide-react, framer-motion. No other imports.');
+  lines.push('6. Lucide social brand casing: Github, Linkedin, Youtube, Twitter (NOT GitHub/LinkedIn/YouTube/X).');
+  lines.push('7. Images: prefer https://images.unsplash.com/photo-... static strings.');
+  lines.push('8. Each page should be visually unique while sharing the navbar/footer/theme.');
+  lines.push('═══════════════════════════════════════════════════════════════');
+  lines.push('');
+
+  return lines.join('\n');
+}

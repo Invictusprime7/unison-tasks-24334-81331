@@ -1012,11 +1012,75 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         customInstructionsRaw: customPrompt,
       });
 
+      // ── Build the Wizard Seed: structured 4-step snapshot the edge function
+      //    routes to Lane B (same brain as the in-Builder AIBuilderPanel). This
+      //    replaces the protected Lane A fast path so first-launch generations
+      //    benefit from memory, research, multi-page contract output, and the
+      //    same design intelligence that powers ongoing edits.
+      const bindingGuide = (() => {
+        try {
+          return buildWizardBindingGuide(siteBundleSnapshot);
+        } catch (e) {
+          console.warn('[SystemLauncher] buildWizardBindingGuide failed (non-fatal)', e);
+          return '';
+        }
+      })();
+
+      const wizardSeed = {
+        version: '1.0',
+        source: 'system-launcher',
+        business: {
+          name: brand,
+          industry: resolvedIndustry,
+          primaryGoal: primaryGoal || 'collect_leads',
+          tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
+          tone: 'professional and friendly',
+          systemType: selectedSystem,
+        },
+        template: {
+          id: selectedTemplate?.id,
+          label: selectedTemplate?.label || system.name,
+          sections: composition.sections.map((s) => s.type),
+        },
+        theme: {
+          presetId: resolvedPreset.id,
+          presetLabel: resolvedPreset.label,
+          styleDirective: resolvedPreset.styleDirective,
+          isDark: parseInt(themedTokens.colors.background.split(' ')[2]) < 50,
+          headingFont: themedTokens.typography.headingFont,
+          bodyFont: themedTokens.typography.bodyFont,
+          tokens: {
+            ...themedTokens.colors,
+            radius: themedTokens.radius,
+          },
+        },
+        canonical: {
+          pages: (sitePlan?.pages || []).map((p) => ({
+            slug: p.id,
+            role: p.role,
+            title: p.title || p.name,
+            path: p.filePath,
+          })),
+          capabilities: industryProfile?.defaultCapabilities || [],
+          intents: canonicalIntents,
+        },
+        generation: {
+          scaffoldMode: wizardSelections.minimalScaffold ? 'home-only' : 'capability-full',
+          customInstructions: customPrompt.trim() || undefined,
+          socials: userSocials,
+        },
+        bindingGuide: bindingGuide || undefined,
+      } as const;
+
       console.info('[WizardLaunch] Implementation model', {
         policy: WIZARD_IMPLEMENTATION_MODEL,
         sectionCount: composition.sections.length,
         hasCustomInstructions: customPrompt.trim().length > 0,
+        wizardSeedPages: wizardSeed.canonical.pages.length,
+        lane: 'B (wizard-seed → general_code_assist)',
       });
+
+
 
       // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
       let generationResult: {
@@ -1038,24 +1102,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
           await new Promise((r) => setTimeout(r, retryDelayMs));
         }
-        // CRITICAL: do NOT pass `currentCode` or `editMode` here. The edge
-        // function's taskClassifier requires (mode==='template-react' &&
-        // systemsBuildContext && !currentCode && !editMode && !templateAction)
-        // to select Lane A `wizard_template_react` (the 6-card wizard fast
-        // path that consumes blueprint + theme_tokens + template_sections +
-        // intents). Passing currentCode routes it to Lane B template_react_edit
-        // (builder edit), which ignores the wizard blueprint and produces the
-        // generic fallback the user is seeing.
+        // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
+        // The structured `wizardSeed` is what the edge function's task
+        // classifier matches on (mode==='wizard-seed' || wizardSeed) → routes
+        // to general_code_assist with memory + research + multi-page output
+        // contract. `systemsBuildContext` is preserved for back-compat so the
+        // existing blueprint prompt blocks still render.
         const result = await withTimeout(
           supabase.functions.invoke('ai-code-assistant', {
             body: {
               messages: [{ role: 'user', content: aiUserPrompt }],
-              mode: 'template-react',
+              mode: 'wizard-seed',
               templateName: selectedTemplate?.label || system.name,
               aesthetic: resolvedPreset.id,
               source: resolvedIndustry,
               systemType: selectedSystem,
               systemsBuildContext: blueprint,
+              wizardSeed,
             },
           }),
           WIZARD_AI_TIMEOUT_MS,
@@ -1255,9 +1318,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const canonicalRouterCode =
         compiledPlayground?.vfsFiles?.['/src/App.tsx'] ||
         siteBundleSnapshot?.vfsFiles?.['/src/App.tsx'];
-      const wiredVfsFiles = canonicalRouterCode
+      const baseVfsFiles = canonicalRouterCode
         ? { ...launchArtifacts.files, '/src/App.tsx': canonicalRouterCode }
         : launchArtifacts.files;
+
+      // Persist the Wizard Seed inside the VFS so the in-Builder AI can read it
+      // back later as durable continuity (theme, capabilities, intents, pages).
+      const wiredVfsFiles: Record<string, string> = {
+        ...baseVfsFiles,
+        '/.unison/wizard-seed.json': JSON.stringify(wizardSeed, null, 2),
+      };
       const runtimeManifest = launchArtifacts.runtimeManifest;
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
@@ -1301,6 +1371,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
         pipelineManifest,
         wizardSelections,
+        wizardSeed,
       };
 
       const launchState = createLaunchState({

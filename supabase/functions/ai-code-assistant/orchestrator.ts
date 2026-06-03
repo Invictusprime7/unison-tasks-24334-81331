@@ -31,7 +31,9 @@ import {
   buildVfsFilesContext,
   buildFastPathSystemPrompt,
   buildUserDBContext,
+  buildWizardSeedContext,
   type UserDBContext,
+  type WizardSeedShape,
 } from "./contextBuilders.ts";
 import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditReinforcement } from "./prompts/editPrompts.ts";
 import { buildCodeModePrompt } from "./prompts/codePrompt.ts";
@@ -237,6 +239,7 @@ async function runBuilderLane(
     componentBehaviorContext, vfsFiles, gatewayOptions,
     previewDiagnostics, previewSnapshot, recentChangedFiles,
   } = parsed;
+  const wizardSeed = (parsed as { wizardSeed?: WizardSeedShape }).wizardSeed;
 
   // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
   const rawUserPromptText = extractTextContent(messages[messages.length - 1]?.content);
@@ -440,6 +443,23 @@ async function runBuilderLane(
   // Inject user history + draft context from Supabase
   if (userDBContextBlock) {
     finalSystemPrompt += `\n\n${userDBContextBlock}`;
+  }
+
+  // Inject Wizard Launch seed (multi-page contract, theme tokens, intents).
+  // When present, this turn is the visitor's first generation after completing
+  // the System Launcher — same brain as the AIBuilderPanel, seeded with the
+  // 4 wizard selections.
+  if (wizardSeed) {
+    const seedBlock = buildWizardSeedContext(wizardSeed);
+    if (seedBlock) {
+      finalSystemPrompt += `\n\n${seedBlock}`;
+      console.log('[orchestrator] wizard-seed context injected', {
+        pages: (wizardSeed.canonical?.pages || []).length,
+        capabilities: (wizardSeed.canonical?.capabilities || []).length,
+        intents: (wizardSeed.canonical?.intents || []).length,
+        hasBindingGuide: !!wizardSeed.bindingGuide,
+      });
+    }
   }
 
   const aiMessages = [

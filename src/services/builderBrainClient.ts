@@ -71,14 +71,14 @@ export interface BuilderTurnOptions {
  * response so callers can keep their existing error-handling / parsing
  * logic unchanged during incremental migration.
  */
-export async function runBuilderTurn<TResponse = unknown>(
+export async function runBuilderTurn<TResponse = any>(
   input: BuilderTurnInput,
   _options: BuilderTurnOptions = {},
-): Promise<BuilderTurnResponse<TResponse>> {
+): Promise<{ data: TResponse; error: any }> {
   const { data, error } = await supabase.functions.invoke<TResponse>("ai-code-assistant", {
     body: input as unknown as Record<string, unknown>,
   });
-  return { data: (data ?? null) as TResponse | null, error };
+  return { data: data as TResponse, error };
 }
 
 export default runBuilderTurn;

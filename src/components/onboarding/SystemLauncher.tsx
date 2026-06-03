@@ -1012,11 +1012,75 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         customInstructionsRaw: customPrompt,
       });
 
+      // ── Build the Wizard Seed: structured 4-step snapshot the edge function
+      //    routes to Lane B (same brain as the in-Builder AIBuilderPanel). This
+      //    replaces the protected Lane A fast path so first-launch generations
+      //    benefit from memory, research, multi-page contract output, and the
+      //    same design intelligence that powers ongoing edits.
+      const bindingGuide = (() => {
+        try {
+          return buildWizardBindingGuide(siteBundleSnapshot);
+        } catch (e) {
+          console.warn('[SystemLauncher] buildWizardBindingGuide failed (non-fatal)', e);
+          return '';
+        }
+      })();
+
+      const wizardSeed = {
+        version: '1.0',
+        source: 'system-launcher',
+        business: {
+          name: brand,
+          industry: resolvedIndustry,
+          primaryGoal: primaryGoal || 'collect_leads',
+          tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
+          tone: 'professional and friendly',
+          systemType: selectedSystem,
+        },
+        template: {
+          id: selectedTemplate?.id,
+          label: selectedTemplate?.label || system.name,
+          sections: composition.sections.map((s) => s.type),
+        },
+        theme: {
+          presetId: resolvedPreset.id,
+          presetLabel: resolvedPreset.label,
+          styleDirective: resolvedPreset.styleDirective,
+          isDark: parseInt(themedTokens.colors.background.split(' ')[2]) < 50,
+          headingFont: themedTokens.typography.headingFont,
+          bodyFont: themedTokens.typography.bodyFont,
+          tokens: {
+            ...themedTokens.colors,
+            radius: themedTokens.radius,
+          },
+        },
+        canonical: {
+          pages: (sitePlan?.pages || []).map((p) => ({
+            slug: p.slug,
+            role: p.role,
+            title: p.title,
+            path: p.filePath,
+          })),
+          capabilities: industryProfile?.defaultCapabilities || [],
+          intents: canonicalIntents,
+        },
+        generation: {
+          scaffoldMode: wizardSelections.minimalScaffold ? 'home-only' : 'capability-full',
+          customInstructions: customPrompt.trim() || undefined,
+          socials: userSocials,
+        },
+        bindingGuide: bindingGuide || undefined,
+      } as const;
+
       console.info('[WizardLaunch] Implementation model', {
         policy: WIZARD_IMPLEMENTATION_MODEL,
         sectionCount: composition.sections.length,
         hasCustomInstructions: customPrompt.trim().length > 0,
+        wizardSeedPages: wizardSeed.canonical.pages.length,
+        lane: 'B (wizard-seed → general_code_assist)',
       });
+
+
 
       // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
       let generationResult: {

@@ -56,6 +56,8 @@ export type IndustryOverlay =
   | 'nonprofit'
   | 'general';
 
+export type WizardScaffoldMode = 'home-only' | 'selected-pages' | 'capability-full';
+
 export interface WizardSelections {
   businessName: string;
   businessModel: BusinessModel;
@@ -74,8 +76,22 @@ export interface WizardSelections {
    */
   primaryIntent?: string;
   /**
-   * Wizard hands off a Home-only site; the in-Builder AI authors every other
-   * page/route/funnel from user prompts. Skips capability-driven page expansion.
+   * Pages the visitor explicitly selected in the wizard's "Pages" step.
+   * Values are PlaygroundPageRole strings ("about", "services", "pricing", etc.).
+   * Flows into the capability resolver + topology planner when
+   * `scaffoldMode === 'selected-pages'`.
+   */
+  requestedPages?: string[];
+  /**
+   * Scaffold strategy:
+   *  - 'home-only'      → only Home; Builder AI authors every other page.
+   *  - 'selected-pages' → Home + visitor-selected pages (default).
+   *  - 'capability-full'→ Home + all capability-implied pages.
+   */
+  scaffoldMode?: WizardScaffoldMode;
+  /**
+   * @deprecated Use `scaffoldMode === 'home-only'`. Retained for back-compat;
+   * still honored by the materializer/topology planner when present.
    */
   minimalScaffold?: boolean;
 }

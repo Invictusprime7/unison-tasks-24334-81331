@@ -1102,24 +1102,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
           await new Promise((r) => setTimeout(r, retryDelayMs));
         }
-        // CRITICAL: do NOT pass `currentCode` or `editMode` here. The edge
-        // function's taskClassifier requires (mode==='template-react' &&
-        // systemsBuildContext && !currentCode && !editMode && !templateAction)
-        // to select Lane A `wizard_template_react` (the 6-card wizard fast
-        // path that consumes blueprint + theme_tokens + template_sections +
-        // intents). Passing currentCode routes it to Lane B template_react_edit
-        // (builder edit), which ignores the wizard blueprint and produces the
-        // generic fallback the user is seeing.
+        // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
+        // The structured `wizardSeed` is what the edge function's task
+        // classifier matches on (mode==='wizard-seed' || wizardSeed) → routes
+        // to general_code_assist with memory + research + multi-page output
+        // contract. `systemsBuildContext` is preserved for back-compat so the
+        // existing blueprint prompt blocks still render.
         const result = await withTimeout(
           supabase.functions.invoke('ai-code-assistant', {
             body: {
               messages: [{ role: 'user', content: aiUserPrompt }],
-              mode: 'template-react',
+              mode: 'wizard-seed',
               templateName: selectedTemplate?.label || system.name,
               aesthetic: resolvedPreset.id,
               source: resolvedIndustry,
               systemType: selectedSystem,
               systemsBuildContext: blueprint,
+              wizardSeed,
             },
           }),
           WIZARD_AI_TIMEOUT_MS,

@@ -74,10 +74,11 @@ export interface BuilderTurnOptions {
 export async function runBuilderTurn<TResponse = unknown>(
   input: BuilderTurnInput,
   _options: BuilderTurnOptions = {},
-): Promise<FunctionsResponse<TResponse>> {
-  return supabase.functions.invoke<TResponse>("ai-code-assistant", {
+): Promise<BuilderTurnResponse<TResponse>> {
+  const { data, error } = await supabase.functions.invoke<TResponse>("ai-code-assistant", {
     body: input as unknown as Record<string, unknown>,
   });
+  return { data: (data ?? null) as TResponse | null, error };
 }
 
 export default runBuilderTurn;

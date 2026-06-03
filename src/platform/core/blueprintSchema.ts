@@ -96,7 +96,7 @@ export interface BusinessBlueprint {
 export interface BlueprintPage {
   title: string;
   path: string;
-  purpose: 'landing' | 'services' | 'portfolio' | 'contact' | 'about' | 'blog' | 'shop' | 'checkout' | 'booking';
+  purpose: 'landing' | 'services' | 'portfolio' | 'contact' | 'about' | 'blog' | 'shop' | 'checkout' | 'booking' | 'pricing' | 'faq';
   isHome?: boolean;
   /** Expected section types (for validation) */
   expectedSections: string[];

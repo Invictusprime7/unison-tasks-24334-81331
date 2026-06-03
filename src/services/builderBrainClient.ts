@@ -19,7 +19,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
-import type { FunctionsResponse } from "@supabase/supabase-js";
+export type BuilderTurnResponse<T = unknown> = { data: T | null; error: unknown };
 
 /**
  * Loose body shape — mirrors the edge function's `AIRequestSchema`.

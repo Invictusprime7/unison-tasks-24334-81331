@@ -1318,9 +1318,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const canonicalRouterCode =
         compiledPlayground?.vfsFiles?.['/src/App.tsx'] ||
         siteBundleSnapshot?.vfsFiles?.['/src/App.tsx'];
-      const wiredVfsFiles = canonicalRouterCode
+      const baseVfsFiles = canonicalRouterCode
         ? { ...launchArtifacts.files, '/src/App.tsx': canonicalRouterCode }
         : launchArtifacts.files;
+
+      // Persist the Wizard Seed inside the VFS so the in-Builder AI can read it
+      // back later as durable continuity (theme, capabilities, intents, pages).
+      const wiredVfsFiles: Record<string, string> = {
+        ...baseVfsFiles,
+        '/.unison/wizard-seed.json': JSON.stringify(wizardSeed, null, 2),
+      };
       const runtimeManifest = launchArtifacts.runtimeManifest;
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {

@@ -1110,7 +1110,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         // contract. `systemsBuildContext` is preserved for back-compat so the
         // existing blueprint prompt blocks still render.
         const result = await withTimeout(
-          runBuilderTurn<Record<string, unknown>>({
+          runBuilderTurn<any>({
             messages: [{ role: 'user', content: aiUserPrompt }],
             mode: 'wizard-seed',
             templateName: selectedTemplate?.label || system.name,

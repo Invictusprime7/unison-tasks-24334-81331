@@ -282,16 +282,43 @@ export function materializePlayground(
   const warnings: string[] = [];
   const industryKey = OVERLAY_TO_INDUSTRY[selections.industryOverlay] || 'general';
 
+  // Resolve scaffold mode. Honor legacy `minimalScaffold` for back-compat.
+  const scaffoldMode =
+    selections.scaffoldMode ??
+    (selections.minimalScaffold ? 'home-only' : 'selected-pages');
+
+  // Map visitor-selected page roles → PageSpec entries for the topology planner.
+  const PAGE_ROLE_TO_SPEC: Record<string, { title: string; path: string; purpose: 'landing' | 'services' | 'portfolio' | 'contact' | 'about' | 'blog' | 'shop' | 'checkout' | 'booking' | 'pricing' | 'faq' }> = {
+    about:    { title: 'About',    path: '/about',    purpose: 'about' },
+    services: { title: 'Services', path: '/services', purpose: 'services' },
+    pricing:  { title: 'Pricing',  path: '/pricing',  purpose: 'pricing' },
+    gallery:  { title: 'Gallery',  path: '/gallery',  purpose: 'portfolio' },
+    faq:      { title: 'FAQ',      path: '/faq',      purpose: 'faq' },
+    contact:  { title: 'Contact',  path: '/contact',  purpose: 'contact' },
+    booking:  { title: 'Book',     path: '/booking',  purpose: 'booking' },
+    checkout: { title: 'Checkout', path: '/checkout', purpose: 'checkout' },
+    blog:     { title: 'Blog',     path: '/blog',     purpose: 'blog' },
+    shop:     { title: 'Shop',     path: '/shop',     purpose: 'shop' },
+  };
+  const additionalPages = scaffoldMode === 'selected-pages'
+    ? (selections.requestedPages ?? [])
+        .map((role) => PAGE_ROLE_TO_SPEC[role])
+        .filter((spec): spec is NonNullable<typeof spec> => Boolean(spec))
+        .map((spec) => ({ ...spec, expectedSections: [] }))
+    : [];
+
   // 1. Generate site topology plan → PageRegistry
-  //    Minimal mode: only Home is scaffolded. The Builder AI authors the rest.
   const sitePlan = planSiteTopology(industryKey, selections.businessName, {
-    minimal: selections.minimalScaffold === true,
+    minimal: scaffoldMode === 'home-only',
+    additionalPages,
+    primaryIntent: selections.primaryIntent,
+    selectedTemplateId: selections.templateId,
   });
   const pageRegistry = populateRegistryFromTopology(sitePlan);
 
-  // 2. Ensure ALL capability-required pages exist in the registry
-  //    Skipped in minimal mode — the in-Builder AI is responsible for adding
-  //    capability pages (checkout, thankyou, booking…) when the user prompts.
+  // 2. Ensure ALL capability-required pages exist in the registry.
+  //    Skipped in 'home-only' mode; in 'selected-pages' mode, we still ensure
+  //    visitor-requested + capability-required pages are present.
   if (!sitePlan.isMinimal) {
     ensureRequiredPages(pageRegistry, sitePlan, capabilities.requiredPages, selections.businessName);
   }

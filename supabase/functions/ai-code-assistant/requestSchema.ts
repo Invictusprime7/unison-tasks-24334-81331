@@ -133,6 +133,22 @@ export const AIRequestSchema = z.object({
     constraints: z.string().max(2000).optional(),
     availableAssets: z.string().max(2000).optional(),
   }).optional(),
+  /**
+   * Structured Wizard-launch seed. When present (typically with `mode === "wizard-seed"`)
+   * the classifier routes to Lane B `wizard_seed_generation` so wizard launches share
+   * the same intelligence (memory, research, VFS context, transactional patches) as
+   * the AIBuilderPanel — instead of the protected Lane A fast path.
+   */
+  wizardSeed: z.object({
+    version: z.string().max(40).optional(),
+    source: z.string().max(40).optional(),
+    business: z.record(z.string(), z.unknown()).optional(),
+    template: z.record(z.string(), z.unknown()).optional(),
+    theme: z.record(z.string(), z.unknown()).optional(),
+    canonical: z.record(z.string(), z.unknown()).optional(),
+    generation: z.record(z.string(), z.unknown()).optional(),
+    bindingGuide: z.string().max(50_000).optional(),
+  }).passthrough().optional(),
 });
 
 export type AIRequest = z.infer<typeof AIRequestSchema>;

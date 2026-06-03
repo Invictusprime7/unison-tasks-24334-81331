@@ -128,6 +128,8 @@ const PURPOSE_TO_PAGE_TYPE: Record<string, BuilderPageType> = {
   shop: 'shop',
   checkout: 'checkout',
   booking: 'booking',
+  pricing: 'landing',
+  faq: 'landing',
 };
 
 const PURPOSE_TO_ROLE: Record<string, PageRole> = {
@@ -140,6 +142,8 @@ const PURPOSE_TO_ROLE: Record<string, PageRole> = {
   shop: 'shop',
   checkout: 'checkout',
   booking: 'booking',
+  pricing: 'pricing',
+  faq: 'faq',
 };
 
 // ============================================================================

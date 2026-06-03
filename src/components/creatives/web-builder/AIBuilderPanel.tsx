@@ -1989,26 +1989,24 @@ export default function App() {
       }
       debugHistory.push({ role: 'user', content: errorPrompt });
 
-      const response = await supabase.functions.invoke('ai-code-assistant', {
-        body: {
-          messages: debugHistory,
-          mode: 'code',
-          currentCode: hasVfsContext ? undefined : currentCode,
-          editMode: true,
-          debugMode: true,
-          systemType,
-          templateName,
-          systemsBuildContext: systemsBuildContext ?? undefined,
-          previewDiagnostics: diagnostics,
-          vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
-          gatewayOptions: gatewayConfig ? {
-            selectedModelId: gatewayConfig.selectedModelId,
-            reasoningEffort: gatewayConfig.reasoningEffort,
-            timeoutMs: gatewayConfig.timeoutMs,
-            autoModelSelection: gatewayConfig.autoModelSelection,
-            maxTokens: gatewayConfig.maxTokens,
-          } : undefined,
-        },
+      const response = await runBuilderTurn<Record<string, unknown>>({
+        messages: debugHistory,
+        mode: 'code',
+        currentCode: hasVfsContext ? undefined : currentCode,
+        editMode: true,
+        debugMode: true,
+        systemType,
+        templateName,
+        systemsBuildContext: systemsBuildContext ?? undefined,
+        previewDiagnostics: diagnostics,
+        vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
+        gatewayOptions: gatewayConfig ? {
+          selectedModelId: gatewayConfig.selectedModelId,
+          reasoningEffort: gatewayConfig.reasoningEffort,
+          timeoutMs: gatewayConfig.timeoutMs,
+          autoModelSelection: gatewayConfig.autoModelSelection,
+          maxTokens: gatewayConfig.maxTokens,
+        } : undefined,
       });
 
       // Handle non-2xx: response.error is set by supabase-js

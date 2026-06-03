@@ -477,6 +477,18 @@ export function resolveCapabilities(selections: WizardSelections): CapabilityPac
     pageSet.add('contact');
   }
 
+  // Honor visitor-selected pages from the Wizard "Pages" step. These are the
+  // pages the user explicitly checked; they must surface in the registry,
+  // topology, router, and binding guide regardless of business-model defaults.
+  const VALID_REQUESTED: PlaygroundPageRole[] = [
+    'home','about','services','pricing','gallery','contact','booking',
+    'booking_confirmation','checkout','thankyou','faq','blog','shop','custom',
+  ];
+  for (const raw of selections.requestedPages ?? []) {
+    const role = (raw as PlaygroundPageRole);
+    if (VALID_REQUESTED.includes(role)) pageSet.add(role);
+  }
+
   // 2. Funnels
   const funnelSet = new Set<PlaygroundFunnelGoal>(MODEL_FUNNELS[model] || MODEL_FUNNELS.general);
   if (selections.needsBooking) funnelSet.add('booking');

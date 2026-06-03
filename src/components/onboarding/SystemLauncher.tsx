@@ -1371,6 +1371,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
         pipelineManifest,
         wizardSelections,
+        wizardSeed,
       };
 
       const launchState = createLaunchState({

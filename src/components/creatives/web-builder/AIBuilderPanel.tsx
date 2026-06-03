@@ -77,6 +77,7 @@ import { parseGhlWireIntent } from '@/utils/ghlWireIntent';
 // Side-effect import: registers GHL skill pack with global registry
 import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
+import { runBuilderTurn } from '@/services/builderBrainClient';
 
 // ============================================================================
 /**
@@ -1275,46 +1276,44 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           // Append the current user prompt as the final message
           conversationHistory.push({ role: 'user', content: promptForAI });
 
-          response = await supabase.functions.invoke('ai-code-assistant', {
-            body: {
-              messages: conversationHistory,
-              // Always use template-react for React projects (even surgical edits)
-              // to ensure the AI generates React/TSX output, not raw HTML.
-              // The surgicalEdit flag tells the edge function to apply surgical constraints.
-              // Only fall back to 'code' mode for non-React (HTML template) surgical edits.
-              mode: isLaunchPlanningRequest ? 'launch-desk' : (isSurgicalEdit && !isReactProject ? 'code' : 'template-react'),
-              currentCode: isLaunchPlanningRequest ? undefined : truncatedCode,
-              editMode: isLaunchPlanningRequest ? false : !!currentCode,
-              debugMode: isLaunchPlanningRequest ? false : isDebugMode,
-              surgicalEdit: isLaunchPlanningRequest ? false : isSurgicalEdit,
-              behavioralEdit: isLaunchPlanningRequest ? false : isBehavioralEdit,
-              targetFile: resolvedTargetFile || undefined,
-              componentBehaviorContext: behaviorContext || undefined,
-              systemType,
-              templateName,
-              templateAction,
-              launchBrief,
-              userDesignProfile: userDesignProfile ?? undefined,
-              systemsBuildContext: systemsBuildContext ?? undefined,
-              siteElementsLibraryContext,
-              attachments: _attachments.length > 0 ? _attachments : undefined,
-              // Send VFS files for edit context (all edit types, not just surgical)
-              vfsFiles: vfsPayload,
-              // Preview DOM snapshot for live context awareness
-              previewSnapshot,
-              // Preview diagnostics for Lane B session memory
-              previewDiagnostics: iframeErrors.length > 0
-                ? iframeErrors.slice(0, 3).map(e => `${e.type}: ${e.message}${e.file ? ` (${e.file}:${e.line})` : ''}`).join('\n')
-                : undefined,
-              // Gateway options from user config
-              gatewayOptions: gatewayConfig ? {
-                selectedModelId: gatewayConfig.selectedModelId,
-                reasoningEffort: gatewayConfig.reasoningEffort,
-                timeoutMs: gatewayConfig.timeoutMs,
-                autoModelSelection: gatewayConfig.autoModelSelection,
-                maxTokens: gatewayConfig.maxTokens,
-              } : undefined,
-            },
+          response = await runBuilderTurn<any>({
+            messages: conversationHistory,
+            // Always use template-react for React projects (even surgical edits)
+            // to ensure the AI generates React/TSX output, not raw HTML.
+            // The surgicalEdit flag tells the edge function to apply surgical constraints.
+            // Only fall back to 'code' mode for non-React (HTML template) surgical edits.
+            mode: isLaunchPlanningRequest ? 'launch-desk' : (isSurgicalEdit && !isReactProject ? 'code' : 'template-react'),
+            currentCode: isLaunchPlanningRequest ? undefined : truncatedCode,
+            editMode: isLaunchPlanningRequest ? false : !!currentCode,
+            debugMode: isLaunchPlanningRequest ? false : isDebugMode,
+            surgicalEdit: isLaunchPlanningRequest ? false : isSurgicalEdit,
+            behavioralEdit: isLaunchPlanningRequest ? false : isBehavioralEdit,
+            targetFile: resolvedTargetFile || undefined,
+            componentBehaviorContext: behaviorContext || undefined,
+            systemType,
+            templateName,
+            templateAction,
+            launchBrief,
+            userDesignProfile: userDesignProfile ?? undefined,
+            systemsBuildContext: systemsBuildContext ?? undefined,
+            siteElementsLibraryContext,
+            attachments: _attachments.length > 0 ? _attachments : undefined,
+            // Send VFS files for edit context (all edit types, not just surgical)
+            vfsFiles: vfsPayload,
+            // Preview DOM snapshot for live context awareness
+            previewSnapshot,
+            // Preview diagnostics for Lane B session memory
+            previewDiagnostics: iframeErrors.length > 0
+              ? iframeErrors.slice(0, 3).map(e => `${e.type}: ${e.message}${e.file ? ` (${e.file}:${e.line})` : ''}`).join('\n')
+              : undefined,
+            // Gateway options from user config
+            gatewayOptions: gatewayConfig ? {
+              selectedModelId: gatewayConfig.selectedModelId,
+              reasoningEffort: gatewayConfig.reasoningEffort,
+              timeoutMs: gatewayConfig.timeoutMs,
+              autoModelSelection: gatewayConfig.autoModelSelection,
+              maxTokens: gatewayConfig.maxTokens,
+            } : undefined,
           });
           
           // Check for retryable errors
@@ -1990,26 +1989,24 @@ export default function App() {
       }
       debugHistory.push({ role: 'user', content: errorPrompt });
 
-      const response = await supabase.functions.invoke('ai-code-assistant', {
-        body: {
-          messages: debugHistory,
-          mode: 'code',
-          currentCode: hasVfsContext ? undefined : currentCode,
-          editMode: true,
-          debugMode: true,
-          systemType,
-          templateName,
-          systemsBuildContext: systemsBuildContext ?? undefined,
-          previewDiagnostics: diagnostics,
-          vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
-          gatewayOptions: gatewayConfig ? {
-            selectedModelId: gatewayConfig.selectedModelId,
-            reasoningEffort: gatewayConfig.reasoningEffort,
-            timeoutMs: gatewayConfig.timeoutMs,
-            autoModelSelection: gatewayConfig.autoModelSelection,
-            maxTokens: gatewayConfig.maxTokens,
-          } : undefined,
-        },
+      const response = await runBuilderTurn<any>({
+        messages: debugHistory,
+        mode: 'code',
+        currentCode: hasVfsContext ? undefined : currentCode,
+        editMode: true,
+        debugMode: true,
+        systemType,
+        templateName,
+        systemsBuildContext: systemsBuildContext ?? undefined,
+        previewDiagnostics: diagnostics,
+        vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
+        gatewayOptions: gatewayConfig ? {
+          selectedModelId: gatewayConfig.selectedModelId,
+          reasoningEffort: gatewayConfig.reasoningEffort,
+          timeoutMs: gatewayConfig.timeoutMs,
+          autoModelSelection: gatewayConfig.autoModelSelection,
+          maxTokens: gatewayConfig.maxTokens,
+        } : undefined,
       });
 
       // Handle non-2xx: response.error is set by supabase-js

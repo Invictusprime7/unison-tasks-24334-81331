@@ -1056,9 +1056,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         canonical: {
           pages: (sitePlan?.pages || []).map((p) => ({
-            slug: p.slug,
+            slug: p.id,
             role: p.role,
-            title: p.title,
+            title: p.title || p.name,
             path: p.filePath,
           })),
           capabilities: industryProfile?.defaultCapabilities || [],

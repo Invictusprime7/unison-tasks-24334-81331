@@ -47,6 +47,7 @@ export function classifyTask(opts: {
   debugMode: boolean;
   vfsFiles?: Record<string, string>;
   launchBrief?: unknown;
+  wizardSeed?: unknown;
 }): ClassifiedTask {
   const {
     mode,
@@ -60,7 +61,23 @@ export function classifyTask(opts: {
     debugMode,
     vfsFiles,
     launchBrief,
+    wizardSeed,
   } = opts;
+
+  // ── Wizard seed (NEW) — routes to Lane B so wizard launches share the
+  //    builder brain (memory, research, VFS context, transactional patches).
+  if (mode === "wizard-seed" || Boolean(wizardSeed)) {
+    return {
+      type: "general_code_assist", // Lane B default sub-behavior
+      fastPath: false,
+      shouldUseMemory: true,
+      shouldUseCompactContext: true,
+      prefersJsonOutput: true,
+      skipResearch: false,
+      skipThinking: false,
+    };
+  }
+
 
   // ── Wizard fast path ──────────────────────────────────────────────────
   // ── Launch Desk ───────────────────────────────────────────────────────

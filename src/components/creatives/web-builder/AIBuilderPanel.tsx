@@ -1276,7 +1276,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           // Append the current user prompt as the final message
           conversationHistory.push({ role: 'user', content: promptForAI });
 
-          response = await runBuilderTurn<Record<string, unknown>>({
+          response = await runBuilderTurn<any>({
             messages: conversationHistory,
             // Always use template-react for React projects (even surgical edits)
             // to ensure the AI generates React/TSX output, not raw HTML.
@@ -1989,7 +1989,7 @@ export default function App() {
       }
       debugHistory.push({ role: 'user', content: errorPrompt });
 
-      const response = await runBuilderTurn<Record<string, unknown>>({
+      const response = await runBuilderTurn<any>({
         messages: debugHistory,
         mode: 'code',
         currentCode: hasVfsContext ? undefined : currentCode,

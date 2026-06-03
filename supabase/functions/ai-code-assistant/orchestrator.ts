@@ -31,7 +31,9 @@ import {
   buildVfsFilesContext,
   buildFastPathSystemPrompt,
   buildUserDBContext,
+  buildWizardSeedContext,
   type UserDBContext,
+  type WizardSeedShape,
 } from "./contextBuilders.ts";
 import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditReinforcement } from "./prompts/editPrompts.ts";
 import { buildCodeModePrompt } from "./prompts/codePrompt.ts";

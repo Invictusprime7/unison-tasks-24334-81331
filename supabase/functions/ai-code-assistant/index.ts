@@ -63,6 +63,7 @@ serve(async (req: Request) => {
       debugMode: parsed.data.debugMode ?? false,
       vfsFiles: parsed.data.vfsFiles,
       launchBrief: parsed.data.launchBrief,
+      wizardSeed: (parsed.data as { wizardSeed?: unknown }).wizardSeed,
     });
 
     console.log(

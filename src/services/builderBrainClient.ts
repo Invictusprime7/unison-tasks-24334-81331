@@ -28,7 +28,7 @@ export type BuilderTurnResponse<T = unknown> = { data: T | null; error: unknown 
  * touching every call site. The edge function validates strictly.
  */
 export interface BuilderTurnInput {
-  messages: Array<{ role: "user" | "assistant" | "system"; content: unknown }>;
+  messages: Array<{ role: string; content: unknown }>;
   mode?: string;
   currentCode?: string;
   editMode?: boolean;
@@ -50,14 +50,14 @@ export interface BuilderTurnInput {
   previewSnapshot?: string;
   recentChangedFiles?: string[];
   vfsFiles?: Record<string, string>;
-  systemsBuildContext?: Record<string, unknown>;
+  systemsBuildContext?: unknown;
   siteElementsLibraryContext?: string;
-  launchBrief?: Record<string, unknown>;
-  userDesignProfile?: Record<string, unknown>;
+  launchBrief?: unknown;
+  userDesignProfile?: unknown;
   attachments?: unknown[];
-  gatewayOptions?: Record<string, unknown>;
+  gatewayOptions?: unknown;
   /** Structured wizard-launch seed; presence routes to Lane B. */
-  wizardSeed?: Record<string, unknown>;
+  wizardSeed?: unknown;
   [extra: string]: unknown;
 }
 

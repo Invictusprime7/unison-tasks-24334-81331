@@ -1109,17 +1109,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         // contract. `systemsBuildContext` is preserved for back-compat so the
         // existing blueprint prompt blocks still render.
         const result = await withTimeout(
-          supabase.functions.invoke('ai-code-assistant', {
-            body: {
-              messages: [{ role: 'user', content: aiUserPrompt }],
-              mode: 'wizard-seed',
-              templateName: selectedTemplate?.label || system.name,
-              aesthetic: resolvedPreset.id,
-              source: resolvedIndustry,
-              systemType: selectedSystem,
-              systemsBuildContext: blueprint,
-              wizardSeed,
-            },
+          runBuilderTurn({
+            messages: [{ role: 'user', content: aiUserPrompt }],
+            mode: 'wizard-seed',
+            templateName: selectedTemplate?.label || system.name,
+            aesthetic: resolvedPreset.id,
+            source: resolvedIndustry,
+            systemType: selectedSystem,
+            systemsBuildContext: blueprint,
+            wizardSeed,
           }),
           WIZARD_AI_TIMEOUT_MS,
           `AI generation timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,

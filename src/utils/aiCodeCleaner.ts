@@ -210,7 +210,13 @@ export function ensureReactImports(code: string): string {
  * which are valid HTML but invalid JSX — must be `<br />`, `<hr />`, etc.
  */
 const VOID_ELEMENTS = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
-const VOID_RE = new RegExp(`<(${VOID_ELEMENTS.join('|')})(\\b[^>]*?)(?<!/)>`, 'gi');
+// Note: `[^>{}]*?` is intentional — it prevents the regex from crossing into
+// a JSX expression like `onChange={(e) => ...}`, where the `>` of the arrow
+// function would otherwise be mistaken for the closing `>` of the tag and the
+// replacement would mangle the arrow into `= />`. Void elements that legitimately
+// hold expression attributes are already written self-closed by the AI, so the
+// negative lookbehind `(?<!/)` correctly excludes them.
+const VOID_RE = new RegExp(`<(${VOID_ELEMENTS.join('|')})(\\b[^>{}]*?)(?<!/)>`, 'gi');
 
 export function fixJsxVoidElements(code: string): string {
   if (!code || typeof code !== 'string') return code;

@@ -47,10 +47,14 @@ export async function runProviderLoop(opts: {
     lastError = message;
   };
 
-  // ── Phase 1: Direct OpenAI API (PRIMARY) ─────────────────────────────
-  // OpenAI is the primary provider when available
-  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  if (OPENAI_API_KEY) {
+  const runDirectOpenAI = async (): Promise<void> => {
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+    if (!OPENAI_API_KEY || content) return;
+
+    // OpenAI is a direct fallback only. Workspace-owned accounts can hit 429s,
+    // so do not let that path gate the Lovable gateway launch path.
+    console.log('[AI-Hybrid] Direct OpenAI configured as secondary fallback');
+    
     const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
     const openaiModels = [
       ...(configuredOpenAIModel
@@ -69,7 +73,7 @@ export async function runProviderLoop(opts: {
       }
       const perModelMs = Math.min(25000, Math.max(8000, remaining - 2000));
       try {
-        console.log(`[AI-Hybrid] Trying PRIMARY OpenAI ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        console.log(`[AI-Hybrid] Trying fallback ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), perModelMs);
         
@@ -97,10 +101,11 @@ export async function runProviderLoop(opts: {
             : { status: 402, error: 'Payment required. Please add credits to your OpenAI account.' };
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
           if (!lovableApiKey) {
-            return { content: '', reasoning: '', modelUsed: undefined, earlyError };
+            deferredEarlyError ??= earlyError;
+            return;
           }
           deferredEarlyError ??= earlyError;
-          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying Lovable gateway fallback...`);
+          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; continuing fallback chain...`);
           break;
         }
 
@@ -144,7 +149,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
-        console.log(`[AI-Hybrid] Success with PRIMARY ${model.label}`);
+        console.log(`[AI-Hybrid] Success with fallback ${model.label}`);
         break;
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -157,11 +162,11 @@ export async function runProviderLoop(opts: {
         continue;
       }
     }
-  }
+  };
 
-  // ── Phase 2: Lovable AI Gateway (FALLBACK) ───────────────────────────
-  // Lovable gateway is secondary fallback if OpenAI is unavailable or fails
-  if (!content && lovableApiKey) {
+  // ── Phase 1: Lovable AI Gateway (PRIMARY) ─────────────────────────────
+  // Prefer the managed gateway so workspace OpenAI rate limits do not block generation.
+  if (lovableApiKey) {
     // Log total prompt size for debugging
     const totalChars = aiMessages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
     console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
@@ -178,7 +183,7 @@ export async function runProviderLoop(opts: {
       const halfBudget = Math.max(15000, Math.floor(remaining / 2));
       const perModelMs = Math.min(providerPlan.perModelTimeoutMs, halfBudget, Math.max(8000, remaining - 2000));
       try {
-        console.log(`[AI-Hybrid] Trying FALLBACK gateway model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        console.log(`[AI-Hybrid] Trying PRIMARY gateway model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
@@ -199,7 +204,8 @@ export async function runProviderLoop(opts: {
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
+            'Lovable-API-Key': lovableApiKey,
+            'X-Lovable-AIG-SDK': 'vercel-ai-sdk',
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(reqBody),
@@ -259,7 +265,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
-        console.log(`[AI-Hybrid] Success with FALLBACK ${model.label}`);
+        console.log(`[AI-Hybrid] Success with PRIMARY gateway ${model.label}`);
         break;
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -273,6 +279,9 @@ export async function runProviderLoop(opts: {
       }
     }
   }
+
+  // ── Phase 2: Direct OpenAI API (FALLBACK) ─────────────────────────────
+  await runDirectOpenAI();
 
   // ── Phase 3: Direct Anthropic API fallback ───────────────────────────
   if (!content) {

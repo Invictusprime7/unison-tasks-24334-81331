@@ -6095,7 +6095,7 @@ ${html}
         </div>
 
         {/* Center Section: Floating Dock - hidden on small screens */}
-        <div className="flex-1 hidden sm:flex justify-center overflow-hidden min-w-0">
+        <div className="flex-1 hidden sm:flex justify-center min-w-0">
           <FloatingDock
             onSelectTemplate={handleSelectTemplate}
             onDemoTemplate={(code, name, systemType, templateId) => {

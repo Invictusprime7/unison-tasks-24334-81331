@@ -2100,6 +2100,55 @@ export default function App() {
     templateFiles.loadTemplate,
   ]);
 
+  // Post-wizard refresh recovery: when no launch context, no route state, and no
+  // projectId are available (e.g. user refreshed /web-builder after wizard generation),
+  // hydrate from the most recent builder_drafts row instead of falling back to the
+  // deterministic editorial seed. Enforces the "No Fallback After Wizard" contract.
+  const recoveredDraftRef = useRef(false);
+  useEffect(() => {
+    const urlId = new URLSearchParams(location.search).get('id');
+    if (recoveredDraftRef.current) return;
+    if (urlId || projectId || effectiveRouteState || templateFiles.currentTemplateId) return;
+
+    let cancelled = false;
+    recoveredDraftRef.current = true;
+
+    (async () => {
+      try {
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        if (!user || cancelled) return;
+
+        const { data, error } = await supabaseClient
+          .from('builder_drafts')
+          .select('id, name')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        if (error || cancelled || !data || data.length === 0) return;
+
+        const draftId = data[0].id as string;
+        const template = await templateFiles.loadTemplate(draftId);
+        if (!template || cancelled || !hydrateSavedTemplate(template)) return;
+
+        toast.success(`Restored "${template.name}"`, {
+          description: 'Continuing your last session',
+        });
+      } catch (err) {
+        console.warn('[WebBuilder] post-refresh draft recovery failed', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [
+    projectId,
+    effectiveRouteState,
+    location.search,
+    templateFiles.currentTemplateId,
+    templateFiles.loadTemplate,
+    hydrateSavedTemplate,
+  ]);
+
   const loadedCanonicalGraphProjectRef = useRef<string | null>(null);
 
   useEffect(() => {

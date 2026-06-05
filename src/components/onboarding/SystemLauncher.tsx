@@ -1399,6 +1399,29 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       });
       setLaunch(launchState);
 
+      // Mark onboarding complete so route guards allow /web-builder.
+      // Without this, /web-builder redirects back to /onboarding (onboarding_required).
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from("onboarding_state")
+            .upsert(
+              {
+                user_id: user.id,
+                completed: true,
+                current_step: "launched",
+                industry: selectedSystem ?? null,
+                business_name: businessName || null,
+                project_id: provisionedBusinessId || null,
+              },
+              { onConflict: "user_id" }
+            );
+        }
+      } catch (onboardingErr) {
+        console.warn("[SystemLauncher] failed to mark onboarding complete", onboardingErr);
+      }
+
       navigate("/web-builder", {
         state: {
           vfsFiles: wiredVfsFiles,
@@ -1411,6 +1434,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       onOpenChange(false);
       resetState();
       toast.success("Site ready! Opening builder…");
+
     } catch (e) {
       const msg = await getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);

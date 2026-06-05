@@ -2118,7 +2118,7 @@ export default function App() {
         const { data: { user } } = await supabaseClient.auth.getUser();
         if (!user || cancelled) return;
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
           .from('builder_drafts')
           .select('id, name')
           .eq('user_id', user.id)

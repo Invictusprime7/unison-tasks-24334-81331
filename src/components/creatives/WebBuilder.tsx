@@ -2115,7 +2115,7 @@ export default function App() {
 
     (async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await supabaseClient.auth.getUser();
         if (!user || cancelled) return;
 
         const { data, error } = await supabase

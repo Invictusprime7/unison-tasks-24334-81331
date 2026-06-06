@@ -2991,6 +2991,13 @@ export default function ${componentName}Page() {
       return;
     }
 
+    // Sync if previewCode has content and actually changed since last sync.
+    // Guardrail: the builder bootstrap component is only an editor placeholder;
+    // never let it overwrite wizard/launcher VFS state as /src/App.tsx.
+    if (previewCode && isBuilderBootstrapPreviewCode(previewCode)) {
+      return;
+    }
+
     // Sync if previewCode has content and actually changed since last sync
     if (previewCode && previewCode !== lastSyncedCodeRef.current) {
       console.log('[WebBuilder] Effect A: Syncing previewCode to VFS, length:', previewCode.length);

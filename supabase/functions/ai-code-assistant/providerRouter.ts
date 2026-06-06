@@ -125,6 +125,18 @@ export function buildProviderPlan(
       break;
 
     // ── Lane B: Lightweight tasks ───────────────────────────────────────
+    case "wizard_seed_generation":
+      plan = {
+        gatewayModels: [
+          m(MODELS.geminiFlash, 48000),
+          m(MODELS.gpt4oMini, 48000),
+          m(MODELS.geminiPro, 48000),
+        ],
+        perModelTimeoutMs: 60000,
+        fallbackMaxTokens: 48000,
+      };
+      break;
+
     case "nav_page_generation":
       plan = {
         gatewayModels: [

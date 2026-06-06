@@ -1126,12 +1126,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       } | null = null;
       let aiError: unknown = null;
       let lastPayloadIssue: {
-        kind: 'empty' | 'app' | 'section';
+        kind: 'empty' | 'app' | 'section' | 'quality';
         aiContentPreview?: string;
         invalidFiles?: string[];
         allInvalidFiles?: string[];
         aiAppMissing?: boolean;
         aiAppInvalid?: boolean;
+        qualityReason?: string;
       } | null = null;
       const MAX_RETRIES = 2;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -1257,6 +1258,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           });
         }
 
+        const quality = assessWizardGenerationQuality(sanitized.files, composition.sections.map((s) => s.type));
+        if (!quality.ok) {
+          lastPayloadIssue = {
+            kind: 'quality',
+            qualityReason: quality.reason,
+            invalidFiles: sanitized.invalidFiles,
+            aiContentPreview: aiContent.slice(0, 300),
+          };
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned minimal/fallback output — retrying`, quality);
+          continue;
+        }
+
         generationResult = { structured, sanitized };
         break;
       }
@@ -1298,6 +1311,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         if (lastPayloadIssue?.kind === 'section') {
           toast.error('AI returned malformed section files after retrying. Please try again.');
           console.error('[SystemLauncher] Aborting launch — malformed AI section files after retries', lastPayloadIssue);
+          return;
+        }
+
+        if (lastPayloadIssue?.kind === 'quality') {
+          toast.error(`AI returned minimal fallback output after retrying. ${lastPayloadIssue.qualityReason || 'Please try again.'}`);
+          console.error('[SystemLauncher] Aborting launch — minimal/fallback AI output after retries', lastPayloadIssue);
           return;
         }
 

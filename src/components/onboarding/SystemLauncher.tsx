@@ -526,6 +526,42 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
   return "Generation failed";
 }
 
+function assessWizardGenerationQuality(
+  files: Record<string, string>,
+  requiredSections: string[],
+): { ok: boolean; reason?: string; totalChars: number; sectionCount: number; intentCount: number } {
+  const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
+  const combined = tsxEntries.map(([, content]) => content).join('\n');
+  const totalChars = combined.trim().length;
+  const sectionCount = (
+    combined.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
+  ).length;
+  const intentCount = (combined.match(/data-ut-intent=/g) || []).length;
+  const placeholderPattern = /AI-generated code will appear here|This page is ready to be edited|Generating page content|Welcome to AI Web Builder|Lorem ipsum|Coming soon/i;
+  const hasRenderablePage = tsxEntries.some(([path, content]) => {
+    if (/\/src\/App\.tsx$/.test(path) && /<Routes\b|<Route\b|HashRouter|BrowserRouter|react-router-dom/.test(content)) {
+      return false;
+    }
+    return /export\s+default|export\s+(function|const)/.test(content);
+  });
+  const expectedSections = Math.max(3, Math.min(requiredSections.length || 3, 5));
+
+  if (!hasRenderablePage) {
+    return { ok: false, reason: 'no renderable TSX page/component was generated', totalChars, sectionCount, intentCount };
+  }
+  if (placeholderPattern.test(combined)) {
+    return { ok: false, reason: 'generated output contains placeholder/fallback copy', totalChars, sectionCount, intentCount };
+  }
+  if (totalChars < 2500) {
+    return { ok: false, reason: `generated output is too small (${totalChars} chars)`, totalChars, sectionCount, intentCount };
+  }
+  if (sectionCount < expectedSections) {
+    return { ok: false, reason: `generated output has too few sections (${sectionCount}/${expectedSections})`, totalChars, sectionCount, intentCount };
+  }
+
+  return { ok: true, totalChars, sectionCount, intentCount };
+}
+
 // Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
   const display = INDUSTRY_DISPLAY[card.industry];
@@ -1083,19 +1119,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
 
 
-      // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
+      // ── Invoke ai-code-assistant (Lane B: wizard_seed_generation) ──
       let generationResult: {
         structured: LauncherPayload;
         sanitized: SanitizedGeneratedFiles;
       } | null = null;
       let aiError: unknown = null;
       let lastPayloadIssue: {
-        kind: 'empty' | 'app' | 'section';
+        kind: 'empty' | 'app' | 'section' | 'quality';
         aiContentPreview?: string;
         invalidFiles?: string[];
         allInvalidFiles?: string[];
         aiAppMissing?: boolean;
         aiAppInvalid?: boolean;
+        qualityReason?: string;
       } | null = null;
       const MAX_RETRIES = 2;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -1221,6 +1258,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           });
         }
 
+        const quality = assessWizardGenerationQuality(sanitized.files, composition.sections.map((s) => s.type));
+        if (!quality.ok) {
+          lastPayloadIssue = {
+            kind: 'quality',
+            qualityReason: quality.reason,
+            invalidFiles: sanitized.invalidFiles,
+            aiContentPreview: aiContent.slice(0, 300),
+          };
+          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned minimal/fallback output — retrying`, quality);
+          continue;
+        }
+
         generationResult = { structured, sanitized };
         break;
       }
@@ -1262,6 +1311,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         if (lastPayloadIssue?.kind === 'section') {
           toast.error('AI returned malformed section files after retrying. Please try again.');
           console.error('[SystemLauncher] Aborting launch — malformed AI section files after retries', lastPayloadIssue);
+          return;
+        }
+
+        if (lastPayloadIssue?.kind === 'quality') {
+          toast.error(`AI returned minimal fallback output after retrying. ${lastPayloadIssue.qualityReason || 'Please try again.'}`);
+          console.error('[SystemLauncher] Aborting launch — minimal/fallback AI output after retries', lastPayloadIssue);
           return;
         }
 

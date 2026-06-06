@@ -173,6 +173,14 @@ function getOrCreatePreviewBusinessId(systemType?: string): string {
   }
 }
 
+function isBuilderBootstrapPreviewCode(code: string): boolean {
+  return /Welcome to AI Web Builder|AI-generated code will appear here|Use the AI Code Assistant to generate components/.test(code);
+}
+
+function isCanonicalRouterSource(code: string): boolean {
+  return /react-router-dom|<Routes\b|<Route\b|HashRouter|BrowserRouter|createBrowserRouter/.test(code);
+}
+
 /**
  * Escape special characters in CSS selectors (e.g., Tailwind brackets like `min-h-[85vh]`)
  */
@@ -2895,6 +2903,9 @@ export default function ${componentName}Page() {
     preferredPath?: string | null,
   ): string | null => {
     if (preferredPath && files[preferredPath]) {
+      if (preferredPath.endsWith('/App.tsx') && isCanonicalRouterSource(files[preferredPath])) {
+        return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) || preferredPath;
+      }
       return preferredPath;
     }
 
@@ -2903,6 +2914,9 @@ export default function ${componentName}Page() {
       preferredPath || launchEntryPoint,
     );
     if (resolvedEntryPath && files[resolvedEntryPath]) {
+      if (resolvedEntryPath.endsWith('/App.tsx') && isCanonicalRouterSource(files[resolvedEntryPath])) {
+        return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) || resolvedEntryPath;
+      }
       return resolvedEntryPath;
     }
 
@@ -2984,6 +2998,13 @@ export default function ${componentName}Page() {
   useEffect(() => {
     if (routeStateHasStructuredProject && !importedRouteStateRef.current) {
       console.log('[WebBuilder] Effect A deferred until route-state project import completes');
+      return;
+    }
+
+    // Sync if previewCode has content and actually changed since last sync.
+    // Guardrail: the builder bootstrap component is only an editor placeholder;
+    // never let it overwrite wizard/launcher VFS state as /src/App.tsx.
+    if (previewCode && isBuilderBootstrapPreviewCode(previewCode)) {
       return;
     }
 

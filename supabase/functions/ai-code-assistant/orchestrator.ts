@@ -225,6 +225,7 @@ async function runBuilderLane(
 ): Promise<Response> {
   console.log(`[orchestrator] LANE B: ${task.type} (sub-behavior: ${
     task.type === 'debug_fix' ? 'builder_debug' :
+    task.type === 'wizard_seed_generation' ? 'wizard_seed_generation' :
     ['surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit'].includes(task.type) ? 'builder_edit' :
     'builder_generate'
   })`);
@@ -423,6 +424,10 @@ async function runBuilderLane(
         imageContext,
       });
       break;
+  }
+
+  if (task.type === 'wizard_seed_generation') {
+    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, or root files.\nThe Home page must be a complete production landing page with at least 5 semantic sections, real industry-specific copy, and working data-ut-intent attributes.\nIf shared components are needed, include them under /src/sections/*.tsx and import them from the page.\n`;
   }
 
   // Inject parsed intent summary into system prompt for better understanding

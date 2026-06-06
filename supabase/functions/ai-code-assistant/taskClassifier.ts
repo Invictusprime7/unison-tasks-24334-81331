@@ -3,6 +3,7 @@
 
 export type AssistantTaskType =
   | "wizard_template_react"
+  | "wizard_seed_generation"
   | "nav_page_generation"
   | "template_json_generation"
   | "template_html_generation"
@@ -68,7 +69,7 @@ export function classifyTask(opts: {
   //    builder brain (memory, research, VFS context, transactional patches).
   if (mode === "wizard-seed" || Boolean(wizardSeed)) {
     return {
-      type: "general_code_assist", // Lane B default sub-behavior
+      type: "wizard_seed_generation", // Lane B wizard-launch sub-behavior
       fastPath: false,
       shouldUseMemory: true,
       shouldUseCompactContext: true,

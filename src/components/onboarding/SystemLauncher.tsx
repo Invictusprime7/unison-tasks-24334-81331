@@ -1119,7 +1119,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
 
 
-      // ── Invoke ai-code-assistant (Lane A: wizard_template_react) ──
+      // ── Invoke ai-code-assistant (Lane B: wizard_seed_generation) ──
       let generationResult: {
         structured: LauncherPayload;
         sanitized: SanitizedGeneratedFiles;

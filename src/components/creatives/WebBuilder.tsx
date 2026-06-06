@@ -177,6 +177,10 @@ function isBuilderBootstrapPreviewCode(code: string): boolean {
   return /Welcome to AI Web Builder|AI-generated code will appear here|Use the AI Code Assistant to generate components/.test(code);
 }
 
+function isCanonicalRouterSource(code: string): boolean {
+  return /react-router-dom|<Routes\b|<Route\b|HashRouter|BrowserRouter|createBrowserRouter/.test(code);
+}
+
 /**
  * Escape special characters in CSS selectors (e.g., Tailwind brackets like `min-h-[85vh]`)
  */

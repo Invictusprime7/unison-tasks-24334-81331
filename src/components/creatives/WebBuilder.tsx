@@ -173,6 +173,10 @@ function getOrCreatePreviewBusinessId(systemType?: string): string {
   }
 }
 
+function isBuilderBootstrapPreviewCode(code: string): boolean {
+  return /Welcome to AI Web Builder|AI-generated code will appear here|Use the AI Code Assistant to generate components/.test(code);
+}
+
 /**
  * Escape special characters in CSS selectors (e.g., Tailwind brackets like `min-h-[85vh]`)
  */

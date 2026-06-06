@@ -526,6 +526,42 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
   return "Generation failed";
 }
 
+function assessWizardGenerationQuality(
+  files: Record<string, string>,
+  requiredSections: string[],
+): { ok: boolean; reason?: string; totalChars: number; sectionCount: number; intentCount: number } {
+  const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
+  const combined = tsxEntries.map(([, content]) => content).join('\n');
+  const totalChars = combined.trim().length;
+  const sectionCount = (
+    combined.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
+  ).length;
+  const intentCount = (combined.match(/data-ut-intent=/g) || []).length;
+  const placeholderPattern = /AI-generated code will appear here|This page is ready to be edited|Generating page content|Welcome to AI Web Builder|Lorem ipsum|Coming soon/i;
+  const hasRenderablePage = tsxEntries.some(([path, content]) => {
+    if (/\/src\/App\.tsx$/.test(path) && /<Routes\b|<Route\b|HashRouter|BrowserRouter|react-router-dom/.test(content)) {
+      return false;
+    }
+    return /export\s+default|export\s+(function|const)/.test(content);
+  });
+  const expectedSections = Math.max(3, Math.min(requiredSections.length || 3, 5));
+
+  if (!hasRenderablePage) {
+    return { ok: false, reason: 'no renderable TSX page/component was generated', totalChars, sectionCount, intentCount };
+  }
+  if (placeholderPattern.test(combined)) {
+    return { ok: false, reason: 'generated output contains placeholder/fallback copy', totalChars, sectionCount, intentCount };
+  }
+  if (totalChars < 2500) {
+    return { ok: false, reason: `generated output is too small (${totalChars} chars)`, totalChars, sectionCount, intentCount };
+  }
+  if (sectionCount < expectedSections) {
+    return { ok: false, reason: `generated output has too few sections (${sectionCount}/${expectedSections})`, totalChars, sectionCount, intentCount };
+  }
+
+  return { ok: true, totalChars, sectionCount, intentCount };
+}
+
 // Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
   const display = INDUSTRY_DISPLAY[card.industry];

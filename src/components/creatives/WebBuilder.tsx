@@ -2903,6 +2903,9 @@ export default function ${componentName}Page() {
     preferredPath?: string | null,
   ): string | null => {
     if (preferredPath && files[preferredPath]) {
+      if (preferredPath.endsWith('/App.tsx') && isCanonicalRouterSource(files[preferredPath])) {
+        return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) || preferredPath;
+      }
       return preferredPath;
     }
 
@@ -2911,6 +2914,9 @@ export default function ${componentName}Page() {
       preferredPath || launchEntryPoint,
     );
     if (resolvedEntryPath && files[resolvedEntryPath]) {
+      if (resolvedEntryPath.endsWith('/App.tsx') && isCanonicalRouterSource(files[resolvedEntryPath])) {
+        return Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx)$/.test(path)) || resolvedEntryPath;
+      }
       return resolvedEntryPath;
     }
 

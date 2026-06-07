@@ -132,7 +132,7 @@ import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import { commitToPipeline, type SiteBundleSnapshot } from '@/platform/core';
-import { publishCreatorDataForUnison, writeCanonicalsToVFS } from '@/services/unisonCanonicalRegistry';
+import { publishCreatorDataForUnison } from '@/services/unisonCanonicalRegistry';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import {
@@ -2237,9 +2237,12 @@ export default function App() {
     // Publish to the canonical registry FIRST so the preview compiler can
     // re-stamp protected files on every build (self-healing against AI edits).
     publishCreatorDataForUnison(creatorDataForUnison);
-    // Then write canonical contents back into the live VFS so the code
-    // editor / deploy bundle / AI context all match what the preview runs.
-    writeCanonicalsToVFS(vfsImportFiles, { creatorData: creatorDataForUnison });
+    // Do NOT write Unison data modules into the live VFS here. On a fresh
+    // /web-builder mount this effect can run before launcher files hydrate;
+    // writing only /src/unison/* into an otherwise empty VFS makes preview pick
+    // a data module as the app entry and fall into fallback/diagnostic output.
+    // Preview compile still overlays canonical Unison files without making them
+    // authoritative site entry files.
   }, [creatorDataForUnison, vfsImportFiles]);
 
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
@@ -2508,18 +2511,11 @@ export default function App() {
       const currentFiles = virtualFS.getSandpackFiles();
       const filesToImport: Record<string, string> = {};
 
-      // Scaffold a minimal placeholder for any registry page whose file is
-      // missing from the VFS. Without this, the canonical router imports
-      // unresolved modules and the preview renders blank.
-      for (const page of Object.values(registry.pages)) {
-        const filePath = page.filePath || `/src/pages/${page.title.replace(/[^a-zA-Z0-9]/g, '') || 'Page'}.tsx`;
-        if (!currentFiles[filePath]) {
-          const componentName = (filePath.split('/').pop() || 'Page').replace(/\.(tsx|jsx|ts|js)$/, '');
-          filesToImport[filePath] = `import React from 'react';\n\nexport default function ${componentName}() {\n  return (\n    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">\n      <div className="text-center">\n        <h1 className="text-3xl font-semibold mb-2">${page.title}</h1>\n        <p className="text-muted-foreground">This page is ready to be edited.</p>\n      </div>\n    </div>\n  );\n}\n`;
-        }
-      }
-
-      const mergedForRouter = { ...currentFiles, ...filesToImport };
+      // Never synthesize Web Builder placeholder pages during launcher/Unison
+      // hydration. The router must only target files that actually exist in the
+      // generated wizard VFS; otherwise placeholder/fallback pages can take over
+      // the preview after refresh.
+      const mergedForRouter = currentFiles;
       const result = syncRouterAndValidate(registry, mergedForRouter);
       if (result.routerCode) {
         filesToImport[launchEntryPoint] = result.routerCode;

@@ -1267,18 +1267,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [isInteractiveModeHelpOpen, setIsInteractiveModeHelpOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [editorCode, setEditorCode] = useState('// AI Web Builder - JavaScript Mode\n// Use vanilla JavaScript to create interactive web experiences\n\n// Example: Create a simple interactive button\nconst createButton = () => {\n  const button = document.createElement("button");\n  button.textContent = "Click Me!";\n  button.style.padding = "12px 24px";\n  button.style.fontSize = "16px";\n  button.style.cursor = "pointer";\n  \n  button.onclick = () => {\n    alert("Hello from Web Builder!");\n  };\n  \n  return button;\n};\n\n// Usage: Uncomment to test\n// document.body.appendChild(createButton());');
-  const [previewCode, setPreviewCode] = useState(`import React from 'react';
-
-export default function App() {
-  return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-      <div className="text-center p-8">
-        <h1 className="text-4xl font-bold mb-4">Welcome to AI Web Builder</h1>
-        <p className="text-muted-foreground">Use the AI Code Assistant to generate components</p>
-      </div>
-    </div>
-  );
-}`);
+  const [previewCode, setPreviewCode] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const splitViewDropZoneRef = useRef<HTMLDivElement>(null);
   const livePreviewRef = useRef<VFSPreviewHandle | null>(null);

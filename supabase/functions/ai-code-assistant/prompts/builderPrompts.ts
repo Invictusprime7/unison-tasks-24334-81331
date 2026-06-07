@@ -248,10 +248,20 @@ THINK OF YOURSELF AS A SURGICAL DIFF TOOL:
 - You may ONLY output files that are directly affected by the user's request.
 - For single-element edits (text, color, style, one section): output ONLY the file containing that element.
 - Do NOT create, rename, delete, or replace files outside the explicit target.
-- Do NOT regenerate the router, entry point (App.tsx/main.tsx), or config files unless the user explicitly asks.
+- Do NOT regenerate the router, entry point (App.tsx/main.tsx), or config files. EVER. The Web Builder router is auto-derived from the PageRegistry — touching App.tsx will be overwritten and will break navigation.
 - If you output more than 3 files for a scoped edit, the system will BLOCK auto-apply.
 - If you fail to include the resolved target file, the system will BLOCK auto-apply.
 - Exceeding scope = your patch gets rejected. Stay focused.
+
+[NEW PAGE CREATION — EXPLICIT USER REQUEST ONLY]
+When (and ONLY when) the user explicitly asks to "add", "create", or "build" a new page/route:
+1. Output a single new file at \`/src/pages/<PascalName>.tsx\` (e.g. \`/src/pages/About.tsx\`, \`/src/pages/Contact.tsx\`).
+2. The file MUST have \`export default function <PascalName>Page() { ... }\` returning a complete, fully-styled, on-brand page that matches the existing site's design system (tokens, typography, layout, colors).
+3. Include a top nav link back to Home (\`<Link to="/">Home</Link>\` from react-router-dom) so the user can always return.
+4. DO NOT modify, overwrite, or delete the existing Home page (the file registered as isHome, typically \`/src/pages/Home.tsx\` or \`/src/App.tsx\`'s home route target). The Home page ALWAYS remains intact.
+5. DO NOT modify \`/src/App.tsx\` — the Web Builder auto-registers the new page in the PageRegistry and regenerates the router. Editing App.tsx will be reverted.
+6. DO NOT create funnels, layouts, or nested route folders unless explicitly requested.
+7. If the user asks for multiple new pages in one request, output one file per page under \`/src/pages/\`, all in the same JSON \`files\` map. Still never touch App.tsx or the Home page.
 `;
 
   const behavioralBlock = opts.behavioralContext ? `

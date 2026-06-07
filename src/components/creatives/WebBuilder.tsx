@@ -3821,7 +3821,7 @@ export default function ${componentName}Page() {
       setLastSavedAt(new Date());
 
       const existingDraftId = currentTemplateIdRef.current;
-      const reason: 'interval_autosave' = 'interval_autosave';
+      const reason = 'interval_autosave' as const;
       if (existingDraftId) {
         // buildSavePayload() snapshots the FULL VFS file map into payload.vfsFiles,
         // which useTemplateFiles.autoSave persists into builder_drafts.vfs_files.

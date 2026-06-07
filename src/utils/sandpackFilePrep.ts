@@ -3846,7 +3846,9 @@ function generateMissingComponents(sandpackFiles: Record<string, string>): void 
 }
 
 function pickPrimaryComponentPath(paths: string[]): string | null {
-  const uniquePaths = [...new Set(paths)].filter((path) => path !== '/hooks-shim.ts');
+  const uniquePaths = [...new Set(paths)].filter(
+    (path) => path !== '/hooks-shim.ts' && !/(^|\/)unison\//i.test(path),
+  );
 
   return uniquePaths.find((path) => path === '/App.tsx' || path === '/App.jsx')
     || uniquePaths.find((path) => /\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(path))
@@ -4907,7 +4909,7 @@ export function prepareSandpackFiles(
     processedContent = injectPreviewNavBridge(processedContent, normalizedPath);
     sandpackFiles[normalizedPath] = processedContent;
 
-    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts') {
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts' && !/(^|\/)unison\//i.test(normalizedPath)) {
       componentFilePaths.push(normalizedPath);
     }
     if (normalizedPath === '/App.tsx' || normalizedPath === '/App.jsx') hasApp = true;

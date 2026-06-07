@@ -105,7 +105,14 @@ export function normalizeLauncherEntryPoint(entryPoint: unknown): string | undef
 }
 
 export function isRenderableLauncherEntryPath(path: string): boolean {
-  return /\.(tsx|jsx|ts|js)$/i.test(path) && !/\/(main|index)\.(tsx|jsx|ts|js)$/i.test(path);
+  // Only .tsx/.jsx files are React component candidates. Data modules (.ts/.js),
+  // entry shells (main/index), and canonical Unison data registries (/unison/*)
+  // must never be selected as the renderable entry — they don't export a React
+  // component and result in "No renderable component found" diagnostics.
+  if (!/\.(tsx|jsx)$/i.test(path)) return false;
+  if (/\/(main|index)\.(tsx|jsx)$/i.test(path)) return false;
+  if (/(^|\/)unison\//i.test(path)) return false;
+  return true;
 }
 
 export function resolveLauncherEntryPoint(
@@ -114,14 +121,20 @@ export function resolveLauncherEntryPoint(
 ): string {
   const normalizedPreferred = normalizeLauncherEntryPoint(preferred);
 
-  if (normalizedPreferred && files[normalizedPreferred]) {
+  if (
+    normalizedPreferred &&
+    files[normalizedPreferred] &&
+    isRenderableLauncherEntryPath(normalizedPreferred)
+  ) {
     return normalizedPreferred;
   }
 
   return (
     (files['/src/App.tsx'] ? '/src/App.tsx' : null) ||
     (files['/App.tsx'] ? '/App.tsx' : null) ||
-    Object.keys(files).find((path) => /\/pages\/.+\.(tsx|jsx|ts|js)$/i.test(path)) ||
+    Object.keys(files).find(
+      (path) => /\/pages\/.+\.(tsx|jsx)$/i.test(path) && !/(^|\/)unison\//i.test(path),
+    ) ||
     Object.keys(files).find((path) => isRenderableLauncherEntryPath(path)) ||
     '/src/App.tsx'
   );

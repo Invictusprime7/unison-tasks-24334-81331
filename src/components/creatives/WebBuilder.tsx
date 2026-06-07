@@ -6512,7 +6512,34 @@ export default function ${componentName}() {
 
                   const effectiveSystemType = (activeSystemType || (systemType as BusinessSystemType) || null) as BusinessSystemType | null;
                   const normalizedFiles = { ...files };
-                  
+
+                  // Guard: AI must never overwrite the canonical router. It is
+                  // auto-derived from the PageRegistry by the registry-version
+                  // effect; allowing AI to write App.tsx would break multi-page
+                  // navigation (especially the Home route).
+                  if (normalizedFiles['/src/App.tsx']) {
+                    console.warn('[WebBuilder] Stripping AI-authored /src/App.tsx — router is auto-derived from PageRegistry');
+                    delete normalizedFiles['/src/App.tsx'];
+                  }
+
+                  // Guard: AI must never overwrite or delete the Home page
+                  // unless the user explicitly targeted it. The Home page
+                  // always remains as the anchor route.
+                  const homePage = Object.values(creatorPlayground.pageRegistry.pages).find(p => p.isHome);
+                  const homeFilePath = homePage?.filePath;
+                  if (homeFilePath && normalizedFiles[homeFilePath]) {
+                    const targetingHome = activePagePath === homeFilePath;
+                    if (!targetingHome) {
+                      console.warn(`[WebBuilder] Stripping AI write to Home page (${homeFilePath}) — Home must remain intact`);
+                      delete normalizedFiles[homeFilePath];
+                    }
+                  }
+
+                  if (Object.keys(normalizedFiles).length === 0) {
+                    toast.error('Patch rejected', { description: 'AI tried to modify only protected files (router / Home page).' });
+                    return false;
+                  }
+
                   if (files["/index.html"]) {
                     const normalized = normalizeTemplateForCtaContract({
                       code: files["/index.html"],
@@ -6522,14 +6549,28 @@ export default function ${componentName}() {
                     setTemplateCtaAnalysis(normalized.analysis);
                     console.log('[WebBuilder] Auto-wired intents in file patch:', normalized.analysis.intents);
                   }
-                  
+
                   importBuilderFiles(normalizedFiles, {
                     preferredPath: activePagePath,
                     entryPoint: activePagePath,
                   });
 
+                  // Detect new pages so the user gets immediate feedback that a
+                  // route was added (the orphan-detection effect will register
+                  // them in PageRegistry and the router-sync effect will rebuild
+                  // /src/App.tsx automatically).
+                  const newPages = Object.keys(normalizedFiles).filter(p =>
+                    /^\/src\/pages\/[^/]+\.tsx$/.test(p) && p !== homeFilePath
+                  );
+
                   setViewMode('canvas');
-                  toast.success('Files updated', { description: 'Approved patch plan applied to project files' });
+                  if (newPages.length > 0) {
+                    toast.success(`Added ${newPages.length} new page${newPages.length > 1 ? 's' : ''}`, {
+                      description: newPages.map(p => p.split('/').pop()).join(', '),
+                    });
+                  } else {
+                    toast.success('Files updated', { description: 'Approved patch plan applied to project files' });
+                  }
                   return true;
                 }}
               />

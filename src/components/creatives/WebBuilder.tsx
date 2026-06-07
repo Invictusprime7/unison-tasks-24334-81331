@@ -6517,9 +6517,20 @@ export default function ${componentName}() {
                   // auto-derived from the PageRegistry by the registry-version
                   // effect; allowing AI to write App.tsx would break multi-page
                   // navigation (especially the Home route).
-                  if (normalizedFiles['/src/App.tsx']) {
-                    console.warn('[WebBuilder] Stripping AI-authored /src/App.tsx — router is auto-derived from PageRegistry');
-                    delete normalizedFiles['/src/App.tsx'];
+                  // Strip all auto-generated/protected entry-shell files. These
+                  // are owned by the canonical pipeline; AI edits to them are
+                  // always overwritten and frequently introduce syntax errors
+                  // that the AI then tries to "fix" in prose.
+                  const protectedPaths = [
+                    '/src/App.tsx', '/App.tsx',
+                    '/src/main.tsx', '/main.tsx',
+                    '/src/index.css', '/index.css',
+                  ];
+                  for (const p of protectedPaths) {
+                    if (normalizedFiles[p]) {
+                      console.warn(`[WebBuilder] Stripping AI-authored ${p} — owned by canonical pipeline`);
+                      delete normalizedFiles[p];
+                    }
                   }
 
                   // Guard: AI must never overwrite or delete the Home page

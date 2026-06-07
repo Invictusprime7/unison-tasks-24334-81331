@@ -142,8 +142,6 @@ import {
   patchVFS,
   resolveNavigationTarget,
   deriveFilePath,
-  scaffoldMissingTopologyPagesWithRouter,
-  getTopologyPagesForAIGeneration,
 } from '@/services/unifiedPreviewPipeline';
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';

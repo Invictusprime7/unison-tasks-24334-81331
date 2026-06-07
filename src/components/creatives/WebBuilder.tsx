@@ -2337,18 +2337,7 @@ export default function App() {
           activeSitePlanRef.current = dbPlan;
           const registry = populateRegistryFromTopology(dbPlan);
           creatorPlayground.hydrateCanonicalState({ pageRegistry: registry });
-          const existingFiles = virtualFS.getSandpackFiles();
-          const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, registry);
-          if (Object.keys(missingFiles).length > 0) {
-            virtualFS.importFiles(missingFiles);
-          }
-          // Trigger AI generation for placeholder pages
-          const pagesToGenerate = getTopologyPagesForAIGeneration(dbPlan, existingFiles);
-          for (const page of pagesToGenerate) {
-            const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
-            triggerPageGenRef.current(pageName, page.title, null);
-          }
-          console.log('[WebBuilder] Recovered topology from DB, AI generating', pagesToGenerate.length, 'pages');
+          console.log('[WebBuilder] Recovered topology from DB without scaffolding fallback pages');
         }
       });
       return; // will be handled by async callback
@@ -2391,26 +2380,7 @@ export default function App() {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }
 
-      // Auto-scaffold placeholders + router for missing pages
-      const existingFiles = virtualFS.getSandpackFiles();
-      const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, canonicalRegistry || populateRegistryFromTopology(sitePlan));
-      if (Object.keys(missingFiles).length > 0) {
-        virtualFS.importFiles(missingFiles);
-        console.log(`[WebBuilder] Scaffolded ${Object.keys(missingFiles).length} placeholder pages:`, Object.keys(missingFiles));
-      }
-
-      // Trigger AI generation to replace placeholders with real content
-      const pagesToGenerate = getTopologyPagesForAIGeneration(sitePlan, existingFiles);
-      if (pagesToGenerate.length > 0) {
-        console.log(`[WebBuilder] AI generating ${pagesToGenerate.length} pages from topology`);
-        // Stagger AI calls to avoid rate limits
-        pagesToGenerate.forEach((page, idx) => {
-          const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
-          setTimeout(() => {
-            triggerPageGenRef.current(pageName, page.title, null);
-          }, idx * 1500); // 1.5s stagger between pages
-        });
-      }
+      console.log('[WebBuilder] Topology hydrated without scaffolded fallback pages');
     } else if (snapshot?.vfsFiles && Object.keys(snapshot.vfsFiles).length > 0) {
       const existingFiles = virtualFS.getSandpackFiles();
       const missingSnapshotFiles = Object.fromEntries(

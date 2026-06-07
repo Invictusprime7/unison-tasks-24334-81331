@@ -4875,11 +4875,8 @@ export function prepareSandpackFiles(
       );
     }
 
-    // SAFETY NET: Prose-only TSX (AI emitted narration instead of a component).
-    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isProseOnlyModule(processedContent)) {
-      console.warn(`[sandpackFilePrep] Prose-only module detected at ${normalizedPath} — injecting safe fallback`);
-      processedContent = buildProseFallback(normalizedPath);
-    }
+    // Prose-only TSX must remain invalid so the wizard can reject/regenerate it;
+    // never replace it with preview fallback UI.
 
     // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {
@@ -5068,17 +5065,8 @@ export function prepareSandpackFiles(
   // the generateMissingComponents pass (which only scans import statements).
   autoInjectMissingJsxImports(sandpackFiles);
 
-  // ── Generate real components for missing relative imports ──
-  // Run BEFORE App.tsx export validation so generated sub-components exist first.
-  // Run up to 3 passes to resolve transitive imports (generated components may import others).
-  // Re-run autoInjectMissingJsxImports each pass so generated files also get imports injected.
-  for (let pass = 0; pass < 3; pass++) {
-    const beforeCount = Object.keys(sandpackFiles).length;
-    generateMissingComponents(sandpackFiles);
-    if (Object.keys(sandpackFiles).length === beforeCount) break;
-    console.log(`[sandpackFilePrep] Component generation pass ${pass + 1}: ${Object.keys(sandpackFiles).length - beforeCount} new files`);
-    autoInjectMissingJsxImports(sandpackFiles);
-  }
+  // Missing relative imports must surface as preview diagnostics. Do not
+  // synthesize fallback/template components into wizard-generated sites.
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {

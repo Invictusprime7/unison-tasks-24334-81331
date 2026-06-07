@@ -181,6 +181,17 @@ function isCanonicalRouterSource(code: string): boolean {
   return /react-router-dom|<Routes\b|<Route\b|HashRouter|BrowserRouter|createBrowserRouter/.test(code);
 }
 
+function isWizardFallbackOrRouterOnlySource(code: string): boolean {
+  const trimmed = code.trim();
+  if (!trimmed) return true;
+  if (isBuilderBootstrapPreviewCode(trimmed)) return true;
+  if (isCanonicalRouterSource(trimmed)) return true;
+  if (/Generating page content|This page is ready to be edited|A refined launch page ready for your next edit|New site preview/i.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Escape special characters in CSS selectors (e.g., Tailwind brackets like `min-h-[85vh]`)
  */
@@ -3004,7 +3015,7 @@ export default function ${componentName}Page() {
     // Sync if previewCode has content and actually changed since last sync.
     // Guardrail: the builder bootstrap component is only an editor placeholder;
     // never let it overwrite wizard/launcher VFS state as /src/App.tsx.
-    if (previewCode && isBuilderBootstrapPreviewCode(previewCode)) {
+    if (previewCode && isWizardFallbackOrRouterOnlySource(previewCode)) {
       return;
     }
 
@@ -3810,7 +3821,7 @@ export default function ${componentName}Page() {
       setLastSavedAt(new Date());
 
       const existingDraftId = currentTemplateIdRef.current;
-      const reason: 'interval_autosave' = 'interval_autosave';
+      const reason = 'interval_autosave' as const;
       if (existingDraftId) {
         // buildSavePayload() snapshots the FULL VFS file map into payload.vfsFiles,
         // which useTemplateFiles.autoSave persists into builder_drafts.vfs_files.
@@ -4723,7 +4734,7 @@ export default function ${componentName}Page() {
       }
 
       if (Object.keys(vfsFiles).length > 0) {
-        const editableEntryPath = resolveLauncherEntryPoint(
+        const editableEntryPath = selectEditableEntryPath(
           vfsFiles,
           normalizedEntryPoint || launchEntryPoint,
         ) || activePagePath;

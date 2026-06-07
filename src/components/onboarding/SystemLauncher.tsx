@@ -537,7 +537,7 @@ function assessWizardGenerationQuality(
     combined.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
   ).length;
   const intentCount = (combined.match(/data-ut-intent=/g) || []).length;
-  const placeholderPattern = /AI-generated code will appear here|This page is ready to be edited|Generating page content|Welcome to AI Web Builder|Lorem ipsum|Coming soon/i;
+  const placeholderPattern = /AI-generated code will appear here|This page is ready to be edited|Generating page content|Welcome to AI Web Builder|Lorem ipsum|Coming soon|New site preview|refined launch page ready for your next edit|fallback keeps the experience polished|generated content, bindings, and business data continue to hydrate/i;
   const hasRenderablePage = tsxEntries.some(([path, content]) => {
     if (/\/src\/App\.tsx$/.test(path) && /<Routes\b|<Route\b|HashRouter|BrowserRouter|react-router-dom/.test(content)) {
       return false;
@@ -557,6 +557,9 @@ function assessWizardGenerationQuality(
   }
   if (sectionCount < expectedSections) {
     return { ok: false, reason: `generated output has too few sections (${sectionCount}/${expectedSections})`, totalChars, sectionCount, intentCount };
+  }
+  if (intentCount < 1) {
+    return { ok: false, reason: 'generated output has no canonical data-ut-intent wiring', totalChars, sectionCount, intentCount };
   }
 
   return { ok: true, totalChars, sectionCount, intentCount };

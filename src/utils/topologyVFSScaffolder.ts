@@ -136,16 +136,9 @@ export function scaffoldMissingTopologyPages(
   plan: GeneratedSitePlan,
   existingFiles: Record<string, string>
 ): Record<string, string> {
-  const newFiles: Record<string, string> = {};
-  const template = resolveActiveTemplate(plan);
-
-  for (const page of plan.pages) {
-    if (!existingFiles[page.filePath]) {
-      newFiles[page.filePath] = generateTopologyPlaceholder(page, plan, template);
-    }
-  }
-
-  return newFiles;
+  void plan;
+  void existingFiles;
+  return {};
 }
 
 /**
@@ -203,17 +196,7 @@ export function generateTopologyPlaceholder(
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null
 ): string {
-  const activeTemplate = template ?? resolveActiveTemplate(plan);
-
-  // Preferred path: serialize a real role-filtered sub-composition.
-  if (activeTemplate) {
-    const subComposition = buildRoleComposition(activeTemplate, page.role, page);
-    if (subComposition) {
-      return compositionToReactCode(subComposition);
-    }
-  }
-
-  // Fallback: minimal navigable placeholder (preserves prior behavior).
+  void template;
   return generateSpinnerPlaceholder(page, plan);
 }
 

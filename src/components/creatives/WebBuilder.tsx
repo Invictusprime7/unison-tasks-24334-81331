@@ -142,8 +142,6 @@ import {
   patchVFS,
   resolveNavigationTarget,
   deriveFilePath,
-  scaffoldMissingTopologyPagesWithRouter,
-  getTopologyPagesForAIGeneration,
 } from '@/services/unifiedPreviewPipeline';
 import { getProjectByIdCompat } from '@/services/projectSchemaCompat';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
@@ -1269,18 +1267,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [isInteractiveModeHelpOpen, setIsInteractiveModeHelpOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [editorCode, setEditorCode] = useState('// AI Web Builder - JavaScript Mode\n// Use vanilla JavaScript to create interactive web experiences\n\n// Example: Create a simple interactive button\nconst createButton = () => {\n  const button = document.createElement("button");\n  button.textContent = "Click Me!";\n  button.style.padding = "12px 24px";\n  button.style.fontSize = "16px";\n  button.style.cursor = "pointer";\n  \n  button.onclick = () => {\n    alert("Hello from Web Builder!");\n  };\n  \n  return button;\n};\n\n// Usage: Uncomment to test\n// document.body.appendChild(createButton());');
-  const [previewCode, setPreviewCode] = useState(`import React from 'react';
-
-export default function App() {
-  return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-      <div className="text-center p-8">
-        <h1 className="text-4xl font-bold mb-4">Welcome to AI Web Builder</h1>
-        <p className="text-muted-foreground">Use the AI Code Assistant to generate components</p>
-      </div>
-    </div>
-  );
-}`);
+  const [previewCode, setPreviewCode] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const splitViewDropZoneRef = useRef<HTMLDivElement>(null);
   const livePreviewRef = useRef<VFSPreviewHandle | null>(null);
@@ -2339,18 +2326,7 @@ export default function App() {
           activeSitePlanRef.current = dbPlan;
           const registry = populateRegistryFromTopology(dbPlan);
           creatorPlayground.hydrateCanonicalState({ pageRegistry: registry });
-          const existingFiles = virtualFS.getSandpackFiles();
-          const missingFiles = scaffoldMissingTopologyPagesWithRouter(dbPlan, existingFiles, registry);
-          if (Object.keys(missingFiles).length > 0) {
-            virtualFS.importFiles(missingFiles);
-          }
-          // Trigger AI generation for placeholder pages
-          const pagesToGenerate = getTopologyPagesForAIGeneration(dbPlan, existingFiles);
-          for (const page of pagesToGenerate) {
-            const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
-            triggerPageGenRef.current(pageName, page.title, null);
-          }
-          console.log('[WebBuilder] Recovered topology from DB, AI generating', pagesToGenerate.length, 'pages');
+          console.log('[WebBuilder] Recovered topology from DB without scaffolding fallback pages');
         }
       });
       return; // will be handled by async callback
@@ -2393,26 +2369,7 @@ export default function App() {
         console.warn('[WebBuilder] Topology validation warnings:', sitePlan.validationErrors);
       }
 
-      // Auto-scaffold placeholders + router for missing pages
-      const existingFiles = virtualFS.getSandpackFiles();
-      const missingFiles = scaffoldMissingTopologyPagesWithRouter(sitePlan, existingFiles, canonicalRegistry || populateRegistryFromTopology(sitePlan));
-      if (Object.keys(missingFiles).length > 0) {
-        virtualFS.importFiles(missingFiles);
-        console.log(`[WebBuilder] Scaffolded ${Object.keys(missingFiles).length} placeholder pages:`, Object.keys(missingFiles));
-      }
-
-      // Trigger AI generation to replace placeholders with real content
-      const pagesToGenerate = getTopologyPagesForAIGeneration(sitePlan, existingFiles);
-      if (pagesToGenerate.length > 0) {
-        console.log(`[WebBuilder] AI generating ${pagesToGenerate.length} pages from topology`);
-        // Stagger AI calls to avoid rate limits
-        pagesToGenerate.forEach((page, idx) => {
-          const pageName = page.filePath.split('/').pop()?.replace('.tsx', '')?.toLowerCase() || '';
-          setTimeout(() => {
-            triggerPageGenRef.current(pageName, page.title, null);
-          }, idx * 1500); // 1.5s stagger between pages
-        });
-      }
+      console.log('[WebBuilder] Topology hydrated without scaffolded fallback pages');
     } else if (snapshot?.vfsFiles && Object.keys(snapshot.vfsFiles).length > 0) {
       const existingFiles = virtualFS.getSandpackFiles();
       const missingSnapshotFiles = Object.fromEntries(

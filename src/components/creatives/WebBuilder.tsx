@@ -127,7 +127,7 @@ import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
 import { getTemplateReactCodeWithCSS } from '@/data/templates';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
-import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from '@/types/playground';
+import type { PlaygroundCompileResult, PlaygroundSetupSnapshot, PlaygroundState, WizardSelections } from '@/types/playground';
 import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
@@ -1141,6 +1141,8 @@ interface WebBuilderRouteState {
   compiledPlayground?: PlaygroundCompileResult;
   pipelineManifest?: RuntimeManifest;
   wizardSelections?: WizardSelections;
+  setupSnapshot?: PlaygroundSetupSnapshot;
+  nativeReadinessManifest?: Record<string, unknown>;
 }
 
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
@@ -1175,6 +1177,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       compiledPlayground: launch.compiledPlayground,
       pipelineManifest: launch.pipelineManifest,
       wizardSelections: launch.wizardSelections,
+      setupSnapshot: launch.setupSnapshot,
+      nativeReadinessManifest: launch.nativeReadinessManifest,
     };
   }, [launch]);
   const effectiveRouteState = useMemo<WebBuilderRouteState | null>(() => {
@@ -3191,12 +3195,20 @@ export default function ${componentName}Page() {
     return () => { cancelled = true; };
   }, [businessId, projectId]);
 
-  const playgroundSetupSnapshot = useMemo(() => ({
-    publishStatus: cloudState.project.publishStatus,
-    customDomain: cloudState.project.customDomain,
-    notificationEmail: cloudState.business.notificationEmail,
-    projectName: cloudState.project.name,
-  }), [cloudState.business.notificationEmail, cloudState.project.customDomain, cloudState.project.name, cloudState.project.publishStatus]);
+  const playgroundSetupSnapshot = useMemo<PlaygroundSetupSnapshot>(() => ({
+    ...(effectiveRouteState?.setupSnapshot || {}),
+    publishStatus: cloudState.project.publishStatus || effectiveRouteState?.setupSnapshot?.publishStatus || null,
+    customDomain: cloudState.project.customDomain || effectiveRouteState?.setupSnapshot?.customDomain || null,
+    notificationEmail: cloudState.business.notificationEmail || effectiveRouteState?.setupSnapshot?.notificationEmail || null,
+    projectName: cloudState.project.name || effectiveRouteState?.setupSnapshot?.projectName || null,
+    setupSteps: effectiveRouteState?.setupSnapshot?.setupSteps,
+  }), [
+    cloudState.business.notificationEmail,
+    cloudState.project.customDomain,
+    cloudState.project.name,
+    cloudState.project.publishStatus,
+    effectiveRouteState?.setupSnapshot,
+  ]);
 
   const playgroundReadinessReport = useMemo(() => buildIntentReadinessReport(
     {

@@ -14,7 +14,7 @@ import type { LauncherHandoff, RuntimeManifest } from './runtimeManifest';
 import type { SystemsBuildContext } from './systemsBuildContext';
 import type { GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import type { LayoutCategory } from '@/data/templates/types';
-import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from './playground';
+import type { PlaygroundCompileResult, PlaygroundSetupSnapshot, PlaygroundState, WizardSelections } from './playground';
 import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
 
 // ============================================================================
@@ -96,6 +96,8 @@ export interface LaunchState {
   compiledPlayground?: PlaygroundCompileResult;
   pipelineManifest?: RuntimeManifest;
   wizardSelections?: WizardSelections;
+  setupSnapshot?: PlaygroundSetupSnapshot;
+  nativeReadinessManifest?: Record<string, unknown>;
   /**
    * When true, WebBuilder keeps wizard topology metadata available but does not
    * auto-hydrate page registry/routes on initial launch.

@@ -94,7 +94,11 @@ function getSlotMarkers(binding: PlaygroundBinding): string[] {
   if (slot === 'card-cta') return ['cta.card'];
   if (slot === 'checkout-cta') return ['cta.checkout'];
   if (slot === 'form-submit') return ['cta.form-submit'];
+  if (slot === 'newsletter-submit') return ['cta.newsletter-submit', 'cta.newsletter'];
   if (slot === 'newsletter') return ['cta.newsletter'];
+  if (slot === 'phone-link') return ['cta.phone', 'icon.phone'];
+  if (slot === 'email-link') return ['cta.email', 'icon.email'];
+  if (slot === 'address-link') return ['cta.address', 'cta.directions', 'icon.address'];
   if (slot === 'cart-trigger') return ['icon.cart'];
   if (slot.startsWith('icon-')) return [`icon.${slot.replace(/^icon-/, '')}`];
   if (slot === 'nav-link') return ['cta.nav-link'];

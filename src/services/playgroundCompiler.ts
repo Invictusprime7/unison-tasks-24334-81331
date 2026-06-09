@@ -69,6 +69,15 @@ export function compilePlayground(
     vfsFiles['/src/App.tsx'] = routerContent;
   }
 
+  // Inject canonical root config files (.json + tooling) so the wizard runtime
+  // VFS always has package.json/tsconfig/vite/tailwind/postcss, matching what
+  // canonical launch and live preview expect. Idempotent — won't overwrite
+  // existing user-authored config files.
+  const hydratedVfsFiles = ensureViteRootFiles(vfsFiles);
+  for (const [p, c] of Object.entries(hydratedVfsFiles)) {
+    if (!(p in vfsFiles)) vfsFiles[p] = c;
+  }
+
   const homeRoute = pages.find((p) => p.isHome)?.path || '/';
   const routes = pages
     .filter((p) => !p.isHome)

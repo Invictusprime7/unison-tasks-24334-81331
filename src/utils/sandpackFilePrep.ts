@@ -4936,14 +4936,20 @@ export function prepareSandpackFiles(
       if (sandpackFiles[entryFlattened]) {
         sandpackFiles['/App.tsx'] = createProxyApp(entryFlattened);
       } else {
-        sandpackFiles['/App.tsx'] = createMissingEntryApp();
+        const fallbackPath = pickPrimaryComponentPath(componentFilePaths);
+        if (fallbackPath) {
+          sandpackFiles['/App.tsx'] = createProxyApp(fallbackPath);
+          console.warn(`[sandpackFilePrep] Strict entry ${entryFlattened} missing — proxying to ${fallbackPath}`);
+        } else {
+          console.warn('[sandpackFilePrep] Strict entry missing and no component candidates — leaving App.tsx unwritten');
+        }
       }
     } else {
       const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
       if (primaryComponentPath) {
         sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
       } else {
-        sandpackFiles['/App.tsx'] = createMissingEntryApp();
+        console.warn('[sandpackFilePrep] No App.tsx and no component candidates — leaving App.tsx unwritten (no fallback template)');
       }
     }
   }

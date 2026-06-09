@@ -66,9 +66,9 @@ export const ContactCentered: React.FC<BaseSectionProps<'contact'>> = ({ section
 
         {(phone || email || address) && (
           <div className="mt-8 text-center text-sm space-y-1" style={{ color: hsl(theme.colors.mutedForeground) }}>
-            {phone && <p>{phone}</p>}
-            {email && <p>{email}</p>}
-            {address && <p>{address}</p>}
+            {phone && <p><a href={`tel:${phone}`} data-ut-cta="cta.phone" style={{ color: 'inherit', textDecoration: 'none' }}>{phone}</a></p>}
+            {email && <p><a href={`mailto:${email}`} data-ut-cta="cta.email" style={{ color: 'inherit', textDecoration: 'none' }}>{email}</a></p>}
+            {address && <p><a href={`https://maps.google.com/?q=${encodeURIComponent(address)}`} target="_blank" rel="noopener noreferrer" data-ut-cta="cta.address" style={{ color: 'inherit', textDecoration: 'none' }}>{address}</a></p>}
           </div>
         )}
       </div>

@@ -73,18 +73,27 @@ export const ContactMinimalInline: React.FC<BaseSectionProps<'contact'>> = ({ se
 
         {(phone || email || address) && (
           <div className="flex gap-4 justify-center flex-wrap">
-            {[email, phone, address].filter(Boolean).map((info, i) => (
-              <span
+            {([
+              email ? { value: email, href: `mailto:${email}`, cta: 'cta.email' } : null,
+              phone ? { value: phone, href: `tel:${phone}`, cta: 'cta.phone' } : null,
+              address ? { value: address, href: `https://maps.google.com/?q=${encodeURIComponent(address)}`, cta: 'cta.address' } : null,
+            ].filter(Boolean) as Array<{ value: string; href: string; cta: string }>).map((info, i) => (
+              <a
                 key={i}
+                href={info.href}
+                data-ut-cta={info.cta}
+                target={info.cta === 'cta.address' ? '_blank' : undefined}
+                rel={info.cta === 'cta.address' ? 'noopener noreferrer' : undefined}
                 className="text-xs px-3 py-1.5 rounded-full"
                 style={{
                   background: hsl(theme.colors.card),
                   color: hsl(theme.colors.mutedForeground),
                   border: `1px solid ${hsla(theme.colors.border, 0.5)}`,
+                  textDecoration: 'none',
                 }}
               >
-                {info}
-              </span>
+                {info.value}
+              </a>
             ))}
           </div>
         )}

@@ -86,19 +86,19 @@ export const ContactSplitCard: React.FC<BaseSectionProps<'contact'>> = ({ sectio
             {email && (
               <div>
                 <p className="text-xs uppercase tracking-wider mb-1" style={{ color: hsl(theme.colors.mutedForeground) }}>Email</p>
-                <p className="text-sm" style={{ color: hsl(theme.colors.cardForeground) }}>{email}</p>
+                <p className="text-sm" style={{ color: hsl(theme.colors.cardForeground) }}><a href={`mailto:${email}`} data-ut-cta="cta.email" style={{ color: 'inherit', textDecoration: 'none' }}>{email}</a></p>
               </div>
             )}
             {phone && (
               <div>
                 <p className="text-xs uppercase tracking-wider mb-1" style={{ color: hsl(theme.colors.mutedForeground) }}>Phone</p>
-                <p className="text-sm" style={{ color: hsl(theme.colors.cardForeground) }}>{phone}</p>
+                <p className="text-sm" style={{ color: hsl(theme.colors.cardForeground) }}><a href={`tel:${phone}`} data-ut-cta="cta.phone" style={{ color: 'inherit', textDecoration: 'none' }}>{phone}</a></p>
               </div>
             )}
             {address && (
               <div>
                 <p className="text-xs uppercase tracking-wider mb-1" style={{ color: hsl(theme.colors.mutedForeground) }}>Address</p>
-                <p className="text-sm" style={{ color: hsl(theme.colors.cardForeground) }}>{address}</p>
+                <p className="text-sm" style={{ color: hsl(theme.colors.cardForeground) }}><a href={`https://maps.google.com/?q=${encodeURIComponent(address)}`} target="_blank" rel="noopener noreferrer" data-ut-cta="cta.address" style={{ color: 'inherit', textDecoration: 'none' }}>{address}</a></p>
               </div>
             )}
           </div>

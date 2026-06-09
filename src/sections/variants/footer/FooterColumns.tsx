@@ -53,6 +53,7 @@ export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, t
                 />
                 <button
                   type="submit"
+                  data-ut-cta="cta.newsletter-submit"
                   className="text-sm px-3 py-2 cursor-pointer hover:opacity-90"
                   style={{
                     background: hsl(theme.colors.primary),

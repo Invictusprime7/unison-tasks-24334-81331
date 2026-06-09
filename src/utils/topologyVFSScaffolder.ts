@@ -131,14 +131,26 @@ function buildRoleComposition(
 /**
  * Given a site plan and existing VFS files, returns a map of files that
  * need to be created to satisfy the topology.
+ *
+ * When `template` is provided (or resolvable from the plan), missing pages
+ * are scaffolded as role-filtered slices of the template's composition via
+ * `buildRoleComposition` + `compositionToReactCode`, so sub-pages added
+ * post-wizard inherit the same section vocabulary and styling as the seed
+ * `/src/App.tsx`. Without a usable composition, falls back to a spinner
+ * placeholder that the AI can later enrich.
  */
 export function scaffoldMissingTopologyPages(
   plan: GeneratedSitePlan,
-  existingFiles: Record<string, string>
+  existingFiles: Record<string, string>,
+  template?: TemplateComposition | null,
 ): Record<string, string> {
-  void plan;
-  void existingFiles;
-  return {};
+  const out: Record<string, string> = {};
+  const activeTemplate = template ?? resolveActiveTemplate(plan);
+  const missing = getMissingTopologyPages(plan, existingFiles);
+  for (const page of missing) {
+    out[page.filePath] = generateTopologyPlaceholder(page, plan, activeTemplate);
+  }
+  return out;
 }
 
 /**
@@ -149,9 +161,10 @@ export function scaffoldMissingTopologyPages(
 export function scaffoldMissingTopologyPagesWithRouter(
   plan: GeneratedSitePlan,
   existingFiles: Record<string, string>,
-  registry: PageRegistry
+  registry: PageRegistry,
+  template?: TemplateComposition | null,
 ): Record<string, string> {
-  const newFiles = scaffoldMissingTopologyPages(plan, existingFiles);
+  const newFiles = scaffoldMissingTopologyPages(plan, existingFiles, template);
 
   // Always regenerate the canonical router so all pages are routable.
   // IMPORTANT: Use plan-based router generation instead of registry-based,
@@ -196,7 +209,17 @@ export function generateTopologyPlaceholder(
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null
 ): string {
-  void template;
+  const active = template ?? resolveActiveTemplate(plan);
+  if (active) {
+    const sub = buildRoleComposition(active, page.role, page);
+    if (sub) {
+      try {
+        return compositionToReactCode(sub);
+      } catch {
+        // fall through to spinner on any renderer failure
+      }
+    }
+  }
   return generateSpinnerPlaceholder(page, plan);
 }
 

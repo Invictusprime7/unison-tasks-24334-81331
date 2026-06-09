@@ -1736,23 +1736,11 @@ export default function App() {
 `;
 }
 
-function createMissingEntryApp(): string {
-  return `import React from 'react';
+// createMissingEntryApp() was intentionally removed. Wizard/launcher-generated
+// sites must never be replaced with a diagnostic fallback template — if the
+// preview cannot render the AI output, surface the real runtime error from
+// DEFAULT_INDEX instead of substituting a placeholder.
 
-export default function App() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-      <div className="max-w-lg rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-foreground">Invalid Launcher preview payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The preview did not receive a renderable industry-theme React entry file from Launcher.
-        </p>
-      </div>
-    </div>
-  );
-}
-`;
-}
 
 // ── Real component generators keyed by section name ─────────────────────────
 // When the AI generates App.tsx that imports ./components/Hero etc. but omits

@@ -18,6 +18,7 @@ import type {
   PlaygroundSetupStepSnapshot,
   PlaygroundState,
 } from '@/platform/core/playground';
+import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 
 export type NativeSetupStepId =
   | 'database'

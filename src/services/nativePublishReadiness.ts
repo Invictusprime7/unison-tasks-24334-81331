@@ -130,18 +130,43 @@ export function buildNativePublishReadinessManifest(
   const notificationStep = input.setupSnapshot?.setupSteps?.find((s) => s.id === 'notifications');
   const bookingStep = input.setupSnapshot?.setupSteps?.find((s) => s.id === 'booking_calendar');
 
+  // Industry intent coverage — verifies the synthesis pass left no required
+  // intent unbound and no forbidden intent leaked through.
+  const profile = input.industryOverlay ? getIndustryIntentProfile(input.industryOverlay) : undefined;
+  const boundIntents = new Set(bindingList.map((b) => b.coreIntent).filter(Boolean) as string[]);
+  const unsatisfiedRequired = profile
+    ? profile.required.filter((intent) => !boundIntents.has(intent))
+    : [];
+  const forbiddenLeaked = profile
+    ? bindingList
+        .filter((b) => b.coreIntent && profile.forbidden.includes(b.coreIntent))
+        .map((b) => b.coreIntent as string)
+    : [];
+  const industryReady = !profile || (unsatisfiedRequired.length === 0 && forbiddenLeaked.length === 0);
+
   return {
     publishMode: input.enabled ? 'native-first-party' : 'manual-setup',
     systemType: input.systemType || null,
+    industry: input.industryOverlay || null,
     enabled: Boolean(input.enabled),
     notificationsReady: notificationStep?.status === 'completed',
     bookingReady: bookingStep?.status === 'completed',
+    industryReady,
     bindings: {
       total: bindingList.length,
       previewReady,
       publishReady,
       blocked,
     },
+    industryIntentCoverage: profile
+      ? {
+          industry: profile.industry,
+          requiredTotal: profile.required.length,
+          requiredSatisfied: profile.required.length - unsatisfiedRequired.length,
+          unsatisfiedRequired,
+          forbiddenLeaked,
+        }
+      : null,
     setupSnapshot: input.setupSnapshot || null,
     validationsSummary: summarizeValidations(input.validations),
     generatedAt: new Date().toISOString(),

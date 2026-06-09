@@ -1489,6 +1489,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         setupSnapshot: nativeSetupSnapshot,
         enabled: forceSalonPreviewReady,
         systemType: selectedSystem,
+        industryOverlay: generationCategory,
       });
 
       const launchArtifacts = buildCanonicalLaunchArtifacts({

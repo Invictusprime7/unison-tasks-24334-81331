@@ -1736,23 +1736,11 @@ export default function App() {
 `;
 }
 
-function createMissingEntryApp(): string {
-  return `import React from 'react';
+// createMissingEntryApp() was intentionally removed. Wizard/launcher-generated
+// sites must never be replaced with a diagnostic fallback template — if the
+// preview cannot render the AI output, surface the real runtime error from
+// DEFAULT_INDEX instead of substituting a placeholder.
 
-export default function App() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-      <div className="max-w-lg rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-foreground">Invalid Launcher preview payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The preview did not receive a renderable industry-theme React entry file from Launcher.
-        </p>
-      </div>
-    </div>
-  );
-}
-`;
-}
 
 // ── Real component generators keyed by section name ─────────────────────────
 // When the AI generates App.tsx that imports ./components/Hero etc. but omits
@@ -4936,14 +4924,20 @@ export function prepareSandpackFiles(
       if (sandpackFiles[entryFlattened]) {
         sandpackFiles['/App.tsx'] = createProxyApp(entryFlattened);
       } else {
-        sandpackFiles['/App.tsx'] = createMissingEntryApp();
+        const fallbackPath = pickPrimaryComponentPath(componentFilePaths);
+        if (fallbackPath) {
+          sandpackFiles['/App.tsx'] = createProxyApp(fallbackPath);
+          console.warn(`[sandpackFilePrep] Strict entry ${entryFlattened} missing — proxying to ${fallbackPath}`);
+        } else {
+          console.warn('[sandpackFilePrep] Strict entry missing and no component candidates — leaving App.tsx unwritten');
+        }
       }
     } else {
       const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
       if (primaryComponentPath) {
         sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
       } else {
-        sandpackFiles['/App.tsx'] = createMissingEntryApp();
+        console.warn('[sandpackFilePrep] No App.tsx and no component candidates — leaving App.tsx unwritten (no fallback template)');
       }
     }
   }
@@ -5066,9 +5060,11 @@ export function prepareSandpackFiles(
       sandpackFiles[appPath] = ensured;
       console.warn(`[sandpackFilePrep] App.tsx missing default export — added: export default ${exportName}`);
     } else {
-      // No usable export found — wrap in a proxy
-      sandpackFiles['/App.tsx'] = createMissingEntryApp();
-      console.warn('[sandpackFilePrep] App.tsx has no valid exports — replaced with diagnostic entry');
+      // No usable export found — leave AI content untouched. The DEFAULT_INDEX
+      // entry shell will surface a "No renderable component" diagnostic with
+      // the actual source, instead of replacing the wizard output with a
+      // fallback template (per "no fallback" architecture).
+      console.warn('[sandpackFilePrep] App.tsx has no detectable component export — leaving AI content untouched');
     }
   }
 

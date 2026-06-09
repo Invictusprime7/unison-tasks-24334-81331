@@ -562,6 +562,15 @@ export function resolveCapabilities(selections: WizardSelections): CapabilityPac
     }
   }
 
+  // 9. Industry profile synthesis — strip forbidden intents and stamp any
+  // required/primary/secondary intents that no binding spec covers yet.
+  // Driven by INDUSTRY_INTENT_PROFILES[industryOverlay].intents (unified shape).
+  const profile = getIndustryIntentProfile(selections.industryOverlay as string);
+  const synth = synthesizeIndustryBindings(profile, bindingSpecsV2, {
+    availablePageRoles: pageSet,
+  });
+  const finalBindingsV2 = [...synth.kept, ...synth.synthesized];
+
   return {
     id: `cap_${nanoid(8)}`,
     requiredPages: Array.from(pageSet),
@@ -571,6 +580,6 @@ export function resolveCapabilities(selections: WizardSelections): CapabilityPac
     requiredProducts: Array.from(productSet),
     recommendedPopups: Array.from(popupSet),
     recommendedBindings: bindingSpecs,
-    recommendedBindingsV2: bindingSpecsV2,
+    recommendedBindingsV2: finalBindingsV2,
   };
 }

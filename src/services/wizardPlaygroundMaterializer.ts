@@ -22,7 +22,7 @@ import type {
 } from '@/types/playground';
 import type { PageRegistry } from '@/types/pageRegistry';
 import { inferPageRoleFromType } from '@/types/pageRegistry';
-import type { CreatorFormField } from '@/types/creatorData';
+import type { CreatorFormField, CreatorService } from '@/types/creatorData';
 import { createEmptyCreatorData } from '@/types/creatorData';
 import { planSiteTopology, populateRegistryFromTopology, type GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import { normalizePlaygroundIntent, inferUIAction } from '@/platform/core/intentNormalizer';
@@ -226,6 +226,145 @@ const PRODUCT_TEMPLATES: Record<string, { name: string; description: string; pri
     category: 'Shop',
   },
 };
+
+
+// ============================================================================
+// Native Publish Defaults
+// ============================================================================
+
+const DEFAULT_NATIVE_HOURS = [
+  { day: 'Monday', open: '09:00', close: '17:00' },
+  { day: 'Tuesday', open: '09:00', close: '17:00' },
+  { day: 'Wednesday', open: '09:00', close: '17:00' },
+  { day: 'Thursday', open: '09:00', close: '17:00' },
+  { day: 'Friday', open: '09:00', close: '17:00' },
+  { day: 'Saturday', open: '10:00', close: '14:00' },
+  { day: 'Sunday', open: '', close: '', closed: true },
+];
+
+const SALON_NATIVE_SERVICES: Array<Omit<CreatorService, 'serviceId' | 'sortOrder'>> = [
+  {
+    name: 'Signature Styling Appointment',
+    slug: 'signature-styling-appointment',
+    description: 'A polished salon appointment for cuts, styling, and client consultation.',
+    price: 8500,
+    duration: 60,
+    currency: 'USD',
+    category: 'Hair Services',
+    availabilitySummary: 'Available during standard salon hours',
+    ctaLabel: 'Book Appointment',
+    featured: true,
+    visibility: 'featured',
+    bookable: true,
+  },
+  {
+    name: 'Color Consultation',
+    slug: 'color-consultation',
+    description: 'A focused consultation to plan color, treatment, and follow-up care.',
+    price: 3500,
+    duration: 30,
+    currency: 'USD',
+    category: 'Consultation',
+    availabilitySummary: 'Weekdays and select Saturdays',
+    ctaLabel: 'Book Consultation',
+    featured: true,
+    visibility: 'public',
+    bookable: true,
+  },
+  {
+    name: 'Treatment & Blowout',
+    slug: 'treatment-blowout',
+    description: 'A conditioning treatment finished with a professional blowout.',
+    price: 12000,
+    duration: 90,
+    currency: 'USD',
+    category: 'Treatments',
+    availabilitySummary: 'Available by appointment',
+    ctaLabel: 'Reserve Time',
+    featured: false,
+    visibility: 'public',
+    bookable: true,
+  },
+];
+
+function normalizeOwnerEmail(value?: string): string | undefined {
+  const trimmed = (value || '').trim();
+  return trimmed.includes('@') ? trimmed : undefined;
+}
+
+function seedNativeSalonServices(creatorData: PlaygroundState['creatorData']) {
+  if (Object.keys(creatorData.services).length > 0) return;
+
+  SALON_NATIVE_SERVICES.forEach((service, index) => {
+    const serviceId = `svc_${nanoid(8)}`;
+    creatorData.services[serviceId] = {
+      ...service,
+      serviceId,
+      sortOrder: index,
+    };
+  });
+
+  const collectionId = `col_${nanoid(8)}`;
+  creatorData.collections[collectionId] = {
+    collectionId,
+    name: 'Bookable Salon Services',
+    type: 'services',
+    itemIds: Object.keys(creatorData.services),
+    sortOrder: Object.keys(creatorData.collections).length,
+  };
+}
+
+function applyNativePublishDefaults(
+  playground: PlaygroundState,
+  selections: WizardSelections,
+): void {
+  if (!selections.nativePublishReady) return;
+
+  const ownerEmail = normalizeOwnerEmail(selections.ownerEmail);
+  const businessInfo = playground.creatorData.businessInfo;
+  businessInfo.email = businessInfo.email || ownerEmail;
+  businessInfo.notificationEmail = businessInfo.notificationEmail || ownerEmail;
+  businessInfo.bookingOwner = businessInfo.bookingOwner || ownerEmail;
+  businessInfo.crmDestination = businessInfo.crmDestination || 'unison_crm';
+  businessInfo.followUpChannel = businessInfo.followUpChannel || 'email';
+  businessInfo.hours = businessInfo.hours?.length ? businessInfo.hours : DEFAULT_NATIVE_HOURS;
+  businessInfo.customValues = {
+    ...(businessInfo.customValues || {}),
+    publishMode: selections.publishMode || 'native-first-party',
+    nativeLeadDestination: 'unison_crm',
+    nativeBookingProvider: 'unison_booking_requests',
+  };
+
+  if (selections.industryOverlay === 'salon' || selections.businessModel === 'appointment_service') {
+    seedNativeSalonServices(playground.creatorData);
+  }
+
+  for (const form of Object.values(playground.creatorData.forms)) {
+    const lowerName = form.name.toLowerCase();
+    form.destinationType = 'crm';
+    form.destinationLabel = 'Unison CRM + owner email';
+    form.submitIntentId = lowerName.includes('booking') || lowerName.includes('reservation')
+      ? 'booking.create'
+      : lowerName.includes('quote')
+        ? 'quote.request'
+        : 'contact.submit';
+  }
+
+  for (const binding of Object.values(playground.bindings)) {
+    if (!binding.isValid) continue;
+    binding.previewStatus = 'ready';
+    binding.publishStatus = ownerEmail ? 'ready' : 'blocked';
+    binding.readiness = ownerEmail ? 'publish-ready' : 'blocked';
+    binding.missingDependencies = ownerEmail ? [] : ['Owner notification email'];
+    binding.fixHints = ownerEmail ? [] : ['Sign in with an email address or set a notification email before publish.'];
+  }
+
+  for (const component of Object.values(playground.creatorData.componentInstances)) {
+    if (component.status !== 'stubbed') {
+      component.status = 'ready';
+    }
+  }
+}
 
 // ============================================================================
 // Element Key Generator
@@ -602,6 +741,8 @@ export function materializePlayground(
     calendars,
     popups,
   };
+
+  applyNativePublishDefaults(playground, selections);
 
   return { playground, warnings };
 }

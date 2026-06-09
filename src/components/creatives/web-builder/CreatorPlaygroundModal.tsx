@@ -247,18 +247,31 @@ export function CreatorPlaygroundModal({
     popups,
   }), [bindings, calendars, playground.creatorData, playground.pageRegistry, popups]);
 
-  const controlPlane = useMemo<PlaygroundControlPlaneModel>(() => resolvePlaygroundControlPlane({
-    state: playgroundState,
-    vfsFiles,
-    setupSnapshot: {
-      ...setupSnapshot,
-      setupSteps: setupWizard.steps.map((step) => ({
+  const controlPlane = useMemo<PlaygroundControlPlaneModel>(() => {
+    const stepMap = new Map<string, NonNullable<PlaygroundSetupSnapshot['setupSteps']>[number]>();
+    for (const step of setupSnapshot?.setupSteps || []) {
+      stepMap.set(step.id, step);
+    }
+    for (const step of setupWizard.steps) {
+      const existing = stepMap.get(step.id);
+      const shouldKeepExisting = existing?.status === 'completed' && step.status === 'pending';
+      if (shouldKeepExisting) continue;
+      stepMap.set(step.id, {
         id: step.id,
         status: step.status,
-        config: step.config,
-      })),
-    },
-  }), [playgroundState, setupSnapshot, setupWizard.steps, vfsFiles]);
+        config: { ...(existing?.config || {}), ...step.config },
+      });
+    }
+
+    return resolvePlaygroundControlPlane({
+      state: playgroundState,
+      vfsFiles,
+      setupSnapshot: {
+        ...setupSnapshot,
+        setupSteps: Array.from(stepMap.values()),
+      },
+    });
+  }, [playgroundState, setupSnapshot, setupWizard.steps, vfsFiles]);
 
   const validations = controlPlane.validations;
   const validationSummary = controlPlane.validationSummary;

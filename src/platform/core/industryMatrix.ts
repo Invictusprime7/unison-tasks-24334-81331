@@ -71,6 +71,7 @@ export const INDUSTRY_MATRIX: Record<string, IndustryProfile> = {
     defaultPages: [
       { title: 'Home', path: '/', purpose: 'landing', expectedSections: ['navbar', 'hero', 'services', 'testimonials', 'cta', 'footer'] },
       { title: 'Services', path: '/services', purpose: 'services', expectedSections: ['navbar', 'services', 'pricing', 'footer'] },
+      { title: 'Book', path: '/booking', purpose: 'booking', expectedSections: ['navbar', 'services', 'contact', 'footer'] },
       { title: 'Contact', path: '/contact', purpose: 'contact', expectedSections: ['navbar', 'contact', 'footer'] },
     ],
     automationPack: 'booking_salon',

@@ -94,6 +94,17 @@ export interface WizardSelections {
    * still honored by the materializer/topology planner when present.
    */
   minimalScaffold?: boolean;
+  /**
+   * When true, the launcher should seed first-party Unison defaults so the
+   * generated system can pass publish readiness without requiring third-party
+   * setup. This is intended for native lead/contact/booking flows.
+   */
+  nativePublishReady?: boolean;
+  /** Owner email from the authenticated launcher session. Used as the default
+   * notification destination and booking owner for native publish mode. */
+  ownerEmail?: string;
+  /** Explicit publish-mode trace for readiness manifests and future migrations. */
+  publishMode?: 'native-first-party' | 'manual-setup';
 }
 
 // ============================================================================

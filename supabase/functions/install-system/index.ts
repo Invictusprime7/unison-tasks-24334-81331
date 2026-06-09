@@ -21,6 +21,8 @@ interface InstallRequest {
   templateCategory?: string;
   designPreset?: string;
   businessId?: string; // Use existing business if provided
+  ownerEmail?: string;
+  publishMode?: "native" | "manual";
 }
 
 function packsForSystem(systemType: SystemType): string[] {
@@ -93,6 +95,8 @@ serve(async (req) => {
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const warnings: string[] = [];
+    const ownerEmail = sanitizeString(body.ownerEmail || auth.user.email || "", 254);
+    const nativePublishMode = body.publishMode === "native";
     
     let businessId: string;
     let businessCreated = false;
@@ -138,6 +142,21 @@ serve(async (req) => {
       }
     }
 
+    // 2b) Native publish defaults: owner notifications are required for real
+    // booking/contact publish readiness. Use the authenticated account email
+    // unless the launcher explicitly supplied one. This is non-fatal so older
+    // schemas still launch.
+    if (ownerEmail) {
+      const { error: notificationError } = await admin
+        .from("businesses")
+        .update({ notification_email: ownerEmail })
+        .eq("id", businessId);
+      if (notificationError) {
+        console.error("[install-system] update notification_email failed", notificationError);
+        warnings.push("notification_email_update_failed");
+      }
+    }
+
     // 3) Record install. This should not block provisioning if the table is not
     // present yet in an older environment.
     const packs = packsForSystem(systemType);
@@ -176,15 +195,94 @@ serve(async (req) => {
       }
     }
 
-    // 4) Seed minimal demo data (real tables, real writes)
+    // 4) Seed publish-ready first-party data (real tables, real writes).
+    // Booking launches should have bookable services + visible availability on
+    // first open, not just an attractive preview shell.
     if (systemType === "booking") {
-      const { error: servicesError } = await admin.from("services").insert([
-        { business_id: businessId, name: "Consultation", duration_minutes: 30, price_cents: 0, is_active: true },
-        { business_id: businessId, name: "Appointment", duration_minutes: 60, price_cents: 9900, is_active: true },
-      ]);
+      const { data: seededServices, error: servicesError } = await admin.from("services").insert([
+        { business_id: businessId, name: "Signature Styling Appointment", description: "Core salon appointment for cuts, styling, and client consultation.", duration_minutes: 60, price_cents: 8500, is_active: true },
+        { business_id: businessId, name: "Color Consultation", description: "Focused color planning and treatment consultation.", duration_minutes: 30, price_cents: 3500, is_active: true },
+        { business_id: businessId, name: "Treatment & Blowout", description: "Conditioning treatment finished with a professional blowout.", duration_minutes: 90, price_cents: 12000, is_active: true },
+      ]).select("id, duration_minutes");
       if (servicesError) {
         console.error("[install-system] seed services failed", servicesError);
         warnings.push("services_seed_failed");
+      } else if (Array.isArray(seededServices) && seededServices.length > 0) {
+        const slots: Array<{ business_id: string; service_id: string | null; starts_at: string; ends_at: string; is_booked: boolean }> = [];
+        const now = new Date();
+        let dayOffset = 1;
+        while (slots.length < 18 && dayOffset < 21) {
+          const day = new Date(now);
+          day.setUTCDate(now.getUTCDate() + dayOffset);
+          const dayOfWeek = day.getUTCDay();
+          dayOffset += 1;
+          if (dayOfWeek === 0) continue;
+
+          for (const hour of [15, 17, 19]) {
+            const service = seededServices[slots.length % seededServices.length] as { id: string; duration_minutes?: number | null };
+            const startsAt = new Date(day);
+            startsAt.setUTCHours(hour, 0, 0, 0);
+            const endsAt = new Date(startsAt);
+            endsAt.setUTCMinutes(endsAt.getUTCMinutes() + (service.duration_minutes || 60));
+            slots.push({
+              business_id: businessId,
+              service_id: service.id,
+              starts_at: startsAt.toISOString(),
+              ends_at: endsAt.toISOString(),
+              is_booked: false,
+            });
+            if (slots.length >= 18) break;
+          }
+        }
+
+        if (slots.length > 0) {
+          const { error: slotsError } = await admin.from("availability_slots").insert(slots);
+          if (slotsError) {
+            console.error("[install-system] seed availability failed", slotsError);
+            warnings.push("availability_seed_failed");
+          }
+        }
+      }
+    }
+
+    if (nativePublishMode) {
+      const setupRows = [
+        {
+          business_id: businessId,
+          step_id: "database",
+          status: "completed",
+          config: { provider: "supabase", destination: "unison_crm", autoProvisioned: true },
+          completed_at: new Date().toISOString(),
+        },
+        {
+          business_id: businessId,
+          step_id: "notifications",
+          status: ownerEmail ? "completed" : "pending",
+          config: { provider: "unison-native-email", notificationEmail: ownerEmail || null, autoProvisioned: Boolean(ownerEmail) },
+          completed_at: ownerEmail ? new Date().toISOString() : null,
+        },
+        {
+          business_id: businessId,
+          step_id: "booking_calendar",
+          status: systemType === "booking" ? "completed" : "skipped",
+          config: { provider: "unison-native-booking-requests", bookingOwner: ownerEmail || null, businessDays: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"], opensAt: "09:00", closesAt: "17:00", autoProvisioned: true },
+          completed_at: systemType === "booking" ? new Date().toISOString() : null,
+        },
+        {
+          business_id: businessId,
+          step_id: "payments",
+          status: "skipped",
+          config: { reason: "No payment provider required for native booking/contact publish path.", autoProvisioned: true },
+          completed_at: null,
+        },
+      ];
+
+      const { error: setupError } = await admin
+        .from("business_setup_progress")
+        .upsert(setupRows, { onConflict: "business_id,step_id" });
+      if (setupError) {
+        console.error("[install-system] native setup progress failed", setupError);
+        warnings.push("native_setup_progress_failed");
       }
     }
 

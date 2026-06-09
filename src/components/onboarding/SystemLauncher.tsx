@@ -66,6 +66,7 @@ import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
 import { extractLauncherPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
+import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 
 // ============================================================================
 // Types
@@ -366,6 +367,51 @@ const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
 const WIZARD_AI_TIMEOUT_MS = 150_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
+
+
+const BOOKING_PREVIEW_DEFAULT_PAGES: PageChoice[] = [
+  'about',
+  'services',
+  'pricing',
+  'gallery',
+  'booking',
+  'contact',
+  'faq',
+];
+
+const BOOKING_PREVIEW_DEFAULT_NEEDS: CustomerNeed[] = [
+  'book_service',
+  'browse_services',
+  'fill_form',
+];
+
+function uniqueValues<T extends string>(values: T[]): T[] {
+  return Array.from(new Set(values));
+}
+
+function getDefaultBookingTemplateCard(): TemplateCardData | null {
+  const cards = buildCompositionCards('booking');
+  return (
+    cards.find((card) => card.id === 'salon-premium') ||
+    cards.find((card) => card.industry === 'salon') ||
+    cards[0] ||
+    null
+  );
+}
+
+function isSalonBookingPreviewLaunch(opts: {
+  systemId: BusinessSystemType | null;
+  generationCategory: string;
+  resolvedIndustry: string;
+  template?: TemplateCardData | null;
+}): boolean {
+  return (
+    opts.systemId === 'booking' &&
+    (opts.resolvedIndustry === 'salon' ||
+      opts.generationCategory === 'salon' ||
+      opts.template?.industry === 'salon')
+  );
+}
 
 function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
   if (value.length <= max) return value;
@@ -739,7 +785,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
   const handleSystemSelect = (systemId: BusinessSystemType) => {
     setSelectedSystem(systemId);
-    setSelectedTemplate(null);
+
+    if (systemId === 'booking') {
+      setPrimaryGoal('book_appointments');
+      setCustomerNeeds((prev) => uniqueValues([...BOOKING_PREVIEW_DEFAULT_NEEDS, ...prev]));
+      setSelectedPages((prev) => uniqueValues([...BOOKING_PREVIEW_DEFAULT_PAGES, ...prev]));
+      setSelectedTemplate(getDefaultBookingTemplateCard());
+    } else {
+      setPrimaryGoal(null);
+      setCustomerNeeds([]);
+      setSelectedPages(['about', 'services', 'contact']);
+      setSelectedTemplate(null);
+    }
+
     setStep("questions");
   };
 
@@ -780,6 +838,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
+    const effectiveTemplate = selectedTemplate || (selectedSystem === 'booking' ? getDefaultBookingTemplateCard() : null);
     if (!businessName.trim()) {
       toast.error("Please enter your business name");
       return;
@@ -789,7 +848,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     try {
       console.log('[SystemLauncher] Launching with:', {
         system: selectedSystem,
-        template: selectedTemplate?.label,
+        template: effectiveTemplate?.label,
         business: businessName.trim(),
       });
       
@@ -820,7 +879,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         }
       }
 
-      const generationCategory = getGenerationCategory(system, selectedTemplate);
+      const ownerEmail = sessionData.session.user.email || '';
+
+      const generationCategory = getGenerationCategory(system, effectiveTemplate);
       const industryProfile = getIndustryForCategory(generationCategory);
       const compositionMeta = getCompositionMeta(generationCategory);
       const canonicalIntents = Array.from(new Set([
@@ -833,15 +894,37 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const fonts = randomFontPairing();
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
+      const forceSalonPreviewReady = isSalonBookingPreviewLaunch({
+        systemId: selectedSystem,
+        generationCategory,
+        resolvedIndustry,
+        template: effectiveTemplate,
+      });
+      const resolvedPrimaryGoal: PrimaryGoal = forceSalonPreviewReady
+        ? 'book_appointments'
+        : (primaryGoal || 'collect_leads');
+      const resolvedCustomerNeeds = uniqueValues([
+        ...(forceSalonPreviewReady ? BOOKING_PREVIEW_DEFAULT_NEEDS : []),
+        ...customerNeeds,
+      ]);
+      const resolvedRequestedPages = uniqueValues([
+        ...(forceSalonPreviewReady ? BOOKING_PREVIEW_DEFAULT_PAGES : []),
+        ...selectedPages,
+      ]);
+      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = forceSalonPreviewReady
+        ? 'capability-full'
+        : 'home-only';
 
       // ── Provision backend in background (non-blocking) ──
       const installSystemType = selectedSystem as string;
       const installBody: any = {
         systemType: installSystemType,
         businessName: businessName.trim(),
-        templateName: selectedTemplate?.label || system.name,
+        templateName: effectiveTemplate?.label || system.name,
         templateCategory: generationCategory,
         designPreset: selectedTheme?.id || undefined,
+        ownerEmail: ownerEmail || undefined,
+        publishMode: forceSalonPreviewReady && ownerEmail ? 'native' : undefined,
       };
 
       console.log('[SystemLauncher] Invoking install-system with body:', installBody);
@@ -859,30 +942,36 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return null;
         });
 
-      // ── Plan topology (MINIMAL: Home only) ──
-      // The Wizard hands off a clean canvas. The in-Builder AI assistant is
-      // the sole author of every additional page/route/funnel/tab from user
-      // prompts (registry → VFS sync handles the rest).
+      // ── Plan topology ──
+      // Default launch remains home-only, but salon/booking is hardened into a
+      // capability-full scaffold so the first preview has a booking route,
+      // contact form, calendar binding, and deterministic fallback surface.
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
-        selectedTemplateId: selectedTemplate?.id,
-        minimal: true,
+        selectedTemplateId: effectiveTemplate?.id,
+        minimal: resolvedScaffoldMode === 'home-only',
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
-      const goalNeeds = primaryGoal ? GOAL_TO_NEEDS[primaryGoal] : {};
+      const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};
       const wizardSelections: WizardSelections = {
         businessName: businessName.trim(),
         businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
         industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
-        primaryGoal: primaryGoal || 'collect_leads',
-        secondaryGoals: customerNeeds as string[],
-        needsBooking: goalNeeds.needsBooking || customerNeeds.includes('book_service'),
-        sellsProducts: goalNeeds.sellsProducts || customerNeeds.includes('buy_offer'),
-        wantsLeadCapture: goalNeeds.wantsLeadCapture || customerNeeds.includes('request_quote') || customerNeeds.includes('fill_form'),
-        templateId: selectedTemplate?.id,
+        primaryGoal: resolvedPrimaryGoal,
+        secondaryGoals: resolvedCustomerNeeds as string[],
+        needsBooking: forceSalonPreviewReady || goalNeeds.needsBooking || resolvedCustomerNeeds.includes('book_service'),
+        sellsProducts: goalNeeds.sellsProducts || resolvedCustomerNeeds.includes('buy_offer'),
+        wantsLeadCapture: forceSalonPreviewReady || goalNeeds.wantsLeadCapture || resolvedCustomerNeeds.includes('request_quote') || resolvedCustomerNeeds.includes('fill_form'),
+        templateId: effectiveTemplate?.id,
         themeId: selectedTheme?.id,
-        minimalScaffold: true,
+        primaryIntent: industryProfile?.primaryIntent,
+        requestedPages: resolvedRequestedPages,
+        scaffoldMode: resolvedScaffoldMode,
+        minimalScaffold: resolvedScaffoldMode === 'home-only',
+        nativePublishReady: forceSalonPreviewReady && Boolean(ownerEmail),
+        ownerEmail: ownerEmail || undefined,
+        publishMode: forceSalonPreviewReady && ownerEmail ? 'native-first-party' : 'manual-setup',
       };
 
       const pipelineResult = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
@@ -902,14 +991,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // ── Resolve composition from selected Template card only ──
       // Template selection is a hard structural contract for AI generation.
-      if (!selectedTemplate?.id) {
+      if (!effectiveTemplate?.id) {
         toast.error("Please select a template before launching.");
         return;
       }
-      let composition = getCompositionById(selectedTemplate.id);
+      let composition = getCompositionById(effectiveTemplate.id);
       if (!composition) {
         toast.error(
-          `Selected template "${selectedTemplate.label}" has no registered composition. Please choose another template.`,
+          `Selected template "${effectiveTemplate.label}" has no registered composition. Please choose another template.`,
         );
         return;
       }
@@ -1032,15 +1121,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       };
 
       toast("Generating your site with AI…", {
-        description: `${resolvedIndustry} • ${selectedTemplate?.label || system.name} • ${resolvedPreset.label}`,
+        description: `${resolvedIndustry} • ${effectiveTemplate?.label || system.name} • ${resolvedPreset.label}`,
       });
 
       // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
       const aiUserPrompt = buildWizardAiSeedPrompt({
         industrySystemName: system.name,
         resolvedIndustry,
-        primaryGoal: primaryGoal || 'collect_leads',
-        templateLabel: selectedTemplate?.label || system.name,
+        primaryGoal: resolvedPrimaryGoal,
+        templateLabel: effectiveTemplate?.label || system.name,
         sectionOrder: composition.sections.map((s) => s.type),
         businessName: brand,
         visualStyleLabel: resolvedPreset.label,
@@ -1065,6 +1154,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return '';
         }
       })();
+      const canonicalPages = Object.values(siteBundleSnapshot.pageRegistry.pages)
+        .sort((a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0))
+        .map((page) => ({
+          slug: page.pageId,
+          role: page.pageRole || page.pageType,
+          title: page.title,
+          route: page.path,
+          path: page.filePath,
+        }));
 
       const wizardSeed = {
         version: '1.0',
@@ -1072,14 +1170,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         business: {
           name: brand,
           industry: resolvedIndustry,
-          primaryGoal: primaryGoal || 'collect_leads',
+          primaryGoal: resolvedPrimaryGoal,
           tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
           tone: 'professional and friendly',
           systemType: selectedSystem,
         },
         template: {
-          id: selectedTemplate?.id,
-          label: selectedTemplate?.label || system.name,
+          id: effectiveTemplate?.id,
+          label: effectiveTemplate?.label || system.name,
           sections: composition.sections.map((s) => s.type),
         },
         theme: {
@@ -1095,17 +1193,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           },
         },
         canonical: {
-          pages: (sitePlan?.pages || []).map((p) => ({
-            slug: p.id,
-            role: p.role,
-            title: p.title || p.name,
-            path: p.filePath,
-          })),
+          pages: canonicalPages,
           capabilities: industryProfile?.defaultCapabilities || [],
           intents: canonicalIntents,
         },
         generation: {
-          scaffoldMode: wizardSelections.minimalScaffold ? 'home-only' : 'capability-full',
+          scaffoldMode: resolvedScaffoldMode,
+          previewGuarantee: forceSalonPreviewReady ? 'salon-booking-deterministic-fallback' : undefined,
+          publishGuarantee: forceSalonPreviewReady && ownerEmail ? 'native-first-party-publish-ready' : undefined,
           customInstructions: customPrompt.trim() || undefined,
           socials: userSocials,
         },
@@ -1138,6 +1233,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         qualityReason?: string;
       } | null = null;
       const MAX_RETRIES = 2;
+      let launchReliabilityMode: 'ai' | 'deterministic-salon-preview' = 'ai';
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
@@ -1153,7 +1249,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           runBuilderTurn<any>({
             messages: [{ role: 'user', content: aiUserPrompt }],
             mode: 'wizard-seed',
-            templateName: selectedTemplate?.label || system.name,
+            templateName: effectiveTemplate?.label || system.name,
             aesthetic: resolvedPreset.id,
             source: resolvedIndustry,
             systemType: selectedSystem,
@@ -1278,6 +1374,40 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
 
+      if (!generationResult && forceSalonPreviewReady) {
+        const deterministicFallbackFiles = {
+          '/src/App.tsx': seedAppCode,
+          '/src/index.css': themedIndexCss,
+        };
+        const sanitizedFallback = sanitizeGeneratedFiles(deterministicFallbackFiles);
+        const fallbackQuality = assessWizardGenerationQuality(
+          sanitizedFallback.files,
+          composition.sections.map((s) => s.type),
+        );
+
+        if (fallbackQuality.ok) {
+          generationResult = {
+            structured: {
+              files: deterministicFallbackFiles,
+              entryPoint: '/src/App.tsx',
+            },
+            sanitized: sanitizedFallback,
+          };
+          aiError = null;
+          launchReliabilityMode = 'deterministic-salon-preview';
+          console.warn('[SystemLauncher] AI generation did not produce a launchable salon payload; using deterministic salon preview fallback', {
+            lastPayloadIssue,
+            fallbackQuality,
+          });
+          toast.warning('AI generation had an issue, so Unison opened a deterministic salon preview instead.');
+        } else {
+          console.error('[SystemLauncher] Deterministic salon preview fallback failed quality gate', {
+            fallbackQuality,
+            report: sanitizedFallback.report,
+          });
+        }
+      }
+
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);
         const normalizedMsg = msg.toLowerCase();
@@ -1346,6 +1476,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
       const provisionedBusinessId = await installPromise;
+      const nativeSetupSnapshot = buildNativePublishSetupSnapshot({
+        enabled: forceSalonPreviewReady,
+        ownerEmail,
+        businessName: brand,
+        businessId: provisionedBusinessId || undefined,
+        systemType: selectedSystem,
+      });
+      const nativeReadinessManifest = buildNativePublishReadinessManifest({
+        state: materializedPlayground,
+        validations: pipelineResult.validations,
+        setupSnapshot: nativeSetupSnapshot,
+        enabled: forceSalonPreviewReady,
+        systemType: selectedSystem,
+      });
 
       const launchArtifacts = buildCanonicalLaunchArtifacts({
         generatedFiles,
@@ -1359,7 +1503,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemName: system.name,
         templateName: `${brand} Site`,
         templateCategory: generationCategory,
-        templateId: selectedTemplate?.id,
+        templateId: effectiveTemplate?.id,
         businessName: brand,
         industry: generationCategory,
         aesthetic: resolvedPreset.id,
@@ -1384,6 +1528,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const wiredVfsFiles: Record<string, string> = {
         ...baseVfsFiles,
         '/.unison/wizard-seed.json': JSON.stringify(wizardSeed, null, 2),
+        '/.unison/launch-readiness.json': JSON.stringify({
+          ...nativeReadinessManifest,
+          previewReady: true,
+          launchReliabilityMode,
+          scaffoldMode: resolvedScaffoldMode,
+          forcedSalonPreviewReady: forceSalonPreviewReady,
+          generatedAt: new Date().toISOString(),
+        }, null, 2),
+        '/.unison/native-publish-setup.json': JSON.stringify(nativeSetupSnapshot || null, null, 2),
       };
       const runtimeManifest = launchArtifacts.runtimeManifest;
 
@@ -1416,7 +1569,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aesthetic: resolvedPreset.id,
         themePresetId: resolvedPreset.id,
         templateCategory: generationCategory,
-        templateId: selectedTemplate?.id,
+        templateId: effectiveTemplate?.id,
         systemType: selectedSystem,
         systemName: system.name,
         preloadedIntents: canonicalIntents,
@@ -1429,6 +1582,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         pipelineManifest,
         wizardSelections,
         wizardSeed,
+        launchReliabilityMode,
+        forcedSalonPreviewReady: forceSalonPreviewReady,
+        setupSnapshot: nativeSetupSnapshot,
+        nativeReadinessManifest,
       };
 
       const launchState = createLaunchState({
@@ -1441,7 +1598,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         vfsFiles: wiredVfsFiles,
         aesthetic: resolvedPreset.id,
         themePresetId: resolvedPreset.id,
-        templateId: selectedTemplate?.id,
+        templateId: effectiveTemplate?.id,
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         intentRuntime: true,
@@ -1454,6 +1611,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         compiledPlayground,
         pipelineManifest,
         wizardSelections,
+        setupSnapshot: nativeSetupSnapshot,
+        nativeReadinessManifest,
       });
       setLaunch(launchState);
 

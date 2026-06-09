@@ -46,6 +46,7 @@ export const CTACentered: React.FC<BaseSectionProps<'cta'>> = ({ section, theme 
               key={i}
               href={c.href || '#'}
               data-ut-intent={c.intent}
+              data-ut-cta={i === 0 ? 'cta.hero' : 'cta.hero-secondary'}
               className="inline-block text-sm font-medium px-6 py-3 transition-all hover:opacity-90"
               style={
                 c.variant === 'outline'

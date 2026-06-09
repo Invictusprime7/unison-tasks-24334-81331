@@ -140,8 +140,12 @@ export type BindingSlotRole =
   | 'cart-trigger'
   | 'form-submit'
   | 'newsletter'
+  | 'newsletter-submit'
   | 'nav-link'
   | 'social-link'
+  | 'phone-link'
+  | 'email-link'
+  | 'address-link'
   // Icon-driven interactive slots
   | 'icon-search'
   | 'icon-cart'

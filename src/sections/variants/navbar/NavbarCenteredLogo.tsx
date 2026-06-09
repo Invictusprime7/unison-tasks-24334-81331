@@ -72,6 +72,7 @@ export const NavbarCenteredLogo: React.FC<BaseSectionProps<'navbar'>> = ({ secti
             <a
               href={cta.href || '#'}
               data-ut-intent={cta.intent}
+              data-ut-cta="cta.nav"
               className="text-sm px-4 py-2 ml-auto transition-all hover:opacity-90"
               style={{
                 background: hsl(theme.colors.primary),

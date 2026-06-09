@@ -54,6 +54,7 @@ export const NavbarMinimalDark: React.FC<BaseSectionProps<'navbar'>> = ({ sectio
             <a
               href={cta.href || '#'}
               data-ut-intent={cta.intent}
+              data-ut-cta="cta.nav"
               className="text-sm px-5 py-1.5 transition-all hover:opacity-90"
               style={{
                 background: hsl(theme.colors.primary),

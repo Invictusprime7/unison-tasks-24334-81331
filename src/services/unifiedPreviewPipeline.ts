@@ -58,13 +58,17 @@ export {
 /**
  * Scaffold missing topology page modules and patch the canonical router.
  * This guarantees the preview can render immediately after launcher handoff.
+ *
+ * When `template` is provided, sub-pages are scaffolded as role-filtered
+ * slices of the template's composition (real sections, not spinners).
  */
 export function scaffoldMissingTopologyPagesWithRouter(
   plan: GeneratedSitePlan,
   existingFiles: Record<string, string>,
   registry: PageRegistry,
+  template?: import('@/sections/types').TemplateComposition | null,
 ): Record<string, string> {
-  const scaffolded = scaffoldMissingTopologyPages(plan, existingFiles);
+  const scaffolded = scaffoldMissingTopologyPages(plan, existingFiles, template);
   const merged = { ...existingFiles, ...scaffolded };
   const withRouter = patchVFSWithRouter(merged, registry, plan.businessName);
 

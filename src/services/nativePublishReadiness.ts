@@ -40,6 +40,8 @@ export interface BuildNativePublishReadinessManifestInput {
   setupSnapshot?: PlaygroundSetupSnapshot;
   enabled: boolean;
   systemType?: string | null;
+  /** Industry overlay (e.g. 'salon') used to verify required intents are bound. */
+  industryOverlay?: string | null;
 }
 
 const completed = (): PlaygroundSetupStepSnapshot['status'] => 'completed';

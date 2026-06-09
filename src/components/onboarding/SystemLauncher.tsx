@@ -1157,7 +1157,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const canonicalPages = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .sort((a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0))
         .map((page) => ({
-          slug: page.id,
+          slug: page.pageId,
           role: page.pageRole || page.pageType,
           title: page.title,
           route: page.path,

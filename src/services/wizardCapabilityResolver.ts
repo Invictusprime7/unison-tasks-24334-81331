@@ -24,6 +24,10 @@ import type {
   BindingSectionType,
   BindingSlotRole,
 } from '@/types/playground';
+import {
+  getIndustryIntentProfile,
+  synthesizeIndustryBindings,
+} from '@/platform/core/industryIntentProfiles';
 
 // ============================================================================
 // Business Model → Required Pages

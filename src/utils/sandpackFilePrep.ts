@@ -5072,9 +5072,11 @@ export function prepareSandpackFiles(
       sandpackFiles[appPath] = ensured;
       console.warn(`[sandpackFilePrep] App.tsx missing default export — added: export default ${exportName}`);
     } else {
-      // No usable export found — wrap in a proxy
-      sandpackFiles['/App.tsx'] = createMissingEntryApp();
-      console.warn('[sandpackFilePrep] App.tsx has no valid exports — replaced with diagnostic entry');
+      // No usable export found — leave AI content untouched. The DEFAULT_INDEX
+      // entry shell will surface a "No renderable component" diagnostic with
+      // the actual source, instead of replacing the wizard output with a
+      // fallback template (per "no fallback" architecture).
+      console.warn('[sandpackFilePrep] App.tsx has no detectable component export — leaving AI content untouched');
     }
   }
 

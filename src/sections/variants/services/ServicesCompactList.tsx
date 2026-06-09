@@ -76,6 +76,7 @@ export const ServicesCompactList: React.FC<BaseSectionProps<'services'>> = ({ se
                 <a
                   href={item.cta.href || '#'}
                   data-ut-intent={item.cta.intent}
+                  data-ut-cta="cta.card"
                   className="flex-shrink-0 text-sm font-medium px-4 py-2 transition-all hover:opacity-90"
                   style={{
                     background: hsl(theme.colors.primary),

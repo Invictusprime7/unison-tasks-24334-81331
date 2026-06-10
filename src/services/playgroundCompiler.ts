@@ -35,13 +35,14 @@ export function compilePlayground(
 ): PlaygroundCompileResult {
   const registry = state.pageRegistry;
   const pages = Object.values(registry.pages);
-  const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, options);
 
   for (const page of pages) {
     if (!page.filePath) {
       page.filePath = deriveFilePath(page);
     }
   }
+
+  const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, options);
 
   const vfsFiles: Record<string, string> = {};
 
@@ -104,6 +105,71 @@ export function compilePlayground(
       homeRoute,
     },
   };
+}
+
+function buildScaffoldPlan(
+  homePageId: string | null | undefined,
+  pages: BuilderPage[],
+  businessName?: string,
+  options?: CompilePlaygroundOptions,
+): GeneratedSitePlan {
+  const pageNodes: PageRouteNode[] = pages
+    .slice()
+    .sort((a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0))
+    .map((page) => ({
+      id: page.pageId,
+      name: page.title,
+      title: page.title,
+      route: page.path,
+      role: inferTopologyRole(page),
+      filePath: page.filePath || deriveFilePath(page),
+      visibleInNav: page.showInNav,
+      isHome: page.isHome,
+      generatedBy: page.createdBy === 'ai' ? 'ai' : page.createdBy === 'manual' ? 'manual' : 'wizard',
+      funnelId: page.funnelId || null,
+      seo: page.seo,
+    }));
+
+  return {
+    siteId: 'playground-compile',
+    industry: String(options?.industry || 'general'),
+    businessName: businessName || 'Company',
+    homePageId: homePageId || pageNodes.find((p) => p.isHome)?.id || pageNodes[0]?.id || 'home',
+    pages: pageNodes,
+    navItems: pageNodes.filter((p) => p.visibleInNav).map((p) => p.id),
+    funnels: [],
+    redirects: [],
+    generatedAt: new Date().toISOString(),
+    selectedTemplateId: options?.selectedTemplateId,
+  };
+}
+
+function inferTopologyRole(page: BuilderPage): PageRole {
+  const raw = (page.pageRole || page.pageType || '').toString();
+  if (raw === 'service' || raw === 'landing') return 'services';
+  if (raw === 'thankyou' || raw === 'thank_you') return 'thank_you';
+  if (raw === 'home') return 'home';
+  if (raw === 'about') return 'about';
+  if (raw === 'contact') return 'contact';
+  if (raw === 'pricing') return 'pricing';
+  if (raw === 'gallery') return 'gallery';
+  if (raw === 'faq') return 'faq';
+  if (raw === 'booking') return 'booking';
+  if (raw === 'checkout') return 'checkout';
+  if (raw === 'blog') return 'blog';
+  if (raw === 'shop') return 'shop';
+
+  const path = page.path.toLowerCase();
+  if (path.includes('service')) return 'services';
+  if (path.includes('confirmation') || path.includes('thank')) return 'thank_you';
+  if (path.includes('contact')) return 'contact';
+  if (path.includes('pricing')) return 'pricing';
+  if (path.includes('gallery')) return 'gallery';
+  if (path.includes('faq')) return 'faq';
+  if (path.includes('book')) return 'booking';
+  if (path.includes('checkout')) return 'checkout';
+  if (path.includes('about')) return 'about';
+  return 'custom';
 }
 
 function rebaseHomeModuleForPageFile(content: string): string {

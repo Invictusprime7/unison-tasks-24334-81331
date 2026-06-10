@@ -576,6 +576,14 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
 function assessWizardGenerationQuality(
   files: Record<string, string>,
   requiredSections: string[],
+  industryRequirements?: {
+    /** Canonical data-ut-intent values that MUST appear in the generated output. */
+    requiredIntents?: readonly string[];
+    /** Industry vocabulary — at least one term must appear (case-insensitive). */
+    vocabulary?: readonly string[];
+    /** Label for diagnostics (e.g. "salon"). */
+    label?: string;
+  },
 ): { ok: boolean; reason?: string; totalChars: number; sectionCount: number; intentCount: number } {
   const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
   const combined = tsxEntries.map(([, content]) => content).join('\n');
@@ -609,8 +617,55 @@ function assessWizardGenerationQuality(
     return { ok: false, reason: 'generated output has no canonical data-ut-intent wiring', totalChars, sectionCount, intentCount };
   }
 
+  // Industry-specific hardening (Lane B wizard seed contract enforcement).
+  if (industryRequirements) {
+    const label = industryRequirements.label || 'industry';
+    const requiredIntents = industryRequirements.requiredIntents || [];
+    for (const intent of requiredIntents) {
+      const intentRegex = new RegExp(`data-ut-intent=["']${intent.replace(/[.]/g, '\\.')}["']`);
+      if (!intentRegex.test(combined)) {
+        return {
+          ok: false,
+          reason: `${label} contract violation: missing required data-ut-intent="${intent}"`,
+          totalChars,
+          sectionCount,
+          intentCount,
+        };
+      }
+    }
+    const vocabulary = industryRequirements.vocabulary || [];
+    if (vocabulary.length > 0) {
+      const lower = combined.toLowerCase();
+      const hit = vocabulary.some((term) => lower.includes(term.toLowerCase()));
+      if (!hit) {
+        return {
+          ok: false,
+          reason: `${label} contract violation: none of the required vocabulary terms appeared (${vocabulary.slice(0, 4).join(', ')}…)`,
+          totalChars,
+          sectionCount,
+          intentCount,
+        };
+      }
+    }
+  }
+
   return { ok: true, totalChars, sectionCount, intentCount };
 }
+
+/**
+ * Salon Lane B wizard seed contract requirements.
+ * Aligned with industryIntentProfiles.ts salon profile (booking.create required).
+ * Other industries will get their own constant as we harden each profile.
+ */
+const SALON_QUALITY_REQUIREMENTS = {
+  label: 'salon',
+  requiredIntents: ['booking.create'],
+  vocabulary: [
+    'salon', 'stylist', 'stylists', 'hair', 'haircut', 'color', 'colour',
+    'blowout', 'balayage', 'highlights', 'appointment', 'book', 'booking',
+    'spa', 'beauty', 'manicure', 'pedicure', 'lash', 'brow',
+  ],
+} as const;
 
 // Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
@@ -1369,7 +1424,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           });
         }
 
-        const quality = assessWizardGenerationQuality(sanitized.files, composition.sections.map((s) => s.type));
+        const quality = assessWizardGenerationQuality(
+          sanitized.files,
+          composition.sections.map((s) => s.type),
+          forceSalonPreviewReady ? SALON_QUALITY_REQUIREMENTS : undefined,
+        );
         if (!quality.ok) {
           lastPayloadIssue = {
             kind: 'quality',
@@ -1415,6 +1474,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           const fallbackQuality = assessWizardGenerationQuality(
             sanitizedFallback.files,
             composition.sections.map((s) => s.type),
+            forceSalonPreviewReady ? SALON_QUALITY_REQUIREMENTS : undefined,
           );
 
           if (fallbackQuality.ok) {

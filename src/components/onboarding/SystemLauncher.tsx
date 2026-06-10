@@ -67,6 +67,7 @@ import { createLaunchState } from "@/types/launchState";
 import { extractLauncherPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
+import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 
 // ============================================================================
 // Types

@@ -15,6 +15,7 @@ import { themeToCSS, hsl } from './themeUtils';
 import { resolveVariantComponent } from './variants';
 import type { ActiveVariantMap } from './variants';
 import { resolveThemeTokens } from './themes';
+import { runCompositionInvariantsInDev } from '@/platform/core/compositionInvariants';
 
 interface PageRendererProps {
   template: TemplateComposition;

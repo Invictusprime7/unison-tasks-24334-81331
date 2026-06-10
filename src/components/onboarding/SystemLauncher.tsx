@@ -1298,7 +1298,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
+          if (forceSalonPreviewReady) {
+            setLaunchStatus(`Refining salon content… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+          }
           await new Promise((r) => setTimeout(r, retryDelayMs));
+        }
+        if (forceSalonPreviewReady) {
+          setLaunchStatus(`Generating booking flow… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
         }
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
         // The structured `wizardSeed` is what the edge function's task

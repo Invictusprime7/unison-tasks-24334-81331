@@ -16,9 +16,11 @@
 import type { SiteBundle } from '@/types/siteBundle';
 import type { CompiledContract, ValidationIssue, ValidationSeverity } from './contractCompiler';
 import type { ProvisioningStatus } from './provisioningValidator';
+import type { TemplateComposition } from '@/sections/types';
 import { SiteBundleSchema } from '@/schemas/SiteBundle';
 import { CORE_INTENTS, isCoreIntent } from './coreIntents';
 import { normalizeIntent } from '@/runtime/intentAliases';
+import { auditComposition, type CompositionExpectations } from './compositionInvariants';
 
 // ============================================================================
 // Report Types
@@ -47,7 +49,8 @@ export type IntegrityCategory =
   | 'intent-validity'
   | 'workflow-validity'
   | 'provisioning'
-  | 'consistency';
+  | 'consistency'
+  | 'composition-authority';
 
 export interface IntegrityReport {
   /** Overall pass/fail */
@@ -78,6 +81,17 @@ export interface IntegrityReportOptions {
   includeInfos?: boolean;
   /** Skip expensive checks */
   fast?: boolean;
+  /**
+   * Optional per-page TemplateComposition audits. Map of label → composition
+   * (and optional expectations). When supplied, each composition is audited
+   * by the Composition Authority invariants and its issues land in the
+   * `composition-authority` category.
+   */
+  compositions?: Array<{
+    label: string;
+    composition: TemplateComposition;
+    expectations?: CompositionExpectations;
+  }>;
 }
 
 // ============================================================================
@@ -113,6 +127,13 @@ export function runIntegrityReport(
   // ── 3. Cross-consistency (bundle ↔ contract) ────────────────────────
   if (bundle && contract) {
     checks.push(...validateCrossConsistency(bundle, contract));
+  }
+
+  // ── 4. Composition Authority invariants (per supplied page) ─────────
+  if (options.compositions && options.compositions.length > 0) {
+    for (const entry of options.compositions) {
+      checks.push(...validateCompositionAuthority(entry.label, entry.composition, entry.expectations));
+    }
   }
 
   // Filter infos if not requested
@@ -424,6 +445,37 @@ function validateCrossConsistency(bundle: SiteBundle, contract: CompiledContract
   return results;
 }
 
+function validateCompositionAuthority(
+  label: string,
+  composition: TemplateComposition,
+  expectations?: CompositionExpectations,
+): IntegrityCheckResult[] {
+  const report = auditComposition(composition, expectations);
+  const results: IntegrityCheckResult[] = [];
+
+  if (report.issues.length === 0) {
+    results.push(pass(
+      'composition-authority',
+      `composition-${label}`,
+      `Composition: ${label}`,
+      `All ${report.sectionsInspected} section(s) honor SiteBundle authority`,
+    ));
+    return results;
+  }
+
+  for (const issue of report.issues) {
+    results.push(fail(
+      'composition-authority',
+      `composition-${label}-${issue.code}-${issue.sectionId || issue.sectionType || 'page'}`,
+      `Composition: ${label}`,
+      issue.severity,
+      issue.message,
+      issue.detail,
+    ));
+  }
+  return results;
+}
+
 // ============================================================================
 // Category Summary Builder
 // ============================================================================
@@ -433,7 +485,7 @@ function buildCategorySummary(
 ): Record<IntegrityCategory, { passed: boolean; checks: number; failures: number }> {
   const categories: IntegrityCategory[] = [
     'bundle-structure', 'route-integrity', 'intent-validity',
-    'workflow-validity', 'provisioning', 'consistency',
+    'workflow-validity', 'provisioning', 'consistency', 'composition-authority',
   ];
 
   const result: Record<string, { passed: boolean; checks: number; failures: number }> = {};

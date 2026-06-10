@@ -15,6 +15,7 @@ import { themeToCSS, hsl } from './themeUtils';
 import { resolveVariantComponent } from './variants';
 import type { ActiveVariantMap } from './variants';
 import { resolveThemeTokens } from './themes';
+import { runCompositionInvariantsInDev } from '@/platform/core/compositionInvariants';
 
 interface PageRendererProps {
   template: TemplateComposition;
@@ -50,6 +51,12 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
       document.body.style.fontFamily = '';
     };
   }, [theme, template.name]);
+
+  // Composition Authority invariants — dev-only warnings if the rendered
+  // template drops sections, empties item arrays, or duplicates section ids.
+  useEffect(() => {
+    runCompositionInvariantsInDev(template, `PageRenderer:${template.id}`);
+  }, [template]);
 
   return (
     <div style={themeToCSS(theme) as React.CSSProperties}>

@@ -1488,6 +1488,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             invalidFiles: sanitized.invalidFiles,
             aiContentPreview: aiContent.slice(0, 300),
           };
+          if (forceSalonPreviewReady) {
+            setValidationAttempts((prev) => [...prev, {
+              attempt: attempt + 1,
+              kind: 'quality',
+              reason: quality.reason || 'Output failed salon quality contract',
+            }]);
+          }
           console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned minimal/fallback output — retrying`, quality);
           continue;
         }

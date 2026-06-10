@@ -913,6 +913,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     }
 
     setIsLaunching(true);
+    setValidationAttempts([]);
+    setFallbackUsed(false);
     try {
       console.log('[SystemLauncher] Launching with:', {
         system: selectedSystem,

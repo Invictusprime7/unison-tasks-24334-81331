@@ -391,7 +391,17 @@ export default function App() {
       {SECTIONS.filter(s => !s.hidden).map(s => {
         const C = SECTION_MAP[s.type];
         if (!C) return null;
-        return <C key={s.id} props={s.props} />;
+        const layoutToken = s.props && s.props.layout;
+        return (
+          <div
+            key={s.id}
+            data-ut-section-id={s.id}
+            data-ut-section-type={s.type}
+            data-ut-layout={layoutToken || undefined}
+          >
+            <C props={s.props} />
+          </div>
+        );
       })}
     </div>
   );

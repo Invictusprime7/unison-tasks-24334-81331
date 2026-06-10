@@ -394,6 +394,27 @@ export function TemplateRuntimeProvider({ config, children }: TemplateRuntimePro
     return () => subscription.unsubscribe();
   }, [sessionId, session?.user]);
 
+  // Hydrate pre-baked intent surfaces (written by the Wizard Launcher into
+  // /.unison/intent-surfaces.json). Stashed on window so deterministic UI
+  // helpers + the AI Builder Readiness card share one source of truth.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as unknown as { __UNISON_INTENT_SURFACES__?: unknown };
+    if (w.__UNISON_INTENT_SURFACES__) return;
+    let cancelled = false;
+    fetch('/.unison/intent-surfaces.json', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        w.__UNISON_INTENT_SURFACES__ = data;
+        if (config.debug) {
+          console.log('[Runtime] Loaded pre-baked intent surfaces:', Object.keys(data.byIntent || {}));
+        }
+      })
+      .catch(() => {/* file is optional */});
+    return () => { cancelled = true; };
+  }, [config.debug]);
+
   // Migrate guest cart to authenticated user
   const migrateGuestCart = async (guestSessionId: string, userId: string) => {
     if (!supabase) return;

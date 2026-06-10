@@ -48,6 +48,7 @@ import {
 import { cn } from '@/lib/utils';
 import { AIConversationMessage } from './ai-chat/AIConversationMessage';
 import { AIConversationWelcome } from './ai-chat/AIConversationWelcome';
+import { LaunchReadinessCard } from './ai-chat/LaunchReadinessCard';
 import { AIConversationInput } from './ai-chat/AIConversationInput';
 import { supabase as supabaseClient } from '@/integrations/supabase/client';
 const supabase = supabaseClient as any;
@@ -2221,6 +2222,7 @@ export default function App() {
           {/* Messages or Welcome */}
           <ScrollArea className="flex-1" ref={scrollRef}>
             <div className="py-3 px-3">
+              <LaunchReadinessCard vfsFiles={vfsFiles} className="-mx-3" />
               {!hasConversation ? (
                 <AIConversationWelcome
                   onSelectPrompt={(prompt) => {

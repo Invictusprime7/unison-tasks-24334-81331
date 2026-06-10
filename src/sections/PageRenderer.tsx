@@ -67,12 +67,21 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
             console.warn(`[PageRenderer] Unknown section type: ${section.type}`);
             return null;
           }
+          // Layout tokens flow through to a wrapping element so CSS / variant
+          // components can observe them. See composition-authority memory.
+          const layoutToken = (section.props as { layout?: string })?.layout;
           return (
-            <Component
+            <div
               key={`${section.id}-${activeVariants[section.id] || 'default'}`}
-              section={section as SectionEntry<any>}
-              theme={theme}
-            />
+              data-ut-section-id={section.id}
+              data-ut-section-type={section.type}
+              data-ut-layout={layoutToken || undefined}
+            >
+              <Component
+                section={section as SectionEntry<any>}
+                theme={theme}
+              />
+            </div>
           );
         })}
     </div>

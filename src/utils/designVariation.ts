@@ -1,13 +1,23 @@
 /**
- * Design Variation Generator
+ * Style Variation Generator
  *
- * Produces randomized design schema parameters for the systems-build
- * edge function so that every generated website has a unique layout,
- * visual effect set, button style, image treatment, and section mix.
+ * Produces randomized **style-only** design parameters for the systems-build
+ * edge function so every generated website has a unique visual feel:
+ * palette shift, button shape, image treatment, spacing, shadows, hover
+ * effects, font pairing.
  *
- * This is the PRIMARY mechanism for visual diversity — the variationSeed
- * in the edge function only nudges AI creative choices; the design schema
- * is the authoritative contract the AI follows.
+ * AUTHORITY (see mem://architecture/site-os/composition-authority):
+ *   - SiteBundle composition owns: section presence, section count,
+ *     per-section items.
+ *   - Topology owns: page identity / route / nav order.
+ *   - This module owns: VISUAL STYLE ONLY. It must never decide whether a
+ *     section appears, how many items it has, or which pages exist.
+ *
+ * The legacy `sections.include_*` / `sections.use_*` boolean flags were
+ * removed. They were the silent culprit behind sparse skeleton previews —
+ * a coinflip here could strip a testimonial or feature grid the bundle had
+ * already populated. Section presence is now exclusively a function of
+ * `SiteBundleSnapshot.composition.sections[]`.
  */
 
 // ============================================================================
@@ -57,7 +67,11 @@ function coinFlip(probability = 0.5): boolean {
 // Public API
 // ============================================================================
 
-export interface DesignVariation {
+/**
+ * Style-only variation. NO `sections` block — section presence is owned by
+ * `SiteBundleSnapshot.composition`, not by the randomizer.
+ */
+export interface StyleVariation {
   layout: {
     hero_style: (typeof HERO_STYLES)[number];
     section_spacing: (typeof SECTION_SPACINGS)[number];
@@ -83,29 +97,28 @@ export interface DesignVariation {
     size: (typeof BUTTON_SIZES)[number];
     hover_effect: (typeof HOVER_EFFECTS)[number];
   };
-  sections: {
-    include_stats: boolean;
-    include_testimonials: boolean;
-    include_faq: boolean;
-    include_cta_banner: boolean;
-    include_newsletter: boolean;
-    include_social_proof: boolean;
-    use_counter_animations: boolean;
-  };
   content: {
     density: (typeof CONTENT_DENSITIES)[number];
     use_icons: boolean;
     use_emojis: boolean;
     writing_style: (typeof WRITING_STYLES)[number];
   };
+  /**
+   * Style-level animation flourish only. NOT a section-presence flag.
+   */
+  motion: {
+    use_counter_animations: boolean;
+  };
 }
 
+/** Back-compat alias. New callers should use `StyleVariation`. */
+export type DesignVariation = StyleVariation;
+
 /**
- * Generate a randomized design schema.
- * Core sections (testimonials, CTA) are weighted to appear most of the time
- * but NOT always, ensuring visual diversity.
+ * Generate randomized style-only parameters. Section presence is NEVER
+ * decided here — see SiteBundle composition.
  */
-export function generateDesignVariation(): DesignVariation {
+export function generateStyleVariation(): StyleVariation {
   return {
     layout: {
       hero_style: pick(HERO_STYLES),
@@ -132,28 +145,20 @@ export function generateDesignVariation(): DesignVariation {
       size: pick(BUTTON_SIZES),
       hover_effect: pick(HOVER_EFFECTS),
     },
-    sections: {
-      // AUTHORITY RULE: Section presence is owned by SiteBundle composition,
-      // never by the design randomizer. These flags MUST stay `true` so the
-      // variation layer can never strip a section the bundle declared.
-      // Only `use_counter_animations` remains a style coinflip.
-      include_stats: true,
-      include_testimonials: true,
-      include_faq: true,
-      include_cta_banner: true,
-      include_newsletter: true,
-      include_social_proof: true,
-      use_counter_animations: coinFlip(0.6),
-    },
-
     content: {
       density: pick(CONTENT_DENSITIES),
       use_icons: coinFlip(0.9),
       use_emojis: coinFlip(0.15),
       writing_style: pick(WRITING_STYLES),
     },
+    motion: {
+      use_counter_animations: coinFlip(0.6),
+    },
   };
 }
+
+/** Back-compat alias. New callers should use `generateStyleVariation`. */
+export const generateDesignVariation = generateStyleVariation;
 
 /**
  * Pick a random font pairing different from the given current fonts.

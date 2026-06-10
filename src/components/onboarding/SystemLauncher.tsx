@@ -788,6 +788,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const [businessName, setBusinessName] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
+  const [launchStatus, setLaunchStatus] = useState("");
 
   // Questions step state
   const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal | null>(null);

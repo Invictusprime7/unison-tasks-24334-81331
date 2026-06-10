@@ -1246,6 +1246,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         // to general_code_assist with memory + research + multi-page output
         // contract. `systemsBuildContext` is preserved for back-compat so the
         // existing blueprint prompt blocks still render.
+        // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
+        // Pass a SLIM blueprint — wizardSeed already carries brand/theme/intents
+        // and the full blueprint duplicated ~10KB of payload, pushing Gemini
+        // 3 Flash past its 50s budget for non-cached industry/style combos.
+        const slimBlueprint = {
+          version: blueprint.version,
+          launcherPolicy: blueprint.launcherPolicy,
+          identity: blueprint.identity,
+          template_sections: blueprint.template_sections,
+          template_intents: blueprint.template_intents,
+        };
         const result = await withTimeout(
           runBuilderTurn<any>({
             messages: [{ role: 'user', content: aiUserPrompt }],
@@ -1254,7 +1265,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             aesthetic: resolvedPreset.id,
             source: resolvedIndustry,
             systemType: selectedSystem,
-            systemsBuildContext: blueprint,
+            systemsBuildContext: slimBlueprint,
             wizardSeed,
           }),
           WIZARD_AI_TIMEOUT_MS,

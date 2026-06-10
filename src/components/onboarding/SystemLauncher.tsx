@@ -1474,6 +1474,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           const fallbackQuality = assessWizardGenerationQuality(
             sanitizedFallback.files,
             composition.sections.map((s) => s.type),
+            forceSalonPreviewReady ? SALON_QUALITY_REQUIREMENTS : undefined,
           );
 
           if (fallbackQuality.ok) {

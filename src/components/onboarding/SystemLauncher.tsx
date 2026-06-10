@@ -1546,6 +1546,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             };
             aiError = null;
             launchReliabilityMode = 'deterministic-salon-preview';
+            setFallbackUsed(true);
             if (forceSalonPreviewReady) {
               setLaunchStatus('Using styled template preview — you can customize in the Builder');
             }

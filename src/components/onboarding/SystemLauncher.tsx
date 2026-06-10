@@ -1559,6 +1559,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           generatedAt: new Date().toISOString(),
         }, null, 2),
         '/.unison/native-publish-setup.json': JSON.stringify(nativeSetupSnapshot || null, null, 2),
+        '/.unison/setup-snapshot.json': JSON.stringify(nativeSetupSnapshot || null, null, 2),
+        '/.unison/intent-bindings.json': JSON.stringify(intentBindingsFile, null, 2),
+        '/.unison/intent-surfaces.json': JSON.stringify(intentSurfacesFile, null, 2),
       };
       const runtimeManifest = launchArtifacts.runtimeManifest;
 

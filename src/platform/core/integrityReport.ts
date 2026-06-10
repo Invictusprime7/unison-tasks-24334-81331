@@ -49,7 +49,8 @@ export type IntegrityCategory =
   | 'intent-validity'
   | 'workflow-validity'
   | 'provisioning'
-  | 'consistency';
+  | 'consistency'
+  | 'composition-authority';
 
 export interface IntegrityReport {
   /** Overall pass/fail */

@@ -842,6 +842,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setCustomPrompt("");
     setIsLaunching(false);
     setLaunchStatus("");
+    setValidationAttempts([]);
+    setFallbackUsed(false);
+    setDiagnosticsExpanded(false);
     setPrimaryGoal(null);
     setCustomerNeeds([]);
     setSelectedPages(["about", "services", "contact"]);

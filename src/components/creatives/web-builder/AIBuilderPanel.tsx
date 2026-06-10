@@ -48,6 +48,7 @@ import {
 import { cn } from '@/lib/utils';
 import { AIConversationMessage } from './ai-chat/AIConversationMessage';
 import { AIConversationWelcome } from './ai-chat/AIConversationWelcome';
+import { LaunchReadinessCard } from './ai-chat/LaunchReadinessCard';
 import { AIConversationInput } from './ai-chat/AIConversationInput';
 import { supabase as supabaseClient } from '@/integrations/supabase/client';
 const supabase = supabaseClient as any;

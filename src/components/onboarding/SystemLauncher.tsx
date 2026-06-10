@@ -788,6 +788,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const [businessName, setBusinessName] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
+  const [launchStatus, setLaunchStatus] = useState("");
 
   // Questions step state
   const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal | null>(null);
@@ -833,6 +834,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setBusinessName("");
     setCustomPrompt("");
     setIsLaunching(false);
+    setLaunchStatus("");
     setPrimaryGoal(null);
     setCustomerNeeds([]);
     setSelectedPages(["about", "services", "contact"]);
@@ -1296,7 +1298,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
+          if (forceSalonPreviewReady) {
+            setLaunchStatus(`Refining salon content… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+          }
           await new Promise((r) => setTimeout(r, retryDelayMs));
+        }
+        if (forceSalonPreviewReady) {
+          setLaunchStatus(`Generating booking flow… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
         }
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
         // The structured `wizardSeed` is what the edge function's task
@@ -1503,6 +1511,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             };
             aiError = null;
             launchReliabilityMode = 'deterministic-salon-preview';
+            if (forceSalonPreviewReady) {
+              setLaunchStatus('Using styled template preview — you can customize in the Builder');
+            }
             console.warn('[SystemLauncher] AI generation did not produce a launchable payload; using canonical composition fallback', {
               industry: resolvedIndustry,
               template: effectiveTemplate?.label,
@@ -1804,6 +1815,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       toast.error(msg);
     } finally {
       setIsLaunching(false);
+      setLaunchStatus("");
     }
   };
 
@@ -2422,7 +2434,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   {isLaunching ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating…
+                      {launchStatus || "Generating…"}
                     </>
                   ) : (
                     <>

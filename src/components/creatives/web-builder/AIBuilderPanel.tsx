@@ -2222,6 +2222,7 @@ export default function App() {
           {/* Messages or Welcome */}
           <ScrollArea className="flex-1" ref={scrollRef}>
             <div className="py-3 px-3">
+              <LaunchReadinessCard vfsFiles={vfsFiles} className="-mx-3" />
               {!hasConversation ? (
                 <AIConversationWelcome
                   onSelectPrompt={(prompt) => {

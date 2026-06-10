@@ -1511,6 +1511,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             };
             aiError = null;
             launchReliabilityMode = 'deterministic-salon-preview';
+            if (forceSalonPreviewReady) {
+              setLaunchStatus('Using styled template preview — you can customize in the Builder');
+            }
             console.warn('[SystemLauncher] AI generation did not produce a launchable payload; using canonical composition fallback', {
               industry: resolvedIndustry,
               template: effectiveTemplate?.label,

@@ -129,6 +129,13 @@ export function runIntegrityReport(
     checks.push(...validateCrossConsistency(bundle, contract));
   }
 
+  // ── 4. Composition Authority invariants (per supplied page) ─────────
+  if (options.compositions && options.compositions.length > 0) {
+    for (const entry of options.compositions) {
+      checks.push(...validateCompositionAuthority(entry.label, entry.composition, entry.expectations));
+    }
+  }
+
   // Filter infos if not requested
   const filtered = options.includeInfos
     ? checks

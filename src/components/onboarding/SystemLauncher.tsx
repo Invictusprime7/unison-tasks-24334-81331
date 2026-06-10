@@ -578,9 +578,9 @@ function assessWizardGenerationQuality(
   requiredSections: string[],
   industryRequirements?: {
     /** Canonical data-ut-intent values that MUST appear in the generated output. */
-    requiredIntents?: string[];
+    requiredIntents?: readonly string[];
     /** Industry vocabulary — at least one term must appear (case-insensitive). */
-    vocabulary?: string[];
+    vocabulary?: readonly string[];
     /** Label for diagnostics (e.g. "salon"). */
     label?: string;
   },

@@ -81,6 +81,17 @@ export interface IntegrityReportOptions {
   includeInfos?: boolean;
   /** Skip expensive checks */
   fast?: boolean;
+  /**
+   * Optional per-page TemplateComposition audits. Map of label → composition
+   * (and optional expectations). When supplied, each composition is audited
+   * by the Composition Authority invariants and its issues land in the
+   * `composition-authority` category.
+   */
+  compositions?: Array<{
+    label: string;
+    composition: TemplateComposition;
+    expectations?: CompositionExpectations;
+  }>;
 }
 
 // ============================================================================

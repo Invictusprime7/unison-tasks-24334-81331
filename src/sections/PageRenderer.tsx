@@ -52,6 +52,12 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
     };
   }, [theme, template.name]);
 
+  // Composition Authority invariants — dev-only warnings if the rendered
+  // template drops sections, empties item arrays, or duplicates section ids.
+  useEffect(() => {
+    runCompositionInvariantsInDev(template, `PageRenderer:${template.id}`);
+  }, [template]);
+
   return (
     <div style={themeToCSS(theme) as React.CSSProperties}>
       {template.sections

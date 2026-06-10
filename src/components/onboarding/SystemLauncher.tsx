@@ -1386,14 +1386,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
 
-      // ── Universal deterministic fallback ──
-      // When Lane B AI generation fails (timeout, rate-limit, quality gate),
-      // surface the canonical composition (compositionToReactCode) as the
-      // preview so EVERY industry/template/style combo lands on a working,
-      // themed site instead of an error toast. The canonical pipeline has
-      // already scaffolded all sub-pages into the VFS — this just gives the
-      // home page a real composition body when the AI didn't deliver one.
-      if (!generationResult) {
+      // ── Salon-only deterministic fallback (Lane B wizard seed is hardened
+      // for salon first; other industries will be added in stages). When the
+      // salon Lane B AI generation fails (timeout, rate-limit, quality gate),
+      // surface the canonical composition so the salon preview always lands
+      // on a working themed site. Non-salon industries fall through to the
+      // standard AI-error path below so we can observe failures and harden
+      // each industry profile intentionally.
+      if (!generationResult && forceSalonPreviewReady) {
+
         const preAiErrorMsg = aiError ? await getFunctionErrorMessage(aiError).catch(() => '') : '';
         const normalizedPreErr = preAiErrorMsg.toLowerCase();
         const isHardAbort =

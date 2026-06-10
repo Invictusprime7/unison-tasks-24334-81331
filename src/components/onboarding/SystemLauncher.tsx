@@ -1288,7 +1288,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aiAppInvalid?: boolean;
         qualityReason?: string;
       } | null = null;
-      const MAX_RETRIES = 2;
+      // Salon Lane B is the canonical wizard-seed + AI pipeline path; we give
+      // it extra retries so the AI succeeds without bypassing into the
+      // deterministic safety net. Other industries keep the standard budget.
+      const MAX_RETRIES = forceSalonPreviewReady ? 3 : 2;
       let launchReliabilityMode: 'ai' | 'deterministic-salon-preview' = 'ai';
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
@@ -1301,7 +1304,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         // to general_code_assist with memory + research + multi-page output
         // contract. `systemsBuildContext` is preserved for back-compat so the
         // existing blueprint prompt blocks still render.
-        // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
         // Pass a SLIM blueprint — wizardSeed already carries brand/theme/intents
         // and the full blueprint duplicated ~10KB of payload, pushing Gemini
         // 3 Flash past its 50s budget for non-cached industry/style combos.
@@ -1312,9 +1314,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           template_sections: blueprint.template_sections,
           template_intents: blueprint.template_intents,
         };
+
+        // On retry, reinforce the salon contract by quoting the prior failure
+        // back to the model so it corrects the specific gap (missing
+        // booking.create intent, generic copy, missing section, etc).
+        const retryReinforcement =
+          attempt > 0 && lastPayloadIssue && forceSalonPreviewReady
+            ? `\n\nRETRY CONTRACT REMINDER (attempt ${attempt + 1}): prior generation was rejected — ${
+                lastPayloadIssue.qualityReason || lastPayloadIssue.kind
+              }. You MUST emit a booking-focused salon site: wire the primary CTA with data-ut-intent="booking.create", use salon vocabulary (stylist, hair, color, blowout, appointment, book), and render all required sections from the wizard seed template list.`
+            : '';
+        const promptForAttempt = retryReinforcement
+          ? aiUserPrompt + retryReinforcement
+          : aiUserPrompt;
+
         const result = await withTimeout(
           runBuilderTurn<any>({
-            messages: [{ role: 'user', content: aiUserPrompt }],
+            messages: [{ role: 'user', content: promptForAttempt }],
             mode: 'wizard-seed',
             templateName: effectiveTemplate?.label || system.name,
             aesthetic: resolvedPreset.id,

@@ -67,6 +67,7 @@ import { createLaunchState } from "@/types/launchState";
 import { extractLauncherPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
+import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 
 // ============================================================================
 // Types
@@ -1483,14 +1484,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         businessId: provisionedBusinessId || undefined,
         systemType: selectedSystem,
       });
-      const nativeReadinessManifest = buildNativePublishReadinessManifest({
+      // ── Wizard-time intent gap audit (runs against topology plan + materialized
+      // playground BEFORE any TSX is shipped). Stamped into launch-readiness so
+      // the AI Builder Readiness card can read it on first paint.
+      const wizardAudit = auditWizardIntentGap({
+        sitePlan,
         state: materializedPlayground,
-        validations: pipelineResult.validations,
-        setupSnapshot: nativeSetupSnapshot,
-        enabled: forceSalonPreviewReady,
-        systemType: selectedSystem,
         industryOverlay: generationCategory,
       });
+      if (wizardAudit.missing.some((m) => m.level === 'required' && !m.synthesizable)) {
+        console.warn('[SystemLauncher] Required intents unreachable in topology:', wizardAudit.missing);
+      } else if (wizardAudit.missing.length > 0) {
+        console.log('[SystemLauncher] Intent gaps will be auto-synthesized:', wizardAudit.missing.map((m) => m.coreIntent));
+      }
+
+      const nativeReadinessManifest = {
+        ...buildNativePublishReadinessManifest({
+          state: materializedPlayground,
+          validations: pipelineResult.validations,
+          setupSnapshot: nativeSetupSnapshot,
+          enabled: forceSalonPreviewReady,
+          systemType: selectedSystem,
+          industryOverlay: generationCategory,
+        }),
+        wizardAudit,
+      };
+
+      const intentBindingsFile = buildIntentBindingsFile(materializedPlayground);
+      const intentSurfacesFile = buildIntentSurfacesFile(materializedPlayground);
 
       const launchArtifacts = buildCanonicalLaunchArtifacts({
         generatedFiles,
@@ -1538,6 +1559,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           generatedAt: new Date().toISOString(),
         }, null, 2),
         '/.unison/native-publish-setup.json': JSON.stringify(nativeSetupSnapshot || null, null, 2),
+        '/.unison/setup-snapshot.json': JSON.stringify(nativeSetupSnapshot || null, null, 2),
+        '/.unison/intent-bindings.json': JSON.stringify(intentBindingsFile, null, 2),
+        '/.unison/intent-surfaces.json': JSON.stringify(intentSurfacesFile, null, 2),
       };
       const runtimeManifest = launchArtifacts.runtimeManifest;
 

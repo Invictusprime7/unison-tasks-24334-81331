@@ -219,7 +219,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(indexCode).not.toContain("Safe_Route");
   });
 
-  it("does not synthesize route page files before AI Builder hydration", () => {
+  it("scaffolds registered wizard pages before Builder readiness", () => {
     const templateId = getCompositionsBySystemType("booking")[0]?.id;
     expect(templateId).toBeTruthy();
 
@@ -255,6 +255,7 @@ describe("launchStateToSandpackFiles", () => {
       wizardSelections,
     });
 
-    expect(artifacts.files["/src/pages/Services.tsx"]).toBeUndefined();
+    expect(artifacts.files["/src/pages/Services.tsx"]).toBeTruthy();
+    expect(artifacts.files["/src/App.tsx"]).toContain('path="/services"');
   });
 });

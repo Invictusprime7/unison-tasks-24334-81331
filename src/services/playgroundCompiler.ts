@@ -1,9 +1,8 @@
 /**
  * Playground Compiler - compiles PlaygroundState into runtime artifacts.
  *
- * Missing page bodies are intentionally not generated here. New route files are
- * hydrated by the AI Builder from user chat prompts, then the canonical router
- * includes them once they exist in VFS.
+ * Wizard-registered pages are scaffolded here so the canonical router and VFS
+ * are structurally complete before the launch reaches WebBuilder readiness.
  */
 
 import type {
@@ -12,16 +11,19 @@ import type {
   PlaygroundBinding,
 } from '@/types/playground';
 import { generateCanonicalRouterForFiles } from '@/utils/topologyRouterGenerator';
+import { generateTopologyPlaceholder } from '@/utils/topologyVFSScaffolder';
 import { deriveFilePath } from './routeNavigationService';
 import { ensureViteRootFiles } from './previewSession';
 import type { LayoutCategory } from '@/data/templates/types';
+import type { BuilderPage } from '@/types/pageRegistry';
+import type { GeneratedSitePlan, PageRole, PageRouteNode } from '@/platform/core/siteTopologyPlanner';
 
 export interface CompilePlaygroundOptions {
-  /** Retained for pipeline compatibility; missing pages are AI-hydrated. */
+  /** Selected template used to generate real role-filtered page scaffolds. */
   selectedTemplateId?: string;
-  /** Retained for pipeline compatibility; missing pages are AI-hydrated. */
+  /** Selected theme id retained for pipeline compatibility. */
   selectedThemeId?: string;
-  /** Retained for pipeline compatibility; missing pages are AI-hydrated. */
+  /** Industry overlay used by template/page scaffolding. */
   industry?: LayoutCategory | string | null;
 }
 
@@ -29,7 +31,7 @@ export function compilePlayground(
   state: PlaygroundState,
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
-  _options?: CompilePlaygroundOptions,
+  options?: CompilePlaygroundOptions,
 ): PlaygroundCompileResult {
   const registry = state.pageRegistry;
   const pages = Object.values(registry.pages);
@@ -39,6 +41,8 @@ export function compilePlayground(
       page.filePath = deriveFilePath(page);
     }
   }
+
+  const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, options);
 
   const vfsFiles: Record<string, string> = {};
 
@@ -55,7 +59,13 @@ export function compilePlayground(
       const legacyHomeSource = existingVfsFiles['/src/App.tsx'] || existingVfsFiles['/App.tsx'];
       if (legacyHomeSource) {
         vfsFiles[fp] = rebaseHomeModuleForPageFile(legacyHomeSource);
+        continue;
       }
+    }
+
+    const node = scaffoldPlan.pages.find((p) => p.id === page.pageId);
+    if (node) {
+      vfsFiles[fp] = generateTopologyPlaceholder(node, scaffoldPlan);
     }
   }
 
@@ -95,6 +105,71 @@ export function compilePlayground(
       homeRoute,
     },
   };
+}
+
+function buildScaffoldPlan(
+  homePageId: string | null | undefined,
+  pages: BuilderPage[],
+  businessName?: string,
+  options?: CompilePlaygroundOptions,
+): GeneratedSitePlan {
+  const pageNodes: PageRouteNode[] = pages
+    .slice()
+    .sort((a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0))
+    .map((page) => ({
+      id: page.pageId,
+      name: page.title,
+      title: page.title,
+      route: page.path,
+      role: inferTopologyRole(page),
+      filePath: page.filePath || deriveFilePath(page),
+      visibleInNav: page.showInNav,
+      isHome: page.isHome,
+      generatedBy: page.createdBy === 'ai' ? 'ai' : page.createdBy === 'manual' ? 'manual' : 'wizard',
+      funnelId: page.funnelId || null,
+      seo: page.seo,
+    }));
+
+  return {
+    siteId: 'playground-compile',
+    industry: String(options?.industry || 'general'),
+    businessName: businessName || 'Company',
+    homePageId: homePageId || pageNodes.find((p) => p.isHome)?.id || pageNodes[0]?.id || 'home',
+    pages: pageNodes,
+    navItems: pageNodes.filter((p) => p.visibleInNav).map((p) => p.id),
+    funnels: [],
+    redirects: [],
+    generatedAt: new Date().toISOString(),
+    selectedTemplateId: options?.selectedTemplateId,
+  };
+}
+
+function inferTopologyRole(page: BuilderPage): PageRole {
+  const raw = (page.pageRole || page.pageType || '').toString();
+  if (raw === 'service' || raw === 'landing') return 'services';
+  if (raw === 'thankyou' || raw === 'thank_you') return 'thank_you';
+  if (raw === 'home') return 'home';
+  if (raw === 'about') return 'about';
+  if (raw === 'contact') return 'contact';
+  if (raw === 'pricing') return 'pricing';
+  if (raw === 'gallery') return 'gallery';
+  if (raw === 'faq') return 'faq';
+  if (raw === 'booking') return 'booking';
+  if (raw === 'checkout') return 'checkout';
+  if (raw === 'blog') return 'blog';
+  if (raw === 'shop') return 'shop';
+
+  const path = page.path.toLowerCase();
+  if (path.includes('service')) return 'services';
+  if (path.includes('confirmation') || path.includes('thank')) return 'thank_you';
+  if (path.includes('contact')) return 'contact';
+  if (path.includes('pricing')) return 'pricing';
+  if (path.includes('gallery')) return 'gallery';
+  if (path.includes('faq')) return 'faq';
+  if (path.includes('book')) return 'booking';
+  if (path.includes('checkout')) return 'checkout';
+  if (path.includes('about')) return 'about';
+  return 'custom';
 }
 
 function rebaseHomeModuleForPageFile(content: string): string {

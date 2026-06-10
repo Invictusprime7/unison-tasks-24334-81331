@@ -1375,47 +1375,70 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
 
-      if (!generationResult && forceSalonPreviewReady) {
-        const deterministicFallbackFiles = {
-          '/src/App.tsx': seedAppCode,
-          '/src/index.css': themedIndexCss,
-        };
-        const sanitizedFallback = sanitizeGeneratedFiles(deterministicFallbackFiles);
-        const fallbackQuality = assessWizardGenerationQuality(
-          sanitizedFallback.files,
-          composition.sections.map((s) => s.type),
-        );
+      // ── Universal deterministic fallback ──
+      // When Lane B AI generation fails (timeout, rate-limit, quality gate),
+      // surface the canonical composition (compositionToReactCode) as the
+      // preview so EVERY industry/template/style combo lands on a working,
+      // themed site instead of an error toast. The canonical pipeline has
+      // already scaffolded all sub-pages into the VFS — this just gives the
+      // home page a real composition body when the AI didn't deliver one.
+      if (!generationResult) {
+        const preAiErrorMsg = aiError ? await getFunctionErrorMessage(aiError).catch(() => '') : '';
+        const normalizedPreErr = preAiErrorMsg.toLowerCase();
+        const isHardAbort =
+          normalizedPreErr.includes('invalid or expired token') ||
+          normalizedPreErr.includes('unauthorized') ||
+          normalizedPreErr.includes('authentication') ||
+          preAiErrorMsg.includes('401') ||
+          preAiErrorMsg.includes('402') ||
+          preAiErrorMsg.includes('429') ||
+          normalizedPreErr.includes('credits required');
 
-        if (fallbackQuality.ok) {
-          generationResult = {
-            structured: {
-              files: deterministicFallbackFiles,
-              entryPoint: '/src/App.tsx',
-            },
-            sanitized: sanitizedFallback,
+        if (!isHardAbort) {
+          const deterministicFallbackFiles = {
+            '/src/App.tsx': seedAppCode,
+            '/src/index.css': themedIndexCss,
           };
-          aiError = null;
-          launchReliabilityMode = 'deterministic-salon-preview';
-          console.warn('[SystemLauncher] AI generation did not produce a launchable salon payload; using deterministic salon preview fallback', {
-            lastPayloadIssue,
-            fallbackQuality,
-          });
-          const aiErrorMsg = aiError ? await getFunctionErrorMessage(aiError).catch(() => '') : '';
-          const reasonBits: string[] = [];
-          if (aiErrorMsg) reasonBits.push(aiErrorMsg);
-          if (lastPayloadIssue?.kind) reasonBits.push(`payload:${lastPayloadIssue.kind}`);
-          if (lastPayloadIssue?.qualityReason) reasonBits.push(lastPayloadIssue.qualityReason);
-          const reason = reasonBits.join(' · ').slice(0, 220);
-          toast.warning(
-            reason
-              ? `Lane B AI generation failed (${reason}). Showing deterministic salon preview.`
-              : 'AI generation had an issue, so Unison opened a deterministic salon preview instead.',
+          const sanitizedFallback = sanitizeGeneratedFiles(deterministicFallbackFiles);
+          const fallbackQuality = assessWizardGenerationQuality(
+            sanitizedFallback.files,
+            composition.sections.map((s) => s.type),
           );
-        } else {
-          console.error('[SystemLauncher] Deterministic salon preview fallback failed quality gate', {
-            fallbackQuality,
-            report: sanitizedFallback.report,
-          });
+
+          if (fallbackQuality.ok) {
+            generationResult = {
+              structured: {
+                files: deterministicFallbackFiles,
+                entryPoint: '/src/App.tsx',
+              },
+              sanitized: sanitizedFallback,
+            };
+            aiError = null;
+            launchReliabilityMode = 'deterministic-salon-preview';
+            console.warn('[SystemLauncher] AI generation did not produce a launchable payload; using canonical composition fallback', {
+              industry: resolvedIndustry,
+              template: effectiveTemplate?.label,
+              preset: resolvedPreset.id,
+              lastPayloadIssue,
+              fallbackQuality,
+            });
+            const reasonBits: string[] = [];
+            if (preAiErrorMsg) reasonBits.push(preAiErrorMsg);
+            if (lastPayloadIssue?.kind) reasonBits.push(`payload:${lastPayloadIssue.kind}`);
+            if (lastPayloadIssue?.qualityReason) reasonBits.push(lastPayloadIssue.qualityReason);
+            const reason = reasonBits.join(' · ').slice(0, 220);
+            toast.warning(
+              reason
+                ? `AI was slow (${reason}). Showing the deterministic ${resolvedIndustry} preview — edit it in the Builder.`
+                : `AI generation timed out. Showing the deterministic ${resolvedIndustry} preview — edit it in the Builder.`,
+            );
+          } else {
+            console.error('[SystemLauncher] Deterministic preview fallback failed quality gate', {
+              industry: resolvedIndustry,
+              fallbackQuality,
+              report: sanitizedFallback.report,
+            });
+          }
         }
       }
 

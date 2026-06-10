@@ -1400,7 +1400,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             lastPayloadIssue,
             fallbackQuality,
           });
-          toast.warning('AI generation had an issue, so Unison opened a deterministic salon preview instead.');
+          const aiErrorMsg = aiError ? await getFunctionErrorMessage(aiError).catch(() => '') : '';
+          const reasonBits: string[] = [];
+          if (aiErrorMsg) reasonBits.push(aiErrorMsg);
+          if (lastPayloadIssue?.kind) reasonBits.push(`payload:${lastPayloadIssue.kind}`);
+          if (lastPayloadIssue?.qualityReason) reasonBits.push(lastPayloadIssue.qualityReason);
+          const reason = reasonBits.join(' · ').slice(0, 220);
+          toast.warning(
+            reason
+              ? `Lane B AI generation failed (${reason}). Showing deterministic salon preview.`
+              : 'AI generation had an issue, so Unison opened a deterministic salon preview instead.',
+          );
         } else {
           console.error('[SystemLauncher] Deterministic salon preview fallback failed quality gate', {
             fallbackQuality,

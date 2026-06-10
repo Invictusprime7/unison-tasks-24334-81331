@@ -1484,14 +1484,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         businessId: provisionedBusinessId || undefined,
         systemType: selectedSystem,
       });
-      const nativeReadinessManifest = buildNativePublishReadinessManifest({
+      // ── Wizard-time intent gap audit (runs against topology plan + materialized
+      // playground BEFORE any TSX is shipped). Stamped into launch-readiness so
+      // the AI Builder Readiness card can read it on first paint.
+      const wizardAudit = auditWizardIntentGap({
+        sitePlan,
         state: materializedPlayground,
-        validations: pipelineResult.validations,
-        setupSnapshot: nativeSetupSnapshot,
-        enabled: forceSalonPreviewReady,
-        systemType: selectedSystem,
         industryOverlay: generationCategory,
       });
+      if (wizardAudit.missing.some((m) => m.level === 'required' && !m.synthesizable)) {
+        console.warn('[SystemLauncher] Required intents unreachable in topology:', wizardAudit.missing);
+      } else if (wizardAudit.missing.length > 0) {
+        console.log('[SystemLauncher] Intent gaps will be auto-synthesized:', wizardAudit.missing.map((m) => m.coreIntent));
+      }
+
+      const nativeReadinessManifest = {
+        ...buildNativePublishReadinessManifest({
+          state: materializedPlayground,
+          validations: pipelineResult.validations,
+          setupSnapshot: nativeSetupSnapshot,
+          enabled: forceSalonPreviewReady,
+          systemType: selectedSystem,
+          industryOverlay: generationCategory,
+        }),
+        wizardAudit,
+      };
+
+      const intentBindingsFile = buildIntentBindingsFile(materializedPlayground);
+      const intentSurfacesFile = buildIntentSurfacesFile(materializedPlayground);
 
       const launchArtifacts = buildCanonicalLaunchArtifacts({
         generatedFiles,

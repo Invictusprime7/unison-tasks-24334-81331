@@ -789,6 +789,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchStatus, setLaunchStatus] = useState("");
+  const [validationAttempts, setValidationAttempts] = useState<Array<{
+    attempt: number;
+    kind: 'empty' | 'app' | 'section' | 'quality';
+    reason: string;
+  }>>([]);
+  const [fallbackUsed, setFallbackUsed] = useState(false);
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
 
   // Questions step state
   const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal | null>(null);

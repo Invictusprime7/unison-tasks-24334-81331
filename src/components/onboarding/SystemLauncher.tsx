@@ -2434,7 +2434,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   {isLaunching ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating…
+                      {launchStatus || "Generating…"}
                     </>
                   ) : (
                     <>

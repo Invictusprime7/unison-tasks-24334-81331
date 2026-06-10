@@ -1,9 +1,8 @@
 /**
  * Playground Compiler - compiles PlaygroundState into runtime artifacts.
  *
- * Missing page bodies are intentionally not generated here. New route files are
- * hydrated by the AI Builder from user chat prompts, then the canonical router
- * includes them once they exist in VFS.
+ * Wizard-registered pages are scaffolded here so the canonical router and VFS
+ * are structurally complete before the launch reaches WebBuilder readiness.
  */
 
 import type {
@@ -12,16 +11,19 @@ import type {
   PlaygroundBinding,
 } from '@/types/playground';
 import { generateCanonicalRouterForFiles } from '@/utils/topologyRouterGenerator';
+import { generateTopologyPlaceholder } from '@/utils/topologyVFSScaffolder';
 import { deriveFilePath } from './routeNavigationService';
 import { ensureViteRootFiles } from './previewSession';
 import type { LayoutCategory } from '@/data/templates/types';
+import type { BuilderPage } from '@/types/pageRegistry';
+import type { GeneratedSitePlan, PageRole, PageRouteNode } from '@/platform/core/siteTopologyPlanner';
 
 export interface CompilePlaygroundOptions {
-  /** Retained for pipeline compatibility; missing pages are AI-hydrated. */
+  /** Selected template used to generate real role-filtered page scaffolds. */
   selectedTemplateId?: string;
-  /** Retained for pipeline compatibility; missing pages are AI-hydrated. */
+  /** Selected theme id retained for pipeline compatibility. */
   selectedThemeId?: string;
-  /** Retained for pipeline compatibility; missing pages are AI-hydrated. */
+  /** Industry overlay used by template/page scaffolding. */
   industry?: LayoutCategory | string | null;
 }
 
@@ -29,10 +31,11 @@ export function compilePlayground(
   state: PlaygroundState,
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
-  _options?: CompilePlaygroundOptions,
+  options?: CompilePlaygroundOptions,
 ): PlaygroundCompileResult {
   const registry = state.pageRegistry;
   const pages = Object.values(registry.pages);
+  const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, options);
 
   for (const page of pages) {
     if (!page.filePath) {
@@ -55,7 +58,13 @@ export function compilePlayground(
       const legacyHomeSource = existingVfsFiles['/src/App.tsx'] || existingVfsFiles['/App.tsx'];
       if (legacyHomeSource) {
         vfsFiles[fp] = rebaseHomeModuleForPageFile(legacyHomeSource);
+        continue;
       }
+    }
+
+    const node = scaffoldPlan.pages.find((p) => p.id === page.pageId);
+    if (node) {
+      vfsFiles[fp] = generateTopologyPlaceholder(node, scaffoldPlan);
     }
   }
 

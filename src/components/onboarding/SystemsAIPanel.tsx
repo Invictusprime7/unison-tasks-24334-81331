@@ -283,14 +283,9 @@ function buildContractAndContext(chipId: string, prompt: string, businessName?: 
         glassmorphism: design.effects.glassmorphism,
         shadows: design.effects.shadows as string | undefined,
       },
-      sections: {
-        include_stats: design.sections.include_stats,
-        include_testimonials: design.sections.include_testimonials,
-        include_faq: design.sections.include_faq,
-        include_cta_banner: design.sections.include_cta_banner,
-        include_newsletter: design.sections.include_newsletter,
-        include_social_proof: design.sections.include_social_proof,
-      },
+      // Section presence intentionally omitted — owned by SiteBundle
+      // composition, not the style randomizer. See
+      // mem://architecture/site-os/composition-authority.
     },
     intents: blueprint.intents.allowed.map(i => ({ intent: i })),
     template_sections: compositionMeta?.sections,

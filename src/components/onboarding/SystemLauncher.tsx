@@ -1815,6 +1815,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       toast.error(msg);
     } finally {
       setIsLaunching(false);
+      setLaunchStatus("");
     }
   };
 

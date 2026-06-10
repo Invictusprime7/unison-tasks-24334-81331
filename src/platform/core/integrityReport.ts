@@ -445,6 +445,37 @@ function validateCrossConsistency(bundle: SiteBundle, contract: CompiledContract
   return results;
 }
 
+function validateCompositionAuthority(
+  label: string,
+  composition: TemplateComposition,
+  expectations?: CompositionExpectations,
+): IntegrityCheckResult[] {
+  const report = auditComposition(composition, expectations);
+  const results: IntegrityCheckResult[] = [];
+
+  if (report.issues.length === 0) {
+    results.push(pass(
+      'composition-authority',
+      `composition-${label}`,
+      `Composition: ${label}`,
+      `All ${report.sectionsInspected} section(s) honor SiteBundle authority`,
+    ));
+    return results;
+  }
+
+  for (const issue of report.issues) {
+    results.push(fail(
+      'composition-authority',
+      `composition-${label}-${issue.code}-${issue.sectionId || issue.sectionType || 'page'}`,
+      `Composition: ${label}`,
+      issue.severity,
+      issue.message,
+      issue.detail,
+    ));
+  }
+  return results;
+}
+
 // ============================================================================
 // Category Summary Builder
 // ============================================================================
@@ -454,7 +485,7 @@ function buildCategorySummary(
 ): Record<IntegrityCategory, { passed: boolean; checks: number; failures: number }> {
   const categories: IntegrityCategory[] = [
     'bundle-structure', 'route-integrity', 'intent-validity',
-    'workflow-validity', 'provisioning', 'consistency',
+    'workflow-validity', 'provisioning', 'consistency', 'composition-authority',
   ];
 
   const result: Record<string, { passed: boolean; checks: number; failures: number }> = {};

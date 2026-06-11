@@ -1394,13 +1394,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             kind: 'empty',
             aiContentPreview: aiContent.slice(0, 300),
           };
-          if (forceSalonPreviewReady) {
-            setValidationAttempts((prev) => [...prev, {
-              attempt: attempt + 1,
-              kind: 'empty',
-              reason: 'AI returned no usable files',
-            }]);
-          }
+          setValidationAttempts((prev) => [...prev, {
+            attempt: attempt + 1,
+            kind: 'empty',
+            reason: 'AI returned no usable files',
+          }]);
           console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned no usable files`, {
             aiContentPreview: lastPayloadIssue.aiContentPreview,
           });

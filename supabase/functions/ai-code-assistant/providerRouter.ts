@@ -207,8 +207,10 @@ export function buildProviderPlan(
       break;
   }
 
-  // Apply complexity-based auto-upgrade (Wizard Lane A is protected)
-  if (task.type !== "wizard_template_react") {
+  // Apply complexity-based auto-upgrade (Wizard Lane A + wizard seed are
+  // protected — the wizard seed lineup is intentionally tuned for first-shot
+  // success and must not be swapped out for slower advanced-tier models).
+  if (task.type !== "wizard_template_react" && task.type !== "wizard_seed_generation") {
     const baseTokens = plan.gatewayModels[0]?.maxTokens ?? 32000;
     const upgrade = applyComplexityUpgrade(plan.gatewayModels, complexity, baseTokens);
     plan.gatewayModels = upgrade.models;

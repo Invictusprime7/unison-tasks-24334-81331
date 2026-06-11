@@ -126,22 +126,22 @@ export function buildProviderPlan(
 
     // ── Lane B: Wizard seed (full builder-brain path) ───────────────────
     case "wizard_seed_generation":
-      // Hardened first-attempt path. We lead with the fastest Gemini
-      // variant but keep a generous output cap because a truncated JSON
-      // payload was the dominant cause of "no usable files" launch
-      // failures — the parser now salvages partial output, and a 28k cap
-      // gives the model enough room to fully close the JSON object in
-      // one pass for the typical multi-page wizard seed.
+      // Hardened first-attempt path. Lead with Gemini 3 Flash (consistently
+      // produces complete multi-file JSON inside ~45s); fall back to
+      // Flash Lite then GPT-5 Mini. Token cap kept at 20k so first-byte
+      // latency stays low and the model finishes well inside its slot —
+      // the partial-JSON salvager covers any rare truncation.
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlashLite, 28000),
-          m(MODELS.geminiFlash, 28000),
-          m(MODELS.gpt4oMini, 28000),
+          m(MODELS.geminiFlash, 20000),
+          m(MODELS.geminiFlashLite, 20000),
+          m(MODELS.gpt4oMini, 20000),
         ],
-        perModelTimeoutMs: 90000,
-        fallbackMaxTokens: 28000,
+        perModelTimeoutMs: 70000,
+        fallbackMaxTokens: 20000,
       };
       break;
+
 
     case "nav_page_generation":
       plan = {

@@ -1506,78 +1506,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
 
-      // ── Salon-only deterministic fallback (Lane B wizard seed is hardened
-      // for salon first; other industries will be added in stages). When the
-      // salon Lane B AI generation fails (timeout, rate-limit, quality gate),
-      // surface the canonical composition so the salon preview always lands
-      // on a working themed site. Non-salon industries fall through to the
-      // standard AI-error path below so we can observe failures and harden
-      // each industry profile intentionally.
-      if (!generationResult && forceSalonPreviewReady) {
+      // Lane B (wizard-seed + AI) is the ONLY generation path. No deterministic
+      // fallback — if AI fails after retries, surface the error so the user
+      // can re-run intentionally and we can observe/harden each industry.
 
-        const preAiErrorMsg = aiError ? await getFunctionErrorMessage(aiError).catch(() => '') : '';
-        const normalizedPreErr = preAiErrorMsg.toLowerCase();
-        const isHardAbort =
-          normalizedPreErr.includes('invalid or expired token') ||
-          normalizedPreErr.includes('unauthorized') ||
-          normalizedPreErr.includes('authentication') ||
-          preAiErrorMsg.includes('401') ||
-          preAiErrorMsg.includes('402') ||
-          preAiErrorMsg.includes('429') ||
-          normalizedPreErr.includes('credits required');
-
-        if (!isHardAbort) {
-          const deterministicFallbackFiles = {
-            '/src/App.tsx': seedAppCode,
-            '/src/index.css': themedIndexCss,
-          };
-          const sanitizedFallback = sanitizeGeneratedFiles(deterministicFallbackFiles);
-          const fallbackQuality = assessWizardGenerationQuality(
-            sanitizedFallback.files,
-            composition.sections.map((s) => s.type),
-            forceSalonPreviewReady ? SALON_QUALITY_REQUIREMENTS : undefined,
-          );
-
-          if (fallbackQuality.ok) {
-            generationResult = {
-              structured: {
-                files: deterministicFallbackFiles,
-                entryPoint: '/src/App.tsx',
-              },
-              sanitized: sanitizedFallback,
-            };
-            aiError = null;
-            launchReliabilityMode = 'deterministic-salon-preview';
-            setFallbackUsed(true);
-            if (forceSalonPreviewReady) {
-              setLaunchStatus('Using styled template preview — you can customize in the Builder');
-            }
-            console.warn('[SystemLauncher] AI generation did not produce a launchable payload; using canonical composition fallback', {
-              industry: resolvedIndustry,
-              template: effectiveTemplate?.label,
-              preset: resolvedPreset.id,
-              lastPayloadIssue,
-              fallbackQuality,
-            });
-            const reasonBits: string[] = [];
-            if (preAiErrorMsg) reasonBits.push(preAiErrorMsg);
-            if (lastPayloadIssue?.kind) reasonBits.push(`payload:${lastPayloadIssue.kind}`);
-            if (lastPayloadIssue?.qualityReason) reasonBits.push(lastPayloadIssue.qualityReason);
-            const reason = reasonBits.join(' · ').slice(0, 220);
-            toast.warning(
-              reason
-                ? `AI was slow (${reason}). Showing the deterministic ${resolvedIndustry} preview — edit it in the Builder.`
-                : `AI generation timed out. Showing the deterministic ${resolvedIndustry} preview — edit it in the Builder.`,
-            );
-          } else {
-            console.error('[SystemLauncher] Deterministic preview fallback failed quality gate', {
-              industry: resolvedIndustry,
-              fallbackQuality,
-              report: sanitizedFallback.report,
-            });
-          }
-        }
-      }
 
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);

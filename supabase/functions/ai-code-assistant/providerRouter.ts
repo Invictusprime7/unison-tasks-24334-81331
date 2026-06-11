@@ -126,16 +126,18 @@ export function buildProviderPlan(
 
     // ── Lane B: Wizard seed (full builder-brain path) ───────────────────
     case "wizard_seed_generation":
-      // Shares the same model lineup and budget as heavy Lane B tasks so
-      // first-launch generation isn't a degraded path.
+      // Hardened first-attempt path: lead with the fastest Gemini variant at
+      // a tighter output cap so the primary call returns inside one budget
+      // instead of forcing a multi-attempt retry loop. Heavier Gemini Flash
+      // and GPT-5 Mini remain as in-call fallbacks before the loop gives up.
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
+          m(MODELS.geminiFlashLite, 16000),
+          m(MODELS.geminiFlash, 20000),
+          m(MODELS.gpt4oMini, 20000),
         ],
-        perModelTimeoutMs: 60000,
-        fallbackMaxTokens: 32000,
+        perModelTimeoutMs: 90000,
+        fallbackMaxTokens: 20000,
       };
       break;
 

@@ -268,9 +268,9 @@ async function runBuilderLane(
     : undefined;
   const memoryBlock = formatSessionMemoryBlock(memory);
 
-  // ── 2. Learned patterns (skip for fast tasks) ──────────────────────────
+  // ── 2. Learned patterns (skip for fast tasks AND wizard seed) ──────────
   let learnedPatterns = 'No patterns loaded.';
-  if (!task.fastPath) {
+  if (!task.fastPath && task.type !== 'wizard_seed_generation') {
     learnedPatterns = await fetchLearnedPatterns();
   }
 
@@ -282,8 +282,10 @@ async function runBuilderLane(
   const templateActionCtx = buildTemplateActionContext(templateAction ?? undefined);
   const editModeContext = buildEditModeContext(editMode, currentCode ?? undefined, templateStructure, templateActionCtx);
 
-  // ── 3a. User DB context (history + drafts) — non-blocking ──────────────
-  const userDBCtx = userId && !task.fastPath ? await fetchUserContext(userId).catch(() => null) : null;
+  // ── 3a. User DB context (history + drafts) — skip for wizard seed too ──
+  const userDBCtx = userId && !task.fastPath && task.type !== 'wizard_seed_generation'
+    ? await fetchUserContext(userId).catch(() => null)
+    : null;
   const userDBContextBlock = buildUserDBContext(userDBCtx);
 
   // ── 4. Base system prompt ──────────────────────────────────────────────

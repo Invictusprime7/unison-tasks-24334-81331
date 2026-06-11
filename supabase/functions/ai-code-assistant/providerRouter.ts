@@ -126,16 +126,18 @@ export function buildProviderPlan(
 
     // ── Lane B: Wizard seed (full builder-brain path) ───────────────────
     case "wizard_seed_generation":
-      // Shares the same model lineup and budget as heavy Lane B tasks so
-      // first-launch generation isn't a degraded path.
+      // Hardened first-attempt path: lead with the fastest Gemini variant at
+      // a tighter output cap so the primary call returns inside one budget
+      // instead of forcing a multi-attempt retry loop. Heavier Gemini Flash
+      // and GPT-5 Mini remain as in-call fallbacks before the loop gives up.
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 32000),
-          m(MODELS.gpt4oMini, 32000),
-          m(MODELS.gpt4o, 32000),
+          m(MODELS.geminiFlashLite, 16000),
+          m(MODELS.geminiFlash, 20000),
+          m(MODELS.gpt4oMini, 20000),
         ],
-        perModelTimeoutMs: 60000,
-        fallbackMaxTokens: 32000,
+        perModelTimeoutMs: 90000,
+        fallbackMaxTokens: 20000,
       };
       break;
 
@@ -205,8 +207,10 @@ export function buildProviderPlan(
       break;
   }
 
-  // Apply complexity-based auto-upgrade (Wizard Lane A is protected)
-  if (task.type !== "wizard_template_react") {
+  // Apply complexity-based auto-upgrade (Wizard Lane A + wizard seed are
+  // protected — the wizard seed lineup is intentionally tuned for first-shot
+  // success and must not be swapped out for slower advanced-tier models).
+  if (task.type !== "wizard_template_react" && task.type !== "wizard_seed_generation") {
     const baseTokens = plan.gatewayModels[0]?.maxTokens ?? 32000;
     const upgrade = applyComplexityUpgrade(plan.gatewayModels, complexity, baseTokens);
     plan.gatewayModels = upgrade.models;

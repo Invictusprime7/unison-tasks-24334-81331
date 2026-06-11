@@ -1442,15 +1442,13 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             aiAppInvalid: aiAppInvalidFlag,
             invalidFiles: sanitized.invalidFiles,
           };
-          if (forceSalonPreviewReady) {
-            setValidationAttempts((prev) => [...prev, {
-              attempt: attempt + 1,
-              kind: 'app',
-              reason: !aiAppPresent
-                ? 'No App.tsx or page/section files emitted'
-                : 'App.tsx invalid and no fallback page/section files',
-            }]);
-          }
+          setValidationAttempts((prev) => [...prev, {
+            attempt: attempt + 1,
+            kind: 'app',
+            reason: !aiAppPresent
+              ? 'No App.tsx or page/section files emitted'
+              : 'App.tsx invalid and no fallback page/section files',
+          }]);
           console.warn(
             `[SystemLauncher] AI attempt ${attempt + 1} produced no usable composition (no valid App.tsx and no page/section files) — retrying`,
             lastPayloadIssue,

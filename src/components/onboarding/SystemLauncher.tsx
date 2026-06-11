@@ -1304,22 +1304,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aiAppInvalid?: boolean;
         qualityReason?: string;
       } | null = null;
-      // Salon Lane B is the canonical wizard-seed + AI pipeline path; we give
-      // it extra retries so the AI succeeds without bypassing into the
-      // deterministic safety net. Other industries keep the standard budget.
-      const MAX_RETRIES = forceSalonPreviewReady ? 3 : 2;
-      let launchReliabilityMode: 'ai' | 'deterministic-salon-preview' = 'ai';
+      // Lane B wizard-seed + AI is the ONLY path for every industry. Generous
+      // retries with reinforcement; no deterministic safety net.
+      const MAX_RETRIES = 3;
+      const launchReliabilityMode: 'ai' = 'ai';
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
-          if (forceSalonPreviewReady) {
-            setLaunchStatus(`Refining salon content… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
-          }
+          setLaunchStatus(`Refining site content… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
           await new Promise((r) => setTimeout(r, retryDelayMs));
         }
-        if (forceSalonPreviewReady) {
-          setLaunchStatus(`Generating booking flow… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
-        }
+        setLaunchStatus(`Generating site… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
         // The structured `wizardSeed` is what the edge function's task
         // classifier matches on (mode==='wizard-seed' || wizardSeed) → routes

@@ -1304,9 +1304,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aiAppInvalid?: boolean;
         qualityReason?: string;
       } | null = null;
-      // Lane B wizard-seed + AI is the ONLY path for every industry. Generous
-      // retries with reinforcement; no deterministic safety net.
-      const MAX_RETRIES = 3;
+      // Lane B wizard-seed + AI is the ONLY path for every industry. The
+      // provider router is tuned so the first call lands inside its budget,
+      // so we run a single attempt instead of looping multiple retries that
+      // each pay the full prompt-assembly + provider-timeout cost.
+      const MAX_RETRIES = 0;
       const launchReliabilityMode: 'ai' = 'ai';
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
@@ -1314,7 +1316,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           setLaunchStatus(`Refining site content… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
           await new Promise((r) => setTimeout(r, retryDelayMs));
         }
-        setLaunchStatus(`Generating site… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        setLaunchStatus(MAX_RETRIES === 0 ? 'Generating site…' : `Generating site… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
         // The structured `wizardSeed` is what the edge function's task
         // classifier matches on (mode==='wizard-seed' || wizardSeed) → routes

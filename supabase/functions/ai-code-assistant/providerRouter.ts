@@ -124,17 +124,18 @@ export function buildProviderPlan(
       };
       break;
 
-    // ── Lane B: Lightweight tasks ───────────────────────────────────────
+    // ── Lane B: Wizard seed (full builder-brain path) ───────────────────
     case "wizard_seed_generation":
-      // First-launch generation: keep tokens modest so providers respond inside
-      // the 50s window. Gemini Flash leads; GPT-5 Mini is the only fallback.
+      // Shares the same model lineup and budget as heavy Lane B tasks so
+      // first-launch generation isn't a degraded path.
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 16000),
-          m(MODELS.gpt4oMini, 16000),
+          m(MODELS.geminiFlash, 32000),
+          m(MODELS.gpt4oMini, 32000),
+          m(MODELS.gpt4o, 32000),
         ],
-        perModelTimeoutMs: 50000,
-        fallbackMaxTokens: 16000,
+        perModelTimeoutMs: 60000,
+        fallbackMaxTokens: 32000,
       };
       break;
 
@@ -204,16 +205,16 @@ export function buildProviderPlan(
       break;
   }
 
-  // Apply complexity-based auto-upgrade (Wizard lanes are protected)
-  if (task.type !== "wizard_template_react" && task.type !== "wizard_seed_generation") {
+  // Apply complexity-based auto-upgrade (Wizard Lane A is protected)
+  if (task.type !== "wizard_template_react") {
     const baseTokens = plan.gatewayModels[0]?.maxTokens ?? 32000;
     const upgrade = applyComplexityUpgrade(plan.gatewayModels, complexity, baseTokens);
     plan.gatewayModels = upgrade.models;
     plan.perModelTimeoutMs += upgrade.timeoutBoostMs;
   }
 
-  // Apply user overrides (Lane B only — wizard lanes are protected)
-  if (overrides && task.type !== "wizard_template_react" && task.type !== "wizard_seed_generation") {
+  // Apply user overrides (Lane B only — Wizard Lane A is protected)
+  if (overrides && task.type !== "wizard_template_react") {
     if (overrides.autoModelSelection === false && overrides.selectedModelId) {
       const tokens = overrides.maxTokens ?? plan.gatewayModels[0]?.maxTokens ?? 32000;
       const modelId = overrides.selectedModelId;

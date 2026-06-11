@@ -797,7 +797,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     kind: 'empty' | 'app' | 'section' | 'quality';
     reason: string;
   }>>([]);
-  const [fallbackUsed, setFallbackUsed] = useState(false);
+  
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
 
   // Questions step state

@@ -1,7 +1,13 @@
 import * as ts from 'typescript';
 import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
-import type { PlaygroundBinding } from '@/types/playground';
+import type { PlaygroundBinding, PlaygroundBindingSpecV2, PlaygroundPageRole } from '@/types/playground';
 import type { BuilderPage } from '@/types/pageRegistry';
+import {
+  buildUIIntentContract,
+  getUIIntentProfile,
+  hasUIIntentProfile,
+  resolveUIIntentPlacements,
+} from '@/platform/core/uiIntentProfile';
 
 export interface WizardBindingApplicationResult {
   files: Record<string, string>;
@@ -503,40 +509,77 @@ function describeBindingTarget(binding: PlaygroundBinding, snapshot: SiteBundleS
   return binding.targetId;
 }
 
-export function buildWizardBindingGuide(snapshot: SiteBundleSnapshot): string {
+export function buildWizardBindingGuide(
+  snapshot: SiteBundleSnapshot,
+  options: { industry?: string | null } = {},
+): string {
   const bindings = Object.values(snapshot.bindings)
     .filter((binding) => binding.sourceSection && binding.sourceSlot)
     .sort((a, b) => `${a.sourcePageId}:${a.elementKey || a.bindingId}`.localeCompare(`${b.sourcePageId}:${b.elementKey || b.bindingId}`));
 
-  if (bindings.length === 0) {
-    return '';
-  }
+  const lines: string[] = [];
 
-  const lines = [
-    '--- INTERACTION WIRING CONTRACT ---',
-    'Use the exact `data-ut-cta` markers below so the launcher can stamp final hooks before import.',
-    'Do not invent alternate CTA marker names for these slots.',
-    'Keep the visible CTA/link text equal to the specified label when possible so label-based fallback wiring remains deterministic.',
-    'For icon-only triggers, include a descriptive `aria-label` or `title` that matches the intended action.',
-  ];
-
-  for (const binding of bindings) {
-    const sourcePage = snapshot.pageRegistry.pages[binding.sourcePageId];
-    const markers = getSlotMarkers(binding);
-    if (!sourcePage || markers.length === 0) continue;
-
+  if (bindings.length > 0) {
     lines.push(
-      `- Page ${sourcePage.title} (${normalizeRoute(sourcePage.path)}), slot ${binding.sourceSection}.${binding.sourceSlot}: ` +
-      `label "${binding.sourceLabel || 'CTA'}", marker ${markers.map((marker) => `data-ut-cta="${marker}"`).join(' or ')}, ` +
-      `intent ${getDomIntent(binding)}, target ${describeBindingTarget(binding, snapshot)}`
+      '--- INTERACTION WIRING CONTRACT ---',
+      'Use the exact `data-ut-cta` markers below so the launcher can stamp final hooks before import.',
+      'Do not invent alternate CTA marker names for these slots.',
+      'Keep the visible CTA/link text equal to the specified label when possible so label-based fallback wiring remains deterministic.',
+      'For icon-only triggers, include a descriptive `aria-label` or `title` that matches the intended action.',
     );
+
+    for (const binding of bindings) {
+      const sourcePage = snapshot.pageRegistry.pages[binding.sourcePageId];
+      const markers = getSlotMarkers(binding);
+      if (!sourcePage || markers.length === 0) continue;
+
+      lines.push(
+        `- Page ${sourcePage.title} (${normalizeRoute(sourcePage.path)}), slot ${binding.sourceSection}.${binding.sourceSlot}: ` +
+        `label "${binding.sourceLabel || 'CTA'}", marker ${markers.map((marker) => `data-ut-cta="${marker}"`).join(' or ')}, ` +
+        `intent ${getDomIntent(binding)}, target ${describeBindingTarget(binding, snapshot)}`
+      );
+    }
+
+    lines.push('Every internal page link must use `data-ut-intent="nav.goto"` with `data-ut-path`.');
+    lines.push('Every product/cart CTA must include product payload attrs when real product data exists.');
   }
 
-  lines.push('Every internal page link must use `data-ut-intent="nav.goto"` with `data-ut-path`.');
-  lines.push('Every product/cart CTA must include product payload attrs when real product data exists.');
+  // Append UI Intent Contract for industries with a declared profile.
+  const industry = options.industry ?? null;
+  if (hasUIIntentProfile(industry)) {
+    const profile = getUIIntentProfile(industry);
+    // Build binding spec snapshot from existing bindings so resolver can mark "covered" placements.
+    const specs: PlaygroundBindingSpecV2[] = Object.values(snapshot.bindings)
+      .filter((b) => b.sourceSection && b.sourceSlot && b.coreIntent)
+      .map((b) => {
+        const page = snapshot.pageRegistry.pages[b.sourcePageId];
+        return {
+          sourcePageRole: ((page?.pageRole || page?.pageType) ?? 'home') as PlaygroundPageRole,
+          sourceSection: b.sourceSection!,
+          sourceSlot: b.sourceSlot!,
+          label: b.sourceLabel || '',
+          coreIntent: b.coreIntent!,
+          intent: b.intent,
+          targetRef: b.targetId,
+          uiAction: 'navigate',
+        } as PlaygroundBindingSpecV2;
+      });
+    const availablePages = new Set<PlaygroundPageRole>(
+      Object.values(snapshot.pageRegistry.pages).map(
+        (p) => ((p.pageRole || p.pageType) ?? 'home') as PlaygroundPageRole,
+      ),
+    );
+    const resolution = resolveUIIntentPlacements(profile, specs, availablePages);
+    const contract = buildUIIntentContract(industry, resolution);
+    if (contract) {
+      if (lines.length > 0) lines.push('');
+      lines.push(contract);
+    }
+  }
 
   return lines.join('\n');
 }
+
 
 export function applyWizardBindingsToVfs(
   files: Record<string, string>,

@@ -1,7 +1,13 @@
 import * as ts from 'typescript';
 import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
-import type { PlaygroundBinding } from '@/types/playground';
+import type { PlaygroundBinding, PlaygroundBindingSpecV2, PlaygroundPageRole } from '@/types/playground';
 import type { BuilderPage } from '@/types/pageRegistry';
+import {
+  buildUIIntentContract,
+  getUIIntentProfile,
+  hasUIIntentProfile,
+  resolveUIIntentPlacements,
+} from '@/platform/core/uiIntentProfile';
 
 export interface WizardBindingApplicationResult {
   files: Record<string, string>;

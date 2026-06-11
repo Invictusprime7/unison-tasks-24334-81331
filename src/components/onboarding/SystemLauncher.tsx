@@ -1220,7 +1220,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       //    same design intelligence that powers ongoing edits.
       const bindingGuide = (() => {
         try {
-          return buildWizardBindingGuide(siteBundleSnapshot);
+          return buildWizardBindingGuide(siteBundleSnapshot, { industry: resolvedIndustry });
         } catch (e) {
           console.warn('[SystemLauncher] buildWizardBindingGuide failed (non-fatal)', e);
           return '';

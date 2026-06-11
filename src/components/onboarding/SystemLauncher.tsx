@@ -2416,30 +2416,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 </Button>
               </div>
 
-              {(validationAttempts.length > 0 || fallbackUsed) && (
-                <div
-                  className={cn(
-                    "mt-4 rounded-lg border overflow-hidden",
-                    fallbackUsed
-                      ? "border-amber-500/40 bg-amber-500/[0.04]"
-                      : "border-white/10 bg-white/[0.02]"
-                  )}
-                >
+              {validationAttempts.length > 0 && (
+                <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] overflow-hidden">
                   <button
                     type="button"
                     onClick={() => setDiagnosticsExpanded((v) => !v)}
                     className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
                   >
-                    <AlertTriangle
-                      className={cn(
-                        "h-3.5 w-3.5 flex-shrink-0",
-                        fallbackUsed ? "text-amber-400" : "text-cyan-400/70"
-                      )}
-                    />
+                    <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400/70" />
                     <span className="flex-1 text-xs font-medium text-white/80 truncate">
-                      {fallbackUsed
-                        ? "Styled template fallback used — AI couldn't satisfy the salon contract"
-                        : `Salon contract retried ${validationAttempts.length}× — see last validation failure`}
+                      {`Wizard seed retried ${validationAttempts.length}× — see last validation failure`}
                     </span>
                     {diagnosticsExpanded ? (
                       <ChevronDown className="h-3.5 w-3.5 text-white/40" />
@@ -2449,32 +2435,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   </button>
                   {diagnosticsExpanded && (
                     <div className="px-3 pb-3 pt-1 border-t border-white/[0.06] space-y-1.5">
-                      {validationAttempts.length === 0 ? (
-                        <p className="text-[11px] text-white/50 mt-2">
-                          No validation failures recorded.
-                        </p>
-                      ) : (
-                        <ul className="space-y-1.5 mt-2">
-                          {validationAttempts.map((a, i) => (
-                            <li
-                              key={i}
-                              className="flex items-start gap-2 text-[11px] text-white/70"
-                            >
-                              <span className="mt-0.5 px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/10 font-mono text-[10px] text-white/60 flex-shrink-0">
-                                #{a.attempt} · {a.kind}
-                              </span>
-                              <span className="leading-relaxed">{a.reason}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {fallbackUsed && (
-                        <p className="mt-2 text-[11px] text-amber-300/80 leading-relaxed">
-                          The deterministic salon composition was used so you
-                          can still enter the Builder. Customize copy and
-                          re-run AI generation from the AI panel.
-                        </p>
-                      )}
+                      <ul className="space-y-1.5 mt-2">
+                        {validationAttempts.map((a, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start gap-2 text-[11px] text-white/70"
+                          >
+                            <span className="mt-0.5 px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/10 font-mono text-[10px] text-white/60 flex-shrink-0">
+                              #{a.attempt} · {a.kind}
+                            </span>
+                            <span className="leading-relaxed">{a.reason}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>

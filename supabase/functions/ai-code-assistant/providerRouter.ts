@@ -204,16 +204,16 @@ export function buildProviderPlan(
       break;
   }
 
-  // Apply complexity-based auto-upgrade (Wizard is protected)
-  if (task.type !== "wizard_template_react") {
+  // Apply complexity-based auto-upgrade (Wizard lanes are protected)
+  if (task.type !== "wizard_template_react" && task.type !== "wizard_seed_generation") {
     const baseTokens = plan.gatewayModels[0]?.maxTokens ?? 32000;
     const upgrade = applyComplexityUpgrade(plan.gatewayModels, complexity, baseTokens);
     plan.gatewayModels = upgrade.models;
     plan.perModelTimeoutMs += upgrade.timeoutBoostMs;
   }
 
-  // Apply user overrides (Lane B only — wizard is protected)
-  if (overrides && task.type !== "wizard_template_react") {
+  // Apply user overrides (Lane B only — wizard lanes are protected)
+  if (overrides && task.type !== "wizard_template_react" && task.type !== "wizard_seed_generation") {
     if (overrides.autoModelSelection === false && overrides.selectedModelId) {
       const tokens = overrides.maxTokens ?? plan.gatewayModels[0]?.maxTokens ?? 32000;
       const modelId = overrides.selectedModelId;

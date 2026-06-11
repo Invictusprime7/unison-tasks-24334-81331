@@ -68,16 +68,17 @@ export function classifyTask(opts: {
   // ── Wizard seed (NEW) — routes to Lane B so wizard launches share the
   //    builder brain (memory, research, VFS context, transactional patches).
   if (mode === "wizard-seed" || Boolean(wizardSeed)) {
-    // First-launch generation: no VFS yet, no chat history, no learned patterns
-    // needed. Keep the prompt tight so providers respond inside the 50s window.
+    // Wizard seed runs through full Lane B: memory, learned patterns,
+    // user DB context, research, and thinking are all enabled so the
+    // first-launch generation shares the same builder brain as edits.
     return {
       type: "wizard_seed_generation",
       fastPath: false,
-      shouldUseMemory: false,
-      shouldUseCompactContext: false,
+      shouldUseMemory: true,
+      shouldUseCompactContext: true,
       prefersJsonOutput: true,
-      skipResearch: true,
-      skipThinking: true,
+      skipResearch: false,
+      skipThinking: false,
     };
   }
 

@@ -126,14 +126,15 @@ export function buildProviderPlan(
 
     // ── Lane B: Lightweight tasks ───────────────────────────────────────
     case "wizard_seed_generation":
+      // First-launch generation: keep tokens modest so providers respond inside
+      // the 50s window. Gemini Flash leads; GPT-5 Mini is the only fallback.
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 48000),
-          m(MODELS.gpt4oMini, 48000),
-          m(MODELS.geminiPro, 48000),
+          m(MODELS.geminiFlash, 16000),
+          m(MODELS.gpt4oMini, 16000),
         ],
-        perModelTimeoutMs: 60000,
-        fallbackMaxTokens: 48000,
+        perModelTimeoutMs: 50000,
+        fallbackMaxTokens: 16000,
       };
       break;
 

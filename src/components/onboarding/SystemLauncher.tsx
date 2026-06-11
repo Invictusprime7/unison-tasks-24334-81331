@@ -846,7 +846,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     setIsLaunching(false);
     setLaunchStatus("");
     setValidationAttempts([]);
-    setFallbackUsed(false);
     setDiagnosticsExpanded(false);
     setPrimaryGoal(null);
     setCustomerNeeds([]);

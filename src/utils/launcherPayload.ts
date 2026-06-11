@@ -90,7 +90,61 @@ function parseLauncherJsonObject(sanitized: string): {
     }
   }
 
+  // Salvage: model output was truncated mid-string (hit max_tokens) so the
+  // whole-object JSON.parse failed. Walk the raw text and pull every
+  // "/path/file.tsx": "..." entry whose VALUE string is fully closed.
+  // This lets a partial generation still produce a launchable site instead
+  // of forcing the user back through another full retry.
+  const salvaged = salvageFileEntries(sanitized);
+  if (salvaged && Object.keys(salvaged).length > 0) {
+    return { files: salvaged };
+  }
+
   return null;
+}
+
+/**
+ * Best-effort extraction of `"path": "string"` entries from a JSON-ish
+ * payload whose top-level object never closed (truncated AI response).
+ * Only returns entries whose value string is unambiguously terminated.
+ */
+function salvageFileEntries(input: string): Record<string, string> | null {
+  if (!input) return null;
+  const filesAnchor = input.indexOf('"files"');
+  const scanFrom = filesAnchor >= 0 ? filesAnchor : 0;
+  const out: Record<string, string> = {};
+
+  // Matches: "/path/to/file.ext": "....."   (value may contain escaped quotes)
+  const keyRe = /"((?:\/|src\/|@\/)[^"\\]+\.[a-zA-Z0-9]+)"\s*:\s*"/g;
+  keyRe.lastIndex = scanFrom;
+
+  let m: RegExpExecArray | null;
+  while ((m = keyRe.exec(input)) !== null) {
+    const path = m[1];
+    let i = m.index + m[0].length;
+    let escaped = false;
+    let end = -1;
+    for (; i < input.length; i++) {
+      const ch = input[i];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (ch === '"') { end = i; break; }
+    }
+    if (end < 0) break; // value string never closed → stop salvaging
+    const raw = input.slice(m.index + m[0].length, end);
+    try {
+      // Re-use JSON's string decoder so escapes (\n, \", \\) decode correctly.
+      const decoded = JSON.parse(`"${raw}"`) as string;
+      if (typeof decoded === 'string' && decoded.trim().length > 0) {
+        out[path] = decoded;
+      }
+    } catch {
+      // skip this entry, keep walking
+    }
+    keyRe.lastIndex = end + 1;
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 export interface LauncherStructuredPayload {

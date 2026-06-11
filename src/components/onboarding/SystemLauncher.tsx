@@ -1332,14 +1332,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           template_intents: blueprint.template_intents,
         };
 
-        // On retry, reinforce the salon contract by quoting the prior failure
-        // back to the model so it corrects the specific gap (missing
-        // booking.create intent, generic copy, missing section, etc).
+        // On retry, reinforce the wizard-seed contract by quoting the prior
+        // failure back to the model so it corrects the specific gap (missing
+        // intent, generic copy, missing section, etc.).
         const retryReinforcement =
-          attempt > 0 && lastPayloadIssue && forceSalonPreviewReady
+          attempt > 0 && lastPayloadIssue
             ? `\n\nRETRY CONTRACT REMINDER (attempt ${attempt + 1}): prior generation was rejected — ${
                 lastPayloadIssue.qualityReason || lastPayloadIssue.kind
-              }. You MUST emit a booking-focused salon site: wire the primary CTA with data-ut-intent="booking.create", use salon vocabulary (stylist, hair, color, blowout, appointment, book), and render all required sections from the wizard seed template list.`
+              }. You MUST emit a complete site that satisfies the wizard seed: render every required section from the template list, wire the primary CTA with the industry-appropriate data-ut-intent, and write industry-specific copy (no lorem-ipsum or generic placeholders).`
             : '';
         const promptForAttempt = retryReinforcement
           ? aiUserPrompt + retryReinforcement

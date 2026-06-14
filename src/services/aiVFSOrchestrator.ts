@@ -180,10 +180,14 @@ export function applyAIOutputToVFS(
     }
     vfsSnapshotManager.createSnapshot(currentFiles, `Before AI edit (${Object.keys(aiFiles).length} files)`, 'ai');
 
-    // 1. Merge AI output with existing files
+    // 1. Merge AI output with existing files (after repairing common AI typos
+    //    like stray `)` before self-closing JSX tags, which Babel rejects with
+    //    "Unexpected token" and surfaces as "Cannot assign to read only
+    //    property 'message'" downstream).
+    const repairedAiFiles = repairAiJsxTypos(aiFiles);
     const mergedFiles: Record<string, string> = {
       ...currentFiles,
-      ...aiFiles,
+      ...repairedAiFiles,
     };
 
     // 2. Extract dependencies from ALL files (existing + new)

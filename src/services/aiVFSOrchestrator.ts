@@ -23,8 +23,37 @@ import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
 import { detectSlotBindingViolations } from '@/services/aiBindingTool';
 
 // ============================================================================
+// AI typo repair
+// ============================================================================
+
+/**
+ * Repair common AI-generated JSX typos before they reach Babel. These are
+ * deterministic, low-risk text-level fixes — anything ambiguous is left alone
+ * so the real error still surfaces.
+ *
+ * Currently handled:
+ *  - Stray `)` immediately before a self-closing JSX tag, e.g.
+ *      <img className="..." ) />   →   <img className="..." />
+ *      <Foo prop={x} ) />          →   <Foo prop={x} />
+ */
+function repairAiJsxTypos(files: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [path, source] of Object.entries(files)) {
+    if (typeof source !== 'string' || !/\.(tsx|jsx)$/.test(path)) {
+      out[path] = source;
+      continue;
+    }
+    // `"`, `}`, or word char, optional whitespace, stray `)`, whitespace, `/>`.
+    const repaired = source.replace(/(["}\w])\s*\)\s*\/>/g, '$1 />');
+    out[path] = repaired;
+  }
+  return out;
+}
+
+// ============================================================================
 // Types
 // ============================================================================
+
 
 /** Result of an AI code application to VFS */
 export interface AIApplyResult {
@@ -180,10 +209,14 @@ export function applyAIOutputToVFS(
     }
     vfsSnapshotManager.createSnapshot(currentFiles, `Before AI edit (${Object.keys(aiFiles).length} files)`, 'ai');
 
-    // 1. Merge AI output with existing files
+    // 1. Merge AI output with existing files (after repairing common AI typos
+    //    like stray `)` before self-closing JSX tags, which Babel rejects with
+    //    "Unexpected token" and surfaces as "Cannot assign to read only
+    //    property 'message'" downstream).
+    const repairedAiFiles = repairAiJsxTypos(aiFiles);
     const mergedFiles: Record<string, string> = {
       ...currentFiles,
-      ...aiFiles,
+      ...repairedAiFiles,
     };
 
     // 2. Extract dependencies from ALL files (existing + new)

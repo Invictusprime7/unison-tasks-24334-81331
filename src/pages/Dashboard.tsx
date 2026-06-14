@@ -9,6 +9,7 @@ import { LogOut, Plus, CheckSquare, Inbox, Zap, Menu } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useLaunch } from "@/contexts/useLaunchHooks";
 import { cn } from "@/lib/utils";
 
 const Dashboard = () => {
@@ -18,6 +19,16 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { canCreateProject, incrementProjectCount } = useSubscription();
+  const { isFreshLaunch } = useLaunch();
+
+  // Strict enforcement: generated sites must always open in the WebBuilder.
+  // If a fresh launch is in context, the Unison Tasks dashboard must never
+  // intercept the post-launch destination — redirect straight to /web-builder.
+  useEffect(() => {
+    if (isFreshLaunch) {
+      navigate("/web-builder", { replace: true });
+    }
+  }, [isFreshLaunch, navigate]);
 
   const handleCreateProject = () => {
     if (!canCreateProject()) {

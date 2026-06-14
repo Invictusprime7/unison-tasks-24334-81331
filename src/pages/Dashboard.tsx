@@ -9,6 +9,7 @@ import { LogOut, Plus, CheckSquare, Inbox, Zap, Menu } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useLaunch } from "@/contexts/useLaunchHooks";
 import { cn } from "@/lib/utils";
 
 const Dashboard = () => {

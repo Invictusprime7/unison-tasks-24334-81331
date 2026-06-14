@@ -5,13 +5,11 @@
  *   1. policy (level: required | primary | secondary | optional | forbidden)
  *   2. synthesis (where to stamp the intent if no binding spec already covers it)
  *
+ * Each industry is unique. Synthesis slots are tailored to that industry's
+ * conversion model — never copy-paste between verticals.
+ *
  * Legacy flat arrays (required/primary/secondary/optional/forbidden) are
  * auto-derived from `intents` for back-compat with existing callers.
- *
- * Industries that haven't been migrated yet may still ship as legacy arrays
- * (no `intents` map); the resolver's synthesis pass simply no-ops for them.
- *
- * Adding a new intent to an industry = one line in the `intents` map.
  */
 import type { CoreIntent } from './coreIntents';
 import type {
@@ -89,11 +87,32 @@ function profileFromMap(
 }
 
 // ============================================================================
-// Profiles
+// Shared synthesis fragments (NOT copies of salon — common to all industries)
+// ============================================================================
+
+const FOOTER_CONTACT_CALL: SlotCoord = {
+  pageRole: 'home', section: 'footer', slot: 'phone-link', label: 'Call',
+  intent: 'external.open', targetRef: 'tel:$businessInfo.phone', uiAction: 'navigate',
+};
+const FOOTER_CONTACT_EMAIL: SlotCoord = {
+  pageRole: 'home', section: 'footer', slot: 'email-link', label: 'Email',
+  intent: 'external.open', targetRef: 'mailto:$businessInfo.email', uiAction: 'navigate',
+};
+const FOOTER_DIRECTIONS: SlotCoord = {
+  pageRole: 'home', section: 'footer', slot: 'address-link', label: 'Directions',
+  intent: 'external.open', targetRef: 'maps:$businessInfo.address', uiAction: 'navigate',
+};
+const FOOTER_NEWSLETTER: SlotCoord = {
+  pageRole: 'home', section: 'footer', slot: 'newsletter-submit', label: 'Subscribe',
+  intent: 'form.open', targetRef: 'newsletter_form', uiAction: 'state',
+};
+
+// ============================================================================
+// Profiles — each vertical authored to its own conversion model
 // ============================================================================
 
 export const INDUSTRY_INTENT_PROFILES: Record<string, IndustryIntentProfile> = {
-  // -------- Salon (unified, fully migrated) --------
+  // ─────────────── Salon ───────────────
   salon: profileFromMap('salon', {
     'nav.goto': { level: 'required' },
     'booking.create': {
@@ -118,95 +137,362 @@ export const INDUSTRY_INTENT_PROFILES: Record<string, IndustryIntentProfile> = {
       level: 'required',
       synthesize: [
         { pageRole: 'contact', section: 'contact', slot: 'form-submit', ifPageExists: true,
-          label: 'Send Message', intent: 'form.open', targetRef: 'contact_form',
-          uiAction: 'state' },
+          label: 'Send Message', intent: 'form.open', targetRef: 'contact_form', uiAction: 'state' },
+      ],
+    },
+    'contact.call':       { level: 'secondary', synthesize: [FOOTER_CONTACT_CALL] },
+    'location.directions':{ level: 'secondary', synthesize: [FOOTER_DIRECTIONS] },
+    'newsletter.subscribe':{ level: 'secondary', synthesize: [FOOTER_NEWSLETTER] },
+    'coupon.claim':       { level: 'optional' },
+    'pay.checkout':       { level: 'optional' },
+    'quote.request':      { level: 'forbidden' },
+    'cart.add':           { level: 'forbidden' },
+    'cart.checkout':      { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
+  }),
+
+  // ─────────────── Local Service / Contractor (trust + urgency) ───────────────
+  'local-service': profileFromMap('local-service', {
+    'nav.goto': { level: 'required' },
+    'quote.request': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'primary-cta', label: 'Get Free Estimate',
+          intent: 'form.open', targetRef: 'quote_form', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'navbar', slot: 'primary-cta', label: 'Get Quote',
+          intent: 'form.open', targetRef: 'quote_form', uiAction: 'overlay' },
+        { pageRole: 'services', section: 'services', slot: 'card-cta', ifPageExists: true,
+          label: 'Request Estimate', intent: 'form.open', targetRef: 'quote_form',
+          uiAction: 'overlay', payloadTemplate: { 'data-service': '$service.slug' } },
+        { pageRole: 'home', section: 'cta', slot: 'primary-cta', label: 'Get Free Estimate',
+          intent: 'form.open', targetRef: 'quote_form', uiAction: 'overlay' },
       ],
     },
     'contact.call': {
-      level: 'secondary',
+      level: 'required',
       synthesize: [
-        { pageRole: 'home', section: 'footer', slot: 'phone-link', label: 'Call',
-          intent: 'external.open', targetRef: 'tel:$businessInfo.phone',
-          uiAction: 'navigate' },
+        { pageRole: 'home', section: 'hero', slot: 'secondary-cta', label: 'Call Now',
+          intent: 'external.open', targetRef: 'tel:$businessInfo.phone', uiAction: 'navigate' },
+        { pageRole: 'home', section: 'navbar', slot: 'phone-link', label: '$businessInfo.phone',
+          intent: 'external.open', targetRef: 'tel:$businessInfo.phone', uiAction: 'navigate' },
+        FOOTER_CONTACT_CALL,
+      ],
+    },
+    'contact.submit': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'contact', section: 'contact', slot: 'form-submit', ifPageExists: true,
+          label: 'Send Message', intent: 'form.open', targetRef: 'contact_form', uiAction: 'state' },
+      ],
+    },
+    'contact.sms':        { level: 'secondary', synthesize: [
+      { pageRole: 'home', section: 'footer', slot: 'phone-link', label: 'Text Us',
+        intent: 'external.open', targetRef: 'sms:$businessInfo.phone', uiAction: 'navigate' },
+    ] },
+    'location.directions':{ level: 'secondary', synthesize: [FOOTER_DIRECTIONS] },
+    'newsletter.subscribe':{ level: 'optional', synthesize: [FOOTER_NEWSLETTER] },
+    'booking.create':     { level: 'optional' },
+    'cart.add':           { level: 'forbidden' },
+    'cart.checkout':      { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
+  }),
+
+  // contractor = alias of local-service intent model
+  contractor: profileFromMap('contractor', {
+    'nav.goto': { level: 'required' },
+    'quote.request': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'primary-cta', label: 'Get Free Estimate',
+          intent: 'form.open', targetRef: 'quote_form', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'navbar', slot: 'primary-cta', label: 'Get Quote',
+          intent: 'form.open', targetRef: 'quote_form', uiAction: 'overlay' },
+      ],
+    },
+    'contact.call': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'secondary-cta', label: 'Call Now',
+          intent: 'external.open', targetRef: 'tel:$businessInfo.phone', uiAction: 'navigate' },
+        FOOTER_CONTACT_CALL,
+      ],
+    },
+    'contact.submit':     { level: 'required', synthesize: [
+      { pageRole: 'contact', section: 'contact', slot: 'form-submit', ifPageExists: true,
+        label: 'Send Message', intent: 'form.open', targetRef: 'contact_form', uiAction: 'state' },
+    ] },
+    'contact.sms':        { level: 'secondary' },
+    'location.directions':{ level: 'secondary', synthesize: [FOOTER_DIRECTIONS] },
+    'newsletter.subscribe':{ level: 'optional', synthesize: [FOOTER_NEWSLETTER] },
+    'booking.create':     { level: 'optional' },
+    'cart.add':           { level: 'forbidden' },
+    'cart.checkout':      { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
+  }),
+
+  // ─────────────── Coaching / Consulting ───────────────
+  coaching: profileFromMap('coaching', {
+    'nav.goto': { level: 'required' },
+    'booking.create': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'primary-cta', label: 'Book Discovery Call',
+          intent: 'calendar.open', targetRef: 'discovery_call', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'navbar', slot: 'primary-cta', label: 'Book a Call',
+          intent: 'calendar.open', targetRef: 'discovery_call', uiAction: 'overlay' },
+        { pageRole: 'services', section: 'services', slot: 'card-cta', ifPageExists: true,
+          label: 'Apply Now', intent: 'calendar.open', targetRef: 'discovery_call',
+          uiAction: 'overlay', payloadTemplate: { 'data-program': '$service.slug' } },
+        { pageRole: 'pricing', section: 'pricing', slot: 'card-cta', ifPageExists: true,
+          label: 'Enroll', intent: 'calendar.open', targetRef: 'discovery_call', uiAction: 'overlay' },
+      ],
+    },
+    'lead.capture': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'secondary-cta', label: 'Free Resource',
+          intent: 'form.open', targetRef: 'lead_magnet_form', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'cta', slot: 'primary-cta', label: 'Get the Free Guide',
+          intent: 'form.open', targetRef: 'lead_magnet_form', uiAction: 'overlay' },
+      ],
+    },
+    'contact.submit':     { level: 'required', synthesize: [
+      { pageRole: 'contact', section: 'contact', slot: 'form-submit', ifPageExists: true,
+        label: 'Send Message', intent: 'form.open', targetRef: 'contact_form', uiAction: 'state' },
+    ] },
+    'content.download':   { level: 'secondary' },
+    'newsletter.subscribe':{ level: 'secondary', synthesize: [FOOTER_NEWSLETTER] },
+    'contact.email':      { level: 'optional', synthesize: [FOOTER_CONTACT_EMAIL] },
+    'cart.add':           { level: 'forbidden' },
+    'quote.request':      { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
+  }),
+
+  // ─────────────── Restaurant ───────────────
+  restaurant: profileFromMap('restaurant', {
+    'nav.goto': { level: 'required' },
+    'booking.create': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'primary-cta', label: 'Reserve a Table',
+          intent: 'calendar.open', targetRef: 'reservations', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'navbar', slot: 'primary-cta', label: 'Reservations',
+          intent: 'calendar.open', targetRef: 'reservations', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'cta', slot: 'primary-cta', label: 'Book a Table',
+          intent: 'calendar.open', targetRef: 'reservations', uiAction: 'overlay' },
+      ],
+    },
+    'contact.call': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'secondary-cta', label: 'Call to Order',
+          intent: 'external.open', targetRef: 'tel:$businessInfo.phone', uiAction: 'navigate' },
+        FOOTER_CONTACT_CALL,
       ],
     },
     'location.directions': {
-      level: 'secondary',
+      level: 'required',
       synthesize: [
-        { pageRole: 'home', section: 'footer', slot: 'address-link', label: 'Directions',
-          intent: 'external.open', targetRef: 'maps:$businessInfo.address',
-          uiAction: 'navigate' },
+        FOOTER_DIRECTIONS,
+        { pageRole: 'contact', section: 'contact', slot: 'address-link', ifPageExists: true,
+          label: 'Get Directions', intent: 'external.open',
+          targetRef: 'maps:$businessInfo.address', uiAction: 'navigate' },
       ],
     },
-    'newsletter.subscribe': {
-      level: 'secondary',
-      synthesize: [
-        { pageRole: 'home', section: 'footer', slot: 'newsletter-submit', label: 'Subscribe',
-          intent: 'form.open', targetRef: 'newsletter_form', uiAction: 'state' },
-      ],
-    },
-    'coupon.claim': { level: 'optional' },
-    'pay.checkout': { level: 'optional' },
-    'quote.request': { level: 'forbidden' },
+    'menu.view':          { level: 'secondary' },
+    'newsletter.subscribe':{ level: 'secondary', synthesize: [FOOTER_NEWSLETTER] },
+    'coupon.claim':       { level: 'optional' },
+    'pay.checkout':       { level: 'optional' },
+    'quote.request':      { level: 'forbidden' },
+    'cart.add':           { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
   }),
 
-  // -------- Other industries (legacy flat arrays; resolver no-ops synthesis) --------
-  contractor: {
-    industry: 'contractor',
-    required: ['nav.goto', 'contact.submit', 'quote.request'],
-    primary: ['quote.request'],
-    secondary: ['contact.call', 'contact.sms', 'location.directions'],
-    optional: ['newsletter.subscribe', 'booking.create'],
-    forbidden: ['cart.add', 'cart.checkout'],
-  },
-  'local-service': {
-    industry: 'local-service',
-    required: ['nav.goto', 'contact.submit', 'quote.request'],
-    primary: ['quote.request'],
-    secondary: ['contact.call', 'contact.sms', 'location.directions'],
-    optional: ['newsletter.subscribe', 'booking.create'],
-    forbidden: ['cart.add', 'cart.checkout'],
-  },
-  restaurant: {
-    industry: 'restaurant',
-    required: ['nav.goto', 'booking.create', 'contact.call', 'location.directions'],
-    primary: ['booking.create'],
-    secondary: ['newsletter.subscribe', 'coupon.claim'],
-    optional: ['pay.checkout'],
-    forbidden: ['quote.request'],
-  },
-  ecommerce: {
-    industry: 'ecommerce',
-    required: ['nav.goto', 'product.view', 'cart.add', 'cart.view', 'cart.checkout'],
-    primary: ['cart.add'],
-    secondary: ['newsletter.subscribe', 'search.open', 'filter.open', 'favorite.toggle'],
-    optional: ['auth.login', 'auth.register', 'account.open'],
-    forbidden: ['booking.create', 'quote.request'],
-  },
-  agency: {
-    industry: 'agency',
-    required: ['lead.capture', 'contact.submit', 'quote.request'],
-    primary: ['quote.request', 'lead.capture'],
-    secondary: ['booking.create', 'content.download', 'newsletter.subscribe'],
-    optional: ['demo.request', 'proposal.request'],
-    forbidden: ['cart.add'],
-  },
-  nonprofit: {
-    industry: 'nonprofit',
-    required: ['nav.goto', 'donation.start', 'contact.submit'],
-    primary: ['donation.start'],
-    secondary: ['volunteer.signup', 'newsletter.subscribe'],
-    optional: ['pay.checkout'],
-    forbidden: ['cart.add', 'booking.create'],
-  },
-  portfolio: {
-    industry: 'portfolio',
-    required: ['nav.goto', 'contact.submit'],
-    primary: ['nav.goto', 'lead.capture'],
-    secondary: ['content.download', 'newsletter.subscribe'],
-    optional: ['booking.create'],
-    forbidden: ['cart.add', 'cart.checkout'],
-  },
+  // ─────────────── E-commerce ───────────────
+  ecommerce: profileFromMap('ecommerce', {
+    'nav.goto': { level: 'required' },
+    'cart.add': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'shop', section: 'shop-grid', slot: 'card-cta', ifPageExists: true,
+          label: 'Add to Cart', intent: 'cart.add', targetRef: '$product.id',
+          uiAction: 'state', payloadTemplate: { 'data-product': '$product.id' } },
+        { pageRole: 'home', section: 'services', slot: 'card-cta',
+          label: 'Add to Cart', intent: 'cart.add', targetRef: '$product.id',
+          uiAction: 'state', payloadTemplate: { 'data-product': '$product.id' } },
+      ],
+    },
+    'cart.view': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'navbar', slot: 'cart-trigger', label: 'Cart',
+          intent: 'overlay.open', targetRef: 'cart_drawer', uiAction: 'overlay' },
+      ],
+    },
+    'cart.checkout': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'checkout', section: 'cart', slot: 'checkout-cta', ifPageExists: true,
+          label: 'Checkout', intent: 'nav.goto', targetRef: 'checkout', uiAction: 'navigate' },
+      ],
+    },
+    'product.view':       { level: 'primary' },
+    'search.open':        { level: 'secondary', synthesize: [
+      { pageRole: 'home', section: 'navbar', slot: 'icon-search', label: 'Search',
+        intent: 'overlay.open', targetRef: 'search_overlay', uiAction: 'overlay' },
+    ] },
+    'filter.open':        { level: 'secondary' },
+    'favorite.toggle':    { level: 'secondary', synthesize: [
+      { pageRole: 'shop', section: 'shop-grid', slot: 'icon-favorite', ifPageExists: true,
+        label: 'Save', intent: 'state.toggle', targetRef: 'favorite',
+        payloadTemplate: { 'data-product': '$product.id' } },
+    ] },
+    'newsletter.subscribe':{ level: 'secondary', synthesize: [FOOTER_NEWSLETTER] },
+    'auth.login':         { level: 'optional', synthesize: [
+      { pageRole: 'home', section: 'navbar', slot: 'icon-user', label: 'Account',
+        intent: 'nav.goto', targetRef: 'account', uiAction: 'navigate' },
+    ] },
+    'auth.register':      { level: 'optional' },
+    'account.open':       { level: 'optional' },
+    'booking.create':     { level: 'forbidden' },
+    'quote.request':      { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
+  }),
+
+  // ─────────────── Agency / B2B ───────────────
+  agency: profileFromMap('agency', {
+    'nav.goto': { level: 'required' },
+    'lead.capture': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'primary-cta', label: 'Get a Free Consultation',
+          intent: 'form.open', targetRef: 'lead_form', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'navbar', slot: 'primary-cta', label: 'Get Started',
+          intent: 'form.open', targetRef: 'lead_form', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'cta', slot: 'primary-cta', label: 'Book a Strategy Call',
+          intent: 'form.open', targetRef: 'lead_form', uiAction: 'overlay' },
+      ],
+    },
+    'quote.request': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'services', section: 'services', slot: 'card-cta', ifPageExists: true,
+          label: 'Request Proposal', intent: 'form.open', targetRef: 'proposal_form',
+          uiAction: 'overlay', payloadTemplate: { 'data-service': '$service.slug' } },
+      ],
+    },
+    'contact.submit':     { level: 'required', synthesize: [
+      { pageRole: 'contact', section: 'contact', slot: 'form-submit', ifPageExists: true,
+        label: 'Send Message', intent: 'form.open', targetRef: 'contact_form', uiAction: 'state' },
+    ] },
+    'booking.create':     { level: 'secondary' },
+    'content.download':   { level: 'secondary' },
+    'newsletter.subscribe':{ level: 'secondary', synthesize: [FOOTER_NEWSLETTER] },
+    'demo.request':       { level: 'optional' },
+    'proposal.request':   { level: 'optional' },
+    'contact.email':      { level: 'optional', synthesize: [FOOTER_CONTACT_EMAIL] },
+    'cart.add':           { level: 'forbidden' },
+    'cart.checkout':      { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
+  }),
+
+  // ─────────────── Nonprofit ───────────────
+  nonprofit: profileFromMap('nonprofit', {
+    'nav.goto': { level: 'required' },
+    'donation.start': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'primary-cta', label: 'Donate Now',
+          intent: 'nav.goto', targetRef: 'donate', uiAction: 'navigate' },
+        { pageRole: 'home', section: 'navbar', slot: 'primary-cta', label: 'Donate',
+          intent: 'nav.goto', targetRef: 'donate', uiAction: 'navigate' },
+        { pageRole: 'home', section: 'cta', slot: 'primary-cta', label: 'Give Today',
+          intent: 'nav.goto', targetRef: 'donate', uiAction: 'navigate' },
+      ],
+    },
+    'volunteer.signup': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'secondary-cta', label: 'Volunteer',
+          intent: 'form.open', targetRef: 'volunteer_form', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'cta', slot: 'secondary-cta', label: 'Get Involved',
+          intent: 'form.open', targetRef: 'volunteer_form', uiAction: 'overlay' },
+      ],
+    },
+    'contact.submit':     { level: 'required', synthesize: [
+      { pageRole: 'contact', section: 'contact', slot: 'form-submit', ifPageExists: true,
+        label: 'Contact Us', intent: 'form.open', targetRef: 'contact_form', uiAction: 'state' },
+    ] },
+    'newsletter.subscribe':{ level: 'secondary', synthesize: [FOOTER_NEWSLETTER] },
+    'contact.call':       { level: 'secondary', synthesize: [FOOTER_CONTACT_CALL] },
+    'pay.checkout':       { level: 'optional' },
+    'cart.add':           { level: 'forbidden' },
+    'booking.create':     { level: 'forbidden' },
+    'quote.request':      { level: 'forbidden' },
+  }),
+
+  // ─────────────── Portfolio / Creative ───────────────
+  portfolio: profileFromMap('portfolio', {
+    'nav.goto': { level: 'required' },
+    'contact.submit': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'primary-cta', label: 'Start a Project',
+          intent: 'form.open', targetRef: 'inquiry_form', uiAction: 'overlay' },
+        { pageRole: 'home', section: 'cta', slot: 'primary-cta', label: "Let's Work Together",
+          intent: 'form.open', targetRef: 'inquiry_form', uiAction: 'overlay' },
+        { pageRole: 'contact', section: 'contact', slot: 'form-submit', ifPageExists: true,
+          label: 'Send Inquiry', intent: 'form.open', targetRef: 'inquiry_form', uiAction: 'state' },
+      ],
+    },
+    'lead.capture':       { level: 'primary' },
+    'content.download':   { level: 'secondary' },
+    'newsletter.subscribe':{ level: 'secondary', synthesize: [FOOTER_NEWSLETTER] },
+    'contact.email':      { level: 'secondary', synthesize: [FOOTER_CONTACT_EMAIL] },
+    'booking.create':     { level: 'optional' },
+    'share.open':         { level: 'optional' },
+    'cart.add':           { level: 'forbidden' },
+    'cart.checkout':      { level: 'forbidden' },
+    'quote.request':      { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
+  }),
+
+  // ─────────────── Real Estate ───────────────
+  'real-estate': profileFromMap('real-estate', {
+    'nav.goto': { level: 'required' },
+    'contact.submit': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'primary-cta', label: 'Contact an Agent',
+          intent: 'form.open', targetRef: 'agent_contact_form', uiAction: 'overlay' },
+        { pageRole: 'contact', section: 'contact', slot: 'form-submit', ifPageExists: true,
+          label: 'Send Message', intent: 'form.open', targetRef: 'agent_contact_form', uiAction: 'state' },
+      ],
+    },
+    'booking.create': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'hero', slot: 'secondary-cta', label: 'Schedule a Showing',
+          intent: 'calendar.open', targetRef: 'showing_calendar', uiAction: 'overlay' },
+        { pageRole: 'gallery', section: 'gallery', slot: 'card-cta', ifPageExists: true,
+          label: 'Schedule Showing', intent: 'calendar.open', targetRef: 'showing_calendar',
+          uiAction: 'overlay', payloadTemplate: { 'data-listing': '$listing.id' } },
+      ],
+    },
+    'lead.capture': {
+      level: 'required',
+      synthesize: [
+        { pageRole: 'home', section: 'cta', slot: 'primary-cta', label: 'Get a Free Home Valuation',
+          intent: 'form.open', targetRef: 'valuation_form', uiAction: 'overlay' },
+      ],
+    },
+    'contact.call':       { level: 'secondary', synthesize: [FOOTER_CONTACT_CALL] },
+    'location.directions':{ level: 'secondary', synthesize: [FOOTER_DIRECTIONS] },
+    'newsletter.subscribe':{ level: 'secondary', synthesize: [FOOTER_NEWSLETTER] },
+    'cart.add':           { level: 'forbidden' },
+    'donation.start':     { level: 'forbidden' },
+    'quote.request':      { level: 'forbidden' },
+  }),
 };
 
 export function getIndustryIntentProfile(industry: string): IndustryIntentProfile | undefined {
@@ -235,8 +521,7 @@ export interface SynthesisResult {
 /**
  * Synthesizes missing industry-required intent bindings onto canonical slot
  * coordinates and strips any forbidden intents. Idempotent — running twice
- * yields the same result. Driven entirely by the profile's `intents` map; if
- * the profile uses legacy flat arrays only, this just applies forbidden-strip.
+ * yields the same result.
  */
 export function synthesizeIndustryBindings(
   profile: IndustryIntentProfile | undefined,
@@ -267,7 +552,6 @@ export function synthesizeIndustryBindings(
     if (!spec || spec.level === 'forbidden' || spec.level === 'optional') continue;
     if (!spec.synthesize?.length) continue;
 
-    // Already covered by any existing binding for this intent? skip.
     const alreadyBound = kept.some(b => b.coreIntent === intentName);
     let satisfiedAtLeastOnce = alreadyBound;
 

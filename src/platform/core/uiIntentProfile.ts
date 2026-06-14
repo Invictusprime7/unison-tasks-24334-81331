@@ -85,12 +85,21 @@ export interface UIIntentResolution {
 // Registry
 // ============================================================================
 
-import { SALON_UI_INTENT_PROFILE } from './uiIntentProfiles/salon.ui';
+import {
+  SALON_UI_INTENT_PROFILE,
+  LOCAL_SERVICE_UI_INTENT_PROFILE,
+  COACHING_UI_INTENT_PROFILE,
+  RESTAURANT_UI_INTENT_PROFILE,
+  ECOMMERCE_UI_INTENT_PROFILE,
+  AGENCY_UI_INTENT_PROFILE,
+  NONPROFIT_UI_INTENT_PROFILE,
+  PORTFOLIO_UI_INTENT_PROFILE,
+  REAL_ESTATE_UI_INTENT_PROFILE,
+} from './uiIntentProfiles';
 
 /**
  * Industries without a declared profile fall through to the permissive default
- * (no UI rules, no conformance failures). Keeps regressions out while we
- * migrate one vertical at a time.
+ * (no UI rules, no conformance failures).
  */
 const PERMISSIVE_DEFAULT: UIIntentProfile = {
   industry: '__permissive__',
@@ -99,6 +108,15 @@ const PERMISSIVE_DEFAULT: UIIntentProfile = {
 
 export const UI_INTENT_PROFILES: Partial<Record<string, UIIntentProfile>> = {
   salon: SALON_UI_INTENT_PROFILE,
+  'local-service': LOCAL_SERVICE_UI_INTENT_PROFILE,
+  contractor: LOCAL_SERVICE_UI_INTENT_PROFILE,
+  coaching: COACHING_UI_INTENT_PROFILE,
+  restaurant: RESTAURANT_UI_INTENT_PROFILE,
+  ecommerce: ECOMMERCE_UI_INTENT_PROFILE,
+  agency: AGENCY_UI_INTENT_PROFILE,
+  nonprofit: NONPROFIT_UI_INTENT_PROFILE,
+  portfolio: PORTFOLIO_UI_INTENT_PROFILE,
+  'real-estate': REAL_ESTATE_UI_INTENT_PROFILE,
 };
 
 export function getUIIntentProfile(industry: string | undefined | null): UIIntentProfile {

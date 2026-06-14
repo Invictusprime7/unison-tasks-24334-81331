@@ -40,7 +40,10 @@ const Onboarding = () => {
   };
 
   const handleSkip = () => {
-    navigate("/dashboard");
+    // Strict enforcement: onboarding always exits into the builder, never the
+    // unison tasks dashboard. The dashboard is reachable from the builder shell
+    // but is never the post-launch destination.
+    navigate("/web-builder");
   };
 
   if (isLoading) {

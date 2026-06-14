@@ -696,19 +696,70 @@ function assessWizardGenerationQuality(
 }
 
 /**
- * Salon Lane B wizard seed contract requirements.
- * Aligned with industryIntentProfiles.ts salon profile (booking.create required).
- * Other industries will get their own constant as we harden each profile.
+ * Per-industry Lane B wizard seed contract requirements.
+ * Required intents are sourced from `industryIntentProfiles.ts` so any change
+ * there automatically tightens the launcher quality gate. Vocabulary terms are
+ * authored per vertical so the AI cannot ship generic copy that ignores the
+ * industry context.
  */
+const INDUSTRY_VOCABULARY: Record<string, readonly string[]> = {
+  salon: ['salon', 'stylist', 'stylists', 'hair', 'haircut', 'color', 'colour',
+    'blowout', 'balayage', 'highlights', 'appointment', 'book', 'booking',
+    'spa', 'beauty', 'manicure', 'pedicure', 'lash', 'brow'],
+  'local-service': ['estimate', 'quote', 'service area', 'licensed', 'insured',
+    'emergency', 'same-day', 'repair', 'install', 'inspection', 'call', 'technician'],
+  contractor: ['estimate', 'quote', 'project', 'remodel', 'install', 'licensed',
+    'insured', 'crew', 'inspection', 'service area', 'call'],
+  coaching: ['coach', 'coaching', 'program', 'session', 'client', 'transformation',
+    'discovery call', 'curriculum', 'cohort', 'mentor', 'framework', 'results'],
+  restaurant: ['menu', 'chef', 'reservation', 'reserve', 'table', 'dining',
+    'kitchen', 'cuisine', 'tasting', 'wine', 'cocktail', 'brunch', 'dinner'],
+  ecommerce: ['shop', 'cart', 'checkout', 'product', 'collection', 'bestseller',
+    'free shipping', 'returns', 'in stock', 'sale', 'new arrival', 'bundle'],
+  store: ['shop', 'cart', 'checkout', 'product', 'collection', 'bestseller',
+    'free shipping', 'returns', 'in stock', 'sale'],
+  agency: ['agency', 'strategy', 'client', 'case study', 'engagement', 'team',
+    'proposal', 'consultation', 'services', 'industries', 'results', 'capabilities'],
+  saas: ['platform', 'product', 'feature', 'integration', 'workflow', 'dashboard',
+    'pricing', 'free trial', 'api', 'analytics', 'automation', 'customers'],
+  nonprofit: ['mission', 'donate', 'donation', 'volunteer', 'community', 'impact',
+    'cause', 'support', 'fundraiser', 'program', 'give', 'change'],
+  portfolio: ['portfolio', 'work', 'project', 'case study', 'client', 'process',
+    'commission', 'collaboration', 'studio', 'craft', 'inquiry', 'showcase'],
+  photography: ['photography', 'photographer', 'session', 'shoot', 'portrait',
+    'wedding', 'editorial', 'gallery', 'lens', 'studio', 'booking', 'package'],
+  'real-estate': ['listing', 'property', 'home', 'agent', 'showing', 'valuation',
+    'neighborhood', 'mls', 'square feet', 'sale', 'tour', 'open house'],
+  realestate: ['listing', 'property', 'home', 'agent', 'showing', 'valuation',
+    'neighborhood', 'sale', 'tour', 'open house'],
+};
+
+/** Backward-compat export retained for any existing imports. */
 const SALON_QUALITY_REQUIREMENTS = {
   label: 'salon',
   requiredIntents: ['booking.create'],
-  vocabulary: [
-    'salon', 'stylist', 'stylists', 'hair', 'haircut', 'color', 'colour',
-    'blowout', 'balayage', 'highlights', 'appointment', 'book', 'booking',
-    'spa', 'beauty', 'manicure', 'pedicure', 'lash', 'brow',
-  ],
+  vocabulary: INDUSTRY_VOCABULARY.salon,
 } as const;
+
+function getIndustryQualityRequirements(industry: string | undefined):
+  | { label: string; requiredIntents: readonly string[]; vocabulary: readonly string[] }
+  | undefined {
+  if (!industry) return undefined;
+  // Pull required CoreIntents from the platform profile registry.
+  // Inlined dynamic import is avoided — INDUSTRY_INTENT_PROFILES is a static map.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { INDUSTRY_INTENT_PROFILES } = require('@/platform/core/industryIntentProfiles') as typeof import('@/platform/core/industryIntentProfiles');
+  const profile = INDUSTRY_INTENT_PROFILES[industry];
+  const required = (profile?.required || []).filter((i) => i !== 'nav.goto');
+  const vocab = INDUSTRY_VOCABULARY[industry] || [];
+  if (required.length === 0 && vocab.length === 0) return undefined;
+  return {
+    label: industry,
+    requiredIntents: required,
+    vocabulary: vocab,
+  };
+}
+
 
 // Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {

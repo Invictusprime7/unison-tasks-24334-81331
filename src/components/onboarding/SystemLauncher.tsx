@@ -950,7 +950,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
-    const effectiveTemplate = selectedTemplate || (selectedSystem === 'booking' ? getDefaultBookingTemplateCard() : null);
+    const effectiveTemplate = selectedTemplate || getDefaultTemplateCardFor(selectedSystem);
     if (!businessName.trim()) {
       toast.error("Please enter your business name");
       return;

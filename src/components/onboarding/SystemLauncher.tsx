@@ -373,49 +373,89 @@ const WIZARD_AI_TIMEOUT_MS = 240_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 
 
-const BOOKING_PREVIEW_DEFAULT_PAGES: PageChoice[] = [
-  'about',
-  'services',
-  'pricing',
-  'gallery',
-  'booking',
-  'contact',
-  'faq',
-];
+// ─── Deterministic per-system preselects ──────────────────────────────────
+// Every business system gets a complete, industry-faithful preselection so the
+// launcher journey ends in a coherent first preview without the user having to
+// guess which goals/needs/pages to pick. These mirror the contracts in
+// `src/platform/core/industryIntentProfiles.ts`.
 
-const BOOKING_PREVIEW_DEFAULT_NEEDS: CustomerNeed[] = [
-  'book_service',
-  'browse_services',
-  'fill_form',
-];
+interface LauncherPreselect {
+  primaryGoal: PrimaryGoal;
+  customerNeeds: CustomerNeed[];
+  pages: PageChoice[];
+  /** Optional preferred industry for default template selection. */
+  preferredIndustry?: string;
+}
+
+const LAUNCHER_PRESELECTS: Record<BusinessSystemType, LauncherPreselect> = {
+  booking: {
+    primaryGoal: 'book_appointments',
+    customerNeeds: ['book_service', 'browse_services', 'fill_form'],
+    pages: ['about', 'services', 'pricing', 'gallery', 'booking', 'contact', 'faq'],
+    preferredIndustry: 'salon',
+  },
+  saas: {
+    primaryGoal: 'collect_leads',
+    customerNeeds: ['fill_form', 'browse_services'],
+    pages: ['about', 'services', 'pricing', 'faq', 'contact', 'blog'],
+    preferredIndustry: 'saas',
+  },
+  agency: {
+    primaryGoal: 'collect_leads',
+    customerNeeds: ['request_quote', 'fill_form', 'browse_services'],
+    pages: ['about', 'services', 'pricing', 'gallery', 'contact', 'faq'],
+    preferredIndustry: 'agency',
+  },
+  portfolio: {
+    primaryGoal: 'showcase_work',
+    customerNeeds: ['request_quote', 'fill_form'],
+    pages: ['about', 'gallery', 'services', 'contact'],
+    preferredIndustry: 'portfolio',
+  },
+  store: {
+    primaryGoal: 'sell_offers',
+    customerNeeds: ['buy_offer', 'browse_services'],
+    pages: ['about', 'services', 'pricing', 'gallery', 'checkout', 'contact', 'faq'],
+    preferredIndustry: 'ecommerce',
+  },
+  content: {
+    primaryGoal: 'grow_email_list',
+    customerNeeds: ['fill_form', 'browse_services'],
+    pages: ['about', 'blog', 'services', 'contact'],
+    preferredIndustry: 'nonprofit',
+  },
+};
 
 function uniqueValues<T extends string>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
 
-function getDefaultBookingTemplateCard(): TemplateCardData | null {
-  const cards = buildCompositionCards('booking');
-  return (
-    cards.find((card) => card.id === 'salon-premium') ||
-    cards.find((card) => card.industry === 'salon') ||
-    cards[0] ||
-    null
-  );
+function getDefaultTemplateCardFor(systemId: BusinessSystemType | null): TemplateCardData | null {
+  if (!systemId) return null;
+  const cards = buildCompositionCards(systemId);
+  if (cards.length === 0) return null;
+  const preferred = LAUNCHER_PRESELECTS[systemId]?.preferredIndustry;
+  if (preferred) {
+    const match =
+      cards.find((card) => card.id === `${preferred}-premium`) ||
+      cards.find((card) => card.industry === preferred);
+    if (match) return match;
+  }
+  return cards[0];
 }
 
-function isSalonBookingPreviewLaunch(opts: {
+/**
+ * Deterministic preview path is active whenever the user has chosen a system.
+ * Each vertical (booking, saas, agency, portfolio, store, content) gets the
+ * same hardened pipeline: preselected goals/needs/pages, full capability
+ * scaffold, industry-aware quality gate, and native-publish readiness.
+ */
+function isDeterministicPreviewLaunch(opts: {
   systemId: BusinessSystemType | null;
-  generationCategory: string;
-  resolvedIndustry: string;
-  template?: TemplateCardData | null;
 }): boolean {
-  return (
-    opts.systemId === 'booking' &&
-    (opts.resolvedIndustry === 'salon' ||
-      opts.generationCategory === 'salon' ||
-      opts.template?.industry === 'salon')
-  );
+  return Boolean(opts.systemId && LAUNCHER_PRESELECTS[opts.systemId]);
 }
+
 
 function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
   if (value.length <= max) return value;

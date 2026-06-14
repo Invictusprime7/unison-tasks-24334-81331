@@ -202,7 +202,7 @@ export function runPreflightRepair(
     }
 
     const first = tryParse(source);
-    if (first.ok) {
+    if (first.ok === true) {
       reports.push({ path, status: 'clean' });
       clean++;
       continue;
@@ -210,7 +210,7 @@ export function runPreflightRepair(
 
     let current = source;
     const applied: string[] = [];
-    let lastError: string = first.error;
+    let lastError: string = first.ok === false ? first.error : 'unknown parse failure';
     let success = false;
     for (let pass = 0; pass < maxPasses && !success; pass++) {
       let changedThisRound = false;
@@ -223,11 +223,11 @@ export function runPreflightRepair(
         }
       }
       const res = tryParse(current);
-      if (res.ok) {
+      if (res.ok === true) {
         success = true;
         break;
       }
-      lastError = res.error;
+      if (res.ok === false) lastError = res.error;
       if (!changedThisRound) break;
     }
 

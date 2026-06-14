@@ -10,9 +10,9 @@ import type { PlaygroundBindingSpecV2, PlaygroundPageRole } from '@/types/playgr
 
 describe('UI Intent Profile', () => {
   it('returns permissive default for unknown industry', () => {
-    expect(hasUIIntentProfile('contractor')).toBe(false);
+    expect(hasUIIntentProfile('photography')).toBe(false);
     expect(hasUIIntentProfile(null)).toBe(false);
-    const profile = getUIIntentProfile('contractor');
+    const profile = getUIIntentProfile('photography');
     expect(profile.industry).toBe('__permissive__');
     expect(Object.keys(profile.intents)).toHaveLength(0);
   });
@@ -85,8 +85,8 @@ describe('UI Intent Profile', () => {
 
   it('buildUIIntentContract returns empty for unmigrated industry', () => {
     const pages = new Set<PlaygroundPageRole>(['home']);
-    const profile = getUIIntentProfile('contractor');
+    const profile = getUIIntentProfile('photography');
     const resolution = resolveUIIntentPlacements(profile, [], pages);
-    expect(buildUIIntentContract('contractor', resolution)).toBe('');
+    expect(buildUIIntentContract('photography', resolution)).toBe('');
   });
 });

@@ -63,6 +63,7 @@ import {
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
 import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
+import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";

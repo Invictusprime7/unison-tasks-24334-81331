@@ -746,10 +746,6 @@ function getIndustryQualityRequirements(industry: string | undefined):
   | { label: string; requiredIntents: readonly string[]; vocabulary: readonly string[] }
   | undefined {
   if (!industry) return undefined;
-  // Pull required CoreIntents from the platform profile registry.
-  // Inlined dynamic import is avoided — INDUSTRY_INTENT_PROFILES is a static map.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { INDUSTRY_INTENT_PROFILES } = require('@/platform/core/industryIntentProfiles') as typeof import('@/platform/core/industryIntentProfiles');
   const profile = INDUSTRY_INTENT_PROFILES[industry];
   const required = (profile?.required || []).filter((i) => i !== 'nav.goto');
   const vocab = INDUSTRY_VOCABULARY[industry] || [];

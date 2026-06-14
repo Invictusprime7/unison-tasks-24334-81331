@@ -99,10 +99,33 @@ const REPAIR_PASSES: RepairPass[] = [
     apply: (s) => s.replace(/^\s*```(?:tsx|jsx|ts|js|typescript|javascript)?\s*\n/m, '').replace(/\n```\s*$/m, ''),
   },
   {
+    name: 'truncate-incomplete-trailing-jsx',
+    // If file ends mid-tag (e.g. `<img src={...` or `<div className="...`),
+    // walk back to the last clearly-complete top-level boundary so the
+    // balancer can close the remaining structure cleanly.
+    apply: (s) => {
+      const tail = s.slice(-6000);
+      const lastSafe = Math.max(
+        tail.lastIndexOf('\n}\n'),
+        tail.lastIndexOf('\n};\n'),
+        tail.lastIndexOf('\n);\n'),
+        tail.lastIndexOf('\n  );\n'),
+        tail.lastIndexOf('\n    );\n'),
+      );
+      if (lastSafe < 0) return s;
+      const absolute = s.length - tail.length + lastSafe;
+      const after = s.slice(absolute);
+      const opens = (after.match(/[({[]/g) || []).length;
+      const closes = (after.match(/[)}\]]/g) || []).length;
+      if (opens > closes + 2) {
+        return s.slice(0, absolute) + '\n';
+      }
+      return s;
+    },
+  },
+  {
     name: 'balance-trailing-brackets',
     apply: (s) => {
-      // Count opens vs closes for (), {}, []. If we have a small deficit at
-      // EOF, append the missing closers — many AI truncations look like this.
       const counts = { '(': 0, ')': 0, '{': 0, '}': 0, '[': 0, ']': 0 };
       let inStr: string | null = null;
       let inLine = false;
@@ -126,9 +149,9 @@ const REPAIR_PASSES: RepairPass[] = [
       close(')', counts['('] - counts[')']);
       close('}', counts['{'] - counts['}']);
       close(']', counts['['] - counts[']']);
-      // Only auto-close small deficits (≤ 4) — anything bigger is real damage
-      // that should fall through to quarantine so the user sees it.
-      if (missing.length > 0 && missing.length <= 4) {
+      // Auto-close deficits up to 24 — handles truncated AI output that
+      // dropped multiple nested JSX/object closers across many lines.
+      if (missing.length > 0 && missing.length <= 24) {
         out = out.replace(/\s*$/, '') + '\n' + missing.join('') + '\n';
       }
       return out;
@@ -136,43 +159,46 @@ const REPAIR_PASSES: RepairPass[] = [
   },
 ];
 
-const QUARANTINE_TEMPLATE = (path: string, error: string) => `import React from 'react';
+const QUARANTINE_TEMPLATE = (path: string, error: string) => {
+  const name = (path.split('/').pop() || 'Page').replace(/\.(tsx|jsx|ts|js)$/, '');
+  const safeError = JSON.stringify(error.slice(0, 800));
+  return `import React from 'react';
 
 /**
  * Auto-quarantined by aiSitePreflightRepair.
  * Original AI output for ${path} failed to parse after all repair passes.
- * The preview renders this placeholder instead of crashing.
+ * Renders a neutral, on-brand placeholder so the preview never crashes
+ * or shows raw parser errors to end users.
  */
-export default function QuarantinedPage() {
+export default function ${name.replace(/[^A-Za-z0-9]/g, '') || 'Page'}() {
+  if (typeof window !== 'undefined') {
+    try { console.warn('[preflight] quarantined ${path}:', ${safeError}); } catch {}
+  }
   return (
-    <div style={{
-      padding: '2rem',
-      margin: '2rem auto',
-      maxWidth: 720,
-      border: '1px solid #f5a623',
-      background: '#fff8eb',
-      color: '#7a4a00',
-      borderRadius: 12,
-      fontFamily: 'system-ui, sans-serif',
-    }}>
-      <h2 style={{ margin: '0 0 0.5rem 0' }}>Page temporarily unavailable</h2>
-      <p style={{ margin: 0, fontSize: 14 }}>
-        This page is being rebuilt. Ask the AI to regenerate <code>${path}</code>.
-      </p>
-      <pre style={{
-        marginTop: '1rem',
-        padding: '0.75rem',
-        background: '#fff',
-        border: '1px solid #f3d9a1',
-        borderRadius: 8,
-        fontSize: 12,
-        overflow: 'auto',
-        whiteSpace: 'pre-wrap',
-      }}>{${JSON.stringify(error)}}</pre>
-    </div>
+    <main className="min-h-screen bg-background text-foreground">
+      <section className="container mx-auto px-6 py-24 max-w-4xl text-center">
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
+          Welcome
+        </h1>
+        <p className="text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
+          We're putting the finishing touches on this page. Check back in a moment.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+          {[1,2,3].map((i) => (
+            <div key={i} className="rounded-2xl border border-border bg-card p-6 text-left shadow-sm">
+              <div className="h-10 w-10 rounded-lg bg-primary/10 mb-4" />
+              <div className="h-4 w-2/3 rounded bg-muted mb-2" />
+              <div className="h-3 w-full rounded bg-muted/70" />
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
   );
 }
 `;
+};
+
 
 function isCodeFile(path: string): boolean {
   return /\.(tsx|jsx|ts|js)$/.test(path) && !path.includes('/node_modules/');

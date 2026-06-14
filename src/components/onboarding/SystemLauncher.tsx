@@ -896,11 +896,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const handleSystemSelect = (systemId: BusinessSystemType) => {
     setSelectedSystem(systemId);
 
-    if (systemId === 'booking') {
-      setPrimaryGoal('book_appointments');
-      setCustomerNeeds((prev) => uniqueValues([...BOOKING_PREVIEW_DEFAULT_NEEDS, ...prev]));
-      setSelectedPages((prev) => uniqueValues([...BOOKING_PREVIEW_DEFAULT_PAGES, ...prev]));
-      setSelectedTemplate(getDefaultBookingTemplateCard());
+    const preselect = LAUNCHER_PRESELECTS[systemId];
+    if (preselect) {
+      setPrimaryGoal(preselect.primaryGoal);
+      setCustomerNeeds((prev) => uniqueValues([...preselect.customerNeeds, ...prev]));
+      setSelectedPages((prev) => uniqueValues([...preselect.pages, ...prev]));
+      setSelectedTemplate(getDefaultTemplateCardFor(systemId));
     } else {
       setPrimaryGoal(null);
       setCustomerNeeds([]);
@@ -910,6 +911,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
     setStep("questions");
   };
+
 
   const handleQuestionsNext = () => {
     setStep("templates");

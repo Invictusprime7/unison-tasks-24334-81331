@@ -63,6 +63,7 @@ import {
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { compositionToReactCode } from "@/sections/PageRenderer";
 import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
+import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
@@ -373,49 +374,89 @@ const WIZARD_AI_TIMEOUT_MS = 240_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 
 
-const BOOKING_PREVIEW_DEFAULT_PAGES: PageChoice[] = [
-  'about',
-  'services',
-  'pricing',
-  'gallery',
-  'booking',
-  'contact',
-  'faq',
-];
+// ─── Deterministic per-system preselects ──────────────────────────────────
+// Every business system gets a complete, industry-faithful preselection so the
+// launcher journey ends in a coherent first preview without the user having to
+// guess which goals/needs/pages to pick. These mirror the contracts in
+// `src/platform/core/industryIntentProfiles.ts`.
 
-const BOOKING_PREVIEW_DEFAULT_NEEDS: CustomerNeed[] = [
-  'book_service',
-  'browse_services',
-  'fill_form',
-];
+interface LauncherPreselect {
+  primaryGoal: PrimaryGoal;
+  customerNeeds: CustomerNeed[];
+  pages: PageChoice[];
+  /** Optional preferred industry for default template selection. */
+  preferredIndustry?: string;
+}
+
+const LAUNCHER_PRESELECTS: Record<BusinessSystemType, LauncherPreselect> = {
+  booking: {
+    primaryGoal: 'book_appointments',
+    customerNeeds: ['book_service', 'browse_services', 'fill_form'],
+    pages: ['about', 'services', 'pricing', 'gallery', 'booking', 'contact', 'faq'],
+    preferredIndustry: 'salon',
+  },
+  saas: {
+    primaryGoal: 'collect_leads',
+    customerNeeds: ['fill_form', 'browse_services'],
+    pages: ['about', 'services', 'pricing', 'faq', 'contact', 'blog'],
+    preferredIndustry: 'saas',
+  },
+  agency: {
+    primaryGoal: 'collect_leads',
+    customerNeeds: ['request_quote', 'fill_form', 'browse_services'],
+    pages: ['about', 'services', 'pricing', 'gallery', 'contact', 'faq'],
+    preferredIndustry: 'agency',
+  },
+  portfolio: {
+    primaryGoal: 'showcase_work',
+    customerNeeds: ['request_quote', 'fill_form'],
+    pages: ['about', 'gallery', 'services', 'contact'],
+    preferredIndustry: 'portfolio',
+  },
+  store: {
+    primaryGoal: 'sell_offers',
+    customerNeeds: ['buy_offer', 'browse_services'],
+    pages: ['about', 'services', 'pricing', 'gallery', 'checkout', 'contact', 'faq'],
+    preferredIndustry: 'ecommerce',
+  },
+  content: {
+    primaryGoal: 'grow_email_list',
+    customerNeeds: ['fill_form', 'browse_services'],
+    pages: ['about', 'blog', 'services', 'contact'],
+    preferredIndustry: 'nonprofit',
+  },
+};
 
 function uniqueValues<T extends string>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
 
-function getDefaultBookingTemplateCard(): TemplateCardData | null {
-  const cards = buildCompositionCards('booking');
-  return (
-    cards.find((card) => card.id === 'salon-premium') ||
-    cards.find((card) => card.industry === 'salon') ||
-    cards[0] ||
-    null
-  );
+function getDefaultTemplateCardFor(systemId: BusinessSystemType | null): TemplateCardData | null {
+  if (!systemId) return null;
+  const cards = buildCompositionCards(systemId);
+  if (cards.length === 0) return null;
+  const preferred = LAUNCHER_PRESELECTS[systemId]?.preferredIndustry;
+  if (preferred) {
+    const match =
+      cards.find((card) => card.id === `${preferred}-premium`) ||
+      cards.find((card) => card.industry === preferred);
+    if (match) return match;
+  }
+  return cards[0];
 }
 
-function isSalonBookingPreviewLaunch(opts: {
+/**
+ * Deterministic preview path is active whenever the user has chosen a system.
+ * Each vertical (booking, saas, agency, portfolio, store, content) gets the
+ * same hardened pipeline: preselected goals/needs/pages, full capability
+ * scaffold, industry-aware quality gate, and native-publish readiness.
+ */
+function isDeterministicPreviewLaunch(opts: {
   systemId: BusinessSystemType | null;
-  generationCategory: string;
-  resolvedIndustry: string;
-  template?: TemplateCardData | null;
 }): boolean {
-  return (
-    opts.systemId === 'booking' &&
-    (opts.resolvedIndustry === 'salon' ||
-      opts.generationCategory === 'salon' ||
-      opts.template?.industry === 'salon')
-  );
+  return Boolean(opts.systemId && LAUNCHER_PRESELECTS[opts.systemId]);
 }
+
 
 function clampPromptText(value: string, max = AI_MESSAGE_CHAR_LIMIT): string {
   if (value.length <= max) return value;
@@ -656,19 +697,66 @@ function assessWizardGenerationQuality(
 }
 
 /**
- * Salon Lane B wizard seed contract requirements.
- * Aligned with industryIntentProfiles.ts salon profile (booking.create required).
- * Other industries will get their own constant as we harden each profile.
+ * Per-industry Lane B wizard seed contract requirements.
+ * Required intents are sourced from `industryIntentProfiles.ts` so any change
+ * there automatically tightens the launcher quality gate. Vocabulary terms are
+ * authored per vertical so the AI cannot ship generic copy that ignores the
+ * industry context.
  */
+const INDUSTRY_VOCABULARY: Record<string, readonly string[]> = {
+  salon: ['salon', 'stylist', 'stylists', 'hair', 'haircut', 'color', 'colour',
+    'blowout', 'balayage', 'highlights', 'appointment', 'book', 'booking',
+    'spa', 'beauty', 'manicure', 'pedicure', 'lash', 'brow'],
+  'local-service': ['estimate', 'quote', 'service area', 'licensed', 'insured',
+    'emergency', 'same-day', 'repair', 'install', 'inspection', 'call', 'technician'],
+  contractor: ['estimate', 'quote', 'project', 'remodel', 'install', 'licensed',
+    'insured', 'crew', 'inspection', 'service area', 'call'],
+  coaching: ['coach', 'coaching', 'program', 'session', 'client', 'transformation',
+    'discovery call', 'curriculum', 'cohort', 'mentor', 'framework', 'results'],
+  restaurant: ['menu', 'chef', 'reservation', 'reserve', 'table', 'dining',
+    'kitchen', 'cuisine', 'tasting', 'wine', 'cocktail', 'brunch', 'dinner'],
+  ecommerce: ['shop', 'cart', 'checkout', 'product', 'collection', 'bestseller',
+    'free shipping', 'returns', 'in stock', 'sale', 'new arrival', 'bundle'],
+  store: ['shop', 'cart', 'checkout', 'product', 'collection', 'bestseller',
+    'free shipping', 'returns', 'in stock', 'sale'],
+  agency: ['agency', 'strategy', 'client', 'case study', 'engagement', 'team',
+    'proposal', 'consultation', 'services', 'industries', 'results', 'capabilities'],
+  saas: ['platform', 'product', 'feature', 'integration', 'workflow', 'dashboard',
+    'pricing', 'free trial', 'api', 'analytics', 'automation', 'customers'],
+  nonprofit: ['mission', 'donate', 'donation', 'volunteer', 'community', 'impact',
+    'cause', 'support', 'fundraiser', 'program', 'give', 'change'],
+  portfolio: ['portfolio', 'work', 'project', 'case study', 'client', 'process',
+    'commission', 'collaboration', 'studio', 'craft', 'inquiry', 'showcase'],
+  photography: ['photography', 'photographer', 'session', 'shoot', 'portrait',
+    'wedding', 'editorial', 'gallery', 'lens', 'studio', 'booking', 'package'],
+  'real-estate': ['listing', 'property', 'home', 'agent', 'showing', 'valuation',
+    'neighborhood', 'mls', 'square feet', 'sale', 'tour', 'open house'],
+  realestate: ['listing', 'property', 'home', 'agent', 'showing', 'valuation',
+    'neighborhood', 'sale', 'tour', 'open house'],
+};
+
+/** Backward-compat export retained for any existing imports. */
 const SALON_QUALITY_REQUIREMENTS = {
   label: 'salon',
   requiredIntents: ['booking.create'],
-  vocabulary: [
-    'salon', 'stylist', 'stylists', 'hair', 'haircut', 'color', 'colour',
-    'blowout', 'balayage', 'highlights', 'appointment', 'book', 'booking',
-    'spa', 'beauty', 'manicure', 'pedicure', 'lash', 'brow',
-  ],
+  vocabulary: INDUSTRY_VOCABULARY.salon,
 } as const;
+
+function getIndustryQualityRequirements(industry: string | undefined):
+  | { label: string; requiredIntents: readonly string[]; vocabulary: readonly string[] }
+  | undefined {
+  if (!industry) return undefined;
+  const profile = INDUSTRY_INTENT_PROFILES[industry];
+  const required = (profile?.required || []).filter((i) => i !== 'nav.goto');
+  const vocab = INDUSTRY_VOCABULARY[industry] || [];
+  if (required.length === 0 && vocab.length === 0) return undefined;
+  return {
+    label: industry,
+    requiredIntents: required,
+    vocabulary: vocab,
+  };
+}
+
 
 // Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
@@ -856,11 +944,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const handleSystemSelect = (systemId: BusinessSystemType) => {
     setSelectedSystem(systemId);
 
-    if (systemId === 'booking') {
-      setPrimaryGoal('book_appointments');
-      setCustomerNeeds((prev) => uniqueValues([...BOOKING_PREVIEW_DEFAULT_NEEDS, ...prev]));
-      setSelectedPages((prev) => uniqueValues([...BOOKING_PREVIEW_DEFAULT_PAGES, ...prev]));
-      setSelectedTemplate(getDefaultBookingTemplateCard());
+    const preselect = LAUNCHER_PRESELECTS[systemId];
+    if (preselect) {
+      setPrimaryGoal(preselect.primaryGoal);
+      setCustomerNeeds((prev) => uniqueValues([...preselect.customerNeeds, ...prev]));
+      setSelectedPages((prev) => uniqueValues([...preselect.pages, ...prev]));
+      setSelectedTemplate(getDefaultTemplateCardFor(systemId));
     } else {
       setPrimaryGoal(null);
       setCustomerNeeds([]);
@@ -870,6 +959,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
     setStep("questions");
   };
+
 
   const handleQuestionsNext = () => {
     setStep("templates");
@@ -908,7 +998,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
-    const effectiveTemplate = selectedTemplate || (selectedSystem === 'booking' ? getDefaultBookingTemplateCard() : null);
+    const effectiveTemplate = selectedTemplate || getDefaultTemplateCardFor(selectedSystem);
     if (!businessName.trim()) {
       toast.error("Please enter your business name");
       return;
@@ -966,26 +1056,24 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const fonts = randomFontPairing();
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
-      const forceSalonPreviewReady = isSalonBookingPreviewLaunch({
-        systemId: selectedSystem,
-        generationCategory,
-        resolvedIndustry,
-        template: effectiveTemplate,
-      });
-      const resolvedPrimaryGoal: PrimaryGoal = forceSalonPreviewReady
-        ? 'book_appointments'
-        : (primaryGoal || 'collect_leads');
+      const preselect = selectedSystem ? LAUNCHER_PRESELECTS[selectedSystem] : undefined;
+      const forceDeterministicPreviewReady = isDeterministicPreviewLaunch({ systemId: selectedSystem });
+      // Salon retains its name in downstream native-publish logging for back-compat.
+      const forceSalonPreviewReady = forceDeterministicPreviewReady;
+      const resolvedPrimaryGoal: PrimaryGoal =
+        primaryGoal || preselect?.primaryGoal || 'collect_leads';
       const resolvedCustomerNeeds = uniqueValues([
-        ...(forceSalonPreviewReady ? BOOKING_PREVIEW_DEFAULT_NEEDS : []),
+        ...((preselect?.customerNeeds as CustomerNeed[]) || []),
         ...customerNeeds,
       ]);
       const resolvedRequestedPages = uniqueValues([
-        ...(forceSalonPreviewReady ? BOOKING_PREVIEW_DEFAULT_PAGES : []),
+        ...((preselect?.pages as PageChoice[]) || []),
         ...selectedPages,
       ]);
-      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = forceSalonPreviewReady
+      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = forceDeterministicPreviewReady
         ? 'capability-full'
         : 'home-only';
+
 
       // ── Provision backend in background (non-blocking) ──
       const installSystemType = selectedSystem as string;
@@ -1474,7 +1562,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const quality = assessWizardGenerationQuality(
           sanitized.files,
           composition.sections.map((s) => s.type),
-          forceSalonPreviewReady ? SALON_QUALITY_REQUIREMENTS : undefined,
+          forceDeterministicPreviewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
         );
         if (!quality.ok) {
           lastPayloadIssue = {

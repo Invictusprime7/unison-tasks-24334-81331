@@ -1562,7 +1562,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const quality = assessWizardGenerationQuality(
           sanitized.files,
           composition.sections.map((s) => s.type),
-          forceSalonPreviewReady ? SALON_QUALITY_REQUIREMENTS : undefined,
+          forceDeterministicPreviewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
         );
         if (!quality.ok) {
           lastPayloadIssue = {

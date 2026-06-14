@@ -99,10 +99,33 @@ const REPAIR_PASSES: RepairPass[] = [
     apply: (s) => s.replace(/^\s*```(?:tsx|jsx|ts|js|typescript|javascript)?\s*\n/m, '').replace(/\n```\s*$/m, ''),
   },
   {
+    name: 'truncate-incomplete-trailing-jsx',
+    // If file ends mid-tag (e.g. `<img src={...` or `<div className="...`),
+    // walk back to the last clearly-complete top-level boundary so the
+    // balancer can close the remaining structure cleanly.
+    apply: (s) => {
+      const tail = s.slice(-6000);
+      const lastSafe = Math.max(
+        tail.lastIndexOf('\n}\n'),
+        tail.lastIndexOf('\n};\n'),
+        tail.lastIndexOf('\n);\n'),
+        tail.lastIndexOf('\n  );\n'),
+        tail.lastIndexOf('\n    );\n'),
+      );
+      if (lastSafe < 0) return s;
+      const absolute = s.length - tail.length + lastSafe;
+      const after = s.slice(absolute);
+      const opens = (after.match(/[({[]/g) || []).length;
+      const closes = (after.match(/[)}\]]/g) || []).length;
+      if (opens > closes + 2) {
+        return s.slice(0, absolute) + '\n';
+      }
+      return s;
+    },
+  },
+  {
     name: 'balance-trailing-brackets',
     apply: (s) => {
-      // Count opens vs closes for (), {}, []. If we have a small deficit at
-      // EOF, append the missing closers — many AI truncations look like this.
       const counts = { '(': 0, ')': 0, '{': 0, '}': 0, '[': 0, ']': 0 };
       let inStr: string | null = null;
       let inLine = false;
@@ -126,9 +149,9 @@ const REPAIR_PASSES: RepairPass[] = [
       close(')', counts['('] - counts[')']);
       close('}', counts['{'] - counts['}']);
       close(']', counts['['] - counts[']']);
-      // Only auto-close small deficits (≤ 4) — anything bigger is real damage
-      // that should fall through to quarantine so the user sees it.
-      if (missing.length > 0 && missing.length <= 4) {
+      // Auto-close deficits up to 24 — handles truncated AI output that
+      // dropped multiple nested JSX/object closers across many lines.
+      if (missing.length > 0 && missing.length <= 24) {
         out = out.replace(/\s*$/, '') + '\n' + missing.join('') + '\n';
       }
       return out;

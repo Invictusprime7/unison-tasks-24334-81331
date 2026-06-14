@@ -1008,26 +1008,24 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const fonts = randomFontPairing();
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
-      const forceSalonPreviewReady = isSalonBookingPreviewLaunch({
-        systemId: selectedSystem,
-        generationCategory,
-        resolvedIndustry,
-        template: effectiveTemplate,
-      });
-      const resolvedPrimaryGoal: PrimaryGoal = forceSalonPreviewReady
-        ? 'book_appointments'
-        : (primaryGoal || 'collect_leads');
+      const preselect = selectedSystem ? LAUNCHER_PRESELECTS[selectedSystem] : undefined;
+      const forceDeterministicPreviewReady = isDeterministicPreviewLaunch({ systemId: selectedSystem });
+      // Salon retains its name in downstream native-publish logging for back-compat.
+      const forceSalonPreviewReady = forceDeterministicPreviewReady;
+      const resolvedPrimaryGoal: PrimaryGoal =
+        primaryGoal || preselect?.primaryGoal || 'collect_leads';
       const resolvedCustomerNeeds = uniqueValues([
-        ...(forceSalonPreviewReady ? BOOKING_PREVIEW_DEFAULT_NEEDS : []),
+        ...((preselect?.customerNeeds as CustomerNeed[]) || []),
         ...customerNeeds,
       ]);
       const resolvedRequestedPages = uniqueValues([
-        ...(forceSalonPreviewReady ? BOOKING_PREVIEW_DEFAULT_PAGES : []),
+        ...((preselect?.pages as PageChoice[]) || []),
         ...selectedPages,
       ]);
-      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = forceSalonPreviewReady
+      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = forceDeterministicPreviewReady
         ? 'capability-full'
         : 'home-only';
+
 
       // ── Provision backend in background (non-blocking) ──
       const installSystemType = selectedSystem as string;

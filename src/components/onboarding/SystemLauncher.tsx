@@ -1757,11 +1757,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         console.warn("[SystemLauncher] failed to mark onboarding complete", onboardingErr);
       }
 
+      // Strict post-launch destination: always the WebBuilder, wired to the
+      // generated site (preview + VFS/playground). Never bounce through the
+      // dashboard. `replace: true` so back-nav doesn't re-enter the wizard.
       navigate("/web-builder", {
+        replace: true,
         state: {
           vfsFiles: wiredVfsFiles,
           runtimeManifest,
           entryPoint: launchArtifacts.entryPoint,
+          fromLauncher: true,
           ...navState,
         },
       });

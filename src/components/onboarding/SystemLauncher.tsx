@@ -1640,7 +1640,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // Persist the Wizard Seed inside the VFS so the in-Builder AI can read it
       // back later as durable continuity (theme, capabilities, intents, pages).
-      const wiredVfsFiles: Record<string, string> = {
+      const preWiredVfsFiles: Record<string, string> = {
         ...baseVfsFiles,
         '/.unison/wizard-seed.json': JSON.stringify(wizardSeed, null, 2),
         '/.unison/launch-readiness.json': JSON.stringify({
@@ -1656,6 +1656,25 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         '/.unison/intent-bindings.json': JSON.stringify(intentBindingsFile, null, 2),
         '/.unison/intent-surfaces.json': JSON.stringify(intentSurfacesFile, null, 2),
       };
+
+      // ── Preflight repair ───────────────────────────────────────────────
+      // Hard contract: the WebBuilder preview must never see a syntax/parse
+      // error. Run every code file through Babel parse + deterministic repair
+      // passes; quarantine anything that still fails so the iframe renders a
+      // placeholder instead of crashing.
+      const { runPreflightRepair } = await import('@/services/aiSitePreflightRepair');
+      const preflight = runPreflightRepair(preWiredVfsFiles);
+      const wiredVfsFiles = preflight.files;
+      if (preflight.repairedCount > 0 || preflight.quarantinedCount > 0) {
+        console.warn('[SystemLauncher] Preflight repaired AI output before handoff:', {
+          clean: preflight.cleanCount,
+          repaired: preflight.repairedCount,
+          quarantined: preflight.quarantinedCount,
+          details: preflight.reports.filter(r => r.status !== 'clean'),
+        });
+      } else {
+        console.log('[SystemLauncher] Preflight: all', preflight.cleanCount, 'code files parsed clean');
+      }
       const runtimeManifest = launchArtifacts.runtimeManifest;
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {

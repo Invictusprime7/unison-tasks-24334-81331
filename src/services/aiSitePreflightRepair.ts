@@ -210,7 +210,7 @@ export function runPreflightRepair(
 
     let current = source;
     const applied: string[] = [];
-    let lastError = first.error;
+    let lastError: string = first.error;
     let success = false;
     for (let pass = 0; pass < maxPasses && !success; pass++) {
       let changedThisRound = false;

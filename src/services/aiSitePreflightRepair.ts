@@ -24,6 +24,7 @@
  */
 
 import * as Babel from '@babel/standalone';
+import { renderQuarantineComponent, type QuarantineContext } from './aiSiteQuarantineScaffolds';
 
 export interface PreflightFileReport {
   path: string;
@@ -38,6 +39,12 @@ export interface PreflightResult {
   cleanCount: number;
   repairedCount: number;
   quarantinedCount: number;
+}
+
+export interface PreflightOptions {
+  maxPasses?: number;
+  /** Industry + brand context used to build on-brand quarantine fallbacks. */
+  context?: QuarantineContext;
 }
 
 const PARSE_OPTS = {

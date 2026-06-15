@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { cn } from "@/lib/utils";
+import { readLauncherHandoff } from "@/services/launcherHandoffPersistence";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -20,15 +21,16 @@ const Dashboard = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { canCreateProject, incrementProjectCount } = useSubscription();
   const { isFreshLaunch } = useLaunch();
+  const hasPendingLauncherHandoff = !!readLauncherHandoff();
 
   // Strict enforcement: generated sites must always open in the WebBuilder.
   // If a fresh launch is in context, the Unison Tasks dashboard must never
   // intercept the post-launch destination — redirect straight to /web-builder.
   useEffect(() => {
-    if (isFreshLaunch) {
+    if (isFreshLaunch || hasPendingLauncherHandoff) {
       navigate("/web-builder", { replace: true });
     }
-  }, [isFreshLaunch, navigate]);
+  }, [hasPendingLauncherHandoff, isFreshLaunch, navigate]);
 
   const handleCreateProject = () => {
     if (!canCreateProject()) {
@@ -65,7 +67,7 @@ const Dashboard = () => {
     });
   };
 
-  if (loading) {
+  if (loading || isFreshLaunch || hasPendingLauncherHandoff) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0a0a12]">
         <div className="flex flex-col items-center gap-4">

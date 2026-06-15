@@ -146,11 +146,11 @@ const SYSTEM_TO_BUSINESS_MODEL: Record<BusinessSystemType, BusinessModel> = {
 
 const SYSTEM_TO_INDUSTRY_OVERLAY: Record<BusinessSystemType, IndustryOverlay> = {
   booking: 'salon',
-  saas: 'general',
+  saas: 'saas' as IndustryOverlay,
   agency: 'agency',
-  portfolio: 'photographer',
+  portfolio: 'portfolio' as IndustryOverlay,
   store: 'ecommerce',
-  content: 'general',
+  content: 'nonprofit',
 };
 
 const GOAL_TO_NEEDS: Record<PrimaryGoal, { needsBooking?: boolean; sellsProducts?: boolean; wantsLeadCapture?: boolean }> = {
@@ -163,12 +163,12 @@ const GOAL_TO_NEEDS: Record<PrimaryGoal, { needsBooking?: boolean; sellsProducts
 };
 
 const SYSTEM_TO_INDUSTRY: Record<string, IndustryTag[]> = {
-  booking: ["salon", "restaurant", "fitness"],
+  booking: ["salon", "restaurant", "local-service", "fitness"],
   saas: ["universal"],
-  agency: ["coaching", "universal"],
+  agency: ["agency" as IndustryTag, "coaching", "realestate", "legal", "universal"],
   portfolio: ["photography", "universal"],
   store: ["ecommerce", "universal"],
-  content: ["universal"],
+  content: ["nonprofit" as IndustryTag, "universal"],
 };
 
 // Industry display metadata — covers both IndustryTag and composition industry values

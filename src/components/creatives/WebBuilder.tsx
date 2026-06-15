@@ -149,6 +149,7 @@ import { buildIntentReadinessReport } from '@/services/intentReadinessService';
 import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistence';
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
+import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
 import PreviewCartDrawer from '@/components/preview/PreviewCartDrawer';
 import {
@@ -1143,6 +1144,7 @@ interface WebBuilderRouteState {
   wizardSelections?: WizardSelections;
   setupSnapshot?: PlaygroundSetupSnapshot;
   nativeReadinessManifest?: Record<string, unknown>;
+  fromLauncher?: boolean;
 }
 
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
@@ -1151,6 +1153,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const isMobile = useIsMobile();
   const { launch } = useLaunch();
   const routeState = (location.state as WebBuilderRouteState | null) ?? null;
+  const pendingLauncherHandoff = useMemo(
+    () => readLauncherHandoff()?.routeState as WebBuilderRouteState | null,
+    []
+  );
   const launchRouteState = useMemo<WebBuilderRouteState | null>(() => {
     if (!launch) return null;
 
@@ -1182,12 +1188,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     };
   }, [launch]);
   const effectiveRouteState = useMemo<WebBuilderRouteState | null>(() => {
-    if (!launchRouteState && !routeState) return null;
+    if (!pendingLauncherHandoff && !launchRouteState && !routeState) return null;
     return {
+      ...(pendingLauncherHandoff ?? {}),
       ...(launchRouteState ?? {}),
       ...(routeState ?? {}),
     };
-  }, [launchRouteState, routeState]);
+  }, [launchRouteState, pendingLauncherHandoff, routeState]);
   const launchEntryPoint = useMemo(
     () =>
       normalizeLauncherEntryPoint(
@@ -4760,6 +4767,9 @@ export default function ${componentName}Page() {
 
         // Prevent re-processing generatedCode when vfsFiles already represent source of truth
         importedRouteStateRef.current = navStateSignature;
+        if (navState.fromLauncher) {
+          clearLauncherHandoff();
+        }
         window.history.replaceState({}, document.title);
         return;
       }

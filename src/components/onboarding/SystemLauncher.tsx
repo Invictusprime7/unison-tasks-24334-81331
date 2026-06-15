@@ -1751,7 +1751,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // passes; quarantine anything that still fails so the iframe renders a
       // placeholder instead of crashing.
       const { runPreflightRepair } = await import('@/services/aiSitePreflightRepair');
-      const preflight = runPreflightRepair(preWiredVfsFiles);
+      const preflight = runPreflightRepair(preWiredVfsFiles, {
+        context: { industry: generationCategory, brand },
+      });
       const wiredVfsFiles = preflight.files;
       if (preflight.repairedCount > 0 || preflight.quarantinedCount > 0) {
         console.warn('[SystemLauncher] Preflight repaired AI output before handoff:', {

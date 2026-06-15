@@ -1228,7 +1228,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           generationMode: "ai-tsx",
           enforceTemplateComposition: true,
           enforceThemeCssOverride: true,
-          deterministicFallbackAllowed: false,
+          deterministicFallbackAllowed: true,
         },
         identity: {
           industry: resolvedIndustry,
@@ -1393,12 +1393,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aiAppInvalid?: boolean;
         qualityReason?: string;
       } | null = null;
-      // Lane B wizard-seed + AI is the ONLY path for every industry. The
-      // provider router is tuned so the first call lands inside its budget,
-      // so we run a single attempt instead of looping multiple retries that
-      // each pay the full prompt-assembly + provider-timeout cost.
+      // Lane B wizard-seed + AI is the preferred path for every industry. If
+      // provider auth/rate/timeout fails, the already-built canonical pipeline
+      // must still launch into WebBuilder instead of redirecting to dashboard.
       const MAX_RETRIES = 0;
-      const launchReliabilityMode: 'ai' = 'ai';
+      let launchReliabilityMode: 'ai' | 'deterministic-fallback' = 'ai';
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
@@ -1584,61 +1583,41 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         generationResult = { structured, sanitized };
         break;
       }
+      const buildDeterministicSeedFiles = (): Record<string, string> => ({
+        '/src/App.tsx': seedAppCode,
+        '/src/index.css': themedIndexCss,
+      });
 
-
-      // Lane B (wizard-seed + AI) is the ONLY generation path. No deterministic
-      // fallback — if AI fails after retries, surface the error so the user
-      // can re-run intentionally and we can observe/harden each industry.
-
+      let generatedFiles: Record<string, string> | null = null;
 
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);
-        const normalizedMsg = msg.toLowerCase();
-        if (
-          normalizedMsg.includes('invalid or expired token') ||
-          normalizedMsg.includes('unauthorized') ||
-          normalizedMsg.includes('authentication') ||
-          msg.includes('401')
-        ) {
-          toast.error('Session expired. Please sign in again.');
-          navigate('/auth');
-          return;
-        }
-        if (msg.includes('429')) {
-          toast.error('AI is rate-limited. Please wait a moment and try again.');
-          return;
-        } else if (msg.includes('402')) {
-          toast.error('AI credits required. Please add credits to continue.');
-          return;
-        } else {
-          toast.error(`AI generation failed: ${msg || 'unknown error'}`);
-          return;
-        }
+        launchReliabilityMode = 'deterministic-fallback';
+        generatedFiles = buildDeterministicSeedFiles();
+        console.warn('[SystemLauncher] AI generation unavailable; launching deterministic canonical site instead:', msg);
+        toast.warning('AI provider unavailable — opening deterministic builder preview.', {
+          description: 'The site topology, theme, pages, and industry intents were preserved.',
+        });
       }
 
-      if (!generationResult) {
+      if (!generatedFiles && !generationResult) {
+        launchReliabilityMode = 'deterministic-fallback';
+        generatedFiles = buildDeterministicSeedFiles();
         if (lastPayloadIssue?.kind === 'empty') {
-          toast.error('AI returned no usable files after retrying. Please try again.');
-          console.error('[SystemLauncher] AI payload missing files:', lastPayloadIssue.aiContentPreview);
-          return;
+          console.warn('[SystemLauncher] AI payload missing files; launching deterministic seed:', lastPayloadIssue.aiContentPreview);
         }
         // 'app' kind no longer surfaces — App.tsx is deterministic, not AI-owned.
 
         if (lastPayloadIssue?.kind === 'section') {
-          toast.error('AI returned malformed section files after retrying. Please try again.');
-          console.error('[SystemLauncher] Aborting launch — malformed AI section files after retries', lastPayloadIssue);
-          return;
+          console.warn('[SystemLauncher] AI returned malformed section files; launching deterministic seed', lastPayloadIssue);
         }
 
         if (lastPayloadIssue?.kind === 'quality') {
-          toast.error(`AI returned minimal fallback output after retrying. ${lastPayloadIssue.qualityReason || 'Please try again.'}`);
-          console.error('[SystemLauncher] Aborting launch — minimal/fallback AI output after retries', lastPayloadIssue);
-          return;
+          console.warn('[SystemLauncher] AI returned minimal/fallback output; launching deterministic seed', lastPayloadIssue);
         }
-
-        toast.error('AI generation failed. Please try again.');
-        console.error('[SystemLauncher] AI generation produced no launchable result.');
-        return;
+        toast.warning('Opening deterministic builder preview.', {
+          description: 'The launcher preserved your selected industry, template, theme, and intents.',
+        });
       }
 
       // ── Merge AI output with LOCKED themed CSS + DETERMINISTIC ROUTER ──
@@ -1648,8 +1627,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // and supporting components. mergeWithCanonicalSnapshot=true ensures the
       // canonical router + scaffolded page files take precedence; any AI App.tsx
       // that doesn't look like a router will be rebased into the home page file.
-      const generatedFiles: Record<string, string> = {
-        ...generationResult.sanitized.files,
+      generatedFiles = {
+        ...(generatedFiles || generationResult!.sanitized.files),
         '/src/index.css': themedIndexCss,
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).

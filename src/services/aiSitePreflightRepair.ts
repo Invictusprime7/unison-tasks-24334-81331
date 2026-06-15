@@ -235,7 +235,7 @@ export function runPreflightRepair(
       reports.push({ path, status: 'repaired', passes: applied });
       repaired++;
     } else {
-      out[path] = deriveQuarantineComponent(path, lastError);
+      out[path] = deriveQuarantineComponent(path, lastError, ctx);
       reports.push({ path, status: 'quarantined', passes: applied, finalError: lastError });
       quarantined++;
     }

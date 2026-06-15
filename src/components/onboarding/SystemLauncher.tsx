@@ -72,6 +72,7 @@ import { extractLauncherPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
+import { persistLauncherHandoff } from "@/services/launcherHandoffPersistence";
 
 // ============================================================================
 // Types
@@ -1841,7 +1842,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         setupSnapshot: nativeSetupSnapshot,
         nativeReadinessManifest,
       });
+      const webBuilderRouteState = {
+        vfsFiles: wiredVfsFiles,
+        runtimeManifest,
+        entryPoint: launchArtifacts.entryPoint,
+        fromLauncher: true,
+        ...navState,
+      };
+
       setLaunch(launchState);
+      persistLauncherHandoff({
+        routeState: webBuilderRouteState,
+        launchState,
+      });
 
       // Mark onboarding complete so route guards allow /web-builder.
       // Without this, /web-builder redirects back to /onboarding (onboarding_required).
@@ -1871,13 +1884,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // dashboard. `replace: true` so back-nav doesn't re-enter the wizard.
       navigate("/web-builder", {
         replace: true,
-        state: {
-          vfsFiles: wiredVfsFiles,
-          runtimeManifest,
-          entryPoint: launchArtifacts.entryPoint,
-          fromLauncher: true,
-          ...navState,
-        },
+        state: webBuilderRouteState,
       });
 
       onOpenChange(false);

@@ -166,62 +166,28 @@ const REPAIR_PASSES: RepairPass[] = [
   },
 ];
 
-const QUARANTINE_TEMPLATE = (path: string, error: string) => {
-  const name = (path.split('/').pop() || 'Page').replace(/\.(tsx|jsx|ts|js)$/, '');
-  const safeError = JSON.stringify(error.slice(0, 800));
-  return `import React from 'react';
-
-/**
- * Auto-quarantined by aiSitePreflightRepair.
- * Original AI output for ${path} failed to parse after all repair passes.
- * Renders a neutral, on-brand placeholder so the preview never crashes
- * or shows raw parser errors to end users.
- */
-export default function ${name.replace(/[^A-Za-z0-9]/g, '') || 'Page'}() {
-  if (typeof window !== 'undefined') {
-    try { console.warn('[preflight] quarantined ${path}:', ${safeError}); } catch {}
-  }
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      <section className="container mx-auto px-6 py-24 max-w-4xl text-center">
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-          Welcome
-        </h1>
-        <p className="text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
-          We're putting the finishing touches on this page. Check back in a moment.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-          {[1,2,3].map((i) => (
-            <div key={i} className="rounded-2xl border border-border bg-card p-6 text-left shadow-sm">
-              <div className="h-10 w-10 rounded-lg bg-primary/10 mb-4" />
-              <div className="h-4 w-2/3 rounded bg-muted mb-2" />
-              <div className="h-3 w-full rounded bg-muted/70" />
-            </div>
-          ))}
-        </div>
-      </section>
-    </main>
-  );
-}
-`;
-};
-
+// Industry-aware quarantine fallbacks live in `aiSiteQuarantineScaffolds.ts`.
+// We never render a generic "Welcome / finishing touches" placeholder anymore —
+// every quarantined file is replaced with a real on-brand section keyed on the
+// detected page kind (Home, Footer, Services, Contact, Menu, Properties, etc.)
+// and the launcher's industry context.
 
 function isCodeFile(path: string): boolean {
   return /\.(tsx|jsx|ts|js)$/.test(path) && !path.includes('/node_modules/');
 }
 
-function deriveQuarantineComponent(_path: string, error: string): string {
-  return QUARANTINE_TEMPLATE(_path, error.slice(0, 800));
+function deriveQuarantineComponent(path: string, error: string, ctx: QuarantineContext): string {
+  return renderQuarantineComponent(path, error.slice(0, 800), ctx);
 }
 
 // ────────────────────────────────────────────────────────────────── public
 
 export function runPreflightRepair(
   files: Record<string, string>,
-  options: { maxPasses?: number } = {},
+  options: PreflightOptions = {},
 ): PreflightResult {
   const maxPasses = options.maxPasses ?? 4;
+  const ctx: QuarantineContext = options.context ?? {};
   const out: Record<string, string> = { ...files };
   const reports: PreflightFileReport[] = [];
   let clean = 0;

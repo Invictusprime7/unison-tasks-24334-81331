@@ -4767,6 +4767,9 @@ export default function ${componentName}Page() {
 
         // Prevent re-processing generatedCode when vfsFiles already represent source of truth
         importedRouteStateRef.current = navStateSignature;
+        if (navState.fromLauncher) {
+          clearLauncherHandoff();
+        }
         window.history.replaceState({}, document.title);
         return;
       }

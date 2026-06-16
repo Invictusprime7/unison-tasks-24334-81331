@@ -1300,6 +1300,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             launchBrief,
             userDesignProfile: userDesignProfile ?? undefined,
             systemsBuildContext: systemsBuildContext ?? undefined,
+            // Durable WizardSeed → Lane B continuity: same seed/memory/intents/routes.
+            wizardSeed: wizardSeed ?? undefined,
             siteElementsLibraryContext,
             attachments: _attachments.length > 0 ? _attachments : undefined,
             // Send VFS files for edit context (all edit types, not just surgical)

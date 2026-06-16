@@ -1637,8 +1637,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const msg = await getFunctionErrorMessage(aiError);
         launchReliabilityMode = 'lane-b-blocked';
         console.warn('[SystemLauncher] Lane B wizard generation failed; deterministic template fallback is blocked:', msg);
-        toast.error('AI wizard generation failed before a valid site bundle was produced.', {
-          description: 'Deterministic template fallback is blocked so wizard selections and registries are not overwritten.',
+        toast.error('Lane B wizard generation did not complete.', {
+          description: msg,
         });
         throw new Error(`Lane B wizard generation failed: ${msg}`);
       }

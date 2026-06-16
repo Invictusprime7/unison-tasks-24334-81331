@@ -1108,7 +1108,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         ...(compositionMeta?.intents || []),
       ]));
 
-      const fonts = randomFontPairing();
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
       const preselect = selectedSystem ? LAUNCHER_PRESELECTS[selectedSystem] : undefined;
@@ -1269,10 +1268,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);
-
-      // Deterministic seed App.tsx — used as `currentCode` context to anchor
-      // the AI to the picked template's section structure.
-      const seedAppCode = compositionToReactCode(composition);
 
       // ── Blueprint enriched with Style card palette + custom instructions ──
       const blueprint = {

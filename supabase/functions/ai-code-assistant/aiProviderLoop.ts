@@ -26,8 +26,10 @@ export async function runProviderLoop(opts: {
   navPageGen: boolean;
   lovableApiKey?: string;
   reasoningEffort?: "none" | "low" | "medium" | "high";
+  /** Disable direct provider fallbacks for flows that must only use the managed gateway. */
+  allowDirectFallbacks?: boolean;
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort } = opts;
+  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort, allowDirectFallbacks = true } = opts;
   let content = '';
   let lastError = '';
   let reasoning = '';
@@ -38,7 +40,7 @@ export async function runProviderLoop(opts: {
   const TOTAL_BUDGET_MS = 135_000;
   const startedAt = Date.now();
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
-  const hasDirectOpenAI = Boolean(Deno.env.get('OPENAI_API_KEY'));
+  const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
   const recordProviderError = (label: string, detail: string) => {
@@ -48,6 +50,7 @@ export async function runProviderLoop(opts: {
   };
 
   const runDirectOpenAI = async (): Promise<void> => {
+    if (!allowDirectFallbacks) return;
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     if (!OPENAI_API_KEY || content) return;
 
@@ -212,6 +215,7 @@ export async function runProviderLoop(opts: {
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
             'Lovable-API-Key': lovableApiKey,
             'X-Lovable-AIG-SDK': 'vercel-ai-sdk',
             'Content-Type': 'application/json',
@@ -289,10 +293,12 @@ export async function runProviderLoop(opts: {
   }
 
   // ── Phase 2: Direct OpenAI API (FALLBACK) ─────────────────────────────
-  await runDirectOpenAI();
+  if (allowDirectFallbacks) {
+    await runDirectOpenAI();
+  }
 
   // ── Phase 3: Direct Anthropic API fallback ───────────────────────────
-  if (!content) {
+  if (!content && allowDirectFallbacks) {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (ANTHROPIC_API_KEY) {
       const remaining = budgetRemaining();

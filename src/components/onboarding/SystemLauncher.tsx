@@ -1302,8 +1302,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           typography: {
             heading: resolvedPreset.typography.headingFont,
             body: resolvedPreset.typography.bodyFont,
-            heading: resolvedPreset.typography.headingFont,
-            body: resolvedPreset.typography.bodyFont,
           },
           // Hex palette from the picked Style preset — fast-path prompt
           // converts these to the HSL --primary/--background CSS vars.

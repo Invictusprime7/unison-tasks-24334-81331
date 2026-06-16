@@ -1475,11 +1475,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aiAppInvalid?: boolean;
         qualityReason?: string;
       } | null = null;
-      // Lane B wizard-seed + AI is the preferred path for every industry. If
-      // provider auth/rate/timeout fails, the already-built canonical pipeline
-      // must still launch into WebBuilder instead of redirecting to dashboard.
-      const MAX_RETRIES = 0;
-      let launchReliabilityMode: 'ai' | 'deterministic-fallback' = 'ai';
+      // Lane B wizard-seed + AI is required for every industry. Do not fall
+      // back to deterministic templates, because that overwrites wizard-selected
+      // style, registry, memory, research, and parsing context.
+      const MAX_RETRIES = 1;
+      let launchReliabilityMode: 'ai' | 'lane-b-blocked' = 'ai';
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
@@ -1521,11 +1521,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           runBuilderTurn<any>({
             messages: [{ role: 'user', content: promptForAttempt }],
             mode: 'wizard-seed',
+            currentCode: wizardCurrentCode,
+            editMode: true,
             templateName: effectiveTemplate?.label || system.name,
             aesthetic: resolvedPreset.id,
             source: resolvedIndustry,
             systemType: selectedSystem,
             systemsBuildContext: slimBlueprint,
+            userDesignProfile: laneBDesignProfile,
+            siteElementsLibraryContext,
+            vfsFiles: wizardVfsPayload,
+            previewSnapshot: wizardPreviewSnapshot,
+            recentChangedFiles: canonicalPages.map((page) => page.path).filter(Boolean),
+            gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
             wizardSeed,
           }),
           WIZARD_AI_TIMEOUT_MS,

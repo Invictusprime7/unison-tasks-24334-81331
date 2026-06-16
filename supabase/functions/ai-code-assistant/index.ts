@@ -96,10 +96,10 @@ serve(async (req: Request) => {
       const details = detailsMatch?.[1]?.slice(0, 220);
 
       if (configuredNone) {
-        userMessage = "AI providers are not configured on the edge function. Please set LOVABLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in Supabase secrets.";
+        userMessage = "AI providers are not configured on the backend. Please verify the managed AI gateway secret is available.";
         errorType = "provider_not_configured";
       } else if (hasAuthFailure) {
-        userMessage = "AI provider authentication failed. Please verify gateway/provider API keys in Supabase secrets.";
+        userMessage = "AI provider authentication failed. The managed AI gateway key was refreshed; please retry generation.";
         errorType = "provider_auth";
       } else {
         userMessage = details

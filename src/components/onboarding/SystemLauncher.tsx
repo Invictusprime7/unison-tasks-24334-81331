@@ -1146,7 +1146,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       ]);
       const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = forceDeterministicPreviewReady
         ? 'capability-full'
-        : 'home-only';
+        : 'selected-pages';
 
 
       // ── Provision backend in background (non-blocking) ──
@@ -1177,9 +1177,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         });
 
       // ── Plan topology ──
-      // Default launch remains home-only, but salon/booking is hardened into a
-      // capability-full scaffold so the first preview has a booking route,
-      // contact form, calendar binding, and deterministic fallback surface.
+      // All industry launches must honor the 4-step wizard's selected pages,
+      // template, and style tokens. Capability-full remains a hardened mode for
+      // deterministic preview launches; no industry may fall back to home-only.
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: effectiveTemplate?.id,

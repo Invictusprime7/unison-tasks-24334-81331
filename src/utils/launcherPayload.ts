@@ -130,7 +130,14 @@ function salvageFileEntries(input: string): Record<string, string> | null {
       if (ch === '\\') { escaped = true; continue; }
       if (ch === '"') { end = i; break; }
     }
-    if (end < 0) break; // value string never closed → stop salvaging
+    if (end < 0) {
+      const partialRaw = input.slice(m.index + m[0].length);
+      const partialDecoded = decodePartialJsonString(partialRaw);
+      if (partialDecoded && looksLikeRenderableTsx(partialDecoded)) {
+        out[path] = closePartialTsxModule(partialDecoded);
+      }
+      break; // value string never closed → save the partial file, then stop
+    }
     const raw = input.slice(m.index + m[0].length, end);
     try {
       // Re-use JSON's string decoder so escapes (\n, \", \\) decode correctly.
@@ -145,6 +152,29 @@ function salvageFileEntries(input: string): Record<string, string> | null {
   }
 
   return Object.keys(out).length > 0 ? out : null;
+}
+
+function decodePartialJsonString(raw: string): string {
+  return raw
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+    .trim();
+}
+
+function looksLikeRenderableTsx(content: string): boolean {
+  return /export\s+default|export\s+(function|const)|function\s+[A-Z]/.test(content)
+    && /return\s*\(|<\s*(main|section|div|header|footer|nav)\b/.test(content);
+}
+
+function closePartialTsxModule(content: string): string {
+  const withoutDanglingFence = content.replace(/```[\s\S]*$/g, '').trimEnd();
+  const openBraces = (withoutDanglingFence.match(/\{/g) || []).length;
+  const closeBraces = (withoutDanglingFence.match(/\}/g) || []).length;
+  const missing = Math.max(0, openBraces - closeBraces);
+  return `${withoutDanglingFence}\n${'}'.repeat(missing)}\n`;
 }
 
 export interface LauncherStructuredPayload {

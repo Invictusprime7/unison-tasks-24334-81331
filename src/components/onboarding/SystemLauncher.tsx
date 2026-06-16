@@ -1192,6 +1192,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // playground, and AIBuilder continuity all read from the snapshot).
       const earlyResolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
 
+      // ── ASSERTION: resolveThemePreset must NEVER return falsy/idless. ──
+      // It is exhaustive over LayoutCategory and falls back to 'modern'. A
+      // missing id here means the resolver was bypassed or its contract broke.
+      // See mem://architecture/styling/canonical-pipeline-theme-injection.
+      if (!earlyResolvedPreset || !earlyResolvedPreset.id) {
+        const msg =
+          '[SystemLauncher] Theme resolver assertion failed: resolveThemePreset returned no id. ' +
+          'Every industry path MUST resolve to a registered ThemePreset before commitToPipeline. ' +
+          'Aborting build to prevent shipping an un-themed scaffold.';
+        console.error(msg, { selectedTheme, generationCategory });
+        toast.error('Build aborted: theme preset could not be resolved.');
+        throw new Error(msg);
+      }
+
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};
       const wizardSelections: WizardSelections = {
@@ -1215,6 +1229,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         publishMode: forceSalonPreviewReady && ownerEmail ? 'native-first-party' : 'manual-setup',
       };
 
+      // ── ASSERTION: themePresetId must be threaded into WizardSelections. ──
+      if (!wizardSelections.themePresetId) {
+        const msg =
+          '[SystemLauncher] WizardSelections assertion failed: themePresetId is missing on the payload sent to commitToPipeline. ' +
+          'This indicates a regression in the wizard → pipeline contract.';
+        console.error(msg, wizardSelections);
+        toast.error('Build aborted: wizard payload missing theme preset.');
+        throw new Error(msg);
+      }
+
       const pipelineResult = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
       const {
         playground: materializedPlayground,
@@ -1228,6 +1252,28 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
       if (pipelineResult.errors.length > 0) {
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
+      }
+
+      // ── ASSERTION: Stage 4b must have overwritten /src/index.css with the
+      // exact themed stylesheet for the resolved preset. If this fails, some
+      // path bypassed canonicalPipeline Stage 4b or a later writer clobbered
+      // the themed file. Stop the build instead of shipping un-themed tokens.
+      const expectedThemedCss = buildThemedIndexCss(earlyResolvedPreset);
+      const actualIndexCss =
+        compiledPlayground?.vfsFiles?.['/src/index.css'] ??
+        siteBundleSnapshot?.vfsFiles?.['/src/index.css'];
+      if (!actualIndexCss || actualIndexCss !== expectedThemedCss) {
+        const msg =
+          '[SystemLauncher] Stage 4b verification failed: compiled /src/index.css does not match the themed stylesheet ' +
+          `for preset "${earlyResolvedPreset.id}". Some path bypassed canonicalPipeline Stage 4b or clobbered the file. ` +
+          'Refer to mem://architecture/styling/canonical-pipeline-theme-injection.';
+        console.error(msg, {
+          presetId: earlyResolvedPreset.id,
+          hasCompiledCss: !!compiledPlayground?.vfsFiles?.['/src/index.css'],
+          hasSnapshotCss: !!siteBundleSnapshot?.vfsFiles?.['/src/index.css'],
+        });
+        toast.error('Build aborted: themed stylesheet was not applied to the scaffold.');
+        throw new Error(msg);
       }
 
       // ── Resolve composition from selected Template card only ──

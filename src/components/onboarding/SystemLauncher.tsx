@@ -1525,7 +1525,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             siteElementsLibraryContext,
             vfsFiles: wizardVfsPayload,
             previewSnapshot: wizardPreviewSnapshot,
-            recentChangedFiles: canonicalPages.map((page) => page.path).filter(Boolean),
+            recentChangedFiles: canonicalPages
+              .map((page) => page.path)
+              .filter((path): path is string => Boolean(path)),
             gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
             wizardSeed,
           }),

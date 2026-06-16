@@ -35,6 +35,7 @@ const MODELS = {
   // Lovable AI Gateway models. Gemini Flash is much faster than GPT-5
   // (which uses heavy reasoning + frequently times out at 50s).
   geminiFlash: { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
+  gemini25Flash: { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   geminiFlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
   geminiPro: { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
   gpt4oMini: { id: "openai/gpt-5-mini", label: "GPT-5 Mini" },
@@ -134,7 +135,9 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 20000),
+          m(MODELS.gemini25Flash, 20000),
           m(MODELS.geminiFlashLite, 20000),
+          m(MODELS.geminiPro, 20000),
           m(MODELS.gpt4oMini, 20000),
         ],
         perModelTimeoutMs: 70000,

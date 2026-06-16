@@ -1381,6 +1381,32 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           path: page.filePath,
         }));
 
+      const canonicalScaffoldFiles: Record<string, string> = {
+        ...(compiledPlayground?.vfsFiles || siteBundleSnapshot.vfsFiles || {}),
+        '/src/index.css': themedIndexCss,
+      };
+      const siteAnalysis = analyzeReactSite(canonicalScaffoldFiles);
+      const wizardCurrentCode = buildWizardCurrentCodeContext(canonicalScaffoldFiles);
+      const wizardVfsPayload = buildWizardVfsPayload(canonicalScaffoldFiles);
+      const siteElementsLibraryContext = generateLibraryPrompt({
+        systemType: selectedSystem,
+        userPrompt: aiUserPrompt,
+        includeSkeletons: false,
+        maxElements: 12,
+      });
+      const laneBDesignProfile = hasDesignProfile && userDesignProfile
+        ? {
+            projectCount: userDesignProfile.projectCount,
+            dominantStyle: userDesignProfile.dominantStyle,
+            industryHints: userDesignProfile.industryHints,
+          }
+        : undefined;
+      const wizardPreviewSnapshot = [
+        `[Wizard canonical scaffold] ${canonicalPages.length} registered pages, ${Object.keys(siteBundleSnapshot.bindings || {}).length} bindings`,
+        `Home template sections: ${composition.sections.map((s) => s.type).join(' → ')}`,
+        siteAnalysis.sectionMap,
+      ].filter(Boolean).join('\n');
+
       const wizardSeed = {
         version: '1.0',
         source: 'system-launcher',
@@ -1416,7 +1442,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         generation: {
           scaffoldMode: resolvedScaffoldMode,
-          previewGuarantee: forceSalonPreviewReady ? 'salon-booking-deterministic-fallback' : undefined,
+          previewGuarantee: forceSalonPreviewReady ? 'lane-b-ai-required' : undefined,
           publishGuarantee: forceSalonPreviewReady && ownerEmail ? 'native-first-party-publish-ready' : undefined,
           customInstructions: customPrompt.trim() || undefined,
           socials: userSocials,

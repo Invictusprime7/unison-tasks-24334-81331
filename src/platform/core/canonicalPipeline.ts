@@ -261,15 +261,25 @@ export function recompileFromPlayground(
   // Re-emit themed /src/index.css from the wizard's preset so any in-builder
   // recompile keeps the Style-card tokens locked across all industries.
   const presetId = options?.themePresetId || options?.selectedThemeId;
-  if (presetId) {
-    // Lazy require to avoid a circular dep with onboarding modules.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { THEME_PRESETS } = require('@/components/onboarding/themePresets');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } = require('@/components/onboarding/themePresetToIndexCss');
-    const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId) || DEFAULT_PREVIEW_THEME_PRESET;
-    compileResult.vfsFiles['/src/index.css'] = buildThemedIndexCss(preset);
+  if (!presetId) {
+    throw new Error(
+      '[canonicalPipeline] Recompile Stage 4b assertion failed: themePresetId is missing. ' +
+      'Playground/WebBuilder recompiles must preserve the wizard Style-card preset and cannot emit fallback CSS.',
+    );
   }
+  const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId);
+  if (!preset) {
+    throw new Error(
+      `[canonicalPipeline] Recompile Stage 4b assertion failed: ThemePreset id "${presetId}" is not registered in THEME_PRESETS.`,
+    );
+  }
+  const themedCss = buildThemedIndexCss(preset);
+  if (!themedCss || typeof themedCss !== 'string' || !themedCss.includes('--primary')) {
+    throw new Error(
+      `[canonicalPipeline] Recompile Stage 4b assertion failed: buildThemedIndexCss returned invalid CSS for preset "${presetId}".`,
+    );
+  }
+  compileResult.vfsFiles['/src/index.css'] = themedCss;
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

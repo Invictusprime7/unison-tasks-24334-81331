@@ -42,6 +42,7 @@ import {
   planSiteTopology,
   type GeneratedSitePlan,
 } from "@/platform/core/siteTopologyPlanner";
+import type { PageSpec } from "@/platform/core/industryMatrix";
 import {
   generateDesignVariation,
 } from "@/utils/designVariation";
@@ -132,6 +133,18 @@ const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
   { id: "checkout", label: "Checkout", icon: "🛍️" },
   { id: "blog", label: "Blog", icon: "📰" },
 ];
+
+const PAGE_CHOICE_TO_SPEC: Record<PageChoice, PageSpec> = {
+  about: { title: "About", path: "/about", purpose: "about", expectedSections: [] },
+  services: { title: "Services", path: "/services", purpose: "services", expectedSections: [] },
+  pricing: { title: "Pricing", path: "/pricing", purpose: "pricing", expectedSections: [] },
+  gallery: { title: "Gallery", path: "/gallery", purpose: "portfolio", expectedSections: [] },
+  faq: { title: "FAQ", path: "/faq", purpose: "faq", expectedSections: [] },
+  contact: { title: "Contact", path: "/contact", purpose: "contact", expectedSections: [] },
+  booking: { title: "Book", path: "/booking", purpose: "booking", expectedSections: [] },
+  checkout: { title: "Checkout", path: "/checkout", purpose: "checkout", expectedSections: [] },
+  blog: { title: "Blog", path: "/blog", purpose: "blog", expectedSections: [] },
+};
 
 // ============================================================================
 // Playground Pipeline Mappings
@@ -1146,7 +1159,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       ]);
       const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = forceDeterministicPreviewReady
         ? 'capability-full'
-        : 'home-only';
+        : 'selected-pages';
 
 
       // ── Provision backend in background (non-blocking) ──
@@ -1177,13 +1190,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         });
 
       // ── Plan topology ──
-      // Default launch remains home-only, but salon/booking is hardened into a
-      // capability-full scaffold so the first preview has a booking route,
-      // contact form, calendar binding, and deterministic fallback surface.
+      // All industry launches must honor the 4-step wizard's selected pages,
+      // template, and style tokens. Capability-full remains a hardened mode for
+      // deterministic preview launches; no industry may fall back to home-only.
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: effectiveTemplate?.id,
-        minimal: resolvedScaffoldMode === 'home-only',
+        additionalPages: resolvedScaffoldMode === 'selected-pages'
+          ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
+          : undefined,
+        minimal: false,
       });
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) EARLY ──
@@ -1223,7 +1239,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         primaryIntent: industryProfile?.primaryIntent,
         requestedPages: resolvedRequestedPages,
         scaffoldMode: resolvedScaffoldMode,
-        minimalScaffold: resolvedScaffoldMode === 'home-only',
+        minimalScaffold: false,
         nativePublishReady: forceSalonPreviewReady && Boolean(ownerEmail),
         ownerEmail: ownerEmail || undefined,
         publishMode: forceSalonPreviewReady && ownerEmail ? 'native-first-party' : 'manual-setup',

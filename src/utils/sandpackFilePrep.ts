@@ -4679,6 +4679,29 @@ function isProseOnlyModule(content: string): boolean {
   return /[A-Za-z]/.test(trimmed) && /\s/.test(trimmed);
 }
 
+function buildProseFallback(normalizedPath: string): string {
+  const safeName = (normalizedPath.split('/').pop() || 'Page').replace(/\.[jt]sx?$/, '').replace(/[^A-Za-z0-9]/g, '') || 'Page';
+  const componentName = /^[A-Z]/.test(safeName) ? safeName : `Page${safeName}`;
+  return `import React from 'react';
+
+// [sandpackFilePrep] Original module at ${normalizedPath} was prose-only;
+// a safe fallback was injected so the Preview recovered without crashing.
+export default function ${componentName}() {
+  return (
+    <main style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: 'system-ui' }}>
+      <div style={{ maxWidth: 480, textAlign: 'center' }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>📝</div>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Preview recovered</h2>
+        <p style={{ color: '#666', fontSize: 14, lineHeight: 1.5 }}>
+          The source for <code>${normalizedPath}</code> contained narration instead of a React component, so a safe fallback was injected.
+        </p>
+      </div>
+    </main>
+  );
+}
+`;
+}
+
 /**
  * Repair concise-arrow / object-literal returns where a component accidentally
  * returns <code>{ children }</code> as a plain object instead of JSX. The

@@ -64,12 +64,11 @@ export function classifyTask(opts: {
     wizardSeed,
   } = opts;
 
-  // ── Wizard seed (NEW) — routes to Lane B so wizard launches share the
-  //    builder brain (memory, research, VFS context, transactional patches).
-  if (mode === "wizard-seed" || Boolean(wizardSeed)) {
-    // Wizard seed runs through full Lane B: memory, learned patterns,
-    // user DB context, research, and thinking are all enabled so the
-    // first-launch generation shares the same builder brain as edits.
+  // ── Wizard seed — sole launch lane. Routes to Lane B so wizard launches
+  //    share the builder brain (memory, research, VFS, transactional patches).
+  //    The legacy `wizard_template_react` fast path has been removed; wizard
+  //    launches MUST send `mode: "wizard-seed"` with a structured `wizardSeed`.
+  if (mode === "wizard-seed") {
     return {
       type: "wizard_seed_generation",
       fastPath: false,
@@ -81,8 +80,11 @@ export function classifyTask(opts: {
     };
   }
 
+  // Builders may attach `wizardSeed` for continuity on follow-up edits without
+  // forcing a full-site regeneration; presence alone does NOT reclassify the
+  // task — it is injected as context inside Lane B (see orchestrator).
+  void wizardSeed;
 
-  // ── Wizard fast path ──────────────────────────────────────────────────
   // ── Launch Desk ───────────────────────────────────────────────────────
   if (mode === "launch-desk" || Boolean(launchBrief)) {
     return {
@@ -93,25 +95,6 @@ export function classifyTask(opts: {
       prefersJsonOutput: true,
       skipResearch: true,
       skipThinking: false,
-    };
-  }
-
-  const fastTemplateReact =
-    mode === "template-react" &&
-    Boolean(systemsBuildContext) &&
-    !currentCode &&
-    !editMode &&
-    !templateAction;
-
-  if (fastTemplateReact) {
-    return {
-      type: "wizard_template_react",
-      fastPath: true,
-      shouldUseMemory: false,
-      shouldUseCompactContext: true,
-      prefersJsonOutput: true,
-      skipResearch: true,
-      skipThinking: true,
     };
   }
 
@@ -153,7 +136,7 @@ export function classifyTask(opts: {
     };
   }
 
-  if (mode === "template-react" && !fastTemplateReact) {
+  if (mode === "template-react") {
     return {
       type: "template_react_edit",
       fastPath: false,

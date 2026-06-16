@@ -419,6 +419,8 @@ interface AIBuilderPanelProps {
   businessDataContext?: string | null;
   /** Structured business blueprint from systems-build (brand, palette, intents, sections) */
   systemsBuildContext?: SystemsBuildContext | null;
+  /** Durable WizardSeed from launcher — forwarded with every Lane B turn for memory/route/theme/intent continuity. */
+  wizardSeed?: Record<string, unknown> | null;
   /** Current VFS file list + dependency summary for AI awareness */
   vfsContext?: string | null;
   /** Full VFS file map for component-level site analysis */

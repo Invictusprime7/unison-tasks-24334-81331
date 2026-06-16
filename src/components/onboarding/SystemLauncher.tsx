@@ -696,9 +696,13 @@ function assessWizardGenerationQuality(
   const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
   const combined = tsxEntries.map(([, content]) => content).join('\n');
   const totalChars = combined.trim().length;
-  const sectionCount = (
+  const semanticSectionCount = (
     combined.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
   ).length;
+  const classSectionCount = (
+    combined.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav)[^"']*["']/gi) || []
+  ).length;
+  const sectionCount = Math.max(semanticSectionCount, classSectionCount);
   const intentCount = (combined.match(/data-ut-intent=/g) || []).length;
   const placeholderPattern = /AI-generated code will appear here|This page is ready to be edited|Generating page content|Welcome to AI Web Builder|Lorem ipsum|Coming soon|New site preview|refined launch page ready for your next edit|fallback keeps the experience polished|generated content, bindings, and business data continue to hydrate/i;
   const hasRenderablePage = tsxEntries.some(([path, content]) => {
@@ -1657,8 +1661,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         if (lastPayloadIssue?.kind === 'quality') {
           console.warn('[SystemLauncher] Lane B returned minimal/fallback output; deterministic fallback blocked', lastPayloadIssue);
         }
-        toast.error('AI wizard generation returned unusable files.', {
-          description: 'Template fallback is blocked; please retry so Lane B can preserve the wizard bundle and registry.',
+        toast.error('Lane B wizard generation returned an invalid bundle.', {
+          description: lastPayloadIssue?.qualityReason || 'The generated files did not satisfy the wizard bundle contract.',
         });
         throw new Error(lastPayloadIssue?.qualityReason || 'Lane B wizard generation returned no valid files.');
       }

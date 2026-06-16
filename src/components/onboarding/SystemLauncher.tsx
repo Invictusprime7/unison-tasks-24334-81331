@@ -1484,31 +1484,17 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aiAppInvalid?: boolean;
         qualityReason?: string;
       } | null = null;
-      // Lane B wizard-seed + AI is required for every industry. Do not fall
-      // back to deterministic templates, because that overwrites wizard-selected
-      // style, registry, memory, research, and parsing context.
-      const MAX_RETRIES = 1;
+      // Lane B wizard-seed + AI is required for every industry. Single-shot
+      // generation: NO retries, NO deterministic template fallback. The wizard
+      // seed contract + managed gateway must produce a valid site on the first
+      // attempt every time. If it doesn't, surface the precise failure so the
+      // pipeline (prompt, schema, gateway) gets fixed at the source rather than
+      // masked by retries.
       let launchReliabilityMode: 'ai' | 'lane-b-blocked' = 'ai';
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        if (attempt > 0) {
-          const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
-          setLaunchStatus(`Refining site content… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
-          await new Promise((r) => setTimeout(r, retryDelayMs));
-        }
-        setLaunchStatus(`Generating site… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      {
+        setLaunchStatus('Generating site…');
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
-        // The structured `wizardSeed` is what the edge function's task
-        // classifier matches on (mode==='wizard-seed' || wizardSeed) → routes
-        // to general_code_assist with memory + research + multi-page output
-        // contract. `systemsBuildContext` is preserved for back-compat so the
-        // existing blueprint prompt blocks still render.
-        // Pass a SLIM blueprint — wizardSeed already carries brand/theme/intents
-        // and the full blueprint duplicated ~10KB of payload, pushing Gemini
-        // 3 Flash past its 50s budget for non-cached industry/style combos.
-        // Carry brand/design/theme_tokens through to Lane B — without them the
-        // AI loses the Style card palette + typography + brand voice and falls
-        // back to generic copy / neutral colors. Intents are also required so
-        // the model wires CTAs to the right industry coreIntents.
+        // Pass a SLIM blueprint — wizardSeed already carries brand/theme/intents.
         const slimBlueprint = {
           version: blueprint.version,
           launcherPolicy: blueprint.launcherPolicy,
@@ -1521,22 +1507,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           template_intents: blueprint.template_intents,
         };
 
-        // On retry, reinforce the wizard-seed contract by quoting the prior
-        // failure back to the model so it corrects the specific gap (missing
-        // intent, generic copy, missing section, etc.).
-        const retryReinforcement =
-          attempt > 0 && lastPayloadIssue
-            ? `\n\nRETRY CONTRACT REMINDER (attempt ${attempt + 1}): prior generation was rejected — ${
-                lastPayloadIssue.qualityReason || lastPayloadIssue.kind
-              }. You MUST emit a complete site that satisfies the wizard seed: render every required section from the template list, wire the primary CTA with the industry-appropriate data-ut-intent, and write industry-specific copy (no lorem-ipsum or generic placeholders).`
-            : '';
-        const promptForAttempt = retryReinforcement
-          ? aiUserPrompt + retryReinforcement
-          : aiUserPrompt;
-
         const result = await withTimeout(
           runBuilderTurn<any>({
-            messages: [{ role: 'user', content: promptForAttempt }],
+            messages: [{ role: 'user', content: aiUserPrompt }],
             mode: 'wizard-seed',
             currentCode: wizardCurrentCode,
             editMode: true,
@@ -1560,137 +1533,101 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         );
         aiError = result.error;
         if (aiError) {
-          const retryMsg = await getFunctionErrorMessage(aiError);
-          const normalizedRetryMsg = retryMsg.toLowerCase();
-          const shouldStopRetry =
-            retryMsg.includes('402') ||
-            normalizedRetryMsg.includes('payment required') ||
-            normalizedRetryMsg.includes('credits required') ||
-            normalizedRetryMsg.includes('invalid request body') ||
-            normalizedRetryMsg.includes('timed out') ||
-            normalizedRetryMsg.includes('timeout') ||
-            normalizedRetryMsg.includes('invalid or expired token') ||
-            normalizedRetryMsg.includes('unauthorized') ||
-            normalizedRetryMsg.includes('authentication');
+          const msg = await getFunctionErrorMessage(aiError);
+          console.warn('[SystemLauncher] AI generation failed:', msg);
+        } else {
+          const aiData = result.data as Record<string, unknown> | null;
+          const aiDataError = typeof aiData?.error === 'string' ? aiData.error : '';
+          if (aiDataError) {
+            aiError = new Error(aiDataError);
+            console.warn('[SystemLauncher] AI returned explicit error payload:', aiDataError);
+          } else {
+            const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
+            const structured = extractLauncherPayload(aiContent);
 
-          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} failed:`, retryMsg);
-          if (shouldStopRetry) break;
-          continue;
+            if (!structured?.files || Object.keys(structured.files).length === 0) {
+              lastPayloadIssue = {
+                kind: 'empty',
+                aiContentPreview: aiContent.slice(0, 300),
+              };
+              setValidationAttempts((prev) => [...prev, {
+                attempt: 1,
+                kind: 'empty',
+                reason: 'AI returned no usable files',
+              }]);
+              console.warn('[SystemLauncher] AI returned no usable files', {
+                aiContentPreview: lastPayloadIssue.aiContentPreview,
+              });
+            } else {
+              const sanitized = sanitizeGeneratedFiles(structured.files);
+              const normalizedFiles: Record<string, string> = {
+                ...sanitized.files,
+                '/src/index.css': themedIndexCss,
+              };
+              if (!normalizedFiles['/src/App.tsx'] && normalizedFiles['src/App.tsx']) {
+                normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
+              }
+
+              const aiAppInvalidFlag =
+                sanitized.invalidFiles.includes('/src/App.tsx') ||
+                sanitized.invalidFiles.includes('src/App.tsx');
+              const aiAppPresent =
+                !!sanitized.files['/src/App.tsx'] || !!sanitized.files['src/App.tsx'];
+              const hasOtherValidFile = Object.keys(sanitized.files).some(
+                (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
+              );
+
+              if ((!aiAppPresent || aiAppInvalidFlag) && !hasOtherValidFile) {
+                lastPayloadIssue = {
+                  kind: 'app',
+                  aiAppMissing: !aiAppPresent,
+                  aiAppInvalid: aiAppInvalidFlag,
+                  invalidFiles: sanitized.invalidFiles,
+                };
+                setValidationAttempts((prev) => [...prev, {
+                  attempt: 1,
+                  kind: 'app',
+                  reason: !aiAppPresent
+                    ? 'No App.tsx or page/section files emitted'
+                    : 'App.tsx invalid and no fallback page/section files',
+                }]);
+                console.warn('[SystemLauncher] AI produced no usable composition', lastPayloadIssue);
+              } else {
+                const otherInvalid = sanitized.invalidFiles.filter(
+                  (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
+                );
+                if (otherInvalid.length > 0) {
+                  console.warn('[SystemLauncher] AI has malformed non-entry files; continuing launch', {
+                    invalidFiles: sanitized.invalidFiles,
+                    report: sanitized.report,
+                  });
+                }
+
+                const quality = assessWizardGenerationQuality(
+                  sanitized.files,
+                  composition.sections.map((s) => s.type),
+                  forceDeterministicPreviewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
+                );
+                if (!quality.ok) {
+                  lastPayloadIssue = {
+                    kind: 'quality',
+                    qualityReason: quality.reason,
+                    invalidFiles: sanitized.invalidFiles,
+                    aiContentPreview: aiContent.slice(0, 300),
+                  };
+                  setValidationAttempts((prev) => [...prev, {
+                    attempt: 1,
+                    kind: 'quality',
+                    reason: quality.reason || 'Output failed wizard quality contract',
+                  }]);
+                  console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
+                } else {
+                  generationResult = { structured, sanitized };
+                }
+              }
+            }
+          }
         }
-
-        const aiData = result.data as Record<string, unknown> | null;
-        const aiDataError = typeof aiData?.error === 'string' ? aiData.error : '';
-        if (aiDataError) {
-          aiError = new Error(aiDataError);
-          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned explicit error payload:`, aiDataError);
-          break;
-        }
-        const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
-        const structured = extractLauncherPayload(aiContent);
-
-        if (!structured?.files || Object.keys(structured.files).length === 0) {
-          lastPayloadIssue = {
-            kind: 'empty',
-            aiContentPreview: aiContent.slice(0, 300),
-          };
-          setValidationAttempts((prev) => [...prev, {
-            attempt: attempt + 1,
-            kind: 'empty',
-            reason: 'AI returned no usable files',
-          }]);
-          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned no usable files`, {
-            aiContentPreview: lastPayloadIssue.aiContentPreview,
-          });
-          continue;
-        }
-
-        // Sanitize AI output inside the retry loop so malformed code gets a
-        // fresh generation attempt instead of immediately blocking the launch.
-        const sanitized = sanitizeGeneratedFiles(structured.files);
-        const normalizedFiles: Record<string, string> = {
-          ...sanitized.files,
-          '/src/index.css': themedIndexCss,
-        };
-        if (!normalizedFiles['/src/App.tsx'] && normalizedFiles['src/App.tsx']) {
-          normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
-        }
-
-        // App.tsx is OWNED by the deterministic canonical router. Lane A
-        // typically returns the home composition inlined under /src/App.tsx,
-        // which mergeGeneratedVfsWithCanonicalSnapshot rebases into the
-        // canonical home page file (e.g. /src/pages/Home.tsx). However, the AI
-        // may also legitimately emit the composition directly under page or
-        // section files when honoring the multi-page contract. Accept the
-        // generation when EITHER a valid App.tsx OR at least one valid
-        // page/section file is present — never gate solely on App.tsx, because
-        // doing so forces unrecoverable retries when the AI follows the
-        // "router is deterministic, don't author App.tsx" rule.
-        const aiAppInvalidFlag =
-          sanitized.invalidFiles.includes('/src/App.tsx') ||
-          sanitized.invalidFiles.includes('src/App.tsx');
-        const aiAppPresent =
-          !!sanitized.files['/src/App.tsx'] || !!sanitized.files['src/App.tsx'];
-        const hasOtherValidFile = Object.keys(sanitized.files).some(
-          (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
-        );
-
-        if ((!aiAppPresent || aiAppInvalidFlag) && !hasOtherValidFile) {
-          lastPayloadIssue = {
-            kind: 'app',
-            aiAppMissing: !aiAppPresent,
-            aiAppInvalid: aiAppInvalidFlag,
-            invalidFiles: sanitized.invalidFiles,
-          };
-          setValidationAttempts((prev) => [...prev, {
-            attempt: attempt + 1,
-            kind: 'app',
-            reason: !aiAppPresent
-              ? 'No App.tsx or page/section files emitted'
-              : 'App.tsx invalid and no fallback page/section files',
-          }]);
-          console.warn(
-            `[SystemLauncher] AI attempt ${attempt + 1} produced no usable composition (no valid App.tsx and no page/section files) — retrying`,
-            lastPayloadIssue,
-          );
-          continue;
-        }
-
-        const otherInvalid = sanitized.invalidFiles.filter(
-          (p) => p !== '/src/App.tsx' && p !== 'src/App.tsx',
-        );
-
-        if (otherInvalid.length > 0) {
-          // Non-entry malformed files are tolerated for launch so users can still
-          // enter the builder and iterate. App.tsx remains the hard validity gate.
-          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} has malformed non-entry files; continuing launch`, {
-            invalidFiles: sanitized.invalidFiles,
-            report: sanitized.report,
-          });
-        }
-
-        const quality = assessWizardGenerationQuality(
-          sanitized.files,
-          composition.sections.map((s) => s.type),
-          forceDeterministicPreviewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
-        );
-        if (!quality.ok) {
-          lastPayloadIssue = {
-            kind: 'quality',
-            qualityReason: quality.reason,
-            invalidFiles: sanitized.invalidFiles,
-            aiContentPreview: aiContent.slice(0, 300),
-          };
-          setValidationAttempts((prev) => [...prev, {
-            attempt: attempt + 1,
-            kind: 'quality',
-            reason: quality.reason || 'Output failed wizard quality contract',
-          }]);
-          console.warn(`[SystemLauncher] AI attempt ${attempt + 1} returned minimal/fallback output — retrying`, quality);
-          continue;
-        }
-
-        generationResult = { structured, sanitized };
-        break;
       }
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);

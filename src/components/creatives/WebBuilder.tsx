@@ -3610,6 +3610,9 @@ export default function ${componentName}Page() {
         existingVfsFiles: currentFiles,
         businessName: effectiveBusinessName,
         industry: effectiveRouteState?.siteBundleSnapshot?.industry,
+        selectedTemplateId: currentTemplateId || undefined,
+        selectedThemeId: currentDesignPreset || resolvedThemePresetId || undefined,
+        themePresetId: resolvedThemePresetId || undefined,
       },
       'playground-edit',
     );
@@ -3629,6 +3632,7 @@ export default function ${componentName}Page() {
       businessName: effectiveBusinessName,
       industry: recompilation.siteBundleSnapshot.industry,
       aesthetic: currentDesignPreset || undefined,
+      themePresetId: resolvedThemePresetId || currentDesignPreset || undefined,
       backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
       wizardSelections: effectiveRouteState?.wizardSelections || undefined,
     });
@@ -3696,6 +3700,8 @@ export default function ${componentName}Page() {
     systemType,
     currentTemplateCategory,
     currentDesignPreset,
+    currentTemplateId,
+    resolvedThemePresetId,
     routeStateHasStructuredProject,
   ]);
 

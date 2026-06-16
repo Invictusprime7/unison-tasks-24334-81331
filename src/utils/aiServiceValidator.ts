@@ -40,7 +40,7 @@ export async function validateAIService(): Promise<AIServiceStatus> {
           isConfigured: false,
           hasAPIKey: false,
           functionAvailable: false,
-          error: 'Supabase function "ai-code-assistant" not found. Please deploy it first.'
+          error: 'AI backend function "ai-code-assistant" was not found. Please redeploy the backend function.'
         };
       }
       
@@ -49,7 +49,7 @@ export async function validateAIService(): Promise<AIServiceStatus> {
           isConfigured: false,
           hasAPIKey: false,
           functionAvailable: true,
-          error: 'API key not configured. Set LOVABLE_API_KEY or OPENAI_API_KEY in Supabase secrets.'
+          error: 'AI gateway key is not configured on the backend. Please refresh the managed AI gateway key.'
         };
       }
       
@@ -114,15 +114,15 @@ export function getAIErrorMessage(error: any): string {
   
   // Check for connection/network errors first
   if (errorStr.includes('failed to send') || errorStr.includes('failed to fetch') || errorStr.includes('network request failed')) {
-    return 'Cannot connect to AI service. Please check:\n1. Your internet connection\n2. Supabase project is online\n3. Function is deployed: supabase functions deploy ai-code-assistant';
+    return 'Cannot connect to AI service. Please check your connection and retry after the backend function redeploys.';
   }
   
   if (errorStr.includes('not found') || errorStr.includes('404')) {
-    return 'AI function not found. Deploy it with: supabase functions deploy ai-code-assistant';
+    return 'AI backend function not found. Please redeploy the backend function.';
   }
   
   if (errorStr.includes('api key') || errorStr.includes('not configured') || errorStr.includes('503')) {
-    return 'AI service not configured. Set API key: supabase secrets set LOVABLE_API_KEY=your_key';
+    return 'AI service not configured. Please refresh the managed AI gateway key.';
   }
   
   if (errorStr.includes('rate limit') || errorStr.includes('429')) {

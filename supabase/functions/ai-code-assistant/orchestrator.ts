@@ -29,7 +29,7 @@ import {
   analyzeTemplateStructure,
   buildElementsLibraryBlock,
   buildVfsFilesContext,
-  buildFastPathSystemPrompt,
+  // buildFastPathSystemPrompt removed with Lane A
   buildUserDBContext,
   buildWizardSeedContext,
   type UserDBContext,

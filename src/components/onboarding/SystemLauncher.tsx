@@ -1186,6 +1186,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         minimal: resolvedScaffoldMode === 'home-only',
       });
 
+      // ── Resolve canonical aesthetic preset (Style card → ThemePreset) EARLY ──
+      // Must run before commitToPipeline so the canonical pipeline can lock the
+      // themed `/src/index.css` into siteBundleSnapshot.vfsFiles (preview, VFS,
+      // playground, and AIBuilder continuity all read from the snapshot).
+      const earlyResolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
+
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};
       const wizardSelections: WizardSelections = {
@@ -1199,6 +1205,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         wantsLeadCapture: forceSalonPreviewReady || goalNeeds.wantsLeadCapture || resolvedCustomerNeeds.includes('request_quote') || resolvedCustomerNeeds.includes('fill_form'),
         templateId: effectiveTemplate?.id,
         themeId: selectedTheme?.id,
+        themePresetId: earlyResolvedPreset.id,
         primaryIntent: industryProfile?.primaryIntent,
         requestedPages: resolvedRequestedPages,
         scaffoldMode: resolvedScaffoldMode,

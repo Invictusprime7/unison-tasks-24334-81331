@@ -63,7 +63,7 @@ import {
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { commitToPipeline } from "@/platform/core";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
-import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
+import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
@@ -1643,6 +1643,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               };
               if (!normalizedFiles['/src/App.tsx'] && normalizedFiles['src/App.tsx']) {
                 normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
+              }
+
+              const bindingApplication = (() => {
+                try {
+                  return applyWizardBindingsToVfs(normalizedFiles, siteBundleSnapshot);
+                } catch (error) {
+                  console.warn('[SystemLauncher] Pre-quality wizard binding pass failed; validating raw AI output', error);
+                  return null;
+                }
+              })();
+              const boundFiles = bindingApplication?.files || normalizedFiles;
+              sanitized.files = boundFiles;
+              if (bindingApplication?.missingBindings?.length) {
+                console.warn('[SystemLauncher] Wizard binding pass left missing bindings before quality gate:', bindingApplication.missingBindings);
               }
 
               const aiAppInvalidFlag =

@@ -162,7 +162,8 @@ ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
       },
       body: JSON.stringify({
         messages: [{ role: "user", content: reactPrompt }],
-        mode: "template-react",
+        // Wizard-seed is the sole launch lane (replaces legacy template-react fast path).
+        mode: "wizard-seed",
         variationSeed: variationSeed || `react-${Date.now().toString(36)}`,
         templateName: blueprint.brand.business_name,
         aesthetic: blueprint.brand.tone || "modern professional",
@@ -170,6 +171,28 @@ ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
         savePattern: true,
         currentCode: templateHtml ? templateHtml.substring(0, 80000) : undefined,
         templateAction: templateHtml ? "use-as-schema" : undefined,
+        // Minimal structured WizardSeed synthesized from the launch blueprint so
+        // Lane B has identity/brand/intents continuity even outside the Wizard UI.
+        wizardSeed: {
+          version: "1.0",
+          source: "systems-build",
+          identity: {
+            industry: blueprint.identity.industry,
+            primary_goal: blueprint.identity.primary_goal,
+          },
+          brand: {
+            business_name: blueprint.brand.business_name,
+            tagline: blueprint.brand.tagline,
+            tone: blueprint.brand.tone,
+            palette: blueprint.brand.palette,
+            typography: blueprint.brand.typography,
+          },
+          canonical: {
+            pages: [],
+            capabilities: [],
+            intents: [],
+          },
+        },
       }),
     });
 

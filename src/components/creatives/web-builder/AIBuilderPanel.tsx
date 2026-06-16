@@ -519,6 +519,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   backendStateContext,
   businessDataContext,
   systemsBuildContext,
+  wizardSeed,
   vfsContext,
   vfsFiles,
   onApplyToVFS,

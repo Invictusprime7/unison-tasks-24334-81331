@@ -215,7 +215,6 @@ export async function runProviderLoop(opts: {
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
             'Lovable-API-Key': lovableApiKey,
             'X-Lovable-AIG-SDK': 'vercel-ai-sdk',
             'Content-Type': 'application/json',
@@ -239,6 +238,12 @@ export async function runProviderLoop(opts: {
         if (!resp.ok) {
           const errText = await resp.text();
           console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 300)}`);
+          if (resp.status === 401 || resp.status === 403) {
+            deferredEarlyError ??= {
+              status: 503,
+              error: 'Managed AI gateway authentication failed. The backend key is unavailable or stale; rotate the managed gateway key and redeploy the AI functions.',
+            };
+          }
           // For 400 errors, log full detail to help diagnose parameter issues
           if (resp.status === 400) {
             console.error(`[AI-Hybrid] 400 Bad Request for ${model.id}. Request body keys: ${Object.keys(reqBody).join(', ')}`);
@@ -354,7 +359,7 @@ export async function runProviderLoop(opts: {
   }
 
   if (!content) {
-    if (deferredEarlyError && providerErrors.length === 1) {
+    if (deferredEarlyError) {
       return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
     }
     const configuredProviders = [

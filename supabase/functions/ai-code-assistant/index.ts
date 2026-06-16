@@ -99,7 +99,7 @@ serve(async (req: Request) => {
         userMessage = "AI providers are not configured on the backend. Please verify the managed AI gateway secret is available.";
         errorType = "provider_not_configured";
       } else if (hasAuthFailure) {
-        userMessage = "AI provider authentication failed. The managed AI gateway key was refreshed; please retry generation.";
+        userMessage = "Managed AI gateway authentication failed. The backend key is unavailable or stale; rotate the managed gateway key and redeploy the AI functions.";
         errorType = "provider_auth";
       } else {
         userMessage = details

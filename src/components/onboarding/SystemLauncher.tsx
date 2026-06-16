@@ -1394,11 +1394,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             industryHints: userDesignProfile.industryHints,
           }
         : undefined;
-      const wizardPreviewSnapshot = [
+      // Edge schema caps previewSnapshot at 3000 chars — clamp to stay valid.
+      const wizardPreviewSnapshotRaw = [
         `[Wizard canonical scaffold] ${canonicalPages.length} registered pages, ${Object.keys(siteBundleSnapshot.bindings || {}).length} bindings`,
         `Home template sections: ${composition.sections.map((s) => s.type).join(' → ')}`,
         siteAnalysis.sectionMap,
       ].filter(Boolean).join('\n');
+      const wizardPreviewSnapshot = wizardPreviewSnapshotRaw.length > 2900
+        ? wizardPreviewSnapshotRaw.slice(0, 2900) + '\n…[truncated]'
+        : wizardPreviewSnapshotRaw;
 
       const wizardSeed = {
         version: '1.0',

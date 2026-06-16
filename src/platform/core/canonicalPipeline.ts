@@ -39,6 +39,8 @@ import { createRuntimeManifest } from '@/types/runtimeManifest';
 import { validateComposition } from '@/services/componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
 import { assertWithinCommit } from './pipelineGuard';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 
 // ============================================================================
 // Pipeline Result
@@ -185,10 +187,6 @@ export function executeCanonicalPipeline(
       'Refusing to compile an un-themed scaffold.',
     );
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { THEME_PRESETS } = require('@/components/onboarding/themePresets');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { buildThemedIndexCss } = require('@/components/onboarding/themePresetToIndexCss');
   const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId);
   if (!preset) {
     throw new Error(

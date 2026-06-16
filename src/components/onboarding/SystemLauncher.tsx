@@ -1486,7 +1486,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           setLaunchStatus(`Refining site content… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
           await new Promise((r) => setTimeout(r, retryDelayMs));
         }
-        setLaunchStatus(MAX_RETRIES === 0 ? 'Generating site…' : `Generating site… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        setLaunchStatus(`Generating site… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
         // The structured `wizardSeed` is what the edge function's task
         // classifier matches on (mode==='wizard-seed' || wizardSeed) → routes
@@ -1673,41 +1673,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         generationResult = { structured, sanitized };
         break;
       }
-      const buildDeterministicSeedFiles = (): Record<string, string> => ({
-        '/src/App.tsx': seedAppCode,
-        '/src/index.css': themedIndexCss,
-      });
-
-      let generatedFiles: Record<string, string> | null = null;
-
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);
-        launchReliabilityMode = 'deterministic-fallback';
-        generatedFiles = buildDeterministicSeedFiles();
-        console.warn('[SystemLauncher] AI generation unavailable; launching deterministic canonical site instead:', msg);
-        toast.warning('AI provider unavailable — opening deterministic builder preview.', {
-          description: 'The site topology, theme, pages, and industry intents were preserved.',
+        launchReliabilityMode = 'lane-b-blocked';
+        console.warn('[SystemLauncher] Lane B wizard generation failed; deterministic template fallback is blocked:', msg);
+        toast.error('AI wizard generation failed before a valid site bundle was produced.', {
+          description: 'Deterministic template fallback is blocked so wizard selections and registries are not overwritten.',
         });
+        throw new Error(`Lane B wizard generation failed: ${msg}`);
       }
 
-      if (!generatedFiles && !generationResult) {
-        launchReliabilityMode = 'deterministic-fallback';
-        generatedFiles = buildDeterministicSeedFiles();
+      if (!generationResult) {
+        launchReliabilityMode = 'lane-b-blocked';
         if (lastPayloadIssue?.kind === 'empty') {
-          console.warn('[SystemLauncher] AI payload missing files; launching deterministic seed:', lastPayloadIssue.aiContentPreview);
+          console.warn('[SystemLauncher] Lane B payload missing files; deterministic fallback blocked:', lastPayloadIssue.aiContentPreview);
         }
         // 'app' kind no longer surfaces — App.tsx is deterministic, not AI-owned.
 
         if (lastPayloadIssue?.kind === 'section') {
-          console.warn('[SystemLauncher] AI returned malformed section files; launching deterministic seed', lastPayloadIssue);
+          console.warn('[SystemLauncher] Lane B returned malformed section files; deterministic fallback blocked', lastPayloadIssue);
         }
 
         if (lastPayloadIssue?.kind === 'quality') {
-          console.warn('[SystemLauncher] AI returned minimal/fallback output; launching deterministic seed', lastPayloadIssue);
+          console.warn('[SystemLauncher] Lane B returned minimal/fallback output; deterministic fallback blocked', lastPayloadIssue);
         }
-        toast.warning('Opening deterministic builder preview.', {
-          description: 'The launcher preserved your selected industry, template, theme, and intents.',
+        toast.error('AI wizard generation returned unusable files.', {
+          description: 'Template fallback is blocked; please retry so Lane B can preserve the wizard bundle and registry.',
         });
+        throw new Error(lastPayloadIssue?.qualityReason || 'Lane B wizard generation returned no valid files.');
       }
 
       // ── Merge AI output with LOCKED themed CSS + DETERMINISTIC ROUTER ──
@@ -1717,8 +1710,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // and supporting components. mergeWithCanonicalSnapshot=true ensures the
       // canonical router + scaffolded page files take precedence; any AI App.tsx
       // that doesn't look like a router will be rebased into the home page file.
-      generatedFiles = {
-        ...(generatedFiles || generationResult!.sanitized.files),
+      let generatedFiles: Record<string, string> = {
+        ...generationResult.sanitized.files,
         '/src/index.css': themedIndexCss,
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).

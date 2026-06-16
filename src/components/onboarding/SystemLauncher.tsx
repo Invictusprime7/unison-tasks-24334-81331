@@ -1284,7 +1284,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           generationMode: "ai-tsx",
           enforceTemplateComposition: true,
           enforceThemeCssOverride: true,
-          deterministicFallbackAllowed: true,
+          deterministicFallbackAllowed: false,
         },
         identity: {
           industry: resolvedIndustry,

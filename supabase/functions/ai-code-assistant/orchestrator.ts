@@ -64,6 +64,18 @@ export interface OrchestratorResult {
   response: Response;
 }
 
+function buildWizardSeedBasePrompt(): string {
+  return `You are the Lane B first-build generator for the System Launcher.
+Generate the initial structured business website from the WizardSeed, canonical route registry, theme, intent contract, memory, research, and VFS context.
+
+OUTPUT RULES:
+- Return ONLY raw JSON: {"files":{"/src/pages/Home.tsx":"..."}}
+- Do not use markdown fences or prose.
+- Do not author /src/App.tsx, /src/main.tsx, config files, or package files.
+- Emit complete React/TypeScript page/section files using semantic Tailwind tokens.
+- Preserve the canonical routes and data-ut-intent contract from the WizardSeed.`;
+}
+
 // ── Main Orchestrator Entry ─────────────────────────────────────────────────
 
 export function runAssistantOrchestrator(
@@ -228,7 +240,9 @@ async function runBuilderLane(
 
   // ── 4. Base system prompt ──────────────────────────────────────────────
   let basePrompt: string;
-  if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
+  if (task.type === 'wizard_seed_generation') {
+    basePrompt = buildWizardSeedBasePrompt();
+  } else if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
     const templatePromptText = templateName
       ? `${templateName} ${aesthetic || ''} ${source || ''}`
       : userPromptText;
@@ -289,7 +303,9 @@ async function runBuilderLane(
     : { compactedFiles: '', fileCount: 0, excludedFiles: [] };
 
   // ── 7. Assemble final prompt by task type ──────────────────────────────
-  const thinkingInstruction = buildThinkingInstruction(task.skipThinking);
+  const thinkingInstruction = task.type === 'wizard_seed_generation'
+    ? ''
+    : buildThinkingInstruction(task.skipThinking);
   const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, surgicalEdit);
 
   // For surgical edits, use old-style VFS context (byte-for-byte preservation)
@@ -303,7 +319,9 @@ async function runBuilderLane(
     : '';
 
   // Use the non-surgical compacted files for non-surgical edits
-  const compactedFilesBlock = surgicalEdit ? '' : builderContext.compactedFiles;
+  const compactedFilesBlock = task.type === 'wizard_seed_generation'
+    ? ''
+    : (surgicalEdit ? '' : builderContext.compactedFiles);
 
   let finalSystemPrompt: string;
 
@@ -350,7 +368,7 @@ async function runBuilderLane(
       break;
 
     default:
-      // general_code_assist, nav_page_generation, template_json/html
+      // general_code_assist, nav_page_generation, template_json/html, wizard_seed_generation
       finalSystemPrompt = buildGeneralBuilderPrompt({
         basePrompt,
         memoryBlock,

@@ -439,7 +439,7 @@ async function runBuilderLane(
     navPageGen,
     lovableApiKey: LOVABLE_API_KEY ?? undefined,
     reasoningEffort: gatewayOptions?.reasoningEffort,
-    allowDirectFallbacks: task.type !== 'wizard_seed_generation',
+    allowDirectFallbacks: true,
   });
 
   if (providerResult.earlyError) {

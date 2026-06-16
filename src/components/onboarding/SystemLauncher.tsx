@@ -44,7 +44,6 @@ import {
 } from "@/platform/core/siteTopologyPlanner";
 import {
   generateDesignVariation,
-  randomFontPairing,
 } from "@/utils/designVariation";
 // (aiCodeCleaner imports removed alongside the wizard fast-path enrichment)
 import { sanitizeGeneratedFiles } from "@/utils/tsxSanitizer";
@@ -61,8 +60,7 @@ import {
   type PremiumSectionReference,
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
-import { compositionToReactCode } from "@/sections/PageRenderer";
-import { commitToPipeline, type CanonicalPipelineResult } from "@/platform/core";
+import { commitToPipeline } from "@/platform/core";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
@@ -73,6 +71,9 @@ import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/p
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 import { persistLauncherHandoff } from "@/services/launcherHandoffPersistence";
+import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
+import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
+import { analyzeReactSite } from "@/utils/reactSiteAnalysis";
 
 // ============================================================================
 // Types
@@ -373,6 +374,12 @@ const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
 const WIZARD_AI_TIMEOUT_MS = 240_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
+const WIZARD_LANE_B_GATEWAY_OPTIONS = {
+  timeoutMs: 120_000,
+  reasoningEffort: 'medium',
+  autoModelSelection: true,
+  maxTokens: 64_000,
+} as const;
 
 
 // ─── Deterministic per-system preselects ──────────────────────────────────
@@ -504,6 +511,46 @@ function buildWizardAiSeedPrompt(opts: {
     `CONTENT CONTRACT: Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
     `Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
   ].filter(Boolean).join('\n');
+}
+
+function buildWizardCurrentCodeContext(files: Record<string, string>): string {
+  const priority = (path: string) => {
+    if (path === '/src/pages/Home.tsx') return 0;
+    if (path === '/src/App.tsx') return 1;
+    if (/\/src\/pages\//.test(path)) return 2;
+    if (path === '/src/index.css') return 3;
+    if (/\.tsx$/.test(path)) return 4;
+    return 5;
+  };
+
+  let total = 0;
+  const maxChars = 90_000;
+  const blocks: string[] = [];
+  for (const [path, content] of Object.entries(files).sort(([a], [b]) => priority(a) - priority(b))) {
+    if (!/\.(tsx|jsx|ts|css)$/.test(path)) continue;
+    if (/package\.json|tsconfig|vite\.config|tailwind\.config|postcss\.config/.test(path)) continue;
+    if (total + content.length > maxChars) continue;
+    blocks.push(`--- FILE: ${path} ---\n${content}\n--- END FILE ---`);
+    total += content.length;
+  }
+  return blocks.join('\n\n');
+}
+
+function buildWizardVfsPayload(files: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  let total = 0;
+  const maxChars = 120_000;
+  const entries = Object.entries(files).sort(([a], [b]) => {
+    const rank = (path: string) => path === '/src/pages/Home.tsx' ? 0 : path.includes('/src/pages/') ? 1 : path === '/src/App.tsx' ? 2 : path.endsWith('.css') ? 3 : 4;
+    return rank(a) - rank(b);
+  });
+  for (const [path, content] of entries) {
+    if (!/\.(tsx|jsx|ts|css|json)$/.test(path)) continue;
+    if (total + content.length > maxChars) continue;
+    out[path] = content;
+    total += content.length;
+  }
+  return out;
 }
 
 function buildTemplateGuidance(card: TemplateCardData | null): string {
@@ -866,6 +913,7 @@ const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData
 export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const navigate = useNavigate();
   const { setLaunch } = useLaunch();
+  const { profile: userDesignProfile, fetchProfile: fetchDesignProfile, hasProfile: hasDesignProfile } = useUserDesignProfile();
 
   // Wizard state
   const [step, setStep] = useState<WizardStep>("industry");
@@ -905,6 +953,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   });
 
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
+
+  useEffect(() => {
+    if (open) {
+      fetchDesignProfile();
+    }
+  }, [open, fetchDesignProfile]);
 
   // Build template cards from real compositions (falls back to references if none exist)
   const templateCards = useMemo(() => {
@@ -1054,7 +1108,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         ...(compositionMeta?.intents || []),
       ]));
 
-      const fonts = randomFontPairing();
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
       const preselect = selectedSystem ? LAUNCHER_PRESELECTS[selectedSystem] : undefined;
@@ -1216,10 +1269,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
       const themedIndexCss = buildThemedIndexCss(resolvedPreset);
 
-      // Deterministic seed App.tsx — used as `currentCode` context to anchor
-      // the AI to the picked template's section structure.
-      const seedAppCode = compositionToReactCode(composition);
-
       // ── Blueprint enriched with Style card palette + custom instructions ──
       const blueprint = {
         version: "1.0",
@@ -1228,7 +1277,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           generationMode: "ai-tsx",
           enforceTemplateComposition: true,
           enforceThemeCssOverride: true,
-          deterministicFallbackAllowed: true,
+          deterministicFallbackAllowed: false,
         },
         identity: {
           industry: resolvedIndustry,
@@ -1325,6 +1374,32 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           path: page.filePath,
         }));
 
+      const canonicalScaffoldFiles: Record<string, string> = {
+        ...(compiledPlayground?.vfsFiles || siteBundleSnapshot.vfsFiles || {}),
+        '/src/index.css': themedIndexCss,
+      };
+      const siteAnalysis = analyzeReactSite(canonicalScaffoldFiles);
+      const wizardCurrentCode = buildWizardCurrentCodeContext(canonicalScaffoldFiles);
+      const wizardVfsPayload = buildWizardVfsPayload(canonicalScaffoldFiles);
+      const siteElementsLibraryContext = generateLibraryPrompt({
+        systemType: selectedSystem,
+        userPrompt: aiUserPrompt,
+        includeSkeletons: false,
+        maxElements: 12,
+      });
+      const laneBDesignProfile = hasDesignProfile && userDesignProfile
+        ? {
+            projectCount: userDesignProfile.projectCount,
+            dominantStyle: userDesignProfile.dominantStyle,
+            industryHints: userDesignProfile.industryHints,
+          }
+        : undefined;
+      const wizardPreviewSnapshot = [
+        `[Wizard canonical scaffold] ${canonicalPages.length} registered pages, ${Object.keys(siteBundleSnapshot.bindings || {}).length} bindings`,
+        `Home template sections: ${composition.sections.map((s) => s.type).join(' → ')}`,
+        siteAnalysis.sectionMap,
+      ].filter(Boolean).join('\n');
+
       const wizardSeed = {
         version: '1.0',
         source: 'system-launcher',
@@ -1360,7 +1435,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         generation: {
           scaffoldMode: resolvedScaffoldMode,
-          previewGuarantee: forceSalonPreviewReady ? 'salon-booking-deterministic-fallback' : undefined,
+          previewGuarantee: forceSalonPreviewReady ? 'lane-b-ai-required' : undefined,
           publishGuarantee: forceSalonPreviewReady && ownerEmail ? 'native-first-party-publish-ready' : undefined,
           customInstructions: customPrompt.trim() || undefined,
           socials: userSocials,
@@ -1393,18 +1468,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         aiAppInvalid?: boolean;
         qualityReason?: string;
       } | null = null;
-      // Lane B wizard-seed + AI is the preferred path for every industry. If
-      // provider auth/rate/timeout fails, the already-built canonical pipeline
-      // must still launch into WebBuilder instead of redirecting to dashboard.
-      const MAX_RETRIES = 0;
-      let launchReliabilityMode: 'ai' | 'deterministic-fallback' = 'ai';
+      // Lane B wizard-seed + AI is required for every industry. Do not fall
+      // back to deterministic templates, because that overwrites wizard-selected
+      // style, registry, memory, research, and parsing context.
+      const MAX_RETRIES = 1;
+      let launchReliabilityMode: 'ai' | 'lane-b-blocked' = 'ai';
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const retryDelayMs = lastPayloadIssue ? 1200 * attempt : 3000 * attempt;
           setLaunchStatus(`Refining site content… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
           await new Promise((r) => setTimeout(r, retryDelayMs));
         }
-        setLaunchStatus(MAX_RETRIES === 0 ? 'Generating site…' : `Generating site… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        setLaunchStatus(`Generating site… (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
         // The structured `wizardSeed` is what the edge function's task
         // classifier matches on (mode==='wizard-seed' || wizardSeed) → routes
@@ -1439,11 +1514,21 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           runBuilderTurn<any>({
             messages: [{ role: 'user', content: promptForAttempt }],
             mode: 'wizard-seed',
+            currentCode: wizardCurrentCode,
+            editMode: true,
             templateName: effectiveTemplate?.label || system.name,
             aesthetic: resolvedPreset.id,
             source: resolvedIndustry,
             systemType: selectedSystem,
             systemsBuildContext: slimBlueprint,
+            userDesignProfile: laneBDesignProfile,
+            siteElementsLibraryContext,
+            vfsFiles: wizardVfsPayload,
+            previewSnapshot: wizardPreviewSnapshot,
+            recentChangedFiles: canonicalPages
+              .map((page) => page.path)
+              .filter((path): path is string => Boolean(path)),
+            gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
             wizardSeed,
           }),
           WIZARD_AI_TIMEOUT_MS,
@@ -1583,41 +1668,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         generationResult = { structured, sanitized };
         break;
       }
-      const buildDeterministicSeedFiles = (): Record<string, string> => ({
-        '/src/App.tsx': seedAppCode,
-        '/src/index.css': themedIndexCss,
-      });
-
-      let generatedFiles: Record<string, string> | null = null;
-
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);
-        launchReliabilityMode = 'deterministic-fallback';
-        generatedFiles = buildDeterministicSeedFiles();
-        console.warn('[SystemLauncher] AI generation unavailable; launching deterministic canonical site instead:', msg);
-        toast.warning('AI provider unavailable — opening deterministic builder preview.', {
-          description: 'The site topology, theme, pages, and industry intents were preserved.',
+        launchReliabilityMode = 'lane-b-blocked';
+        console.warn('[SystemLauncher] Lane B wizard generation failed; deterministic template fallback is blocked:', msg);
+        toast.error('AI wizard generation failed before a valid site bundle was produced.', {
+          description: 'Deterministic template fallback is blocked so wizard selections and registries are not overwritten.',
         });
+        throw new Error(`Lane B wizard generation failed: ${msg}`);
       }
 
-      if (!generatedFiles && !generationResult) {
-        launchReliabilityMode = 'deterministic-fallback';
-        generatedFiles = buildDeterministicSeedFiles();
+      if (!generationResult) {
+        launchReliabilityMode = 'lane-b-blocked';
         if (lastPayloadIssue?.kind === 'empty') {
-          console.warn('[SystemLauncher] AI payload missing files; launching deterministic seed:', lastPayloadIssue.aiContentPreview);
+          console.warn('[SystemLauncher] Lane B payload missing files; deterministic fallback blocked:', lastPayloadIssue.aiContentPreview);
         }
         // 'app' kind no longer surfaces — App.tsx is deterministic, not AI-owned.
 
         if (lastPayloadIssue?.kind === 'section') {
-          console.warn('[SystemLauncher] AI returned malformed section files; launching deterministic seed', lastPayloadIssue);
+          console.warn('[SystemLauncher] Lane B returned malformed section files; deterministic fallback blocked', lastPayloadIssue);
         }
 
         if (lastPayloadIssue?.kind === 'quality') {
-          console.warn('[SystemLauncher] AI returned minimal/fallback output; launching deterministic seed', lastPayloadIssue);
+          console.warn('[SystemLauncher] Lane B returned minimal/fallback output; deterministic fallback blocked', lastPayloadIssue);
         }
-        toast.warning('Opening deterministic builder preview.', {
-          description: 'The launcher preserved your selected industry, template, theme, and intents.',
+        toast.error('AI wizard generation returned unusable files.', {
+          description: 'Template fallback is blocked; please retry so Lane B can preserve the wizard bundle and registry.',
         });
+        throw new Error(lastPayloadIssue?.qualityReason || 'Lane B wizard generation returned no valid files.');
       }
 
       // ── Merge AI output with LOCKED themed CSS + DETERMINISTIC ROUTER ──
@@ -1627,8 +1705,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // and supporting components. mergeWithCanonicalSnapshot=true ensures the
       // canonical router + scaffolded page files take precedence; any AI App.tsx
       // that doesn't look like a router will be rebased into the home page file.
-      generatedFiles = {
-        ...(generatedFiles || generationResult!.sanitized.files),
+      let generatedFiles: Record<string, string> = {
+        ...generationResult.sanitized.files,
         '/src/index.css': themedIndexCss,
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).

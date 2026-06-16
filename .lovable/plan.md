@@ -1,118 +1,104 @@
-# UI-Intent Profile Layer
 
-Adds a per-industry contract that declares *how* each canonical intent must surface in the UI (affordance type, icon set, label options, variant, required placements). Slots above existing intent binding system without changing what works. Orchestrated by the System Launcher wizard during Lane B seed, mirroring how industry intent profiles + capability bindings are already resolved.
+## Goal
 
-## Architecture fit
+Make the System Launcher Wizard reliably output **full** sites (themed Tailwind CSS, multi-page TSX, `.unison/*.json` registries, wizard-seed.json, intent bindings) on the current HEAD — instead of the incomplete/minimal fallback visitors are currently seeing.
 
-Sits between `IndustryIntentProfile` (what intents must exist) and section components (what gets rendered):
+## Diagnosis
+
+The seed + token + registry plumbing itself is already intact end-to-end:
 
 ```text
-Capability Pack
-    │
-    ▼
-IndustryIntentProfile  ── declares required/forbidden coreIntents + slot coords
-    │
-    ▼
-UIIntentProfile  ◄── NEW: declares affordance/icon/label/variant per (intent, placement)
-    │
-    ▼
-wizardCapabilityResolver  ── merges bindings + ui-intent resolution
-    │
-    ▼
-builder_drafts.metadata.uiIntents  ── persisted slice (JSON)
-    │
-    ▼
-VFS scaffolder + InteractiveIcon + AutoBinder  ── materializes affordances
-    │
-    ▼
-IntegrityReport / Publish Gate  ── UIIntentConformanceCheck
+SystemLauncher.tsx
+  ├─ builds wizardSeed (business, template, theme tokens, canonical pages,
+  │   capabilities, intents, bindingGuide)
+  ├─ builds themedIndexCss (HSL tokens + typography from resolved preset)
+  ├─ calls ai-code-assistant   mode: "wizard-seed"  + wizardSeed payload
+  │       └─ orchestrator → runBuilderLane → wizard_seed_generation task
+  │             └─ buildWizardSeedBasePrompt + buildWizardSeedContext
+  │                 (multi-file JSON output contract: pages + shared sections)
+  └─ on success → buildCanonicalLaunchArtifacts
+        ├─ mergeGeneratedVfsWithCanonicalSnapshot (canonical router + scaffolded pages)
+        ├─ applyWizardBindingsToVfs (data-ut-intent wiring)
+        ├─ ensureViteRootFiles + themed /src/index.css force-applied
+        └─ upsertCanonicalMetadataFiles
+              /.unison/app-context.json
+              /.unison/runtime-manifest.json
+              /.unison/site-bundle-snapshot.json
+              /.unison/canonical-playground.json
+              /.unison/wizard-seed.json
+              /.unison/launch-readiness.json
+              /.unison/intent-bindings.json + intent-surfaces.json
 ```
 
-No new tables. No DOM contract change. AI chooses *within* allowed sets; required placements are non-negotiable.
+The reason visitors see "incomplete / minimal fallback" sites is **three disruptive iterations** layered on top in recent turns that disconnect this otherwise-working pipeline whenever the very first model attempt is anything less than perfect:
 
-## Scope
+1. **`providerRouter.ts` (wizard_seed_generation)** — collapsed to a SINGLE `geminiFlash` attempt with no secondary model. Any prose-leak, soft-fail, or token cutoff yields an empty/partial bundle.
+2. **`orchestrator.ts`** — `allowDirectFallbacks: task.type !== 'wizard_seed_generation'` disables direct provider fallback for the one task that needs it most.
+3. **`SystemLauncher.tsx`** — explicit "NO retries, NO deterministic template fallback" hard-throws on the first quality dip, surfacing toasts/blank sites to visitors. The canonical scaffold pages (already present in `siteBundleSnapshot.vfsFiles`) are never used as a per-page completion source.
 
-Salon profile only in v1 (proves the layer end-to-end). Other industries fall back to a no-op "permissive" profile so nothing regresses. Forbidden/required UI rules apply only where a profile exists.
+The seed/token/registry code itself is **not** the problem and must not be touched. Only those three guards need to be relaxed — surgically and only for `wizard_seed_generation`.
 
-## Deliverables
+## Changes (surgical, scoped)
 
-1. **Schema** — `src/platform/core/uiIntentProfile.ts`
-   - `UIIntentPlacement { pageRole, section, slot, affordance: 'button'|'icon-button'|'link'|'menu-item'|'card-cta', variant?, size?, icon: string | string[], labelOptions: string[], required: boolean, ifPageExists?: string }`
-   - `UIIntentProfile { industry, intents: Record<CoreIntent, { placements: UIIntentPlacement[] }> }`
-   - `UI_INTENT_PROFILES: Partial<Record<IndustryOverlay, UIIntentProfile>>`
-   - `getUIIntentProfile(industry)` + permissive default.
-   - Zod validator (`uiIntentProfileSchema`) reused by edge `reviewPass` and integrity check.
+### 1. `supabase/functions/ai-code-assistant/providerRouter.ts`
+Restore a 2-model wizard lineup so one provider blip can't kill a launch:
 
-2. **Salon profile** — `src/platform/core/uiIntentProfiles/salon.ui.ts`
-   - `booking.create`: hero/primary-cta (Button lg primary, `Calendar`, ["Book Now","Reserve","Schedule Visit"], required), services-grid/card-cta (Button default, `CalendarPlus`, ["Book","Reserve"], required), nav/nav-cta (Button primary, `Calendar`, ["Book"], required), footer/footer-cta (Button outline, `Calendar`, ["Book Now"], optional).
-   - `contact.call`: hero/secondary-cta (icon-button, `Phone`, ["Call"], optional), footer/phone-link (link, `Phone`, required), nav/utility (icon-button, `Phone`, optional).
-   - `location.directions`: footer/address-link (link, `MapPin`, ["Get Directions"], required), contact-page/address (link, required).
-   - `newsletter.subscribe`: footer/newsletter-submit (Button default, `Mail`, ["Subscribe","Join"], optional).
-   - `contact.email`: footer/email-link (link, `Mail`, optional).
-   - `share.open`: services-grid/icon-share (icon-button, `Share2`, optional).
-   - `favorite.toggle`: services-grid/icon-favorite (icon-button, `Heart`, optional).
+```text
+case "wizard_seed_generation":
+  plan = {
+    gatewayModels: [
+      m(MODELS.geminiFlash, 36000),   // primary
+      m(MODELS.gpt4oMini,   32000),   // fallback (same JSON contract)
+    ],
+    perModelTimeoutMs: 110000,
+    fallbackMaxTokens: 36000,
+  };
+```
 
-3. **Resolver** — extend `src/services/wizardCapabilityResolver.ts`
-   - New `resolveUIIntents(profile, bindings, availablePageRoles)` returns `{ resolvedPlacements, unsatisfiedRequired, conflicts }`.
-   - For each binding from `synthesizeIndustryBindings`, look up the UI profile entry by `(coreIntent, pageRole, section, slot)`; pick first allowed `labelOption` (AI may override later within allowed set); attach `affordance`, `icon`, `variant`.
-   - For required placements not covered by any binding → record `unsatisfiedRequired`.
-   - Return added to `CapabilityResolutionResult.uiIntents`.
+Keep the protection that complexity-upgrades and user overrides do not swap these out (existing guard at L201/L209 stays).
 
-4. **AI prompt contract** — `supabase/functions/ai-code-assistant/wizardSeedPrompt.ts` (or current wizard prompt builder)
-   - Inject resolved `uiIntents` JSON into prompt as `UI_INTENT_CONTRACT`.
-   - Rule: AI must render each required placement exactly once, using one label from `labelOptions`, icon from `icon` set, affordance/variant as declared. AI may add optional placements when industry context warrants.
+### 2. `supabase/functions/ai-code-assistant/orchestrator.ts`
+Flip the one line that disables fallbacks for wizard:
 
-5. **VFS materialization** — `src/services/wizardBindingBridge.ts` + `src/runtime/autoBinder.ts`
-   - When binding is stamped on a slot, also stamp `data-ui-affordance`, `data-ui-icon`, `data-ui-variant` (read from resolved profile) so the existing AutoBinder / InteractiveIcon pipeline can verify post-hoc.
-   - `applyWizardBindingsToVfs` writes resolved placements into the section's JSX where the AI omitted them (post-pass; non-destructive — only fills missing required affordances).
+```text
+allowDirectFallbacks: true,   // wizard_seed_generation included
+```
 
-6. **Persistence** — `builder_drafts.metadata.uiIntents` slice
-   - Written by Launcher after resolver runs (same call site as `recommendedBindingsV2`).
-   - Re-hydrated on Builder remount alongside bindings — no schema change, just an extra JSON key.
+This re-enables `runProviderLoop`'s built-in walk down the `gatewayModels` array if the first model returns an unusable body.
 
-7. **Integrity + Publish Gate** — `src/services/siteIntegrityReport.ts` (UIIntentConformanceCheck)
-   - For each `required` placement in the active profile, verify a DOM node with the matching `data-ut-intent` + slot coords exists in the generated VFS.
-   - Missing required placements → publish blocker (joins existing Closure B logic).
-   - Surface in Intent Health Pill alongside binding readiness.
+### 3. `src/components/onboarding/SystemLauncher.tsx`
+Replace the "single-shot or die" branch (~L1480–L1668) with **single-shot AI + deterministic per-page completion** — no retry loop, no template-react fallback, but never block visitors when the canonical scaffold can fill a gap:
 
-8. **Edge `reviewPass`** — normalize: if AI emits a button for a required intent without the canonical icon/label set, repair to nearest allowed value before commit; log to `intent_execution_log`.
+- Keep one Lane B call exactly as today.
+- If `generationResult` is missing OR quality is `!ok`, do NOT `throw`. Instead:
+  - Take whatever valid files the AI did emit (may be 0+).
+  - For every canonical page in `siteBundleSnapshot.pageRegistry` that has no AI-authored file, fall through to the scaffolded page already living in `siteBundleSnapshot.vfsFiles[page.filePath]` (these are the themed registry-driven stubs that `compiledPlayground` already produced — they are NOT the "default editorial seed" forbidden by the Preview Persistence rule; they are the wizard's own canonical scaffold).
+  - Continue into `buildCanonicalLaunchArtifacts` so the visitor always gets: themed `/src/index.css`, canonical router, every registered page reachable, full `.unison/*.json` registry set, wizard-seed.json, and intent bindings.
+- Log the gap (which pages came from AI vs scaffold) into `launch-readiness.json` under `wizardGenerationGaps` so the AIBuilderPanel can pick those pages up first.
+- Demote the `toast.error` to a `toast.warning` only when zero AI files AND zero scaffold files exist (effectively never, since scaffolding is deterministic).
 
-9. **Tests** — `src/test/uiIntentProfile.test.ts`
-   - Schema validation.
-   - Salon profile: `booking.create` resolves to hero/services/nav placements with allowed icons/labels.
-   - Resolver: forbidden intent (e.g. `quote.request` on salon) produces no UI placement; missing required → `unsatisfiedRequired` populated.
-   - Integrity: VFS missing hero booking button → publish blocked.
-   - `applyWizardBindingsToVfs` stamps `data-ui-affordance` on existing buttons; doesn't duplicate.
+This is the minimum change that removes the disruption without re-introducing the deprecated `template-react` fast-path / `runWizardLane` / retry-loop the user explicitly told us to keep out.
 
-## Out of scope (v1)
+## Explicitly NOT changing
 
-- Other industry profiles (contractor / restaurant / nonprofit / ecommerce / coaching) — placeholder permissive profiles only; follow-up PR.
-- Visual-editor UI to edit `UIIntentProfile` (read-only this round).
-- A11y rule expansion beyond what the affordance type already implies.
-- Copy-pack pluralization / locale variants.
+- `wizardSeed` shape, `buildWizardSeedContext`, `buildWizardSeedBasePrompt`, `requestSchema.ts` wizardSeed block.
+- `canonicalLaunchVfs.ts` (merger + metadata files) — already correct.
+- `wizardBindingBridge.ts`, `topologyRouterGenerator.ts`, `industryThemePresetMap.ts`, `launcherPayload.ts`.
+- Token/CSS injection (`themedIndexCss` + `ensureViteRootFiles`).
+- Lane B brain (memory, research, compact context).
+- Industry intent profiles / capability resolver / binding bridge.
 
-## Files touched
+## Verification
 
-- New: `src/platform/core/uiIntentProfile.ts`
-- New: `src/platform/core/uiIntentProfiles/salon.ui.ts`
-- New: `src/platform/core/uiIntentProfiles/index.ts`
-- New: `src/test/uiIntentProfile.test.ts`
-- Edit: `src/services/wizardCapabilityResolver.ts` (add `resolveUIIntents`, extend result)
-- Edit: `src/services/wizardBindingBridge.ts` (stamp affordance attrs; fill missing required)
-- Edit: `src/services/siteIntegrityReport.ts` (UIIntentConformanceCheck → publish gate)
-- Edit: `src/components/onboarding/SystemLauncher.tsx` (persist `uiIntents` into `builder_drafts.metadata`)
-- Edit: `supabase/functions/ai-code-assistant/orchestrator.ts` or wizard prompt module (inject `UI_INTENT_CONTRACT`)
-- Edit: `supabase/functions/ai-code-assistant/reviewPass.ts` (repair to allowed icon/label set)
-- Edit: `.lovable/memory/index.md` + new memory file documenting the layer.
+1. Deploy `ai-code-assistant` + redeploy nothing else.
+2. Run System Launcher for a booking-industry brand, watch:
+   - Network: one `ai-code-assistant` call returns 200 with `{files:{…}}`.
+   - VFS in preview contains `/.unison/wizard-seed.json`, `/.unison/site-bundle-snapshot.json`, `/.unison/canonical-playground.json`, `/.unison/intent-bindings.json`.
+   - `/src/index.css` contains the themed HSL tokens (not the default).
+   - Every page in the canonical registry resolves to a non-stub TSX (AI-authored where possible, scaffold otherwise).
+3. Re-run for a 2nd industry (e.g. salon) and a 3rd (e.g. coaching) to confirm parity and that industry intent profiles are not corrupting parsing.
+4. Open AIBuilderPanel after launch — confirm continuity reads `wizard-seed.json` (same seed, same theme, same routes).
 
-## Validation
+## Technical note
 
-- All 252+ existing tests pass.
-- New tests for schema, resolver, integrity, bridge stamping.
-- Manual: run salon wizard end-to-end; confirm hero/services/nav booking buttons render with canonical icons and labels; remove hero button in editor → publish gate blocks with actionable fix.
-
-## Risks
-
-- AI label drift: mitigated by `reviewPass` repair pass + integrity check.
-- Section component doesn't expose the required slot: integrity check catches and reports; resolver's `ifPageExists` already filters.
-- Other industries currently undeclared: permissive default = no-op, no regression.
+The `runProviderLoop` already supports walking multiple gatewayModels and returns `deferredEarlyError` only on 401/403. Restoring the 2-model lineup + `allowDirectFallbacks: true` therefore costs no new code path — it just stops short-circuiting a path that exists.

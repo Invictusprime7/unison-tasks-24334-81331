@@ -2205,6 +2205,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   }, [projectId, creatorPlayground]);
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
   const systemsBuildContextFromState = effectiveRouteState?.systemsBuildContext ?? null;
+  // Durable WizardSeed forwarded into AIBuilderPanel so every Lane B turn shares
+  // the same seed / memory / intent contract that drove the original launch.
+  const wizardSeedFromState = effectiveRouteState?.wizardSeed ?? null;
   
   // Derive compiled contract from navigation state for SystemHealthPanel & preview gating
   const compiledContract = useCompiledContract(

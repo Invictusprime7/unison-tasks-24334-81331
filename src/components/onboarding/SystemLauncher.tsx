@@ -1401,8 +1401,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemType: selectedSystem,
         userPrompt: aiUserPrompt,
         includeSkeletons: false,
-        maxElements: 12,
-      });
+        maxElements: 4,
+      }).slice(0, 12_000);
       const laneBDesignProfile = hasDesignProfile && userDesignProfile
         ? {
             projectCount: userDesignProfile.projectCount,
@@ -1516,7 +1516,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             messages: [{ role: 'user', content: aiUserPrompt }],
             mode: 'wizard-seed',
             currentCode: wizardCurrentCode,
-            editMode: true,
+            editMode: false,
             templateName: effectiveTemplate?.label || system.name,
             aesthetic: resolvedPreset.id,
             source: resolvedIndustry,

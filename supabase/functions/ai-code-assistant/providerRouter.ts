@@ -105,27 +105,14 @@ export function buildProviderPlan(
     return {
       gatewayModels: [],
       perModelTimeoutMs: 25000,
-      fallbackMaxTokens: task.type === "wizard_template_react" ? 16000 : 32000,
+      fallbackMaxTokens: 32000,
     };
   }
 
   let plan: ProviderPlan;
 
   switch (task.type) {
-    // ── Lane A: Wizard (protected — no complexity upgrades) ─────────────
-    case "wizard_template_react":
-      plan = {
-        gatewayModels: [
-          m(MODELS.geminiFlash, 16000),
-          m(MODELS.gpt4oMini, 16000),
-          m(MODELS.gpt4o, 16000),
-        ],
-        perModelTimeoutMs: 45000,
-        fallbackMaxTokens: 16000,
-      };
-      break;
-
-    // ── Lane B: Wizard seed (full builder-brain path) ───────────────────
+    // ── Lane B: Wizard seed (full builder-brain path — sole wizard lane) ──
     case "wizard_seed_generation":
       // Hardened first-attempt path. Lead with Gemini 3 Flash (consistently
       // produces complete multi-file JSON inside ~45s); fall back to
@@ -144,6 +131,7 @@ export function buildProviderPlan(
         fallbackMaxTokens: 20000,
       };
       break;
+
 
 
     case "nav_page_generation":

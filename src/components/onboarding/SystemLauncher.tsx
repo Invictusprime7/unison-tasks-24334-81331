@@ -376,6 +376,12 @@ const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
 const WIZARD_AI_TIMEOUT_MS = 240_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
+const WIZARD_LANE_B_GATEWAY_OPTIONS = {
+  timeoutMs: 120_000,
+  reasoningEffort: 'medium',
+  autoModelSelection: true,
+  maxTokens: 64_000,
+} as const;
 
 
 // ─── Deterministic per-system preselects ──────────────────────────────────
@@ -507,6 +513,46 @@ function buildWizardAiSeedPrompt(opts: {
     `CONTENT CONTRACT: Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
     `Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
   ].filter(Boolean).join('\n');
+}
+
+function buildWizardCurrentCodeContext(files: Record<string, string>): string {
+  const priority = (path: string) => {
+    if (path === '/src/pages/Home.tsx') return 0;
+    if (path === '/src/App.tsx') return 1;
+    if (/\/src\/pages\//.test(path)) return 2;
+    if (path === '/src/index.css') return 3;
+    if (/\.tsx$/.test(path)) return 4;
+    return 5;
+  };
+
+  let total = 0;
+  const maxChars = 90_000;
+  const blocks: string[] = [];
+  for (const [path, content] of Object.entries(files).sort(([a], [b]) => priority(a) - priority(b))) {
+    if (!/\.(tsx|jsx|ts|css)$/.test(path)) continue;
+    if (/package\.json|tsconfig|vite\.config|tailwind\.config|postcss\.config/.test(path)) continue;
+    if (total + content.length > maxChars) continue;
+    blocks.push(`--- FILE: ${path} ---\n${content}\n--- END FILE ---`);
+    total += content.length;
+  }
+  return blocks.join('\n\n');
+}
+
+function buildWizardVfsPayload(files: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  let total = 0;
+  const maxChars = 120_000;
+  const entries = Object.entries(files).sort(([a], [b]) => {
+    const rank = (path: string) => path === '/src/pages/Home.tsx' ? 0 : path.includes('/src/pages/') ? 1 : path === '/src/App.tsx' ? 2 : path.endsWith('.css') ? 3 : 4;
+    return rank(a) - rank(b);
+  });
+  for (const [path, content] of entries) {
+    if (!/\.(tsx|jsx|ts|css|json)$/.test(path)) continue;
+    if (total + content.length > maxChars) continue;
+    out[path] = content;
+    total += content.length;
+  }
+  return out;
 }
 
 function buildTemplateGuidance(card: TemplateCardData | null): string {

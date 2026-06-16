@@ -524,7 +524,10 @@ function buildWizardCurrentCodeContext(files: Record<string, string>): string {
   };
 
   let total = 0;
-  const maxChars = 90_000;
+  // Wizard-seed is a first-build generation, not an edit of the scaffold.
+  // Keep this intentionally small so Lane B gets the canonical shape without
+  // overwhelming the gateway with router/placeholders that it must replace.
+  const maxChars = 18_000;
   const blocks: string[] = [];
   for (const [path, content] of Object.entries(files).sort(([a], [b]) => priority(a) - priority(b))) {
     if (!/\.(tsx|jsx|ts|css)$/.test(path)) continue;
@@ -539,13 +542,14 @@ function buildWizardCurrentCodeContext(files: Record<string, string>): string {
 function buildWizardVfsPayload(files: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   let total = 0;
-  const maxChars = 120_000;
+  const maxChars = 24_000;
   const entries = Object.entries(files).sort(([a], [b]) => {
     const rank = (path: string) => path === '/src/pages/Home.tsx' ? 0 : path.includes('/src/pages/') ? 1 : path === '/src/App.tsx' ? 2 : path.endsWith('.css') ? 3 : 4;
     return rank(a) - rank(b);
   });
   for (const [path, content] of entries) {
-    if (!/\.(tsx|jsx|ts|css|json)$/.test(path)) continue;
+    if (!/\.(tsx|jsx|css|json)$/.test(path)) continue;
+    if (path !== '/src/App.tsx' && path !== '/src/pages/Home.tsx' && path !== '/src/index.css' && !path.startsWith('/.unison/')) continue;
     if (total + content.length > maxChars) continue;
     out[path] = content;
     total += content.length;

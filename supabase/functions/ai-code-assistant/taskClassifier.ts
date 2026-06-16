@@ -2,7 +2,6 @@
 // Classifies incoming requests into task types for routing and optimization.
 
 export type AssistantTaskType =
-  | "wizard_template_react"
   | "wizard_seed_generation"
   | "nav_page_generation"
   | "template_json_generation"

@@ -114,15 +114,15 @@ export function buildProviderPlan(
   switch (task.type) {
     // ── Lane B: Wizard seed (full builder-brain path — sole wizard lane) ──
     case "wizard_seed_generation":
-      // Hardened first-attempt path. Keep a single strong gateway attempt so
-      // wizard launches do not depend on retry/fallback behavior. The client
-      // now sends a compact seed prompt, so one model has enough wall-clock to
-      // finish a complete structured bundle on the first pass.
+      // Two-model lineup so a single provider blip (prose leak, soft-fail,
+      // token cutoff) can't strand a Wizard launch with an empty/partial
+      // bundle. Both honor the same multi-file JSON output contract.
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 36000),
+          m(MODELS.geminiFlash, 36000),   // primary
+          m(MODELS.gpt4oMini,   32000),   // fallback — same JSON contract
         ],
-        perModelTimeoutMs: 125000,
+        perModelTimeoutMs: 110000,
         fallbackMaxTokens: 36000,
       };
       break;

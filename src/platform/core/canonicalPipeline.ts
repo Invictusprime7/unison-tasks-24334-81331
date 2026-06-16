@@ -171,19 +171,39 @@ export function executeCanonicalPipeline(
   // persistence, AIBuilderPanel continuity, Playground rehydration) ships the
   // themed `/src/index.css` — not the un-themed default from the base scaffold.
   // Mirrors `recompileFromPlayground`'s themed CSS injection.
+  //
+  // INVARIANT (industry-agnostic): `selections.themePresetId` MUST be present.
+  // `resolveThemePreset(...)` in SystemLauncher is exhaustive over every
+  // LayoutCategory and falls back to 'modern'. A missing presetId here means
+  // some upstream path bypassed the wizard resolver — fail loudly instead of
+  // silently shipping un-themed tokens. See mem://architecture/styling/canonical-pipeline-theme-injection.
   const presetId = selections.themePresetId || selections.themeId;
-  if (presetId) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { THEME_PRESETS } = require('@/components/onboarding/themePresets');
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } = require('@/components/onboarding/themePresetToIndexCss');
-      const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId) || DEFAULT_PREVIEW_THEME_PRESET;
-      compileResult.vfsFiles['/src/index.css'] = buildThemedIndexCss(preset);
-    } catch (err) {
-      warnings.push(`[canonicalPipeline] themed index.css injection failed: ${(err as Error).message}`);
-    }
+  if (!presetId) {
+    throw new Error(
+      '[canonicalPipeline] Stage 4b assertion failed: selections.themePresetId is missing. ' +
+      'Every WizardSelections payload MUST thread a resolved ThemePreset id (see resolveThemePreset in SystemLauncher). ' +
+      'Refusing to compile an un-themed scaffold.',
+    );
   }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { THEME_PRESETS } = require('@/components/onboarding/themePresets');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { buildThemedIndexCss } = require('@/components/onboarding/themePresetToIndexCss');
+  const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId);
+  if (!preset) {
+    throw new Error(
+      `[canonicalPipeline] Stage 4b assertion failed: ThemePreset id "${presetId}" is not registered in THEME_PRESETS. ` +
+      'Add the preset to themePresets.ts or fix resolveThemePreset to return a registered id.',
+    );
+  }
+  const themedCss = buildThemedIndexCss(preset);
+  if (!themedCss || typeof themedCss !== 'string' || !themedCss.includes('--primary')) {
+    throw new Error(
+      `[canonicalPipeline] Stage 4b assertion failed: buildThemedIndexCss returned an invalid stylesheet for preset "${presetId}".`,
+    );
+  }
+  compileResult.vfsFiles['/src/index.css'] = themedCss;
+
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(

@@ -178,6 +178,7 @@ export function createLaunchState(
     compiledPlayground: input.compiledPlayground,
     pipelineManifest: input.pipelineManifest,
     wizardSelections: input.wizardSelections,
+    wizardSeed: input.wizardSeed,
     deferTopologyHydration: input.deferTopologyHydration,
     blueprint: input.blueprint || {
       version: '1.0',

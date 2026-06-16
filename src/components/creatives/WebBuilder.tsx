@@ -1144,6 +1144,8 @@ interface WebBuilderRouteState {
   wizardSelections?: WizardSelections;
   setupSnapshot?: PlaygroundSetupSnapshot;
   nativeReadinessManifest?: Record<string, unknown>;
+  /** Durable structured WizardSeed from launcher; threaded into every AIBuilderPanel turn. */
+  wizardSeed?: Record<string, unknown>;
   fromLauncher?: boolean;
 }
 

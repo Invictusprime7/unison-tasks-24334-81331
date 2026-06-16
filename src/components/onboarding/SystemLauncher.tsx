@@ -42,6 +42,7 @@ import {
   planSiteTopology,
   type GeneratedSitePlan,
 } from "@/platform/core/siteTopologyPlanner";
+import type { PageSpec } from "@/platform/core/industryMatrix";
 import {
   generateDesignVariation,
 } from "@/utils/designVariation";
@@ -132,6 +133,18 @@ const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
   { id: "checkout", label: "Checkout", icon: "🛍️" },
   { id: "blog", label: "Blog", icon: "📰" },
 ];
+
+const PAGE_CHOICE_TO_SPEC: Record<PageChoice, PageSpec> = {
+  about: { title: "About", path: "/about", purpose: "about", expectedSections: [] },
+  services: { title: "Services", path: "/services", purpose: "services", expectedSections: [] },
+  pricing: { title: "Pricing", path: "/pricing", purpose: "pricing", expectedSections: [] },
+  gallery: { title: "Gallery", path: "/gallery", purpose: "portfolio", expectedSections: [] },
+  faq: { title: "FAQ", path: "/faq", purpose: "faq", expectedSections: [] },
+  contact: { title: "Contact", path: "/contact", purpose: "contact", expectedSections: [] },
+  booking: { title: "Book", path: "/booking", purpose: "booking", expectedSections: [] },
+  checkout: { title: "Checkout", path: "/checkout", purpose: "checkout", expectedSections: [] },
+  blog: { title: "Blog", path: "/blog", purpose: "blog", expectedSections: [] },
+};
 
 // ============================================================================
 // Playground Pipeline Mappings

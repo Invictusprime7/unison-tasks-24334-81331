@@ -7466,7 +7466,6 @@ export default function ${componentName}() {
               }}
               systemType={activeSystemType}
               systemsBuildContext={systemsBuildContextFromState}
-                wizardSeed={wizardSeedFromState}
               readiness={selectedElementReadiness}
               onAIEditComplete={async (selector, newHtml) => {
                 // 1. Try the active page first.

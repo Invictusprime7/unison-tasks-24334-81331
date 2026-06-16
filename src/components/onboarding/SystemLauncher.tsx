@@ -1706,15 +1706,11 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           }
         }
       }
-      // ── Lane B never blocks the visitor ────────────────────────────────
-      // Single-shot AI + deterministic per-page completion. If AI fully or
-      // partially fails, fall through to the canonical scaffolded pages that
-      // already live in siteBundleSnapshot.vfsFiles (themed, registry-driven,
-      // wired with intents — NOT the deprecated editorial/default seed).
-      // mergeGeneratedVfsWithCanonicalSnapshot will fill any missing page
-      // path from canonicalFiles automatically, so the visitor always gets
-      // a complete site with themed CSS + canonical router + every registered
-      // page reachable + full .unison/*.json registries + wizard-seed.json.
+      // ── Lane B is mandatory for launcher runtime ───────────────────────
+      // The wizard explicitly sets deterministicFallbackAllowed=false. If Lane B
+      // cannot produce a usable bundle, abort the launch instead of allowing the
+      // canonical template scaffold (for example default store copy) to mask the
+      // failure and appear as the user's generated site.
       let aiSourcedFiles: Record<string, string> = {};
       let wizardGenerationGap: {
         aiError?: string;
@@ -1725,19 +1721,26 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       if (aiError) {
         const msg = await getFunctionErrorMessage(aiError);
         launchReliabilityMode = 'lane-b-blocked';
-        wizardGenerationGap = { aiError: msg, completedFromScaffold: true };
-        console.warn('[SystemLauncher] Lane B AI failed; completing site from canonical scaffold:', msg);
-        toast.warning('AI generation did not complete — completing site from canonical scaffold.', {
+        wizardGenerationGap = { aiError: msg, completedFromScaffold: false };
+        const errorMessage =
+          '[SystemLauncher] Launcher pipeline assertion failed: Lane B returned an error and deterministic fallback is disabled. ' +
+          'Aborting before canonical scaffold/default template content can overwrite wizard-selected runtime output.';
+        console.error(errorMessage, { aiError: msg, wizardGenerationGap });
+        toast.error('Build aborted: AI orchestration failed before producing the wizard site.', {
           description: msg.slice(0, 200),
         });
+        throw new Error(`${errorMessage} ${msg}`);
       } else if (!generationResult) {
         launchReliabilityMode = 'lane-b-blocked';
-        wizardGenerationGap = { payloadIssue: lastPayloadIssue, completedFromScaffold: true };
-        console.warn('[SystemLauncher] Lane B returned no usable payload; completing from canonical scaffold', lastPayloadIssue);
-        toast.warning('AI generation returned a partial bundle — completing site from canonical scaffold.', {
-          description: lastPayloadIssue?.qualityReason
-            || 'Canonical pages, themed CSS, and registries are intact.',
+        wizardGenerationGap = { payloadIssue: lastPayloadIssue, completedFromScaffold: false };
+        const errorMessage =
+          '[SystemLauncher] Launcher pipeline assertion failed: Lane B returned no usable files and deterministic fallback is disabled. ' +
+          'Aborting before canonical scaffold/default template content can overwrite wizard-selected runtime output.';
+        console.error(errorMessage, { lastPayloadIssue, wizardGenerationGap });
+        toast.error('Build aborted: AI orchestration returned no usable wizard site.', {
+          description: lastPayloadIssue?.qualityReason || 'No valid launcher bundle was produced.',
         });
+        throw new Error(errorMessage);
       } else {
         aiSourcedFiles = generationResult.sanitized.files;
       }

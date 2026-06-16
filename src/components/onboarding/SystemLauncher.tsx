@@ -1679,8 +1679,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             aiError = new Error(aiDataError);
             console.warn('[SystemLauncher] AI returned explicit error payload:', aiDataError);
           } else {
-            const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
-            const structured = extractLauncherPayload(aiContent);
+            const { structured, aiContent, source: aiPayloadSource } = extractLaneBLauncherPayload(
+              aiData,
+              `${brand} ${system.name}`,
+            );
 
             if (!structured?.files || Object.keys(structured.files).length === 0) {
               lastPayloadIssue = {
@@ -1694,8 +1696,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               }]);
               console.warn('[SystemLauncher] AI returned no usable files', {
                 aiContentPreview: lastPayloadIssue.aiContentPreview,
+                aiPayloadSource,
+                responseKeys: aiData ? Object.keys(aiData) : [],
               });
             } else {
+              console.info('[SystemLauncher] Lane B launcher payload accepted', {
+                aiPayloadSource,
+                fileCount: Object.keys(structured.files).length,
+              });
               const sanitized = sanitizeGeneratedFiles(structured.files);
               const normalizedFiles: Record<string, string> = {
                 ...sanitized.files,
@@ -1760,18 +1768,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   forceDeterministicPreviewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
                 );
                 if (!quality.ok) {
-                  lastPayloadIssue = {
-                    kind: 'quality',
-                    qualityReason: quality.reason,
-                    invalidFiles: sanitized.invalidFiles,
-                    aiContentPreview: aiContent.slice(0, 300),
-                  };
-                  setValidationAttempts((prev) => [...prev, {
-                    attempt: 1,
-                    kind: 'quality',
-                    reason: quality.reason || 'Output failed wizard quality contract',
-                  }]);
-                  console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
+                  if (isBlockingWizardQualityFailure(quality.reason)) {
+                    lastPayloadIssue = {
+                      kind: 'quality',
+                      qualityReason: quality.reason,
+                      invalidFiles: sanitized.invalidFiles,
+                      aiContentPreview: aiContent.slice(0, 300),
+                    };
+                    setValidationAttempts((prev) => [...prev, {
+                      attempt: 1,
+                      kind: 'quality',
+                      reason: quality.reason || 'Output failed wizard quality contract',
+                    }]);
+                    console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
+                  } else {
+                    console.warn('[SystemLauncher] AI output missed a repairable wizard quality check; continuing with stamped bindings', quality);
+                    generationResult = { structured, sanitized };
+                  }
                 } else {
                   generationResult = { structured, sanitized };
                 }

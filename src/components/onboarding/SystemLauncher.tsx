@@ -1771,6 +1771,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           launchReliabilityMode,
           scaffoldMode: resolvedScaffoldMode,
           forcedSalonPreviewReady: forceSalonPreviewReady,
+          wizardGenerationGap,
           generatedAt: new Date().toISOString(),
         }, null, 2),
         '/.unison/native-publish-setup.json': JSON.stringify(nativeSetupSnapshot || null, null, 2),

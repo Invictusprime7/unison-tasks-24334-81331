@@ -4863,8 +4863,14 @@ export function prepareSandpackFiles(
       );
     }
 
-    // Prose-only TSX must remain invalid so the wizard can reject/regenerate it;
-    // never replace it with preview fallback UI.
+    // SAFETY NET: Prose-only TSX (AI emitted narration instead of a component).
+    // Replace with a visible fallback so the wizard's snapshot/registry still
+    // renders cleanly; the launcher's separate quality contract still rejects
+    // the underlying generation so it can be regenerated.
+    if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isProseOnlyModule(processedContent)) {
+      console.warn(`[sandpackFilePrep] Prose-only module detected at ${normalizedPath} — injecting safe fallback`);
+      processedContent = buildProseFallback(normalizedPath);
+    }
 
     // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {

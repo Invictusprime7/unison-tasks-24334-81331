@@ -6429,6 +6429,7 @@ export default function ${componentName}() {
                 backendStateContext={backendStateContext}
                 businessDataContext={businessDataContext}
                 systemsBuildContext={systemsBuildContextFromState}
+                wizardSeed={wizardSeedFromState}
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
@@ -6800,6 +6801,7 @@ export default function ${componentName}() {
               backendStateContext={backendStateContext}
               businessDataContext={businessDataContext}
               systemsBuildContext={systemsBuildContextFromState}
+                wizardSeed={wizardSeedFromState}
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
@@ -7464,6 +7466,7 @@ export default function ${componentName}() {
               }}
               systemType={activeSystemType}
               systemsBuildContext={systemsBuildContextFromState}
+                wizardSeed={wizardSeedFromState}
               readiness={selectedElementReadiness}
               onAIEditComplete={async (selector, newHtml) => {
                 // 1. Try the active page first.

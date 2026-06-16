@@ -1185,6 +1185,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       compiledPlayground: launch.compiledPlayground,
       pipelineManifest: launch.pipelineManifest,
       wizardSelections: launch.wizardSelections,
+      wizardSeed: launch.wizardSeed,
       setupSnapshot: launch.setupSnapshot,
       nativeReadinessManifest: launch.nativeReadinessManifest,
     };

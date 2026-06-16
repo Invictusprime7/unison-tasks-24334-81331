@@ -615,8 +615,14 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
     if (typeof body === "string" && body) {
       try {
         const parsed = JSON.parse(body) as { error?: string; message?: string; details?: unknown };
-        if (parsed.error) return parsed.error;
-        if (parsed.message) return parsed.message;
+        const detailSummary = Array.isArray(parsed.details)
+          ? ` — ${(parsed.details as Array<{ path?: unknown; message?: string }>)
+              .slice(0, 5)
+              .map((d) => `${Array.isArray(d.path) ? d.path.join('.') : String(d.path ?? '')}: ${d.message ?? ''}`)
+              .join('; ')}`
+          : '';
+        if (parsed.error) return `${parsed.error}${detailSummary}`;
+        if (parsed.message) return `${parsed.message}${detailSummary}`;
       } catch {
         return body;
       }
@@ -638,8 +644,14 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
               message?: string;
               details?: unknown;
             };
-            if (parsed.error) return parsed.error;
-            if (parsed.message) return parsed.message;
+            const detailSummary = Array.isArray(parsed.details)
+              ? ` — ${(parsed.details as Array<{ path?: unknown; message?: string }>)
+                  .slice(0, 5)
+                  .map((d) => `${Array.isArray(d.path) ? d.path.join('.') : String(d.path ?? '')}: ${d.message ?? ''}`)
+                  .join('; ')}`
+              : '';
+            if (parsed.error) return `${parsed.error}${detailSummary}`;
+            if (parsed.message) return `${parsed.message}${detailSummary}`;
           } catch {
             return responseText;
           }
@@ -1394,11 +1406,15 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             industryHints: userDesignProfile.industryHints,
           }
         : undefined;
-      const wizardPreviewSnapshot = [
+      // Edge schema caps previewSnapshot at 3000 chars — clamp to stay valid.
+      const wizardPreviewSnapshotRaw = [
         `[Wizard canonical scaffold] ${canonicalPages.length} registered pages, ${Object.keys(siteBundleSnapshot.bindings || {}).length} bindings`,
         `Home template sections: ${composition.sections.map((s) => s.type).join(' → ')}`,
         siteAnalysis.sectionMap,
       ].filter(Boolean).join('\n');
+      const wizardPreviewSnapshot = wizardPreviewSnapshotRaw.length > 2900
+        ? wizardPreviewSnapshotRaw.slice(0, 2900) + '\n…[truncated]'
+        : wizardPreviewSnapshotRaw;
 
       const wizardSeed = {
         version: '1.0',

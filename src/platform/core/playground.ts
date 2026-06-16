@@ -70,6 +70,14 @@ export interface WizardSelections {
   templateId?: string;
   themeId?: string;
   /**
+   * Canonical ThemePreset id resolved from the wizard's Style card. When
+   * present, the canonical pipeline emits a themed `/src/index.css` into the
+   * compiled VFS + siteBundleSnapshot so preview, playground, and AIBuilder
+   * surfaces all share the same Style-card tokens (instead of falling back
+   * to the un-themed default that ships with the base scaffold).
+   */
+  themePresetId?: string;
+  /**
    * Primary intent from the industry profile (e.g. 'booking.create', 'contact.submit').
    * Forwarded to the topology planner so the materializer's internal planSiteTopology
    * call produces the same page set as the SystemLauncher's direct call.

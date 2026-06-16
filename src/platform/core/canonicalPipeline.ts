@@ -166,6 +166,25 @@ export function executeCanonicalPipeline(
     industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
   });
 
+  // Stage 4b: Lock in the wizard's Style-card tokens at the compile layer so
+  // every downstream artifact (siteBundleSnapshot.vfsFiles, builder_drafts
+  // persistence, AIBuilderPanel continuity, Playground rehydration) ships the
+  // themed `/src/index.css` — not the un-themed default from the base scaffold.
+  // Mirrors `recompileFromPlayground`'s themed CSS injection.
+  const presetId = selections.themePresetId || selections.themeId;
+  if (presetId) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { THEME_PRESETS } = require('@/components/onboarding/themePresets');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } = require('@/components/onboarding/themePresetToIndexCss');
+      const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId) || DEFAULT_PREVIEW_THEME_PRESET;
+      compileResult.vfsFiles['/src/index.css'] = buildThemedIndexCss(preset);
+    } catch (err) {
+      warnings.push(`[canonicalPipeline] themed index.css injection failed: ${(err as Error).message}`);
+    }
+  }
+
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

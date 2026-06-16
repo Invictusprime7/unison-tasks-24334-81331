@@ -99,6 +99,12 @@ export interface LaunchState {
   setupSnapshot?: PlaygroundSetupSnapshot;
   nativeReadinessManifest?: Record<string, unknown>;
   /**
+   * Durable structured WizardSeed that drove this launch.
+   * Persisted into route state so AIBuilderPanel can continue from the same
+   * seed/memory/intent contract on every subsequent Lane B turn.
+   */
+  wizardSeed?: Record<string, unknown>;
+  /**
    * When true, WebBuilder keeps wizard topology metadata available but does not
    * auto-hydrate page registry/routes on initial launch.
    */

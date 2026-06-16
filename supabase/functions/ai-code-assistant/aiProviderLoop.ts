@@ -356,7 +356,7 @@ export async function runProviderLoop(opts: {
       hasDirectOpenAI ? 'openai' : '',
     ].filter(Boolean);
     const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';
-    throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure LOVABLE_API_KEY and OPENAI_API_KEY are valid Supabase secrets.`);
+    throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure the managed AI gateway secret is valid and available to backend functions.`);
   }
 
   return { content, reasoning, modelUsed };

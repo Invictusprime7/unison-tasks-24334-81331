@@ -29,7 +29,7 @@ import {
   analyzeTemplateStructure,
   buildElementsLibraryBlock,
   buildVfsFilesContext,
-  buildFastPathSystemPrompt,
+  // buildFastPathSystemPrompt removed with Lane A
   buildUserDBContext,
   buildWizardSeedContext,
   type UserDBContext,
@@ -72,84 +72,22 @@ export function runAssistantOrchestrator(
   corsHeaders: Record<string, string>,
   userId?: string,
 ): Promise<Response> {
-  if (task.type === "wizard_template_react") {
-    return runWizardLane(parsed, task, corsHeaders);
-  }
   if (task.type === "launch_desk") {
     return runLaunchDeskLane(parsed, task, corsHeaders);
   }
+  // All wizard launches now route through Lane B as `wizard_seed_generation`.
   return runBuilderLane(parsed, task, corsHeaders, userId);
-}
-
-// ============================================================================
-// LANE A — Wizard Fast Path (protected, no memory, no research overhead)
-// ============================================================================
-
-async function runWizardLane(
-  parsed: AIRequest,
-  task: ClassifiedTask,
-  corsHeaders: Record<string, string>,
-): Promise<Response> {
-  console.log('[orchestrator] LANE A: wizard fast path');
-
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-  const { messages, systemsBuildContext, templateName, source, imagePlacement } = parsed;
-
-  // Fast path system prompt — no research, no memory, no patterns
-  const finalSystemPrompt = buildFastPathSystemPrompt({
-    systemsBuildContext: systemsBuildContext ?? {},
-    templateName: templateName ?? undefined,
-    source: source ?? undefined,
-  });
-
-  const processedMessages = compactMessages(messages);
-  const aiMessages = [
-    { role: 'system', content: finalSystemPrompt },
-    ...processedMessages,
-  ];
-
-  // Provider plan — protected, no user overrides
-  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY));
-  const providerResult = await runProviderLoop({
-    aiMessages,
-    providerPlan,
-    navPageGen: false,
-    lovableApiKey: LOVABLE_API_KEY ?? undefined,
-  });
-
-  if (providerResult.earlyError) {
-    return new Response(
-      JSON.stringify({ error: providerResult.earlyError.error }),
-      {
-        status: providerResult.earlyError.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
-  }
-
-  const content = postProcessContent(providerResult.content);
-
-  // Fire-and-forget learning session
-  saveLearningSession(parsed, content);
-
-  const responseBody = buildResponseBody({
-    content,
-    reasoning: providerResult.reasoning,
-    generatedImageUrl: '',
-    imagePlacement: imagePlacement ?? undefined,
-    mode: 'template-react',
-    modelUsed: providerResult.modelUsed,
-  });
-
-  return new Response(
-    JSON.stringify(responseBody),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
 }
 
 // ============================================================================
 // LANE B — Builder Orchestration (memory, compaction, research, rich response)
 // ============================================================================
+//
+// The legacy Lane A "wizard fast path" (runWizardLane / mode: template-react
+// without currentCode) has been REMOVED. Wizard launches now send
+// `mode: "wizard-seed"` with a structured WizardSeed and share the same
+// builder brain as in-Builder AIBuilderPanel edits.
+
 
 // ============================================================================
 // LANE C — Launch Desk (structured JSON plan, no memory, no research)

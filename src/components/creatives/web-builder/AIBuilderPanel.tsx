@@ -419,6 +419,8 @@ interface AIBuilderPanelProps {
   businessDataContext?: string | null;
   /** Structured business blueprint from systems-build (brand, palette, intents, sections) */
   systemsBuildContext?: SystemsBuildContext | null;
+  /** Durable WizardSeed from launcher — forwarded with every Lane B turn for memory/route/theme/intent continuity. */
+  wizardSeed?: Record<string, unknown> | null;
   /** Current VFS file list + dependency summary for AI awareness */
   vfsContext?: string | null;
   /** Full VFS file map for component-level site analysis */
@@ -517,6 +519,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   backendStateContext,
   businessDataContext,
   systemsBuildContext,
+  wizardSeed,
   vfsContext,
   vfsFiles,
   onApplyToVFS,
@@ -1297,6 +1300,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             launchBrief,
             userDesignProfile: userDesignProfile ?? undefined,
             systemsBuildContext: systemsBuildContext ?? undefined,
+            // Durable WizardSeed → Lane B continuity: same seed/memory/intents/routes.
+            wizardSeed: wizardSeed ?? undefined,
             siteElementsLibraryContext,
             attachments: _attachments.length > 0 ? _attachments : undefined,
             // Send VFS files for edit context (all edit types, not just surgical)
@@ -1999,6 +2004,7 @@ export default function App() {
         systemType,
         templateName,
         systemsBuildContext: systemsBuildContext ?? undefined,
+        wizardSeed: wizardSeed ?? undefined,
         previewDiagnostics: diagnostics,
         vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
         gatewayOptions: gatewayConfig ? {

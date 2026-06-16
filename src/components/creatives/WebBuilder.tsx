@@ -1144,6 +1144,8 @@ interface WebBuilderRouteState {
   wizardSelections?: WizardSelections;
   setupSnapshot?: PlaygroundSetupSnapshot;
   nativeReadinessManifest?: Record<string, unknown>;
+  /** Durable structured WizardSeed from launcher; threaded into every AIBuilderPanel turn. */
+  wizardSeed?: Record<string, unknown>;
   fromLauncher?: boolean;
 }
 
@@ -1183,6 +1185,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       compiledPlayground: launch.compiledPlayground,
       pipelineManifest: launch.pipelineManifest,
       wizardSelections: launch.wizardSelections,
+      wizardSeed: launch.wizardSeed,
       setupSnapshot: launch.setupSnapshot,
       nativeReadinessManifest: launch.nativeReadinessManifest,
     };
@@ -2202,6 +2205,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   }, [projectId, creatorPlayground]);
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
   const systemsBuildContextFromState = effectiveRouteState?.systemsBuildContext ?? null;
+  // Durable WizardSeed forwarded into AIBuilderPanel so every Lane B turn shares
+  // the same seed / memory / intent contract that drove the original launch.
+  const wizardSeedFromState = effectiveRouteState?.wizardSeed ?? null;
   
   // Derive compiled contract from navigation state for SystemHealthPanel & preview gating
   const compiledContract = useCompiledContract(
@@ -6423,6 +6429,7 @@ export default function ${componentName}() {
                 backendStateContext={backendStateContext}
                 businessDataContext={businessDataContext}
                 systemsBuildContext={systemsBuildContextFromState}
+                wizardSeed={wizardSeedFromState}
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
@@ -6794,6 +6801,7 @@ export default function ${componentName}() {
               backendStateContext={backendStateContext}
               businessDataContext={businessDataContext}
               systemsBuildContext={systemsBuildContextFromState}
+                wizardSeed={wizardSeedFromState}
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}

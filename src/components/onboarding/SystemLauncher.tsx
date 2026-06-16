@@ -1857,6 +1857,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         compiledPlayground,
         pipelineManifest,
         wizardSelections,
+        wizardSeed,
         setupSnapshot: nativeSetupSnapshot,
         nativeReadinessManifest,
       });

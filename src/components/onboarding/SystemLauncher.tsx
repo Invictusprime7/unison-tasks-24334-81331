@@ -915,6 +915,7 @@ const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData
 export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   const navigate = useNavigate();
   const { setLaunch } = useLaunch();
+  const { profile: userDesignProfile, fetchProfile: fetchDesignProfile, hasProfile: hasDesignProfile } = useUserDesignProfile();
 
   // Wizard state
   const [step, setStep] = useState<WizardStep>("industry");
@@ -954,6 +955,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
   });
 
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
+
+  useEffect(() => {
+    if (open) {
+      fetchDesignProfile();
+    }
+  }, [open, fetchDesignProfile]);
 
   // Build template cards from real compositions (falls back to references if none exist)
   const templateCards = useMemo(() => {

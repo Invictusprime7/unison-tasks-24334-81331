@@ -1839,7 +1839,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // and supporting components. mergeWithCanonicalSnapshot=true ensures the
       // canonical router + scaffolded page files take precedence; any AI App.tsx
       // that doesn't look like a router will be rebased into the home page file.
-      let generatedFiles: Record<string, string> = {
+      const generatedFiles: Record<string, string> = {
         ...aiSourcedFiles,
         '/src/index.css': themedIndexCss,
       };

@@ -20,6 +20,11 @@ function toSerializableRecord(value: Record<string, unknown>) {
 }
 
 function buildFallbackRouteState(routeState: Record<string, unknown>) {
+  // CRITICAL: preserve the generated VFS + canonical bundle here. The Builder
+  // relies on these to skip the deterministic template fallback and hydrate
+  // the page registry from AI output. Dropping them used to cause the Dashboard
+  // → WebBuilder handoff to "lose" the wizard's selections and render a stale
+  // default seed.
   return {
     fromLauncher: true,
     startInPreview: true,
@@ -34,6 +39,13 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
     projectId: routeState.projectId,
     entryPoint: routeState.entryPoint,
     runtimeManifest: routeState.runtimeManifest,
+    vfsFiles: routeState.vfsFiles,
+    siteBundleSnapshot: routeState.siteBundleSnapshot,
+    canonicalPlayground: routeState.canonicalPlayground,
+    wizardSelections: routeState.wizardSelections,
+    wizardSeed: routeState.wizardSeed,
+    appContext: routeState.appContext,
+    launchReadiness: routeState.launchReadiness,
   } satisfies Record<string, unknown>;
 }
 

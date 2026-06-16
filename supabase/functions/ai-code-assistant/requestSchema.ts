@@ -42,12 +42,13 @@ export const AIRequestSchema = z.object({
   navLabel: z.string().max(120).nullish(),
   systemsBuildContext: z.object({
     version: z.string().optional(),
+    launcherPolicy: z.record(z.string(), z.unknown()).optional(),
     identity: z.object({
       industry: z.string().max(80).optional(),
       business_model: z.string().max(80).optional(),
       primary_goal: z.string().max(200).optional(),
       locale: z.string().max(20).optional(),
-    }).optional(),
+    }).passthrough().optional(),
     brand: z.object({
       business_name: z.string().max(100).optional(),
       tagline: z.string().max(200).optional(),
@@ -61,7 +62,7 @@ export const AIRequestSchema = z.object({
       }).optional(),
       typography: z.object({ heading: z.string().optional(), body: z.string().optional() }).optional(),
       logo: z.object({ mode: z.string().optional(), text_lockup: z.string().optional() }).optional(),
-    }).optional(),
+    }).passthrough().optional(),
     design: z.object({
       layout: z.object({
         hero_style: z.string().max(40).optional(),
@@ -101,14 +102,15 @@ export const AIRequestSchema = z.object({
         use_icons: z.boolean().optional(),
         writing_style: z.string().max(30).optional(),
       }).optional(),
-    }).optional(),
+    }).passthrough().optional(),
+    theme_tokens: z.record(z.string(), z.unknown()).optional(),
     intents: z.array(z.object({
       intent: z.string().max(60),
       target: z.object({ kind: z.string().optional(), ref: z.string().optional() }).optional(),
-    })).max(20).optional(),
+    }).passthrough()).max(40).optional(),
     template_sections: z.array(z.string().max(60)).max(20).optional(),
     template_intents: z.array(z.string().max(60)).max(20).optional(),
-  }).optional(),
+  }).passthrough().optional(),
   siteElementsLibraryContext: z.string().max(50_000).optional(),
   surgicalEdit: z.boolean().optional(),
   behavioralEdit: z.boolean().optional(),

@@ -95,7 +95,11 @@ function coerceLauncherFiles(value: unknown): Record<string, string> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const files = Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
-      .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
+      .filter((entry): entry is [string, string] => (
+        typeof entry[0] === 'string' &&
+        /^(?:\/|src\/|public\/|\.unison\/).+\.[a-z0-9]+$/i.test(entry[0]) &&
+        typeof entry[1] === 'string'
+      ))
       .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content]),
   );
   return Object.keys(files).length > 0 ? files : null;
@@ -131,6 +135,11 @@ function extractLaneBLauncherPayload(
     return { structured: { files: topLevelFiles }, aiContent: JSON.stringify({ files: topLevelFiles }), source: 'files' };
   }
 
+  const flatResponseFiles = coerceLauncherFiles(aiData);
+  if (flatResponseFiles) {
+    return { structured: { files: flatResponseFiles }, aiContent: JSON.stringify({ files: flatResponseFiles }), source: 'flat-response-files' };
+  }
+
   for (const [source, value] of stringCandidates) {
     if (typeof value !== 'string' || !looksLikeRawRenderableAiOutput(value)) continue;
     const files = templateToVFSFiles(value, templateName);
@@ -147,7 +156,7 @@ function extractLaneBLauncherPayload(
 
 function isBlockingWizardQualityFailure(reason?: string): boolean {
   if (!reason) return true;
-  return /no renderable|placeholder\/fallback|too small|too few sections/i.test(reason);
+  return /no renderable|placeholder\/fallback|too small|too few sections|no canonical data-ut-intent/i.test(reason);
 }
 
 const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [

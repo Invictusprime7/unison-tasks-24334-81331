@@ -75,6 +75,7 @@ import { persistLauncherHandoff } from "@/services/launcherHandoffPersistence";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { analyzeReactSite } from "@/utils/reactSiteAnalysis";
+import { templateToVFSFiles } from "@/utils/templateToVFS";
 
 // ============================================================================
 // Types
@@ -89,6 +90,65 @@ interface SystemLauncherProps {
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
 type LauncherPayload = NonNullable<ReturnType<typeof extractLauncherPayload>>;
+
+function coerceLauncherFiles(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const files = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
+      .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content]),
+  );
+  return Object.keys(files).length > 0 ? files : null;
+}
+
+function looksLikeRawRenderableAiOutput(content: string): boolean {
+  if (content.trim().length < 500) return false;
+  return /<!DOCTYPE|<html\b|export\s+default|function\s+[A-Z][\w]*\s*\(|const\s+[A-Z][\w]*\s*=|<\s*(main|section|header|div)\b/i.test(content);
+}
+
+function extractLaneBLauncherPayload(
+  aiData: Record<string, unknown> | null,
+  templateName: string,
+): { structured: LauncherPayload | null; aiContent: string; source: string } {
+  const stringCandidates = [
+    ['content', aiData?.content],
+    ['code', aiData?.code],
+    ['text', aiData?.text],
+    ['output', aiData?.output],
+    ['response', aiData?.response],
+  ] as const;
+
+  for (const [source, value] of stringCandidates) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const structured = extractLauncherPayload(value);
+    if (structured?.files && Object.keys(structured.files).length > 0) {
+      return { structured, aiContent: value, source };
+    }
+  }
+
+  const topLevelFiles = coerceLauncherFiles(aiData?.files);
+  if (topLevelFiles) {
+    return { structured: { files: topLevelFiles }, aiContent: JSON.stringify({ files: topLevelFiles }), source: 'files' };
+  }
+
+  for (const [source, value] of stringCandidates) {
+    if (typeof value !== 'string' || !looksLikeRawRenderableAiOutput(value)) continue;
+    const files = templateToVFSFiles(value, templateName);
+    return {
+      structured: { files, entryPoint: '/src/App.tsx' },
+      aiContent: value,
+      source: `${source}:raw-renderable`,
+    };
+  }
+
+  const aiContent = stringCandidates.find(([, value]) => typeof value === 'string')?.[1];
+  return { structured: null, aiContent: typeof aiContent === 'string' ? aiContent : '', source: 'none' };
+}
+
+function isBlockingWizardQualityFailure(reason?: string): boolean {
+  if (!reason) return true;
+  return /no renderable|placeholder\/fallback|too small|too few sections/i.test(reason);
+}
 
 const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [
   { key: "industry", num: 1, label: "Industry", sublabel: "What you do" },

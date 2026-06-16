@@ -2002,6 +2002,7 @@ export default function App() {
         systemType,
         templateName,
         systemsBuildContext: systemsBuildContext ?? undefined,
+        wizardSeed: wizardSeed ?? undefined,
         previewDiagnostics: diagnostics,
         vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
         gatewayOptions: gatewayConfig ? {

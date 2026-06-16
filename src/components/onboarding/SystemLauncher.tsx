@@ -1505,10 +1505,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         // Pass a SLIM blueprint — wizardSeed already carries brand/theme/intents
         // and the full blueprint duplicated ~10KB of payload, pushing Gemini
         // 3 Flash past its 50s budget for non-cached industry/style combos.
+        // Carry brand/design/theme_tokens through to Lane B — without them the
+        // AI loses the Style card palette + typography + brand voice and falls
+        // back to generic copy / neutral colors. Intents are also required so
+        // the model wires CTAs to the right industry coreIntents.
         const slimBlueprint = {
           version: blueprint.version,
           launcherPolicy: blueprint.launcherPolicy,
           identity: blueprint.identity,
+          brand: blueprint.brand,
+          design: blueprint.design,
+          theme_tokens: blueprint.theme_tokens,
+          intents: blueprint.intents,
           template_sections: blueprint.template_sections,
           template_intents: blueprint.template_intents,
         };

@@ -524,7 +524,10 @@ function buildWizardCurrentCodeContext(files: Record<string, string>): string {
   };
 
   let total = 0;
-  const maxChars = 90_000;
+  // Wizard-seed is a first-build generation, not an edit of the scaffold.
+  // Keep this intentionally small so Lane B gets the canonical shape without
+  // overwhelming the gateway with router/placeholders that it must replace.
+  const maxChars = 18_000;
   const blocks: string[] = [];
   for (const [path, content] of Object.entries(files).sort(([a], [b]) => priority(a) - priority(b))) {
     if (!/\.(tsx|jsx|ts|css)$/.test(path)) continue;
@@ -539,13 +542,14 @@ function buildWizardCurrentCodeContext(files: Record<string, string>): string {
 function buildWizardVfsPayload(files: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   let total = 0;
-  const maxChars = 120_000;
+  const maxChars = 24_000;
   const entries = Object.entries(files).sort(([a], [b]) => {
     const rank = (path: string) => path === '/src/pages/Home.tsx' ? 0 : path.includes('/src/pages/') ? 1 : path === '/src/App.tsx' ? 2 : path.endsWith('.css') ? 3 : 4;
     return rank(a) - rank(b);
   });
   for (const [path, content] of entries) {
-    if (!/\.(tsx|jsx|ts|css|json)$/.test(path)) continue;
+    if (!/\.(tsx|jsx|css|json)$/.test(path)) continue;
+    if (path !== '/src/App.tsx' && path !== '/src/pages/Home.tsx' && path !== '/src/index.css' && !path.startsWith('/.unison/')) continue;
     if (total + content.length > maxChars) continue;
     out[path] = content;
     total += content.length;
@@ -692,9 +696,13 @@ function assessWizardGenerationQuality(
   const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
   const combined = tsxEntries.map(([, content]) => content).join('\n');
   const totalChars = combined.trim().length;
-  const sectionCount = (
+  const semanticSectionCount = (
     combined.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
   ).length;
+  const classSectionCount = (
+    combined.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav)[^"']*["']/gi) || []
+  ).length;
+  const sectionCount = Math.max(semanticSectionCount, classSectionCount);
   const intentCount = (combined.match(/data-ut-intent=/g) || []).length;
   const placeholderPattern = /AI-generated code will appear here|This page is ready to be edited|Generating page content|Welcome to AI Web Builder|Lorem ipsum|Coming soon|New site preview|refined launch page ready for your next edit|fallback keeps the experience polished|generated content, bindings, and business data continue to hydrate/i;
   const hasRenderablePage = tsxEntries.some(([path, content]) => {
@@ -1397,8 +1405,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         systemType: selectedSystem,
         userPrompt: aiUserPrompt,
         includeSkeletons: false,
-        maxElements: 12,
-      });
+        maxElements: 4,
+      }).slice(0, 12_000);
       const laneBDesignProfile = hasDesignProfile && userDesignProfile
         ? {
             projectCount: userDesignProfile.projectCount,
@@ -1512,7 +1520,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             messages: [{ role: 'user', content: aiUserPrompt }],
             mode: 'wizard-seed',
             currentCode: wizardCurrentCode,
-            editMode: true,
+            editMode: false,
             templateName: effectiveTemplate?.label || system.name,
             aesthetic: resolvedPreset.id,
             source: resolvedIndustry,
@@ -1633,8 +1641,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         const msg = await getFunctionErrorMessage(aiError);
         launchReliabilityMode = 'lane-b-blocked';
         console.warn('[SystemLauncher] Lane B wizard generation failed; deterministic template fallback is blocked:', msg);
-        toast.error('AI wizard generation failed before a valid site bundle was produced.', {
-          description: 'Deterministic template fallback is blocked so wizard selections and registries are not overwritten.',
+        toast.error('Lane B wizard generation did not complete.', {
+          description: msg,
         });
         throw new Error(`Lane B wizard generation failed: ${msg}`);
       }
@@ -1653,8 +1661,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         if (lastPayloadIssue?.kind === 'quality') {
           console.warn('[SystemLauncher] Lane B returned minimal/fallback output; deterministic fallback blocked', lastPayloadIssue);
         }
-        toast.error('AI wizard generation returned unusable files.', {
-          description: 'Template fallback is blocked; please retry so Lane B can preserve the wizard bundle and registry.',
+        toast.error('Lane B wizard generation returned an invalid bundle.', {
+          description: lastPayloadIssue?.qualityReason || 'The generated files did not satisfy the wizard bundle contract.',
         });
         throw new Error(lastPayloadIssue?.qualityReason || 'Lane B wizard generation returned no valid files.');
       }

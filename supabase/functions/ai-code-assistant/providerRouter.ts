@@ -114,21 +114,16 @@ export function buildProviderPlan(
   switch (task.type) {
     // ── Lane B: Wizard seed (full builder-brain path — sole wizard lane) ──
     case "wizard_seed_generation":
-      // Hardened first-attempt path. Lead with Gemini 3 Flash (consistently
-      // produces complete multi-file JSON inside ~45s); fall back to
-      // Flash Lite then GPT-5 Mini. Token cap kept at 20k so first-byte
-      // latency stays low and the model finishes well inside its slot —
-      // the partial-JSON salvager covers any rare truncation.
+      // Hardened first-attempt path. Keep a single strong gateway attempt so
+      // wizard launches do not depend on retry/fallback behavior. The client
+      // now sends a compact seed prompt, so one model has enough wall-clock to
+      // finish a complete structured bundle on the first pass.
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 20000),
-          m(MODELS.gemini25Flash, 20000),
-          m(MODELS.geminiFlashLite, 20000),
-          m(MODELS.geminiPro, 20000),
-          m(MODELS.gpt4oMini, 20000),
+          m(MODELS.geminiFlash, 36000),
         ],
-        perModelTimeoutMs: 70000,
-        fallbackMaxTokens: 20000,
+        perModelTimeoutMs: 125000,
+        fallbackMaxTokens: 36000,
       };
       break;
 

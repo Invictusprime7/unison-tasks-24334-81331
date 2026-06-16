@@ -387,6 +387,18 @@ export function buildGeneralBuilderPrompt(opts: {
   thinkingInstruction: string;
   imageContext: string;
 }): string {
+  if (opts.basePrompt.includes('Lane B first-build generator')) {
+    return opts.basePrompt
+      + '\n\n[DESIGN INTELLIGENCE]\nUse strong visual hierarchy, responsive semantic layout, accessible CTAs, and the project theme tokens.\n'
+      + opts.memoryBlock
+      + opts.researchContext
+      + opts.industryPageContext
+      + opts.designContext
+      + opts.blueprintContext
+      + opts.elementsLibrary
+      + opts.imageContext;
+  }
+
   const generalPreamble = `
 [BUILDER ASSISTANT MODE]
 You are helping the user build and improve their web application.

@@ -1183,7 +1183,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: effectiveTemplate?.id,
-        minimal: resolvedScaffoldMode === 'home-only',
+        minimal: false,
       });
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) EARLY ──
@@ -1223,7 +1223,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         primaryIntent: industryProfile?.primaryIntent,
         requestedPages: resolvedRequestedPages,
         scaffoldMode: resolvedScaffoldMode,
-        minimalScaffold: resolvedScaffoldMode === 'home-only',
+        minimalScaffold: false,
         nativePublishReady: forceSalonPreviewReady && Boolean(ownerEmail),
         ownerEmail: ownerEmail || undefined,
         publishMode: forceSalonPreviewReady && ownerEmail ? 'native-first-party' : 'manual-setup',

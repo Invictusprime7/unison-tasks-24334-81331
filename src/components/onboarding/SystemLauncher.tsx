@@ -75,6 +75,7 @@ import { persistLauncherHandoff } from "@/services/launcherHandoffPersistence";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { analyzeReactSite } from "@/utils/reactSiteAnalysis";
+import { templateToVFSFiles } from "@/utils/templateToVFS";
 
 // ============================================================================
 // Types
@@ -89,6 +90,74 @@ interface SystemLauncherProps {
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
 type LauncherPayload = NonNullable<ReturnType<typeof extractLauncherPayload>>;
+
+function coerceLauncherFiles(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const files = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => (
+        typeof entry[0] === 'string' &&
+        /^(?:\/|src\/|public\/|\.unison\/).+\.[a-z0-9]+$/i.test(entry[0]) &&
+        typeof entry[1] === 'string'
+      ))
+      .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content]),
+  );
+  return Object.keys(files).length > 0 ? files : null;
+}
+
+function looksLikeRawRenderableAiOutput(content: string): boolean {
+  if (content.trim().length < 500) return false;
+  return /<!DOCTYPE|<html\b|export\s+default|function\s+[A-Z][\w]*\s*\(|const\s+[A-Z][\w]*\s*=|<\s*(main|section|header|div)\b/i.test(content);
+}
+
+function extractLaneBLauncherPayload(
+  aiData: Record<string, unknown> | null,
+  templateName: string,
+): { structured: LauncherPayload | null; aiContent: string; source: string } {
+  const stringCandidates = [
+    ['content', aiData?.content],
+    ['code', aiData?.code],
+    ['text', aiData?.text],
+    ['output', aiData?.output],
+    ['response', aiData?.response],
+  ] as const;
+
+  for (const [source, value] of stringCandidates) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const structured = extractLauncherPayload(value);
+    if (structured?.files && Object.keys(structured.files).length > 0) {
+      return { structured, aiContent: value, source };
+    }
+  }
+
+  const topLevelFiles = coerceLauncherFiles(aiData?.files);
+  if (topLevelFiles) {
+    return { structured: { files: topLevelFiles }, aiContent: JSON.stringify({ files: topLevelFiles }), source: 'files' };
+  }
+
+  const flatResponseFiles = coerceLauncherFiles(aiData);
+  if (flatResponseFiles) {
+    return { structured: { files: flatResponseFiles }, aiContent: JSON.stringify({ files: flatResponseFiles }), source: 'flat-response-files' };
+  }
+
+  for (const [source, value] of stringCandidates) {
+    if (typeof value !== 'string' || !looksLikeRawRenderableAiOutput(value)) continue;
+    const files = templateToVFSFiles(value, templateName);
+    return {
+      structured: { files, entryPoint: '/src/App.tsx' },
+      aiContent: value,
+      source: `${source}:raw-renderable`,
+    };
+  }
+
+  const aiContent = stringCandidates.find(([, value]) => typeof value === 'string')?.[1];
+  return { structured: null, aiContent: typeof aiContent === 'string' ? aiContent : '', source: 'none' };
+}
+
+function isBlockingWizardQualityFailure(reason?: string): boolean {
+  if (!reason) return true;
+  return /no renderable|placeholder\/fallback|too small|too few sections|no canonical data-ut-intent/i.test(reason);
+}
 
 const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [
   { key: "industry", num: 1, label: "Industry", sublabel: "What you do" },
@@ -1619,8 +1688,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             aiError = new Error(aiDataError);
             console.warn('[SystemLauncher] AI returned explicit error payload:', aiDataError);
           } else {
-            const aiContent = (aiData?.content as string) || (aiData?.code as string) || '';
-            const structured = extractLauncherPayload(aiContent);
+            const { structured, aiContent, source: aiPayloadSource } = extractLaneBLauncherPayload(
+              aiData,
+              `${brand} ${system.name}`,
+            );
 
             if (!structured?.files || Object.keys(structured.files).length === 0) {
               lastPayloadIssue = {
@@ -1634,8 +1705,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               }]);
               console.warn('[SystemLauncher] AI returned no usable files', {
                 aiContentPreview: lastPayloadIssue.aiContentPreview,
+                aiPayloadSource,
+                responseKeys: aiData ? Object.keys(aiData) : [],
               });
             } else {
+              console.info('[SystemLauncher] Lane B launcher payload accepted', {
+                aiPayloadSource,
+                fileCount: Object.keys(structured.files).length,
+              });
               const sanitized = sanitizeGeneratedFiles(structured.files);
               const normalizedFiles: Record<string, string> = {
                 ...sanitized.files,
@@ -1700,18 +1777,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   forceDeterministicPreviewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
                 );
                 if (!quality.ok) {
-                  lastPayloadIssue = {
-                    kind: 'quality',
-                    qualityReason: quality.reason,
-                    invalidFiles: sanitized.invalidFiles,
-                    aiContentPreview: aiContent.slice(0, 300),
-                  };
-                  setValidationAttempts((prev) => [...prev, {
-                    attempt: 1,
-                    kind: 'quality',
-                    reason: quality.reason || 'Output failed wizard quality contract',
-                  }]);
-                  console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
+                  if (isBlockingWizardQualityFailure(quality.reason)) {
+                    lastPayloadIssue = {
+                      kind: 'quality',
+                      qualityReason: quality.reason,
+                      invalidFiles: sanitized.invalidFiles,
+                      aiContentPreview: aiContent.slice(0, 300),
+                    };
+                    setValidationAttempts((prev) => [...prev, {
+                      attempt: 1,
+                      kind: 'quality',
+                      reason: quality.reason || 'Output failed wizard quality contract',
+                    }]);
+                    console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
+                  } else {
+                    console.warn('[SystemLauncher] AI output missed a repairable wizard quality check; continuing with stamped bindings', quality);
+                    generationResult = { structured, sanitized };
+                  }
                 } else {
                   generationResult = { structured, sanitized };
                 }
@@ -1766,7 +1848,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // and supporting components. mergeWithCanonicalSnapshot=true ensures the
       // canonical router + scaffolded page files take precedence; any AI App.tsx
       // that doesn't look like a router will be rebased into the home page file.
-      let generatedFiles: Record<string, string> = {
+      const generatedFiles: Record<string, string> = {
         ...aiSourcedFiles,
         '/src/index.css': themedIndexCss,
       };

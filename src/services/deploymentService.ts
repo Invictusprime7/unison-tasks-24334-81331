@@ -35,6 +35,15 @@ export interface DeploymentResponse {
   note?: string;
   error?: string;
   isLocalDevelopment?: boolean;
+  /** Server-proven publish attestation outcome (Track 5). */
+  attestation?: {
+    enforced: boolean;
+    evaluatedAt?: string;
+    publishGateOk?: boolean;
+    fingerprint?: string;
+    code?: string;
+    details?: unknown;
+  };
 }
 
 export interface DeploymentStatus {

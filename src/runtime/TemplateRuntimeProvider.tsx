@@ -900,7 +900,7 @@ function createBookingManagerWired(config: RuntimeIntentManagerConfig): IntentMa
         .from('services')
         .select('*')
         .eq('business_id', config.businessId)
-        .eq('active', true);
+        .eq('is_active', true);
 
       return (services || []).map(s => ({
         id: s.id,
@@ -926,8 +926,8 @@ function createBookingManagerWired(config: RuntimeIntentManagerConfig): IntentMa
           business_id: config.businessId,
           name: defaultService.name,
           duration_minutes: 60,
-          price: 0,
-          active: true,
+          price_cents: 0,
+          is_active: true,
         })
         .select()
         .single();

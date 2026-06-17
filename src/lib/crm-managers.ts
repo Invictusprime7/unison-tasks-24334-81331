@@ -214,14 +214,14 @@ function createBookingManager(businessId: string): IntentManagers['booking'] {
           .from('services')
           .select('*')
           .eq('business_id', businessId)
-          .eq('active', true);
+          .eq('is_active', true);
 
         if (services && services.length > 0) {
           return services.map((s) => ({
             id: s.id,
             name: s.name,
             duration: s.duration_minutes || 60,
-            price: s.price,
+            price: s.price_cents ? s.price_cents / 100 : 0,
           }));
         }
       }
@@ -246,8 +246,8 @@ function createBookingManager(businessId: string): IntentManagers['booking'] {
             business_id: businessId,
             name: defaultService.name,
             duration_minutes: defaultService.duration,
-            price: 0,
-            active: true,
+            price_cents: 0,
+            is_active: true,
           })
           .select()
           .single();

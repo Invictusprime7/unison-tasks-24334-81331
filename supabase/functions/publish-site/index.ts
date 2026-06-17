@@ -373,6 +373,7 @@ Deno.serve(async (req) => {
         url: deployData.url ? `https://${deployData.url}` : undefined,
         dashboardUrl: "https://vercel.com/dashboard",
         note: "Vercel deployment created",
+        attestation: attestationMeta,
       } as PublishResponse,
       200,
       corsHeaders,

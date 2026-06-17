@@ -11,6 +11,7 @@ import type {
   CompiledContract,
   PublishBlocker,
 } from '@/platform/core';
+import { buildPublishAttestation } from '@/services/publishAttestation';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
 

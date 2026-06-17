@@ -29,6 +29,10 @@ import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { resolveThemePreset } from "./industryThemePresetMap";
+import {
+  resolveVerticalLaunchContract,
+  legacyForcedPreviewReadyFlag,
+} from "@/services/verticalLaunchContract";
 
 import { supabase } from "@/integrations/supabase/client";
 import { runBuilderTurn } from "@/services/builderBrainClient";
@@ -1213,9 +1217,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
       const preselect = selectedSystem ? LAUNCHER_PRESELECTS[selectedSystem] : undefined;
-      const forceDeterministicPreviewReady = isDeterministicPreviewLaunch({ systemId: selectedSystem });
-      // Salon retains its name in downstream native-publish logging for back-compat.
-      const forceSalonPreviewReady = forceDeterministicPreviewReady;
+      // Track 4: typed per-vertical contract replaces the ad-hoc
+      // `forceSalonPreviewReady` boolean. See src/services/verticalLaunchContract.ts.
+      const launchContract = resolveVerticalLaunchContract(selectedSystem);
+      const forceDeterministicPreviewReady = launchContract.previewReady;
+      // Back-compat alias retained because downstream manifest/launch-state
+      // fields still log under the `forcedSalonPreviewReady` name. Derived from
+      // the contract, not from preselect heuristics.
+      const forceSalonPreviewReady = legacyForcedPreviewReadyFlag(launchContract);
       const resolvedPrimaryGoal: PrimaryGoal =
         primaryGoal || preselect?.primaryGoal || 'collect_leads';
       const resolvedCustomerNeeds = uniqueValues([

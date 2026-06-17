@@ -159,16 +159,55 @@ Deno.serve(async (req) => {
       return errorResponse(fileError, 400, corsHeaders);
     }
 
+    // Track 5 — server-proven publish contract.
+    let attestationMeta: PublishResponse["attestation"] = { enforced: false };
+    if (body.publishAttestation !== undefined && body.publishAttestation !== null) {
+      const verdict = await verifyPublishAttestation(body.publishAttestation, files);
+      if (!verdict.ok) {
+        console.warn(
+          "[publish-site] attestation rejected user=%s code=%s message=%s",
+          auth.user.id,
+          verdict.code,
+          verdict.message,
+        );
+        return errorResponse(verdict.message, 412, corsHeaders, {
+          status: "error",
+          provider: provider ?? "unknown",
+          attestation: { enforced: true, code: verdict.code, details: verdict.details },
+        });
+      }
+      attestationMeta = {
+        enforced: true,
+        evaluatedAt: verdict.attestation.evaluatedAt,
+        publishGateOk: verdict.attestation.gates.publish.ok,
+        fingerprint: verdict.attestation.filesFingerprint,
+      };
+      console.log(
+        "[publish-site] attestation verified user=%s fingerprint=%s evaluatedAt=%s",
+        auth.user.id,
+        verdict.attestation.filesFingerprint,
+        verdict.attestation.evaluatedAt,
+      );
+    } else if (REQUIRE_ATTESTATION) {
+      return errorResponse(
+        "Publish attestation is required but was not supplied.",
+        412,
+        corsHeaders,
+        { status: "error", provider: provider ?? "unknown", attestation: { enforced: true, code: "attestation-required" } },
+      );
+    }
+
     const NETLIFY_AUTH_TOKEN = Deno.env.get("NETLIFY_AUTH_TOKEN");
     const VERCEL_TOKEN = Deno.env.get("VERCEL_TOKEN");
     const indexHtmlPreview = files["index.html"] ? sanitizeLogPreview(files["index.html"]) : "no index.html";
     console.log(
-      "[publish-site] user=%s provider=%s siteName=%s customDomain=%s indexPreview=%s",
+      "[publish-site] user=%s provider=%s siteName=%s customDomain=%s indexPreview=%s attestation=%s",
       auth.user.id,
       provider,
       siteName,
       customDomain || "n/a",
       indexHtmlPreview,
+      attestationMeta.enforced ? "verified" : "absent",
     );
 
     if (!NETLIFY_AUTH_TOKEN && !VERCEL_TOKEN) {
@@ -180,6 +219,7 @@ Deno.serve(async (req) => {
           dashboardUrl: "https://example.com/dashboard",
           note: "Mock publish successful (local dev). Configure NETLIFY_AUTH_TOKEN or VERCEL_TOKEN in Supabase to enable real deployments.",
           isLocalDevelopment: true,
+          attestation: attestationMeta,
         } as PublishResponse,
         200,
         corsHeaders,

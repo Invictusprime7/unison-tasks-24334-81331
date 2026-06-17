@@ -329,6 +329,7 @@ Deno.serve(async (req) => {
           url: deployUrl || siteUrl || undefined,
           dashboardUrl: siteAdminUrl || "https://app.netlify.com/sites",
           note: state === "ready" ? "Deploy is ready" : "Deploy created, still processing",
+          attestation: attestationMeta,
         } as PublishResponse,
         200,
         corsHeaders,

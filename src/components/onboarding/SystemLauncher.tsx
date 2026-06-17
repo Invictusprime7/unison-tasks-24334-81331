@@ -29,6 +29,10 @@ import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { resolveThemePreset } from "./industryThemePresetMap";
+import {
+  resolveVerticalLaunchContract,
+  legacyForcedPreviewReadyFlag,
+} from "@/services/verticalLaunchContract";
 
 import { supabase } from "@/integrations/supabase/client";
 import { runBuilderTurn } from "@/services/builderBrainClient";

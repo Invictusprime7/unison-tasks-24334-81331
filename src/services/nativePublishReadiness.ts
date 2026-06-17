@@ -32,6 +32,10 @@ export interface BuildNativePublishSetupSnapshotInput {
   businessName?: string;
   businessId?: string;
   systemType?: string | null;
+  /** True when an outbound email transport (Resend/SMTP/etc.) is configured for this project. */
+  emailTransportConfigured?: boolean;
+  /** True when Unison's native owner inbox / intent_execution_log sink is enabled (default true). */
+  nativeInboxEnabled?: boolean;
 }
 
 export interface BuildNativePublishReadinessManifestInput {
@@ -42,6 +46,8 @@ export interface BuildNativePublishReadinessManifestInput {
   systemType?: string | null;
   /** Industry overlay (e.g. 'salon') used to verify required intents are bound. */
   industryOverlay?: string | null;
+  emailTransportConfigured?: boolean;
+  nativeInboxEnabled?: boolean;
 }
 
 const completed = (): PlaygroundSetupStepSnapshot['status'] => 'completed';
@@ -61,6 +67,19 @@ export function buildNativePublishSetupSnapshot(
   const normalizedEmail = (input.ownerEmail || '').trim();
   const hasEmail = normalizedEmail.includes('@');
   const isBooking = input.systemType === 'booking';
+  // Unison always writes intents to intent_execution_log, which is the
+  // native owner inbox sink. Callers can disable it explicitly if needed.
+  const nativeInboxEnabled = input.nativeInboxEnabled !== false;
+  const emailTransportConfigured = input.emailTransportConfigured === true;
+  // A notification sink is "ready" when the owner can actually see new
+  // leads/bookings — either via email transport OR the native inbox.
+  // Owner email alone is no longer enough.
+  const notificationSinkReady = hasEmail && (emailTransportConfigured || nativeInboxEnabled);
+  const notificationProvider = emailTransportConfigured
+    ? 'unison-native-email'
+    : nativeInboxEnabled
+      ? 'unison-native-inbox'
+      : 'none';
 
   const steps: PlaygroundSetupStepSnapshot[] = [
     {
@@ -75,11 +94,14 @@ export function buildNativePublishSetupSnapshot(
     },
     {
       id: 'notifications',
-      status: hasEmail ? completed() : pending(),
+      status: notificationSinkReady ? completed() : pending(),
       config: {
-        provider: 'unison-native-email',
+        provider: notificationProvider,
         notificationEmail: hasEmail ? normalizedEmail : null,
-        autoProvisioned: hasEmail,
+        emailTransportConfigured,
+        nativeInboxEnabled,
+        emailDelivery: emailTransportConfigured ? 'configured' : 'optional',
+        autoProvisioned: notificationSinkReady,
       },
     },
     {
@@ -105,7 +127,7 @@ export function buildNativePublishSetupSnapshot(
   ];
 
   return {
-    publishStatus: hasEmail ? 'ready' : 'pending',
+    publishStatus: notificationSinkReady ? 'ready' : 'pending',
     customDomain: null,
     notificationEmail: hasEmail ? normalizedEmail : null,
     projectName: input.businessName || null,
@@ -144,12 +166,35 @@ export function buildNativePublishReadinessManifest(
     : [];
   const industryReady = !profile || (unsatisfiedRequired.length === 0 && forbiddenLeaked.length === 0);
 
+  const notifConfig = (notificationStep?.config || {}) as Record<string, unknown>;
+  const hasOwnerEmail = typeof notifConfig.notificationEmail === 'string'
+    && (notifConfig.notificationEmail as string).includes('@');
+  const emailTransportConfigured =
+    input.emailTransportConfigured === true || notifConfig.emailTransportConfigured === true;
+  const nativeInboxEnabled =
+    input.nativeInboxEnabled !== false && notifConfig.nativeInboxEnabled !== false;
+  // Honest rule: notifications are ready only if an owner can actually
+  // receive them. Email transport OR a native inbox sink is required.
+  const notificationsReady =
+    hasOwnerEmail && (emailTransportConfigured || nativeInboxEnabled);
+
   return {
     publishMode: input.enabled ? 'native-first-party' : 'manual-setup',
     systemType: input.systemType || null,
     industry: input.industryOverlay || null,
     enabled: Boolean(input.enabled),
-    notificationsReady: notificationStep?.status === 'completed',
+    notificationsReady,
+    notifications: {
+      ownerEmail: hasOwnerEmail,
+      emailTransportConfigured,
+      nativeInboxEnabled,
+      sink: emailTransportConfigured
+        ? 'email'
+        : nativeInboxEnabled
+          ? 'native-inbox'
+          : 'none',
+      stepStatus: notificationStep?.status || 'unknown',
+    },
     bookingReady: bookingStep?.status === 'completed',
     industryReady,
     bindings: {

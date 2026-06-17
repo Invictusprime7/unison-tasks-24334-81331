@@ -2,6 +2,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { safeParseBody, sanitizeString, isNonEmptyString } from "../_shared/validate.ts";
+import { verifyPublishAttestation } from "../_shared/publishAttestation.ts";
 
 type PublishProvider = "netlify" | "vercel";
 
@@ -10,6 +11,14 @@ interface PublishRequestBody {
   siteName?: string;
   customDomain?: string;
   files?: Record<string, string>;
+  /**
+   * Track 5 — server-proven publish contract. When supplied the edge function
+   * re-verifies PublishGate verdict + file fingerprint server-side before
+   * touching the deploy provider. When `PUBLISH_REQUIRE_ATTESTATION=true` is
+   * set in env this field is REQUIRED and missing/invalid attestations are
+   * rejected with HTTP 412.
+   */
+  publishAttestation?: unknown;
 }
 
 type PublishResponse = Record<string, unknown> & {
@@ -20,6 +29,12 @@ type PublishResponse = Record<string, unknown> & {
   note?: string;
   error?: string;
   isLocalDevelopment?: boolean;
+  attestation?: {
+    enforced: boolean;
+    evaluatedAt?: string;
+    publishGateOk?: boolean;
+    fingerprint?: string;
+  };
 };
 
 const MAX_FILE_COUNT = 250;
@@ -27,6 +42,7 @@ const MAX_FILE_SIZE_BYTES = 1_000_000;
 const MAX_TOTAL_BYTES = 5_000_000;
 const SAFE_PATH_PATTERN = /^(?!\/)(?!.*\.\.)(?!.*\\)[A-Za-z0-9._/-]+$/;
 const SAFE_DOMAIN_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
+const REQUIRE_ATTESTATION = (Deno.env.get("PUBLISH_REQUIRE_ATTESTATION") || "").toLowerCase() === "true";
 
 function sanitizeLogPreview(input: string) {
   return input.replace(/[\r\n\t]/g, " ").slice(0, 200);

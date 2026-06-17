@@ -71,6 +71,7 @@ import { DemoIntentOverlay, type DemoIntentOverlayConfig } from "./web-builder/D
 import { ResearchOverlay, type ResearchOverlayPayload } from "./web-builder/ResearchOverlay";
 import { decideIntentUx } from "@/runtime/intentUx";
 import SystemHealthPanel from "@/components/web-builder/SystemHealthPanel";
+import ReadinessCenterPanel from "@/components/web-builder/ReadinessCenterPanel";
 import GateVerdictStrip from "@/components/web-builder/GateVerdictStrip";
 import { useCompiledContract } from "@/hooks/useCompiledContract";
 import type { BusinessSystemType } from "@/data/templates/types";
@@ -6765,6 +6766,10 @@ export default function ${componentName}() {
                   </TabsContent>
                   <TabsContent value="health" className="flex-1 m-0 min-h-0 overflow-auto p-2 space-y-2">
                     <GateVerdictStrip contract={compiledContract} />
+                    <ReadinessCenterPanel
+                      contract={compiledContract}
+                      vfsFiles={virtualFS.getSandpackFiles()}
+                    />
                     <SystemHealthPanel
                       contract={compiledContract}
                       onPublishCheck={() => {

@@ -213,6 +213,18 @@ export async function deployToProvider(
 
     updateProgress(30, `Connecting to ${request.provider}...`);
 
+    // Track 5 — server-proven publish contract. When a contract is available,
+    // attach an attestation so the edge function can re-verify gates + file
+    // fingerprint server-side before touching the deploy provider.
+    let publishAttestation: Awaited<ReturnType<typeof buildPublishAttestation>> | undefined;
+    if (request.contract) {
+      try {
+        publishAttestation = await buildPublishAttestation(request.contract, normalizedFiles);
+      } catch (err) {
+        console.warn('[deploymentService] Failed to build publish attestation', err);
+      }
+    }
+
     // Call the Supabase Edge Function
     const { data, error } = await supabase.functions.invoke('publish-site', {
       body: {
@@ -220,6 +232,7 @@ export async function deployToProvider(
         siteName: request.siteName || `unison-site-${Date.now()}`,
         customDomain: request.customDomain,
         files: normalizedFiles,
+        publishAttestation,
       },
     });
 

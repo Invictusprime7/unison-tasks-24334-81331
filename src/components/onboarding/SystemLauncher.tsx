@@ -1637,7 +1637,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // attempt every time. If it doesn't, surface the precise failure so the
       // pipeline (prompt, schema, gateway) gets fixed at the source rather than
       // masked by retries.
-      let launchReliabilityMode: 'ai' | 'lane-b-blocked' = 'ai';
+      let launchReliabilityMode: 'ai' | 'lane-b-degraded' | 'lane-b-blocked' = 'ai';
       {
         setLaunchStatus('Generating site…');
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
@@ -1996,7 +1996,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           launchReliabilityMode,
           scaffoldMode: resolvedScaffoldMode,
           launchContract,
-          wizardGenerationGap,
+          wizardGenerationGaps,
           generatedAt: new Date().toISOString(),
         }, null, 2),
         '/.unison/native-publish-setup.json': JSON.stringify(nativeSetupSnapshot || null, null, 2),

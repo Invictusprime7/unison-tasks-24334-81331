@@ -93,9 +93,25 @@ export async function computeFilesFingerprint(
   return { fingerprint, fileCount: entries.length };
 }
 
+export interface BuildPublishAttestationOptions {
+  /**
+   * Track 6 — when supplied, the attestation includes per-vertical readiness
+   * fixtures so the server can enforce required capabilities, minimum
+   * canonical pages, minimum bound intents, and row-count assertions.
+   */
+  verticalContract?: VerticalLaunchContract | null;
+  /**
+   * Observed row counts keyed by table name. Tables referenced in the vertical
+   * contract's `rowCountAssertions` that are missing from this map are
+   * recorded as `observed: 0` (which will fail any `min > 0` assertion).
+   */
+  rowCounts?: Record<string, number>;
+}
+
 export async function buildPublishAttestation(
   contract: CompiledContract,
   files: Record<string, string>,
+  options: BuildPublishAttestationOptions = {},
 ): Promise<PublishAttestation> {
   const preview = PreviewGate.evaluate(contract);
   const publish = PublishGate.evaluate(contract);
@@ -108,6 +124,26 @@ export async function buildPublishAttestation(
       status: cap.status,
       critical: BUSINESS_CRITICAL.has(cap.capabilityId),
     }));
+
+  let verticalReadiness: PublishAttestationVerticalReadiness | undefined;
+  const vc = options.verticalContract;
+  if (vc && vc.systemType) {
+    const rowCounts = options.rowCounts ?? {};
+    verticalReadiness = {
+      systemId: vc.systemType,
+      requiredCapabilities: [...vc.requiredCapabilities],
+      minCanonicalPages: vc.readinessFixtures.minCanonicalPages,
+      canonicalPageCount: contract.pages.length,
+      minBoundIntents: vc.readinessFixtures.minBoundIntents,
+      boundIntentCount: contract.intentBindings.filter((b) => b.readiness !== 'blocked').length,
+      rowCountAssertions: vc.readinessFixtures.rowCountAssertions.map((a) => ({
+        table: a.table,
+        min: a.min,
+        observed: rowCounts[a.table] ?? 0,
+        reason: a.reason,
+      })),
+    };
+  }
 
   return {
     version: 1,
@@ -125,5 +161,6 @@ export async function buildPublishAttestation(
     capabilities,
     filesFingerprint: fingerprint,
     fileCount,
+    verticalReadiness,
   };
 }

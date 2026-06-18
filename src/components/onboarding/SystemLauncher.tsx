@@ -29,10 +29,7 @@ import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { resolveThemePreset } from "./industryThemePresetMap";
-import {
-  resolveVerticalLaunchContract,
-  legacyForcedPreviewReadyFlag,
-} from "@/services/verticalLaunchContract";
+import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract";
 
 import { supabase } from "@/integrations/supabase/client";
 import { runBuilderTurn } from "@/services/builderBrainClient";
@@ -1217,14 +1214,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
       const preselect = selectedSystem ? LAUNCHER_PRESELECTS[selectedSystem] : undefined;
-      // Track 4: typed per-vertical contract replaces the ad-hoc
-      // `forceSalonPreviewReady` boolean. See src/services/verticalLaunchContract.ts.
+      // Track 4: typed per-vertical contract is the sole source of truth for
+      // launch-time guarantees. See src/services/verticalLaunchContract.ts.
       const launchContract = resolveVerticalLaunchContract(selectedSystem);
-      const forceDeterministicPreviewReady = launchContract.previewReady;
-      // Back-compat alias retained because downstream manifest/launch-state
-      // fields still log under the `forcedSalonPreviewReady` name. Derived from
-      // the contract, not from preselect heuristics.
-      const forceSalonPreviewReady = legacyForcedPreviewReadyFlag(launchContract);
       const resolvedPrimaryGoal: PrimaryGoal =
         primaryGoal || preselect?.primaryGoal || 'collect_leads';
       const resolvedCustomerNeeds = uniqueValues([
@@ -1235,7 +1227,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         ...((preselect?.pages as PageChoice[]) || []),
         ...selectedPages,
       ]);
-      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = forceDeterministicPreviewReady
+      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = launchContract.capabilityFullScaffold
         ? 'capability-full'
         : 'selected-pages';
 
@@ -1249,7 +1241,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         templateCategory: generationCategory,
         designPreset: selectedTheme?.id || undefined,
         ownerEmail: ownerEmail || undefined,
-        publishMode: forceSalonPreviewReady && ownerEmail ? 'native' : undefined,
+        publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native' : undefined,
       };
 
       console.log('[SystemLauncher] Invoking install-system with body:', installBody);
@@ -1308,9 +1300,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
         primaryGoal: resolvedPrimaryGoal,
         secondaryGoals: resolvedCustomerNeeds as string[],
-        needsBooking: forceSalonPreviewReady || goalNeeds.needsBooking || resolvedCustomerNeeds.includes('book_service'),
-        sellsProducts: goalNeeds.sellsProducts || resolvedCustomerNeeds.includes('buy_offer'),
-        wantsLeadCapture: forceSalonPreviewReady || goalNeeds.wantsLeadCapture || resolvedCustomerNeeds.includes('request_quote') || resolvedCustomerNeeds.includes('fill_form'),
+        needsBooking: launchContract.forcedNeeds.booking || goalNeeds.needsBooking || resolvedCustomerNeeds.includes('book_service'),
+        sellsProducts: launchContract.forcedNeeds.products || goalNeeds.sellsProducts || resolvedCustomerNeeds.includes('buy_offer'),
+        wantsLeadCapture: launchContract.forcedNeeds.leadCapture || goalNeeds.wantsLeadCapture || resolvedCustomerNeeds.includes('request_quote') || resolvedCustomerNeeds.includes('fill_form'),
         templateId: effectiveTemplate?.id,
         themeId: selectedTheme?.id,
         themePresetId: earlyResolvedPreset.id,
@@ -1318,9 +1310,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         requestedPages: resolvedRequestedPages,
         scaffoldMode: resolvedScaffoldMode,
         minimalScaffold: false,
-        nativePublishReady: forceSalonPreviewReady && Boolean(ownerEmail),
+        nativePublishReady: launchContract.nativePublishCapable && Boolean(ownerEmail),
         ownerEmail: ownerEmail || undefined,
-        publishMode: forceSalonPreviewReady && ownerEmail ? 'native-first-party' : 'manual-setup',
+        publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native-first-party' : 'manual-setup',
       };
 
       // ── ASSERTION: themePresetId must be threaded into WizardSelections. ──
@@ -1606,8 +1598,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         generation: {
           scaffoldMode: resolvedScaffoldMode,
-          previewGuarantee: forceSalonPreviewReady ? 'lane-b-ai-required' : undefined,
-          publishGuarantee: forceSalonPreviewReady && ownerEmail ? 'native-first-party-publish-ready' : undefined,
+          previewGuarantee: launchContract.previewGuaranteeTag,
+          publishGuarantee: launchContract.nativePublishCapable && ownerEmail ? launchContract.publishGuaranteeTag : undefined,
           customInstructions: customPrompt.trim() || undefined,
           socials: userSocials,
         },
@@ -1783,7 +1775,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 const quality = assessWizardGenerationQuality(
                   sanitized.files,
                   composition.sections.map((s) => s.type),
-                  forceDeterministicPreviewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
+                  launchContract.previewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
                 );
                 if (!quality.ok) {
                   if (isBlockingWizardQualityFailure(quality.reason)) {
@@ -1870,7 +1862,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       const provisionedBusinessId = await installPromise;
       const nativeSetupSnapshot = buildNativePublishSetupSnapshot({
-        enabled: forceSalonPreviewReady,
+        enabled: launchContract.nativePublishCapable,
         ownerEmail,
         businessName: brand,
         businessId: provisionedBusinessId || undefined,
@@ -1895,7 +1887,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           state: materializedPlayground,
           validations: pipelineResult.validations,
           setupSnapshot: nativeSetupSnapshot,
-          enabled: forceSalonPreviewReady,
+          enabled: launchContract.nativePublishCapable,
           systemType: selectedSystem,
           industryOverlay: generationCategory,
         }),
@@ -1947,7 +1939,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           previewReady: true,
           launchReliabilityMode,
           scaffoldMode: resolvedScaffoldMode,
-          forcedSalonPreviewReady: forceSalonPreviewReady,
+          launchContract,
           wizardGenerationGap,
           generatedAt: new Date().toISOString(),
         }, null, 2),
@@ -2022,7 +2014,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         wizardSelections,
         wizardSeed,
         launchReliabilityMode,
-        forcedSalonPreviewReady: forceSalonPreviewReady,
+        launchContract,
         setupSnapshot: nativeSetupSnapshot,
         nativeReadinessManifest,
       };

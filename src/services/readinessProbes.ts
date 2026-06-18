@@ -41,8 +41,8 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ value: T; ms: number }>
 
 async function probeDbReachable(): Promise<ProbeResult> {
   try {
-    const { ms, value } = await timed(() =>
-      supabase
+    const { ms, value } = await timed(async () =>
+      await supabase
         .from('site_intent_bindings')
         .select('id', { head: true, count: 'exact' })
         .limit(1),
@@ -72,6 +72,7 @@ async function probeDbReachable(): Promise<ProbeResult> {
     };
   }
 }
+
 
 async function probeNotificationsSink(): Promise<ProbeResult> {
   try {

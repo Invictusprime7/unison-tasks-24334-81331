@@ -60,7 +60,7 @@ interface ReadinessCenterPanelProps {
   className?: string;
 }
 
-type CheckState = 'ok' | 'fail' | 'na';
+type CheckState = 'ok' | 'fail' | 'na' | 'pending';
 
 interface CheckRow {
   label: string;
@@ -73,6 +73,25 @@ interface Section {
   title: string;
   rows: CheckRow[];
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function parseManifest(vfsFiles?: Record<string, string> | null): ReadinessManifest | null {
+  const raw = vfsFiles?.['/.unison/launch-readiness.json'];
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ReadinessManifest;
+  } catch {
+    return null;
+  }
+}
+
+function probeStateToCheckState(s: ProbeState): CheckState {
+  return s;
+}
+
 
 // ---------------------------------------------------------------------------
 // Helpers

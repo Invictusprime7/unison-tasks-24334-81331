@@ -1775,7 +1775,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 const quality = assessWizardGenerationQuality(
                   sanitized.files,
                   composition.sections.map((s) => s.type),
-                  forceDeterministicPreviewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
+                  launchContract.previewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
                 );
                 if (!quality.ok) {
                   if (isBlockingWizardQualityFailure(quality.reason)) {

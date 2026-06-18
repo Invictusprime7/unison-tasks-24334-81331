@@ -61,6 +61,44 @@ export interface VerticalLaunchContract {
 
   /** Tag stamped into the wizard seed `generation.publishGuarantee`. */
   publishGuaranteeTag: 'native-first-party-publish-ready' | undefined;
+
+  /**
+   * Track 6 — capability schema. Capabilities the vertical promises to wire
+   * by launch. Readiness probes and the publish gate cross-check these
+   * against the compiled contract's provisioningReport.
+   */
+  requiredCapabilities: ReadonlyArray<VerticalCapabilityId>;
+
+  /**
+   * Track 6 — readiness fixtures. Minimum acceptable counts/flags the
+   * Readiness Center can fixture-test against (e.g. booking vertical must
+   * have at least 1 service wired). These are assertions, not seed data;
+   * they never write to the database.
+   */
+  readinessFixtures: VerticalReadinessFixtures;
+}
+
+export type VerticalCapabilityId =
+  | 'lead-capture'
+  | 'booking'
+  | 'commerce'
+  | 'payments'
+  | 'donation'
+  | 'quoting'
+  | 'auth'
+  | 'cms-content';
+
+export interface VerticalReadinessFixtures {
+  /** Minimum number of canonical pages required for preview readiness. */
+  minCanonicalPages: number;
+  /** Minimum number of bound CTAs (intents) required for preview readiness. */
+  minBoundIntents: number;
+  /** Vertical-specific row-count assertions checked by Readiness Center v2. */
+  rowCountAssertions: ReadonlyArray<{
+    table: string;
+    min: number;
+    reason: string;
+  }>;
 }
 
 const NULL_CONTRACT: VerticalLaunchContract = {
@@ -71,6 +109,8 @@ const NULL_CONTRACT: VerticalLaunchContract = {
   forcedNeeds: { booking: false, leadCapture: false, products: false },
   previewGuaranteeTag: undefined,
   publishGuaranteeTag: undefined,
+  requiredCapabilities: [],
+  readinessFixtures: { minCanonicalPages: 0, minBoundIntents: 0, rowCountAssertions: [] },
 };
 
 /**

@@ -103,9 +103,11 @@ function StateIcon({ state }: { state: CheckState }) {
 
 function sectionStatus(section: Section): CheckState {
   if (section.rows.some((r) => r.state === 'fail')) return 'fail';
+  if (section.rows.some((r) => r.state === 'pending')) return 'pending';
   if (section.rows.every((r) => r.state === 'na')) return 'na';
   return 'ok';
 }
+
 
 // ---------------------------------------------------------------------------
 // Component

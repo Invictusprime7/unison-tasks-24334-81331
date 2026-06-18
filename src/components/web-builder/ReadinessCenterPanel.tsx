@@ -93,25 +93,13 @@ function probeStateToCheckState(s: ProbeState): CheckState {
 }
 
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function parseManifest(vfsFiles?: Record<string, string> | null): ReadinessManifest | null {
-  const raw = vfsFiles?.['/.unison/launch-readiness.json'];
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as ReadinessManifest;
-  } catch {
-    return null;
-  }
-}
-
 function StateIcon({ state }: { state: CheckState }) {
   if (state === 'ok') return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />;
   if (state === 'fail') return <XCircle className="w-3.5 h-3.5 text-destructive shrink-0" />;
+  if (state === 'pending') return <Loader2 className="w-3.5 h-3.5 text-muted-foreground shrink-0 animate-spin" />;
   return <MinusCircle className="w-3.5 h-3.5 text-muted-foreground shrink-0" />;
 }
+
 
 function sectionStatus(section: Section): CheckState {
   if (section.rows.some((r) => r.state === 'fail')) return 'fail';

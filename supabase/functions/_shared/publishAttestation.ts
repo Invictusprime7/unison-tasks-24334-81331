@@ -133,6 +133,37 @@ function isReasonArray(value: unknown): value is AttestationGateReason[] {
   );
 }
 
+function parseVerticalReadiness(raw: unknown): AttestationVerticalReadiness | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const v = raw as Record<string, unknown>;
+  if (typeof v.systemId !== 'string') return null;
+  if (!Array.isArray(v.requiredCapabilities)) return null;
+  if (typeof v.minCanonicalPages !== 'number' || typeof v.canonicalPageCount !== 'number') return null;
+  if (typeof v.minBoundIntents !== 'number' || typeof v.boundIntentCount !== 'number') return null;
+  const rcaRaw = Array.isArray(v.rowCountAssertions) ? v.rowCountAssertions : [];
+  const rowCountAssertions: AttestationRowCountAssertion[] = [];
+  for (const item of rcaRaw) {
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.table !== 'string' || typeof r.min !== 'number' || typeof r.observed !== 'number') continue;
+    rowCountAssertions.push({
+      table: r.table,
+      min: r.min,
+      observed: r.observed,
+      reason: typeof r.reason === 'string' ? r.reason : '',
+    });
+  }
+  return {
+    systemId: v.systemId,
+    requiredCapabilities: (v.requiredCapabilities as unknown[]).filter((x): x is string => typeof x === 'string'),
+    minCanonicalPages: v.minCanonicalPages,
+    canonicalPageCount: v.canonicalPageCount,
+    minBoundIntents: v.minBoundIntents,
+    boundIntentCount: v.boundIntentCount,
+    rowCountAssertions,
+  };
+}
+
 function parseAttestation(raw: unknown): PublishAttestation | null {
   if (!raw || typeof raw !== 'object') return null;
   const a = raw as Record<string, unknown>;
@@ -148,6 +179,9 @@ function parseAttestation(raw: unknown): PublishAttestation | null {
   if (typeof a.fileCount !== 'number' || a.fileCount < 0) return null;
   if (!Array.isArray(a.capabilities)) return null;
   if (typeof a.evaluatedAt !== 'string') return null;
+  const verticalReadiness = a.verticalReadiness !== undefined
+    ? parseVerticalReadiness(a.verticalReadiness) ?? undefined
+    : undefined;
   return {
     version: 1,
     evaluatedAt: a.evaluatedAt,
@@ -158,6 +192,7 @@ function parseAttestation(raw: unknown): PublishAttestation | null {
     capabilities: a.capabilities as AttestationCapabilityReport[],
     filesFingerprint: a.filesFingerprint,
     fileCount: a.fileCount,
+    verticalReadiness,
   };
 }
 

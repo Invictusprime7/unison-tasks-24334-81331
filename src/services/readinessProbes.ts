@@ -76,9 +76,10 @@ async function probeDbReachable(): Promise<ProbeResult> {
 
 async function probeNotificationsSink(): Promise<ProbeResult> {
   try {
-    const { ms, value } = await timed(() =>
-      supabase
+    const { ms, value } = await timed(async () =>
+      await supabase
         .from('intent_execution_log')
+
         .select('id', { head: true, count: 'exact' })
         .limit(1),
     );

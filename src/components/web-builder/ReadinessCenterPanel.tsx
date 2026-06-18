@@ -11,13 +11,20 @@
  * reason line per failing check. See mem://process — Readiness Center v1.
  */
 
-import React, { useMemo } from 'react';
-import { CheckCircle2, XCircle, MinusCircle, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { CheckCircle2, XCircle, MinusCircle, ShieldCheck, RefreshCw, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { type CompiledContract, PublishGate, PreviewGate } from '@/platform/core';
+import {
+  runReadinessProbes,
+  type ProbeResult,
+  type ProbeState,
+} from '@/services/readinessProbes';
+
 
 // ---------------------------------------------------------------------------
 // Types

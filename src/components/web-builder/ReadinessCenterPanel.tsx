@@ -11,13 +11,20 @@
  * reason line per failing check. See mem://process — Readiness Center v1.
  */
 
-import React, { useMemo } from 'react';
-import { CheckCircle2, XCircle, MinusCircle, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { CheckCircle2, XCircle, MinusCircle, ShieldCheck, RefreshCw, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { type CompiledContract, PublishGate, PreviewGate } from '@/platform/core';
+import {
+  runReadinessProbes,
+  type ProbeResult,
+  type ProbeState,
+} from '@/services/readinessProbes';
+
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,7 +60,7 @@ interface ReadinessCenterPanelProps {
   className?: string;
 }
 
-type CheckState = 'ok' | 'fail' | 'na';
+type CheckState = 'ok' | 'fail' | 'na' | 'pending';
 
 interface CheckRow {
   label: string;
@@ -81,17 +88,26 @@ function parseManifest(vfsFiles?: Record<string, string> | null): ReadinessManif
   }
 }
 
+function probeStateToCheckState(s: ProbeState): CheckState {
+  return s;
+}
+
+
 function StateIcon({ state }: { state: CheckState }) {
   if (state === 'ok') return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />;
   if (state === 'fail') return <XCircle className="w-3.5 h-3.5 text-destructive shrink-0" />;
+  if (state === 'pending') return <Loader2 className="w-3.5 h-3.5 text-muted-foreground shrink-0 animate-spin" />;
   return <MinusCircle className="w-3.5 h-3.5 text-muted-foreground shrink-0" />;
 }
 
+
 function sectionStatus(section: Section): CheckState {
   if (section.rows.some((r) => r.state === 'fail')) return 'fail';
+  if (section.rows.some((r) => r.state === 'pending')) return 'pending';
   if (section.rows.every((r) => r.state === 'na')) return 'na';
   return 'ok';
 }
+
 
 // ---------------------------------------------------------------------------
 // Component
@@ -112,6 +128,28 @@ export const ReadinessCenterPanel: React.FC<ReadinessCenterPanelProps> = ({
     () => (contract ? PublishGate.evaluate(contract) : null),
     [contract],
   );
+
+  // --- Live probes (Track 5 v2) ---
+  const [probes, setProbes] = useState<ProbeResult[] | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [probedAt, setProbedAt] = useState<number | null>(null);
+
+  const runProbes = useCallback(async () => {
+    setProbing(true);
+    try {
+      const report = await runReadinessProbes();
+      setProbes(report.probes);
+      setProbedAt(report.finishedAt);
+    } finally {
+      setProbing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void runProbes();
+  }, [runProbes]);
+
+
 
   const sections: Section[] = useMemo(() => {
     // ---- Wizard ---------------------------------------------------------
@@ -290,8 +328,27 @@ export const ReadinessCenterPanel: React.FC<ReadinessCenterPanelProps> = ({
       ],
     };
 
-    return [wizard, frontend, intents, backend, notifications, publish];
-  }, [contract, manifest, previewVerdict, publishVerdict, vfsFiles]);
+    // ---- Live Probes (Track 5) -----------------------------------------
+    const liveProbes: Section = {
+      id: 'live-probes',
+      title: 'Live Probes',
+      rows: probes
+        ? probes.map((p) => ({
+            label: p.label,
+            state: probeStateToCheckState(p.state),
+            detail: p.detail,
+          }))
+        : [
+            {
+              label: 'Server-side checks',
+              state: probing ? 'pending' : 'na',
+              detail: probing ? 'running…' : 'not run yet',
+            },
+          ],
+    };
+
+    return [wizard, frontend, intents, backend, notifications, publish, liveProbes];
+  }, [contract, manifest, previewVerdict, publishVerdict, vfsFiles, probes, probing]);
 
   const overallReady = sections.every((s) => sectionStatus(s) !== 'fail');
 
@@ -302,16 +359,30 @@ export const ReadinessCenterPanel: React.FC<ReadinessCenterPanelProps> = ({
           <CardTitle className="text-sm flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-primary" />
             Readiness Center
-            <Badge variant="outline" className="text-[10px] h-4 px-1">v1 · read-only</Badge>
+            <Badge variant="outline" className="text-[10px] h-4 px-1">v2 · live probes</Badge>
           </CardTitle>
-          <Badge
-            variant={overallReady ? 'default' : 'destructive'}
-            className={cn('text-xs', overallReady && 'bg-primary text-primary-foreground')}
-          >
-            {overallReady ? 'All checks passing' : 'Action needed'}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[11px]"
+              onClick={runProbes}
+              disabled={probing}
+              title={probedAt ? `Last run ${new Date(probedAt).toLocaleTimeString()}` : 'Run live probes'}
+            >
+              <RefreshCw className={cn('w-3 h-3 mr-1', probing && 'animate-spin')} />
+              Re-probe
+            </Button>
+            <Badge
+              variant={overallReady ? 'default' : 'destructive'}
+              className={cn('text-xs', overallReady && 'bg-primary text-primary-foreground')}
+            >
+              {overallReady ? 'All checks passing' : 'Action needed'}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
+
 
       <CardContent className="space-y-3">
         {!manifest && !contract && (

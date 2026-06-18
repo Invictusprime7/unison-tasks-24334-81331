@@ -249,6 +249,55 @@ export async function verifyPublishAttestation(
     };
   }
 
+  // Track 6 — vertical readiness fixtures. When the client attests a vertical
+  // contract, enforce required capabilities, minimum canonical pages, minimum
+  // bound intents, and row count assertions server-side.
+  const vr = attestation.verticalReadiness;
+  if (vr) {
+    const capByCap = new Map(attestation.capabilities.map((c) => [c.capabilityId, c]));
+    const missingCaps: string[] = [];
+    for (const required of vr.requiredCapabilities) {
+      const cap = capByCap.get(required);
+      if (!cap || cap.status === 'missing' || cap.status === 'stub') {
+        missingCaps.push(required);
+      }
+    }
+    if (missingCaps.length > 0) {
+      return {
+        ok: false,
+        code: 'vertical-capabilities-missing',
+        message: `Vertical "${vr.systemId}" requires capabilities not ready: ${missingCaps.join(', ')}.`,
+        details: { systemId: vr.systemId, missingCapabilities: missingCaps },
+      };
+    }
+    if (vr.canonicalPageCount < vr.minCanonicalPages) {
+      return {
+        ok: false,
+        code: 'vertical-pages-insufficient',
+        message: `Vertical "${vr.systemId}" requires at least ${vr.minCanonicalPages} canonical pages; only ${vr.canonicalPageCount} present.`,
+        details: { systemId: vr.systemId, min: vr.minCanonicalPages, observed: vr.canonicalPageCount },
+      };
+    }
+    if (vr.boundIntentCount < vr.minBoundIntents) {
+      return {
+        ok: false,
+        code: 'vertical-intents-insufficient',
+        message: `Vertical "${vr.systemId}" requires at least ${vr.minBoundIntents} bound intents; only ${vr.boundIntentCount} bound.`,
+        details: { systemId: vr.systemId, min: vr.minBoundIntents, observed: vr.boundIntentCount },
+      };
+    }
+    const failedRows = vr.rowCountAssertions.filter((a) => a.observed < a.min);
+    if (failedRows.length > 0) {
+      return {
+        ok: false,
+        code: 'vertical-row-counts-insufficient',
+        message: `Vertical "${vr.systemId}" failed ${failedRows.length} row-count assertion(s).`,
+        details: { systemId: vr.systemId, failed: failedRows },
+      };
+    }
+  }
+
+
   // Fingerprint check — the files being published must be the ones attested.
   const { fingerprint, fileCount } = await computeFilesFingerprint(files);
   if (fingerprint !== attestation.filesFingerprint) {

@@ -244,7 +244,13 @@ export async function deployToProvider(
     let publishAttestation: Awaited<ReturnType<typeof buildPublishAttestation>> | undefined;
     if (request.contract) {
       try {
-        publishAttestation = await buildPublishAttestation(request.contract, normalizedFiles);
+        const verticalContract: VerticalLaunchContract | null = request.systemId
+          ? resolveVerticalLaunchContract(request.systemId)
+          : null;
+        publishAttestation = await buildPublishAttestation(request.contract, normalizedFiles, {
+          verticalContract,
+          rowCounts: request.rowCounts,
+        });
       } catch (err) {
         console.warn('[deploymentService] Failed to build publish attestation', err);
       }

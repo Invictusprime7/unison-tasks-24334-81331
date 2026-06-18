@@ -28,6 +28,23 @@ export type AttestationCapabilityReport = {
   critical?: boolean;
 };
 
+export type AttestationRowCountAssertion = {
+  table: string;
+  min: number;
+  observed: number;
+  reason: string;
+};
+
+export type AttestationVerticalReadiness = {
+  systemId: string;
+  requiredCapabilities: string[];
+  minCanonicalPages: number;
+  canonicalPageCount: number;
+  minBoundIntents: number;
+  boundIntentCount: number;
+  rowCountAssertions: AttestationRowCountAssertion[];
+};
+
 export type PublishAttestation = {
   /** Schema version — bump when the contract layout changes. */
   version: 1;
@@ -47,6 +64,12 @@ export type PublishAttestation = {
   filesFingerprint: string;
   /** Number of files attested. */
   fileCount: number;
+  /**
+   * Track 6 — per-vertical readiness fixture results. When present, the
+   * server enforces required capabilities, minimum canonical page count,
+   * minimum bound intent count, and row count assertions before publish.
+   */
+  verticalReadiness?: AttestationVerticalReadiness;
 };
 
 export type AttestationVerification =
@@ -110,6 +133,37 @@ function isReasonArray(value: unknown): value is AttestationGateReason[] {
   );
 }
 
+function parseVerticalReadiness(raw: unknown): AttestationVerticalReadiness | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const v = raw as Record<string, unknown>;
+  if (typeof v.systemId !== 'string') return null;
+  if (!Array.isArray(v.requiredCapabilities)) return null;
+  if (typeof v.minCanonicalPages !== 'number' || typeof v.canonicalPageCount !== 'number') return null;
+  if (typeof v.minBoundIntents !== 'number' || typeof v.boundIntentCount !== 'number') return null;
+  const rcaRaw = Array.isArray(v.rowCountAssertions) ? v.rowCountAssertions : [];
+  const rowCountAssertions: AttestationRowCountAssertion[] = [];
+  for (const item of rcaRaw) {
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.table !== 'string' || typeof r.min !== 'number' || typeof r.observed !== 'number') continue;
+    rowCountAssertions.push({
+      table: r.table,
+      min: r.min,
+      observed: r.observed,
+      reason: typeof r.reason === 'string' ? r.reason : '',
+    });
+  }
+  return {
+    systemId: v.systemId,
+    requiredCapabilities: (v.requiredCapabilities as unknown[]).filter((x): x is string => typeof x === 'string'),
+    minCanonicalPages: v.minCanonicalPages,
+    canonicalPageCount: v.canonicalPageCount,
+    minBoundIntents: v.minBoundIntents,
+    boundIntentCount: v.boundIntentCount,
+    rowCountAssertions,
+  };
+}
+
 function parseAttestation(raw: unknown): PublishAttestation | null {
   if (!raw || typeof raw !== 'object') return null;
   const a = raw as Record<string, unknown>;
@@ -125,6 +179,9 @@ function parseAttestation(raw: unknown): PublishAttestation | null {
   if (typeof a.fileCount !== 'number' || a.fileCount < 0) return null;
   if (!Array.isArray(a.capabilities)) return null;
   if (typeof a.evaluatedAt !== 'string') return null;
+  const verticalReadiness = a.verticalReadiness !== undefined
+    ? parseVerticalReadiness(a.verticalReadiness) ?? undefined
+    : undefined;
   return {
     version: 1,
     evaluatedAt: a.evaluatedAt,
@@ -135,6 +192,7 @@ function parseAttestation(raw: unknown): PublishAttestation | null {
     capabilities: a.capabilities as AttestationCapabilityReport[],
     filesFingerprint: a.filesFingerprint,
     fileCount: a.fileCount,
+    verticalReadiness,
   };
 }
 
@@ -190,6 +248,55 @@ export async function verifyPublishAttestation(
       details: criticalIssues,
     };
   }
+
+  // Track 6 — vertical readiness fixtures. When the client attests a vertical
+  // contract, enforce required capabilities, minimum canonical pages, minimum
+  // bound intents, and row count assertions server-side.
+  const vr = attestation.verticalReadiness;
+  if (vr) {
+    const capByCap = new Map(attestation.capabilities.map((c) => [c.capabilityId, c]));
+    const missingCaps: string[] = [];
+    for (const required of vr.requiredCapabilities) {
+      const cap = capByCap.get(required);
+      if (!cap || cap.status === 'missing' || cap.status === 'stub') {
+        missingCaps.push(required);
+      }
+    }
+    if (missingCaps.length > 0) {
+      return {
+        ok: false,
+        code: 'vertical-capabilities-missing',
+        message: `Vertical "${vr.systemId}" requires capabilities not ready: ${missingCaps.join(', ')}.`,
+        details: { systemId: vr.systemId, missingCapabilities: missingCaps },
+      };
+    }
+    if (vr.canonicalPageCount < vr.minCanonicalPages) {
+      return {
+        ok: false,
+        code: 'vertical-pages-insufficient',
+        message: `Vertical "${vr.systemId}" requires at least ${vr.minCanonicalPages} canonical pages; only ${vr.canonicalPageCount} present.`,
+        details: { systemId: vr.systemId, min: vr.minCanonicalPages, observed: vr.canonicalPageCount },
+      };
+    }
+    if (vr.boundIntentCount < vr.minBoundIntents) {
+      return {
+        ok: false,
+        code: 'vertical-intents-insufficient',
+        message: `Vertical "${vr.systemId}" requires at least ${vr.minBoundIntents} bound intents; only ${vr.boundIntentCount} bound.`,
+        details: { systemId: vr.systemId, min: vr.minBoundIntents, observed: vr.boundIntentCount },
+      };
+    }
+    const failedRows = vr.rowCountAssertions.filter((a) => a.observed < a.min);
+    if (failedRows.length > 0) {
+      return {
+        ok: false,
+        code: 'vertical-row-counts-insufficient',
+        message: `Vertical "${vr.systemId}" failed ${failedRows.length} row-count assertion(s).`,
+        details: { systemId: vr.systemId, failed: failedRows },
+      };
+    }
+  }
+
 
   // Fingerprint check — the files being published must be the ones attested.
   const { fingerprint, fileCount } = await computeFilesFingerprint(files);

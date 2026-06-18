@@ -28,6 +28,23 @@ export type AttestationCapabilityReport = {
   critical?: boolean;
 };
 
+export type AttestationRowCountAssertion = {
+  table: string;
+  min: number;
+  observed: number;
+  reason: string;
+};
+
+export type AttestationVerticalReadiness = {
+  systemId: string;
+  requiredCapabilities: string[];
+  minCanonicalPages: number;
+  canonicalPageCount: number;
+  minBoundIntents: number;
+  boundIntentCount: number;
+  rowCountAssertions: AttestationRowCountAssertion[];
+};
+
 export type PublishAttestation = {
   /** Schema version — bump when the contract layout changes. */
   version: 1;
@@ -47,6 +64,12 @@ export type PublishAttestation = {
   filesFingerprint: string;
   /** Number of files attested. */
   fileCount: number;
+  /**
+   * Track 6 — per-vertical readiness fixture results. When present, the
+   * server enforces required capabilities, minimum canonical page count,
+   * minimum bound intent count, and row count assertions before publish.
+   */
+  verticalReadiness?: AttestationVerticalReadiness;
 };
 
 export type AttestationVerification =

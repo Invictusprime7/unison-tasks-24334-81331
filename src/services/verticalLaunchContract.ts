@@ -146,13 +146,3 @@ export function resolveVerticalLaunchContract(
   return VERTICAL_CONTRACTS[systemId] ?? NULL_CONTRACT;
 }
 
-/**
- * Back-compat shim. Many downstream readers (readiness manifest, launch state,
- * builder drafts) still log a `forcedSalonPreviewReady` field. Until those are
- * migrated to read `contract.previewReady`, derive the legacy boolean here.
- */
-export function legacyForcedPreviewReadyFlag(
-  contract: VerticalLaunchContract,
-): boolean {
-  return contract.previewReady;
-}

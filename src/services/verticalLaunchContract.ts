@@ -61,6 +61,44 @@ export interface VerticalLaunchContract {
 
   /** Tag stamped into the wizard seed `generation.publishGuarantee`. */
   publishGuaranteeTag: 'native-first-party-publish-ready' | undefined;
+
+  /**
+   * Track 6 — capability schema. Capabilities the vertical promises to wire
+   * by launch. Readiness probes and the publish gate cross-check these
+   * against the compiled contract's provisioningReport.
+   */
+  requiredCapabilities: ReadonlyArray<VerticalCapabilityId>;
+
+  /**
+   * Track 6 — readiness fixtures. Minimum acceptable counts/flags the
+   * Readiness Center can fixture-test against (e.g. booking vertical must
+   * have at least 1 service wired). These are assertions, not seed data;
+   * they never write to the database.
+   */
+  readinessFixtures: VerticalReadinessFixtures;
+}
+
+export type VerticalCapabilityId =
+  | 'lead-capture'
+  | 'booking'
+  | 'commerce'
+  | 'payments'
+  | 'donation'
+  | 'quoting'
+  | 'auth'
+  | 'cms-content';
+
+export interface VerticalReadinessFixtures {
+  /** Minimum number of canonical pages required for preview readiness. */
+  minCanonicalPages: number;
+  /** Minimum number of bound CTAs (intents) required for preview readiness. */
+  minBoundIntents: number;
+  /** Vertical-specific row-count assertions checked by Readiness Center v2. */
+  rowCountAssertions: ReadonlyArray<{
+    table: string;
+    min: number;
+    reason: string;
+  }>;
 }
 
 const NULL_CONTRACT: VerticalLaunchContract = {
@@ -71,6 +109,8 @@ const NULL_CONTRACT: VerticalLaunchContract = {
   forcedNeeds: { booking: false, leadCapture: false, products: false },
   previewGuaranteeTag: undefined,
   publishGuaranteeTag: undefined,
+  requiredCapabilities: [],
+  readinessFixtures: { minCanonicalPages: 0, minBoundIntents: 0, rowCountAssertions: [] },
 };
 
 /**
@@ -87,6 +127,15 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     forcedNeeds: { booking: true, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
+    requiredCapabilities: ['booking', 'lead-capture'],
+    readinessFixtures: {
+      minCanonicalPages: 4,
+      minBoundIntents: 3,
+      rowCountAssertions: [
+        { table: 'services', min: 1, reason: 'Booking vertical needs at least one bookable service.' },
+        { table: 'availability_slots', min: 1, reason: 'Booking vertical needs at least one availability slot.' },
+      ],
+    },
   },
   saas: {
     systemType: 'saas',
@@ -96,6 +145,12 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     forcedNeeds: { booking: false, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
+    requiredCapabilities: ['lead-capture', 'auth'],
+    readinessFixtures: {
+      minCanonicalPages: 4,
+      minBoundIntents: 2,
+      rowCountAssertions: [],
+    },
   },
   agency: {
     systemType: 'agency',
@@ -105,6 +160,12 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     forcedNeeds: { booking: false, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
+    requiredCapabilities: ['lead-capture', 'quoting'],
+    readinessFixtures: {
+      minCanonicalPages: 4,
+      minBoundIntents: 2,
+      rowCountAssertions: [],
+    },
   },
   portfolio: {
     systemType: 'portfolio',
@@ -114,6 +175,12 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     forcedNeeds: { booking: false, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
+    requiredCapabilities: ['lead-capture'],
+    readinessFixtures: {
+      minCanonicalPages: 3,
+      minBoundIntents: 1,
+      rowCountAssertions: [],
+    },
   },
   store: {
     systemType: 'store',
@@ -123,6 +190,14 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     forcedNeeds: { booking: false, leadCapture: true, products: true },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
+    requiredCapabilities: ['commerce', 'payments', 'lead-capture'],
+    readinessFixtures: {
+      minCanonicalPages: 4,
+      minBoundIntents: 3,
+      rowCountAssertions: [
+        { table: 'products', min: 1, reason: 'Store vertical needs at least one purchasable product.' },
+      ],
+    },
   },
   content: {
     systemType: 'content',
@@ -132,6 +207,12 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     forcedNeeds: { booking: false, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
+    requiredCapabilities: ['lead-capture', 'cms-content'],
+    readinessFixtures: {
+      minCanonicalPages: 3,
+      minBoundIntents: 1,
+      rowCountAssertions: [],
+    },
   },
 };
 

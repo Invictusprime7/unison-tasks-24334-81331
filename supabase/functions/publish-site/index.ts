@@ -236,6 +236,31 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       } as const;
 
+      // Track 1 — provider liveness preflight. Refuse to start a deploy if
+      // the provider's auth/identity endpoint is unreachable or rejecting our
+      // token. Prevents half-written deploys on outages or revoked tokens.
+      try {
+        const liveness = await fetch("https://api.netlify.com/api/v1/user", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${NETLIFY_AUTH_TOKEN}` },
+        });
+        if (!liveness.ok) {
+          return errorResponse(
+            `Netlify liveness check failed (HTTP ${liveness.status}). Refusing to deploy.`,
+            502,
+            corsHeaders,
+            { provider, liveness: { ok: false, status: liveness.status } },
+          );
+        }
+      } catch (err) {
+        return errorResponse(
+          `Netlify unreachable: ${err instanceof Error ? err.message : "unknown"}`,
+          502,
+          corsHeaders,
+          { provider, liveness: { ok: false } },
+        );
+      }
+
       let siteId: string | null = Deno.env.get("NETLIFY_SITE_ID") || null;
       let siteAdminUrl: string | null = null;
       let siteUrl: string | null = null;
@@ -339,6 +364,30 @@ Deno.serve(async (req) => {
     if (!VERCEL_TOKEN) {
       return errorResponse("Missing VERCEL_TOKEN in environment", 400, corsHeaders, { provider });
     }
+
+    // Track 1 — provider liveness preflight for Vercel.
+    try {
+      const liveness = await fetch("https://api.vercel.com/v2/user", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
+      });
+      if (!liveness.ok) {
+        return errorResponse(
+          `Vercel liveness check failed (HTTP ${liveness.status}). Refusing to deploy.`,
+          502,
+          corsHeaders,
+          { provider, liveness: { ok: false, status: liveness.status } },
+        );
+      }
+    } catch (err) {
+      return errorResponse(
+        `Vercel unreachable: ${err instanceof Error ? err.message : "unknown"}`,
+        502,
+        corsHeaders,
+        { provider, liveness: { ok: false } },
+      );
+    }
+
 
     const filesPayload = Object.entries(files).map(([path, content]) => ({
       file: path.replace(/^\/+/, ""),

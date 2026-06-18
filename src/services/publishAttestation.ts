@@ -7,6 +7,7 @@
 
 import type { CompiledContract } from '@/platform/core';
 import { PreviewGate, PublishGate } from '@/platform/core';
+import type { VerticalLaunchContract } from '@/services/verticalLaunchContract';
 
 export interface PublishAttestationGateReason {
   code: string;
@@ -21,6 +22,23 @@ export interface PublishAttestationCapability {
   critical?: boolean;
 }
 
+export interface PublishAttestationRowCountAssertion {
+  table: string;
+  min: number;
+  observed: number;
+  reason: string;
+}
+
+export interface PublishAttestationVerticalReadiness {
+  systemId: string;
+  requiredCapabilities: string[];
+  minCanonicalPages: number;
+  canonicalPageCount: number;
+  minBoundIntents: number;
+  boundIntentCount: number;
+  rowCountAssertions: PublishAttestationRowCountAssertion[];
+}
+
 export interface PublishAttestation {
   version: 1;
   evaluatedAt: string;
@@ -31,6 +49,7 @@ export interface PublishAttestation {
   capabilities: PublishAttestationCapability[];
   filesFingerprint: string;
   fileCount: number;
+  verticalReadiness?: PublishAttestationVerticalReadiness;
 }
 
 const BUSINESS_CRITICAL = new Set([

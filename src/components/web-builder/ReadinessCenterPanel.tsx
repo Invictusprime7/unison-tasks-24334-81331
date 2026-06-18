@@ -326,8 +326,27 @@ export const ReadinessCenterPanel: React.FC<ReadinessCenterPanelProps> = ({
       ],
     };
 
-    return [wizard, frontend, intents, backend, notifications, publish];
-  }, [contract, manifest, previewVerdict, publishVerdict, vfsFiles]);
+    // ---- Live Probes (Track 5) -----------------------------------------
+    const liveProbes: Section = {
+      id: 'live-probes',
+      title: 'Live Probes',
+      rows: probes
+        ? probes.map((p) => ({
+            label: p.label,
+            state: probeStateToCheckState(p.state),
+            detail: p.detail,
+          }))
+        : [
+            {
+              label: 'Server-side checks',
+              state: probing ? 'pending' : 'na',
+              detail: probing ? 'running…' : 'not run yet',
+            },
+          ],
+    };
+
+    return [wizard, frontend, intents, backend, notifications, publish, liveProbes];
+  }, [contract, manifest, previewVerdict, publishVerdict, vfsFiles, probes, probing]);
 
   const overallReady = sections.every((s) => sectionStatus(s) !== 'fail');
 
@@ -338,16 +357,30 @@ export const ReadinessCenterPanel: React.FC<ReadinessCenterPanelProps> = ({
           <CardTitle className="text-sm flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-primary" />
             Readiness Center
-            <Badge variant="outline" className="text-[10px] h-4 px-1">v1 · read-only</Badge>
+            <Badge variant="outline" className="text-[10px] h-4 px-1">v2 · live probes</Badge>
           </CardTitle>
-          <Badge
-            variant={overallReady ? 'default' : 'destructive'}
-            className={cn('text-xs', overallReady && 'bg-primary text-primary-foreground')}
-          >
-            {overallReady ? 'All checks passing' : 'Action needed'}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[11px]"
+              onClick={runProbes}
+              disabled={probing}
+              title={probedAt ? `Last run ${new Date(probedAt).toLocaleTimeString()}` : 'Run live probes'}
+            >
+              <RefreshCw className={cn('w-3 h-3 mr-1', probing && 'animate-spin')} />
+              Re-probe
+            </Button>
+            <Badge
+              variant={overallReady ? 'default' : 'destructive'}
+              className={cn('text-xs', overallReady && 'bg-primary text-primary-foreground')}
+            >
+              {overallReady ? 'All checks passing' : 'Action needed'}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
+
 
       <CardContent className="space-y-3">
         {!manifest && !contract && (

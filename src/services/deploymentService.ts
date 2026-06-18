@@ -12,6 +12,11 @@ import type {
   PublishBlocker,
 } from '@/platform/core';
 import { buildPublishAttestation } from '@/services/publishAttestation';
+import {
+  resolveVerticalLaunchContract,
+  type VerticalLaunchContract,
+} from '@/services/verticalLaunchContract';
+import type { BusinessSystemType } from '@/lib/infrastructureContext';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
 
@@ -25,6 +30,17 @@ export interface DeploymentRequest {
    * any network call — preventing a half-wired site from going live.
    */
   contract?: CompiledContract | null;
+  /**
+   * Track 6 — optional vertical (booking/saas/store/etc). When supplied, the
+   * publish attestation includes the vertical's required capabilities, min
+   * page/intent counts, and row-count assertions for server enforcement.
+   */
+  systemId?: BusinessSystemType | null;
+  /**
+   * Observed row counts by table (e.g. `{ products: 5 }`) used to evaluate
+   * the vertical contract's `rowCountAssertions` before publish.
+   */
+  rowCounts?: Record<string, number>;
 }
 
 export interface DeploymentResponse {

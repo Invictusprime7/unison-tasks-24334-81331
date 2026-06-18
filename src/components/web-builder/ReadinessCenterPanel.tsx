@@ -127,6 +127,28 @@ export const ReadinessCenterPanel: React.FC<ReadinessCenterPanelProps> = ({
     [contract],
   );
 
+  // --- Live probes (Track 5 v2) ---
+  const [probes, setProbes] = useState<ProbeResult[] | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [probedAt, setProbedAt] = useState<number | null>(null);
+
+  const runProbes = useCallback(async () => {
+    setProbing(true);
+    try {
+      const report = await runReadinessProbes();
+      setProbes(report.probes);
+      setProbedAt(report.finishedAt);
+    } finally {
+      setProbing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void runProbes();
+  }, [runProbes]);
+
+
+
   const sections: Section[] = useMemo(() => {
     // ---- Wizard ---------------------------------------------------------
     const wizard: Section = {

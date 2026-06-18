@@ -365,6 +365,30 @@ Deno.serve(async (req) => {
       return errorResponse("Missing VERCEL_TOKEN in environment", 400, corsHeaders, { provider });
     }
 
+    // Track 1 — provider liveness preflight for Vercel.
+    try {
+      const liveness = await fetch("https://api.vercel.com/v2/user", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
+      });
+      if (!liveness.ok) {
+        return errorResponse(
+          `Vercel liveness check failed (HTTP ${liveness.status}). Refusing to deploy.`,
+          502,
+          corsHeaders,
+          { provider, liveness: { ok: false, status: liveness.status } },
+        );
+      }
+    } catch (err) {
+      return errorResponse(
+        `Vercel unreachable: ${err instanceof Error ? err.message : "unknown"}`,
+        502,
+        corsHeaders,
+        { provider, liveness: { ok: false } },
+      );
+    }
+
+
     const filesPayload = Object.entries(files).map(([path, content]) => ({
       file: path.replace(/^\/+/, ""),
       data: btoa(unescape(encodeURIComponent(content))),

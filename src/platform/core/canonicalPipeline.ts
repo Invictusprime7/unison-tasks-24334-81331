@@ -109,7 +109,29 @@ export interface SiteBundleSnapshot {
 
   /** Shared app context propagated at launch/save time */
   appContext?: RuntimeAppContext;
+
+  /**
+   * Durable snapshot identity — the single source of truth for downstream
+   * surfaces (DeployButton, Readiness Center, publish attestation). Anything
+   * derived from WizardSelections that needs to outlive the wizard MUST be
+   * stamped here at compile time, not re-passed as UI props.
+   */
+  meta: SiteBundleSnapshotMeta;
 }
+
+export interface SiteBundleSnapshotMeta {
+  /** Source layer that produced this snapshot. */
+  source: 'wizard' | 'recompile' | 'import' | 'manual' | 'clone';
+  /** Canonical BusinessSystemType — drives VerticalLaunchContract resolution. */
+  systemId: string | null;
+  /** Resolved industry overlay (mirrors top-level `industry`). */
+  industry: string;
+  /** Identifier of the resolved VerticalLaunchContract (== systemId today). */
+  verticalContractId: string | null;
+  /** Optional contract version stamp for future immutability/versioning. */
+  verticalContractVersion?: string;
+  /** Wizard seed identifier when applicable. */
+  wizardSeedId?: string;
 
 // ============================================================================
 // Main Pipeline Entry

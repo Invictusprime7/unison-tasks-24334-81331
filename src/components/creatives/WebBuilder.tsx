@@ -3605,15 +3605,33 @@ export default function ${componentName}Page() {
       projectNameFromState ||
       systemName ||
       'Business';
+    // Chain-of-custody: after compile, the SiteBundleSnapshot is the source
+    // of truth for themePresetId/templateId. Re-derive from snapshot.meta so
+    // autosave/recompile never throws when in-memory wizard props drift.
+    const snapshotMeta = effectiveRouteState?.siteBundleSnapshot?.meta;
+    const effectiveThemePresetId =
+      resolvedThemePresetId ||
+      snapshotMeta?.themePresetId ||
+      currentDesignPreset ||
+      undefined;
+    const effectiveTemplateId =
+      currentTemplateId ||
+      snapshotMeta?.templateId ||
+      undefined;
+    const effectiveSelectedThemeId =
+      currentDesignPreset ||
+      resolvedThemePresetId ||
+      snapshotMeta?.themePresetId ||
+      undefined;
     const recompilation = commitToPipeline(
       {
         playground: canonicalPlayground,
         existingVfsFiles: currentFiles,
         businessName: effectiveBusinessName,
         industry: effectiveRouteState?.siteBundleSnapshot?.industry,
-        selectedTemplateId: currentTemplateId || undefined,
-        selectedThemeId: currentDesignPreset || resolvedThemePresetId || undefined,
-        themePresetId: resolvedThemePresetId || undefined,
+        selectedTemplateId: effectiveTemplateId,
+        selectedThemeId: effectiveSelectedThemeId,
+        themePresetId: effectiveThemePresetId,
       },
       'playground-edit',
     );

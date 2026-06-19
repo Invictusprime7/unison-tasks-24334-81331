@@ -10,8 +10,12 @@ import { PublishGate } from '@/platform/core';
 import type {
   CompiledContract,
   PublishBlocker,
+  SiteBundleSnapshot,
 } from '@/platform/core';
-import { buildPublishAttestation } from '@/services/publishAttestation';
+import {
+  buildPublishAttestation,
+  buildPublishAttestationFromSnapshot,
+} from '@/services/publishAttestation';
 import {
   resolveVerticalLaunchContract,
   type VerticalLaunchContract,
@@ -31,9 +35,18 @@ export interface DeploymentRequest {
    */
   contract?: CompiledContract | null;
   /**
+   * Preferred publish path: the durable SiteBundleSnapshot produced by the
+   * canonical pipeline. When supplied, `systemId` and vertical readiness
+   * fixtures are derived from `snapshot.meta` — `systemId`/`rowCounts` on
+   * this request act only as overrides for backwards compatibility.
+   */
+  snapshot?: SiteBundleSnapshot | null;
+  /**
    * Track 6 — optional vertical (booking/saas/store/etc). When supplied, the
    * publish attestation includes the vertical's required capabilities, min
    * page/intent counts, and row-count assertions for server enforcement.
+   *
+   * @deprecated Prefer `snapshot.meta.systemId`.
    */
   systemId?: BusinessSystemType | null;
   /**

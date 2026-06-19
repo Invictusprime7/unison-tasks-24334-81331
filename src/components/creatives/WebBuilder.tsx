@@ -6236,6 +6236,7 @@ ${html}
               files={canonicalBuildArtifacts?.deployFiles || {}}
               defaultSiteName={currentTemplateName || 'unison-site'}
               contract={compiledContract}
+              systemId={activeSystemType}
               variant="ghost"
               size="sm"
               onDeployComplete={(url) => {

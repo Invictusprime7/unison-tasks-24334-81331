@@ -269,7 +269,41 @@ export async function deployToProvider(
 
     if (error) {
       console.error('[deploymentService] Supabase function error:', error);
-      throw new Error(error.message || 'Deployment failed');
+      // Track 6 — surface server-side attestation rejections (HTTP 412 with
+      // codes like `vertical-capabilities-missing`, `vertical-pages-insufficient`,
+      // `vertical-row-counts-insufficient`) as actionable messages instead of
+      // a generic "Edge Function returned a non-2xx" toast.
+      let serverBody: Record<string, unknown> | null = null;
+      try {
+        const ctx = (error as { context?: Response }).context;
+        if (ctx && typeof ctx.json === 'function') {
+          serverBody = await ctx.json();
+        }
+      } catch {
+        /* ignore */
+      }
+      const attestation = serverBody?.attestation as
+        | { enforced?: boolean; code?: string; details?: unknown }
+        | undefined;
+      const serverMsg = (serverBody?.error as string | undefined) || error.message || 'Deployment failed';
+      const friendly = attestation?.code
+        ? `${serverMsg} [${attestation.code}]`
+        : serverMsg;
+      const errResp: DeploymentResponse = {
+        status: 'error',
+        provider: request.provider,
+        error: friendly,
+        attestation: attestation
+          ? { enforced: !!attestation.enforced, code: attestation.code, details: attestation.details }
+          : undefined,
+      };
+      onProgress?.({
+        isDeploying: false,
+        progress: 0,
+        message: `Deployment failed: ${friendly}`,
+        result: errResp,
+      });
+      return errResp;
     }
 
     const response = data as DeploymentResponse;
@@ -307,19 +341,29 @@ export async function deployToProvider(
   }
 }
 
+export interface ProviderDeployOptions {
+  contract?: CompiledContract | null;
+  systemId?: BusinessSystemType | null;
+  rowCounts?: Record<string, number>;
+}
+
 /**
  * Deploy to Vercel specifically
  */
 export async function deployToVercel(
   files: Record<string, string>,
   siteName?: string,
-  onProgress?: (status: DeploymentStatus) => void
+  onProgress?: (status: DeploymentStatus) => void,
+  options?: ProviderDeployOptions,
 ): Promise<DeploymentResponse> {
   return deployToProvider(
     {
       provider: 'vercel',
       siteName,
       files,
+      contract: options?.contract ?? null,
+      systemId: options?.systemId ?? null,
+      rowCounts: options?.rowCounts,
     },
     onProgress
   );
@@ -331,13 +375,17 @@ export async function deployToVercel(
 export async function deployToNetlify(
   files: Record<string, string>,
   siteName?: string,
-  onProgress?: (status: DeploymentStatus) => void
+  onProgress?: (status: DeploymentStatus) => void,
+  options?: ProviderDeployOptions,
 ): Promise<DeploymentResponse> {
   return deployToProvider(
     {
       provider: 'netlify',
       siteName,
       files,
+      contract: options?.contract ?? null,
+      systemId: options?.systemId ?? null,
+      rowCounts: options?.rowCounts,
     },
     onProgress
   );

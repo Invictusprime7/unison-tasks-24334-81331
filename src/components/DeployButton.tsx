@@ -30,6 +30,7 @@ import GateVerdictStrip from '@/components/web-builder/GateVerdictStrip';
 import PublishBlockersList from '@/components/web-builder/PublishBlockersList';
 import type { CompiledContract } from '@/platform/core';
 import { isPublishReady } from '@/platform/core';
+import type { BusinessSystemType } from '@/data/templates/types';
 
 interface DeployButtonProps {
   /** File map to deploy (path -> content) */
@@ -48,6 +49,17 @@ interface DeployButtonProps {
   disabled?: boolean;
   /** Compiled contract used to render the publish-time pre-flight gate strip. */
   contract?: CompiledContract | null;
+  /**
+   * Track 6 — vertical system context. When supplied, the publish attestation
+   * embeds the vertical's required capabilities, min page/intent counts, and
+   * row-count assertions so the server can enforce per-vertical readiness.
+   */
+  systemId?: BusinessSystemType | null;
+  /**
+   * Observed row counts by table (e.g. `{ products: 5 }`) used to evaluate
+   * the vertical contract's `rowCountAssertions` server-side.
+   */
+  rowCounts?: Record<string, number>;
 }
 
 export function DeployButton({
@@ -59,6 +71,8 @@ export function DeployButton({
   showProviderSelect = true,
   disabled = false,
   contract = null,
+  systemId = null,
+  rowCounts,
 }: DeployButtonProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [siteName, setSiteName] = useState(defaultSiteName || '');
@@ -108,7 +122,11 @@ export function DeployButton({
       }
     }
     
-    await deployToProvider(selectedProvider, processedFiles, name);
+    await deployToProvider(selectedProvider, processedFiles, name, {
+      contract,
+      systemId,
+      rowCounts,
+    });
   };
 
   const handleOpenDialog = (provider: DeploymentProvider) => {
@@ -260,6 +278,18 @@ export function DeployButton({
                   <span className="font-medium">Deployment failed</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{result.error}</p>
+                {result.attestation?.enforced && result.attestation.code && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                    <div className="font-medium text-destructive">
+                      Server publish gate: {result.attestation.code}
+                    </div>
+                    <p className="opacity-80 mt-1">
+                      The server re-verified the vertical readiness contract
+                      and rejected this deploy. Fix the highlighted blocker(s)
+                      and retry.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

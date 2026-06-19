@@ -11,6 +11,7 @@ import {
   DeploymentResponse,
   DeploymentStatus,
   DeploymentProvider,
+  type ProviderDeployOptions,
 } from '@/services/deploymentService';
 
 interface UseDeploymentOptions {
@@ -19,11 +20,16 @@ interface UseDeploymentOptions {
 }
 
 interface UseDeploymentReturn {
-  deploy: (files: Record<string, string>, siteName?: string) => Promise<DeploymentResponse>;
+  deploy: (
+    files: Record<string, string>,
+    siteName?: string,
+    options?: ProviderDeployOptions,
+  ) => Promise<DeploymentResponse>;
   deployToProvider: (
     provider: DeploymentProvider,
     files: Record<string, string>,
-    siteName?: string
+    siteName?: string,
+    options?: ProviderDeployOptions,
   ) => Promise<DeploymentResponse>;
   isDeploying: boolean;
   progress: number;
@@ -54,7 +60,8 @@ export function useDeployment(
     async (
       provider: DeploymentProvider,
       files: Record<string, string>,
-      siteName?: string
+      siteName?: string,
+      providerOptions?: ProviderDeployOptions,
     ): Promise<DeploymentResponse> => {
       setIsDeploying(true);
       setProgress(0);
@@ -63,7 +70,7 @@ export function useDeployment(
 
       try {
         const deployFn = provider === 'vercel' ? deployToVercel : deployToNetlify;
-        const response = await deployFn(files, siteName, handleProgress);
+        const response = await deployFn(files, siteName, handleProgress, providerOptions);
 
         if (response.status === 'success') {
           options.onSuccess?.(response);
@@ -86,8 +93,8 @@ export function useDeployment(
   );
 
   const deploy = useCallback(
-    async (files: Record<string, string>, siteName?: string) => {
-      return deployToProvider(defaultProvider, files, siteName);
+    async (files: Record<string, string>, siteName?: string, providerOptions?: ProviderDeployOptions) => {
+      return deployToProvider(defaultProvider, files, siteName, providerOptions);
     },
     [defaultProvider, deployToProvider]
   );

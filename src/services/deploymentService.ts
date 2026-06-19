@@ -417,6 +417,7 @@ export async function deployToNetlify(
       siteName,
       files,
       contract: options?.contract ?? null,
+      snapshot: options?.snapshot ?? null,
       systemId: options?.systemId ?? null,
       rowCounts: options?.rowCounts,
     },

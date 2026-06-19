@@ -254,16 +254,32 @@ export async function deployToProvider(
     // Track 5 — server-proven publish contract. When a contract is available,
     // attach an attestation so the edge function can re-verify gates + file
     // fingerprint server-side before touching the deploy provider.
+    //
+    // Snapshot-driven path (preferred): when a SiteBundleSnapshot is supplied,
+    // systemId + vertical readiness come from `snapshot.meta` — the durable
+    // canonical-pipeline output. Legacy `systemId`/`rowCounts` on the request
+    // remain as overrides only.
     let publishAttestation: Awaited<ReturnType<typeof buildPublishAttestation>> | undefined;
     if (request.contract) {
       try {
-        const verticalContract: VerticalLaunchContract | null = request.systemId
-          ? resolveVerticalLaunchContract(request.systemId)
-          : null;
-        publishAttestation = await buildPublishAttestation(request.contract, normalizedFiles, {
-          verticalContract,
-          rowCounts: request.rowCounts,
-        });
+        if (request.snapshot && !request.systemId) {
+          publishAttestation = await buildPublishAttestationFromSnapshot(
+            request.snapshot,
+            request.contract,
+            { rowCounts: request.rowCounts, files: normalizedFiles },
+          );
+        } else {
+          const resolvedSystemId =
+            request.systemId ??
+            ((request.snapshot?.meta?.systemId as BusinessSystemType | null) ?? null);
+          const verticalContract: VerticalLaunchContract | null = resolvedSystemId
+            ? resolveVerticalLaunchContract(resolvedSystemId)
+            : null;
+          publishAttestation = await buildPublishAttestation(request.contract, normalizedFiles, {
+            verticalContract,
+            rowCounts: request.rowCounts,
+          });
+        }
       } catch (err) {
         console.warn('[deploymentService] Failed to build publish attestation', err);
       }

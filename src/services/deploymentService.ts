@@ -341,19 +341,29 @@ export async function deployToProvider(
   }
 }
 
+export interface ProviderDeployOptions {
+  contract?: CompiledContract | null;
+  systemId?: BusinessSystemType | null;
+  rowCounts?: Record<string, number>;
+}
+
 /**
  * Deploy to Vercel specifically
  */
 export async function deployToVercel(
   files: Record<string, string>,
   siteName?: string,
-  onProgress?: (status: DeploymentStatus) => void
+  onProgress?: (status: DeploymentStatus) => void,
+  options?: ProviderDeployOptions,
 ): Promise<DeploymentResponse> {
   return deployToProvider(
     {
       provider: 'vercel',
       siteName,
       files,
+      contract: options?.contract ?? null,
+      systemId: options?.systemId ?? null,
+      rowCounts: options?.rowCounts,
     },
     onProgress
   );
@@ -365,13 +375,17 @@ export async function deployToVercel(
 export async function deployToNetlify(
   files: Record<string, string>,
   siteName?: string,
-  onProgress?: (status: DeploymentStatus) => void
+  onProgress?: (status: DeploymentStatus) => void,
+  options?: ProviderDeployOptions,
 ): Promise<DeploymentResponse> {
   return deployToProvider(
     {
       provider: 'netlify',
       siteName,
       files,
+      contract: options?.contract ?? null,
+      systemId: options?.systemId ?? null,
+      rowCounts: options?.rowCounts,
     },
     onProgress
   );

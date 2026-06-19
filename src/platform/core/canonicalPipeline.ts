@@ -132,6 +132,8 @@ export interface SiteBundleSnapshotMeta {
   verticalContractVersion?: string;
   /** Wizard seed identifier when applicable. */
   wizardSeedId?: string;
+}
+
 
 // ============================================================================
 // Main Pipeline Entry

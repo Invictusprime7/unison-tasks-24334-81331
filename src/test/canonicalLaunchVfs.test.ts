@@ -40,6 +40,12 @@ function createSnapshot(): SiteBundleSnapshot {
     routes: ["/"],
     homeRoute: "/",
     createdAt: "2026-04-23T00:00:00.000Z",
+    meta: {
+      source: "wizard",
+      systemId: "agency",
+      industry: "agency",
+      verticalContractId: "agency",
+    },
   };
 }
 

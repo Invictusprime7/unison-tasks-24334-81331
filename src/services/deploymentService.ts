@@ -372,6 +372,9 @@ export async function deployToProvider(
 
 export interface ProviderDeployOptions {
   contract?: CompiledContract | null;
+  /** Preferred — durable canonical snapshot. */
+  snapshot?: SiteBundleSnapshot | null;
+  /** @deprecated Use `snapshot.meta.systemId`. */
   systemId?: BusinessSystemType | null;
   rowCounts?: Record<string, number>;
 }
@@ -391,6 +394,7 @@ export async function deployToVercel(
       siteName,
       files,
       contract: options?.contract ?? null,
+      snapshot: options?.snapshot ?? null,
       systemId: options?.systemId ?? null,
       rowCounts: options?.rowCounts,
     },

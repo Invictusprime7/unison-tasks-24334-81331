@@ -316,7 +316,13 @@ export function recompileFromPlayground(
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
     compileResult,
-    { businessName: businessName || '', industry: industry || 'general' } as any,
+    {
+      businessName: businessName || '',
+      industry: industry || 'general',
+      themePresetId: presetId,
+      themeId: options?.selectedThemeId,
+      templateId: options?.selectedTemplateId,
+    },
     'recompile',
   );
 

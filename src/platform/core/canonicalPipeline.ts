@@ -333,7 +333,13 @@ export function recompileFromPlayground(
 function projectToSiteBundleSnapshot(
   playground: PlaygroundState,
   compileResult: PlaygroundCompileResult,
-  selections: { businessName: string; industryOverlay?: string; industry?: string },
+  selections: {
+    businessName: string;
+    industryOverlay?: string;
+    industry?: string;
+    systemType?: string | null;
+  },
+  source: SiteBundleSnapshotMeta['source'] = 'wizard',
 ): SiteBundleSnapshot {
   const registry = compileResult.pageRouteRegistry;
   const pages = Object.values(registry.pages);
@@ -366,10 +372,14 @@ function projectToSiteBundleSnapshot(
     },
   };
 
+  const resolvedIndustry =
+    selections.industryOverlay || selections.industry || 'general';
+  const resolvedSystemId = selections.systemType ?? null;
+
   return {
     snapshotId: `snap_${nanoid(8)}`,
     businessName: selections.businessName || '',
-    industry: selections.industryOverlay || selections.industry || 'general',
+    industry: resolvedIndustry,
     pageRegistry: registry,
     vfsFiles: compileResult.vfsFiles,
     routerFile: compileResult.routerFile,
@@ -382,6 +392,12 @@ function projectToSiteBundleSnapshot(
     routes: compileResult.previewManifest.routes,
     homeRoute: compileResult.previewManifest.homeRoute,
     createdAt: new Date().toISOString(),
+    meta: {
+      source,
+      systemId: resolvedSystemId,
+      industry: resolvedIndustry,
+      verticalContractId: resolvedSystemId,
+    },
   };
 }
 

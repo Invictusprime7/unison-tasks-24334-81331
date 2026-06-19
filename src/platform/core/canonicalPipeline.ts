@@ -132,6 +132,14 @@ export interface SiteBundleSnapshotMeta {
   verticalContractVersion?: string;
   /** Wizard seed identifier when applicable. */
   wizardSeedId?: string;
+  /**
+   * Resolved ThemePreset id from the wizard Style-card. Persisted into the
+   * snapshot so recompiles/autosaves can re-emit themed /src/index.css
+   * without re-passing wizard props (chain-of-custody after compile).
+   */
+  themePresetId?: string | null;
+  /** Resolved template id from the wizard Template-card. */
+  templateId?: string | null;
 }
 
 
@@ -308,7 +316,13 @@ export function recompileFromPlayground(
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
     compileResult,
-    { businessName: businessName || '', industry: industry || 'general' } as any,
+    {
+      businessName: businessName || '',
+      industry: industry || 'general',
+      themePresetId: presetId,
+      themeId: options?.selectedThemeId,
+      templateId: options?.selectedTemplateId,
+    },
     'recompile',
   );
 
@@ -339,6 +353,9 @@ function projectToSiteBundleSnapshot(
     industryOverlay?: string;
     industry?: string;
     systemType?: string | null;
+    themePresetId?: string | null;
+    themeId?: string | null;
+    templateId?: string | null;
   },
   source: SiteBundleSnapshotMeta['source'] = 'wizard',
 ): SiteBundleSnapshot {
@@ -376,6 +393,9 @@ function projectToSiteBundleSnapshot(
   const resolvedIndustry =
     selections.industryOverlay || selections.industry || 'general';
   const resolvedSystemId = selections.systemType ?? null;
+  const resolvedThemePresetId =
+    selections.themePresetId || selections.themeId || null;
+  const resolvedTemplateId = selections.templateId || null;
 
   return {
     snapshotId: `snap_${nanoid(8)}`,
@@ -398,6 +418,8 @@ function projectToSiteBundleSnapshot(
       systemId: resolvedSystemId,
       industry: resolvedIndustry,
       verticalContractId: resolvedSystemId,
+      themePresetId: resolvedThemePresetId,
+      templateId: resolvedTemplateId,
     },
   };
 }

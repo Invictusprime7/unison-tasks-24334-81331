@@ -56,10 +56,23 @@ export function compilePlayground(
     }
 
     if (page.isHome) {
-      const legacyHomeSource = existingVfsFiles['/src/App.tsx'] || existingVfsFiles['/App.tsx'];
-      if (legacyHomeSource) {
-        vfsFiles[fp] = rebaseHomeModuleForPageFile(legacyHomeSource);
-        continue;
+      // Legacy compatibility: rebase an inherited `/src/App.tsx` into the
+      // Home page module so older imports keep working. Skip this shortcut
+      // whenever the wizard threaded a Style/Template selection — those
+      // SiteBundleSnapshot-driven launches MUST scaffold Home from the same
+      // themed `generateTopologyPlaceholder(...)` path used by every other
+      // page, otherwise Home renders the un-themed AI seed while subpages
+      // render the wizard's themed composition (visible drift).
+      const hasWizardTheming =
+        !!options?.selectedTemplateId ||
+        !!options?.selectedThemeId ||
+        !!options?.industry;
+      if (!hasWizardTheming) {
+        const legacyHomeSource = existingVfsFiles['/src/App.tsx'] || existingVfsFiles['/App.tsx'];
+        if (legacyHomeSource) {
+          vfsFiles[fp] = rebaseHomeModuleForPageFile(legacyHomeSource);
+          continue;
+        }
       }
     }
 

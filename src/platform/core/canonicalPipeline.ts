@@ -132,6 +132,14 @@ export interface SiteBundleSnapshotMeta {
   verticalContractVersion?: string;
   /** Wizard seed identifier when applicable. */
   wizardSeedId?: string;
+  /**
+   * Resolved ThemePreset id from the wizard Style-card. Persisted into the
+   * snapshot so recompiles/autosaves can re-emit themed /src/index.css
+   * without re-passing wizard props (chain-of-custody after compile).
+   */
+  themePresetId?: string | null;
+  /** Resolved template id from the wizard Template-card. */
+  templateId?: string | null;
 }
 
 

@@ -5,9 +5,13 @@
  * algorithm MUST stay in lockstep with the server implementation.
  */
 
-import type { CompiledContract } from '@/platform/core';
+import type { CompiledContract, SiteBundleSnapshot } from '@/platform/core';
 import { PreviewGate, PublishGate } from '@/platform/core';
-import type { VerticalLaunchContract } from '@/services/verticalLaunchContract';
+import {
+  resolveVerticalLaunchContract,
+  type VerticalLaunchContract,
+} from '@/services/verticalLaunchContract';
+import type { BusinessSystemType } from '@/data/templates/types';
 
 export interface PublishAttestationGateReason {
   code: string;

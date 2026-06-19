@@ -122,7 +122,11 @@ export function DeployButton({
       }
     }
     
-    await deployToProvider(selectedProvider, processedFiles, name);
+    await deployToProvider(selectedProvider, processedFiles, name, {
+      contract,
+      systemId,
+      rowCounts,
+    });
   };
 
   const handleOpenDialog = (provider: DeploymentProvider) => {

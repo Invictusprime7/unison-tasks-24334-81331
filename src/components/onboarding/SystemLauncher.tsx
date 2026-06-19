@@ -1298,6 +1298,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         businessName: businessName.trim(),
         businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
         industryOverlay: SYSTEM_TO_INDUSTRY_OVERLAY[selectedSystem] || 'general',
+        systemType: selectedSystem,
         primaryGoal: resolvedPrimaryGoal,
         secondaryGoals: resolvedCustomerNeeds as string[],
         needsBooking: launchContract.forcedNeeds.booking || goalNeeds.needsBooking || resolvedCustomerNeeds.includes('book_service'),

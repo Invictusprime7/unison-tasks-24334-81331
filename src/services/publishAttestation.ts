@@ -5,9 +5,13 @@
  * algorithm MUST stay in lockstep with the server implementation.
  */
 
-import type { CompiledContract } from '@/platform/core';
+import type { CompiledContract, SiteBundleSnapshot } from '@/platform/core';
 import { PreviewGate, PublishGate } from '@/platform/core';
-import type { VerticalLaunchContract } from '@/services/verticalLaunchContract';
+import {
+  resolveVerticalLaunchContract,
+  type VerticalLaunchContract,
+} from '@/services/verticalLaunchContract';
+import type { BusinessSystemType } from '@/data/templates/types';
 
 export interface PublishAttestationGateReason {
   code: string;
@@ -163,4 +167,45 @@ export async function buildPublishAttestation(
     fileCount,
     verticalReadiness,
   };
+}
+
+// ============================================================================
+// Snapshot-driven entrypoint — single source of truth.
+//
+// Downstream surfaces (DeployButton, deploymentService, Readiness Center)
+// should prefer this over `buildPublishAttestation` so the vertical contract,
+// systemId, file map, and contract-derived counts all resolve from
+// `SiteBundleSnapshot` rather than from caller-supplied UI state.
+// ============================================================================
+
+export interface BuildPublishAttestationFromSnapshotOptions {
+  /**
+   * Observed row counts by table. Optional — when omitted, any
+   * `rowCountAssertions.min > 0` will fail (which is the correct default
+   * because the snapshot itself does not author live database rows).
+   */
+  rowCounts?: Record<string, number>;
+  /**
+   * Override the file map used for fingerprinting. Defaults to
+   * `snapshot.vfsFiles`. Use this when the caller has a post-build/deploy
+   * file map (e.g. `canonicalBuildArtifacts.deployFiles`) that differs from
+   * the raw snapshot VFS.
+   */
+  files?: Record<string, string>;
+}
+
+export async function buildPublishAttestationFromSnapshot(
+  snapshot: SiteBundleSnapshot,
+  contract: CompiledContract,
+  options: BuildPublishAttestationFromSnapshotOptions = {},
+): Promise<PublishAttestation> {
+  const systemId = (snapshot.meta?.systemId ?? null) as BusinessSystemType | null;
+  const verticalContract: VerticalLaunchContract | null = systemId
+    ? resolveVerticalLaunchContract(systemId)
+    : null;
+  const files = options.files ?? snapshot.vfsFiles ?? {};
+  return buildPublishAttestation(contract, files, {
+    verticalContract,
+    rowCounts: options.rowCounts,
+  });
 }

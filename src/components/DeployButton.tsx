@@ -28,7 +28,7 @@ import { DeploymentProvider, wrapHtmlForDeployment } from '@/services/deployment
 import { toast } from 'sonner';
 import GateVerdictStrip from '@/components/web-builder/GateVerdictStrip';
 import PublishBlockersList from '@/components/web-builder/PublishBlockersList';
-import type { CompiledContract } from '@/platform/core';
+import type { CompiledContract, SiteBundleSnapshot } from '@/platform/core';
 import { isPublishReady } from '@/platform/core';
 import type { BusinessSystemType } from '@/data/templates/types';
 
@@ -50,9 +50,17 @@ interface DeployButtonProps {
   /** Compiled contract used to render the publish-time pre-flight gate strip. */
   contract?: CompiledContract | null;
   /**
-   * Track 6 — vertical system context. When supplied, the publish attestation
-   * embeds the vertical's required capabilities, min page/intent counts, and
-   * row-count assertions so the server can enforce per-vertical readiness.
+   * Preferred publish source — the durable SiteBundleSnapshot produced by the
+   * canonical pipeline. When supplied, `systemId` and vertical readiness
+   * fixtures are read from `snapshot.meta` (not from UI state). Legacy
+   * `systemId` prop remains only as a backwards-compat override.
+   */
+  snapshot?: SiteBundleSnapshot | null;
+  /**
+   * Track 6 — vertical system context.
+   *
+   * @deprecated Prefer `snapshot.meta.systemId`. Kept for callers that have
+   * not yet been migrated to snapshot-driven publishing.
    */
   systemId?: BusinessSystemType | null;
   /**
@@ -71,12 +79,18 @@ export function DeployButton({
   showProviderSelect = true,
   disabled = false,
   contract = null,
+  snapshot = null,
   systemId = null,
   rowCounts,
 }: DeployButtonProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [siteName, setSiteName] = useState(defaultSiteName || '');
   const [selectedProvider, setSelectedProvider] = useState<DeploymentProvider>('vercel');
+
+  // Snapshot is the durable canonical source — fall back to legacy props only
+  // when no snapshot is in scope (e.g. very early renders or non-builder hosts).
+  const effectiveSystemId: BusinessSystemType | null =
+    ((snapshot?.meta?.systemId as BusinessSystemType | null) ?? null) || systemId;
 
   const { deployToProvider, isDeploying, progress, message, result, reset } = useDeployment(
     'vercel',
@@ -124,7 +138,8 @@ export function DeployButton({
     
     await deployToProvider(selectedProvider, processedFiles, name, {
       contract,
-      systemId,
+      snapshot,
+      systemId: effectiveSystemId,
       rowCounts,
     });
   };

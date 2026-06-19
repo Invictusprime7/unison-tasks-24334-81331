@@ -109,7 +109,31 @@ export interface SiteBundleSnapshot {
 
   /** Shared app context propagated at launch/save time */
   appContext?: RuntimeAppContext;
+
+  /**
+   * Durable snapshot identity — the single source of truth for downstream
+   * surfaces (DeployButton, Readiness Center, publish attestation). Anything
+   * derived from WizardSelections that needs to outlive the wizard MUST be
+   * stamped here at compile time, not re-passed as UI props.
+   */
+  meta: SiteBundleSnapshotMeta;
 }
+
+export interface SiteBundleSnapshotMeta {
+  /** Source layer that produced this snapshot. */
+  source: 'wizard' | 'recompile' | 'import' | 'manual' | 'clone';
+  /** Canonical BusinessSystemType — drives VerticalLaunchContract resolution. */
+  systemId: string | null;
+  /** Resolved industry overlay (mirrors top-level `industry`). */
+  industry: string;
+  /** Identifier of the resolved VerticalLaunchContract (== systemId today). */
+  verticalContractId: string | null;
+  /** Optional contract version stamp for future immutability/versioning. */
+  verticalContractVersion?: string;
+  /** Wizard seed identifier when applicable. */
+  wizardSeedId?: string;
+}
+
 
 // ============================================================================
 // Main Pipeline Entry
@@ -285,6 +309,7 @@ export function recompileFromPlayground(
     playground,
     compileResult,
     { businessName: businessName || '', industry: industry || 'general' } as any,
+    'recompile',
   );
 
   const runtimeManifest = deriveRuntimeManifest(siteBundleSnapshot);
@@ -309,7 +334,13 @@ export function recompileFromPlayground(
 function projectToSiteBundleSnapshot(
   playground: PlaygroundState,
   compileResult: PlaygroundCompileResult,
-  selections: { businessName: string; industryOverlay?: string; industry?: string },
+  selections: {
+    businessName: string;
+    industryOverlay?: string;
+    industry?: string;
+    systemType?: string | null;
+  },
+  source: SiteBundleSnapshotMeta['source'] = 'wizard',
 ): SiteBundleSnapshot {
   const registry = compileResult.pageRouteRegistry;
   const pages = Object.values(registry.pages);
@@ -342,10 +373,14 @@ function projectToSiteBundleSnapshot(
     },
   };
 
+  const resolvedIndustry =
+    selections.industryOverlay || selections.industry || 'general';
+  const resolvedSystemId = selections.systemType ?? null;
+
   return {
     snapshotId: `snap_${nanoid(8)}`,
     businessName: selections.businessName || '',
-    industry: selections.industryOverlay || selections.industry || 'general',
+    industry: resolvedIndustry,
     pageRegistry: registry,
     vfsFiles: compileResult.vfsFiles,
     routerFile: compileResult.routerFile,
@@ -358,6 +393,12 @@ function projectToSiteBundleSnapshot(
     routes: compileResult.previewManifest.routes,
     homeRoute: compileResult.previewManifest.homeRoute,
     createdAt: new Date().toISOString(),
+    meta: {
+      source,
+      systemId: resolvedSystemId,
+      industry: resolvedIndustry,
+      verticalContractId: resolvedSystemId,
+    },
   };
 }
 

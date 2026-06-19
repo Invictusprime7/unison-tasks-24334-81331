@@ -309,6 +309,7 @@ export function recompileFromPlayground(
     playground,
     compileResult,
     { businessName: businessName || '', industry: industry || 'general' } as any,
+    'recompile',
   );
 
   const runtimeManifest = deriveRuntimeManifest(siteBundleSnapshot);

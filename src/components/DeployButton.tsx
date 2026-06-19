@@ -278,6 +278,18 @@ export function DeployButton({
                   <span className="font-medium">Deployment failed</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{result.error}</p>
+                {result.attestation?.enforced && result.attestation.code && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                    <div className="font-medium text-destructive">
+                      Server publish gate: {result.attestation.code}
+                    </div>
+                    <p className="opacity-80 mt-1">
+                      The server re-verified the vertical readiness contract
+                      and rejected this deploy. Fix the highlighted blocker(s)
+                      and retry.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

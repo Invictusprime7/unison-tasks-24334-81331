@@ -64,6 +64,17 @@ export interface WizardSelections {
   industryOverlay: IndustryOverlay;
   primaryGoal: string;
   secondaryGoals: string[];
+  /**
+   * Canonical BusinessSystemType (booking/saas/agency/portfolio/store/content).
+   * Threaded by SystemLauncher so the canonical pipeline can stamp
+   * `SiteBundleSnapshot.meta.systemId` and resolve the VerticalLaunchContract
+   * deterministically downstream — replacing the legacy `activeSystemType`
+   * UI state that DeployButton/Readiness Center used to read.
+   *
+   * Typed as `string` to avoid a cross-package import; values must match
+   * `BusinessSystemType` from `@/data/templates/types`.
+   */
+  systemType?: string | null;
   needsBooking?: boolean;
   sellsProducts?: boolean;
   wantsLeadCapture?: boolean;

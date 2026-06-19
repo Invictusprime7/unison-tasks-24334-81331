@@ -347,6 +347,9 @@ function projectToSiteBundleSnapshot(
     industryOverlay?: string;
     industry?: string;
     systemType?: string | null;
+    themePresetId?: string | null;
+    themeId?: string | null;
+    templateId?: string | null;
   },
   source: SiteBundleSnapshotMeta['source'] = 'wizard',
 ): SiteBundleSnapshot {
@@ -384,6 +387,9 @@ function projectToSiteBundleSnapshot(
   const resolvedIndustry =
     selections.industryOverlay || selections.industry || 'general';
   const resolvedSystemId = selections.systemType ?? null;
+  const resolvedThemePresetId =
+    selections.themePresetId || selections.themeId || null;
+  const resolvedTemplateId = selections.templateId || null;
 
   return {
     snapshotId: `snap_${nanoid(8)}`,
@@ -406,6 +412,8 @@ function projectToSiteBundleSnapshot(
       systemId: resolvedSystemId,
       industry: resolvedIndustry,
       verticalContractId: resolvedSystemId,
+      themePresetId: resolvedThemePresetId,
+      templateId: resolvedTemplateId,
     },
   };
 }

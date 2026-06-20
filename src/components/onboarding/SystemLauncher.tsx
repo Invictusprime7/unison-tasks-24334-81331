@@ -65,6 +65,7 @@ import { getCompositionsBySystemType, getCompositionById } from "@/sections/temp
 import { commitToPipeline } from "@/platform/core";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
+import { preflightNavWiring } from "@/services/preflightNavWiring";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";

@@ -240,8 +240,37 @@ export function buildCanonicalLaunchArtifacts(
     themePresetId: resolvedThemePresetId,
   });
 
+  // ── Early syntax repair ────────────────────────────────────────────────
+  // Run a pre-binding syntax repair pass so wizard binding / nav wiring
+  // mutations never operate on broken JSX (which would amplify errors and
+  // surface a "syntax error" screen in the preview iframe).
+  const earlyRepair = (() => {
+    try {
+      return runPreflightRepair(normalizedFiles, {
+        context: {
+          industry: input.industry,
+          brand: input.businessName,
+        },
+      });
+    } catch (error) {
+      console.warn('[canonicalLaunchVfs] Early preflight syntax repair failed; continuing', error);
+      return null;
+    }
+  })();
+  const repairedFiles = earlyRepair?.files || normalizedFiles;
+  if (earlyRepair && (earlyRepair.repairedCount > 0 || earlyRepair.quarantinedCount > 0)) {
+    console.warn('[canonicalLaunchVfs] Early syntax repair:', {
+      clean: earlyRepair.cleanCount,
+      repaired: earlyRepair.repairedCount,
+      quarantined: earlyRepair.quarantinedCount,
+      details: earlyRepair.reports.filter((r) => r.status !== 'clean').map((r) => ({
+        path: r.path, status: r.status, passes: r.passes, error: r.finalError?.slice(0, 200),
+      })),
+    });
+  }
+
   const bindingApplication = input.siteBundleSnapshot
-    ? applyWizardBindingsToVfs(normalizedFiles, input.siteBundleSnapshot)
+    ? applyWizardBindingsToVfs(repairedFiles, input.siteBundleSnapshot)
     : null;
 
   const canonicalFiles = input.compiledPlayground?.vfsFiles || input.siteBundleSnapshot?.vfsFiles || {};

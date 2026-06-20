@@ -292,9 +292,32 @@ export function buildCanonicalLaunchArtifacts(
       skipped: preflight.skipped.length,
     });
   }
+
+  // ── Final syntax repair ────────────────────────────────────────────────
+  // Catch any syntax damage introduced by binding/nav-wiring attribute
+  // injection before files reach the preview iframe.
+  const finalRepair = (() => {
+    try {
+      return runPreflightRepair(wiredFiles, {
+        context: { industry: input.industry, brand: input.businessName },
+      });
+    } catch (error) {
+      console.warn('[canonicalLaunchVfs] Final preflight syntax repair failed; continuing', error);
+      return null;
+    }
+  })();
+  const safeFiles = finalRepair?.files || wiredFiles;
+  if (finalRepair && (finalRepair.repairedCount > 0 || finalRepair.quarantinedCount > 0)) {
+    console.warn('[canonicalLaunchVfs] Final syntax repair:', {
+      clean: finalRepair.cleanCount,
+      repaired: finalRepair.repairedCount,
+      quarantined: finalRepair.quarantinedCount,
+    });
+  }
+
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(wiredFiles, canonicalFiles, input.siteBundleSnapshot)
-    : { ...wiredFiles };
+    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot)
+    : { ...safeFiles };
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(input, entryPoint, input.siteBundleSnapshot);

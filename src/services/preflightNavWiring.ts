@@ -27,15 +27,41 @@ export interface PreflightNavWiringResult {
   skipped: Array<{ filePath: string; label: string; reason: string }>;
 }
 
+// Tags treated as interactive by exact name.
 const INTERACTIVE_TAGS = new Set([
   'button',
   'a',
   'Link',
   'NavLink',
+  'RouterLink',
+  'HashLink',
   'Button',
+  'IconButton',
   'motion.button',
   'motion.a',
+  'motion.div', // common pattern: motion.div with onClick used as a button
 ]);
+
+// Tag-name regex for "button-like" or "link-like" custom components emitted by
+// templates and AI scaffolds: PrimaryButton, CtaButton, NavLinkItem,
+// ServiceCardLink, BookNowCTA, etc.
+const INTERACTIVE_TAG_PATTERN = /(Button|Btn|Link|Cta|CTA|Action|Pill|Chip)$/;
+
+function isInteractiveTag(tagName: string, attrs: ts.JsxAttributes): boolean {
+  if (INTERACTIVE_TAGS.has(tagName)) return true;
+  // Custom components ending in a button/link suffix.
+  if (/^[A-Z]/.test(tagName) && INTERACTIVE_TAG_PATTERN.test(tagName.split('.').pop() || tagName)) {
+    return true;
+  }
+  // Elements explicitly marked as interactive via ARIA role.
+  const role = getAttrValue(attrs, 'role');
+  if (role === 'button' || role === 'link' || role === 'menuitem' || role === 'tab') return true;
+  // Plain divs/spans with an onClick handler behave as buttons.
+  if ((tagName === 'div' || tagName === 'span' || tagName === 'li') && hasAttr(attrs, 'onClick')) {
+    return true;
+  }
+  return false;
+}
 
 // Label → pageRole alias map. Lowercased, punctuation-stripped form.
 const ROLE_ALIASES: Record<string, string[]> = {

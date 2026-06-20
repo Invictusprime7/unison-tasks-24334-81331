@@ -1259,6 +1259,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return null;
         });
 
+      // ── Resolve canonical aesthetic preset (Style card → ThemePreset) EARLY ──
+      // Must run before commitToPipeline so the canonical pipeline can lock the
+      // themed `/src/index.css` into siteBundleSnapshot.vfsFiles (preview, VFS,
+      // playground, and AIBuilder continuity all read from the snapshot).
+      const earlyResolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
+
       // ── Plan topology ──
       // All industry launches must honor the 4-step wizard's selected pages,
       // template, and style tokens. Capability-full remains a hardened mode for
@@ -1272,12 +1278,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           : undefined,
         minimal: false,
       });
-
-      // ── Resolve canonical aesthetic preset (Style card → ThemePreset) EARLY ──
-      // Must run before commitToPipeline so the canonical pipeline can lock the
-      // themed `/src/index.css` into siteBundleSnapshot.vfsFiles (preview, VFS,
-      // playground, and AIBuilder continuity all read from the snapshot).
-      const earlyResolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
 
       // ── ASSERTION: resolveThemePreset must NEVER return falsy/idless. ──
       // It is exhaustive over LayoutCategory and falls back to 'modern'. A

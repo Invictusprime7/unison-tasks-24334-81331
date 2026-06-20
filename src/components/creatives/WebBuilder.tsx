@@ -1239,12 +1239,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // never silently land on the 'modern' default.
   const resolvedThemePresetId = useMemo<string | null>(() => {
     const raw = effectiveRouteState?.themePresetId
+      || effectiveRouteState?.siteBundleSnapshot?.meta?.themePresetId
+      || effectiveRouteState?.siteBundleSnapshot?.appContext?.themePresetId
       || effectiveRouteState?.designPreset
       || effectiveRouteState?.aesthetic
       || (effectiveRouteState?.runtimeManifest?.appContext as { themePresetId?: string } | undefined)?.themePresetId
       || null;
     return raw && isValidAesthetic(raw) ? raw : raw || null;
-  }, [effectiveRouteState?.themePresetId, effectiveRouteState?.designPreset, effectiveRouteState?.aesthetic, effectiveRouteState?.runtimeManifest?.appContext]);
+  }, [effectiveRouteState?.themePresetId, effectiveRouteState?.siteBundleSnapshot?.meta?.themePresetId, effectiveRouteState?.siteBundleSnapshot?.appContext?.themePresetId, effectiveRouteState?.designPreset, effectiveRouteState?.aesthetic, effectiveRouteState?.runtimeManifest?.appContext]);
   const [currentTemplateCategory, setCurrentTemplateCategory] = useState<string | null>(
     effectiveRouteState?.templateCategory || null
   );

@@ -294,26 +294,46 @@ export function recompileFromPlayground(
 
   // Re-emit themed /src/index.css from the wizard's preset so any in-builder
   // recompile keeps the Style-card tokens locked across all industries.
-  const presetId = options?.themePresetId || options?.selectedThemeId;
+  //
+  // RESILIENCY: AI Builder / Playground autosaves must NEVER block on a missing
+  // themePresetId — the wizard preset chain-of-custody can drift across
+  // remounts (cloud rehydrate, AI patch flow, draft restore). When the caller
+  // doesn't have a presetId, try to recover it from the existing snapshot in
+  // VFS, then fall back to preserving the existing themed /src/index.css.
+  let presetId = options?.themePresetId || options?.selectedThemeId;
   if (!presetId) {
-    throw new Error(
-      '[canonicalPipeline] Recompile Stage 4b assertion failed: themePresetId is missing. ' +
-      'Playground/WebBuilder recompiles must preserve the wizard Style-card preset and cannot emit fallback CSS.',
-    );
+    try {
+      const snapRaw = existingVfsFiles['/.unison/site-bundle-snapshot.json'];
+      if (snapRaw) {
+        const snap = JSON.parse(snapRaw) as { meta?: { themePresetId?: string }; appContext?: { themePresetId?: string } };
+        presetId = snap?.meta?.themePresetId || snap?.appContext?.themePresetId || undefined;
+      }
+    } catch {
+      /* ignore — fall through to CSS-preserve path */
+    }
   }
-  const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId);
-  if (!preset) {
-    throw new Error(
-      `[canonicalPipeline] Recompile Stage 4b assertion failed: ThemePreset id "${presetId}" is not registered in THEME_PRESETS.`,
-    );
+  if (presetId) {
+    const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId);
+    if (!preset) {
+      throw new Error(
+        `[canonicalPipeline] Recompile Stage 4b assertion failed: ThemePreset id "${presetId}" is not registered in THEME_PRESETS.`,
+      );
+    }
+    const themedCss = buildThemedIndexCss(preset);
+    if (!themedCss || typeof themedCss !== 'string' || !themedCss.includes('--primary')) {
+      throw new Error(
+        `[canonicalPipeline] Recompile Stage 4b assertion failed: buildThemedIndexCss returned invalid CSS for preset "${presetId}".`,
+      );
+    }
+    compileResult.vfsFiles['/src/index.css'] = themedCss;
+  } else if (existingVfsFiles['/src/index.css']) {
+    // Preserve previously themed CSS so AI/Playground edits persist without
+    // re-emission. The wizard already locked tokens at first launch.
+    compileResult.vfsFiles['/src/index.css'] = existingVfsFiles['/src/index.css'];
+    warnings.push('[canonicalPipeline] Recompile Stage 4b: themePresetId missing; preserved existing /src/index.css.');
+  } else {
+    warnings.push('[canonicalPipeline] Recompile Stage 4b: themePresetId missing and no existing /src/index.css to preserve.');
   }
-  const themedCss = buildThemedIndexCss(preset);
-  if (!themedCss || typeof themedCss !== 'string' || !themedCss.includes('--primary')) {
-    throw new Error(
-      `[canonicalPipeline] Recompile Stage 4b assertion failed: buildThemedIndexCss returned invalid CSS for preset "${presetId}".`,
-    );
-  }
-  compileResult.vfsFiles['/src/index.css'] = themedCss;
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

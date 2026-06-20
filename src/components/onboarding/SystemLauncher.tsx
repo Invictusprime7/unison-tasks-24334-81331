@@ -2058,7 +2058,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // error. Run every code file through Babel parse + deterministic repair
       // passes; quarantine anything that still fails so the iframe renders a
       // placeholder instead of crashing.
-      const { runPreflightRepair } = await import('@/services/aiSitePreflightRepair');
       const preflight = runPreflightRepair(preWiredVfsFiles, {
         context: { industry: generationCategory, brand },
       });

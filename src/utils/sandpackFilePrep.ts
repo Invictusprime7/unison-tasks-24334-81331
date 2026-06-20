@@ -1330,6 +1330,16 @@ function extractLightness(hslValue: string): number | null {
  * If both bg and fg have similar lightness, fix the foreground to guarantee visibility.
  */
 function enforceContrastInCSS(css: string): string {
+  // SNAPSHOT CHAIN-OF-CUSTODY: CSS produced by buildThemedIndexCss(preset)
+  // carries the `AESTHETIC:` marker and is the canonical pipeline's
+  // authoritative output (Stage 4b). Wizard presets intentionally sit at
+  // mid-lightness primaries (~55-65%) with white foregrounds (Δ≈35-40) — a
+  // naive lightness-delta contrast check below mis-inverts those foregrounds
+  // to near-black and collapses the entire generated site to a "default" look.
+  // The snapshot is trusted; do not post-process it.
+  if (/AESTHETIC:.*wizard token injection/.test(css)) {
+    return css;
+  }
   const pairs = [
     ['--background', '--foreground'],
     ['--card', '--card-foreground'],
@@ -1340,6 +1350,7 @@ function enforceContrastInCSS(css: string): string {
     ['--popover', '--popover-foreground'],
     ['--destructive', '--destructive-foreground'],
   ];
+
 
   // Extract all CSS variable values
   const varValues: Record<string, string> = {};

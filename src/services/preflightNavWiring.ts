@@ -1,0 +1,337 @@
+/**
+ * Preflight Nav Wiring
+ *
+ * Runs after `applyWizardBindingsToVfs` in the System Launcher pipeline.
+ * Walks every JSX file in the generated VFS and, for any interactive element
+ * (button / a / Link / NavLink / motion.button / motion.a) that does NOT yet
+ * carry a `data-ut-intent` attribute, attempts to bind it to a real page route
+ * in `SiteBundleSnapshot.pageRegistry`.
+ *
+ * Resolution priority:
+ *   1. Anchor `href` / `to` matches a known route.
+ *   2. Visible label text matches page title / pageRole alias.
+ *   3. Otherwise → skipped with a reason.
+ *
+ * This is purely additive: elements that already have `data-ut-intent` are
+ * left untouched, so explicit snapshot bindings always win.
+ */
+import * as ts from 'typescript';
+import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
+import type { BuilderPage, PageId } from '@/types/pageRegistry';
+
+export interface PreflightNavWiringResult {
+  files: Record<string, string>;
+  wired: number;
+  skipped: Array<{ filePath: string; label: string; reason: string }>;
+}
+
+const INTERACTIVE_TAGS = new Set([
+  'button',
+  'a',
+  'Link',
+  'NavLink',
+  'Button',
+  'motion.button',
+  'motion.a',
+]);
+
+// Label → pageRole alias map. Lowercased, punctuation-stripped form.
+const ROLE_ALIASES: Record<string, string[]> = {
+  home: ['home'],
+  services: ['services', 'service', 'our services', 'what we do', 'offerings'],
+  pricing: ['pricing', 'plans', 'packages', 'price'],
+  about: ['about', 'about us', 'our story', 'who we are'],
+  contact: ['contact', 'contact us', 'get in touch', 'reach us', 'get a quote'],
+  booking: ['book', 'book now', 'book online', 'booking', 'reserve', 'schedule', 'appointment'],
+  shop: ['shop', 'store', 'products', 'collection', 'browse', 'shop now', 'buy'],
+  cart: ['cart', 'view cart', 'bag', 'basket'],
+  checkout: ['checkout', 'check out'],
+  donate: ['donate', 'donate now', 'give', 'support us', 'contribute'],
+  blog: ['blog', 'articles', 'news', 'journal', 'read more'],
+  gallery: ['gallery', 'portfolio', 'work', 'our work'],
+  faq: ['faq', 'faqs', 'questions'],
+  menu: ['menu', 'our menu', 'view menu'],
+  team: ['team', 'our team', 'staff', 'people'],
+  events: ['events', 'event', 'upcoming events'],
+  account: ['account', 'my account', 'sign in', 'log in', 'login'],
+};
+
+function normalizeText(value: string): string {
+  return value
+    .replace(/\{[^}]*\}/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[_.\-/#]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function normalizeRoute(path: string): string {
+  if (!path || path === '/') return '/';
+  const trimmed = path.replace(/\.html?$/i, '').trim();
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+interface PageIndex {
+  byRoute: Map<string, BuilderPage>; // normalized route → page
+  byLabel: Map<string, BuilderPage>; // normalized title/role token → page
+}
+
+function buildPageIndex(snapshot: SiteBundleSnapshot): PageIndex {
+  const byRoute = new Map<string, BuilderPage>();
+  const byLabel = new Map<string, BuilderPage>();
+
+  for (const page of Object.values(snapshot.pageRegistry.pages)) {
+    const route = normalizeRoute(page.path);
+    byRoute.set(route, page);
+    byRoute.set(route.replace(/^\//, ''), page);
+
+    const title = normalizeText(page.title || '');
+    if (title) byLabel.set(title, page);
+
+    const role = (page.pageRole || page.pageType || '').toString().toLowerCase();
+    if (role) {
+      byLabel.set(role, page);
+      const aliases = ROLE_ALIASES[role] || [];
+      for (const alias of aliases) {
+        if (!byLabel.has(alias)) byLabel.set(alias, page);
+      }
+    }
+  }
+
+  return { byRoute, byLabel };
+}
+
+function getScriptKind(filePath: string): ts.ScriptKind {
+  if (/\.tsx$/i.test(filePath)) return ts.ScriptKind.TSX;
+  if (/\.jsx$/i.test(filePath)) return ts.ScriptKind.JSX;
+  return ts.ScriptKind.TS;
+}
+
+function getTagName(node: ts.JsxTagNameExpression, sf: ts.SourceFile): string {
+  return node.getText(sf);
+}
+
+function collectStaticText(children: readonly ts.JsxChild[]): string {
+  const parts: string[] = [];
+  for (const child of children) {
+    if (ts.isJsxText(child)) {
+      parts.push(child.getText());
+    } else if (ts.isJsxExpression(child)) {
+      const expr = child.expression;
+      if (expr && (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr))) {
+        parts.push(expr.text);
+      }
+    } else if (ts.isJsxElement(child)) {
+      parts.push(collectStaticText(child.children));
+    } else if (ts.isJsxFragment(child)) {
+      parts.push(collectStaticText(child.children));
+    }
+  }
+  return parts.join(' ');
+}
+
+interface OpeningTagInfo {
+  tagName: string;
+  openTagStart: number;
+  openTagEnd: number;
+  attrs: ts.JsxAttributes;
+  text: string;
+}
+
+function findOpeningTagStart(content: string, guess: number): number {
+  for (let i = guess; i >= 0 && guess - i < 300; i -= 1) {
+    if (content[i] === '<') return i;
+  }
+  return guess;
+}
+
+function getAttrValue(attrs: ts.JsxAttributes, name: string): string | undefined {
+  for (const prop of attrs.properties) {
+    if (!ts.isJsxAttribute(prop) || !prop.name || prop.name.getText() !== name) continue;
+    const init = prop.initializer;
+    if (!init) return '';
+    if (ts.isStringLiteral(init)) return init.text;
+    if (ts.isJsxExpression(init) && init.expression) {
+      const expr = init.expression;
+      if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return expr.text;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+function hasAttr(attrs: ts.JsxAttributes, name: string): boolean {
+  for (const prop of attrs.properties) {
+    if (ts.isJsxAttribute(prop) && prop.name && prop.name.getText() === name) return true;
+  }
+  return false;
+}
+
+function resolvePageForElement(
+  info: OpeningTagInfo,
+  index: PageIndex,
+  currentPageId: PageId | null,
+): BuilderPage | null {
+  // 1. href / to
+  const href = getAttrValue(info.attrs, 'href') ?? getAttrValue(info.attrs, 'to');
+  if (href && !/^(https?:|mailto:|tel:|#)/i.test(href)) {
+    const route = normalizeRoute(href.replace(/^#\/?/, '/'));
+    const page = index.byRoute.get(route) || index.byRoute.get(route.replace(/^\//, ''));
+    if (page && page.pageId !== currentPageId) return page;
+  }
+
+  // 2. label
+  const label = normalizeText(info.text);
+  if (!label) return null;
+  const direct = index.byLabel.get(label);
+  if (direct && direct.pageId !== currentPageId) return direct;
+  // Token-level fallback
+  for (const [alias, page] of index.byLabel) {
+    if (page.pageId === currentPageId) continue;
+    if (label === alias || label.startsWith(`${alias} `) || label.endsWith(` ${alias}`) || label.includes(` ${alias} `)) {
+      return page;
+    }
+  }
+  return null;
+}
+
+function inferCurrentPageId(filePath: string, snapshot: SiteBundleSnapshot): PageId | null {
+  for (const page of Object.values(snapshot.pageRegistry.pages)) {
+    if (page.filePath && (page.filePath === filePath || `/${page.filePath}` === filePath)) {
+      return page.pageId;
+    }
+    if (page.isHome && (filePath === '/src/App.tsx' || filePath === '/App.tsx')) {
+      return page.pageId;
+    }
+  }
+  return null;
+}
+
+function buildAttrInjection(page: BuilderPage, label: string): string {
+  const route = normalizeRoute(page.path);
+  const attrs = [
+    `data-ut-intent="nav.goto"`,
+    `data-intent="nav.goto"`,
+    `data-ut-target-page-id="${escapeAttr(page.pageId)}"`,
+    `data-ut-path="${escapeAttr(route)}"`,
+    `data-ut-target-id="${escapeAttr(page.pageId)}"`,
+    `data-ut-target-type="page"`,
+    `data-ut-ui-action="navigate"`,
+    `data-ut-preflight="1"`,
+  ];
+  if (label) attrs.push(`data-ut-label="${escapeAttr(label.slice(0, 80))}"`);
+  return attrs.join(' ');
+}
+
+interface Edit {
+  start: number;
+  end: number;
+  replacement: string;
+}
+
+function processFile(
+  filePath: string,
+  content: string,
+  index: PageIndex,
+  snapshot: SiteBundleSnapshot,
+  result: PreflightNavWiringResult,
+): string {
+  if (!/\.[jt]sx$/i.test(filePath)) return content;
+
+  let sf: ts.SourceFile;
+  try {
+    sf = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, getScriptKind(filePath));
+  } catch {
+    return content;
+  }
+
+  const currentPageId = inferCurrentPageId(filePath, snapshot);
+  const edits: Edit[] = [];
+
+  const handleOpening = (
+    tagName: string,
+    attrs: ts.JsxAttributes,
+    openTagStart: number,
+    openTagEnd: number,
+    text: string,
+  ) => {
+    if (!INTERACTIVE_TAGS.has(tagName)) return;
+    if (hasAttr(attrs, 'data-ut-intent') || hasAttr(attrs, 'data-intent')) return;
+
+    const info: OpeningTagInfo = { tagName, openTagStart, openTagEnd, attrs, text };
+    const page = resolvePageForElement(info, index, currentPageId);
+
+    const labelNorm = normalizeText(text);
+    if (!page) {
+      // Only report buttons/anchors that have a visible label (skip empty wrappers).
+      if (labelNorm) {
+        result.skipped.push({ filePath, label: labelNorm.slice(0, 60), reason: 'no-matching-route' });
+      }
+      return;
+    }
+
+    // Inject before the closing `>` of the opening tag.
+    // openTagEnd points at the position just after `>`.
+    const insertionPoint = openTagEnd - (content[openTagEnd - 2] === '/' ? 2 : 1);
+    const injection = ` ${buildAttrInjection(page, text.trim())}`;
+    edits.push({ start: insertionPoint, end: insertionPoint, replacement: injection });
+    result.wired += 1;
+  };
+
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxElement(node)) {
+      const opening = node.openingElement;
+      const tagName = getTagName(opening.tagName, sf);
+      const start = findOpeningTagStart(content, opening.getStart(sf));
+      handleOpening(tagName, opening.attributes, start, opening.getEnd(), collectStaticText(node.children));
+    } else if (ts.isJsxSelfClosingElement(node)) {
+      const tagName = getTagName(node.tagName, sf);
+      const start = findOpeningTagStart(content, node.getStart(sf));
+      handleOpening(tagName, node.attributes, start, node.getEnd(), '');
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+
+  if (edits.length === 0) return content;
+
+  edits.sort((a, b) => b.start - a.start);
+  let next = content;
+  for (const edit of edits) {
+    next = `${next.slice(0, edit.start)}${edit.replacement}${next.slice(edit.end)}`;
+  }
+  return next;
+}
+
+export function preflightNavWiring(
+  files: Record<string, string>,
+  snapshot: SiteBundleSnapshot | undefined | null,
+): PreflightNavWiringResult {
+  const result: PreflightNavWiringResult = { files: { ...files }, wired: 0, skipped: [] };
+  if (!snapshot || !snapshot.pageRegistry || Object.keys(snapshot.pageRegistry.pages).length <= 1) {
+    return result;
+  }
+
+  const index = buildPageIndex(snapshot);
+
+  for (const [filePath, content] of Object.entries(result.files)) {
+    if (typeof content !== 'string') continue;
+    try {
+      result.files[filePath] = processFile(filePath, content, index, snapshot, result);
+    } catch (err) {
+      // Never let a single bad file break the pass.
+      // eslint-disable-next-line no-console
+      console.warn('[preflightNavWiring] skip file due to parse error', filePath, err);
+    }
+  }
+
+  return result;
+}

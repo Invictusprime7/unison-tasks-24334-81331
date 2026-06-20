@@ -1,104 +1,81 @@
+# Goal
 
-## Goal
+Guarantee that every interactive button across every industry site has a working `data-ut-intent` wired to a real page route (or capability target) *before* the generated VFS leaves the System Launcher and lands in Preview. Today only buttons that have an explicit entry in `siteBundleSnapshot.bindings` get stamped by `applyWizardBindingsToVfs`; everything else (AI-emitted "Learn More", footer column links, sub-page CTAs, "Read more" cards) ships unbound and renders as dead clicks on sub-routes.
 
-Make the System Launcher Wizard reliably output **full** sites (themed Tailwind CSS, multi-page TSX, `.unison/*.json` registries, wizard-seed.json, intent bindings) on the current HEAD — instead of the incomplete/minimal fallback visitors are currently seeing.
+# Strategy
 
-## Diagnosis
+Add a deterministic **Preflight Nav Wiring** stage that runs in the same pre-Preview pass as `applyWizardBindingsToVfs`, walking the VFS for unbound interactive elements and binding them to a page route resolved from:
 
-The seed + token + registry plumbing itself is already intact end-to-end:
+1. Existing slot/markers (already covered by `applyWizardBindingsToVfs`).
+2. Anchor `href`/`to` values that match a known route in `pageRegistry`.
+3. Label text matched (case/punctuation-insensitive) against page `title` / `pageRole` / industry alias map (e.g. "Shop" → `/shop`, "Book" → `/booking`, "Contact us" → `/contact`).
+4. Section context (e.g. NavbarSection link, FooterSection column item) — bind to nearest page role declared by the topology.
+5. Capability fallback from `slotBindingPolicy` when no page match exists (e.g. "Book Now" with no booking page → `booking.create` if capability present, else strip the dead CTA from the gate report).
 
-```text
-SystemLauncher.tsx
-  ├─ builds wizardSeed (business, template, theme tokens, canonical pages,
-  │   capabilities, intents, bindingGuide)
-  ├─ builds themedIndexCss (HSL tokens + typography from resolved preset)
-  ├─ calls ai-code-assistant   mode: "wizard-seed"  + wizardSeed payload
-  │       └─ orchestrator → runBuilderLane → wizard_seed_generation task
-  │             └─ buildWizardSeedBasePrompt + buildWizardSeedContext
-  │                 (multi-file JSON output contract: pages + shared sections)
-  └─ on success → buildCanonicalLaunchArtifacts
-        ├─ mergeGeneratedVfsWithCanonicalSnapshot (canonical router + scaffolded pages)
-        ├─ applyWizardBindingsToVfs (data-ut-intent wiring)
-        ├─ ensureViteRootFiles + themed /src/index.css force-applied
-        └─ upsertCanonicalMetadataFiles
-              /.unison/app-context.json
-              /.unison/runtime-manifest.json
-              /.unison/site-bundle-snapshot.json
-              /.unison/canonical-playground.json
-              /.unison/wizard-seed.json
-              /.unison/launch-readiness.json
-              /.unison/intent-bindings.json + intent-surfaces.json
-```
-
-The reason visitors see "incomplete / minimal fallback" sites is **three disruptive iterations** layered on top in recent turns that disconnect this otherwise-working pipeline whenever the very first model attempt is anything less than perfect:
-
-1. **`providerRouter.ts` (wizard_seed_generation)** — collapsed to a SINGLE `geminiFlash` attempt with no secondary model. Any prose-leak, soft-fail, or token cutoff yields an empty/partial bundle.
-2. **`orchestrator.ts`** — `allowDirectFallbacks: task.type !== 'wizard_seed_generation'` disables direct provider fallback for the one task that needs it most.
-3. **`SystemLauncher.tsx`** — explicit "NO retries, NO deterministic template fallback" hard-throws on the first quality dip, surfacing toasts/blank sites to visitors. The canonical scaffold pages (already present in `siteBundleSnapshot.vfsFiles`) are never used as a per-page completion source.
-
-The seed/token/registry code itself is **not** the problem and must not be touched. Only those three guards need to be relaxed — surgically and only for `wizard_seed_generation`.
-
-## Changes (surgical, scoped)
-
-### 1. `supabase/functions/ai-code-assistant/providerRouter.ts`
-Restore a 2-model wizard lineup so one provider blip can't kill a launch:
+# Where it plugs in
 
 ```text
-case "wizard_seed_generation":
-  plan = {
-    gatewayModels: [
-      m(MODELS.geminiFlash, 36000),   // primary
-      m(MODELS.gpt4oMini,   32000),   // fallback (same JSON contract)
-    ],
-    perModelTimeoutMs: 110000,
-    fallbackMaxTokens: 36000,
-  };
+SystemLauncher AI payload
+   ↓ sanitizeGeneratedFiles
+   ↓ applyWizardBindingsToVfs        (explicit snapshot.bindings)
+   ↓ preflightNavWiring (NEW)        ← this plan
+   ↓ assessWizardGenerationQuality
+   ↓ canonicalLaunchVfs.buildCanonicalLaunchArtifacts
+        └ same preflight runs again for non-launcher entrypoints
+   ↓ Preview
 ```
 
-Keep the protection that complexity-upgrades and user overrides do not swap these out (existing guard at L201/L209 stays).
+# Work items
 
-### 2. `supabase/functions/ai-code-assistant/orchestrator.ts`
-Flip the one line that disables fallbacks for wizard:
+### 1. `src/services/preflightNavWiring.ts` (new)
 
-```text
-allowDirectFallbacks: true,   // wizard_seed_generation included
+Pure function:
+
+```ts
+preflightNavWiring(
+  files: Record<string,string>,
+  snapshot: SiteBundleSnapshot,
+): {
+  files: Record<string,string>;
+  wired: number;
+  skipped: Array<{ filePath; label; reason }>;
+}
 ```
 
-This re-enables `runProviderLoop`'s built-in walk down the `gatewayModels` array if the first model returns an unusable body.
+Per file, walk JSX with the existing TS AST helpers in `wizardBindingBridge.ts`. For each `<button>/<a>/<Link>/<NavLink>/motion.button/motion.a>`:
+- Skip if already has `data-ut-intent`.
+- Resolve target page via the priority order above using `pageRegistry`, `pageRoleAliases`, and industry profile.
+- Stamp `data-ut-intent="nav.goto"` + `data-ut-target-page-id="<pageId>"` + `data-ut-label="<label>"`.
+- For anchors, also rewrite `href` to `#<route>` so HashRouter navigation works without JS.
 
-### 3. `src/components/onboarding/SystemLauncher.tsx`
-Replace the "single-shot or die" branch (~L1480–L1668) with **single-shot AI + deterministic per-page completion** — no retry loop, no template-react fallback, but never block visitors when the canonical scaffold can fill a gap:
+### 2. Shared helpers extracted from `wizardBindingBridge.ts`
 
-- Keep one Lane B call exactly as today.
-- If `generationResult` is missing OR quality is `!ok`, do NOT `throw`. Instead:
-  - Take whatever valid files the AI did emit (may be 0+).
-  - For every canonical page in `siteBundleSnapshot.pageRegistry` that has no AI-authored file, fall through to the scaffolded page already living in `siteBundleSnapshot.vfsFiles[page.filePath]` (these are the themed registry-driven stubs that `compiledPlayground` already produced — they are NOT the "default editorial seed" forbidden by the Preview Persistence rule; they are the wizard's own canonical scaffold).
-  - Continue into `buildCanonicalLaunchArtifacts` so the visitor always gets: themed `/src/index.css`, canonical router, every registered page reachable, full `.unison/*.json` registry set, wizard-seed.json, and intent bindings.
-- Log the gap (which pages came from AI vs scaffold) into `launch-readiness.json` under `wizardGenerationGaps` so the AIBuilderPanel can pick those pages up first.
-- Demote the `toast.error` to a `toast.warning` only when zero AI files AND zero scaffold files exist (effectively never, since scaffolding is deterministic).
+Move `resolveBindingFilePath`, `escapeAttr`, JSX walker, and `normalizeText` into `src/intents/jsxBindingUtils.ts`. `preflightNavWiring` and `applyWizardBindingsToVfs` both import. No behavior change for existing pass.
 
-This is the minimum change that removes the disruption without re-introducing the deprecated `template-react` fast-path / `runWizardLane` / retry-loop the user explicitly told us to keep out.
+### 3. Wiring into the launcher pipeline
 
-## Explicitly NOT changing
+- `src/components/onboarding/SystemLauncher.tsx` — call `preflightNavWiring(boundFiles, siteBundleSnapshot)` right after the existing `applyWizardBindingsToVfs` call (~line 1730). Log `wired` + `skipped` into existing console group; feed `skipped` into the binding gate report.
+- `src/services/canonicalLaunchVfs.ts` — same call inserted after `bindingApplication` (~line 242), so any non-launcher entry (Builder recompiles, replay) also gets the preflight.
+- Both surfaces share one helper, so behavior is identical between first launch and re-hydration.
 
-- `wizardSeed` shape, `buildWizardSeedContext`, `buildWizardSeedBasePrompt`, `requestSchema.ts` wizardSeed block.
-- `canonicalLaunchVfs.ts` (merger + metadata files) — already correct.
-- `wizardBindingBridge.ts`, `topologyRouterGenerator.ts`, `industryThemePresetMap.ts`, `launcherPayload.ts`.
-- Token/CSS injection (`themedIndexCss` + `ensureViteRootFiles`).
-- Lane B brain (memory, research, compact context).
-- Industry intent profiles / capability resolver / binding bridge.
+### 4. Gate + readiness reporting
 
-## Verification
+- `src/services/intentReadinessService.ts` — surface preflight `skipped` items as `partial` (label couldn't resolve) vs `blocked` (label looks like nav but no candidate page). Keeps publish gate honest.
+- Add `preflightNavWiring.applied` counter to the `binding_telemetry` already emitted by `persistGeneratedBindings.ts`.
 
-1. Deploy `ai-code-assistant` + redeploy nothing else.
-2. Run System Launcher for a booking-industry brand, watch:
-   - Network: one `ai-code-assistant` call returns 200 with `{files:{…}}`.
-   - VFS in preview contains `/.unison/wizard-seed.json`, `/.unison/site-bundle-snapshot.json`, `/.unison/canonical-playground.json`, `/.unison/intent-bindings.json`.
-   - `/src/index.css` contains the themed HSL tokens (not the default).
-   - Every page in the canonical registry resolves to a non-stub TSX (AI-authored where possible, scaffold otherwise).
-3. Re-run for a 2nd industry (e.g. salon) and a 3rd (e.g. coaching) to confirm parity and that industry intent profiles are not corrupting parsing.
-4. Open AIBuilderPanel after launch — confirm continuity reads `wizard-seed.json` (same seed, same theme, same routes).
+### 5. Tests
 
-## Technical note
+- `src/test/preflightNavWiring.test.ts` (new): salon, ecommerce, nonprofit, coaching fixtures. Asserts every `<button>`/`<a>` in scaffolded files ends up with a `data-ut-intent` OR is on the skipped list with a reason.
+- Extend `src/test/wizardIntentBinding.test.ts` with a fixture where AI emits a generic `<button>Contact us</button>` on the Services page — expect it bound to the Contact page id.
 
-The `runProviderLoop` already supports walking multiple gatewayModels and returns `deferredEarlyError` only on 401/403. Restoring the 2-model lineup + `allowDirectFallbacks: true` therefore costs no new code path — it just stops short-circuiting a path that exists.
+# Out of scope
+
+- No prompt changes to the AI Lane B generator.
+- No new DB tables (`intent_execution_log` already exists).
+- No changes to Preview runtime intent dispatch — relies on existing `data-ut-intent` interceptor.
+- Cart/booking/checkout behavioral intents stay the responsibility of `applyWizardBindingsToVfs` + `slotBindingPolicy`; preflight only fills the nav gap.
+
+# Risk + rollback
+
+- Pure additive pass; if it throws, both call sites already wrap in try/catch and fall back to the un-preflighted files (mirrors current binding-bridge pattern).
+- Behind no flag — but the function is a no-op when `snapshot.pageRegistry.pages` has ≤1 route, so single-page industries are unaffected.

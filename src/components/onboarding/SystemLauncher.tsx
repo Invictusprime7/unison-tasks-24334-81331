@@ -1293,20 +1293,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         minimal: false,
       });
 
-      // ── ASSERTION: resolveThemePreset must NEVER return falsy/idless. ──
-      // It is exhaustive over LayoutCategory and falls back to 'modern'. A
-      // missing id here means the resolver was bypassed or its contract broke.
-      // See mem://architecture/styling/canonical-pipeline-theme-injection.
-      if (!earlyResolvedPreset || !earlyResolvedPreset.id) {
-        const msg =
-          '[SystemLauncher] Theme resolver assertion failed: resolveThemePreset returned no id. ' +
-          'Every industry path MUST resolve to a registered ThemePreset before commitToPipeline. ' +
-          'Aborting build to prevent shipping an un-themed scaffold.';
-        console.error(msg, { selectedTheme, generationCategory });
-        toast.error('Build aborted: theme preset could not be resolved.');
-        throw new Error(msg);
-      }
-
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};
       const wizardSelections: WizardSelections = {

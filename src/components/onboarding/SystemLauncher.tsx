@@ -1259,19 +1259,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return null;
         });
 
-      // ── Plan topology ──
-      // All industry launches must honor the 4-step wizard's selected pages,
-      // template, and style tokens. Capability-full remains a hardened mode for
-      // deterministic preview launches; no industry may fall back to home-only.
-      const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
-        primaryIntent: industryProfile?.primaryIntent,
-        selectedTemplateId: effectiveTemplate?.id,
-        additionalPages: resolvedScaffoldMode === 'selected-pages'
-          ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
-          : undefined,
-        minimal: false,
-      });
-
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) EARLY ──
       // Must run before commitToPipeline so the canonical pipeline can lock the
       // themed `/src/index.css` into siteBundleSnapshot.vfsFiles (preview, VFS,
@@ -1291,6 +1278,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         toast.error('Build aborted: theme preset could not be resolved.');
         throw new Error(msg);
       }
+
+      // ── Plan topology ──
+      // All industry launches must honor the 4-step wizard's selected pages,
+      // template, and style tokens. Capability-full remains a hardened mode for
+      // deterministic preview launches; no industry may fall back to home-only.
+      const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
+        primaryIntent: industryProfile?.primaryIntent,
+        selectedTemplateId: effectiveTemplate?.id,
+        selectedThemePresetId: earlyResolvedPreset.id,
+        additionalPages: resolvedScaffoldMode === 'selected-pages'
+          ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
+          : undefined,
+        minimal: false,
+      });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};

@@ -19,6 +19,8 @@ import type { PageRegistry } from '@/types/pageRegistry';
 import type { SectionEntry, SectionType, TemplateComposition, TemplatePageRole } from '@/sections/types';
 import { ALL_COMPOSITIONS, getCompositionById, getCompositionsByIndustry } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 
 // ============================================================================
 // Default per-role section pool — used when a template doesn't define its own.
@@ -66,6 +68,21 @@ function resolveActiveTemplate(plan: GeneratedSitePlan): TemplateComposition | n
     c => c.industry === plan.industry || c.category === plan.industry
   );
   return fuzzy ?? null;
+}
+
+function applyPlanThemeToTemplate(
+  template: TemplateComposition | null,
+  plan: GeneratedSitePlan,
+): TemplateComposition | null {
+  if (!template) return null;
+  const presetId = (plan as GeneratedSitePlan & { selectedThemePresetId?: string }).selectedThemePresetId;
+  if (!presetId) return template;
+  const preset = THEME_PRESETS.find((p) => p.id === presetId);
+  if (!preset) return template;
+  return {
+    ...template,
+    theme: themePresetToThemeTokens(preset),
+  };
 }
 
 /**
@@ -145,7 +162,7 @@ export function scaffoldMissingTopologyPages(
   template?: TemplateComposition | null,
 ): Record<string, string> {
   const out: Record<string, string> = {};
-  const activeTemplate = template ?? resolveActiveTemplate(plan);
+  const activeTemplate = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   const missing = getMissingTopologyPages(plan, existingFiles);
   for (const page of missing) {
     out[page.filePath] = generateTopologyPlaceholder(page, plan, activeTemplate);
@@ -209,7 +226,7 @@ export function generateTopologyPlaceholder(
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null
 ): string {
-  const active = template ?? resolveActiveTemplate(plan);
+  const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   if (active) {
     const sub = buildRoleComposition(active, page.role, page);
     if (sub) {

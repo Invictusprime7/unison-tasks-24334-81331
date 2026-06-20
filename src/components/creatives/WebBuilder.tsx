@@ -1239,12 +1239,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // never silently land on the 'modern' default.
   const resolvedThemePresetId = useMemo<string | null>(() => {
     const raw = effectiveRouteState?.themePresetId
+      || effectiveRouteState?.siteBundleSnapshot?.meta?.themePresetId
+      || effectiveRouteState?.siteBundleSnapshot?.appContext?.themePresetId
       || effectiveRouteState?.designPreset
       || effectiveRouteState?.aesthetic
       || (effectiveRouteState?.runtimeManifest?.appContext as { themePresetId?: string } | undefined)?.themePresetId
       || null;
     return raw && isValidAesthetic(raw) ? raw : raw || null;
-  }, [effectiveRouteState?.themePresetId, effectiveRouteState?.designPreset, effectiveRouteState?.aesthetic, effectiveRouteState?.runtimeManifest?.appContext]);
+  }, [effectiveRouteState?.themePresetId, effectiveRouteState?.siteBundleSnapshot?.meta?.themePresetId, effectiveRouteState?.siteBundleSnapshot?.appContext?.themePresetId, effectiveRouteState?.designPreset, effectiveRouteState?.aesthetic, effectiveRouteState?.runtimeManifest?.appContext]);
   const [currentTemplateCategory, setCurrentTemplateCategory] = useState<string | null>(
     effectiveRouteState?.templateCategory || null
   );
@@ -3651,7 +3653,7 @@ export default function ${componentName}Page() {
       businessName: effectiveBusinessName,
       industry: recompilation.siteBundleSnapshot.industry,
       aesthetic: currentDesignPreset || undefined,
-      themePresetId: resolvedThemePresetId || currentDesignPreset || undefined,
+      themePresetId: effectiveThemePresetId,
       backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
       wizardSelections: effectiveRouteState?.wizardSelections || undefined,
     });
@@ -4701,7 +4703,8 @@ export default function ${componentName}Page() {
       // Resolve the wizard's Style-card preset (single source of truth for /src/index.css).
       // Falls back deterministically: navState.aesthetic → siteBundle appContext → preview default.
       const resolvedThemePresetId =
-        (navState.aesthetic && isValidAesthetic(navState.aesthetic) ? navState.aesthetic : null)
+        (navState.themePresetId && isValidAesthetic(navState.themePresetId) ? navState.themePresetId : null)
+        || (navState.aesthetic && isValidAesthetic(navState.aesthetic) ? navState.aesthetic : null)
         || ((navState as { siteBundleSnapshot?: { meta?: { themePresetId?: string } } }).siteBundleSnapshot?.meta?.themePresetId)
         || ((navState as { siteBundleSnapshot?: { appContext?: { themePresetId?: string } } }).siteBundleSnapshot?.appContext?.themePresetId)
         || null;

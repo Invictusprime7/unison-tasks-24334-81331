@@ -23,6 +23,8 @@ export interface CompilePlaygroundOptions {
   selectedTemplateId?: string;
   /** Selected theme id retained for pipeline compatibility. */
   selectedThemeId?: string;
+  /** Resolved wizard ThemePreset id used for route-level token seeding. */
+  themePresetId?: string;
   /** Industry overlay used by template/page scaffolding. */
   industry?: LayoutCategory | string | null;
 }
@@ -154,6 +156,7 @@ function buildScaffoldPlan(
     redirects: [],
     generatedAt: new Date().toISOString(),
     selectedTemplateId: options?.selectedTemplateId,
+    selectedThemePresetId: options?.themePresetId || options?.selectedThemeId,
   };
 }
 

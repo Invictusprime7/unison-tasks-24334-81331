@@ -103,7 +103,39 @@ const REPAIR_PASSES: RepairPass[] = [
   },
   {
     name: 'strip-markdown-fences',
-    apply: (s) => s.replace(/^\s*```(?:tsx|jsx|ts|js|typescript|javascript)?\s*\n/m, '').replace(/\n```\s*$/m, ''),
+    apply: (s) =>
+      s
+        .replace(/^\s*```(?:tsx|jsx|ts|js|typescript|javascript)?\s*\n/gm, '')
+        .replace(/\n```\s*$/gm, '')
+        .replace(/^\s*```\s*\n/gm, ''),
+  },
+  {
+    name: 'strip-html-comments-in-jsx',
+    // AI sometimes emits <!-- ... --> inside JSX (HTML-style comments are invalid)
+    apply: (s) => s.replace(/<!--[\s\S]*?-->/g, ''),
+  },
+  {
+    name: 'normalize-jsx-boolean-attrs',
+    // class= → className= ; for= → htmlFor= (only in code, not strings)
+    apply: (s) =>
+      s
+        .replace(/(\s)class=(["{])/g, '$1className=$2')
+        .replace(/(\s)for=(["{])/g, '$1htmlFor=$2'),
+  },
+  {
+    name: 'fix-double-jsx-attr-equals',
+    // className=="foo" → className="foo"
+    apply: (s) => s.replace(/([A-Za-z_][\w-]*)==(["{])/g, '$1=$2'),
+  },
+  {
+    name: 'remove-stray-semicolon-in-jsx-attr-list',
+    // <Foo a="b"; c="d" /> → <Foo a="b" c="d" />
+    apply: (s) => s.replace(/("|\})\s*;\s+([A-Za-z_][\w-]*=)/g, '$1 $2'),
+  },
+  {
+    name: 'drop-trailing-comma-after-jsx-element',
+    // }, → }  when followed by ) or } at top of expression returns
+    apply: (s) => s.replace(/(<\/[A-Za-z][A-Za-z0-9.]*>),(\s*[)}\]])/g, '$1$2'),
   },
   {
     name: 'truncate-incomplete-trailing-jsx',

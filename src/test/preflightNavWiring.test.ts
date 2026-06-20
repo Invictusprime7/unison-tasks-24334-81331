@@ -82,4 +82,64 @@ describe('preflightNavWiring', () => {
     expect(result.wired).toBe(0);
     expect(result.files['/src/App.tsx']).toBe(src);
   });
+
+  it('binds custom button-like components (PrimaryButton, NavLinkItem, BookCTA)', () => {
+    const src = `export default function P() { return (
+      <div>
+        <PrimaryButton>Contact</PrimaryButton>
+        <NavLinkItem>Services</NavLinkItem>
+        <BookCTA>Book Now</BookCTA>
+      </div>
+    ); }`;
+    const result = preflightNavWiring(
+      { '/src/pages/P.tsx': src },
+      snapshot({
+        home: { title: 'Home', path: '/', isHome: true },
+        services: { title: 'Services', path: '/services', pageRole: 'services' },
+        contact: { title: 'Contact', path: '/contact', pageRole: 'contact' },
+        booking: { title: 'Booking', path: '/booking', pageRole: 'booking' },
+      }),
+    );
+    expect(result.wired).toBe(3);
+    const out = result.files['/src/pages/P.tsx'];
+    expect(out).toContain('data-ut-target-page-id="contact"');
+    expect(out).toContain('data-ut-target-page-id="services"');
+    expect(out).toContain('data-ut-target-page-id="booking"');
+  });
+
+  it('binds wrappers with nested label markup (anchor wrapping spans)', () => {
+    const src = `export default function P() { return (
+      <a href="/contact"><div><span>Get in touch</span></div></a>
+    ); }`;
+    const result = preflightNavWiring(
+      { '/src/App.tsx': src },
+      snapshot({
+        home: { title: 'Home', path: '/', isHome: true, filePath: '/src/App.tsx' },
+        contact: { title: 'Contact', path: '/contact', pageRole: 'contact' },
+      }),
+    );
+    expect(result.wired).toBe(1);
+    expect(result.files['/src/App.tsx']).toContain('data-ut-target-page-id="contact"');
+  });
+
+  it('binds divs with role="button" and onClick handlers', () => {
+    const src = `export default function P() { return (
+      <div>
+        <div role="button">Pricing</div>
+        <div onClick={() => {}}>About Us</div>
+      </div>
+    ); }`;
+    const result = preflightNavWiring(
+      { '/src/pages/P.tsx': src },
+      snapshot({
+        home: { title: 'Home', path: '/', isHome: true },
+        pricing: { title: 'Pricing', path: '/pricing', pageRole: 'pricing' },
+        about: { title: 'About', path: '/about', pageRole: 'about' },
+      }),
+    );
+    expect(result.wired).toBe(2);
+    const out = result.files['/src/pages/P.tsx'];
+    expect(out).toContain('data-ut-target-page-id="pricing"');
+    expect(out).toContain('data-ut-target-page-id="about"');
+  });
 });

@@ -106,7 +106,7 @@ function buildRuntimeAppContext(
     businessName: input.businessName || siteBundleSnapshot?.businessName || undefined,
     templateName: input.templateName || undefined,
     templateCategory: input.templateCategory || undefined,
-    templateId: input.templateId || undefined,
+    templateId: input.templateId || siteBundleSnapshot?.meta?.templateId || undefined,
     systemType: input.systemType || undefined,
     systemName: input.systemName || undefined,
     industry: input.industry || siteBundleSnapshot?.industry || undefined,
@@ -115,7 +115,7 @@ function buildRuntimeAppContext(
     wizardSelections: input.wizardSelections
       ? (JSON.parse(JSON.stringify(input.wizardSelections)) as Record<string, unknown>)
       : undefined,
-    themePresetId: input.themePresetId || (input.aesthetic as string | undefined) || undefined,
+    themePresetId: input.themePresetId || siteBundleSnapshot?.meta?.themePresetId || (input.aesthetic as string | undefined) || undefined,
     generatedAt: new Date().toISOString(),
   };
 }

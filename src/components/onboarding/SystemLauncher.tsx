@@ -1733,7 +1733,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               // "syntax error" overlay appearing in the preview iframe.
               const earlySyntaxRepair = (() => {
                 try {
-                  const { runPreflightRepair } = require('@/services/aiSitePreflightRepair') as typeof import('@/services/aiSitePreflightRepair');
                   return runPreflightRepair(normalizedFiles, {
                     context: { industry: generationCategory, brand },
                   });

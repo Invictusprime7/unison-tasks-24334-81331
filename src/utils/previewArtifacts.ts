@@ -56,10 +56,13 @@ export function buildPreviewArtifacts(
   const themePresetId = launchState?.themePresetId ||
     launchState?.runtimeManifest?.appContext?.themePresetId ||
     readThemePresetIdFromSourceFiles(sourceFiles);
+  const launchStateWithRecoveredTheme = launchState && themePresetId && !launchState.themePresetId
+    ? { ...launchState, themePresetId }
+    : launchState;
 
-  const rawSandpackFiles = launchState
+  const rawSandpackFiles = launchStateWithRecoveredTheme
     ? launchStateToSandpackFiles({
-        launchState,
+        launchState: launchStateWithRecoveredTheme,
         vfsFiles: sourceFiles,
       })
     : prepareSandpackFiles(sourceFiles, { themePresetId });

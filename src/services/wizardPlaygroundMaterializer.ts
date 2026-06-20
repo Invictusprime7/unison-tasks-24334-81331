@@ -452,6 +452,7 @@ export function materializePlayground(
     additionalPages,
     primaryIntent: selections.primaryIntent,
     selectedTemplateId: selections.templateId,
+    selectedThemePresetId: selections.themePresetId || selections.themeId,
   });
   const pageRegistry = populateRegistryFromTopology(sitePlan);
 

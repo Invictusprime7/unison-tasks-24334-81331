@@ -58,7 +58,7 @@ export function buildPreviewArtifacts(
     launchState?.siteBundleSnapshot?.meta?.themePresetId ||
     launchState?.runtimeManifest?.appContext?.themePresetId ||
     launchState?.themePresetId ||
-    readThemePresetIdFromSourceFiles(sourceFiles);
+    null;
   const launchStateWithRecoveredTheme = launchState && themePresetId && !launchState.themePresetId
     ? { ...launchState, themePresetId }
     : launchState;

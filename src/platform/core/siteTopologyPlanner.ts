@@ -105,6 +105,12 @@ export interface GeneratedSitePlan {
    */
   selectedTemplateId?: string;
   /**
+   * Resolved wizard Style-card ThemePreset id. Route scaffolds use this to
+   * stamp the same token seed into inline section compositions that cannot
+   * inherit from `/src/index.css` alone.
+   */
+  selectedThemePresetId?: string;
+  /**
    * When true, the plan was produced in "minimal" mode: ONLY a Home page.
    * Every additional page/funnel/route is expected to be authored by the
    * in-Builder AI assistant in response to user prompts. Downstream stages
@@ -192,6 +198,8 @@ export function planSiteTopology(
     primaryIntent?: string;
     /** Template composition id selected by the wizard chip — drives sub-page scaffolding. */
     selectedTemplateId?: string;
+    /** Resolved ThemePreset id selected by the wizard Style card. */
+    selectedThemePresetId?: string;
     /**
      * Minimal mode: produce ONLY a Home page. The in-Builder AI assistant is
      * responsible for adding every other page/route/funnel on user prompt.
@@ -201,7 +209,7 @@ export function planSiteTopology(
   }
 ): GeneratedSitePlan {
   if (options?.minimal) {
-    return planMinimalHomeTopology(businessName, industryKey, options.selectedTemplateId);
+    return planMinimalHomeTopology(businessName, industryKey, options.selectedTemplateId, options.selectedThemePresetId);
   }
 
   const profile = getIndustryProfile(industryKey);
@@ -209,6 +217,7 @@ export function planSiteTopology(
     // Fallback: generic site with home + contact
     const generic = planGenericTopology(businessName);
     if (options?.selectedTemplateId) generic.selectedTemplateId = options.selectedTemplateId;
+    if (options?.selectedThemePresetId) generic.selectedThemePresetId = options.selectedThemePresetId;
     return generic;
   }
 

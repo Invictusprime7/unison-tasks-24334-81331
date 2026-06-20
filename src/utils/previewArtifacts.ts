@@ -53,8 +53,11 @@ export function buildPreviewArtifacts(
     baseDependencies = SANDPACK_DEPENDENCIES,
   } = options;
 
-  const themePresetId = launchState?.themePresetId ||
+  const metadataThemePresetId = readThemePresetIdFromSourceFiles(sourceFiles);
+  const themePresetId = metadataThemePresetId ||
+    launchState?.siteBundleSnapshot?.meta?.themePresetId ||
     launchState?.runtimeManifest?.appContext?.themePresetId ||
+    launchState?.themePresetId ||
     readThemePresetIdFromSourceFiles(sourceFiles);
   const launchStateWithRecoveredTheme = launchState && themePresetId && !launchState.themePresetId
     ? { ...launchState, themePresetId }

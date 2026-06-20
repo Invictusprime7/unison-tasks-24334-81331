@@ -291,7 +291,7 @@ function processFile(
     openTagEnd: number,
     text: string,
   ) => {
-    if (!INTERACTIVE_TAGS.has(tagName)) return;
+    if (!isInteractiveTag(tagName, attrs)) return;
     if (hasAttr(attrs, 'data-ut-intent') || hasAttr(attrs, 'data-intent')) return;
 
     const info: OpeningTagInfo = { tagName, openTagStart, openTagEnd, attrs, text };

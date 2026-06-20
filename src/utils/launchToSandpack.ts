@@ -47,6 +47,7 @@ export function launchStateToSandpackFiles(
 
   const normalizedFiles = normalizeLauncherFiles(vfsFiles, {
     entryPoint,
+    themePresetId: launchState.themePresetId || launchState.runtimeManifest?.appContext?.themePresetId || null,
   });
 
   const files: SandpackFiles = { ...normalizedFiles };
@@ -111,6 +112,7 @@ export function launchStateToSandpackFiles(
   const previewFiles = prepareSandpackFiles(files, {
     entryPoint,
     aesthetic: launchState.aesthetic,
+    themePresetId: launchState.themePresetId || launchState.runtimeManifest?.appContext?.themePresetId || null,
   });
 
   if (debug) {

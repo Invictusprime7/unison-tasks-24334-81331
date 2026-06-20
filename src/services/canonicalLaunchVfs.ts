@@ -245,9 +245,26 @@ export function buildCanonicalLaunchArtifacts(
 
   const canonicalFiles = input.compiledPlayground?.vfsFiles || input.siteBundleSnapshot?.vfsFiles || {};
   const boundFiles = bindingApplication?.files || normalizedFiles;
+  const preflight = input.siteBundleSnapshot
+    ? (() => {
+        try {
+          return preflightNavWiring(boundFiles, input.siteBundleSnapshot);
+        } catch (error) {
+          console.warn('[canonicalLaunchVfs] Preflight nav wiring failed; continuing', error);
+          return null;
+        }
+      })()
+    : null;
+  const wiredFiles = preflight?.files || boundFiles;
+  if (preflight && (preflight.wired > 0 || preflight.skipped.length > 0)) {
+    console.info('[canonicalLaunchVfs] Preflight nav wiring:', {
+      wired: preflight.wired,
+      skipped: preflight.skipped.length,
+    });
+  }
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(boundFiles, canonicalFiles, input.siteBundleSnapshot)
-    : { ...boundFiles };
+    ? mergeGeneratedVfsWithCanonicalSnapshot(wiredFiles, canonicalFiles, input.siteBundleSnapshot)
+    : { ...wiredFiles };
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(input, entryPoint, input.siteBundleSnapshot);

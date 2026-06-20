@@ -1265,6 +1265,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // playground, and AIBuilder continuity all read from the snapshot).
       const earlyResolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
 
+      // ── ASSERTION: resolveThemePreset must NEVER return falsy/idless. ──
+      // It is exhaustive over LayoutCategory and falls back to 'modern'. A
+      // missing id here means the resolver was bypassed or its contract broke.
+      // See mem://architecture/styling/canonical-pipeline-theme-injection.
+      if (!earlyResolvedPreset || !earlyResolvedPreset.id) {
+        const msg =
+          '[SystemLauncher] Theme resolver assertion failed: resolveThemePreset returned no id. ' +
+          'Every industry path MUST resolve to a registered ThemePreset before commitToPipeline. ' +
+          'Aborting build to prevent shipping an un-themed scaffold.';
+        console.error(msg, { selectedTheme, generationCategory });
+        toast.error('Build aborted: theme preset could not be resolved.');
+        throw new Error(msg);
+      }
+
       // ── Plan topology ──
       // All industry launches must honor the 4-step wizard's selected pages,
       // template, and style tokens. Capability-full remains a hardened mode for

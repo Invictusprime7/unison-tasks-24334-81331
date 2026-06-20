@@ -274,7 +274,7 @@ export function buildCanonicalLaunchArtifacts(
     : null;
 
   const canonicalFiles = input.compiledPlayground?.vfsFiles || input.siteBundleSnapshot?.vfsFiles || {};
-  const boundFiles = bindingApplication?.files || normalizedFiles;
+  const boundFiles = bindingApplication?.files || repairedFiles;
   const preflight = input.siteBundleSnapshot
     ? (() => {
         try {

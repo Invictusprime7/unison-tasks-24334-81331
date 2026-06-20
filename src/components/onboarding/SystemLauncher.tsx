@@ -1266,6 +1266,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: effectiveTemplate?.id,
+        selectedThemePresetId: earlyResolvedPreset.id,
         additionalPages: resolvedScaffoldMode === 'selected-pages'
           ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
           : undefined,

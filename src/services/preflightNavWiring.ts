@@ -45,12 +45,12 @@ const INTERACTIVE_TAGS = new Set([
 // Tag-name regex for "button-like" or "link-like" custom components emitted by
 // templates and AI scaffolds: PrimaryButton, CtaButton, NavLinkItem,
 // ServiceCardLink, BookNowCTA, etc.
-const INTERACTIVE_TAG_PATTERN = /(Button|Btn|Link|Cta|CTA|Action|Pill|Chip)$/;
+const INTERACTIVE_TAG_PATTERN = /(Button|Btn|Link|Cta|CTA|Action|Pill|Chip)/;
 
 function isInteractiveTag(tagName: string, attrs: ts.JsxAttributes): boolean {
   if (INTERACTIVE_TAGS.has(tagName)) return true;
-  // Custom components ending in a button/link suffix.
-  if (/^[A-Z]/.test(tagName) && INTERACTIVE_TAG_PATTERN.test(tagName.split('.').pop() || tagName)) {
+  const base = tagName.split('.').pop() || tagName;
+  if (/^[A-Z]/.test(base) && INTERACTIVE_TAG_PATTERN.test(base)) {
     return true;
   }
   // Elements explicitly marked as interactive via ARIA role.

@@ -232,6 +232,7 @@ function planMinimalHomeTopology(
   businessName: string,
   industryKey: string,
   selectedTemplateId?: string,
+  selectedThemePresetId?: string,
 ): GeneratedSitePlan {
   const siteId = generateUUID();
   const homeId = generateUUID();
@@ -259,6 +260,7 @@ function planMinimalHomeTopology(
     redirects: [],
     generatedAt: new Date().toISOString(),
     selectedTemplateId,
+    selectedThemePresetId,
     isMinimal: true,
   };
 }
@@ -270,6 +272,7 @@ function planFromProfile(
     additionalPages?: PageSpec[];
     primaryIntent?: string;
     selectedTemplateId?: string;
+    selectedThemePresetId?: string;
   }
 ): GeneratedSitePlan {
   const siteId = generateUUID();
@@ -462,6 +465,7 @@ function planFromProfile(
     redirects,
     generatedAt: new Date().toISOString(),
     selectedTemplateId: options?.selectedTemplateId,
+    selectedThemePresetId: options?.selectedThemePresetId,
   };
 
   // 4. Validate the plan

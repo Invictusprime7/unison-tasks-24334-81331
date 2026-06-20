@@ -4701,7 +4701,8 @@ export default function ${componentName}Page() {
       // Resolve the wizard's Style-card preset (single source of truth for /src/index.css).
       // Falls back deterministically: navState.aesthetic → siteBundle appContext → preview default.
       const resolvedThemePresetId =
-        (navState.aesthetic && isValidAesthetic(navState.aesthetic) ? navState.aesthetic : null)
+        (navState.themePresetId && isValidAesthetic(navState.themePresetId) ? navState.themePresetId : null)
+        || (navState.aesthetic && isValidAesthetic(navState.aesthetic) ? navState.aesthetic : null)
         || ((navState as { siteBundleSnapshot?: { meta?: { themePresetId?: string } } }).siteBundleSnapshot?.meta?.themePresetId)
         || ((navState as { siteBundleSnapshot?: { appContext?: { themePresetId?: string } } }).siteBundleSnapshot?.appContext?.themePresetId)
         || null;

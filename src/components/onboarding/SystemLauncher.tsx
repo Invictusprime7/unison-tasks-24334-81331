@@ -66,6 +66,7 @@ import { commitToPipeline } from "@/platform/core";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { preflightNavWiring } from "@/services/preflightNavWiring";
+import { runPreflightRepair } from "@/services/aiSitePreflightRepair";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
@@ -1726,6 +1727,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
               }
 
+              // ── Early syntax repair (pre-binding) ──────────────────────
+              // Repair any AI-emitted syntax errors BEFORE binding/nav-wiring
+              // mutate the JSX. This is the first line of defense against the
+              // "syntax error" overlay appearing in the preview iframe.
+              const earlySyntaxRepair = (() => {
+                try {
+                  return runPreflightRepair(normalizedFiles, {
+                    context: { industry: generationCategory, brand },
+                  });
+                } catch (error) {
+                  console.warn('[SystemLauncher] Early preflight syntax repair failed; continuing', error);
+                  return null;
+                }
+              })();
+              if (earlySyntaxRepair) {
+                Object.assign(normalizedFiles, earlySyntaxRepair.files);
+                if (earlySyntaxRepair.repairedCount > 0 || earlySyntaxRepair.quarantinedCount > 0) {
+                  console.warn('[SystemLauncher] Early syntax repair before binding:', {
+                    clean: earlySyntaxRepair.cleanCount,
+                    repaired: earlySyntaxRepair.repairedCount,
+                    quarantined: earlySyntaxRepair.quarantinedCount,
+                    details: earlySyntaxRepair.reports.filter((r) => r.status !== 'clean').map((r) => ({
+                      path: r.path, status: r.status, passes: r.passes, error: r.finalError?.slice(0, 200),
+                    })),
+                  });
+                }
+              }
+
               const bindingApplication = (() => {
                 try {
                   return applyWizardBindingsToVfs(normalizedFiles, siteBundleSnapshot);
@@ -2029,7 +2058,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       // error. Run every code file through Babel parse + deterministic repair
       // passes; quarantine anything that still fails so the iframe renders a
       // placeholder instead of crashing.
-      const { runPreflightRepair } = await import('@/services/aiSitePreflightRepair');
       const preflight = runPreflightRepair(preWiredVfsFiles, {
         context: { industry: generationCategory, brand },
       });

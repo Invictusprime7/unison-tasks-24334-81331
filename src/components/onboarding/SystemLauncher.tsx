@@ -65,6 +65,7 @@ import { getCompositionsBySystemType, getCompositionById } from "@/sections/temp
 import { commitToPipeline } from "@/platform/core";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
+import { preflightNavWiring } from "@/services/preflightNavWiring";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
@@ -1734,7 +1735,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 }
               })();
               const boundFiles = bindingApplication?.files || normalizedFiles;
-              sanitized.files = boundFiles;
+              const preflight = (() => {
+                try {
+                  return preflightNavWiring(boundFiles, siteBundleSnapshot);
+                } catch (error) {
+                  console.warn('[SystemLauncher] Preflight nav wiring failed; continuing', error);
+                  return null;
+                }
+              })();
+              const wiredFiles = preflight?.files || boundFiles;
+              sanitized.files = wiredFiles;
+              if (preflight && (preflight.wired > 0 || preflight.skipped.length > 0)) {
+                console.info('[SystemLauncher] Preflight nav wiring:', {
+                  wired: preflight.wired,
+                  skipped: preflight.skipped.length,
+                  sampleSkipped: preflight.skipped.slice(0, 5),
+                });
+              }
               if (bindingApplication?.missingBindings?.length) {
                 console.warn('[SystemLauncher] Wizard binding pass left missing bindings before quality gate:', bindingApplication.missingBindings);
               }

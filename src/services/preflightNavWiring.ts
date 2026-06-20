@@ -17,7 +17,9 @@
  */
 import * as ts from 'typescript';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
-import type { BuilderPage, PageId } from '@/types/pageRegistry';
+import type { BuilderPage } from '@/types/pageRegistry';
+
+type PageId = string;
 
 export interface PreflightNavWiringResult {
   files: Record<string, string>;

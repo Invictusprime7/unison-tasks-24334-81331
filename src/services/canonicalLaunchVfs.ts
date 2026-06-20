@@ -8,6 +8,7 @@ import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';
+import { runPreflightRepair } from './aiSitePreflightRepair';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',

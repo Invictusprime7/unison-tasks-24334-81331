@@ -3653,7 +3653,7 @@ export default function ${componentName}Page() {
       businessName: effectiveBusinessName,
       industry: recompilation.siteBundleSnapshot.industry,
       aesthetic: currentDesignPreset || undefined,
-      themePresetId: resolvedThemePresetId || currentDesignPreset || undefined,
+      themePresetId: effectiveThemePresetId,
       backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
       wizardSelections: effectiveRouteState?.wizardSelections || undefined,
     });

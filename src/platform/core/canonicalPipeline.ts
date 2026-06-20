@@ -197,6 +197,7 @@ export function executeCanonicalPipeline(
   const compileResult = compilePlayground(playground, existingVfsFiles, selections.businessName, {
     selectedTemplateId: selections.templateId,
     selectedThemeId: selections.themeId,
+    themePresetId: selections.themePresetId || selections.themeId,
     industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
   });
 
@@ -287,6 +288,7 @@ export function recompileFromPlayground(
   const compileResult = compilePlayground(playground, existingVfsFiles, businessName, {
     selectedTemplateId: options?.selectedTemplateId,
     selectedThemeId: options?.selectedThemeId,
+    themePresetId: options?.themePresetId || options?.selectedThemeId,
     industry: industry || null,
   });
 

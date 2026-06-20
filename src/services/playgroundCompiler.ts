@@ -154,6 +154,7 @@ function buildScaffoldPlan(
     redirects: [],
     generatedAt: new Date().toISOString(),
     selectedTemplateId: options?.selectedTemplateId,
+    selectedThemePresetId: options?.selectedThemeId,
   };
 }
 

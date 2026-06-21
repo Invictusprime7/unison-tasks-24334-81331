@@ -152,6 +152,7 @@ function serializeSiteBundleSnapshot(siteBundleSnapshot?: SiteBundleSnapshot) {
     routerFile: siteBundleSnapshot.routerFile
       ? { path: siteBundleSnapshot.routerFile.path }
       : undefined,
+    vfsFiles: siteBundleSnapshot.vfsFiles,
     vfsFilePaths: Object.keys(siteBundleSnapshot.vfsFiles || {}).sort(),
   };
 }

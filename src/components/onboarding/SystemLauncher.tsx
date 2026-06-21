@@ -1715,7 +1715,22 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
               `${brand} ${system.name}`,
             );
 
-            if (!structured?.files || Object.keys(structured.files).length === 0) {
+            if (aiPayloadSource.includes('raw-renderable')) {
+              lastPayloadIssue = {
+                kind: 'quality',
+                qualityReason: 'AI returned raw single-file renderable output instead of the WizardSeed multi-file page contract',
+                aiContentPreview: aiContent.slice(0, 300),
+              };
+              setValidationAttempts((prev) => [...prev, {
+                attempt: 1,
+                kind: 'quality',
+                reason: lastPayloadIssue.qualityReason || 'Raw renderable output is not allowed for wizard launches',
+              }]);
+              console.warn('[SystemLauncher] Rejected raw renderable output for wizard launch', {
+                aiPayloadSource,
+                aiContentPreview: lastPayloadIssue.aiContentPreview,
+              });
+            } else if (!structured?.files || Object.keys(structured.files).length === 0) {
               lastPayloadIssue = {
                 kind: 'empty',
                 aiContentPreview: aiContent.slice(0, 300),

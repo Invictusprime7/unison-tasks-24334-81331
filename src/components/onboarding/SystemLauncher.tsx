@@ -1866,16 +1866,28 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           }
         }
       }
-      // ── Single-shot-or-die fallback: never abort when the canonical scaffold
-      // can complete the site ─────────────────────────────────────────────
-      // Lane B is preferred, but the wizard MUST always deliver a themed,
-      // navigable site to the visitor. If Lane B errors or returns nothing
-      // usable, we use whatever AI emitted (possibly empty) and fill any gap
-      // from siteBundleSnapshot.vfsFiles (themed registry-driven stubs from
-      // compiledPlayground). Gaps are logged into launch-readiness as
-      // `wizardGenerationGaps` and surfaced as a warning toast (only when
-      // both AI files and scaffold files are zero).
-      let aiSourcedFiles: Record<string, string> = generationResult?.sanitized.files ?? {};
+      // ── Strict wizard-only gate ────────────────────────────────────────
+      // System Launcher runtime must be authored by the 4-step wizard seed via
+      // Lane B. Do NOT complete missing/invalid AI output from the canonical
+      // scaffold here — that is the minimal fallback path that was masking dead
+      // SiteBundle/orchestration token breaks in production.
+      if (aiError) {
+        launchReliabilityMode = 'lane-b-blocked';
+        const details = await getFunctionErrorMessage(aiError);
+        throw new Error(
+          `Wizard Lane B generation failed; minimal fallback is blocked. ${details}`,
+        );
+      }
+      if (!generationResult) {
+        launchReliabilityMode = 'lane-b-blocked';
+        const reason = lastPayloadIssue?.qualityReason
+          || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'AI returned no usable wizard files');
+        throw new Error(
+          `Wizard Lane B generation did not satisfy the 4-step generation contract; minimal fallback is blocked. ${reason}`,
+        );
+      }
+
+      const aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
       const scaffoldVfsFiles: Record<string, string> =
         (compiledPlayground?.vfsFiles as Record<string, string> | undefined) ||
         (siteBundleSnapshot?.vfsFiles as Record<string, string> | undefined) ||
@@ -1895,66 +1907,10 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         scaffoldFileCount: Object.keys(scaffoldVfsFiles).length,
       };
 
-      if (aiError) {
-        wizardGenerationGaps.aiError = await getFunctionErrorMessage(aiError);
-        launchReliabilityMode = 'lane-b-degraded';
-        console.warn('[SystemLauncher] Lane B returned an error; completing site from canonical scaffold.', {
-          aiError: wizardGenerationGaps.aiError,
-        });
-      } else if (!generationResult) {
-        wizardGenerationGaps.payloadIssue = lastPayloadIssue;
-        launchReliabilityMode = 'lane-b-degraded';
-        console.warn('[SystemLauncher] Lane B returned no usable files; completing site from canonical scaffold.', {
-          lastPayloadIssue,
-        });
-      }
-
-      // Fill every canonical page missing from AI output using the themed scaffold.
-      try {
-        const pages = Object.values(siteBundleSnapshot.pageRegistry.pages);
-        for (const page of pages) {
-          const filePath = (page as { filePath?: string }).filePath;
-          if (!filePath) continue;
-          const normalized = filePath.startsWith('/') ? filePath : `/${filePath}`;
-          if (!aiSourcedFiles[normalized] && !aiSourcedFiles[filePath]) {
-            const scaffoldSource =
-              scaffoldVfsFiles[normalized] ||
-              scaffoldVfsFiles[filePath];
-            if (scaffoldSource) {
-              aiSourcedFiles[normalized] = scaffoldSource;
-              wizardGenerationGaps.scaffoldFilledPaths.push(normalized);
-            }
-          }
-        }
-        if (wizardGenerationGaps.scaffoldFilledPaths.length > 0) {
-          wizardGenerationGaps.completedFromScaffold = true;
-          console.info(
-            `[SystemLauncher] Filled ${wizardGenerationGaps.scaffoldFilledPaths.length} canonical page(s) from scaffold.`,
-            wizardGenerationGaps.scaffoldFilledPaths,
-          );
-        }
-      } catch (gapErr) {
-        console.warn('[SystemLauncher] Scaffold gap-fill skipped (non-fatal):', gapErr);
-      }
-
       const totalUsableFiles = Object.keys(aiSourcedFiles).length;
       if (totalUsableFiles === 0) {
-        // Both AI and scaffold are empty — surface a warning but continue so the
-        // canonical router + themed CSS still render a navigable shell.
         launchReliabilityMode = 'lane-b-blocked';
-        toast.warning('AI orchestration produced no files; rendering canonical shell only.', {
-          description:
-            wizardGenerationGaps.aiError?.slice(0, 200) ||
-            lastPayloadIssue?.qualityReason ||
-            'No wizard files or scaffold pages were available.',
-        });
-        console.warn('[SystemLauncher] Continuing with empty file set — canonical router will render shell.', {
-          wizardGenerationGaps,
-        });
-      } else if (wizardGenerationGaps.completedFromScaffold || wizardGenerationGaps.aiError || !generationResult) {
-        toast.warning('Site completed from canonical scaffold (Lane B was degraded).', {
-          description: `${wizardGenerationGaps.scaffoldFilledPaths.length} page(s) filled from themed scaffold.`,
-        });
+        throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
       }
 
       // Stamp gaps so downstream readiness artifacts can record them.

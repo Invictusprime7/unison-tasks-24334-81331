@@ -25,6 +25,12 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // the page registry from AI output. Dropping them used to cause the Dashboard
   // → WebBuilder handoff to "lose" the wizard's selections and render a stale
   // default seed.
+  //
+  // ALSO preserve the orchestration tokens (manifestId, pipelineManifest,
+  // materializedPlayground, compiledPlayground, setupSnapshot) so the in-Builder
+  // recompile + readiness surfaces don't see "dead" tokens/seeds when the
+  // primary sessionStorage write hit quota and we fell through to this trimmed
+  // fallback payload.
   return {
     fromLauncher: true,
     startInPreview: true,
@@ -37,15 +43,22 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
     systemName: routeState.systemName,
     businessId: routeState.businessId,
     projectId: routeState.projectId,
+    manifestId: routeState.manifestId,
     entryPoint: routeState.entryPoint,
     runtimeManifest: routeState.runtimeManifest,
     vfsFiles: routeState.vfsFiles,
     siteBundleSnapshot: routeState.siteBundleSnapshot,
     canonicalPlayground: routeState.canonicalPlayground,
+    materializedPlayground: routeState.materializedPlayground,
+    compiledPlayground: routeState.compiledPlayground,
+    pipelineManifest: routeState.pipelineManifest,
     wizardSelections: routeState.wizardSelections,
     wizardSeed: routeState.wizardSeed,
     appContext: routeState.appContext,
     launchReadiness: routeState.launchReadiness,
+    setupSnapshot: routeState.setupSnapshot,
+    nativeReadinessManifest: routeState.nativeReadinessManifest,
+    sitePlan: routeState.sitePlan,
   } satisfies Record<string, unknown>;
 }
 

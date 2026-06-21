@@ -143,6 +143,12 @@ function serializeSiteBundleSnapshot(siteBundleSnapshot?: SiteBundleSnapshot) {
     homeRoute: siteBundleSnapshot.homeRoute,
     createdAt: siteBundleSnapshot.createdAt,
     appContext: siteBundleSnapshot.appContext,
+    // CRITICAL: persist `meta` (themePresetId, templateId, systemId,
+    // verticalContractId, wizardSeedId). Downstream recompile + readiness
+    // surfaces read `snap.meta.themePresetId` to recover the wizard preset
+    // chain-of-custody. Dropping this field is what made the tokens/seeds
+    // appear "dead" in the launcher pipeline after persistence.
+    meta: siteBundleSnapshot.meta,
     routerFile: siteBundleSnapshot.routerFile
       ? { path: siteBundleSnapshot.routerFile.path }
       : undefined,

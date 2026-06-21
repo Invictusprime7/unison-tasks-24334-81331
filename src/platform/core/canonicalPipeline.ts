@@ -378,6 +378,7 @@ function projectToSiteBundleSnapshot(
     themePresetId?: string | null;
     themeId?: string | null;
     templateId?: string | null;
+    wizardSeedId?: string | null;
   },
   source: SiteBundleSnapshotMeta['source'] = 'wizard',
 ): SiteBundleSnapshot {

@@ -3,6 +3,8 @@ import { buildCanonicalLaunchArtifacts, CANONICAL_METADATA_FILE_PATHS } from "@/
 import type { SiteBundleSnapshot } from "@/platform/core/canonicalPipeline";
 import { createEmptyCreatorData } from "@/types/creatorData";
 import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry";
+import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";
+import { createLaunchState } from "@/types/launchState";
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -50,6 +52,30 @@ function createSnapshot(): SiteBundleSnapshot {
 }
 
 describe("buildCanonicalLaunchArtifacts", () => {
+  it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
+    const launchState = createLaunchState({
+      systemType: "agency",
+      systemName: "Agency",
+      businessName: "Acme Co",
+      templateName: "Acme Launch",
+      templateCategory: "landing",
+      aesthetic: "modern",
+      preloadedIntents: [],
+      entryPoint: "/src/App.tsx",
+      vfsFiles: {
+        "/src/App.tsx": "export default function App(){ return <main>Generated Launch</main>; }",
+        "/src/index.css": ":root { --primary: 221.2 83.2% 53.3%; }",
+      },
+    });
+
+    const sandpackFiles = launchStateToSandpackFiles({
+      launchState,
+      vfsFiles: {},
+    });
+
+    expect(sandpackFiles["/App.tsx"]).toContain("Generated Launch");
+  });
+
   it("wires launcher output into canonical VFS metadata and package dependencies", () => {
     const snapshot = createSnapshot();
     const artifacts = buildCanonicalLaunchArtifacts({
@@ -107,7 +133,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
   });
 
-  it("preserves wizard-themed canonical Home across registered routes when snapshot carries a themePresetId", () => {
+  it("keeps Lane B page output authoritative while preserving the canonical router", () => {
     const snapshot = createSnapshot();
     // Promote the snapshot to a wizard-themed bundle and add an About page so
     // we can assert tokens/seeds stay consistent across multiple routes.
@@ -152,12 +178,9 @@ describe("buildCanonicalLaunchArtifacts", () => {
       backendRequired: false,
     });
 
-    // Wizard-themed Home survives — AI seed does not leak into the page file.
-    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("bg-background");
-    expect(artifacts.files["/src/pages/Home.tsx"]).not.toContain("AI Home");
-    // Registered subpage stays themed too.
-    expect(artifacts.files["/src/pages/About.tsx"]).toContain("bg-background");
-    expect(artifacts.files["/src/pages/About.tsx"]).not.toContain("AI About Override");
+    // Lane B output is the generated site body; canonical scaffold only fills gaps.
+    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("AI Home");
+    expect(artifacts.files["/src/pages/About.tsx"]).toContain("AI About Override");
     // Router is still the canonical generated one.
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });

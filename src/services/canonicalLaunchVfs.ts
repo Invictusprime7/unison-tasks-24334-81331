@@ -152,6 +152,7 @@ function serializeSiteBundleSnapshot(siteBundleSnapshot?: SiteBundleSnapshot) {
     routerFile: siteBundleSnapshot.routerFile
       ? { path: siteBundleSnapshot.routerFile.path }
       : undefined,
+    vfsFiles: siteBundleSnapshot.vfsFiles,
     vfsFilePaths: Object.keys(siteBundleSnapshot.vfsFiles || {}).sort(),
   };
 }
@@ -166,22 +167,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
 
-  // Token/seed consistency invariant — Composition Authority:
-  // When the SiteBundle was produced by the wizard with a resolved
-  // ThemePreset, the canonical themed scaffolds are the single source of
-  // truth for *every* registered page route. Lane-B AI output must NOT be
-  // allowed to overwrite those page files, otherwise Home drifts from the
-  // subpages (AI seed on Home, wizard-themed seed on /about, /services, …).
-  // AI is still free to add new files or overwrite non-page modules.
-  const isWizardThemed =
-    !!snapshot.meta?.themePresetId &&
-    (snapshot.meta?.source === 'wizard' || snapshot.meta?.source === 'recompile');
-  const registeredPageFilePaths = new Set(
-    registryPages
-      .map((p) => p.filePath)
-      .filter((fp): fp is string => typeof fp === 'string' && fp.length > 0),
-  );
-
   for (const [path, content] of Object.entries(generatedFiles)) {
     // Rebase any non-router App.tsx into the home page file whenever the AI
     // hasn't already produced a dedicated home page. This must NOT be gated on
@@ -195,22 +180,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       !looksLikeCanonicalRouter(content);
 
     if (shouldMoveLegacyAppIntoHome) {
-      // Skip the rebase when the canonical themed Home already exists — keep
-      // route tokens/seeds aligned across Home and subpages.
-      if (isWizardThemed && canonicalFiles[homeFilePath]) {
-        continue;
-      }
       merged[homeFilePath] = rebaseAppModuleForHomePage(content);
-      continue;
-    }
-
-    // Lock registered page files to the canonical wizard-themed scaffold so
-    // every route in the SiteBundleSnapshot ships the same composition family.
-    if (
-      isWizardThemed &&
-      registeredPageFilePaths.has(path) &&
-      canonicalFiles[path]
-    ) {
       continue;
     }
 

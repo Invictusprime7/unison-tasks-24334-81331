@@ -100,10 +100,17 @@ function coerceLauncherFiles(value: unknown): Record<string, string> | null {
     Object.entries(value as Record<string, unknown>)
       .filter((entry): entry is [string, string] => (
         typeof entry[0] === 'string' &&
-        /^(?:\/|src\/|public\/|\.unison\/).+\.[a-z0-9]+$/i.test(entry[0]) &&
+        /.+\.[a-z0-9]+$/i.test(entry[0]) &&
         typeof entry[1] === 'string'
       ))
-      .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content]),
+      .map(([path, content]) => {
+        const normalized = path.startsWith('/')
+          ? path
+          : /^(src|public|\.unison)\//.test(path)
+            ? `/${path}`
+            : `/src/${path}`;
+        return [normalized, content];
+      }),
   );
   return Object.keys(files).length > 0 ? files : null;
 }
@@ -634,7 +641,7 @@ function buildWizardVfsPayload(files: Record<string, string>): Record<string, st
   });
   for (const [path, content] of entries) {
     if (!/\.(tsx|jsx|css|json)$/.test(path)) continue;
-    if (path !== '/src/App.tsx' && path !== '/src/pages/Home.tsx' && path !== '/src/index.css' && !path.startsWith('/.unison/')) continue;
+    if (!path.startsWith('/src/pages/') && path !== '/src/App.tsx' && path !== '/src/index.css' && !path.startsWith('/.unison/')) continue;
     if (total + content.length > maxChars) continue;
     out[path] = content;
     total += content.length;
@@ -2107,6 +2114,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
       const navState = {
+        vfsFiles: wiredVfsFiles,
+        runtimeManifest,
+        entryPoint: launchArtifacts.entryPoint,
         templateName: `${brand} Site`,
         aesthetic: resolvedPreset.id,
         themePresetId: resolvedPreset.id,
@@ -2158,9 +2168,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         nativeReadinessManifest,
       });
       const webBuilderRouteState = {
-        vfsFiles: wiredVfsFiles,
-        runtimeManifest,
-        entryPoint: launchArtifacts.entryPoint,
         fromLauncher: true,
         ...navState,
       };

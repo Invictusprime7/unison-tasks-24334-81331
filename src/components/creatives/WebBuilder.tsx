@@ -1151,6 +1151,25 @@ interface WebBuilderRouteState {
   fromLauncher?: boolean;
 }
 
+function hasNonEmptyVfsFiles(files?: Record<string, string>): boolean {
+  return !!files && Object.keys(files).length > 0;
+}
+
+function mergeRouteStatePreservingFiles(
+  ...states: Array<WebBuilderRouteState | null | undefined>
+): WebBuilderRouteState | null {
+  const present = states.filter(Boolean) as WebBuilderRouteState[];
+  if (present.length === 0) return null;
+  const merged = Object.assign({}, ...present) as WebBuilderRouteState;
+  for (let i = present.length - 1; i >= 0; i--) {
+    if (hasNonEmptyVfsFiles(present[i].vfsFiles)) {
+      merged.vfsFiles = present[i].vfsFiles;
+      break;
+    }
+  }
+  return merged;
+}
+
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -1193,12 +1212,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     };
   }, [launch]);
   const effectiveRouteState = useMemo<WebBuilderRouteState | null>(() => {
-    if (!pendingLauncherHandoff && !launchRouteState && !routeState) return null;
-    return {
-      ...(pendingLauncherHandoff ?? {}),
-      ...(launchRouteState ?? {}),
-      ...(routeState ?? {}),
-    };
+    return mergeRouteStatePreservingFiles(pendingLauncherHandoff, launchRouteState, routeState);
   }, [launchRouteState, pendingLauncherHandoff, routeState]);
   const launchEntryPoint = useMemo(
     () =>
@@ -7049,6 +7063,7 @@ export default function ${componentName}() {
                     <VFSPreview
                       ref={livePreviewRef}
                       nodes={virtualFS.nodes}
+                      files={!virtualFS.hasFiles ? effectiveRouteState?.vfsFiles : undefined}
                       activeFile={activePagePath}
                       className="w-full h-full min-h-0 flex-1"
                       showToolbar={false}
@@ -7262,6 +7277,7 @@ export default function ${componentName}() {
                       <VFSPreview
                         ref={livePreviewRef}
                         nodes={virtualFS.nodes}
+                        files={!virtualFS.hasFiles ? effectiveRouteState?.vfsFiles : undefined}
                         activeFile={activePagePath}
                         className="w-full h-full min-h-0 flex-1"
                         showToolbar={false}

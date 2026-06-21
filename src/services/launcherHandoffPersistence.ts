@@ -19,6 +19,19 @@ function toSerializableRecord(value: Record<string, unknown>) {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
+function compactVfsFiles(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [path, content] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof content !== 'string') continue;
+    if (path.startsWith('/.unison/')) continue;
+    if (/^\/(src|public)\//.test(path) || /^\/(index\.html|package\.json|tsconfig\.json|vite\.config\.ts|tailwind\.config\.ts|postcss\.config\.js)$/.test(path)) {
+      out[path] = content;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // CRITICAL: preserve the generated VFS + canonical bundle here. The Builder
   // relies on these to skip the deterministic template fallback and hydrate
@@ -31,6 +44,14 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // recompile + readiness surfaces don't see "dead" tokens/seeds when the
   // primary sessionStorage write hit quota and we fell through to this trimmed
   // fallback payload.
+  const compactFiles = compactVfsFiles(routeState.vfsFiles);
+  const snapshot = routeState.siteBundleSnapshot && typeof routeState.siteBundleSnapshot === 'object'
+    ? { ...(routeState.siteBundleSnapshot as Record<string, unknown>), vfsFiles: compactFiles }
+    : routeState.siteBundleSnapshot;
+  const compiledPlayground = routeState.compiledPlayground && typeof routeState.compiledPlayground === 'object'
+    ? { ...(routeState.compiledPlayground as Record<string, unknown>), vfsFiles: compactFiles }
+    : routeState.compiledPlayground;
+
   return {
     fromLauncher: true,
     startInPreview: true,
@@ -46,11 +67,11 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
     manifestId: routeState.manifestId,
     entryPoint: routeState.entryPoint,
     runtimeManifest: routeState.runtimeManifest,
-    vfsFiles: routeState.vfsFiles,
-    siteBundleSnapshot: routeState.siteBundleSnapshot,
+    vfsFiles: compactFiles,
+    siteBundleSnapshot: snapshot,
     canonicalPlayground: routeState.canonicalPlayground,
     materializedPlayground: routeState.materializedPlayground,
-    compiledPlayground: routeState.compiledPlayground,
+    compiledPlayground,
     pipelineManifest: routeState.pipelineManifest,
     wizardSelections: routeState.wizardSelections,
     wizardSeed: routeState.wizardSeed,

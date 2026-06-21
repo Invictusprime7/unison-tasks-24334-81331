@@ -7063,7 +7063,7 @@ export default function ${componentName}() {
                     <VFSPreview
                       ref={livePreviewRef}
                       nodes={virtualFS.nodes}
-                      files={effectiveRouteState?.vfsFiles}
+                      files={!virtualFS.hasFiles ? effectiveRouteState?.vfsFiles : undefined}
                       activeFile={activePagePath}
                       className="w-full h-full min-h-0 flex-1"
                       showToolbar={false}
@@ -7277,7 +7277,7 @@ export default function ${componentName}() {
                       <VFSPreview
                         ref={livePreviewRef}
                         nodes={virtualFS.nodes}
-                        files={effectiveRouteState?.vfsFiles}
+                        files={!virtualFS.hasFiles ? effectiveRouteState?.vfsFiles : undefined}
                         activeFile={activePagePath}
                         className="w-full h-full min-h-0 flex-1"
                         showToolbar={false}

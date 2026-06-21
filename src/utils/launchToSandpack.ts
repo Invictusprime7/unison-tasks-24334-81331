@@ -40,12 +40,20 @@ export function launchStateToSandpackFiles(
   config: LaunchToSandpackConfig
 ): SandpackFiles {
   const { launchState, vfsFiles, debug = false } = config;
+  // The preview can mount before WebBuilder has imported route-state files into
+  // the shared VFS. In that window `vfsFiles` is empty even though the System
+  // Launcher already produced the full source map on LaunchState. Treat
+  // LaunchState.vfsFiles as the durable fallback source of truth so first paint
+  // never compiles an empty/minimal shell.
+  const sourceVfsFiles = Object.keys(vfsFiles).length > 0
+    ? vfsFiles
+    : launchState.vfsFiles || {};
   const entryPoint = resolveLauncherEntryPoint(
-    vfsFiles,
+    sourceVfsFiles,
     launchState.runtimeManifest?.entryPoint || launchState.entryPoint,
   );
 
-  const normalizedFiles = normalizeLauncherFiles(vfsFiles, {
+  const normalizedFiles = normalizeLauncherFiles(sourceVfsFiles, {
     entryPoint,
     themePresetId: launchState.themePresetId || launchState.runtimeManifest?.appContext?.themePresetId || null,
   });
@@ -55,7 +63,7 @@ export function launchStateToSandpackFiles(
   // ========================================================================
   // 1. Copy all VFS files (preserve structure)
   // ========================================================================
-  for (const [path, content] of Object.entries(vfsFiles)) {
+  for (const [path, content] of Object.entries(sourceVfsFiles)) {
     files[path] = content;
   }
 

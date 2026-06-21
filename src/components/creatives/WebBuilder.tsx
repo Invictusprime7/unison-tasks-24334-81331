@@ -133,6 +133,8 @@ import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import { commitToPipeline, type SiteBundleSnapshot } from '@/platform/core';
+import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
+import { preflightNavWiring } from '@/services/preflightNavWiring';
 import { publishCreatorDataForUnison } from '@/services/unisonCanonicalRegistry';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';
@@ -6467,8 +6469,20 @@ export default function ${componentName}() {
                 projectId={projectId ?? null}
                 businessId={businessId ?? null}
                 layoutOps={layoutOpsForAI}
-                onApplyToVFS={(files, applyMeta) => {
-                  console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(files));
+                onApplyToVFS={(rawFiles, applyMeta) => {
+                  console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(rawFiles));
+                  // Preflight: syntax-repair + nav-intent stamping BEFORE writing to VFS.
+                  // Mirrors the launcher path so AI Builder chat edits cannot crash preview
+                  // or ship un-stamped nav links.
+                  const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
+                  const repaired = (() => {
+                    try { return runPreflightRepair(rawFiles).files; }
+                    catch (e) { console.warn('[WebBuilder] preflight repair failed; using raw', e); return rawFiles; }
+                  })();
+                  const files = (() => {
+                    try { return preflightNavWiring(repaired, snapshotForPreflight).files; }
+                    catch (e) { console.warn('[WebBuilder] preflight nav wiring failed; using repaired', e); return repaired; }
+                  })();
                   const beforeFiles = virtualFS.getSandpackFiles();
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
@@ -6843,7 +6857,16 @@ export default function ${componentName}() {
               projectId={projectId ?? null}
               businessId={businessId ?? null}
               layoutOps={layoutOpsForAI}
-              onApplyToVFS={(files, applyMeta) => {
+              onApplyToVFS={(rawFiles, applyMeta) => {
+                const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
+                const repaired = (() => {
+                  try { return runPreflightRepair(rawFiles).files; }
+                  catch { return rawFiles; }
+                })();
+                const files = (() => {
+                  try { return preflightNavWiring(repaired, snapshotForPreflight).files; }
+                  catch { return repaired; }
+                })();
                 const beforeFiles = virtualFS.getSandpackFiles();
                 const result = aiVFS.applyCode(files);
                 if (result.success) {

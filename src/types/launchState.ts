@@ -15,7 +15,7 @@ import type { SystemsBuildContext } from './systemsBuildContext';
 import type { GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import type { LayoutCategory } from '@/data/templates/types';
 import type { PlaygroundCompileResult, PlaygroundSetupSnapshot, PlaygroundState, WizardSelections } from './playground';
-import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
+import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 
 // ============================================================================
 // Core Launch State

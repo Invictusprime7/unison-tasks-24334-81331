@@ -184,4 +184,43 @@ describe("buildCanonicalLaunchArtifacts", () => {
     // Router is still the canonical generated one.
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });
+
+  it("can block canonical page fallback so wizard launches cannot mask missing Lane B pages", () => {
+    const snapshot = createSnapshot();
+    const aboutPage = {
+      ...snapshot.pageRegistry.pages[snapshot.pageRegistry.homePageId!],
+      pageId: "page_about",
+      title: "About",
+      path: "/about",
+      isHome: false,
+      filePath: "/src/pages/About.tsx",
+    };
+    snapshot.pageRegistry.pages["page_about"] = aboutPage as typeof aboutPage;
+    snapshot.vfsFiles["/src/pages/About.tsx"] =
+      "export default function About(){ return <div>Canonical About Fallback</div>; }";
+
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        "/src/pages/Home.tsx": "export default function Home(){ return <main>Wizard Home</main>; }",
+      },
+      preferredEntryPoint: "/src/App.tsx",
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      allowCanonicalPageFallback: false,
+      businessId: "biz_strict",
+      projectId: "project_strict",
+      systemType: "agency",
+      systemName: "Acme Co",
+      templateName: "Acme Launch",
+      templateCategory: "landing",
+      businessName: "Acme Co",
+      industry: "agency",
+      aesthetic: "modern",
+      backendRequired: false,
+    });
+
+    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Wizard Home");
+    expect(artifacts.files["/src/pages/About.tsx"]).toBeUndefined();
+    expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
+  });
 });

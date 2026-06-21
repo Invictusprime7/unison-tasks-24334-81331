@@ -51,6 +51,14 @@ export interface BuildCanonicalLaunchArtifactsInput {
   themePresetId?: string | null;
   backendRequired?: boolean;
   wizardSelections?: WizardSelections | null;
+  /**
+   * When false, registered page modules must come from generatedFiles. The
+   * canonical snapshot may still provide router/root support, but its page
+   * scaffold cannot silently fill missing Lane B output.
+   */
+  allowCanonicalPageFallback?: boolean;
+  /** Throw if internal preflight has to quarantine generated code. */
+  strictPreflight?: boolean;
 }
 
 function rebaseAppModuleForHomePage(content: string): string {
@@ -161,9 +169,20 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
+  options: { allowCanonicalPageFallback?: boolean } = {},
 ): Record<string, string> {
-  const merged = { ...canonicalFiles };
   const registryPages = Object.values(snapshot.pageRegistry.pages);
+  const registeredPagePaths = new Set(
+    registryPages
+      .map((page) => page.filePath)
+      .filter((path): path is string => Boolean(path))
+      .flatMap((path) => [path, path.startsWith('/') ? path.slice(1) : `/${path}`]),
+  );
+  const merged = Object.fromEntries(
+    Object.entries(canonicalFiles).filter(([path]) => (
+      options.allowCanonicalPageFallback !== false || !registeredPagePaths.has(path)
+    )),
+  ) as Record<string, string>;
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
 
@@ -275,6 +294,15 @@ export function buildCanonicalLaunchArtifacts(
         path: r.path, status: r.status, passes: r.passes, error: r.finalError?.slice(0, 200),
       })),
     });
+    if (input.strictPreflight && earlyRepair.quarantinedCount > 0) {
+      throw new Error(
+        `[canonicalLaunchVfs] Strict preflight blocked ${earlyRepair.quarantinedCount} quarantined file(s): ` +
+        earlyRepair.reports
+          .filter((report) => report.status === 'quarantined')
+          .map((report) => report.path)
+          .join(', '),
+      );
+    }
   }
 
   const bindingApplication = input.siteBundleSnapshot
@@ -349,10 +377,21 @@ export function buildCanonicalLaunchArtifacts(
       repaired: finalRepair.repairedCount,
       quarantined: finalRepair.quarantinedCount,
     });
+    if (input.strictPreflight && finalRepair.quarantinedCount > 0) {
+      throw new Error(
+        `[canonicalLaunchVfs] Strict preflight blocked ${finalRepair.quarantinedCount} quarantined file(s): ` +
+        finalRepair.reports
+          .filter((report) => report.status === 'quarantined')
+          .map((report) => report.path)
+          .join(', '),
+      );
+    }
   }
 
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot)
+    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
+        allowCanonicalPageFallback: input.allowCanonicalPageFallback,
+      })
     : { ...safeFiles };
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);

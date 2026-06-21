@@ -45,6 +45,7 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // primary sessionStorage write hit quota and we fell through to this trimmed
   // fallback payload.
   const compactFiles = compactVfsFiles(routeState.vfsFiles);
+  const hasDurableWizardFiles = !!compactFiles && Object.keys(compactFiles).length > 0;
   const snapshot = routeState.siteBundleSnapshot && typeof routeState.siteBundleSnapshot === 'object'
     ? { ...(routeState.siteBundleSnapshot as Record<string, unknown>), vfsFiles: compactFiles }
     : routeState.siteBundleSnapshot;
@@ -70,14 +71,15 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
     vfsFiles: compactFiles,
     siteBundleSnapshot: snapshot,
     canonicalPlayground: routeState.canonicalPlayground,
-    materializedPlayground: routeState.materializedPlayground,
+    materializedPlayground: hasDurableWizardFiles ? routeState.materializedPlayground : undefined,
     compiledPlayground,
     pipelineManifest: routeState.pipelineManifest,
     wizardSelections: routeState.wizardSelections,
-    wizardSeed: routeState.wizardSeed,
+    wizardSeed: hasDurableWizardFiles ? routeState.wizardSeed : undefined,
     appContext: routeState.appContext,
-    launchReadiness: routeState.launchReadiness,
-    setupSnapshot: routeState.setupSnapshot,
+    launchReliabilityMode: hasDurableWizardFiles ? routeState.launchReliabilityMode : 'lane-b-blocked',
+    launchReadiness: hasDurableWizardFiles ? routeState.launchReadiness : undefined,
+    setupSnapshot: hasDurableWizardFiles ? routeState.setupSnapshot : undefined,
     nativeReadinessManifest: routeState.nativeReadinessManifest,
     sitePlan: routeState.sitePlan,
   } satisfies Record<string, unknown>;

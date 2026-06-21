@@ -368,10 +368,21 @@ export function buildCanonicalLaunchArtifacts(
       repaired: finalRepair.repairedCount,
       quarantined: finalRepair.quarantinedCount,
     });
+    if (input.strictPreflight && finalRepair.quarantinedCount > 0) {
+      throw new Error(
+        `[canonicalLaunchVfs] Strict preflight blocked ${finalRepair.quarantinedCount} quarantined file(s): ` +
+        finalRepair.reports
+          .filter((report) => report.status === 'quarantined')
+          .map((report) => report.path)
+          .join(', '),
+      );
+    }
   }
 
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot)
+    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
+        allowCanonicalPageFallback: input.allowCanonicalPageFallback,
+      })
     : { ...safeFiles };
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);

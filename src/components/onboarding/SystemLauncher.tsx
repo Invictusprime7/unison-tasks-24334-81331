@@ -1576,6 +1576,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       const wizardSeed = {
         version: '1.0',
+        id: wizardSelections.wizardSeedId,
         source: 'system-launcher',
         business: {
           name: brand,

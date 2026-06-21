@@ -133,8 +133,6 @@ import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/platform/core/siteTopologyPlanner';
 import { commitToPipeline, type SiteBundleSnapshot } from '@/platform/core';
-import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
-import { preflightNavWiring } from '@/services/preflightNavWiring';
 import { runFullPreflight } from '@/services/runFullPreflight';
 import { publishCreatorDataForUnison } from '@/services/unisonCanonicalRegistry';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';

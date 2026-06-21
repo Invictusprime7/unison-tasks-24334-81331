@@ -124,6 +124,14 @@ export interface WizardSelections {
   ownerEmail?: string;
   /** Explicit publish-mode trace for readiness manifests and future migrations. */
   publishMode?: 'native-first-party' | 'manual-setup';
+  /**
+   * Stable identifier for the wizard seed produced by this launch. Threaded
+   * through `commitToPipeline → projectToSiteBundleSnapshot` so the persisted
+   * `snapshot.meta.wizardSeedId` matches the `/.unison/wizard-seed.json` file
+   * written into the VFS. Recompile + readiness surfaces use it to verify
+   * chain-of-custody between the wizard payload and the live snapshot.
+   */
+  wizardSeedId?: string;
 }
 
 // ============================================================================

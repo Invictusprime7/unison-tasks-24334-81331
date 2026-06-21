@@ -165,8 +165,10 @@ function extractLaneBLauncherPayload(
 }
 
 function isBlockingWizardQualityFailure(reason?: string): boolean {
-  if (!reason) return true;
-  return /no renderable|placeholder\/fallback|too small|too few sections|no canonical data-ut-intent/i.test(reason);
+  // System Launcher first generation has no repairable quality failures: any
+  // miss here previously flowed into canonical scaffold gap-fill and produced
+  // minimal fallback output with valid-looking wizard tokens.
+  return true;
 }
 
 const STEP_META: { key: WizardStep; num: number; label: string; sublabel: string }[] = [

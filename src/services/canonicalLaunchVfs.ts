@@ -294,6 +294,15 @@ export function buildCanonicalLaunchArtifacts(
         path: r.path, status: r.status, passes: r.passes, error: r.finalError?.slice(0, 200),
       })),
     });
+    if (input.strictPreflight && earlyRepair.quarantinedCount > 0) {
+      throw new Error(
+        `[canonicalLaunchVfs] Strict preflight blocked ${earlyRepair.quarantinedCount} quarantined file(s): ` +
+        earlyRepair.reports
+          .filter((report) => report.status === 'quarantined')
+          .map((report) => report.path)
+          .join(', '),
+      );
+    }
   }
 
   const bindingApplication = input.siteBundleSnapshot

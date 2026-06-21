@@ -1297,6 +1297,12 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};
+      // Stable seed id stamped into snapshot.meta.wizardSeedId and the
+      // /.unison/wizard-seed.json file so recompile/readiness can verify
+      // chain-of-custody between the wizard payload and the live snapshot.
+      const wizardSeedId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : `ws_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
       const wizardSelections: WizardSelections = {
         businessName: businessName.trim(),
         businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
@@ -1317,6 +1323,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         nativePublishReady: launchContract.nativePublishCapable && Boolean(ownerEmail),
         ownerEmail: ownerEmail || undefined,
         publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native-first-party' : 'manual-setup',
+        wizardSeedId,
       };
 
       // ── ASSERTION: themePresetId must be threaded into WizardSelections. ──
@@ -1569,6 +1576,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       const wizardSeed = {
         version: '1.0',
+        id: wizardSelections.wizardSeedId,
         source: 'system-launcher',
         business: {
           name: brand,

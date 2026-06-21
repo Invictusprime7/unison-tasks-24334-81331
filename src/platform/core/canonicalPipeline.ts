@@ -335,6 +335,17 @@ export function recompileFromPlayground(
     warnings.push('[canonicalPipeline] Recompile Stage 4b: themePresetId missing and no existing /src/index.css to preserve.');
   }
 
+  // Recover wizardSeedId from the existing snapshot so recompiles preserve
+  // chain-of-custody back to the original wizard payload.
+  let recoveredSeedId: string | undefined;
+  try {
+    const snapRaw = existingVfsFiles['/.unison/site-bundle-snapshot.json'];
+    if (snapRaw) {
+      const snap = JSON.parse(snapRaw) as { meta?: { wizardSeedId?: string } };
+      recoveredSeedId = snap?.meta?.wizardSeedId;
+    }
+  } catch { /* ignore */ }
+
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
     compileResult,
@@ -344,6 +355,7 @@ export function recompileFromPlayground(
       themePresetId: presetId,
       themeId: options?.selectedThemeId,
       templateId: options?.selectedTemplateId,
+      wizardSeedId: recoveredSeedId,
     },
     'recompile',
   );
@@ -378,6 +390,7 @@ function projectToSiteBundleSnapshot(
     themePresetId?: string | null;
     themeId?: string | null;
     templateId?: string | null;
+    wizardSeedId?: string | null;
   },
   source: SiteBundleSnapshotMeta['source'] = 'wizard',
 ): SiteBundleSnapshot {
@@ -442,6 +455,7 @@ function projectToSiteBundleSnapshot(
       verticalContractId: resolvedSystemId,
       themePresetId: resolvedThemePresetId,
       templateId: resolvedTemplateId,
+      wizardSeedId: selections.wizardSeedId ?? undefined,
     },
   };
 }

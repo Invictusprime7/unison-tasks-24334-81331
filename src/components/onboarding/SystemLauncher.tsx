@@ -2114,6 +2114,9 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       }
 
       const navState = {
+        vfsFiles: wiredVfsFiles,
+        runtimeManifest,
+        entryPoint: launchArtifacts.entryPoint,
         templateName: `${brand} Site`,
         aesthetic: resolvedPreset.id,
         themePresetId: resolvedPreset.id,

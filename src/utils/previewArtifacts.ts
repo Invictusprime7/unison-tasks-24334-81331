@@ -62,6 +62,9 @@ export function buildPreviewArtifacts(
   const launchStateWithRecoveredTheme = launchState && themePresetId && !launchState.themePresetId
     ? { ...launchState, themePresetId }
     : launchState;
+  const dependencySourceFiles = Object.keys(sourceFiles).length > 0
+    ? sourceFiles
+    : launchStateWithRecoveredTheme?.vfsFiles || sourceFiles;
 
   const rawSandpackFiles = launchStateWithRecoveredTheme
     ? launchStateToSandpackFiles({
@@ -75,7 +78,7 @@ export function buildPreviewArtifacts(
   // See src/services/unisonCanonicalRegistry.ts.
   const sandpackFiles = applyUnisonCanonicals(rawSandpackFiles);
 
-  const { dependencies } = getDependenciesForSandpack(sourceFiles, baseDependencies);
+  const { dependencies } = getDependenciesForSandpack(dependencySourceFiles, baseDependencies);
 
   return {
     sandpackFiles,

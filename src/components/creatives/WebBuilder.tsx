@@ -6472,18 +6472,17 @@ export default function ${componentName}() {
                 layoutOps={layoutOpsForAI}
                 onApplyToVFS={(rawFiles, applyMeta) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(rawFiles));
-                  // Preflight: syntax-repair + nav-intent stamping BEFORE writing to VFS.
-                  // Mirrors the launcher path so AI Builder chat edits cannot crash preview
-                  // or ship un-stamped nav links.
+                  // End-to-end preflight: syntax repair → nav-intent stamping →
+                  // industry forbidden-intent strip → final syntax repair.
+                  // Mirrors the System Launcher pipeline so AI Builder chat
+                  // edits cannot crash preview, ship un-stamped nav links, or
+                  // leak intents disallowed by the active industry profile.
                   const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
-                  const repaired = (() => {
-                    try { return runPreflightRepair(rawFiles).files; }
-                    catch (e) { console.warn('[WebBuilder] preflight repair failed; using raw', e); return rawFiles; }
-                  })();
-                  const files = (() => {
-                    try { return preflightNavWiring(repaired, snapshotForPreflight).files; }
-                    catch (e) { console.warn('[WebBuilder] preflight nav wiring failed; using repaired', e); return repaired; }
-                  })();
+                  const preflight = runFullPreflight(rawFiles, {
+                    siteBundleSnapshot: snapshotForPreflight,
+                    industry: snapshotForPreflight?.industry,
+                  });
+                  const files = preflight.files;
                   const beforeFiles = virtualFS.getSandpackFiles();
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });

@@ -3,6 +3,8 @@ import { buildCanonicalLaunchArtifacts, CANONICAL_METADATA_FILE_PATHS } from "@/
 import type { SiteBundleSnapshot } from "@/platform/core/canonicalPipeline";
 import { createEmptyCreatorData } from "@/types/creatorData";
 import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry";
+import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";
+import { createLaunchState } from "@/types/launchState";
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -50,6 +52,30 @@ function createSnapshot(): SiteBundleSnapshot {
 }
 
 describe("buildCanonicalLaunchArtifacts", () => {
+  it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
+    const launchState = createLaunchState({
+      systemType: "agency",
+      systemName: "Agency",
+      businessName: "Acme Co",
+      templateName: "Acme Launch",
+      templateCategory: "landing",
+      aesthetic: "modern",
+      preloadedIntents: [],
+      entryPoint: "/src/App.tsx",
+      vfsFiles: {
+        "/src/App.tsx": "export default function App(){ return <main>Generated Launch</main>; }",
+        "/src/index.css": ":root { --primary: 221.2 83.2% 53.3%; }",
+      },
+    });
+
+    const sandpackFiles = launchStateToSandpackFiles({
+      launchState,
+      vfsFiles: {},
+    });
+
+    expect(sandpackFiles["/App.tsx"]).toContain("Generated Launch");
+  });
+
   it("wires launcher output into canonical VFS metadata and package dependencies", () => {
     const snapshot = createSnapshot();
     const artifacts = buildCanonicalLaunchArtifacts({

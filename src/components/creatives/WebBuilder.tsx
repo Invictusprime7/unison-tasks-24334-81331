@@ -2969,17 +2969,25 @@ export default function ${componentName}Page() {
       }
     }
 
-    vfsImportFiles(normalizedFiles);
+    // End-to-end preflight before any template/page import lands in the VFS.
+    // Mirrors the launcher + AI-apply paths so every entry point is guarded.
+    const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
+    const preflightedFiles = runFullPreflight(normalizedFiles, {
+      siteBundleSnapshot: snapshotForPreflight,
+      industry: snapshotForPreflight?.industry,
+    }).files;
+
+    vfsImportFiles(preflightedFiles);
     const syncedEntry = syncBuilderFromFiles(
-      normalizedFiles,
+      preflightedFiles,
       options?.preferredPath || normalizedEntryPoint || null,
     );
 
     return {
-      files: normalizedFiles,
+      files: preflightedFiles,
       syncedEntry,
     };
-  }, [syncBuilderFromFiles, vfsImportFiles, launchEntryPoint]);
+  }, [syncBuilderFromFiles, vfsImportFiles, launchEntryPoint, resolvedThemePresetId, effectiveRouteState]);
   
   // Effect A: previewCode → VFS  (one-way sync, runs when AI/templates/page-nav set previewCode)
   useEffect(() => {

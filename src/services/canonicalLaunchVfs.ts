@@ -9,6 +9,7 @@ import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair } from './aiSitePreflightRepair';
+import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',
@@ -324,12 +325,37 @@ export function buildCanonicalLaunchArtifacts(
     });
   }
 
+  // ── Industry forbidden-intent strip ────────────────────────────────────
+  // Remove any data-ut-intent attributes whose value is on the active
+  // industry's forbidden list (e.g. checkout.start on a nonprofit).
+  const industryForStrip =
+    (input.industry as string | undefined) || input.siteBundleSnapshot?.industry;
+  const profile = industryForStrip ? getIndustryIntentProfile(industryForStrip) : undefined;
+  const forbidden = profile?.forbidden ?? [];
+  const filesAfterStrip: Record<string, string> = { ...wiredFiles };
+  if (forbidden.length > 0) {
+    const escaped = forbidden.map((i) => i.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const attrRe = new RegExp(`\\s+data-ut-intent\\s*=\\s*["'](?:${escaped})["']`, 'g');
+    let strippedCount = 0;
+    for (const [p, src] of Object.entries(filesAfterStrip)) {
+      if (typeof src !== 'string') continue;
+      const next = src.replace(attrRe, () => { strippedCount++; return ''; });
+      if (next !== src) filesAfterStrip[p] = next;
+    }
+    if (strippedCount > 0) {
+      console.warn('[canonicalLaunchVfs] Stripped forbidden intents for industry:', {
+        industry: industryForStrip,
+        forbidden,
+        count: strippedCount,
+      });
+    }
+
   // ── Final syntax repair ────────────────────────────────────────────────
   // Catch any syntax damage introduced by binding/nav-wiring attribute
   // injection before files reach the preview iframe.
   const finalRepair = (() => {
     try {
-      return runPreflightRepair(wiredFiles, {
+      return runPreflightRepair(filesAfterStrip, {
         context: { industry: input.industry, brand: input.businessName },
       });
     } catch (error) {
@@ -337,7 +363,7 @@ export function buildCanonicalLaunchArtifacts(
       return null;
     }
   })();
-  const safeFiles = finalRepair?.files || wiredFiles;
+  const safeFiles = finalRepair?.files || filesAfterStrip;
   if (finalRepair && (finalRepair.repairedCount > 0 || finalRepair.quarantinedCount > 0)) {
     console.warn('[canonicalLaunchVfs] Final syntax repair:', {
       clean: finalRepair.cleanCount,

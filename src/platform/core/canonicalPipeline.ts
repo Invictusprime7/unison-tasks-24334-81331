@@ -443,6 +443,7 @@ function projectToSiteBundleSnapshot(
       verticalContractId: resolvedSystemId,
       themePresetId: resolvedThemePresetId,
       templateId: resolvedTemplateId,
+      wizardSeedId: selections.wizardSeedId ?? undefined,
     },
   };
 }

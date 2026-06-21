@@ -2055,6 +2055,16 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           quarantined: preflight.quarantinedCount,
           details: preflight.reports.filter(r => r.status !== 'clean'),
         });
+        if (preflight.quarantinedCount > 0) {
+          launchReliabilityMode = 'lane-b-blocked';
+          throw new Error(
+            `Wizard preflight quarantined ${preflight.quarantinedCount} file(s); minimal fallback is blocked: ` +
+            preflight.reports
+              .filter((report) => report.status === 'quarantined')
+              .map((report) => report.path)
+              .join(', '),
+          );
+        }
       } else {
         console.log('[SystemLauncher] Preflight: all', preflight.cleanCount, 'code files parsed clean');
       }

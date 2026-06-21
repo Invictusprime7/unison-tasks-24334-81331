@@ -135,6 +135,7 @@ import { populateRegistryFromTopology, type GeneratedSitePlan } from '@/platform
 import { commitToPipeline, type SiteBundleSnapshot } from '@/platform/core';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
 import { preflightNavWiring } from '@/services/preflightNavWiring';
+import { runFullPreflight } from '@/services/runFullPreflight';
 import { publishCreatorDataForUnison } from '@/services/unisonCanonicalRegistry';
 import { resolveIntentTarget, persistTopology, recoverTopology, persistTopologyToDb, recoverTopologyFromDb } from '@/utils/topologyResolver';
 import { normalizeLauncherEntryPoint, resolveLauncherEntryPoint } from '@/utils/launcherPayload';

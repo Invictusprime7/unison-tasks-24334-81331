@@ -2353,6 +2353,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       sitePlan = recoverTopology();
     }
 
+    if (!sitePlan && navState?.fromLauncher) {
+      console.error('[WebBuilder] Launcher handoff missing 4-step wizard sitePlan; refusing stale topology fallback.');
+      toast.error('Launcher handoff is missing the wizard site plan. Minimal fallback is blocked.');
+      return;
+    }
+
     // If still no plan, try DB recovery (async, will re-run effect logic)
     if (!sitePlan) {
       recoverTopologyFromDb().then(dbPlan => {
@@ -2414,6 +2420,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         virtualFS.importFiles(missingSnapshotFiles);
         console.log(`[WebBuilder] Imported ${Object.keys(missingSnapshotFiles).length} canonical snapshot files`);
       }
+    } else if (navState?.fromLauncher) {
+      console.error('[WebBuilder] Launcher handoff missing SiteBundle/PageRegistry; refusing Home-only fallback.');
+      toast.error('Launcher handoff is missing canonical wizard state. Minimal fallback is blocked.');
     } else {
       // Fallback: seed single Home page
       creatorPlayground.addPage("Home", "/", "home", { showInNav: true, isHome: true });

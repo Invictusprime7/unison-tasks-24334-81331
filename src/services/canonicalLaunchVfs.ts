@@ -349,6 +349,9 @@ export function buildCanonicalLaunchArtifacts(
         count: strippedCount,
       });
     }
+  }
+
+
 
   // ── Final syntax repair ────────────────────────────────────────────────
   // Catch any syntax damage introduced by binding/nav-wiring attribute

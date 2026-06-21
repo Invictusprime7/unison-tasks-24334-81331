@@ -2168,9 +2168,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         nativeReadinessManifest,
       });
       const webBuilderRouteState = {
-        vfsFiles: wiredVfsFiles,
-        runtimeManifest,
-        entryPoint: launchArtifacts.entryPoint,
         fromLauncher: true,
         ...navState,
       };

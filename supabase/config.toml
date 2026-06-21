@@ -6,8 +6,6 @@ verify_jwt = true
 [functions.template-automation]
 verify_jwt = false
 
-[functions.ai-code-assistant]
-verify_jwt = true
 
 [functions.ai-design-assistant]
 verify_jwt = true

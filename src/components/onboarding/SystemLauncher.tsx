@@ -2004,6 +2004,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         themePresetId: resolvedPreset.id,
         backendRequired: false,
         wizardSelections,
+        allowCanonicalPageFallback: false,
+        strictPreflight: true,
       });
 
       // Force-overwrite /src/App.tsx with the canonical router. The merge step

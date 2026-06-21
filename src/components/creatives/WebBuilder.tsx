@@ -6859,14 +6859,10 @@ export default function ${componentName}() {
               layoutOps={layoutOpsForAI}
               onApplyToVFS={(rawFiles, applyMeta) => {
                 const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
-                const repaired = (() => {
-                  try { return runPreflightRepair(rawFiles).files; }
-                  catch { return rawFiles; }
-                })();
-                const files = (() => {
-                  try { return preflightNavWiring(repaired, snapshotForPreflight).files; }
-                  catch { return repaired; }
-                })();
+                const files = runFullPreflight(rawFiles, {
+                  siteBundleSnapshot: snapshotForPreflight,
+                  industry: snapshotForPreflight?.industry,
+                }).files;
                 const beforeFiles = virtualFS.getSandpackFiles();
                 const result = aiVFS.applyCode(files);
                 if (result.success) {

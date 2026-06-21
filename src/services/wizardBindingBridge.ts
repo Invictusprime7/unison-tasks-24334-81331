@@ -1,5 +1,5 @@
 import * as ts from 'typescript';
-import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
+import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import type { PlaygroundBinding, PlaygroundBindingSpecV2, PlaygroundPageRole } from '@/types/playground';
 import type { BuilderPage } from '@/types/pageRegistry';
 import {

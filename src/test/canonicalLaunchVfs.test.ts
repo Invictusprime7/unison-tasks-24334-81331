@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCanonicalLaunchArtifacts, CANONICAL_METADATA_FILE_PATHS } from "@/services/canonicalLaunchVfs";
-import type { SiteBundleSnapshot } from "@/services/canonicalPipeline";
+import type { SiteBundleSnapshot } from "@/platform/core/canonicalPipeline";
 import { createEmptyCreatorData } from "@/types/creatorData";
 import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry";
 

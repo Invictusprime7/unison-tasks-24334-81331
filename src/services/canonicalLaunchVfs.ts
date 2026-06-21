@@ -1,5 +1,5 @@
 import type { LayoutCategory } from '@/data/templates/types';
-import type { SiteBundleSnapshot } from '@/services/canonicalPipeline';
+import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import { ensureViteRootFiles } from '@/services/previewSession';
 import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from '@/types/playground';
 import { createRuntimeManifest, type RuntimeAppContext, type RuntimeManifest } from '@/types/runtimeManifest';

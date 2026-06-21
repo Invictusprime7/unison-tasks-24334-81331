@@ -1912,6 +1912,19 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         launchReliabilityMode = 'lane-b-blocked';
         throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
       }
+      const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
+        .map((page) => (page as { filePath?: string }).filePath)
+        .filter((path): path is string => Boolean(path))
+        .filter((path) => {
+          const normalized = path.startsWith('/') ? path : `/${path}`;
+          return !aiSourcedFiles[normalized] && !aiSourcedFiles[path];
+        });
+      if (missingWizardPageFiles.length > 0) {
+        launchReliabilityMode = 'lane-b-blocked';
+        throw new Error(
+          `Wizard Lane B missed ${missingWizardPageFiles.length} selected page file(s); minimal fallback is blocked: ${missingWizardPageFiles.join(', ')}`,
+        );
+      }
 
       // Stamp gaps so downstream readiness artifacts can record them.
       (window as unknown as { __wizardGenerationGaps?: typeof wizardGenerationGaps }).__wizardGenerationGaps =

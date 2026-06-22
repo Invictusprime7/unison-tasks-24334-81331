@@ -1937,9 +1937,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           return !aiSourcedFiles[normalized] && !aiSourcedFiles[path];
         });
       if (missingWizardPageFiles.length > 0) {
-        launchReliabilityMode = 'lane-b-blocked';
-        throw new Error(
-          `Wizard Lane B missed ${missingWizardPageFiles.length} selected page file(s); minimal fallback is blocked: ${missingWizardPageFiles.join(', ')}`,
+        // Backfill missing selected pages from the deterministic scaffold
+        // (compiledPlayground/siteBundleSnapshot VFS) rather than hard-blocking.
+        // Lane B AI sometimes truncates output; the scaffold is canonical and
+        // always contains a valid page file for every registry entry.
+        const stillMissing: string[] = [];
+        for (const path of missingWizardPageFiles) {
+          const normalized = path.startsWith('/') ? path : `/${path}`;
+          const scaffoldSource =
+            scaffoldVfsFiles[normalized] ||
+            scaffoldVfsFiles[path] ||
+            scaffoldVfsFiles[normalized.replace(/^\//, '')];
+          if (typeof scaffoldSource === 'string' && scaffoldSource.trim().length > 0) {
+            aiSourcedFiles[normalized] = scaffoldSource;
+            wizardGenerationGaps.scaffoldFilledPaths.push(normalized);
+            wizardGenerationGaps.completedFromScaffold = true;
+          } else {
+            stillMissing.push(normalized);
+          }
+        }
+        if (stillMissing.length > 0) {
+          launchReliabilityMode = 'lane-b-blocked';
+          throw new Error(
+            `Wizard Lane B missed ${stillMissing.length} selected page file(s) and scaffold has no fallback: ${stillMissing.join(', ')}`,
+          );
+        }
+        console.warn(
+          `[SystemLauncher] Lane B missed ${wizardGenerationGaps.scaffoldFilledPaths.length} page file(s); backfilled from canonical scaffold:`,
+          wizardGenerationGaps.scaffoldFilledPaths,
         );
       }
 

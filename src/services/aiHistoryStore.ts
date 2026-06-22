@@ -108,8 +108,31 @@ const MAX_SNAPSHOTS = 25;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function lsKey(projectId: string | null | undefined): string {
-  return `unison.aiHistory.${projectId || '__draft__'}`;
+function lsKey(draftId: string | null | undefined): string {
+  return `unison.aiHistory.draft.${draftId || '__unscoped__'}`;
+}
+
+// One-time purge of legacy keys (project-id-scoped or old `__draft__`
+// sentinel). Runs once per page load; prevents pre-2026-06-22 cross-draft
+// bleed from re-hydrating into a new draft.
+let legacyPurged = false;
+function purgeLegacyKeysOnce(): void {
+  if (legacyPurged || typeof window === 'undefined') return;
+  legacyPurged = true;
+  try {
+    const toDelete: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (!k) continue;
+      // Legacy: `unison.aiHistory.<X>` where X is NOT prefixed by `draft.`
+      if (k.startsWith('unison.aiHistory.') && !k.startsWith('unison.aiHistory.draft.')) {
+        toDelete.push(k);
+      }
+    }
+    for (const k of toDelete) window.localStorage.removeItem(k);
+  } catch {
+    /* best-effort */
+  }
 }
 
 function safeParse(raw: string | null): AIHistoryRecord {
@@ -126,10 +149,11 @@ function safeParse(raw: string | null): AIHistoryRecord {
   }
 }
 
-function readLocal(projectId: string | null | undefined): AIHistoryRecord {
+function readLocal(draftId: string | null | undefined): AIHistoryRecord {
   if (typeof window === 'undefined') return { ...EMPTY };
+  purgeLegacyKeysOnce();
   try {
-    return safeParse(window.localStorage.getItem(lsKey(projectId)));
+    return safeParse(window.localStorage.getItem(lsKey(draftId)));
   } catch {
     return { ...EMPTY };
   }

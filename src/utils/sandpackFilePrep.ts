@@ -228,6 +228,24 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
       __showPreviewFeedback('Submitted \u2713', '#2563eb');
       return true;
     }
+    // Slot-aware feedback for direct-action intents that may have no scroll
+    // target on the current page (select option, reserve, confirm, etc.).
+    const FEEDBACK_LABEL: Record<string, { msg: string; color: string }> = {
+      'cart.remove':          { msg: 'Removed from cart',             color: '#dc2626' },
+      'cart.checkout':        { msg: 'Opening checkout \u2026',       color: '#2563eb' },
+      'pay.checkout':         { msg: 'Opening checkout \u2026',       color: '#2563eb' },
+      'booking.create':       { msg: 'Booking request sent \u2713',   color: '#16a34a' },
+      'booking.confirm':      { msg: 'Booking confirmed \u2713',      color: '#16a34a' },
+      'reservation.create':   { msg: 'Reservation sent \u2713',       color: '#16a34a' },
+      'order.place':          { msg: 'Order placed \u2713',           color: '#16a34a' },
+      'product.select':       { msg: 'Option selected',                color: '#2563eb' },
+      'plan.select':          { msg: 'Plan selected',                  color: '#2563eb' },
+      'option.select':        { msg: 'Option selected',                color: '#2563eb' },
+      'contact.submit':       { msg: 'Message sent \u2713',           color: '#2563eb' },
+      'newsletter.subscribe': { msg: 'Subscribed \u2713',             color: '#2563eb' },
+      'quote.request':        { msg: 'Quote requested \u2713',        color: '#2563eb' },
+      'lead.capture':         { msg: 'Thanks! We\u2019ll be in touch',color: '#2563eb' },
+    };
     // Scroll-to-section intents
     const target = __findIntentTarget(intent, clicked);
     if (target) {
@@ -237,6 +255,12 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
         'input:not([type="hidden"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]), textarea'
       ) as HTMLElement | null;
       if (input) setTimeout(function() { input.focus(); }, 480);
+      return true;
+    }
+    // Fallback toast so every slot intent click is visibly responsive.
+    const fb = FEEDBACK_LABEL[intent];
+    if (fb) {
+      __showPreviewFeedback(fb.msg, fb.color);
       return true;
     }
     return false;
@@ -253,8 +277,14 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
 
     // ── Action intents: execute in-preview first, then notify parent ──
     if (utIntent && utIntent !== 'nav.goto' && utIntent !== 'nav.goto_page' && utIntent !== 'nav.anchor' && utIntent !== 'nav.external') {
-      event.preventDefault();
-      event.stopPropagation();
+      // Only suppress default anchor navigation. Never stopPropagation —
+      // React-bound onClick handlers (booking overlays, cart drawers, plan
+      // selectors, etc.) must still run alongside the intent broadcast,
+      // otherwise UI controls appear unresponsive on every generated site.
+      const tagName = el.tagName ? el.tagName.toLowerCase() : '';
+      if (tagName === 'a') {
+        event.preventDefault();
+      }
       const reqId = 'intent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       const intentPayload: Record<string, unknown> = {};
       for (const attr of Array.from(el.attributes)) {

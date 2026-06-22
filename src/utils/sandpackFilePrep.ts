@@ -3607,7 +3607,10 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
   for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
 
-    const namedImportRegex = /^import\s+\{([^}]+)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?\s*$/gm;
+    // Allow multi-line braces; no line anchors so multi-line `import { A,\n B }` matches too.
+    const namedImportRegex = /import\s+\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    // Default-only imports: `import Foo from './bar'` (NOT `import Foo, { X } from ...`).
+    const defaultImportRegex = /import\s+([A-Z]\w*)\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let content = originalContent;
 
     content = content.replace(namedImportRegex, (statement, specifierBlock: string, rawImportPath: string) => {
@@ -3660,11 +3663,32 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
       return statement;
     });
 
+    // Default imports against files that don't actually have a default export.
+    // Patch the TARGET file with `export default <primary>` so the import resolves
+    // instead of evaluating to `undefined` and crashing React with
+    // "Element type is invalid".
+    content.replace(defaultImportRegex, (statement, localName: string, rawImportPath: string) => {
+      const targetPath = resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths);
+      if (!targetPath) return statement;
+      const targetContent = sandpackFiles[targetPath];
+      if (!targetContent) return statement;
+      const moduleExports = inspectModuleExports(targetContent);
+      if (moduleExports.hasDefault) return statement;
+      // Prefer a named export matching the local import name, else primary.
+      const fallback = moduleExports.named.has(localName) ? localName : moduleExports.primaryName;
+      if (!fallback) return statement;
+      const patched = targetContent + `\nexport default ${fallback};\n`;
+      sandpackFiles[targetPath] = patched;
+      console.warn(`[sandpackFilePrep] Added missing default export to ${targetPath} (default → ${fallback}) for ${filePath}`);
+      return statement;
+    });
+
     if (content !== originalContent) {
       sandpackFiles[filePath] = content;
     }
   }
 }
+
 
 /**
  * Scan all files for relative imports. For missing modules, generate REAL

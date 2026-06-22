@@ -6071,12 +6071,12 @@ ${html}
           </Button>
 
           <AIEditHistoryMenu
-            projectId={projectId ?? null}
+            projectId={currentTemplateId ?? null}
             onRevert={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
               virtualFS.importFiles(snap.before);
               syncBuilderFromFiles(snap.before, activePagePath);
-              pushAISnapshot(projectId ?? null, {
+              pushAISnapshot(currentTemplateId ?? null, {
                 label: `Revert · ${snap.label}`,
                 source: 'manual',
                 before: beforeFiles,
@@ -6089,7 +6089,7 @@ ${html}
               const beforeFiles = virtualFS.getSandpackFiles();
               virtualFS.importFiles(snap.after);
               syncBuilderFromFiles(snap.after, activePagePath);
-              pushAISnapshot(projectId ?? null, {
+              pushAISnapshot(currentTemplateId ?? null, {
                 label: `Reapply · ${snap.label}`,
                 source: 'manual',
                 before: beforeFiles,
@@ -6496,7 +6496,7 @@ export default function ${componentName}() {
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
-                projectId={projectId ?? null}
+                projectId={currentTemplateId ?? null}
                 businessId={businessId ?? null}
                 layoutOps={layoutOpsForAI}
                 onApplyToVFS={(rawFiles, applyMeta) => {
@@ -6528,7 +6528,7 @@ export default function ${componentName}() {
                       const promptPreview = applyMeta?.prompt
                         ? applyMeta.prompt.length > 60 ? `${applyMeta.prompt.slice(0, 57)}…` : applyMeta.prompt
                         : `${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`;
-                      pushAISnapshot(projectId ?? null, {
+                      pushAISnapshot(currentTemplateId ?? null, {
                         label: `AI · ${promptPreview}`,
                         source: applyMeta?.origin === 'debug-fix' ? 'debug' : 'ai',
                         before: beforeFiles,
@@ -6883,7 +6883,7 @@ export default function ${componentName}() {
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
-              projectId={projectId ?? null}
+              projectId={currentTemplateId ?? null}
               businessId={businessId ?? null}
               layoutOps={layoutOpsForAI}
               onApplyToVFS={(rawFiles, applyMeta) => {
@@ -6904,7 +6904,7 @@ export default function ${componentName}() {
                     const promptPreview = applyMeta?.prompt
                       ? applyMeta.prompt.length > 60 ? `${applyMeta.prompt.slice(0, 57)}…` : applyMeta.prompt
                       : `${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`;
-                    pushAISnapshot(projectId ?? null, {
+                    pushAISnapshot(currentTemplateId ?? null, {
                       label: `AI · ${promptPreview}`,
                       source: applyMeta?.origin === 'debug-fix' ? 'debug' : 'ai',
                       before: beforeFiles,
@@ -7557,7 +7557,7 @@ export default function ${componentName}() {
                 const primary = applyElementHtmlUpdate(previewCode, selector, newHtml);
                 if (primary.ok) {
                   try {
-                    pushAISnapshot(projectId ?? null, {
+                    pushAISnapshot(currentTemplateId ?? null, {
                       label: `AI · element edit ${selector.slice(0, 40)}`,
                       source: 'ai',
                       before: { [activePagePath]: previewCode },
@@ -7583,7 +7583,7 @@ export default function ${componentName}() {
                     const attempt = applyElementHtmlUpdate(code, selector, newHtml);
                     if (attempt.ok) {
                       try {
-                        pushAISnapshot(projectId ?? null, {
+                        pushAISnapshot(currentTemplateId ?? null, {
                           label: `AI · element edit in ${path.split('/').pop()}`,
                           source: 'ai',
                           before: { [path]: code },

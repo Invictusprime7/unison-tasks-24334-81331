@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { Json } from "@/integrations/supabase/types";
 import { syncCanonicalComponentGraph } from "@/services/componentGraphPersistence";
 import { findBuilderDraftIdForProject } from "@/services/builderDraftBridge";
+import { generateCanonicalRouterForFiles } from "@/utils/topologyRouterGenerator";
+import type { PageRegistry } from "@/types/pageRegistry";
 
 interface TemplateData {
   html: string;
@@ -517,13 +519,56 @@ export function useTemplateFiles() {
         return false;
       }
 
+      // ── Deterministic router last-mile guard ──────────────────────────────
+      // The PageRegistry-version effect in WebBuilder regenerates /src/App.tsx
+      // on every structural mutation, and buildSavePayload's commitToPipeline
+      // recompiles the router on every save. As a defensive third line, before
+      // we persist the draft we re-derive the canonical router from the
+      // payload's canonicalPlayground.pageRegistry and overwrite the App.tsx
+      // entry in vfsFiles if it has drifted. This guarantees the saved draft
+      // never carries a stale or AI-authored router that disagrees with the
+      // current page registry.
+      let vfsFilesForSave: Record<string, string> | undefined =
+        (payload?.vfsFiles as Record<string, string> | undefined) ?? undefined;
+      try {
+        const cp = (payload?.canonicalPlayground || {}) as Record<string, unknown>;
+        const registry = cp.pageRegistry as PageRegistry | undefined;
+        if (
+          vfsFilesForSave &&
+          registry &&
+          registry.pages &&
+          Object.keys(registry.pages).length > 0
+        ) {
+          const businessName =
+            (((cp.creatorData || {}) as Record<string, unknown>).businessInfo as
+              | Record<string, unknown>
+              | undefined)?.businessName as string | undefined;
+          const fresh = generateCanonicalRouterForFiles(
+            registry,
+            vfsFilesForSave,
+            businessName,
+          );
+          const appPath = vfsFilesForSave['/src/App.tsx']
+            ? '/src/App.tsx'
+            : vfsFilesForSave['/App.tsx']
+              ? '/App.tsx'
+              : '/src/App.tsx';
+          if (fresh && fresh !== vfsFilesForSave[appPath]) {
+            vfsFilesForSave = { ...vfsFilesForSave, [appPath]: fresh };
+            console.log('[useTemplateFiles.autoSave] Re-derived canonical router before save:', appPath);
+          }
+        }
+      } catch (err) {
+        console.warn('[useTemplateFiles.autoSave] Router re-derivation skipped:', err);
+      }
+
       const updatePatch: Record<string, unknown> = {
         code,
         editor_code: code,
         updated_at: new Date().toISOString(),
       };
-      if (payload?.vfsFiles !== undefined) {
-        updatePatch.vfs_files = payload.vfsFiles as unknown as Json;
+      if (vfsFilesForSave !== undefined) {
+        updatePatch.vfs_files = vfsFilesForSave as unknown as Json;
       }
       if (
         payload?.entryPoint !== undefined ||

@@ -1,21 +1,22 @@
 /**
- * aiHistoryStore — Persistent AI prompt + edit history per project.
+ * aiHistoryStore — Persistent AI prompt + edit history per BUILDER DRAFT.
  *
- * Responsibilities (frontend-only):
- *  1. Persist AI chat messages so a Preview/page refresh never loses prompt
- *     history or AI replies for the active project.
- *  2. Persist a small cascade of VFS edit snapshots so users can revert or
- *     re-apply prior AI edits from the WebBuilder toolbar.
+ * IMPORTANT (2026-06-22 hardening): conversations are scoped strictly to the
+ * active `builder_drafts.id`, never to the abstract project id. Two drafts of
+ * the same project must NEVER share AI conversation history.
  *
  * Storage strategy:
- *  - Primary: `localStorage` keyed by projectId — instant hydrate on mount.
+ *  - Primary: `localStorage` keyed by draft id — instant hydrate on mount.
  *  - Secondary (best-effort): `builder_drafts.metadata.aiHistory` via the
- *    Supabase client when authenticated, debounced. Local always wins on
- *    hydrate to avoid flicker; Supabase acts as cross-device backup.
+ *    Supabase client when authenticated, debounced and looked up by draft id.
  *
  * Keys:
- *  - localStorage: `unison.aiHistory.<projectId>` → { messages, snapshots }
- *  - For preview / unsaved drafts (no projectId), uses `__draft__`.
+ *  - localStorage: `unison.aiHistory.draft.<draftId>` → { messages, snapshots }
+ *  - When no draft id is bound yet, the sentinel `__unscoped__` is used.
+ *    Callers SHOULD treat unscoped history as ephemeral.
+ *  - Legacy keys (`unison.aiHistory.<projectId>` / old `__draft__` sentinel)
+ *    are ignored and purged on first read below, so prior cross-project
+ *    bleed cannot reappear after this rollout.
  */
 
 import { supabase } from '@/integrations/supabase/client';
@@ -107,8 +108,31 @@ const MAX_SNAPSHOTS = 25;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function lsKey(projectId: string | null | undefined): string {
-  return `unison.aiHistory.${projectId || '__draft__'}`;
+function lsKey(draftId: string | null | undefined): string {
+  return `unison.aiHistory.draft.${draftId || '__unscoped__'}`;
+}
+
+// One-time purge of legacy keys (project-id-scoped or old `__draft__`
+// sentinel). Runs once per page load; prevents pre-2026-06-22 cross-draft
+// bleed from re-hydrating into a new draft.
+let legacyPurged = false;
+function purgeLegacyKeysOnce(): void {
+  if (legacyPurged || typeof window === 'undefined') return;
+  legacyPurged = true;
+  try {
+    const toDelete: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (!k) continue;
+      // Legacy: `unison.aiHistory.<X>` where X is NOT prefixed by `draft.`
+      if (k.startsWith('unison.aiHistory.') && !k.startsWith('unison.aiHistory.draft.')) {
+        toDelete.push(k);
+      }
+    }
+    for (const k of toDelete) window.localStorage.removeItem(k);
+  } catch {
+    /* best-effort */
+  }
 }
 
 function safeParse(raw: string | null): AIHistoryRecord {
@@ -125,10 +149,11 @@ function safeParse(raw: string | null): AIHistoryRecord {
   }
 }
 
-function readLocal(projectId: string | null | undefined): AIHistoryRecord {
+function readLocal(draftId: string | null | undefined): AIHistoryRecord {
   if (typeof window === 'undefined') return { ...EMPTY };
+  purgeLegacyKeysOnce();
   try {
-    return safeParse(window.localStorage.getItem(lsKey(projectId)));
+    return safeParse(window.localStorage.getItem(lsKey(draftId)));
   } catch {
     return { ...EMPTY };
   }
@@ -185,15 +210,14 @@ export function subscribeAIHistory(
 
 const remoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Promise<void> {
+async function mirrorToSupabase(draftId: string, record: AIHistoryRecord): Promise<void> {
   try {
-    const { data: drafts, error: selErr } = await supabase
+    const { data: row, error: selErr } = await supabase
       .from('builder_drafts')
       .select('id, metadata')
-      .eq('project_id', projectId)
-      .limit(1);
-    if (selErr || !drafts?.length) return;
-    const row = drafts[0];
+      .eq('id', draftId)
+      .maybeSingle();
+    if (selErr || !row) return;
     const meta = (row.metadata && typeof row.metadata === 'object' ? row.metadata : {}) as Record<string, unknown>;
     // Don't write the full file blobs to Supabase — keep them local-only to
     // avoid bloating the row. Persist messages + snapshot metadata.
@@ -211,6 +235,7 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
       ...meta,
       aiHistory: {
         v: 1,
+        draftId,
         messages: record.messages.slice(-50),
         snapshots: trimmedSnapshots,
         updatedAt: new Date().toISOString(),
@@ -218,8 +243,6 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
     };
     await supabase
       .from('builder_drafts')
-      // Cast through unknown — Supabase generated Json type is structurally
-      // recursive and rejects our domain shapes even though they're JSON-safe.
       .update({ metadata: nextMeta as unknown as never })
       .eq('id', row.id);
   } catch {
@@ -227,14 +250,14 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
   }
 }
 
-function scheduleRemoteMirror(projectId: string | null | undefined, record: AIHistoryRecord) {
-  if (!projectId) return;
-  const key = lsKey(projectId);
+function scheduleRemoteMirror(draftId: string | null | undefined, record: AIHistoryRecord) {
+  if (!draftId) return;
+  const key = lsKey(draftId);
   const existing = remoteTimers.get(key);
   if (existing) clearTimeout(existing);
   const timer = setTimeout(() => {
     remoteTimers.delete(key);
-    void mirrorToSupabase(projectId, record);
+    void mirrorToSupabase(draftId, record);
   }, 1500);
   remoteTimers.set(key, timer);
 }
@@ -243,35 +266,34 @@ function scheduleRemoteMirror(projectId: string | null | undefined, record: AIHi
 // Public API
 // ---------------------------------------------------------------------------
 
-export function loadAIHistory(projectId: string | null | undefined): AIHistoryRecord {
-  return readLocal(projectId);
+export function loadAIHistory(draftId: string | null | undefined): AIHistoryRecord {
+  return readLocal(draftId);
 }
 
 /**
  * Hydrate local AI history from Supabase mirror for cross-device continuity.
- * Keeps local snapshots (which include before/after blobs) and only merges
- * message history from remote metadata.aiHistory.
+ * Keyed strictly by builder_drafts.id — never by project_id.
  */
 export async function hydrateAIHistoryFromSupabase(
-  projectId: string | null | undefined,
+  draftId: string | null | undefined,
 ): Promise<AIHistoryRecord> {
-  const local = readLocal(projectId);
-  if (!projectId) {
+  const local = readLocal(draftId);
+  if (!draftId) {
     return local;
   }
 
   try {
-    const { data: drafts, error } = await supabase
+    const { data: row, error } = await supabase
       .from('builder_drafts')
       .select('metadata')
-      .eq('project_id', projectId)
-      .limit(1);
+      .eq('id', draftId)
+      .maybeSingle();
 
-    if (error || !drafts?.length) {
+    if (error || !row) {
       return local;
     }
 
-    const metadata = drafts[0]?.metadata;
+    const metadata = row?.metadata;
     const aiHistory =
       metadata && typeof metadata === 'object'
         ? (metadata as Record<string, unknown>).aiHistory
@@ -323,8 +345,8 @@ export async function hydrateAIHistoryFromSupabase(
       messages: mergedMessages,
     };
 
-    writeLocal(projectId, next);
-    emit(projectId, next);
+    writeLocal(draftId, next);
+    emit(draftId, next);
     return next;
   } catch {
     return local;

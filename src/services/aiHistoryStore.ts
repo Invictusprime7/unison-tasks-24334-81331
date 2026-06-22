@@ -345,8 +345,8 @@ export async function hydrateAIHistoryFromSupabase(
       messages: mergedMessages,
     };
 
-    writeLocal(projectId, next);
-    emit(projectId, next);
+    writeLocal(draftId, next);
+    emit(draftId, next);
     return next;
   } catch {
     return local;

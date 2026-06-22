@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { Json } from "@/integrations/supabase/types";
 import { syncCanonicalComponentGraph } from "@/services/componentGraphPersistence";
 import { findBuilderDraftIdForProject } from "@/services/builderDraftBridge";
+import { generateCanonicalRouterForFiles } from "@/utils/topologyRouterGenerator";
+import type { PageRegistry } from "@/types/pageRegistry";
 
 interface TemplateData {
   html: string;

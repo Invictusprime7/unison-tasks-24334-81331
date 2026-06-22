@@ -6883,7 +6883,7 @@ export default function ${componentName}() {
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
-              projectId={projectId ?? null}
+              projectId={currentTemplateId ?? null}
               businessId={businessId ?? null}
               layoutOps={layoutOpsForAI}
               onApplyToVFS={(rawFiles, applyMeta) => {

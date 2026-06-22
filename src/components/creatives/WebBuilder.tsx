@@ -6071,7 +6071,7 @@ ${html}
           </Button>
 
           <AIEditHistoryMenu
-            projectId={projectId ?? null}
+            projectId={currentTemplateId ?? null}
             onRevert={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
               virtualFS.importFiles(snap.before);

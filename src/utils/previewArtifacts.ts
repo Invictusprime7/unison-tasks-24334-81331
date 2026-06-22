@@ -77,7 +77,37 @@ export function buildPreviewArtifacts(
   // Re-stamp AUTO-GENERATED canonical Unison files (data + product widgets)
   // on every compile so AI / editor mutations cannot break the preview.
   // See src/services/unisonCanonicalRegistry.ts.
-  const sandpackFiles = applyUnisonCanonicals(rawSandpackFiles);
+  const stampedFiles = applyUnisonCanonicals(rawSandpackFiles);
+
+  // ── Final preview-side parse gate ─────────────────────────────────────
+  // Hard contract: the iframe must never receive a file that fails to parse.
+  // Run one auto-repair pass over every code file produced by the Sandpack
+  // prep pipeline (which itself mutates JSX via shimming / import repair /
+  // theme injection and can introduce syntax errors). Any file that still
+  // fails to parse is quarantined with a visible diagnostic component so
+  // the iframe shows a clear error panel instead of a white screen or a
+  // raw Sandpack runtime exception.
+  let sandpackFiles = stampedFiles;
+  try {
+    const industry = launchStateWithRecoveredTheme?.siteBundleSnapshot?.industry;
+    const brand =
+      launchStateWithRecoveredTheme?.siteBundleSnapshot?.brand?.business_name ||
+      launchStateWithRecoveredTheme?.runtimeManifest?.appContext?.brand?.business_name;
+    const gate = runPreflightRepair(stampedFiles, { context: { industry, brand } });
+    sandpackFiles = gate.files;
+    if (gate.repairedCount > 0 || gate.quarantinedCount > 0) {
+      console.warn('[buildPreviewArtifacts] Preview parse gate:', {
+        clean: gate.cleanCount,
+        repaired: gate.repairedCount,
+        quarantined: gate.quarantinedCount,
+        details: gate.reports
+          .filter((r) => r.status !== 'clean')
+          .map((r) => ({ path: r.path, status: r.status, error: r.finalError?.slice(0, 200) })),
+      });
+    }
+  } catch (error) {
+    console.warn('[buildPreviewArtifacts] Preview parse gate failed; using stamped files', error);
+  }
 
   const { dependencies } = getDependenciesForSandpack(dependencySourceFiles, baseDependencies);
 

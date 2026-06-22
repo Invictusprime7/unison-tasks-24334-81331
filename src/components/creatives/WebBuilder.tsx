@@ -2503,11 +2503,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // topologyRouterGenerator into the VFS so navigation, intent bindings, and
   // the preview stay perfectly in sync. No AI, no fallback — pure derivation.
   // ──────────────────────────────────────────────────────────────────────────
-  const lastSyncedRegistryVersionRef = useRef<number>(-1);
+  // Key the sync ref by draftId:registryVersion so switching drafts ALWAYS
+  // re-derives the canonical router for the new draft. A bare version counter
+  // would bleed across drafts (draft A v3 → draft B v3 would no-op and leave
+  // draft A's router persisted under draft B).
+  const lastSyncedRouterKeyRef = useRef<string>('');
   useEffect(() => {
     const registry = creatorPlayground.pageRegistry;
     if (!registry || Object.keys(registry.pages).length === 0) return;
-    if (lastSyncedRegistryVersionRef.current === registry.version) return;
+    const draftKey = templateFiles.currentTemplateId || '__no-draft__';
+    const syncKey = `${draftKey}:${registry.version}`;
+    if (lastSyncedRouterKeyRef.current === syncKey) return;
     try {
       const currentFiles = virtualFS.getSandpackFiles();
       const filesToImport: Record<string, string> = {};
@@ -2524,14 +2530,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       if (Object.keys(filesToImport).length > 0) {
         virtualFS.importFiles(filesToImport);
       }
-      lastSyncedRegistryVersionRef.current = registry.version;
+      lastSyncedRouterKeyRef.current = syncKey;
       if (result.validation && !result.validation.valid) {
         console.warn('[WebBuilder] Topology validation issues after registry sync:', result.validation.issues);
       }
     } catch (err) {
       console.error('[WebBuilder] Canonical router sync failed:', err);
     }
-  }, [creatorPlayground.pageRegistry, launchEntryPoint, virtualFS]);
+  }, [creatorPlayground.pageRegistry, launchEntryPoint, virtualFS, templateFiles.currentTemplateId]);
 
   // Page manifest for async multi-page navigation (all HTML pages from VFS)
   const pageManifest = useMemo(() => {

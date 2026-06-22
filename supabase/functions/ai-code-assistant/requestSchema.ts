@@ -50,7 +50,7 @@ export const AIRequestSchema = z.object({
       locale: z.string().max(20).optional(),
     }).passthrough().optional(),
     brand: z.object({
-      business_name: z.string().max(100).optional(),
+      business_name: z.string().max(255).optional(),
       tagline: z.string().max(200).optional(),
       tone: z.string().max(80).optional(),
       palette: z.object({

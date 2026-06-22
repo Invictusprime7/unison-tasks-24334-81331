@@ -210,15 +210,14 @@ export function subscribeAIHistory(
 
 const remoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Promise<void> {
+async function mirrorToSupabase(draftId: string, record: AIHistoryRecord): Promise<void> {
   try {
-    const { data: drafts, error: selErr } = await supabase
+    const { data: row, error: selErr } = await supabase
       .from('builder_drafts')
       .select('id, metadata')
-      .eq('project_id', projectId)
-      .limit(1);
-    if (selErr || !drafts?.length) return;
-    const row = drafts[0];
+      .eq('id', draftId)
+      .maybeSingle();
+    if (selErr || !row) return;
     const meta = (row.metadata && typeof row.metadata === 'object' ? row.metadata : {}) as Record<string, unknown>;
     // Don't write the full file blobs to Supabase — keep them local-only to
     // avoid bloating the row. Persist messages + snapshot metadata.
@@ -236,6 +235,7 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
       ...meta,
       aiHistory: {
         v: 1,
+        draftId,
         messages: record.messages.slice(-50),
         snapshots: trimmedSnapshots,
         updatedAt: new Date().toISOString(),
@@ -243,8 +243,6 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
     };
     await supabase
       .from('builder_drafts')
-      // Cast through unknown — Supabase generated Json type is structurally
-      // recursive and rejects our domain shapes even though they're JSON-safe.
       .update({ metadata: nextMeta as unknown as never })
       .eq('id', row.id);
   } catch {
@@ -252,14 +250,14 @@ async function mirrorToSupabase(projectId: string, record: AIHistoryRecord): Pro
   }
 }
 
-function scheduleRemoteMirror(projectId: string | null | undefined, record: AIHistoryRecord) {
-  if (!projectId) return;
-  const key = lsKey(projectId);
+function scheduleRemoteMirror(draftId: string | null | undefined, record: AIHistoryRecord) {
+  if (!draftId) return;
+  const key = lsKey(draftId);
   const existing = remoteTimers.get(key);
   if (existing) clearTimeout(existing);
   const timer = setTimeout(() => {
     remoteTimers.delete(key);
-    void mirrorToSupabase(projectId, record);
+    void mirrorToSupabase(draftId, record);
   }, 1500);
   remoteTimers.set(key, timer);
 }

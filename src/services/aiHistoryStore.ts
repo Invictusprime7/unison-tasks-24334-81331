@@ -1,21 +1,22 @@
 /**
- * aiHistoryStore — Persistent AI prompt + edit history per project.
+ * aiHistoryStore — Persistent AI prompt + edit history per BUILDER DRAFT.
  *
- * Responsibilities (frontend-only):
- *  1. Persist AI chat messages so a Preview/page refresh never loses prompt
- *     history or AI replies for the active project.
- *  2. Persist a small cascade of VFS edit snapshots so users can revert or
- *     re-apply prior AI edits from the WebBuilder toolbar.
+ * IMPORTANT (2026-06-22 hardening): conversations are scoped strictly to the
+ * active `builder_drafts.id`, never to the abstract project id. Two drafts of
+ * the same project must NEVER share AI conversation history.
  *
  * Storage strategy:
- *  - Primary: `localStorage` keyed by projectId — instant hydrate on mount.
+ *  - Primary: `localStorage` keyed by draft id — instant hydrate on mount.
  *  - Secondary (best-effort): `builder_drafts.metadata.aiHistory` via the
- *    Supabase client when authenticated, debounced. Local always wins on
- *    hydrate to avoid flicker; Supabase acts as cross-device backup.
+ *    Supabase client when authenticated, debounced and looked up by draft id.
  *
  * Keys:
- *  - localStorage: `unison.aiHistory.<projectId>` → { messages, snapshots }
- *  - For preview / unsaved drafts (no projectId), uses `__draft__`.
+ *  - localStorage: `unison.aiHistory.draft.<draftId>` → { messages, snapshots }
+ *  - When no draft id is bound yet, the sentinel `__unscoped__` is used.
+ *    Callers SHOULD treat unscoped history as ephemeral.
+ *  - Legacy keys (`unison.aiHistory.<projectId>` / old `__draft__` sentinel)
+ *    are ignored and purged on first read below, so prior cross-project
+ *    bleed cannot reappear after this rollout.
  */
 
 import { supabase } from '@/integrations/supabase/client';

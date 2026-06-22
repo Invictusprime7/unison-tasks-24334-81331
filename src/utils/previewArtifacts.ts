@@ -90,9 +90,7 @@ export function buildPreviewArtifacts(
   let sandpackFiles = stampedFiles;
   try {
     const industry = launchStateWithRecoveredTheme?.siteBundleSnapshot?.industry;
-    const brand =
-      launchStateWithRecoveredTheme?.siteBundleSnapshot?.brand?.business_name ||
-      launchStateWithRecoveredTheme?.runtimeManifest?.appContext?.brand?.business_name;
+    const brand = launchStateWithRecoveredTheme?.businessName;
     const gate = runPreflightRepair(stampedFiles, { context: { industry, brand } });
     sandpackFiles = gate.files;
     if (gate.repairedCount > 0 || gate.quarantinedCount > 0) {

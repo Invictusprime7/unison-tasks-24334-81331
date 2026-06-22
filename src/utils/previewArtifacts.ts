@@ -4,6 +4,7 @@ import { launchStateToSandpackFiles } from '@/utils/launchToSandpack';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
+import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;

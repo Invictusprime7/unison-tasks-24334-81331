@@ -266,35 +266,34 @@ function scheduleRemoteMirror(draftId: string | null | undefined, record: AIHist
 // Public API
 // ---------------------------------------------------------------------------
 
-export function loadAIHistory(projectId: string | null | undefined): AIHistoryRecord {
-  return readLocal(projectId);
+export function loadAIHistory(draftId: string | null | undefined): AIHistoryRecord {
+  return readLocal(draftId);
 }
 
 /**
  * Hydrate local AI history from Supabase mirror for cross-device continuity.
- * Keeps local snapshots (which include before/after blobs) and only merges
- * message history from remote metadata.aiHistory.
+ * Keyed strictly by builder_drafts.id — never by project_id.
  */
 export async function hydrateAIHistoryFromSupabase(
-  projectId: string | null | undefined,
+  draftId: string | null | undefined,
 ): Promise<AIHistoryRecord> {
-  const local = readLocal(projectId);
-  if (!projectId) {
+  const local = readLocal(draftId);
+  if (!draftId) {
     return local;
   }
 
   try {
-    const { data: drafts, error } = await supabase
+    const { data: row, error } = await supabase
       .from('builder_drafts')
       .select('metadata')
-      .eq('project_id', projectId)
-      .limit(1);
+      .eq('id', draftId)
+      .maybeSingle();
 
-    if (error || !drafts?.length) {
+    if (error || !row) {
       return local;
     }
 
-    const metadata = drafts[0]?.metadata;
+    const metadata = row?.metadata;
     const aiHistory =
       metadata && typeof metadata === 'object'
         ? (metadata as Record<string, unknown>).aiHistory

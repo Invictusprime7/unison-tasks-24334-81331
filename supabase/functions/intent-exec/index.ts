@@ -670,11 +670,11 @@ async function handleBookingCreate(
       customer_name: (params.name || params.fullName) as string,
       customer_phone: params.phone as string,
       service_name: params.service as string,
-      preferred_date: params.date as string,
-      preferred_time: params.time as string,
+      booking_date: params.date as string,
+      booking_time: params.time as string,
       status: "pending",
       notes: params.message as string,
-      source: "website",
+      metadata: { source: "website" },
     })
     .select("id")
     .single();

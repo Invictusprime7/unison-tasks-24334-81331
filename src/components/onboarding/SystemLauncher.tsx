@@ -919,6 +919,79 @@ function getIndustryQualityRequirements(industry: string | undefined):
   };
 }
 
+/**
+ * Auto-injects missing required data-ut-intent values into the AI's TSX files.
+ * Picks the most semantically appropriate element per intent:
+ *  - `*.submit` / `*.send` → first `<button type="submit"` lacking an intent
+ *  - `booking.*` / `appointment.*` → first button/link whose text mentions book/appointment/schedule
+ *  - fallback → first `<button` or `<a` without a data-ut-intent attribute
+ * Returns a new file map. Files unchanged when no safe injection site is found.
+ */
+function autoRepairMissingIntents(
+  files: Record<string, string>,
+  requiredIntents: readonly string[],
+): { files: Record<string, string>; injected: string[]; missing: string[] } {
+  const tsxPaths = Object.keys(files).filter((p) => /\.(tsx|jsx)$/.test(p));
+  if (tsxPaths.length === 0) return { files, injected: [], missing: [...requiredIntents] };
+
+  const combinedAll = () => tsxPaths.map((p) => out[p] ?? files[p]).join('\n');
+  const out: Record<string, string> = { ...files };
+  const injected: string[] = [];
+  const missing: string[] = [];
+
+  const hasIntent = (intent: string) => {
+    const re = new RegExp(`data-ut-intent=["']${intent.replace(/[.]/g, '\\.')}["']`);
+    return re.test(combinedAll());
+  };
+
+  const tryInject = (intent: string, matcher: RegExp): boolean => {
+    for (const path of tsxPaths) {
+      const src = out[path] ?? files[path];
+      const m = matcher.exec(src);
+      if (!m) continue;
+      const idx = m.index + m[0].length;
+      out[path] = src.slice(0, idx) + ` data-ut-intent="${intent}"` + src.slice(idx);
+      return true;
+    }
+    return false;
+  };
+
+  for (const intent of requiredIntents) {
+    if (hasIntent(intent)) continue;
+    const lower = intent.toLowerCase();
+    let ok = false;
+
+    if (/(\.submit|\.send)$/.test(lower)) {
+      ok = tryInject(intent, /<button\b(?![^>]*\bdata-ut-intent=)[^>]*\btype=["']submit["'][^>]*?(?=>)/);
+      if (!ok) ok = tryInject(intent, /<form\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)/);
+    } else if (/(booking|appointment|schedule)/.test(lower)) {
+      ok = tryInject(intent, /<(?:button|a)\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)[^<]*?(?=(?:>[^<]*(?:Book|Appointment|Schedule|Reserve))?)/);
+    } else if (/(call|phone)/.test(lower)) {
+      ok = tryInject(intent, /<a\b(?![^>]*\bdata-ut-intent=)[^>]*\bhref=["']tel:[^>]*?(?=>)/);
+    } else if (/(email|mailto)/.test(lower)) {
+      ok = tryInject(intent, /<a\b(?![^>]*\bdata-ut-intent=)[^>]*\bhref=["']mailto:[^>]*?(?=>)/);
+    } else if (/(directions|location)/.test(lower)) {
+      ok = tryInject(intent, /<a\b(?![^>]*\bdata-ut-intent=)[^>]*\bhref=["']https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.app\.goo\.gl|maps\.google)[^>]*?(?=>)/);
+    } else if (/(donat|give)/.test(lower)) {
+      ok = tryInject(intent, /<(?:button|a)\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)/);
+    } else if (/(checkout|cart|buy|purchase)/.test(lower)) {
+      ok = tryInject(intent, /<(?:button|a)\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)/);
+    }
+
+    if (!ok) {
+      ok = tryInject(intent, /<button\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)/);
+    }
+    if (!ok) {
+      ok = tryInject(intent, /<a\b(?![^>]*\bdata-ut-intent=)[^>]*\bhref=[^>]*?(?=>)/);
+    }
+
+    if (ok) injected.push(intent);
+    else missing.push(intent);
+  }
+
+  return { files: out, injected, missing };
+}
+
 
 // Mini preview component — shows a themed wireframe using the composition's actual colors
 const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData; isSelected: boolean; onClick: () => void }) => {
@@ -1852,11 +1925,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   });
                 }
 
-                const quality = assessWizardGenerationQuality(
+                const industryReq = launchContract.previewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined;
+                let quality = assessWizardGenerationQuality(
                   sanitized.files,
                   composition.sections.map((s) => s.type),
-                  launchContract.previewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
+                  industryReq,
                 );
+                // Auto-repair pass: if the AI missed a required data-ut-intent,
+                // try to inject it onto an appropriate element rather than hard-failing.
+                if (
+                  !quality.ok &&
+                  industryReq &&
+                  typeof quality.reason === 'string' &&
+                  /missing required data-ut-intent/.test(quality.reason)
+                ) {
+                  const repair = autoRepairMissingIntents(sanitized.files, industryReq.requiredIntents);
+                  if (repair.injected.length > 0) {
+                    console.warn('[SystemLauncher] Auto-injected missing required intents', {
+                      injected: repair.injected,
+                      stillMissing: repair.missing,
+                    });
+                    sanitized.files = repair.files;
+                    quality = assessWizardGenerationQuality(
+                      sanitized.files,
+                      composition.sections.map((s) => s.type),
+                      industryReq,
+                    );
+                  }
+                }
                 if (!quality.ok) {
                   if (isBlockingWizardQualityFailure(quality.reason)) {
                     lastPayloadIssue = {

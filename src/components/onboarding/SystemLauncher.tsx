@@ -1925,11 +1925,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                   });
                 }
 
-                const quality = assessWizardGenerationQuality(
+                const industryReq = launchContract.previewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined;
+                let quality = assessWizardGenerationQuality(
                   sanitized.files,
                   composition.sections.map((s) => s.type),
-                  launchContract.previewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined,
+                  industryReq,
                 );
+                // Auto-repair pass: if the AI missed a required data-ut-intent,
+                // try to inject it onto an appropriate element rather than hard-failing.
+                if (
+                  !quality.ok &&
+                  industryReq &&
+                  typeof quality.reason === 'string' &&
+                  /missing required data-ut-intent/.test(quality.reason)
+                ) {
+                  const repair = autoRepairMissingIntents(sanitized.files, industryReq.requiredIntents);
+                  if (repair.injected.length > 0) {
+                    console.warn('[SystemLauncher] Auto-injected missing required intents', {
+                      injected: repair.injected,
+                      stillMissing: repair.missing,
+                    });
+                    sanitized.files = repair.files;
+                    quality = assessWizardGenerationQuality(
+                      sanitized.files,
+                      composition.sections.map((s) => s.type),
+                      industryReq,
+                    );
+                  }
+                }
                 if (!quality.ok) {
                   if (isBlockingWizardQualityFailure(quality.reason)) {
                     lastPayloadIssue = {

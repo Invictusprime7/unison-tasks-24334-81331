@@ -35,6 +35,7 @@ import {
   type CommitResult as CanonicalCommitResult,
   type CommitSource as CanonicalCommitSource,
 } from '@/platform/core/commitToPipeline';
+import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import type { PlaygroundState } from '@/platform/core/playground';
 import type { CompiledContract } from '@/platform/core/contractCompiler';
 import { runFullPreflight } from '@/services/runFullPreflight';
@@ -178,20 +179,30 @@ export async function commitMutation(
   // 5. Full preflight --------------------------------------------------------
   const snapshot = canonicalResult.siteBundleSnapshot ?? null;
   let files: Record<string, string> =
-    (snapshot as { vfsFiles?: Record<string, string> } | null)?.vfsFiles ??
-    workingFiles;
+    input.source === 'wizard-launch'
+      ? mergeWizardLaunchFiles(workingFiles, (snapshot as SiteBundleSnapshot | null) ?? null)
+      : ((snapshot as { vfsFiles?: Record<string, string> } | null)?.vfsFiles ?? workingFiles);
+  let snapshotForPersistence = input.source === 'wizard-launch'
+    ? mergeWizardLaunchSnapshot((snapshot as SiteBundleSnapshot | null) ?? null, files)
+    : snapshot;
 
   const requirePreview = input.options?.requirePreviewPass !== false;
   const requireReadiness = input.options?.requireReadinessPass !== false;
 
   let preflight = runFullPreflight(files, {
-    siteBundleSnapshot: (snapshot as { meta?: unknown } | null) as
+    siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
       | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot
       | null,
     industry: input.options?.industry,
     brand: input.options?.businessName,
   });
   files = preflight.files;
+  if (input.source === 'wizard-launch') {
+    snapshotForPersistence = mergeWizardLaunchSnapshot(
+      (snapshotForPersistence as SiteBundleSnapshot | null) ?? null,
+      files,
+    );
+  }
 
   const previewOk =
     preflight.stages.earlyRepair !== 'failed' &&
@@ -207,7 +218,7 @@ export async function commitMutation(
     log('repair', 'warn', 'running single auto-repair pass');
     try {
       preflight = runFullPreflight(files, {
-        siteBundleSnapshot: (snapshot as { meta?: unknown } | null) as
+          siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
           | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot
           | null,
         industry: input.options?.industry,
@@ -237,7 +248,7 @@ export async function commitMutation(
     input,
     status,
     vfsFiles: files,
-    siteBundleSnapshot: snapshot,
+    siteBundleSnapshot: snapshotForPersistence,
     runtimeManifest: canonicalResult.runtimeManifest ?? null,
     playground: canonicalResult.playground ?? input.current.playground ?? null,
     readinessReport: gate
@@ -289,6 +300,50 @@ function toCanonicalSource(s: PatchSource): CanonicalCommitSource {
     default:
       return 'playground-edit';
   }
+}
+
+/**
+ * Wizard launches already arrive with the full Lane B/SiteBundle handoff VFS
+ * in the patch file map. The canonical wizard recompile is still required for
+ * registry/snapshot/runtime derivation, but its compile output is scaffold-only
+ * and intentionally drops AI-authored support modules plus metadata files. If a
+ * revision persists that scaffold output, WebBuilder's revision-first hydration
+ * replaces the rich launch with the minimal template site.
+ */
+function mergeWizardLaunchFiles(
+  launcherFiles: Record<string, string>,
+  snapshot: SiteBundleSnapshot | null,
+): Record<string, string> {
+  const canonicalFiles = snapshot?.vfsFiles ?? {};
+  const merged: Record<string, string> = {
+    ...canonicalFiles,
+    ...launcherFiles,
+  };
+
+  const routerPath = snapshot?.routerFile?.path || '/src/App.tsx';
+  const routerContent = launcherFiles[routerPath] || launcherFiles['/src/App.tsx'] || snapshot?.routerFile?.content;
+  if (routerContent) {
+    merged[routerPath] = routerContent;
+    merged['/src/App.tsx'] = routerContent;
+  }
+
+  return merged;
+}
+
+function mergeWizardLaunchSnapshot(
+  snapshot: SiteBundleSnapshot | null,
+  files: Record<string, string>,
+): SiteBundleSnapshot | null {
+  if (!snapshot) return null;
+  const routerPath = snapshot.routerFile?.path || '/src/App.tsx';
+  return {
+    ...snapshot,
+    vfsFiles: files,
+    routerFile: {
+      path: routerPath,
+      content: files[routerPath] || files['/src/App.tsx'] || snapshot.routerFile?.content || '',
+    },
+  };
 }
 
 async function finalize(args: {

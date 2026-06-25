@@ -169,19 +169,28 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
-  options: { allowCanonicalPageFallback?: boolean } = {},
+  options: { allowCanonicalPageFallback?: boolean; lockRegisteredPagesToCanonical?: boolean } = {},
 ): Record<string, string> {
   const registryPages = Object.values(snapshot.pageRegistry.pages);
+  const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
+  const readCanonical = (path: string): string | undefined => {
+    const normalized = normalizePath(path);
+    return canonicalFiles[normalized] || canonicalFiles[normalized.slice(1)] || canonicalFiles[path];
+  };
   const registeredPagePaths = new Set(
     registryPages
       .map((page) => page.filePath)
       .filter((path): path is string => Boolean(path))
-      .flatMap((path) => [path, path.startsWith('/') ? path.slice(1) : `/${path}`]),
+      .flatMap((path) => [path, normalizePath(path), normalizePath(path).slice(1)]),
+  );
+  const lockRegisteredPagesToSiteBundle = Boolean(
+    options.lockRegisteredPagesToCanonical || snapshot.meta?.themePresetId,
   );
   const merged = Object.fromEntries(
-    Object.entries(canonicalFiles).filter(([path]) => (
-      options.allowCanonicalPageFallback !== false || !registeredPagePaths.has(path)
-    )),
+    Object.entries(canonicalFiles).filter(([path]) => {
+      if (lockRegisteredPagesToSiteBundle) return true;
+      return options.allowCanonicalPageFallback !== false || !registeredPagePaths.has(path);
+    }),
   ) as Record<string, string>;
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
@@ -199,7 +208,13 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       !looksLikeCanonicalRouter(content);
 
     if (shouldMoveLegacyAppIntoHome) {
-      merged[homeFilePath] = rebaseAppModuleForHomePage(content);
+      if (!lockRegisteredPagesToSiteBundle || !readCanonical(homeFilePath)) {
+        merged[homeFilePath] = rebaseAppModuleForHomePage(content);
+      }
+      continue;
+    }
+
+    if (lockRegisteredPagesToSiteBundle && registeredPagePaths.has(path) && readCanonical(path)) {
       continue;
     }
 
@@ -391,6 +406,7 @@ export function buildCanonicalLaunchArtifacts(
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
+        lockRegisteredPagesToCanonical: Boolean(input.themePresetId || input.siteBundleSnapshot.meta?.themePresetId),
       })
     : { ...safeFiles };
 

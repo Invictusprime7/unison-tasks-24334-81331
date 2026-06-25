@@ -59,7 +59,7 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
   }, [template]);
 
   return (
-    <div style={themeToCSS(theme) as React.CSSProperties}>
+    <div style={themeToCSS(theme) as React.CSSProperties} data-ut-page={template.id} data-ut-template-id={template.id}>
       {template.sections
         .filter(s => !s.hidden)
         .map(section => {

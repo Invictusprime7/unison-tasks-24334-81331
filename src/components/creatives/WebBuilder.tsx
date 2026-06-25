@@ -6972,6 +6972,45 @@ export default function ${componentName}() {
                       meta: applyMeta,
                     });
                   }
+                  // Additive: mirror through VFSCommitService behind feature flag.
+                  if (isCommitServiceEnabled() && businessId && currentTemplateId) {
+                    void (async () => {
+                      try {
+                        const { data: { user } } = await supabaseClient.auth.getUser();
+                        if (!user) return;
+                        const identity: BuilderIdentity = {
+                          userId: user.id,
+                          businessId,
+                          projectId: currentTemplateId,
+                          draftId: currentTemplateId,
+                          revisionId: '',
+                          sessionId: `web-builder:${currentTemplateId}`,
+                        };
+                        const patch = legacyFilesToPatchPlan(files, 'ai-builder');
+                        const commit = await commitMutation({
+                          source: 'ai-builder',
+                          identity,
+                          current: {
+                            vfsFiles: beforeFiles,
+                            siteBundleSnapshot: snapshotForPreflight ?? undefined,
+                          },
+                          patch,
+                          options: {
+                            requirePreviewPass: false,
+                            requireReadinessPass: false,
+                            industry: snapshotForPreflight?.industry,
+                          },
+                        });
+                        console.log('[WebBuilder] ai-builder(secondary) commit persisted:', commit.persistedRevisionId);
+                      } catch (err) {
+                        if (err instanceof CommitRejectedError) {
+                          console.warn('[WebBuilder] ai-builder(secondary) commit rejected:', err.message);
+                        } else {
+                          console.warn('[WebBuilder] ai-builder(secondary) commit failed:', err);
+                        }
+                      }
+                    })();
+                  }
                 }
               }}
               onViewEdits={() => { setViewMode('split'); setAiPanelOpen(false); }}

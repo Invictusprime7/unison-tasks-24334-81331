@@ -3697,6 +3697,89 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
   }
 }
 
+/**
+ * Safety net for unresolved relative imports.
+ *
+ * Wizard sites intentionally disable `generateMissingComponents` (chip-inject)
+ * to keep diagnostics visible. But when the in-builder AI Builder writes a file
+ * that references a sibling module which doesn't exist yet, the preview crashes
+ * with "Could not find module" before any other repair can run.
+ *
+ * We synthesize a minimal `() => null` placeholder file (NOT a fake chip) so the
+ * preview renders an empty slot. The placeholder is clearly marked so authors
+ * can find and replace it. This matches the no-op default-export safety net in
+ * `repairLocalImportContracts`.
+ */
+function synthesizeMissingLocalImports(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+  const extensions = ['.tsx', '.jsx', '.ts', '.js'];
+
+  for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+
+    // Match: import X from './foo'  |  import { X } from './foo'  |  import X, { Y } from './foo'  |  import * as X from './foo'
+    const importRegex =
+      /import\s+(?:[\w*{},\s]+?)\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    let match: RegExpExecArray | null;
+    while ((match = importRegex.exec(content)) !== null) {
+      const rawImportPath = match[1];
+      // Skip stylesheet imports.
+      if (/\.(css|scss|less)$/.test(rawImportPath)) continue;
+
+      const targetPath = resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths);
+      if (targetPath) continue; // module exists
+
+      // Resolve to an absolute synthesized path.
+      const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
+      let resolved = rawImportPath.startsWith('/')
+        ? rawImportPath
+        : `${dir}/${rawImportPath}`.replace(/\/\.\//g, '/');
+      const parts = resolved.split('/');
+      const stack: string[] = [];
+      for (const p of parts) {
+        if (p === '..') stack.pop();
+        else if (p !== '.' && p !== '') stack.push(p);
+      }
+      resolved = '/' + stack.join('/');
+      const writePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
+      if (existingPaths.has(writePath)) continue;
+      if (extensions.some((ext) => existingPaths.has(resolved + ext))) continue;
+
+      // Derive a component name from the import statement (default OR first named).
+      const stmt = match[0];
+      const defaultMatch = stmt.match(/import\s+([A-Z]\w*)/);
+      const namedMatch = stmt.match(/import\s+(?:[A-Z]\w*\s*,\s*)?\{([^}]+)\}/);
+      const namedFirst = namedMatch?.[1]
+        ?.split(',')
+        .map((s) => s.trim().split(/\s+as\s+/).pop()?.trim())
+        .filter((n): n is string => !!n && /^[A-Z]/.test(n))[0];
+      const compName =
+        defaultMatch?.[1] || namedFirst || (resolved.split('/').pop() || 'MissingModule');
+      const safeName = /^[A-Z]\w*$/.test(compName) ? compName : 'MissingComponent';
+
+      // Synthesize a placeholder that satisfies BOTH default and named import
+      // contracts, so consumers using either shape resolve cleanly.
+      const placeholder = [
+        `// Auto-synthesized placeholder for unresolved import "${rawImportPath}" from "${filePath}".`,
+        `// Replace with a real implementation when ready.`,
+        `import React from 'react';`,
+        `export function ${safeName}(_props: Record<string, unknown> = {}) { return null as unknown as React.ReactElement; }`,
+        `export default ${safeName};`,
+        ``,
+      ].join('\n');
+
+      sandpackFiles[writePath] = placeholder;
+      existingPaths.add(writePath);
+      console.warn(
+        `[sandpackFilePrep] Synthesized placeholder module ${writePath} for unresolved import "${rawImportPath}" in ${filePath}`,
+      );
+    }
+  }
+}
+
+
+
+
 
 /**
  * Scan all files for relative imports. For missing modules, generate REAL
@@ -5140,6 +5223,12 @@ export function prepareSandpackFiles(
 
   // Missing relative imports must surface as preview diagnostics. Do not
   // synthesize fallback/template components into wizard-generated sites.
+  // EXCEPTION: the in-builder AI Builder commonly writes a file that
+  // references a sibling module before creating it. To prevent
+  // "Could not find module" crashes from killing the preview, we synthesize
+  // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
+  // empty slot and replace it on the next turn.
+  synthesizeMissingLocalImports(sandpackFiles);
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {
@@ -5148,6 +5237,7 @@ export function prepareSandpackFiles(
   }
 
   repairLocalImportContracts(sandpackFiles);
+
 
   // ── SAFETY: Validate App.tsx has a default export ──
   // If AI-generated App.tsx only uses named exports (e.g., `export function App`),

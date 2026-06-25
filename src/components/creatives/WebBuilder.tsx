@@ -1676,6 +1676,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             styles: { ...(selectedHTMLElement.styles || {}), ...styles },
           });
         }
+        commitToolbarMutationRef.current?.(next, `style ${Object.keys(styles).join(',').slice(0, 40)}`);
       },
       `Manual · style ${Object.keys(styles).join(', ').slice(0, 40)}`,
     );
@@ -1696,6 +1697,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         if (selectedHTMLElement?.selector === selector) {
           setSelectedHTMLElement({ ...selectedHTMLElement, textContent: text });
         }
+        commitToolbarMutationRef.current?.(next, `text "${text.slice(0, 30)}"`);
       },
       `Manual · text "${text.slice(0, 30)}"`,
     );
@@ -1718,6 +1720,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             attributes: { ...(selectedHTMLElement.attributes || {}), src },
           });
         }
+        commitToolbarMutationRef.current?.(next, 'replace image');
       },
       'Manual · replace image',
     );
@@ -1743,6 +1746,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             },
           });
         }
+        commitToolbarMutationRef.current?.(next, `attrs ${Object.keys(attributes).join(',').slice(0, 40)}`);
       },
       `Manual · attrs ${Object.keys(attributes).join(', ').slice(0, 40)}`,
     );

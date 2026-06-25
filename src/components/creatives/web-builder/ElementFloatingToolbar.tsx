@@ -254,9 +254,9 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
       <div className="flex items-center gap-1.5 mb-1.5">
         <Sparkles className="w-3 h-3 text-cyan-400 shrink-0" />
         <span className="text-[10px] font-semibold text-cyan-300 shrink-0">AI Edit</span>
-        <span className="text-[10px] text-white/40 truncate max-w-[220px]">
+        <span className="text-[10px] text-white/40 truncate max-w-[160px]">
           {element.tagName?.toUpperCase()}
-          {element.selector ? ` · ${element.selector.slice(0, 30)}` : ''}
+          {element.selector ? ` · ${element.selector.slice(0, 22)}` : ''}
         </span>
         <button
           onClick={onClose}
@@ -266,6 +266,37 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {/* Scope chips — Element | Block | Section. Default is the auto-derived
+          scope from EditScopeResolver; user can override per prompt. */}
+      <div className="flex items-center gap-1 mb-1.5">
+        <span className="text-[9px] uppercase tracking-wider text-white/40 mr-1">Scope:</span>
+        {(['element', 'block', 'section'] as EditScopeType[]).map((s) => {
+          const isActive = activeScopeType === s;
+          const isAuto = autoScope === s && !scopeOverride;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setScopeOverride(s === autoScope ? null : s)}
+              className={cn(
+                'text-[10px] px-1.5 py-0.5 rounded border transition-colors capitalize',
+                isActive
+                  ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200'
+                  : 'bg-white/[0.04] border-white/10 text-white/50 hover:text-white/80',
+              )}
+              title={isAuto ? 'Auto-selected scope' : `Override scope to ${s}`}
+            >
+              {s}{isAuto ? ' •' : ''}
+            </button>
+          );
+        })}
+        <span className="ml-auto text-[9px] text-white/40 truncate max-w-[150px]" title={formatScopeLabel(editScope)}>
+          {formatScopeLabel(editScope)}
+        </span>
+      </div>
+
+
 
       {/* Input row */}
       <div className="flex items-end gap-1.5">

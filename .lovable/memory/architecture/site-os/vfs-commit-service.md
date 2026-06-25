@@ -41,10 +41,10 @@ Columns: id, project_id, business_id, draft_id, parent_revision_id, source, stat
 
 ## Deferred (next moves)
 
-- Move 4: booking/salon capability adapter wired into step 9 readiness checks.
 - Move 5: `IntentReadinessController` consolidation.
 - Move 6: golden E2E suite (launch salon → AI edit hero → AI add services page → wire CTA → refresh → remove availability → expect publish fail).
 
 ### Status
-- Move 1 (Scaffold), Move 2 (Durable revisions + layout fast-path bridge via `commitLayoutFastPathRef`), Move 3 (revisionId-first hydration) — DONE.
+- Move 1 (Scaffold), Move 2 (Layout fast-path bridge), Move 3 (revisionId-first hydration), Move 4 (capability readiness adapter — Preview/PublishGate verdicts merged into commitMutation readinessReport, block commits with `requireReadinessPass`) — DONE.
+
 

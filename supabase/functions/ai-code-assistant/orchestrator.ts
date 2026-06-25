@@ -190,6 +190,7 @@ async function runBuilderLane(
     componentBehaviorContext, vfsFiles, gatewayOptions,
     previewDiagnostics, previewSnapshot, recentChangedFiles,
   } = parsed;
+  const editScope = (parsed as { editScope?: import("./reviewScope.ts").EditScopeInput }).editScope;
   const wizardSeed = (parsed as { wizardSeed?: WizardSeedShape }).wizardSeed;
 
   // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)
@@ -474,9 +475,11 @@ async function runBuilderLane(
       // ── Scope enforcement for scoped edits ──────────────────────────
       const scopeResult = checkEditScope({
         patchFiles: reviewResult.cleanedFiles,
-        targetFile: parsed.targetFile ?? null,
+        targetFile: parsed.targetFile ?? editScope?.componentPath ?? null,
         taskType: task.type,
         existingFiles,
+        editScope: editScope ?? null,
+        originalFiles: vfsFiles ?? {},
       });
       if (!scopeResult.inScope) {
         console.warn(`[orchestrator] SCOPE VIOLATION: ${scopeResult.reason}`);

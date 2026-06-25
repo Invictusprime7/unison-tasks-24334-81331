@@ -20,6 +20,14 @@ function normalizeVfsPath(p: string): string {
   return p.startsWith("/") ? p : `/${p}`;
 }
 
+export interface EditScopeInput {
+  scopeType?: "element" | "block" | "section" | "page";
+  componentPath?: string;
+  editableRange?: { startLine?: number; endLine?: number };
+  lockedBindings?: string[];
+  riskLevel?: "low" | "medium" | "high";
+}
+
 /**
  * Check whether an AI-generated patch stays within the allowed scope
  * for a scoped edit (surgical, behavioral, single-file, etc.).
@@ -29,17 +37,22 @@ export function checkEditScope(opts: {
   targetFile?: string | null;
   taskType: string;
   existingFiles?: string[];
+  editScope?: EditScopeInput | null;
+  originalFiles?: Record<string, string>;
 }): ScopeCheckResult {
-  const { patchFiles, targetFile, taskType, existingFiles = [] } = opts;
+  const { patchFiles, taskType, existingFiles = [], editScope, originalFiles = {} } = opts;
+  // editScope.componentPath overrides targetFile when present
+  const targetFile = editScope?.componentPath || opts.targetFile;
 
-  // Only enforce scope for scoped edit task types
+  // Only enforce scope for scoped edit task types — or whenever an
+  // explicit editScope was supplied by the floating preview toolbar.
   const SCOPED_TASKS = [
     "surgical_edit",
     "behavioral_edit",
     "single_file_edit",
   ];
 
-  if (!SCOPED_TASKS.includes(taskType)) {
+  if (!editScope && !SCOPED_TASKS.includes(taskType)) {
     return { inScope: true, reason: null, outOfScopeFiles: [], blockAutoApply: false };
   }
 
@@ -96,6 +109,62 @@ export function checkEditScope(opts: {
           inScope: false,
           reason: `Target file ${normTarget} reduced to ${content.length} chars — likely a stub.`,
           outOfScopeFiles: [],
+          blockAutoApply: true,
+        };
+      }
+    }
+  }
+
+  // ── editScope-specific enforcement (preview floating toolbar) ──────────
+  if (editScope && targetFile) {
+    const normTarget = normalizeVfsPath(targetFile);
+    const newKey = Object.keys(patchFiles).find((k) => normalizeVfsPath(k) === normTarget);
+    const origKey = Object.keys(originalFiles).find((k) => normalizeVfsPath(k) === normTarget);
+    const newContent = newKey ? patchFiles[newKey] : null;
+    const origContent = origKey ? originalFiles[origKey] : null;
+
+    // Locked bindings must survive the edit
+    if (newContent && origContent && editScope.lockedBindings?.length) {
+      const missing = editScope.lockedBindings.filter((b) => {
+        const needle = `data-ut-intent="${b}"`;
+        return origContent.includes(needle) && !newContent.includes(needle);
+      });
+      if (missing.length) {
+        return {
+          inScope: false,
+          reason: `Edit removed locked intent bindings: ${missing.join(", ")}`,
+          outOfScopeFiles: [normTarget],
+          blockAutoApply: true,
+        };
+      }
+    }
+
+    // editableRange: lines outside the range must be byte-identical
+    const range = editScope.editableRange;
+    if (newContent && origContent && range && typeof range.startLine === "number" && typeof range.endLine === "number") {
+      const origLines = origContent.split("\n");
+      const newLines = newContent.split("\n");
+      const before = origLines.slice(0, Math.max(0, range.startLine - 1)).join("\n");
+      const after = origLines.slice(range.endLine).join("\n");
+      const newBefore = newLines.slice(0, Math.max(0, range.startLine - 1)).join("\n");
+      // We can't pin the exact end-line in the new file (line count may shift),
+      // but we can require the prefix above startLine to match exactly.
+      if (before !== newBefore) {
+        return {
+          inScope: false,
+          reason: `Edit modified lines above editableRange.startLine (${range.startLine}).`,
+          outOfScopeFiles: [normTarget],
+          blockAutoApply: true,
+        };
+      }
+      // Best-effort suffix match: align tail by length of `after`
+      const tailLen = after.length;
+      const newTail = newContent.slice(newContent.length - tailLen);
+      if (tailLen > 0 && newTail !== after) {
+        return {
+          inScope: false,
+          reason: `Edit modified content below editableRange.endLine (${range.endLine}).`,
+          outOfScopeFiles: [normTarget],
           blockAutoApply: true,
         };
       }

@@ -3070,6 +3070,72 @@ export default function ${componentName}Page() {
     return () => { cancelled = true; };
   }, [effectiveRouteState?.revisionId, importBuilderFiles, launchEntryPoint]);
 
+  // ── Move 2: layout fast-path → VFSCommitService bridge ───────────────────
+  // Each deterministic layout edit additively chains through commitMutation so
+  // the durable site_revisions ledger reflects every state change, not just
+  // AI Builder LLM applies. Non-blocking; preview/editor already updated.
+  useEffect(() => {
+    commitLayoutFastPathRef.current = (nextCode, summary) => {
+      if (!isCommitServiceEnabled() || !businessId || !currentTemplateId) return;
+      const targetPath = activePagePath?.endsWith('.tsx') ? activePagePath : launchEntryPoint;
+      if (!targetPath || !nextCode) return;
+      const beforeFiles = virtualFSRef.current.getSandpackFiles();
+      const snapshot = effectiveRouteState?.siteBundleSnapshot ?? null;
+      void (async () => {
+        try {
+          const { data: { user } } = await supabaseClient.auth.getUser();
+          if (!user) return;
+          const identity: BuilderIdentity = {
+            userId: user.id,
+            businessId,
+            projectId: currentTemplateId,
+            draftId: currentTemplateId,
+            revisionId: currentRevisionId,
+            sessionId: `web-builder:${currentTemplateId}`,
+          };
+          const patch = legacyFilesToPatchPlan(
+            { [targetPath]: nextCode },
+            'layout-fast-path',
+            { description: `Layout · ${summary}` },
+          );
+          const commit = await commitMutation({
+            source: 'layout-fast-path',
+            identity,
+            current: {
+              vfsFiles: beforeFiles,
+              siteBundleSnapshot: snapshot ?? undefined,
+            },
+            patch,
+            options: {
+              requirePreviewPass: false,
+              requireReadinessPass: false,
+              industry: snapshot?.industry,
+            },
+          });
+          if (commit.persistedRevisionId) {
+            setCurrentRevisionId(commit.persistedRevisionId);
+            console.log('[WebBuilder] layout-fast-path commit persisted:', commit.persistedRevisionId);
+          }
+        } catch (err) {
+          if (err instanceof CommitRejectedError) {
+            console.warn('[WebBuilder] layout-fast-path commit rejected:', err.message);
+          } else {
+            console.warn('[WebBuilder] layout-fast-path commit failed:', err);
+          }
+        }
+      })();
+    };
+  }, [
+    businessId,
+    currentTemplateId,
+    currentRevisionId,
+    activePagePath,
+    launchEntryPoint,
+    effectiveRouteState?.siteBundleSnapshot,
+  ]);
+
+
+
 
   
   // Effect A: previewCode → VFS  (one-way sync, runs when AI/templates/page-nav set previewCode)

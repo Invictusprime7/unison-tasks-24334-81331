@@ -2239,6 +2239,55 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         }
       }
 
+      // ── Move 2: additive commit through VFSCommitService (behind flag) ──
+      // Persists revision 1 into `site_revisions` so WebBuilder can hydrate
+      // by revisionId instead of relying on sessionStorage. Best-effort;
+      // failures never block launch.
+      let launcherRevisionId: string | null = null;
+      if (isCommitServiceEnabled() && provisionedBusinessId && launchProjectId) {
+        try {
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          if (authUser?.id) {
+            const identity: BuilderIdentity = {
+              userId: authUser.id,
+              businessId: provisionedBusinessId,
+              projectId: launchProjectId,
+              draftId: launchProjectId, // launcher-time alias; AI/Playground edits will use real draft id
+              revisionId: '',
+              sessionId: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                ? crypto.randomUUID()
+                : `sess_${Date.now().toString(36)}`,
+            };
+            const patch = legacyFilesToPatchPlan(wiredVfsFiles);
+            const result = await commitMutation({
+              source: 'wizard-launch',
+              identity,
+              current: { vfsFiles: {}, playground: materializedPlayground ?? undefined },
+              patch,
+              options: {
+                requirePreviewPass: false, // launcher already ran preflight; do not re-fail here
+                requireReadinessPass: false,
+                businessName: brand,
+                industry: String(generationCategory),
+                selectedTemplateId: effectiveTemplate?.id,
+                themePresetId: resolvedPreset.id,
+                selections: wizardSelections,
+              },
+            });
+            launcherRevisionId = result.persistedRevisionId;
+            if (launcherRevisionId) {
+              console.log('[SystemLauncher] commitMutation persisted revision', launcherRevisionId);
+            }
+          }
+        } catch (err) {
+          if (err instanceof CommitRejectedError) {
+            console.warn('[SystemLauncher] commitMutation rejected (non-fatal at launch)', err.result.diagnostics);
+          } else {
+            console.warn('[SystemLauncher] commitMutation threw (non-fatal)', err);
+          }
+        }
+      }
+
       const navState = {
         vfsFiles: wiredVfsFiles,
         runtimeManifest,

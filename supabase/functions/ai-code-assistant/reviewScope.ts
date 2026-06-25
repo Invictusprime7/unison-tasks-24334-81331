@@ -20,6 +20,14 @@ function normalizeVfsPath(p: string): string {
   return p.startsWith("/") ? p : `/${p}`;
 }
 
+export interface EditScopeInput {
+  scopeType?: "element" | "block" | "section" | "page";
+  componentPath?: string;
+  editableRange?: { startLine?: number; endLine?: number };
+  lockedBindings?: string[];
+  riskLevel?: "low" | "medium" | "high";
+}
+
 /**
  * Check whether an AI-generated patch stays within the allowed scope
  * for a scoped edit (surgical, behavioral, single-file, etc.).
@@ -29,8 +37,12 @@ export function checkEditScope(opts: {
   targetFile?: string | null;
   taskType: string;
   existingFiles?: string[];
+  editScope?: EditScopeInput | null;
+  originalFiles?: Record<string, string>;
 }): ScopeCheckResult {
-  const { patchFiles, targetFile, taskType, existingFiles = [] } = opts;
+  const { patchFiles, taskType, existingFiles = [], editScope, originalFiles = {} } = opts;
+  // editScope.componentPath overrides targetFile when present
+  const targetFile = editScope?.componentPath || opts.targetFile;
 
   // Only enforce scope for scoped edit task types
   const SCOPED_TASKS = [

@@ -211,7 +211,33 @@ export async function commitMutation(
   log('preflight', previewOk ? 'info' : 'warn', 'preflight stages', preflight.stages);
 
   const gate = canonicalResult.gate ?? null;
-  const readinessOk = !gate || gate.previewReady;
+
+  // Move 4: capability readiness adapter. When a CompiledContract is
+  // supplied (or surfaced by the canonical pipeline), run PreviewGate +
+  // PublishGate so business-critical capability stubs (commerce / booking /
+  // donation / auth) block the commit instead of silently degrading.
+  const compiled =
+    input.options?.compiledContract ??
+    ((canonicalResult as { compiledContract?: CompiledContract }).compiledContract ?? null);
+  let previewVerdict: GateVerdict | null = null;
+  let publishVerdict: GateVerdict | null = null;
+  if (compiled) {
+    try {
+      previewVerdict = PreviewGate.evaluate(compiled);
+      publishVerdict = PublishGate.evaluate(compiled);
+      log(
+        'capabilityGate',
+        previewVerdict.ok && publishVerdict.ok ? 'info' : 'warn',
+        `preview=${previewVerdict.ok} publish=${publishVerdict.ok}`,
+        { preview: previewVerdict.reasons, publish: publishVerdict.reasons },
+      );
+    } catch (err) {
+      log('capabilityGate', 'warn', 'gate evaluation threw', String(err));
+    }
+  }
+
+  const readinessOk =
+    (!gate || gate.previewReady) && (!previewVerdict || previewVerdict.ok);
 
   // 6. Auto-repair-then-hard-reject -----------------------------------------
   let status: 'committed' | 'rejected' = 'committed';
@@ -232,12 +258,14 @@ export async function commitMutation(
     const previewOk2 =
       preflight.stages.earlyRepair !== 'failed' &&
       preflight.stages.finalRepair !== 'failed';
-    const readinessOk2 = !gate || gate.previewReady;
+    const readinessOk2 =
+      (!gate || gate.previewReady) && (!previewVerdict || previewVerdict.ok);
     if ((requirePreview && !previewOk2) || (requireReadiness && !readinessOk2)) {
       status = 'rejected';
       log('gate', 'error', 'hard reject after auto-repair', {
         previewOk: previewOk2,
         readinessOk: readinessOk2,
+        publishBlockers: publishVerdict?.reasons ?? [],
       });
     } else {
       log('repair', 'info', 'auto-repair recovered the commit');

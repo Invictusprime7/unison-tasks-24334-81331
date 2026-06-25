@@ -5223,6 +5223,12 @@ export function prepareSandpackFiles(
 
   // Missing relative imports must surface as preview diagnostics. Do not
   // synthesize fallback/template components into wizard-generated sites.
+  // EXCEPTION: the in-builder AI Builder commonly writes a file that
+  // references a sibling module before creating it. To prevent
+  // "Could not find module" crashes from killing the preview, we synthesize
+  // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
+  // empty slot and replace it on the next turn.
+  synthesizeMissingLocalImports(sandpackFiles);
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {
@@ -5231,6 +5237,7 @@ export function prepareSandpackFiles(
   }
 
   repairLocalImportContracts(sandpackFiles);
+
 
   // ── SAFETY: Validate App.tsx has a default export ──
   // If AI-generated App.tsx only uses named exports (e.g., `export function App`),

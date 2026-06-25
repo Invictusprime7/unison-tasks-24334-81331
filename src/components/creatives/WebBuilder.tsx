@@ -1882,6 +1882,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // Bundles the deterministic layout-op handlers (selection-aware class edits,
   // section reorders, element move) into a single prop. The panel uses this to
   // short-circuit common "center / move / align" prompts without an LLM call.
+  //
+  // Move 2: Layout fast-path commits now additively funnel through
+  // VFSCommitService (when the feature flag is on) via `commitLayoutFastPathRef`,
+  // so deterministic edits also chain into the durable site_revisions ledger
+  // instead of bypassing the canonical writer.
+  const commitLayoutFastPathRef = useRef<((nextCode: string, summary: string) => void) | null>(null);
   const layoutOpsForAI = useMemo(() => ({
     selectionSelector: selectedHTMLElement?.selector ?? null,
     selectionSection: selectedHTMLElement?.section ?? null,
@@ -1893,6 +1899,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       setPreviewCode(nextCode);
       setEditorCode(nextCode);
       toast.success(summary);
+      commitLayoutFastPathRef.current?.(nextCode, summary);
       return true;
     },
     moveElementUp: () => {
@@ -3062,6 +3069,71 @@ export default function ${componentName}Page() {
 
     return () => { cancelled = true; };
   }, [effectiveRouteState?.revisionId, importBuilderFiles, launchEntryPoint]);
+
+  // ── Move 2: layout fast-path → VFSCommitService bridge ───────────────────
+  // Each deterministic layout edit additively chains through commitMutation so
+  // the durable site_revisions ledger reflects every state change, not just
+  // AI Builder LLM applies. Non-blocking; preview/editor already updated.
+  useEffect(() => {
+    commitLayoutFastPathRef.current = (nextCode, summary) => {
+      if (!isCommitServiceEnabled() || !businessId || !currentTemplateId) return;
+      const targetPath = activePagePath?.endsWith('.tsx') ? activePagePath : launchEntryPoint;
+      if (!targetPath || !nextCode) return;
+      const beforeFiles = virtualFSRef.current.getSandpackFiles();
+      const snapshot = effectiveRouteState?.siteBundleSnapshot ?? null;
+      void (async () => {
+        try {
+          const { data: { user } } = await supabaseClient.auth.getUser();
+          if (!user) return;
+          const identity: BuilderIdentity = {
+            userId: user.id,
+            businessId,
+            projectId: currentTemplateId,
+            draftId: currentTemplateId,
+            revisionId: currentRevisionId,
+            sessionId: `web-builder:${currentTemplateId}`,
+          };
+          const patch = legacyFilesToPatchPlan(
+            { [targetPath]: nextCode },
+            `Layout · ${summary}`,
+          );
+          const commit = await commitMutation({
+            source: 'layout-fast-path',
+            identity,
+            current: {
+              vfsFiles: beforeFiles,
+              siteBundleSnapshot: snapshot ?? undefined,
+            },
+            patch,
+            options: {
+              requirePreviewPass: false,
+              requireReadinessPass: false,
+              industry: snapshot?.industry,
+            },
+          });
+          if (commit.persistedRevisionId) {
+            setCurrentRevisionId(commit.persistedRevisionId);
+            console.log('[WebBuilder] layout-fast-path commit persisted:', commit.persistedRevisionId);
+          }
+        } catch (err) {
+          if (err instanceof CommitRejectedError) {
+            console.warn('[WebBuilder] layout-fast-path commit rejected:', err.message);
+          } else {
+            console.warn('[WebBuilder] layout-fast-path commit failed:', err);
+          }
+        }
+      })();
+    };
+  }, [
+    businessId,
+    currentTemplateId,
+    currentRevisionId,
+    activePagePath,
+    launchEntryPoint,
+    effectiveRouteState?.siteBundleSnapshot,
+  ]);
+
+
 
 
   

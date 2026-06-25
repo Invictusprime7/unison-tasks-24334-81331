@@ -260,6 +260,6 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
     ).rejects.toThrow(/rejected/i);
 
     // Rejected revisions are still persisted for forensics.
-    expect(revisionStore.at(-1)?.status).toBe('rejected');
+    expect(revisionStore[revisionStore.length - 1]?.status).toBe('rejected');
   });
 });

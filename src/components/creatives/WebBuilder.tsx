@@ -1156,6 +1156,10 @@ interface WebBuilderRouteState {
   /** Durable structured WizardSeed from launcher; threaded into every AIBuilderPanel turn. */
   wizardSeed?: Record<string, unknown>;
   fromLauncher?: boolean;
+  /** Durable revision id persisted by VFSCommitService (Move 2/3). When present,
+   *  WebBuilder hydrates files/snapshot from `site_revisions` rather than relying
+   *  solely on sessionStorage/launch context. */
+  revisionId?: string;
 }
 
 function hasNonEmptyVfsFiles(files?: Record<string, string>): boolean {

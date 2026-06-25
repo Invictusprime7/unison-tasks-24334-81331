@@ -43,6 +43,11 @@ interface SelectedElement {
   selector?: string;
   html?: string;
   section?: string;
+  imageTarget?: {
+    kind: 'img' | 'background';
+    selector: string;
+    src?: string;
+  } | null;
   /** Captured by the Preview selection bridge — drives EditScopeResolver. */
   scopeAncestors?: ScopeAncestors;
 }
@@ -381,6 +386,7 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
   const [editText, setEditText] = useState('');
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [attributeDraft, setAttributeDraft] = useState<Record<string, string>>({});
+  const [imageUrlDraft, setImageUrlDraft] = useState('');
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -392,6 +398,7 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
       'aria-label': element?.attributes?.['aria-label'] || '',
       alt: element?.attributes?.alt || '',
     });
+    setImageUrlDraft(element?.imageTarget?.src || element?.attributes?.src || '');
     setIsEditingText(false);
     setIsAIOpen(false);
     if (imageInputRef.current) imageInputRef.current.value = '';
@@ -402,6 +409,10 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
   const selector = element.selector;
   const styles = element.styles || {};
   const isImage = element.tagName?.toLowerCase() === 'img';
+  const backgroundImage = styles.backgroundImage || '';
+  const hasBackgroundImage = !!backgroundImage && backgroundImage !== 'none';
+  const imageTarget = element.imageTarget || (isImage ? { kind: 'img' as const, selector, src: element.attributes?.src } : null);
+  const hasImageControls = !!imageTarget || hasBackgroundImage;
   const isTextElement = ['h1','h2','h3','h4','h5','h6','p','span','a','button','li','label','td','th'].includes(
     (element.tagName || '').toLowerCase()
   );
@@ -420,6 +431,16 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
   const updateStyle = (prop: string, value: string) => onUpdateStyles(selector, { [prop]: value });
   const updateAttributes = (attributes: Record<string, string>) => onUpdateAttributes?.(selector, attributes);
 
+  const replaceImage = (src: string) => {
+    const nextSrc = src.trim();
+    if (!nextSrc) return;
+    if (imageTarget?.kind === 'img') {
+      onReplaceImage(imageTarget.selector || selector, nextSrc);
+      return;
+    }
+    onUpdateStyles(selector, { backgroundImage: `url("${nextSrc.replace(/"/g, '%22')}")` });
+  };
+
   const handleTextSave = () => {
     if (editText.trim() !== element.textContent) onUpdateText(selector, editText.trim());
     setIsEditingText(false);
@@ -429,8 +450,12 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = () => onReplaceImage(selector, reader.result as string);
+    reader.onload = () => replaceImage(reader.result as string);
     reader.readAsDataURL(file);
+  };
+
+  const handleImageUrlApply = () => {
+    replaceImage(imageUrlDraft);
   };
 
   const handleAttributeSave = () => {
@@ -568,17 +593,44 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
         )}
 
         {/* Image replace */}
-        {isImage && (
+        {hasImageControls && (
           <>
             <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFileChange} />
-            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => imageInputRef.current?.click()}>
-              <Image className="w-3 h-3" />Replace
-            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 px-2">
+                  <Image className="w-3 h-3" />Image<ChevronDown className="w-2.5 h-2.5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 space-y-3 p-3" align="start">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground block">Swap image</Label>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => imageInputRef.current?.click()}>
+                      Upload
+                    </Button>
+                    <Input
+                      value={imageUrlDraft}
+                      onChange={(e) => setImageUrlDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleImageUrlApply(); }}
+                      className="h-8 flex-1 text-xs"
+                      placeholder="Paste image URL"
+                    />
+                    <Button size="sm" className="h-8 text-xs" onClick={handleImageUrlApply} disabled={!imageUrlDraft.trim()}>
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[10px] text-muted-foreground">
+                  Target: {imageTarget?.kind === 'img' ? 'image source' : 'background image'}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Separator orientation="vertical" className="h-6 mx-0.5 bg-white/[0.1]" />
           </>
         )}
 
-        {(isLinkLike || isImage || onUpdateAttributes) && (
+        {(isLinkLike || hasImageControls || onUpdateAttributes) && (
           <>
             <Popover>
               <PopoverTrigger asChild>
@@ -623,7 +675,7 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
                     </div>
                   </>
                 )}
-                {isImage && (
+                {(isImage || imageTarget?.kind === 'img') && (
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground block">Image Alt</Label>
                     <Input

@@ -151,6 +151,24 @@ export const AIRequestSchema = z.object({
     generation: z.record(z.string(), z.unknown()).optional(),
     bindingGuide: z.string().max(50_000).optional(),
   }).passthrough().optional(),
+  /**
+   * Preview floating-toolbar edit scope. When present, the orchestrator locks
+   * file mutations to `componentPath`, refuses edits outside `editableRange`,
+   * and preserves every `data-ut-intent` listed in `lockedBindings`.
+   */
+  editScope: z.object({
+    scopeType: z.enum(["element", "block", "section", "page"]).optional(),
+    targetId: z.string().max(200).optional(),
+    owningSectionId: z.string().max(200).optional(),
+    pageId: z.string().max(200).optional(),
+    componentPath: z.string().max(300).optional(),
+    editableRange: z.object({
+      startLine: z.number().int().nonnegative().optional(),
+      endLine: z.number().int().nonnegative().optional(),
+    }).passthrough().optional(),
+    lockedBindings: z.array(z.string().max(120)).max(50).optional(),
+    riskLevel: z.enum(["low", "medium", "high"]).optional(),
+  }).passthrough().optional(),
 });
 
 export type AIRequest = z.infer<typeof AIRequestSchema>;

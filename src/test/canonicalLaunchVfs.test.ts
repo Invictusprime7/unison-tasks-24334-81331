@@ -133,7 +133,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
   });
 
-  it("keeps Lane B page output authoritative while preserving the canonical router", () => {
+  it("keeps wizard-themed SiteBundle page output authoritative while preserving the canonical router", () => {
     const snapshot = createSnapshot();
     // Promote the snapshot to a wizard-themed bundle and add an About page so
     // we can assert tokens/seeds stay consistent across multiple routes.
@@ -178,9 +178,11 @@ describe("buildCanonicalLaunchArtifacts", () => {
       backendRequired: false,
     });
 
-    // Lane B output is the generated site body; canonical scaffold only fills gaps.
-    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("AI Home");
-    expect(artifacts.files["/src/pages/About.tsx"]).toContain("AI About Override");
+    // Theme/sitebundle composition owns registered pages so AI overrides cannot
+    // drift tokens/seeds between home and sub-routes.
+    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("bg-background text-foreground");
+    expect(artifacts.files["/src/pages/About.tsx"]).toContain("bg-background text-foreground");
+    expect(artifacts.files["/src/pages/About.tsx"]).not.toContain("AI About Override");
     // Router is still the canonical generated one.
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });

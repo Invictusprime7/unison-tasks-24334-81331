@@ -61,8 +61,10 @@ vi.mock('@/integrations/supabase/client', () => {
   const insert = (payload: Record<string, unknown>) => ({
     select: (_cols: string) => ({
       single: async () => {
+        const seq = String(revisionStore.length + 1).padStart(12, '0');
+        const id = `00000000-0000-0000-0000-${seq}`;
         const row: RevisionRow = {
-          id: `rev-${revisionStore.length + 1}`,
+          id,
           parent_revision_id: null,
           status: 'committed',
           vfs_files: {},

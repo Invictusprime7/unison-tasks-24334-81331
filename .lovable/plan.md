@@ -1,81 +1,151 @@
-# Goal
+# Plan: VFSCommitService + Durable Site Revisions + AI Builder → Patch Planner
 
-Guarantee that every interactive button across every industry site has a working `data-ut-intent` wired to a real page route (or capability target) *before* the generated VFS leaves the System Launcher and lands in Preview. Today only buttons that have an explicit entry in `siteBundleSnapshot.bindings` get stamped by `applyWizardBindingsToVfs`; everything else (AI-emitted "Learn More", footer column links, sub-page CTAs, "Read more" cards) ships unbound and renders as dead clicks on sub-routes.
+## Goal
 
-# Strategy
+Make this rule true: **no launcher output, AI edit, playground edit, binding edit, route edit, or publish action is valid until it has passed through one canonical commit pipeline and produced a new `SiteBundleSnapshot`.**
 
-Add a deterministic **Preflight Nav Wiring** stage that runs in the same pre-Preview pass as `applyWizardBindingsToVfs`, walking the VFS for unbound interactive elements and binding them to a page route resolved from:
+This plan covers Moves 1–3 + the identity lock from your directive. Moves 4–6 (booking capability adapter, IntentReadinessController hardening, golden E2E suite) land in a follow-up once the spine is stable.
 
-1. Existing slot/markers (already covered by `applyWizardBindingsToVfs`).
-2. Anchor `href`/`to` values that match a known route in `pageRegistry`.
-3. Label text matched (case/punctuation-insensitive) against page `title` / `pageRole` / industry alias map (e.g. "Shop" → `/shop`, "Book" → `/booking`, "Contact us" → `/contact`).
-4. Section context (e.g. NavbarSection link, FooterSection column item) — bind to nearest page role declared by the topology.
-5. Capability fallback from `slotBindingPolicy` when no page match exists (e.g. "Book Now" with no booking page → `booking.create` if capability present, else strip the dead CTA from the gate report).
+## Current state (verified)
 
-# Where it plugs in
+- `src/platform/core/commitToPipeline.ts` already exists as a thin dispatcher to `executeCanonicalPipeline` / `recompileFromPlayground` with `PreviewGate` / `PublishGate`. It is **not** wired as the sole writer — `AIBuilderPanel` still calls `onApplyToVFS → aiVFS.applyCode` directly, and fast paths (layout, GHL binding) write VFS without re-emitting a snapshot.
+- `launcherHandoffPersistence.ts` is the de-facto handoff contract; there is no durable `site_revisions` table.
+- Identity is heuristic: `projectId`, `draftId`, `templateId`, `sessionId` blur across launcher/builder/AI panel.
 
-```text
-SystemLauncher AI payload
-   ↓ sanitizeGeneratedFiles
-   ↓ applyWizardBindingsToVfs        (explicit snapshot.bindings)
-   ↓ preflightNavWiring (NEW)        ← this plan
-   ↓ assessWizardGenerationQuality
-   ↓ canonicalLaunchVfs.buildCanonicalLaunchArtifacts
-        └ same preflight runs again for non-launcher entrypoints
-   ↓ Preview
-```
+## Scope of this session
 
-# Work items
+### 1. `BuilderIdentity` lock (foundation)
 
-### 1. `src/services/preflightNavWiring.ts` (new)
-
-Pure function:
+New `src/types/builderIdentity.ts`:
 
 ```ts
-preflightNavWiring(
-  files: Record<string,string>,
-  snapshot: SiteBundleSnapshot,
-): {
-  files: Record<string,string>;
-  wired: number;
-  skipped: Array<{ filePath; label; reason }>;
+export interface BuilderIdentity {
+  userId: string;
+  businessId: string;
+  projectId: string;
+  draftId: string;
+  revisionId: string;   // current head revision
+  sessionId: string;
 }
 ```
 
-Per file, walk JSX with the existing TS AST helpers in `wizardBindingBridge.ts`. For each `<button>/<a>/<Link>/<NavLink>/motion.button/motion.a>`:
-- Skip if already has `data-ut-intent`.
-- Resolve target page via the priority order above using `pageRegistry`, `pageRoleAliases`, and industry profile.
-- Stamp `data-ut-intent="nav.goto"` + `data-ut-target-page-id="<pageId>"` + `data-ut-label="<label>"`.
-- For anchors, also rewrite `href` to `#<route>` so HashRouter navigation works without JS.
+- Add `assertBuilderIdentity(id)` runtime guard (throws on missing/blurred fields, forbids `templateId` aliasing).
+- Thread through: `BuilderSessionProvider`, `LaunchContext`, `launcherHandoffPersistence`, `AIBuilderPanel` props, `commitToPipeline` input.
+- Existing call sites that pass `templateId as projectId` get flagged and corrected.
 
-### 2. Shared helpers extracted from `wizardBindingBridge.ts`
+### 2. `site_revisions` durable table
 
-Move `resolveBindingFilePath`, `escapeAttr`, JSX walker, and `normalizeText` into `src/intents/jsxBindingUtils.ts`. `preflightNavWiring` and `applyWizardBindingsToVfs` both import. No behavior change for existing pass.
+Migration (with GRANTs + RLS via `is_project_member`):
 
-### 3. Wiring into the launcher pipeline
+```text
+site_revisions
+  id uuid pk
+  project_id uuid not null
+  business_id uuid not null
+  draft_id uuid not null
+  parent_revision_id uuid null
+  source text not null            -- CommitSource
+  patch_json jsonb not null       -- normalized PatchPlan
+  vfs_files jsonb not null
+  site_bundle_snapshot jsonb not null
+  runtime_manifest jsonb not null
+  playground_state jsonb not null
+  readiness_report jsonb not null
+  diagnostics jsonb not null default '[]'
+  status text not null            -- 'committed' | 'rejected' | 'quarantined'
+  created_by uuid not null
+  created_at timestamptz default now()
+```
 
-- `src/components/onboarding/SystemLauncher.tsx` — call `preflightNavWiring(boundFiles, siteBundleSnapshot)` right after the existing `applyWizardBindingsToVfs` call (~line 1730). Log `wired` + `skipped` into existing console group; feed `skipped` into the binding gate report.
-- `src/services/canonicalLaunchVfs.ts` — same call inserted after `bindingApplication` (~line 242), so any non-launcher entry (Builder recompiles, replay) also gets the preflight.
-- Both surfaces share one helper, so behavior is identical between first launch and re-hydration.
+Policies: project members read; service_role writes (commit service runs server-side validation; client path uses RPC or edge function only when needed — for now, client writes via authenticated insert gated by RLS, mirroring `builder_drafts`).
 
-### 4. Gate + readiness reporting
+### 3. `VFSCommitService` (the centerpiece)
 
-- `src/services/intentReadinessService.ts` — surface preflight `skipped` items as `partial` (label couldn't resolve) vs `blocked` (label looks like nav but no candidate page). Keeps publish gate honest.
-- Add `preflightNavWiring.applied` counter to the `binding_telemetry` already emitted by `persistGeneratedBindings.ts`.
+New `src/services/vfsCommitService.ts` — the **only** legal writer.
 
-### 5. Tests
+```ts
+commitMutation({
+  source,                 // CommitSource (expanded)
+  identity,               // BuilderIdentity (asserted)
+  current: { siteBundleSnapshot, vfsFiles, playground },
+  patch: { fileOps, playgroundOps, bindingOps, backendOps },
+  options: { requirePreviewPass: true, requireReadinessPass: true },
+})
+→ {
+  siteBundleSnapshot, runtimeManifest, vfsFiles, playground,
+  readinessReport, persistedRevisionId, diagnostics,
+}
+```
 
-- `src/test/preflightNavWiring.test.ts` (new): salon, ecommerce, nonprofit, coaching fixtures. Asserts every `<button>`/`<a>` in scaffolded files ends up with a `data-ut-intent` OR is on the skipped list with a reason.
-- Extend `src/test/wizardIntentBinding.test.ts` with a fixture where AI emits a generic `<button>Contact us</button>` on the Services page — expect it bound to the Contact page id.
+Internal pipeline (in order, single transaction-like flow):
 
-# Out of scope
+1. Assert identity + normalize patch (`PatchPlan` schema).
+2. Validate against vertical capability contract (`capabilityRegistry` + `industryIntentProfiles`).
+3. Apply `fileOps` to working VFS (uses existing `sandpackFilePrep` repair).
+4. Apply `playgroundOps` and `bindingOps`.
+5. Recompile: playground → VFS → `SiteBundleSnapshot` (via `recompileFromPlayground`).
+6. Regenerate router/App from page registry (`topologyRouterGenerator`).
+7. Rebuild intent bindings (`persistGeneratedBindings`).
+8. Run `runFullPreflight` (already exists).
+9. Run readiness checks (`intentReadinessService`, `nativePublishReadiness`).
+10. **Auto-repair then hard reject** (your chosen failure policy):
+    - On preflight/readiness failure: run existing auto-repair passes (`aiSitePreflightRepair`, `autoRepairMissingIntents`, import/default-export repair) **once**.
+    - Re-validate. If still failing → status=`rejected`, persist revision row with diagnostics, **do not** update preview/draft, throw `CommitRejectedError` with diagnostics.
+11. Persist `site_revisions` row (status=`committed`), update `builder_drafts.metadata.revisionId`, emit `pipeline:commit` event.
+12. Return canonical state.
 
-- No prompt changes to the AI Lane B generator.
-- No new DB tables (`intent_execution_log` already exists).
-- No changes to Preview runtime intent dispatch — relies on existing `data-ut-intent` interceptor.
-- Cart/booking/checkout behavioral intents stay the responsibility of `applyWizardBindingsToVfs` + `slotBindingPolicy`; preflight only fills the nav gap.
+Preserves on every recompile: `systemId`, `industry`, `verticalContractId/Version`, `wizardSeedId`, `themePresetId`, `templateId`.
 
-# Risk + rollback
+Expand `CommitSource` to: `wizard-launch | ai-builder | playground-edit | layout-fast-path | binding-fast-path | ghl-binding | theme-change | republish | system-restore`.
 
-- Pure additive pass; if it throws, both call sites already wrap in try/catch and fall back to the un-preflighted files (mirrors current binding-bridge pattern).
-- Behind no flag — but the function is a no-op when `snapshot.pageRegistry.pages` has ≤1 route, so single-page industries are unaffected.
+### 4. Reroute all writers through the service
+
+- `SystemLauncher` final commit → `commitMutation({ source: 'wizard-launch' })` → persists revision 1 → navigates `/web-builder?revisionId=...`.
+- `WebBuilder` mount: load by `revisionId` from `site_revisions` (sessionStorage handoff becomes **recovery-only** fallback).
+- `AIBuilderPanel.onApplyToVFS` → replaced with `submitPatchPlan(patch)` → `commitMutation({ source: 'ai-builder' })`. No direct `aiVFS.applyCode`.
+- Layout fast path → `commitMutation({ source: 'layout-fast-path' })`.
+- GHL binding path → `commitMutation({ source: 'ghl-binding' })`.
+- Playground UI edits → `commitMutation({ source: 'playground-edit' })`.
+
+Add CI lint rule (extends `scripts/lint-single-source-of-truth.mjs`) that fails the build if any file outside `vfsCommitService.ts` imports `aiVFS.applyCode`, `executeCanonicalPipeline`, or `recompileFromPlayground`.
+
+### 5. AI Builder → Patch Planner
+
+Edge function `ai-code-assistant` response shape evolves from raw file map to:
+
+```ts
+PatchPlan {
+  summary: string;
+  fileOps:       [{ type: 'replace'|'create'|'delete', path, contents? }];
+  playgroundOps: [{ type, pageId, sectionId?, payload }];
+  bindingOps:    [{ type: 'bindIntent'|'unbindIntent', elementId, intent }];
+  backendOps:    [{ type: 'requireCapability', capability }];
+}
+```
+
+Backwards-compat: legacy raw-files response is wrapped into `PatchPlan { fileOps: [...replace] }` by a client-side adapter so existing prompts keep working while we migrate prompts.
+
+## Out of scope (explicit deferral)
+
+- Move 4 — booking/salon capability adapter (next session).
+- Move 5 — full IntentReadinessController hardening (we only call existing `intentReadinessService` from the commit pipeline).
+- Move 6 — golden E2E test suite.
+- Expanding "all slots interactive" — frozen per your guidance; only categories 3 (intent-bound) and 4 (capability-owned) get preflight teeth.
+
+## Risks / mitigations
+
+- **Big-bang rerouting can break preview.** Land the service + identity + revision table first behind a feature flag (`VITE_USE_COMMIT_SERVICE`), migrate writers one-by-one (launcher → AI builder → fast paths), flip the flag, then add the lint rule.
+- **Patch validation rejecting legitimate AI edits.** Auto-repair pass mirrors today's behavior; only escalates to reject when repair fails, preserving current UX baseline.
+- **Revision table growth.** Add retention policy in follow-up (keep last N committed + all quarantined per project).
+
+## Deliverables this session
+
+1. `src/types/builderIdentity.ts` + `assertBuilderIdentity` + threaded through providers.
+2. Migration: `site_revisions` table with GRANTs + RLS.
+3. `src/services/vfsCommitService.ts` with `commitMutation` + `PatchPlan` types + `CommitRejectedError`.
+4. `SystemLauncher`, `AIBuilderPanel`, layout fast path, GHL binding path rerouted through the service (behind `VITE_USE_COMMIT_SERVICE`, default on after smoke test).
+5. WebBuilder hydration prefers `?revisionId=` from DB, sessionStorage = fallback.
+6. CI lint rule blocking direct canonical-pipeline imports outside the service.
+7. Memory note: `mem://architecture/site-os/vfs-commit-service` describing the contract.
+
+Approve and I'll implement in that order.

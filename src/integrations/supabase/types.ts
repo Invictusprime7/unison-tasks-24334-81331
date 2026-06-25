@@ -3066,6 +3066,71 @@ export type Database = {
         }
         Relationships: []
       }
+      site_revisions: {
+        Row: {
+          business_id: string
+          created_at: string
+          created_by: string
+          diagnostics: Json
+          draft_id: string
+          id: string
+          parent_revision_id: string | null
+          patch_json: Json
+          playground_state: Json
+          project_id: string
+          readiness_report: Json
+          runtime_manifest: Json
+          site_bundle_snapshot: Json
+          source: string
+          status: string
+          vfs_files: Json
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          created_by: string
+          diagnostics?: Json
+          draft_id: string
+          id?: string
+          parent_revision_id?: string | null
+          patch_json?: Json
+          playground_state?: Json
+          project_id: string
+          readiness_report?: Json
+          runtime_manifest?: Json
+          site_bundle_snapshot?: Json
+          source: string
+          status?: string
+          vfs_files?: Json
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          created_by?: string
+          diagnostics?: Json
+          draft_id?: string
+          id?: string
+          parent_revision_id?: string | null
+          patch_json?: Json
+          playground_state?: Json
+          project_id?: string
+          readiness_report?: Json
+          runtime_manifest?: Json
+          site_bundle_snapshot?: Json
+          source?: string
+          status?: string
+          vfs_files?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_revisions_parent_revision_id_fkey"
+            columns: ["parent_revision_id"]
+            isOneToOne: false
+            referencedRelation: "site_revisions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_packs: {
         Row: {
           created_at: string

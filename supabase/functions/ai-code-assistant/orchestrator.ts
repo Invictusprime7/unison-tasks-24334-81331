@@ -190,6 +190,7 @@ async function runBuilderLane(
     componentBehaviorContext, vfsFiles, gatewayOptions,
     previewDiagnostics, previewSnapshot, recentChangedFiles,
   } = parsed;
+  const editScope = (parsed as { editScope?: import("./reviewScope.ts").EditScopeInput }).editScope;
   const wizardSeed = (parsed as { wizardSeed?: WizardSeedShape }).wizardSeed;
 
   // ── 0. Prompt preprocessing (typo fix, intent extraction, keyword distillation)

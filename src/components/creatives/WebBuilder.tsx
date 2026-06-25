@@ -3095,8 +3095,7 @@ export default function ${componentName}Page() {
           };
           const patch = legacyFilesToPatchPlan(
             { [targetPath]: nextCode },
-            'layout-fast-path',
-            { description: `Layout · ${summary}` },
+            `Layout · ${summary}`,
           );
           const commit = await commitMutation({
             source: 'layout-fast-path',

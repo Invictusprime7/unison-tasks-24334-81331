@@ -409,7 +409,11 @@ export function buildCanonicalLaunchArtifacts(
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
-        lockRegisteredPagesToCanonical: Boolean(input.themePresetId || input.siteBundleSnapshot.meta?.themePresetId),
+        // Lane B is the authority at wizard launch. Do NOT lock pages to the
+        // canonical scaffold here — that would degrade rich AI pages back to
+        // minimal stubs. The lock is reserved for post-launch Builder paths
+        // that explicitly opt in.
+        lockRegisteredPagesToCanonical: false,
       })
     : { ...safeFiles };
 

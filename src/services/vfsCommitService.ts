@@ -182,7 +182,7 @@ export async function commitMutation(
     input.source === 'wizard-launch'
       ? mergeWizardLaunchFiles(workingFiles, (snapshot as SiteBundleSnapshot | null) ?? null)
       : ((snapshot as { vfsFiles?: Record<string, string> } | null)?.vfsFiles ?? workingFiles);
-  const snapshotForPersistence = input.source === 'wizard-launch'
+  let snapshotForPersistence = input.source === 'wizard-launch'
     ? mergeWizardLaunchSnapshot((snapshot as SiteBundleSnapshot | null) ?? null, files)
     : snapshot;
 
@@ -197,6 +197,12 @@ export async function commitMutation(
     brand: input.options?.businessName,
   });
   files = preflight.files;
+  if (input.source === 'wizard-launch') {
+    snapshotForPersistence = mergeWizardLaunchSnapshot(
+      (snapshotForPersistence as SiteBundleSnapshot | null) ?? null,
+      files,
+    );
+  }
 
   const previewOk =
     preflight.stages.earlyRepair !== 'failed' &&
@@ -294,6 +300,50 @@ function toCanonicalSource(s: PatchSource): CanonicalCommitSource {
     default:
       return 'playground-edit';
   }
+}
+
+/**
+ * Wizard launches already arrive with the full Lane B/SiteBundle handoff VFS
+ * in the patch file map. The canonical wizard recompile is still required for
+ * registry/snapshot/runtime derivation, but its compile output is scaffold-only
+ * and intentionally drops AI-authored support modules plus metadata files. If a
+ * revision persists that scaffold output, WebBuilder's revision-first hydration
+ * replaces the rich launch with the minimal template site.
+ */
+function mergeWizardLaunchFiles(
+  launcherFiles: Record<string, string>,
+  snapshot: SiteBundleSnapshot | null,
+): Record<string, string> {
+  const canonicalFiles = snapshot?.vfsFiles ?? {};
+  const merged: Record<string, string> = {
+    ...canonicalFiles,
+    ...launcherFiles,
+  };
+
+  const routerPath = snapshot?.routerFile?.path || '/src/App.tsx';
+  const routerContent = launcherFiles[routerPath] || launcherFiles['/src/App.tsx'] || snapshot?.routerFile?.content;
+  if (routerContent) {
+    merged[routerPath] = routerContent;
+    merged['/src/App.tsx'] = routerContent;
+  }
+
+  return merged;
+}
+
+function mergeWizardLaunchSnapshot(
+  snapshot: SiteBundleSnapshot | null,
+  files: Record<string, string>,
+): SiteBundleSnapshot | null {
+  if (!snapshot) return null;
+  const routerPath = snapshot.routerFile?.path || '/src/App.tsx';
+  return {
+    ...snapshot,
+    vfsFiles: files,
+    routerFile: {
+      path: routerPath,
+      content: files[routerPath] || files['/src/App.tsx'] || snapshot.routerFile?.content || '',
+    },
+  };
 }
 
 async function finalize(args: {

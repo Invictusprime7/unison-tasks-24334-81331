@@ -82,6 +82,13 @@ import { buildPageStructureContext } from "@/utils/pageStructureContext";
 import { extractCleanCode, looksLikeCode, ensureReactImports } from "@/utils/aiCodeCleaner";
 import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
+import {
+  commitMutation,
+  isCommitServiceEnabled,
+  CommitRejectedError,
+} from "@/services/vfsCommitService";
+import { legacyFilesToPatchPlan } from "@/types/patchPlan";
+import type { BuilderIdentity } from "@/types/builderIdentity";
 
 function isMissingBusinessInstallsError(error: unknown): boolean {
   const candidate = error as {

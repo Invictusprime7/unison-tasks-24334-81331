@@ -292,13 +292,17 @@ export async function commitMutation(
       preflight.stages.earlyRepair !== 'failed' &&
       preflight.stages.finalRepair !== 'failed';
     const readinessOk2 =
-      (!gate || gate.previewReady) && (!previewVerdict || previewVerdict.ok);
+      (!gate || gate.previewReady) &&
+      (!previewVerdict || previewVerdict.ok) &&
+      intentPreviewBlocked === 0;
     if ((requirePreview && !previewOk2) || (requireReadiness && !readinessOk2)) {
       status = 'rejected';
       log('gate', 'error', 'hard reject after auto-repair', {
         previewOk: previewOk2,
         readinessOk: readinessOk2,
         publishBlockers: publishVerdict?.reasons ?? [],
+        intentPreviewBlocked,
+        intentPublishBlocked,
       });
     } else {
       log('repair', 'info', 'auto-repair recovered the commit');
@@ -317,7 +321,17 @@ export async function commitMutation(
       ...(gate ? { gate } : {}),
       ...(previewVerdict ? { previewVerdict } : {}),
       ...(publishVerdict ? { publishVerdict } : {}),
+      ...(intentControlPlane
+        ? {
+            intentReadiness: {
+              summary: intentControlPlane.readinessReport.summary,
+              validationSummary: intentControlPlane.validationSummary,
+              overview: intentControlPlane.overview,
+            },
+          }
+        : {}),
     } as Record<string, unknown>,
+
     diagnostics,
     parentRevisionId: input.identity.revisionId || null,
     rejectMessage:

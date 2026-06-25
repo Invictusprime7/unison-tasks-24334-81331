@@ -280,9 +280,11 @@ export async function commitMutation(
     siteBundleSnapshot: snapshotForPersistence,
     runtimeManifest: canonicalResult.runtimeManifest ?? null,
     playground: canonicalResult.playground ?? input.current.playground ?? null,
-    readinessReport: gate
-      ? ({ gate } as Record<string, unknown>)
-      : ({} as Record<string, unknown>),
+    readinessReport: {
+      ...(gate ? { gate } : {}),
+      ...(previewVerdict ? { previewVerdict } : {}),
+      ...(publishVerdict ? { publishVerdict } : {}),
+    } as Record<string, unknown>,
     diagnostics,
     parentRevisionId: input.identity.revisionId || null,
     rejectMessage:

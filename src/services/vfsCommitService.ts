@@ -239,8 +239,38 @@ export async function commitMutation(
     }
   }
 
+  // Move 5: IntentReadinessController consolidation. Evaluate the canonical
+  // PlaygroundState through the intent readiness resolver so binding-level
+  // preview blockers (missing pages/forms/calendars/popups, broken targets)
+  // gate the commit alongside the capability gate.
+  let intentControlPlane: PlaygroundControlPlaneModel | null = null;
+  let intentPreviewBlocked = 0;
+  let intentPublishBlocked = 0;
+  const playgroundForIntents = canonicalResult.playground ?? input.current.playground ?? null;
+  if (playgroundForIntents) {
+    try {
+      intentControlPlane = resolvePlaygroundControlPlane({
+        state: playgroundForIntents,
+        vfsFiles: files,
+      });
+      intentPreviewBlocked = intentControlPlane.readinessReport.summary.previewBlocked;
+      intentPublishBlocked = intentControlPlane.readinessReport.summary.publishBlocked;
+      log(
+        'intentReadiness',
+        intentPreviewBlocked === 0 ? 'info' : 'warn',
+        `intent preview blocked=${intentPreviewBlocked} publish blocked=${intentPublishBlocked}`,
+        intentControlPlane.readinessReport.summary,
+      );
+    } catch (err) {
+      log('intentReadiness', 'warn', 'intent readiness evaluation threw', String(err));
+    }
+  }
+
   const readinessOk =
-    (!gate || gate.previewReady) && (!previewVerdict || previewVerdict.ok);
+    (!gate || gate.previewReady) &&
+    (!previewVerdict || previewVerdict.ok) &&
+    intentPreviewBlocked === 0;
+
 
   // 6. Auto-repair-then-hard-reject -----------------------------------------
   let status: 'committed' | 'rejected' = 'committed';

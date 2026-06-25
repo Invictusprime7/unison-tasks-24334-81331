@@ -75,6 +75,13 @@ import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/p
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 import { persistLauncherHandoff } from "@/services/launcherHandoffPersistence";
+import {
+  commitMutation,
+  isCommitServiceEnabled,
+  CommitRejectedError,
+} from "@/services/vfsCommitService";
+import { legacyFilesToPatchPlan } from "@/types/patchPlan";
+import type { BuilderIdentity } from "@/types/builderIdentity";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { analyzeReactSite } from "@/utils/reactSiteAnalysis";

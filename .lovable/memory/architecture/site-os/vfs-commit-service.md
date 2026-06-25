@@ -41,10 +41,10 @@ Columns: id, project_id, business_id, draft_id, parent_revision_id, source, stat
 
 ## Deferred (next moves)
 
-- Move 6: golden E2E suite (launch salon → AI edit hero → AI add services page → wire CTA → refresh → remove availability → expect publish fail).
+- (none — all 6 moves landed)
 
 ### Status
-- Move 1 (Scaffold), Move 2 (Layout fast-path bridge), Move 3 (revisionId-first hydration), Move 4 (capability readiness adapter — Preview/PublishGate verdicts merged), Move 5 (IntentReadinessController consolidation — `resolvePlaygroundControlPlane` evaluated on every commit; previewBlocked intents gate the commit; summary persisted in `readinessReport.intentReadiness`) — DONE.
+- Move 1 (Scaffold), Move 2 (Layout fast-path bridge), Move 3 (revisionId-first hydration), Move 4 (capability readiness adapter — Preview/PublishGate verdicts merged), Move 5 (IntentReadinessController consolidation — `resolvePlaygroundControlPlane` evaluated on every commit; previewBlocked intents gate the commit; summary persisted in `readinessReport.intentReadiness`), Move 6 (golden E2E suite — `src/test/vfsCommitService.golden.test.ts` covers wizard-launch → AI hero edit → add page → binding fast-path → refresh hydration; publishBlocked propagation; hard-reject on previewBlocked) — DONE.
 
 
 

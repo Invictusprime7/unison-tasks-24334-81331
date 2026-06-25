@@ -133,10 +133,9 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
   });
 
-  it("keeps wizard-themed SiteBundle page output authoritative while preserving the canonical router", () => {
+  it("keeps Lane B AI page output authoritative at wizard launch (no canonical lock)", () => {
     const snapshot = createSnapshot();
-    // Promote the snapshot to a wizard-themed bundle and add an About page so
-    // we can assert tokens/seeds stay consistent across multiple routes.
+    // Wizard-themed bundle with a registered About route.
     snapshot.meta = { ...snapshot.meta, themePresetId: "modern" };
     const aboutPage = {
       ...snapshot.pageRegistry.pages[snapshot.pageRegistry.homePageId!],
@@ -147,20 +146,19 @@ describe("buildCanonicalLaunchArtifacts", () => {
       filePath: "/src/pages/About.tsx",
     };
     snapshot.pageRegistry.pages["page_about"] = aboutPage as typeof aboutPage;
+    // Canonical scaffold ships minimal stubs.
     snapshot.vfsFiles["/src/pages/Home.tsx"] =
-      "import Hero from '../components/Hero';\nexport default function Home(){ return <div className='bg-background text-foreground'><Hero/></div>; }";
+      "export default function Home(){ return <div>Canonical Home Stub</div>; }";
     snapshot.vfsFiles["/src/pages/About.tsx"] =
-      "import Hero from '../components/Hero';\nexport default function About(){ return <div className='bg-background text-foreground'><Hero/></div>; }";
+      "export default function About(){ return <div>Canonical About Stub</div>; }";
 
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
-        // AI Lane B produces a bespoke Home composition that would normally
-        // overwrite the themed Home and break route consistency.
-        "/src/App.tsx":
-          "import { motion } from 'framer-motion';\nexport default function App(){ return <motion.div>AI Home</motion.div>; }",
-        // AI also tries to overwrite a registered subpage — must be ignored.
+        // Lane B authors rich pages for both routes — these MUST win.
+        "/src/pages/Home.tsx":
+          "import Hero from '../components/Hero';\nexport default function Home(){ return <main className='bg-background text-foreground'><Hero/>Lane B Home</main>; }",
         "/src/pages/About.tsx":
-          "export default function About(){ return <div>AI About Override</div>; }",
+          "export default function About(){ return <main className='bg-background text-foreground'>Lane B About</main>; }",
       },
       preferredEntryPoint: "/src/App.tsx",
       siteBundleSnapshot: snapshot,
@@ -178,12 +176,14 @@ describe("buildCanonicalLaunchArtifacts", () => {
       backendRequired: false,
     });
 
-    // Theme/sitebundle composition owns registered pages so AI overrides cannot
-    // drift tokens/seeds between home and sub-routes.
-    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("bg-background text-foreground");
-    expect(artifacts.files["/src/pages/About.tsx"]).toContain("bg-background text-foreground");
-    expect(artifacts.files["/src/pages/About.tsx"]).not.toContain("AI About Override");
-    // Router is still the canonical generated one.
+    // Lane B authority: rich AI pages win over canonical stubs even with
+    // a wizard themePresetId present. Themed token classes are preserved
+    // because Lane B authored them; canonical stubs do not preempt.
+    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Lane B Home");
+    expect(artifacts.files["/src/pages/About.tsx"]).toContain("Lane B About");
+    expect(artifacts.files["/src/pages/Home.tsx"]).not.toContain("Canonical Home Stub");
+    expect(artifacts.files["/src/pages/About.tsx"]).not.toContain("Canonical About Stub");
+    // Canonical router still owns /src/App.tsx.
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });
 

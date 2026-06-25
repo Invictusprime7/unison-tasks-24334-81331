@@ -1004,6 +1004,7 @@ interface SelectedElement {
   styles?: {
     color?: string;
     backgroundColor?: string;
+    backgroundImage?: string;
     fontSize?: string;
     fontFamily?: string;
     fontWeight?: string;
@@ -1016,6 +1017,7 @@ interface SelectedElement {
     borderRadius?: string;
     width?: string;
     height?: string;
+    objectFit?: string;
     display?: string;
     opacity?: string;
   };

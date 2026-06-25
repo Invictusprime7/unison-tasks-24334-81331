@@ -238,11 +238,8 @@ export async function commitMutation(
     status,
     vfsFiles: files,
     siteBundleSnapshot: snapshot,
-    runtimeManifest: (canonicalResult as unknown as { runtimeManifest?: unknown })
-      .runtimeManifest ?? null,
-    playground:
-      (canonicalResult as unknown as { playground?: PlaygroundState | null })
-        .playground ?? input.current.playground ?? null,
+    runtimeManifest: canonicalResult.runtimeManifest ?? null,
+    playground: canonicalResult.playground ?? input.current.playground ?? null,
     readinessReport: gate
       ? ({ gate } as Record<string, unknown>)
       : ({} as Record<string, unknown>),

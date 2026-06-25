@@ -176,10 +176,10 @@ export async function commitMutation(
   }
 
   // 5. Full preflight --------------------------------------------------------
-  let files = canonicalResult.files ?? workingFiles;
-  const snapshot =
-    (canonicalResult as unknown as { siteBundleSnapshot?: unknown })
-      .siteBundleSnapshot ?? null;
+  const snapshot = canonicalResult.siteBundleSnapshot ?? null;
+  let files: Record<string, string> =
+    (snapshot as { vfsFiles?: Record<string, string> } | null)?.vfsFiles ??
+    workingFiles;
 
   const requirePreview = input.options?.requirePreviewPass !== false;
   const requireReadiness = input.options?.requireReadinessPass !== false;

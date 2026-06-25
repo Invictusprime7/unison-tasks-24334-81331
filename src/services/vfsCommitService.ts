@@ -40,6 +40,8 @@ import type { PlaygroundState } from '@/platform/core/playground';
 import type { CompiledContract } from '@/platform/core/contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gates';
 import { runFullPreflight } from '@/services/runFullPreflight';
+import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
+import type { PlaygroundControlPlaneModel } from '@/types/playground';
 import {
   assertBuilderIdentity,
   type BuilderIdentity,
@@ -50,6 +52,7 @@ import {
   type PatchPlan,
   type PatchSource,
 } from '@/types/patchPlan';
+
 
 // ----------------------------------------------------------------------------
 // Public surface

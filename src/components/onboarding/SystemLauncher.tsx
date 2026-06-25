@@ -2313,6 +2313,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         launchContract,
         setupSnapshot: nativeSetupSnapshot,
         nativeReadinessManifest,
+        revisionId: launcherRevisionId || undefined,
       };
 
       const launchState = createLaunchState({

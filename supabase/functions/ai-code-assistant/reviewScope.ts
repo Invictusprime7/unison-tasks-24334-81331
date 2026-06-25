@@ -44,14 +44,15 @@ export function checkEditScope(opts: {
   // editScope.componentPath overrides targetFile when present
   const targetFile = editScope?.componentPath || opts.targetFile;
 
-  // Only enforce scope for scoped edit task types
+  // Only enforce scope for scoped edit task types — or whenever an
+  // explicit editScope was supplied by the floating preview toolbar.
   const SCOPED_TASKS = [
     "surgical_edit",
     "behavioral_edit",
     "single_file_edit",
   ];
 
-  if (!SCOPED_TASKS.includes(taskType)) {
+  if (!editScope && !SCOPED_TASKS.includes(taskType)) {
     return { inScope: true, reason: null, outOfScopeFiles: [], blockAutoApply: false };
   }
 

@@ -3026,6 +3026,44 @@ export default function ${componentName}Page() {
       syncedEntry,
     };
   }, [syncBuilderFromFiles, vfsImportFiles, launchEntryPoint, resolvedThemePresetId, effectiveRouteState]);
+
+  // ── Move 3: revisionId-first hydration ──
+  // When the route state carries a `revisionId` (persisted by VFSCommitService at
+  // launch or by AI Builder), prefer loading the durable revision row from
+  // `site_revisions` over the sessionStorage / launch-context VFS. This closes
+  // the launcher→builder loop so the canonical revision chain is authoritative.
+  const hydratedRevisionRef = useRef<string | null>(null);
+  const [currentRevisionId, setCurrentRevisionId] = useState<string>(
+    effectiveRouteState?.revisionId || ''
+  );
+  useEffect(() => {
+    const revId = effectiveRouteState?.revisionId;
+    if (!revId || hydratedRevisionRef.current === revId) return;
+    hydratedRevisionRef.current = revId;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { loadRevision } = await import('@/services/vfsCommitService');
+        const revision = await loadRevision(revId);
+        if (cancelled || !revision) return;
+        const files = revision.vfsFiles || {};
+        if (Object.keys(files).length === 0) {
+          console.warn('[WebBuilder] revision', revId, 'returned empty vfsFiles — keeping launch state');
+          return;
+        }
+        console.log('[WebBuilder] hydrated from site_revisions:', revId, Object.keys(files).length, 'files');
+        importBuilderFiles(files, { entryPoint: launchEntryPoint });
+        setCurrentRevisionId(revId);
+      } catch (err) {
+        console.warn('[WebBuilder] loadRevision failed (non-fatal):', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [effectiveRouteState?.revisionId, importBuilderFiles, launchEntryPoint]);
+
+
   
   // Effect A: previewCode → VFS  (one-way sync, runs when AI/templates/page-nav set previewCode)
   useEffect(() => {

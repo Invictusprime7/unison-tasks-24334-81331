@@ -1654,6 +1654,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     return { ok: false, reason: next === previewCode ? 'no-change' : 'no-match' };
   }, [previewCode, recordManualPageEdit]);
 
+  // ── Preview Floating Toolbar → VFSCommitService bridge ───────────────────
+  // Every direct edit dispatched by the floating toolbar (style/text/image/
+  // attribute/delete/duplicate/move) additively chains through commitMutation
+  // so toolbar mutations land in the durable site_revisions ledger alongside
+  // AI Builder and layout fast-path commits.
+  // See mem://features/web-builder/preview-floating-toolbar.
+  const commitToolbarMutationRef = useRef<((nextCode: string, summary: string) => void) | null>(null);
+
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);
     const res = applyMutatorAcrossVFS(

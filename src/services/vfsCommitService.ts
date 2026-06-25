@@ -40,6 +40,8 @@ import type { PlaygroundState } from '@/platform/core/playground';
 import type { CompiledContract } from '@/platform/core/contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gates';
 import { runFullPreflight } from '@/services/runFullPreflight';
+import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
+import type { PlaygroundControlPlaneModel } from '@/types/playground';
 import {
   assertBuilderIdentity,
   type BuilderIdentity,
@@ -50,6 +52,7 @@ import {
   type PatchPlan,
   type PatchSource,
 } from '@/types/patchPlan';
+
 
 // ----------------------------------------------------------------------------
 // Public surface
@@ -236,8 +239,38 @@ export async function commitMutation(
     }
   }
 
+  // Move 5: IntentReadinessController consolidation. Evaluate the canonical
+  // PlaygroundState through the intent readiness resolver so binding-level
+  // preview blockers (missing pages/forms/calendars/popups, broken targets)
+  // gate the commit alongside the capability gate.
+  let intentControlPlane: PlaygroundControlPlaneModel | null = null;
+  let intentPreviewBlocked = 0;
+  let intentPublishBlocked = 0;
+  const playgroundForIntents = canonicalResult.playground ?? input.current.playground ?? null;
+  if (playgroundForIntents) {
+    try {
+      intentControlPlane = resolvePlaygroundControlPlane({
+        state: playgroundForIntents,
+        vfsFiles: files,
+      });
+      intentPreviewBlocked = intentControlPlane.readinessReport.summary.previewBlocked;
+      intentPublishBlocked = intentControlPlane.readinessReport.summary.publishBlocked;
+      log(
+        'intentReadiness',
+        intentPreviewBlocked === 0 ? 'info' : 'warn',
+        `intent preview blocked=${intentPreviewBlocked} publish blocked=${intentPublishBlocked}`,
+        intentControlPlane.readinessReport.summary,
+      );
+    } catch (err) {
+      log('intentReadiness', 'warn', 'intent readiness evaluation threw', String(err));
+    }
+  }
+
   const readinessOk =
-    (!gate || gate.previewReady) && (!previewVerdict || previewVerdict.ok);
+    (!gate || gate.previewReady) &&
+    (!previewVerdict || previewVerdict.ok) &&
+    intentPreviewBlocked === 0;
+
 
   // 6. Auto-repair-then-hard-reject -----------------------------------------
   let status: 'committed' | 'rejected' = 'committed';
@@ -259,13 +292,17 @@ export async function commitMutation(
       preflight.stages.earlyRepair !== 'failed' &&
       preflight.stages.finalRepair !== 'failed';
     const readinessOk2 =
-      (!gate || gate.previewReady) && (!previewVerdict || previewVerdict.ok);
+      (!gate || gate.previewReady) &&
+      (!previewVerdict || previewVerdict.ok) &&
+      intentPreviewBlocked === 0;
     if ((requirePreview && !previewOk2) || (requireReadiness && !readinessOk2)) {
       status = 'rejected';
       log('gate', 'error', 'hard reject after auto-repair', {
         previewOk: previewOk2,
         readinessOk: readinessOk2,
         publishBlockers: publishVerdict?.reasons ?? [],
+        intentPreviewBlocked,
+        intentPublishBlocked,
       });
     } else {
       log('repair', 'info', 'auto-repair recovered the commit');
@@ -284,7 +321,17 @@ export async function commitMutation(
       ...(gate ? { gate } : {}),
       ...(previewVerdict ? { previewVerdict } : {}),
       ...(publishVerdict ? { publishVerdict } : {}),
+      ...(intentControlPlane
+        ? {
+            intentReadiness: {
+              summary: intentControlPlane.readinessReport.summary,
+              validationSummary: intentControlPlane.validationSummary,
+              overview: intentControlPlane.overview,
+            },
+          }
+        : {}),
     } as Record<string, unknown>,
+
     diagnostics,
     parentRevisionId: input.identity.revisionId || null,
     rejectMessage:

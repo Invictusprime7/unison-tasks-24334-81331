@@ -117,11 +117,16 @@ export class CommitRejectedError extends Error {
   }
 }
 
-/** Returns true if the feature flag enables the commit service. */
+/**
+ * Returns true if the feature flag enables the commit service.
+ * Defaults to ON now that Moves 1–6 are wired end-to-end; set
+ * `VITE_USE_COMMIT_SERVICE=false` to opt out for debugging.
+ */
 export function isCommitServiceEnabled(): boolean {
   const v = (import.meta as { env?: Record<string, string | undefined> }).env
     ?.VITE_USE_COMMIT_SERVICE;
-  return v === 'true' || v === '1';
+  if (v === 'false' || v === '0') return false;
+  return true;
 }
 
 // ----------------------------------------------------------------------------

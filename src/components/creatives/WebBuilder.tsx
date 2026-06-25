@@ -1023,6 +1023,8 @@ interface SelectedElement {
   selector?: string;
   html?: string;
   section?: string;
+  /** Captured by the Preview selection bridge; consumed by EditScopeResolver. */
+  scopeAncestors?: import('@/services/editScopeResolver').ScopeAncestors;
 }
 
 // Define types for Fabric objects with their specific properties
@@ -1533,6 +1535,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       selector: el.selector,
       html: el.html,
       section: el.section,
+      scopeAncestors: el.scopeAncestors,
     });
   }, [setSelectedHTMLElement]);
 

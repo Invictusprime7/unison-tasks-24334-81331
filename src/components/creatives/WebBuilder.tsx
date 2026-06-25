@@ -1814,6 +1814,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     recordManualPageEdit('Manual · delete element', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    commitToolbarMutationRef.current?.(res.code, 'delete element');
     setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Element deleted');
@@ -1829,6 +1830,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     recordManualPageEdit('Manual · duplicate element', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    commitToolbarMutationRef.current?.(res.code, 'duplicate element');
     clearLivePreviewSelection();
     toast.success('Element duplicated');
   }, [previewCode, applyElementDuplicate, clearLivePreviewSelection, recordManualPageEdit]);
@@ -1859,6 +1861,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     recordManualPageEdit('Manual · move element up', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    commitToolbarMutationRef.current?.(res.code, 'move element up');
     clearLivePreviewSelection();
     toast.success('Moved up');
   }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
@@ -1889,6 +1892,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     recordManualPageEdit('Manual · move element down', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    commitToolbarMutationRef.current?.(res.code, 'move element down');
     clearLivePreviewSelection();
     toast.success('Moved down');
   }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);

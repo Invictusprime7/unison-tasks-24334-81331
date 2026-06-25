@@ -1023,6 +1023,11 @@ interface SelectedElement {
   selector?: string;
   html?: string;
   section?: string;
+  imageTarget?: {
+    kind: 'img' | 'background';
+    selector: string;
+    src?: string;
+  } | null;
   /** Captured by the Preview selection bridge; consumed by EditScopeResolver. */
   scopeAncestors?: import('@/services/editScopeResolver').ScopeAncestors;
 }
@@ -1534,6 +1539,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       attributes: el.attributes,
       selector: el.selector,
       html: el.html,
+      imageTarget: el.imageTarget,
       section: el.section,
       scopeAncestors: el.scopeAncestors,
     });

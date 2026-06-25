@@ -475,9 +475,11 @@ async function runBuilderLane(
       // ── Scope enforcement for scoped edits ──────────────────────────
       const scopeResult = checkEditScope({
         patchFiles: reviewResult.cleanedFiles,
-        targetFile: parsed.targetFile ?? null,
+        targetFile: parsed.targetFile ?? editScope?.componentPath ?? null,
         taskType: task.type,
         existingFiles,
+        editScope: editScope ?? null,
+        originalFiles: vfsFiles ?? {},
       });
       if (!scopeResult.inScope) {
         console.warn(`[orchestrator] SCOPE VIOLATION: ${scopeResult.reason}`);

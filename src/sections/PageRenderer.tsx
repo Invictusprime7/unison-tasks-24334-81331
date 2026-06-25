@@ -81,7 +81,9 @@ export const PageRenderer: React.FC<PageRendererProps> = ({ template, themeOverr
             <div
               key={`${section.id}-${activeVariants[section.id] || 'default'}`}
               data-ut-section-id={section.id}
+              data-ut-section={section.id}
               data-ut-section-type={section.type}
+              data-ut-block={section.id}
               data-ut-layout={layoutToken || undefined}
             >
               <Component

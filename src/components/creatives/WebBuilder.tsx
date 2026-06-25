@@ -6550,6 +6550,51 @@ export default function ${componentName}() {
                         meta: applyMeta,
                       });
                     }
+                    // Additive: route through VFSCommitService when the
+                    // feature flag is on. Non-blocking, log-only for now —
+                    // the canonical SiteBundleSnapshot regen happens in the
+                    // service so subsequent revisions chain off this one.
+                    if (
+                      isCommitServiceEnabled() &&
+                      businessId &&
+                      currentTemplateId
+                    ) {
+                      void (async () => {
+                        try {
+                          const { data: { user } } = await supabaseClient.auth.getUser();
+                          if (!user) return;
+                          const identity: BuilderIdentity = {
+                            userId: user.id,
+                            businessId,
+                            projectId: currentTemplateId,
+                            draftId: currentTemplateId,
+                            sessionId: `web-builder:${currentTemplateId}`,
+                          };
+                          const patch = legacyFilesToPatchPlan(files, 'ai-builder');
+                          const commit = await commitMutation({
+                            source: 'ai-builder',
+                            identity,
+                            current: {
+                              vfsFiles: beforeFiles,
+                              siteBundleSnapshot: snapshotForPreflight ?? undefined,
+                            },
+                            patch,
+                            options: {
+                              requirePreviewPass: false,
+                              requireReadinessPass: false,
+                              industry: snapshotForPreflight?.industry,
+                            },
+                          });
+                          console.log('[WebBuilder] ai-builder commit persisted:', commit.persistedRevisionId);
+                        } catch (err) {
+                          if (err instanceof CommitRejectedError) {
+                            console.warn('[WebBuilder] ai-builder commit rejected:', err.message);
+                          } else {
+                            console.warn('[WebBuilder] ai-builder commit failed:', err);
+                          }
+                        }
+                      })();
+                    }
                   } else {
                     console.error('[WebBuilder] aiVFS.applyCode failed:', result.errors);
                   }

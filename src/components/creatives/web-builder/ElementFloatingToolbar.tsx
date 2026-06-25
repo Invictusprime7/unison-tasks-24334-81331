@@ -101,6 +101,12 @@ function getDefaultDisplay(tagName?: string) {
   return 'block';
 }
 
+function extractCssUrl(value?: string): string {
+  if (!value || value === 'none') return '';
+  const match = value.match(/url\((['"]?)(.*?)\1\)/i);
+  return match?.[2] || '';
+}
+
 // ─── Inline AI Panel ─────────────────────────────────────────────────────────
 
 interface InlineAIPanelProps {
@@ -398,7 +404,7 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
       'aria-label': element?.attributes?.['aria-label'] || '',
       alt: element?.attributes?.alt || '',
     });
-    setImageUrlDraft(element?.imageTarget?.src || element?.attributes?.src || '');
+    setImageUrlDraft(element?.imageTarget?.src || element?.attributes?.src || extractCssUrl(element?.styles?.backgroundImage) || '');
     setIsEditingText(false);
     setIsAIOpen(false);
     if (imageInputRef.current) imageInputRef.current.value = '';
@@ -438,7 +444,7 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
       onReplaceImage(imageTarget.selector || selector, nextSrc);
       return;
     }
-    onUpdateStyles(selector, { backgroundImage: `url("${nextSrc.replace(/"/g, '%22')}")` });
+    onUpdateStyles(imageTarget?.selector || selector, { backgroundImage: `url("${nextSrc.replace(/"/g, '%22')}")` });
   };
 
   const handleTextSave = () => {

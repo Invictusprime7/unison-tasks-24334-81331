@@ -3609,8 +3609,8 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
 
     // Allow multi-line braces; no line anchors so multi-line `import { A,\n B }` matches too.
     const namedImportRegex = /import\s+\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    // Default-only imports: `import Foo from './bar'` (NOT `import Foo, { X } from ...`).
-    const defaultImportRegex = /import\s+([A-Z]\w*)\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    // Default imports — matches both `import Foo from './bar'` and `import Foo, { X } from './bar'`.
+    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let content = originalContent;
 
     content = content.replace(namedImportRegex, (statement, specifierBlock: string, rawImportPath: string) => {

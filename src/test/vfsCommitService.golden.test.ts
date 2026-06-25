@@ -178,7 +178,7 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
       options: { selections: { industry: 'salon' } as never },
     });
     expect(launch.status).toBe('committed');
-    expect(launch.persistedRevisionId).toBe('rev-1');
+    expect(launch.persistedRevisionId).toBe('00000000-0000-0000-0000-000000000001');
     expect(launch.parentRevisionId).toBeNull();
 
     // 2. AI Builder edits hero
@@ -192,7 +192,7 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
       patch: legacyFilesToPatchPlan({ '/src/pages/Home.tsx': '<Hero variant="bold"/>' }, 'hero bold'),
     });
     expect(heroEdit.status).toBe('committed');
-    expect(heroEdit.parentRevisionId).toBe('rev-1');
+    expect(heroEdit.parentRevisionId).toBe('00000000-0000-0000-0000-000000000001');
 
     // 3. AI Builder adds Services page
     const withServices = { ...heroFiles, '/src/pages/Services.tsx': '<Services/>' };
@@ -204,7 +204,7 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
       current: { vfsFiles: heroEdit.vfsFiles, playground: heroEdit.playground ?? undefined },
       patch: legacyFilesToPatchPlan({ '/src/pages/Services.tsx': '<Services/>' }, 'add services'),
     });
-    expect(addPage.parentRevisionId).toBe('rev-2');
+    expect(addPage.parentRevisionId).toBe('00000000-0000-0000-0000-000000000002');
 
     // 4. Binding fast-path wires CTA
     const ctaPatch = emptyPatchPlan('wire cta');
@@ -217,12 +217,12 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
       current: { vfsFiles: addPage.vfsFiles, playground: addPage.playground ?? undefined },
       patch: ctaPatch,
     });
-    expect(wire.parentRevisionId).toBe('rev-3');
+    expect(wire.parentRevisionId).toBe('00000000-0000-0000-0000-000000000003');
     expect(revisionStore).toHaveLength(4);
 
     // 5. Refresh → hydration prefers latest revision row, not sessionStorage
     const hydrated = await loadLatestRevisionForProject(IDENTITY.projectId);
-    expect(hydrated?.id).toBe('rev-4');
+    expect(hydrated?.id).toBe('00000000-0000-0000-0000-000000000004');
     expect(hydrated?.source).toBe('binding-fast-path');
   });
 

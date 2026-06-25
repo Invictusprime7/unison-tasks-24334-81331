@@ -236,7 +236,14 @@ function inferCurrentPageId(filePath: string, snapshot: SiteBundleSnapshot): Pag
     if (page.filePath && (page.filePath === filePath || `/${page.filePath}` === filePath)) {
       return page.pageId;
     }
-    if (page.isHome && (filePath === '/src/App.tsx' || filePath === '/App.tsx')) {
+    if (
+      page.isHome &&
+      (filePath === '/src/pages/Home.tsx' ||
+        filePath === '/pages/Home.tsx' ||
+        filePath === '/src/pages/Index.tsx' ||
+        filePath === '/src/App.tsx' ||
+        filePath === '/App.tsx')
+    ) {
       return page.pageId;
     }
   }

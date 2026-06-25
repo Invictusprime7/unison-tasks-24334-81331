@@ -106,7 +106,11 @@ export function resolveNavigationTarget(
 export function deriveFilePath(page: BuilderPage): string {
   if (page.filePath) return page.filePath;
 
-  if (page.isHome) return '/src/App.tsx';
+  // Home page content lives at /src/pages/Home.tsx. /src/App.tsx is the
+  // deterministically-generated router and must NOT be used as the home
+  // page's filePath, or binding/nav-wiring/snapshot composition will skip
+  // the home route entirely (the router gets overwritten downstream).
+  if (page.isHome) return '/src/pages/Home.tsx';
 
   const slug = page.path.replace(/^\//, '') || 'custom';
   const componentName = slug

@@ -67,13 +67,18 @@ function resolveBindingFilePath(files: Record<string, string>, page: BuilderPage
 
   const candidates = new Set<string>();
   if (page.filePath) candidates.add(page.filePath);
-  if (page.isHome) {
-    candidates.add('/src/App.tsx');
-    candidates.add('/App.tsx');
-  }
 
   const route = normalizeRoute(page.path);
-  if (!page.isHome) {
+  if (page.isHome) {
+    // Home page lives at /src/pages/Home.tsx (canonical) — probe it FIRST
+    // so SiteBundleSnapshot binding/theme wiring reaches the home route.
+    // Legacy /src/App.tsx is checked last as a back-compat fallback only.
+    candidates.add('/src/pages/Home.tsx');
+    candidates.add('/pages/Home.tsx');
+    candidates.add('/src/pages/Index.tsx');
+    candidates.add('/src/App.tsx');
+    candidates.add('/App.tsx');
+  } else {
     const componentName = toComponentName(route);
     candidates.add(`/src/pages/${componentName}.tsx`);
     candidates.add(`/pages/${componentName}.tsx`);

@@ -239,10 +239,13 @@ async def run_scenario(page: Page, capture: ConsoleCapture, scenario: dict) -> d
         result["status"] = "FAIL"
         result["details"].extend([f"preview: {e}" for e in preview_errors])
     if console_hits:
-        # Console hits are warnings if preview survived; failures if not.
         result["details"].extend([f"console: {c}" for c in console_hits])
-        if scenario["expect_clean_preview"] and preview_errors:
+        # Any runtime/module/syntax fingerprint in console is a failure when
+        # the scenario expects a clean preview — preview-iframe scraping can
+        # miss errors rendered inside cross-document overlays.
+        if scenario["expect_clean_preview"]:
             result["status"] = "FAIL"
+
 
     try:
         await page.screenshot(path=str(shot))

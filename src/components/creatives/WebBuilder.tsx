@@ -6568,6 +6568,7 @@ export default function ${componentName}() {
                             businessId,
                             projectId: currentTemplateId,
                             draftId: currentTemplateId,
+                            revisionId: '',
                             sessionId: `web-builder:${currentTemplateId}`,
                           };
                           const patch = legacyFilesToPatchPlan(files, 'ai-builder');

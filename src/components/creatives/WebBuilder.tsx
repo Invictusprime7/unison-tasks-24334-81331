@@ -7045,6 +7045,7 @@ export default function ${componentName}() {
                           },
                         });
                         console.log('[WebBuilder] ai-builder(secondary) commit persisted:', commit.persistedRevisionId);
+                        if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
                       } catch (err) {
                         if (err instanceof CommitRejectedError) {
                           console.warn('[WebBuilder] ai-builder(secondary) commit rejected:', err.message);

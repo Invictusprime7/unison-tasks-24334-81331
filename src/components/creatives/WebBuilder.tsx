@@ -3144,6 +3144,71 @@ export default function ${componentName}Page() {
     effectiveRouteState?.siteBundleSnapshot,
   ]);
 
+  // ── Preview Floating Toolbar → VFSCommitService bridge ───────────────────
+  // Mirrors the layout fast-path effect: persists every toolbar-driven edit
+  // (style / text / image / attribute / delete / duplicate / move) into the
+  // durable site_revisions ledger so they participate in capability and
+  // intent readiness gating.
+  useEffect(() => {
+    commitToolbarMutationRef.current = (nextCode, summary) => {
+      if (!isCommitServiceEnabled() || !businessId || !currentTemplateId) return;
+      const targetPath = activePagePath?.endsWith('.tsx') ? activePagePath : launchEntryPoint;
+      if (!targetPath || !nextCode) return;
+      const beforeFiles = virtualFSRef.current.getSandpackFiles();
+      const snapshot = effectiveRouteState?.siteBundleSnapshot ?? null;
+      void (async () => {
+        try {
+          const { data: { user } } = await supabaseClient.auth.getUser();
+          if (!user) return;
+          const identity: BuilderIdentity = {
+            userId: user.id,
+            businessId,
+            projectId: currentTemplateId,
+            draftId: currentTemplateId,
+            revisionId: currentRevisionId,
+            sessionId: `web-builder:${currentTemplateId}`,
+          };
+          const patch = legacyFilesToPatchPlan(
+            { [targetPath]: nextCode },
+            `Toolbar · ${summary}`,
+          );
+          const commit = await commitMutation({
+            source: 'preview-toolbar',
+            identity,
+            current: {
+              vfsFiles: beforeFiles,
+              siteBundleSnapshot: snapshot ?? undefined,
+            },
+            patch,
+            options: {
+              requirePreviewPass: false,
+              requireReadinessPass: false,
+              industry: snapshot?.industry,
+            },
+          });
+          if (commit.persistedRevisionId) {
+            setCurrentRevisionId(commit.persistedRevisionId);
+            console.log('[WebBuilder] preview-toolbar commit persisted:', commit.persistedRevisionId);
+          }
+        } catch (err) {
+          if (err instanceof CommitRejectedError) {
+            console.warn('[WebBuilder] preview-toolbar commit rejected:', err.message);
+          } else {
+            console.warn('[WebBuilder] preview-toolbar commit failed:', err);
+          }
+        }
+      })();
+    };
+  }, [
+    businessId,
+    currentTemplateId,
+    currentRevisionId,
+    activePagePath,
+    launchEntryPoint,
+    effectiveRouteState?.siteBundleSnapshot,
+  ]);
+
+
 
 
 

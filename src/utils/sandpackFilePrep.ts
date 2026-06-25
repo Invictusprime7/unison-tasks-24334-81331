@@ -3676,10 +3676,18 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
       if (moduleExports.hasDefault) return statement;
       // Prefer a named export matching the local import name, else primary.
       const fallback = moduleExports.named.has(localName) ? localName : moduleExports.primaryName;
-      if (!fallback) return statement;
-      const patched = targetContent + `\nexport default ${fallback};\n`;
-      sandpackFiles[targetPath] = patched;
-      console.warn(`[sandpackFilePrep] Added missing default export to ${targetPath} (default → ${fallback}) for ${filePath}`);
+      if (fallback) {
+        sandpackFiles[targetPath] = targetContent + `\nexport default ${fallback};\n`;
+        console.warn(`[sandpackFilePrep] Added missing default export to ${targetPath} (default → ${fallback}) for ${filePath}`);
+        return statement;
+      }
+      // Last-resort: synthesize a no-op default so the import doesn't evaluate to undefined
+      // and crash React with "Element type is invalid". Better an empty section than a white screen.
+      const safeName = /^[A-Z]\w*$/.test(localName) ? localName : 'MissingComponent';
+      sandpackFiles[targetPath] =
+        targetContent +
+        `\nexport default function ${safeName}() { return null; }\n`;
+      console.warn(`[sandpackFilePrep] Synthesized placeholder default export for ${targetPath} (imported as ${localName} by ${filePath})`);
       return statement;
     });
 

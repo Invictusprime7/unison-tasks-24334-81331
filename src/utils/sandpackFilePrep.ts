@@ -570,12 +570,39 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
   function snapshotStyles(el: Element): Record<string, string> {
     const cs = window.getComputedStyle(el);
     return {
-      color: cs.color, backgroundColor: cs.backgroundColor,
+      color: cs.color, backgroundColor: cs.backgroundColor, backgroundImage: cs.backgroundImage,
       fontSize: cs.fontSize, fontWeight: cs.fontWeight,
       fontStyle: cs.fontStyle, fontFamily: cs.fontFamily,
       textDecoration: cs.textDecoration, textAlign: cs.textAlign,
       padding: cs.padding, margin: cs.margin, borderRadius: cs.borderRadius,
+      width: cs.width, height: cs.height, objectFit: cs.objectFit,
     };
+  }
+
+  function extractBackgroundImageUrl(value: string | null): string | null {
+    if (!value || value === 'none') return null;
+    const match = value.match(/url\\((['\"]?)(.*?)\\1\\)/i);
+    return match?.[2] || null;
+  }
+
+  function findImageTarget(el: Element): { kind: 'img' | 'background'; selector: string; src?: string } | null {
+    if (el.tagName === 'IMG') {
+      return { kind: 'img', selector: computeSelector(el), src: el.getAttribute('src') || undefined };
+    }
+    const nestedImg = el.querySelector('img');
+    if (nestedImg) {
+      return { kind: 'img', selector: computeSelector(nestedImg), src: nestedImg.getAttribute('src') || undefined };
+    }
+    let cur: Element | null = el;
+    let depth = 0;
+    while (cur && cur !== document.body && depth < 6) {
+      const bg = window.getComputedStyle(cur).backgroundImage;
+      const src = extractBackgroundImageUrl(bg);
+      if (src) return { kind: 'background', selector: computeSelector(cur), src };
+      cur = cur.parentElement;
+      depth++;
+    }
+    return null;
   }
 
   function snapshotAttrs(el: Element): Record<string, string> {
@@ -626,6 +653,7 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
         selector, html,
         styles: snapshotStyles(t),
         attributes: snapshotAttrs(t),
+        imageTarget: findImageTarget(t),
         section: findSection(t),
         scopeAncestors,
       },

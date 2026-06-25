@@ -169,7 +169,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
-  options: { allowCanonicalPageFallback?: boolean } = {},
+  options: { allowCanonicalPageFallback?: boolean; lockRegisteredPagesToCanonical?: boolean } = {},
 ): Record<string, string> {
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
@@ -184,7 +184,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       .flatMap((path) => [path, normalizePath(path), normalizePath(path).slice(1)]),
   );
   const lockRegisteredPagesToSiteBundle = Boolean(
-    snapshot.meta?.themePresetId || snapshot.meta?.source === 'wizard',
+    options.lockRegisteredPagesToCanonical || snapshot.meta?.themePresetId,
   );
   const merged = Object.fromEntries(
     Object.entries(canonicalFiles).filter(([path]) => {
@@ -406,6 +406,7 @@ export function buildCanonicalLaunchArtifacts(
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
+        lockRegisteredPagesToCanonical: Boolean(input.themePresetId || input.siteBundleSnapshot.meta?.themePresetId),
       })
     : { ...safeFiles };
 

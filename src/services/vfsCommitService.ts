@@ -35,6 +35,7 @@ import {
   type CommitResult as CanonicalCommitResult,
   type CommitSource as CanonicalCommitSource,
 } from '@/platform/core/commitToPipeline';
+import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import type { PlaygroundState } from '@/platform/core/playground';
 import type { CompiledContract } from '@/platform/core/contractCompiler';
 import { runFullPreflight } from '@/services/runFullPreflight';
@@ -178,14 +179,18 @@ export async function commitMutation(
   // 5. Full preflight --------------------------------------------------------
   const snapshot = canonicalResult.siteBundleSnapshot ?? null;
   let files: Record<string, string> =
-    (snapshot as { vfsFiles?: Record<string, string> } | null)?.vfsFiles ??
-    workingFiles;
+    input.source === 'wizard-launch'
+      ? mergeWizardLaunchFiles(workingFiles, (snapshot as SiteBundleSnapshot | null) ?? null)
+      : ((snapshot as { vfsFiles?: Record<string, string> } | null)?.vfsFiles ?? workingFiles);
+  const snapshotForPersistence = input.source === 'wizard-launch'
+    ? mergeWizardLaunchSnapshot((snapshot as SiteBundleSnapshot | null) ?? null, files)
+    : snapshot;
 
   const requirePreview = input.options?.requirePreviewPass !== false;
   const requireReadiness = input.options?.requireReadinessPass !== false;
 
   let preflight = runFullPreflight(files, {
-    siteBundleSnapshot: (snapshot as { meta?: unknown } | null) as
+    siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
       | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot
       | null,
     industry: input.options?.industry,
@@ -207,7 +212,7 @@ export async function commitMutation(
     log('repair', 'warn', 'running single auto-repair pass');
     try {
       preflight = runFullPreflight(files, {
-        siteBundleSnapshot: (snapshot as { meta?: unknown } | null) as
+          siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
           | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot
           | null,
         industry: input.options?.industry,
@@ -237,7 +242,7 @@ export async function commitMutation(
     input,
     status,
     vfsFiles: files,
-    siteBundleSnapshot: snapshot,
+    siteBundleSnapshot: snapshotForPersistence,
     runtimeManifest: canonicalResult.runtimeManifest ?? null,
     playground: canonicalResult.playground ?? input.current.playground ?? null,
     readinessReport: gate

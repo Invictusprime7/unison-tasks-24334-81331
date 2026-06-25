@@ -1882,6 +1882,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // Bundles the deterministic layout-op handlers (selection-aware class edits,
   // section reorders, element move) into a single prop. The panel uses this to
   // short-circuit common "center / move / align" prompts without an LLM call.
+  //
+  // Move 2: Layout fast-path commits now additively funnel through
+  // VFSCommitService (when the feature flag is on) via `commitLayoutFastPathRef`,
+  // so deterministic edits also chain into the durable site_revisions ledger
+  // instead of bypassing the canonical writer.
+  const commitLayoutFastPathRef = useRef<((nextCode: string, summary: string) => void) | null>(null);
   const layoutOpsForAI = useMemo(() => ({
     selectionSelector: selectedHTMLElement?.selector ?? null,
     selectionSection: selectedHTMLElement?.section ?? null,
@@ -1893,6 +1899,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       setPreviewCode(nextCode);
       setEditorCode(nextCode);
       toast.success(summary);
+      commitLayoutFastPathRef.current?.(nextCode, summary);
       return true;
     },
     moveElementUp: () => {

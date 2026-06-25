@@ -6610,7 +6610,7 @@ export default function ${componentName}() {
                             businessId,
                             projectId: currentTemplateId,
                             draftId: currentTemplateId,
-                            revisionId: '',
+                            revisionId: currentRevisionId,
                             sessionId: `web-builder:${currentTemplateId}`,
                           };
                           const patch = legacyFilesToPatchPlan(files, 'ai-builder');

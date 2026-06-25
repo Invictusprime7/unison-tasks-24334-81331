@@ -166,8 +166,11 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         element.html ||
         `<${element.tagName || 'div'}>${element.textContent || ''}</${element.tagName || 'div'}>`;
 
+      const scopedPrefix = buildScopedPromptPrefix(editScope);
       const surgicalPrompt = [
-        '🎯 ELEMENT EDIT MODE — Return ONLY the modified HTML for this specific element.',
+        scopedPrefix,
+        '',
+        '🎯 ELEMENT EDIT MODE — Return ONLY the modified HTML for the targeted scope.',
         '',
         'Current element HTML:',
         '```html',
@@ -179,11 +182,11 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         `User Request: ${trimmedPrompt}`,
         '',
         '⚠️ STRICT OUTPUT RULES:',
-        '1. Return ONLY the modified HTML element — nothing else.',
+        '1. Return ONLY the modified HTML for this scope — nothing outside it.',
         '2. No <!DOCTYPE>, no <html>, no <head>, no <body> wrappers.',
         '3. No explanation text, no markdown fences, no extra commentary.',
-        '4. Preserve existing class names and data attributes unless explicitly asked to change them.',
-        '5. Make ONLY the requested change — do not alter other aspects of the element.',
+        '4. Preserve existing class names, data-ut-* attributes, and locked intent bindings verbatim.',
+        '5. Make ONLY the requested change — do not alter other aspects, sections, or pages.',
       ].join('\n');
 
       const { data, error: fnError } = await supabase.functions.invoke('ai-code-assistant', {
@@ -194,6 +197,17 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
           templateAction: 'modify',
           systemType: systemType ?? undefined,
           systemsBuildContext: systemsBuildContext ?? undefined,
+          // Preview floating toolbar — explicit edit scope for reviewPass.
+          editScope: {
+            scopeType: editScope.scopeType,
+            targetId: editScope.targetId,
+            owningSectionId: editScope.owningSectionId,
+            pageId: editScope.pageId,
+            componentPath: editScope.componentPath,
+            editableRange: editScope.editableRange,
+            lockedBindings: editScope.lockedBindings,
+            riskLevel: editScope.riskLevel,
+          },
         },
       });
 
@@ -227,7 +241,7 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [prompt, loading, element, onAIEditComplete, onRequestAI, onClose]);
+  }, [prompt, loading, element, onAIEditComplete, onRequestAI, onClose, editScope, systemType, systemsBuildContext]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }

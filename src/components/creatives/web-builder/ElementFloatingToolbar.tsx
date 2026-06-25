@@ -26,6 +26,14 @@ const supabase = supabaseClient as any;
 import { toast } from 'sonner';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import type { BusinessSystemType } from '@/data/templates/types';
+import {
+  resolveEditScope,
+  defaultScopeFor,
+  formatScopeLabel,
+  buildScopedPromptPrefix,
+  type EditScopeType,
+  type ScopeAncestors,
+} from '@/services/editScopeResolver';
 
 interface SelectedElement {
   tagName?: string;
@@ -35,6 +43,8 @@ interface SelectedElement {
   selector?: string;
   html?: string;
   section?: string;
+  /** Captured by the Preview selection bridge — drives EditScopeResolver. */
+  scopeAncestors?: ScopeAncestors;
 }
 
 interface ElementFloatingToolbarProps {
@@ -110,6 +120,26 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Edit scope resolution (Preview floating toolbar) ─────────────────
+  // User can override default scope (element / block / section) so AI edits
+  // are clipped to the exact artifact they care about.
+  const ancestors: ScopeAncestors = element.scopeAncestors || {
+    elementId: null,
+    slotId: null,
+    blockId: null,
+    sectionId: element.section || null,
+    pageId: null,
+    intents: [],
+    clickedTag: element.tagName || null,
+  };
+  const autoScope = defaultScopeFor(ancestors);
+  const [scopeOverride, setScopeOverride] = useState<EditScopeType | null>(null);
+  const activeScopeType: EditScopeType = scopeOverride || autoScope;
+  const editScope = resolveEditScope({
+    ancestors,
+    selectedScope: activeScopeType,
+  });
 
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 60);

@@ -183,9 +183,12 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       .filter((path): path is string => Boolean(path))
       .flatMap((path) => [path, normalizePath(path), normalizePath(path).slice(1)]),
   );
-  const lockRegisteredPagesToSiteBundle = Boolean(
-    options.lockRegisteredPagesToCanonical || snapshot.meta?.themePresetId,
-  );
+  // Composition Authority lock is OPT-IN ONLY. At wizard launch Lane B is
+  // authoritative — never let canonical scaffolds preempt rich AI-authored
+  // pages just because a themePresetId is present. Callers that need the
+  // lock (post-wizard Builder edits guarding wizard-themed pages) must
+  // explicitly pass `lockRegisteredPagesToCanonical: true`.
+  const lockRegisteredPagesToSiteBundle = Boolean(options.lockRegisteredPagesToCanonical);
   const merged = Object.fromEntries(
     Object.entries(canonicalFiles).filter(([path]) => {
       if (lockRegisteredPagesToSiteBundle) return true;

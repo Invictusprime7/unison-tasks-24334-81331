@@ -1,151 +1,154 @@
-# Plan: VFSCommitService + Durable Site Revisions + AI Builder → Patch Planner
+# Preview Floating Toolbar — Primary Customization Plane
 
-## Goal
+Make the floating edit toolbar the main surface project owners use to customize their site in Preview. Every edit — AI prompt or direct control — flows through the same durable commit pipeline used by the in‑builder AI Builder, but AI prompts are tightly scoped to the artifact the user clicked.
 
-Make this rule true: **no launcher output, AI edit, playground edit, binding edit, route edit, or publish action is valid until it has passed through one canonical commit pipeline and produced a new `SiteBundleSnapshot`.**
+## Goals
 
-This plan covers Moves 1–3 + the identity lock from your directive. Moves 4–6 (booking capability adapter, IntentReadinessController hardening, golden E2E suite) land in a follow-up once the spine is stable.
+1. **Scope-aware AI** — clicking an artifact in Preview resolves a deterministic `EditScope` (element / block / section / page) with a default of **block**, and the AI prompt is constrained to that scope's file range and node identity. No file-wide drift.
+2. **Fully wired direct edits** — typography, color/background, image swap/insert (upload + AI generate), layout (resize/spacing/align), and structural ops (duplicate, delete, move) all commit through `VFSCommitService` so they persist to `site_revisions`, survive refresh, and pass capability + intent gates.
+3. **Single backend** — toolbar AI reuses the exact same `ai-code-assistant` Lane B path the in-builder uses; no parallel pipeline.
 
-## Current state (verified)
+---
 
-- `src/platform/core/commitToPipeline.ts` already exists as a thin dispatcher to `executeCanonicalPipeline` / `recompileFromPlayground` with `PreviewGate` / `PublishGate`. It is **not** wired as the sole writer — `AIBuilderPanel` still calls `onApplyToVFS → aiVFS.applyCode` directly, and fast paths (layout, GHL binding) write VFS without re-emitting a snapshot.
-- `launcherHandoffPersistence.ts` is the de-facto handoff contract; there is no durable `site_revisions` table.
-- Identity is heuristic: `projectId`, `draftId`, `templateId`, `sessionId` blur across launcher/builder/AI panel.
-
-## Scope of this session
-
-### 1. `BuilderIdentity` lock (foundation)
-
-New `src/types/builderIdentity.ts`:
-
-```ts
-export interface BuilderIdentity {
-  userId: string;
-  businessId: string;
-  projectId: string;
-  draftId: string;
-  revisionId: string;   // current head revision
-  sessionId: string;
-}
-```
-
-- Add `assertBuilderIdentity(id)` runtime guard (throws on missing/blurred fields, forbids `templateId` aliasing).
-- Thread through: `BuilderSessionProvider`, `LaunchContext`, `launcherHandoffPersistence`, `AIBuilderPanel` props, `commitToPipeline` input.
-- Existing call sites that pass `templateId as projectId` get flagged and corrected.
-
-### 2. `site_revisions` durable table
-
-Migration (with GRANTs + RLS via `is_project_member`):
+## Architecture
 
 ```text
-site_revisions
-  id uuid pk
-  project_id uuid not null
-  business_id uuid not null
-  draft_id uuid not null
-  parent_revision_id uuid null
-  source text not null            -- CommitSource
-  patch_json jsonb not null       -- normalized PatchPlan
-  vfs_files jsonb not null
-  site_bundle_snapshot jsonb not null
-  runtime_manifest jsonb not null
-  playground_state jsonb not null
-  readiness_report jsonb not null
-  diagnostics jsonb not null default '[]'
-  status text not null            -- 'committed' | 'rejected' | 'quarantined'
-  created_by uuid not null
-  created_at timestamptz default now()
+Preview click
+   ↓
+SelectionBridge (postMessage from sandpack)
+   ↓
+EditScopeResolver  ←─ reads PageRegistry, SiteBundleSnapshot, VFS source map
+   ↓
+EditScope { scopeType, targetId, owningSection, affectedFiles, editableRange, lockedBindings }
+   ↓
+   ├── Direct controls  ──► jsxElementMutation / image / layoutIntent
+   └── Scoped AI prompt ──► ai-code-assistant (Lane B) with allowedEditBoundary
+                              ↓
+                         PatchPlan (scoped)
+                              ↓
+                   VFSCommitService.commitMutation()
+                              ↓
+                  site_revisions + Playground + readiness sync
 ```
 
-Policies: project members read; service_role writes (commit service runs server-side validation; client path uses RPC or edge function only when needed — for now, client writes via authenticated insert gated by RLS, mirroring `builder_drafts`).
+---
 
-### 3. `VFSCommitService` (the centerpiece)
+## Scope rules (per user spec)
 
-New `src/services/vfsCommitService.ts` — the **only** legal writer.
 
-```ts
-commitMutation({
-  source,                 // CommitSource (expanded)
-  identity,               // BuilderIdentity (asserted)
-  current: { siteBundleSnapshot, vfsFiles, playground },
-  patch: { fileOps, playgroundOps, bindingOps, backendOps },
-  options: { requirePreviewPass: true, requireReadinessPass: true },
-})
-→ {
-  siteBundleSnapshot, runtimeManifest, vfsFiles, playground,
-  readinessReport, persistedRevisionId, diagnostics,
-}
-```
+| Click target                       | Default scope         | Allowed overrides                                                      |
+| ---------------------------------- | --------------------- | ---------------------------------------------------------------------- |
+| Text/headline/label/price          | **Block**             | Element, Section                                                       |
+| Button / CTA                       | **Block** (CTA group) | Element, Section                                                       |
+| Card (pricing/service/testimonial) | **Block** (the card)  | Element, Section                                                       |
+| Form / Booking widget              | **Block** (the form)  | Element                                                                |
+| Nav item                           | **Element**           | Block (whole nav) — page routing changes still go through PageRegistry |
+| Section background / whitespace    | **Section**           | Block, Page                                                            |
+| Image                              | **Element**           | Block                                                                  |
 
-Internal pipeline (in order, single transaction-like flow):
 
-1. Assert identity + normalize patch (`PatchPlan` schema).
-2. Validate against vertical capability contract (`capabilityRegistry` + `industryIntentProfiles`).
-3. Apply `fileOps` to working VFS (uses existing `sandpackFilePrep` repair).
-4. Apply `playgroundOps` and `bindingOps`.
-5. Recompile: playground → VFS → `SiteBundleSnapshot` (via `recompileFromPlayground`).
-6. Regenerate router/App from page registry (`topologyRouterGenerator`).
-7. Rebuild intent bindings (`persistGeneratedBindings`).
-8. Run `runFullPreflight` (already exists).
-9. Run readiness checks (`intentReadinessService`, `nativePublishReadiness`).
-10. **Auto-repair then hard reject** (your chosen failure policy):
-    - On preflight/readiness failure: run existing auto-repair passes (`aiSitePreflightRepair`, `autoRepairMissingIntents`, import/default-export repair) **once**.
-    - Re-validate. If still failing → status=`rejected`, persist revision row with diagnostics, **do not** update preview/draft, throw `CommitRejectedError` with diagnostics.
-11. Persist `site_revisions` row (status=`committed`), update `builder_drafts.metadata.revisionId`, emit `pipeline:commit` event.
-12. Return canonical state.
+Resolver climbs DOM: `data-ut-element` → `data-ut-slot` → `data-ut-block` → `data-ut-section` → `data-ut-page` → file fallback.
 
-Preserves on every recompile: `systemId`, `industry`, `verticalContractId/Version`, `wizardSeedId`, `themePresetId`, `templateId`.
+---
 
-Expand `CommitSource` to: `wizard-launch | ai-builder | playground-edit | layout-fast-path | binding-fast-path | ghl-binding | theme-change | republish | system-restore`.
+## Implementation steps
 
-### 4. Reroute all writers through the service
+### Step 1 — Annotate generated DOM with stable scope IDs
 
-- `SystemLauncher` final commit → `commitMutation({ source: 'wizard-launch' })` → persists revision 1 → navigates `/web-builder?revisionId=...`.
-- `WebBuilder` mount: load by `revisionId` from `site_revisions` (sessionStorage handoff becomes **recovery-only** fallback).
-- `AIBuilderPanel.onApplyToVFS` → replaced with `submitPatchPlan(patch)` → `commitMutation({ source: 'ai-builder' })`. No direct `aiVFS.applyCode`.
-- Layout fast path → `commitMutation({ source: 'layout-fast-path' })`.
-- GHL binding path → `commitMutation({ source: 'ghl-binding' })`.
-- Playground UI edits → `commitMutation({ source: 'playground-edit' })`.
+- Extend `src/sections/PageRenderer.tsx` and the JSX scaffolds emitted by canonical generation to stamp `data-ut-page`, `data-ut-section`, `data-ut-block`, `data-ut-slot`, `data-ut-element` (preserve existing `data-ut-intent`).
+- Add `stampScopeAttributes(code, { pageId, sectionId })` in `src/utils/sandpackFilePrep.ts` so legacy/AI-emitted files get block/slot IDs by JSX position when authors omit them.
 
-Add CI lint rule (extends `scripts/lint-single-source-of-truth.mjs`) that fails the build if any file outside `vfsCommitService.ts` imports `aiVFS.applyCode`, `executeCanonicalPipeline`, or `recompileFromPlayground`.
+### Step 2 — `EditScopeResolver` service
 
-### 5. AI Builder → Patch Planner
+- New file `src/services/editScopeResolver.ts` exporting `resolveEditScope({ clickedElementId, selectedScope, snapshot, vfs, registry, intentRegistry }) → EditScope`.
+- EditScope shape:
+  ```ts
+  type EditScope = {
+    scopeType: 'element' | 'block' | 'section' | 'page';
+    targetId: string;
+    owningSectionId?: string;
+    pageId: string;
+    componentPath: string;
+    editableRange: { startLine: number; endLine: number };
+    lockedBindings: string[];        // data-ut-intent values that must survive
+    requiredCapabilities: string[];
+    riskLevel: 'low' | 'med' | 'high';
+  };
+  ```
+- Uses existing `jsxBounds` utility + section/slot regex to compute line range.
 
-Edge function `ai-code-assistant` response shape evolves from raw file map to:
+### Step 3 — Selection bridge upgrade
 
-```ts
-PatchPlan {
-  summary: string;
-  fileOps:       [{ type: 'replace'|'create'|'delete', path, contents? }];
-  playgroundOps: [{ type, pageId, sectionId?, payload }];
-  bindingOps:    [{ type: 'bindIntent'|'unbindIntent', elementId, intent }];
-  backendOps:    [{ type: 'requireCapability', capability }];
-}
-```
+- Extend the postMessage payload emitted by `sandpackFilePrep.ts` selection listener to include all `data-ut-*` ancestors (not just selector + section).
+- `WebBuilder.tsx` passes the enriched selection through `EditScopeResolver` into a new `selectedEditScope` state.
 
-Backwards-compat: legacy raw-files response is wrapped into `PatchPlan { fileOps: [...replace] }` by a client-side adapter so existing prompts keep working while we migrate prompts.
+### Step 4 — Toolbar UI: scope chips + AI panel rewiring
 
-## Out of scope (explicit deferral)
+- In `ElementFloatingToolbar.tsx`:
+  - Add a scope chip row: `Editing: <ScopeLabel>  [Element] [Block] [Section]` with Block pre-selected (or auto per click target rules).
+  - Pass `selectedScope` into the inline AI panel.
+  - Send the EditScope (with `allowedEditBoundary`) in the AI request body so Lane B prompt enforces "edit only within these lines / keep these bindings".
+- New props: `editScope`, `onScopeChange`.
 
-- Move 4 — booking/salon capability adapter (next session).
-- Move 5 — full IntentReadinessController hardening (we only call existing `intentReadinessService` from the commit pipeline).
-- Move 6 — golden E2E test suite.
-- Expanding "all slots interactive" — frozen per your guidance; only categories 3 (intent-bound) and 4 (capability-owned) get preflight teeth.
+### Step 5 — Lane B prompt scoping
 
-## Risks / mitigations
+- In `supabase/functions/ai-code-assistant/`:
+  - Accept optional `editScope` in request schema.
+  - When present, build the prompt around just the snippet inside `editableRange` from `componentPath`, instruct model to return a patch replacing only that range, and forbid touching `lockedBindings` `data-ut-intent` values.
+  - reviewPass: reject patches that mutate lines outside the boundary or strip locked bindings.
 
-- **Big-bang rerouting can break preview.** Land the service + identity + revision table first behind a feature flag (`VITE_USE_COMMIT_SERVICE`), migrate writers one-by-one (launcher → AI builder → fast paths), flip the flag, then add the lint rule.
-- **Patch validation rejecting legitimate AI edits.** Auto-repair pass mirrors today's behavior; only escalates to reject when repair fails, preserving current UX baseline.
-- **Revision table growth.** Add retention policy in follow-up (keep last N committed + all quarantined per project).
+### Step 6 — Route every direct edit through `VFSCommitService`
 
-## Deliverables this session
+Existing handlers in `WebBuilder.tsx` (`handleFloatingStyleUpdate`, `handleFloatingTextUpdate`, `handleFloatingAttributeUpdate`, `handleFloatingImageReplace`, `handleFloatingDelete`, `handleFloatingDuplicate`, `handleFloatingMoveUp/Down`) currently mutate `previewCode` and call `importBuilderFiles`. Rewire each to:
 
-1. `src/types/builderIdentity.ts` + `assertBuilderIdentity` + threaded through providers.
-2. Migration: `site_revisions` table with GRANTs + RLS.
-3. `src/services/vfsCommitService.ts` with `commitMutation` + `PatchPlan` types + `CommitRejectedError`.
-4. `SystemLauncher`, `AIBuilderPanel`, layout fast path, GHL binding path rerouted through the service (behind `VITE_USE_COMMIT_SERVICE`, default on after smoke test).
-5. WebBuilder hydration prefers `?revisionId=` from DB, sessionStorage = fallback.
-6. CI lint rule blocking direct canonical-pipeline imports outside the service.
-7. Memory note: `mem://architecture/site-os/vfs-commit-service` describing the contract.
+1. Compute the mutated VFS file set via existing `jsxElementMutation` helpers.
+2. Call `commitMutation({ source: 'preview-toolbar', label, files, scope })` (gated by `isCommitServiceEnabled()` — already defaults ON).
+3. Toolbar AI's `onAIEditComplete` already mutates VFS — chain into `commitMutation` instead of calling `virtualFS.importFiles` directly.
 
-Approve and I'll implement in that order.
+Persistence behavior:
+
+- Continuous controls (sliders, color pickers) **buffer to a single commit on blur/release** to avoid flooding `site_revisions`. Discrete controls (typography toggle, delete, duplicate, AI edit) commit immediately.
+
+### Step 7 — Image insert + AI generate
+
+- Add "Insert image" + "Generate image with AI" buttons in the toolbar's image control. Generated images upload to Lovable Cloud storage (existing bucket) / Supabase storage and the resulting URL is patched into the JSX `<img src>` via `jsxElementMutation`, then committed.
+
+### Step 8 — Tests
+
+- `src/test/editScopeResolver.test.ts` — clicks on headline/button/card/nav/section bg resolve to expected scope.
+- `src/test/floatingToolbarCommit.test.ts` — each direct-edit handler produces a `site_revisions` row and bindings are preserved.
+- Extend Lane B reviewPass test: out-of-boundary patch is rejected.
+
+---
+
+## Files touched
+
+
+| File                                                                                   | Change                                                                           |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `src/sections/PageRenderer.tsx`                                                        | stamp `data-ut-block` / `data-ut-slot` on rendered sections                      |
+| `src/utils/sandpackFilePrep.ts`                                                        | inject scope attrs into AI/legacy JSX; enrich selection postMessage              |
+| `src/services/editScopeResolver.ts`                                                    | **new** — resolver service                                                       |
+| `src/services/vfsCommitService.ts`                                                     | new `source: 'preview-toolbar'` label, buffered-commit helper                    |
+| `src/components/creatives/web-builder/ElementFloatingToolbar.tsx`                      | scope chips, AI scope plumbing, image insert/generate                            |
+| `src/components/creatives/WebBuilder.tsx`                                              | enriched selection state, rewire every floating handler through `commitMutation` |
+| `supabase/functions/ai-code-assistant/index.ts` + `requestSchema.ts` + `reviewPass.ts` | accept `editScope`, prompt + validate against boundary                           |
+| `src/test/editScopeResolver.test.ts`                                                   | **new**                                                                          |
+| `src/test/floatingToolbarCommit.test.ts`                                               | **new**                                                                          |
+
+
+---
+
+## Rollout
+
+- Ship behind no new flag — `VITE_USE_COMMIT_SERVICE` already defaults ON, so rewiring direct edits is live immediately for new sessions.
+- AI scope enforcement also live by default; user can widen to Section via toolbar chip without code change.
+- Memory updates: add `mem://features/web-builder/preview-floating-toolbar-as-primary-plane` and update Core index to reference scope-aware toolbar.
+
+---
+
+## Out of scope (explicitly deferred)
+
+- Custom domain / publish flow changes.
+- Mobile-only toolbar layout polish (current responsive layout kept).
+- Multi-element multi-select (single-element selection only for v1).

@@ -1023,6 +1023,8 @@ interface SelectedElement {
   selector?: string;
   html?: string;
   section?: string;
+  /** Captured by the Preview selection bridge; consumed by EditScopeResolver. */
+  scopeAncestors?: import('@/services/editScopeResolver').ScopeAncestors;
 }
 
 // Define types for Fabric objects with their specific properties
@@ -1533,6 +1535,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       selector: el.selector,
       html: el.html,
       section: el.section,
+      scopeAncestors: el.scopeAncestors,
     });
   }, [setSelectedHTMLElement]);
 
@@ -1651,6 +1654,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     return { ok: false, reason: next === previewCode ? 'no-change' : 'no-match' };
   }, [previewCode, recordManualPageEdit]);
 
+  // ── Preview Floating Toolbar → VFSCommitService bridge ───────────────────
+  // Every direct edit dispatched by the floating toolbar (style/text/image/
+  // attribute/delete/duplicate/move) additively chains through commitMutation
+  // so toolbar mutations land in the durable site_revisions ledger alongside
+  // AI Builder and layout fast-path commits.
+  // See mem://features/web-builder/preview-floating-toolbar.
+  const commitToolbarMutationRef = useRef<((nextCode: string, summary: string) => void) | null>(null);
+
   const handleFloatingStyleUpdate = useCallback((selector: string, styles: Record<string, string>) => {
     console.log('[WebBuilder] handleFloatingStyleUpdate called:', selector, styles);
     const res = applyMutatorAcrossVFS(
@@ -1665,6 +1676,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             styles: { ...(selectedHTMLElement.styles || {}), ...styles },
           });
         }
+        commitToolbarMutationRef.current?.(next, `style ${Object.keys(styles).join(',').slice(0, 40)}`);
       },
       `Manual · style ${Object.keys(styles).join(', ').slice(0, 40)}`,
     );
@@ -1685,6 +1697,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         if (selectedHTMLElement?.selector === selector) {
           setSelectedHTMLElement({ ...selectedHTMLElement, textContent: text });
         }
+        commitToolbarMutationRef.current?.(next, `text "${text.slice(0, 30)}"`);
       },
       `Manual · text "${text.slice(0, 30)}"`,
     );
@@ -1707,6 +1720,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             attributes: { ...(selectedHTMLElement.attributes || {}), src },
           });
         }
+        commitToolbarMutationRef.current?.(next, 'replace image');
       },
       'Manual · replace image',
     );
@@ -1732,6 +1746,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             },
           });
         }
+        commitToolbarMutationRef.current?.(next, `attrs ${Object.keys(attributes).join(',').slice(0, 40)}`);
       },
       `Manual · attrs ${Object.keys(attributes).join(', ').slice(0, 40)}`,
     );
@@ -1799,6 +1814,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     recordManualPageEdit('Manual · delete element', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    commitToolbarMutationRef.current?.(res.code, 'delete element');
     setSelectedHTMLElement(null);
     clearLivePreviewSelection();
     toast.success('Element deleted');
@@ -1814,6 +1830,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     recordManualPageEdit('Manual · duplicate element', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    commitToolbarMutationRef.current?.(res.code, 'duplicate element');
     clearLivePreviewSelection();
     toast.success('Element duplicated');
   }, [previewCode, applyElementDuplicate, clearLivePreviewSelection, recordManualPageEdit]);
@@ -1844,6 +1861,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     recordManualPageEdit('Manual · move element up', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    commitToolbarMutationRef.current?.(res.code, 'move element up');
     clearLivePreviewSelection();
     toast.success('Moved up');
   }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
@@ -1874,6 +1892,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     recordManualPageEdit('Manual · move element down', previewCode, res.code);
     setEditorCode(res.code);
     setPreviewCode(res.code);
+    commitToolbarMutationRef.current?.(res.code, 'move element down');
     clearLivePreviewSelection();
     toast.success('Moved down');
   }, [previewCode, clearLivePreviewSelection, recordManualPageEdit]);
@@ -3132,6 +3151,71 @@ export default function ${componentName}Page() {
     launchEntryPoint,
     effectiveRouteState?.siteBundleSnapshot,
   ]);
+
+  // ── Preview Floating Toolbar → VFSCommitService bridge ───────────────────
+  // Mirrors the layout fast-path effect: persists every toolbar-driven edit
+  // (style / text / image / attribute / delete / duplicate / move) into the
+  // durable site_revisions ledger so they participate in capability and
+  // intent readiness gating.
+  useEffect(() => {
+    commitToolbarMutationRef.current = (nextCode, summary) => {
+      if (!isCommitServiceEnabled() || !businessId || !currentTemplateId) return;
+      const targetPath = activePagePath?.endsWith('.tsx') ? activePagePath : launchEntryPoint;
+      if (!targetPath || !nextCode) return;
+      const beforeFiles = virtualFSRef.current.getSandpackFiles();
+      const snapshot = effectiveRouteState?.siteBundleSnapshot ?? null;
+      void (async () => {
+        try {
+          const { data: { user } } = await supabaseClient.auth.getUser();
+          if (!user) return;
+          const identity: BuilderIdentity = {
+            userId: user.id,
+            businessId,
+            projectId: currentTemplateId,
+            draftId: currentTemplateId,
+            revisionId: currentRevisionId,
+            sessionId: `web-builder:${currentTemplateId}`,
+          };
+          const patch = legacyFilesToPatchPlan(
+            { [targetPath]: nextCode },
+            `Toolbar · ${summary}`,
+          );
+          const commit = await commitMutation({
+            source: 'preview-toolbar',
+            identity,
+            current: {
+              vfsFiles: beforeFiles,
+              siteBundleSnapshot: snapshot ?? undefined,
+            },
+            patch,
+            options: {
+              requirePreviewPass: false,
+              requireReadinessPass: false,
+              industry: snapshot?.industry,
+            },
+          });
+          if (commit.persistedRevisionId) {
+            setCurrentRevisionId(commit.persistedRevisionId);
+            console.log('[WebBuilder] preview-toolbar commit persisted:', commit.persistedRevisionId);
+          }
+        } catch (err) {
+          if (err instanceof CommitRejectedError) {
+            console.warn('[WebBuilder] preview-toolbar commit rejected:', err.message);
+          } else {
+            console.warn('[WebBuilder] preview-toolbar commit failed:', err);
+          }
+        }
+      })();
+    };
+  }, [
+    businessId,
+    currentTemplateId,
+    currentRevisionId,
+    activePagePath,
+    launchEntryPoint,
+    effectiveRouteState?.siteBundleSnapshot,
+  ]);
+
 
 
 

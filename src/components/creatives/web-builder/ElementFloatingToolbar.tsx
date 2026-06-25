@@ -26,6 +26,14 @@ const supabase = supabaseClient as any;
 import { toast } from 'sonner';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
 import type { BusinessSystemType } from '@/data/templates/types';
+import {
+  resolveEditScope,
+  defaultScopeFor,
+  formatScopeLabel,
+  buildScopedPromptPrefix,
+  type EditScopeType,
+  type ScopeAncestors,
+} from '@/services/editScopeResolver';
 
 interface SelectedElement {
   tagName?: string;
@@ -35,6 +43,8 @@ interface SelectedElement {
   selector?: string;
   html?: string;
   section?: string;
+  /** Captured by the Preview selection bridge — drives EditScopeResolver. */
+  scopeAncestors?: ScopeAncestors;
 }
 
 interface ElementFloatingToolbarProps {
@@ -111,6 +121,26 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
   const [success, setSuccess] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // ── Edit scope resolution (Preview floating toolbar) ─────────────────
+  // User can override default scope (element / block / section) so AI edits
+  // are clipped to the exact artifact they care about.
+  const ancestors: ScopeAncestors = element.scopeAncestors || {
+    elementId: null,
+    slotId: null,
+    blockId: null,
+    sectionId: element.section || null,
+    pageId: null,
+    intents: [],
+    clickedTag: element.tagName || null,
+  };
+  const autoScope = defaultScopeFor(ancestors);
+  const [scopeOverride, setScopeOverride] = useState<EditScopeType | null>(null);
+  const activeScopeType: EditScopeType = scopeOverride || autoScope;
+  const editScope = resolveEditScope({
+    ancestors,
+    selectedScope: activeScopeType,
+  });
+
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 60);
   }, []);
@@ -136,8 +166,11 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         element.html ||
         `<${element.tagName || 'div'}>${element.textContent || ''}</${element.tagName || 'div'}>`;
 
+      const scopedPrefix = buildScopedPromptPrefix(editScope);
       const surgicalPrompt = [
-        '🎯 ELEMENT EDIT MODE — Return ONLY the modified HTML for this specific element.',
+        scopedPrefix,
+        '',
+        '🎯 ELEMENT EDIT MODE — Return ONLY the modified HTML for the targeted scope.',
         '',
         'Current element HTML:',
         '```html',
@@ -149,11 +182,11 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         `User Request: ${trimmedPrompt}`,
         '',
         '⚠️ STRICT OUTPUT RULES:',
-        '1. Return ONLY the modified HTML element — nothing else.',
+        '1. Return ONLY the modified HTML for this scope — nothing outside it.',
         '2. No <!DOCTYPE>, no <html>, no <head>, no <body> wrappers.',
         '3. No explanation text, no markdown fences, no extra commentary.',
-        '4. Preserve existing class names and data attributes unless explicitly asked to change them.',
-        '5. Make ONLY the requested change — do not alter other aspects of the element.',
+        '4. Preserve existing class names, data-ut-* attributes, and locked intent bindings verbatim.',
+        '5. Make ONLY the requested change — do not alter other aspects, sections, or pages.',
       ].join('\n');
 
       const { data, error: fnError } = await supabase.functions.invoke('ai-code-assistant', {
@@ -164,6 +197,17 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
           templateAction: 'modify',
           systemType: systemType ?? undefined,
           systemsBuildContext: systemsBuildContext ?? undefined,
+          // Preview floating toolbar — explicit edit scope for reviewPass.
+          editScope: {
+            scopeType: editScope.scopeType,
+            targetId: editScope.targetId,
+            owningSectionId: editScope.owningSectionId,
+            pageId: editScope.pageId,
+            componentPath: editScope.componentPath,
+            editableRange: editScope.editableRange,
+            lockedBindings: editScope.lockedBindings,
+            riskLevel: editScope.riskLevel,
+          },
         },
       });
 
@@ -197,7 +241,7 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [prompt, loading, element, onAIEditComplete, onRequestAI, onClose]);
+  }, [prompt, loading, element, onAIEditComplete, onRequestAI, onClose, editScope, systemType, systemsBuildContext]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
@@ -210,9 +254,9 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
       <div className="flex items-center gap-1.5 mb-1.5">
         <Sparkles className="w-3 h-3 text-cyan-400 shrink-0" />
         <span className="text-[10px] font-semibold text-cyan-300 shrink-0">AI Edit</span>
-        <span className="text-[10px] text-white/40 truncate max-w-[220px]">
+        <span className="text-[10px] text-white/40 truncate max-w-[160px]">
           {element.tagName?.toUpperCase()}
-          {element.selector ? ` · ${element.selector.slice(0, 30)}` : ''}
+          {element.selector ? ` · ${element.selector.slice(0, 22)}` : ''}
         </span>
         <button
           onClick={onClose}
@@ -222,6 +266,37 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {/* Scope chips — Element | Block | Section. Default is the auto-derived
+          scope from EditScopeResolver; user can override per prompt. */}
+      <div className="flex items-center gap-1 mb-1.5">
+        <span className="text-[9px] uppercase tracking-wider text-white/40 mr-1">Scope:</span>
+        {(['element', 'block', 'section'] as EditScopeType[]).map((s) => {
+          const isActive = activeScopeType === s;
+          const isAuto = autoScope === s && !scopeOverride;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setScopeOverride(s === autoScope ? null : s)}
+              className={cn(
+                'text-[10px] px-1.5 py-0.5 rounded border transition-colors capitalize',
+                isActive
+                  ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200'
+                  : 'bg-white/[0.04] border-white/10 text-white/50 hover:text-white/80',
+              )}
+              title={isAuto ? 'Auto-selected scope' : `Override scope to ${s}`}
+            >
+              {s}{isAuto ? ' •' : ''}
+            </button>
+          );
+        })}
+        <span className="ml-auto text-[9px] text-white/40 truncate max-w-[150px]" title={formatScopeLabel(editScope)}>
+          {formatScopeLabel(editScope)}
+        </span>
+      </div>
+
+
 
       {/* Input row */}
       <div className="flex items-end gap-1.5">

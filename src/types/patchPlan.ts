@@ -15,6 +15,7 @@ export type PatchSource =
   | 'ai-builder'
   | 'playground-edit'
   | 'layout-fast-path'
+  | 'preview-toolbar'
   | 'binding-fast-path'
   | 'ghl-binding'
   | 'theme-change'

@@ -515,11 +515,56 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
       if (cur.tagName === 'SECTION') {
         return cur.getAttribute('id') || cur.getAttribute('data-section') || cur.tagName.toLowerCase();
       }
-      const dataSection = cur.getAttribute('data-section') || cur.getAttribute('data-ut-section');
+      const dataSection = cur.getAttribute('data-section') || cur.getAttribute('data-ut-section') || cur.getAttribute('data-ut-section-id');
       if (dataSection) return dataSection;
       cur = cur.parentElement;
     }
     return null;
+  }
+
+  // Walk ancestors and collect Unison scope IDs + intent bindings so the
+  // floating toolbar's EditScopeResolver can pick element/block/section scope.
+  function collectScopeAncestors(el: Element): {
+    elementId: string | null;
+    slotId: string | null;
+    blockId: string | null;
+    sectionId: string | null;
+    pageId: string | null;
+    intents: string[];
+    clickedTag: string;
+  } {
+    let elementId: string | null = el.getAttribute('data-ut-element') || null;
+    let slotId: string | null = null;
+    let blockId: string | null = null;
+    let sectionId: string | null = null;
+    let pageId: string | null = null;
+    const intents: string[] = [];
+    let cur: Element | null = el;
+    let depth = 0;
+    while (cur && cur !== document.body && depth < 24) {
+      if (!elementId) elementId = cur.getAttribute('data-ut-element') || elementId;
+      if (!slotId) slotId = cur.getAttribute('data-ut-slot');
+      if (!blockId) blockId = cur.getAttribute('data-ut-block');
+      if (!sectionId) {
+        sectionId = cur.getAttribute('data-ut-section-id')
+          || cur.getAttribute('data-ut-section')
+          || (cur.tagName === 'SECTION' ? (cur.getAttribute('id') || null) : null);
+      }
+      if (!pageId) pageId = cur.getAttribute('data-ut-page');
+      const intent = cur.getAttribute('data-ut-intent');
+      if (intent && !intents.includes(intent)) intents.push(intent);
+      cur = cur.parentElement;
+      depth++;
+    }
+    return {
+      elementId,
+      slotId,
+      blockId,
+      sectionId,
+      pageId,
+      intents,
+      clickedTag: el.tagName.toLowerCase(),
+    };
   }
 
   function snapshotStyles(el: Element): Record<string, string> {
@@ -571,6 +616,7 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
     t.classList.add('__ut-selected');
     const selector = computeSelector(t);
     const html = t.outerHTML.length > 4000 ? t.outerHTML.slice(0, 4000) : t.outerHTML;
+    const scopeAncestors = collectScopeAncestors(t);
     window.parent.postMessage({
       type: 'ELEMENT_SELECTED',
       activationKey,
@@ -581,6 +627,7 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
         styles: snapshotStyles(t),
         attributes: snapshotAttrs(t),
         section: findSection(t),
+        scopeAncestors,
       },
     }, '*');
   }

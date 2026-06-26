@@ -205,9 +205,15 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
           messages: [{ role: 'user', content: surgicalPrompt }],
           mode: 'code',
           editMode: true,
+          surgicalEdit: true, // route to leaner surgical_edit path (skipResearch, lighter context)
           templateAction: 'modify',
           systemType: systemType ?? undefined,
           systemsBuildContext: systemsBuildContext ?? undefined,
+          // Tight, fast settings — toolbar edits should return in seconds, not 60s
+          gatewayOptions: {
+            reasoningEffort: 'low',
+            timeoutMs: 55000,
+          },
           // Preview floating toolbar — explicit edit scope for reviewPass.
           editScope: {
             scopeType: editScope.scopeType,
@@ -223,9 +229,32 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
       });
 
       if (fnError) {
-        // data may carry the edge function's descriptive { error: '...' } body even on failure
-        const bodyMsg = (data as { error?: string } | null)?.error;
-        throw new Error(bodyMsg || fnError.message || 'AI request failed');
+        // Supabase JS v2 wraps non-2xx responses in FunctionsHttpError; the parsed body
+        // (if JSON) is available on the error's `context` Response. Read it so we
+        // can surface the real upstream error instead of the generic
+        // "Edge Function returned a non-2xx status code" message.
+        let bodyMsg = (data as { error?: string } | null)?.error;
+        let bodyDetails: string | undefined;
+        try {
+          const ctx = (fnError as { context?: Response }).context;
+          if (ctx && typeof ctx.clone === 'function') {
+            const cloned = ctx.clone();
+            const text = await cloned.text();
+            if (text) {
+              try {
+                const parsed = JSON.parse(text);
+                bodyMsg = bodyMsg || parsed?.error || parsed?.message;
+                bodyDetails = parsed?.details || parsed?.errorType;
+              } catch {
+                bodyMsg = bodyMsg || text.slice(0, 240);
+              }
+            }
+          }
+        } catch {
+          // ignore — fall back to generic message below
+        }
+        const composed = [bodyMsg, bodyDetails].filter(Boolean).join(' — ');
+        throw new Error(composed || fnError.message || 'AI request failed');
       }
 
       // Extract HTML — strip markdown fences if present

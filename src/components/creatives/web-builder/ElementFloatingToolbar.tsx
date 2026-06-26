@@ -215,16 +215,19 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
             timeoutMs: 55000,
           },
           // Preview floating toolbar — explicit edit scope for reviewPass.
-          editScope: {
-            scopeType: editScope.scopeType,
-            targetId: editScope.targetId,
-            owningSectionId: editScope.owningSectionId,
-            pageId: editScope.pageId,
-            componentPath: editScope.componentPath,
-            editableRange: editScope.editableRange,
-            lockedBindings: editScope.lockedBindings,
-            riskLevel: editScope.riskLevel,
-          },
+          // Strip null/undefined fields so Zod `.object().optional()` doesn't reject `null`.
+          editScope: Object.fromEntries(
+            Object.entries({
+              scopeType: editScope.scopeType,
+              targetId: editScope.targetId,
+              owningSectionId: editScope.owningSectionId,
+              pageId: editScope.pageId,
+              componentPath: editScope.componentPath,
+              editableRange: editScope.editableRange ?? undefined,
+              lockedBindings: editScope.lockedBindings,
+              riskLevel: editScope.riskLevel,
+            }).filter(([, v]) => v !== null && v !== undefined)
+          ),
         },
       });
 
@@ -244,7 +247,20 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
               try {
                 const parsed = JSON.parse(text);
                 bodyMsg = bodyMsg || parsed?.error || parsed?.message;
-                bodyDetails = parsed?.details || parsed?.errorType;
+                const rawDetails = parsed?.details;
+                if (Array.isArray(rawDetails)) {
+                  bodyDetails = rawDetails
+                    .map((d: { path?: unknown; message?: string }) => {
+                      const path = Array.isArray(d?.path) ? d.path.join('.') : String(d?.path ?? '');
+                      return path ? `${path}: ${d?.message ?? ''}` : (d?.message ?? '');
+                    })
+                    .filter(Boolean)
+                    .join('; ');
+                } else if (typeof rawDetails === 'string') {
+                  bodyDetails = rawDetails;
+                } else if (parsed?.errorType) {
+                  bodyDetails = String(parsed.errorType);
+                }
               } catch {
                 bodyMsg = bodyMsg || text.slice(0, 240);
               }

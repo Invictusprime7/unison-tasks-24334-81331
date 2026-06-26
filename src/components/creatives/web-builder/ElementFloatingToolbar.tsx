@@ -215,16 +215,19 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
             timeoutMs: 55000,
           },
           // Preview floating toolbar — explicit edit scope for reviewPass.
-          editScope: {
-            scopeType: editScope.scopeType,
-            targetId: editScope.targetId,
-            owningSectionId: editScope.owningSectionId,
-            pageId: editScope.pageId,
-            componentPath: editScope.componentPath,
-            editableRange: editScope.editableRange,
-            lockedBindings: editScope.lockedBindings,
-            riskLevel: editScope.riskLevel,
-          },
+          // Strip null/undefined fields so Zod `.object().optional()` doesn't reject `null`.
+          editScope: Object.fromEntries(
+            Object.entries({
+              scopeType: editScope.scopeType,
+              targetId: editScope.targetId,
+              owningSectionId: editScope.owningSectionId,
+              pageId: editScope.pageId,
+              componentPath: editScope.componentPath,
+              editableRange: editScope.editableRange ?? undefined,
+              lockedBindings: editScope.lockedBindings,
+              riskLevel: editScope.riskLevel,
+            }).filter(([, v]) => v !== null && v !== undefined)
+          ),
         },
       });
 

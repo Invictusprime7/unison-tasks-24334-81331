@@ -413,7 +413,7 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
       if (altHero) {
         cards.push({
           id: `${tag}-alt`,
-          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Minimal`,
+          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Focused`,
           description: "Clean, focused layout emphasizing clarity and conversions",
           industry: tag,
           sectionTypes: ["hero", "services", "testimonials", "cta", "contact", "footer"],
@@ -424,7 +424,7 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
     }
   }
 
-  // Add universal fallback if empty
+  // Reference cards are legacy-only and must never act as wizard fallbacks.
   if (cards.length === 0) {
     const allRefs = getAllReferences();
     const universalHero = allRefs.find((r) => r.sectionType === "hero");
@@ -465,9 +465,9 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
     }));
   }
 
-  // Fallback: build from section references when no compositions are registered
-  const tags = SYSTEM_TO_INDUSTRY[systemId] || ["universal"];
-  return buildTemplateCards(tags as IndustryTag[]);
+  // No synthetic/reference fallback: every wizard template card must point to a
+  // registered TemplateComposition so the SiteBundle path owns every page.
+  return [];
 }
 
 const AI_MESSAGE_CHAR_LIMIT = 8_500;

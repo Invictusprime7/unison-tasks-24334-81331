@@ -19,7 +19,6 @@ function selections(
     needsBooking: false,
     sellsProducts: false,
     wantsLeadCapture: false,
-    minimalScaffold: false,
     ...overrides,
   };
 }

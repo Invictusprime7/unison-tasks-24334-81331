@@ -12,6 +12,7 @@ import type {
 } from '@/types/playground';
 import { generateCanonicalRouterForFiles } from '@/utils/topologyRouterGenerator';
 import { generateTopologyPlaceholder } from '@/utils/topologyVFSScaffolder';
+import { PreviewPipelineError } from './previewPipelineError';
 import { deriveFilePath } from './routeNavigationService';
 import { ensureViteRootFiles } from './previewSession';
 import type { LayoutCategory } from '@/data/templates/types';

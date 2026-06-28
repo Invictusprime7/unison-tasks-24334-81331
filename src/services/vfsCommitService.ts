@@ -785,6 +785,24 @@ export async function loadLatestPublishReadyRevisionForProject(
   return mapRevisionRow(data as Record<string, unknown>);
 }
 
+/**
+ * Lightweight history feed for the Ledger panel — newest first. Returns the
+ * same `LoadedRevision` shape but caps the result count for UI use.
+ */
+export async function listRecentRevisionsForProject(
+  projectId: string,
+  limit = 10,
+): Promise<LoadedRevision[]> {
+  const { data, error } = await supabase
+    .from('site_revisions')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[]).map(mapRevisionRow);
+}
+
 function mapRevisionRow(row: Record<string, unknown>): LoadedRevision {
   return {
     id: String(row.id),

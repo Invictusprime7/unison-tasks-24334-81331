@@ -682,7 +682,13 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     aliases: ['donate.start', 'donate.now'],
     triggerType: 'user-action',
     description: 'Start a donation checkout flow.',
+    handlerBinding: 'external',
+    readinessFixture: {
+      description: 'Connect Stripe before enabling donations.',
+      fixPath: '/settings/payments',
+    },
   },
+
   'volunteer.signup': {
     name: 'volunteer.signup',
     namespace: 'nonprofit',

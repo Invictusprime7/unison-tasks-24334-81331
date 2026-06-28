@@ -557,7 +557,7 @@ function mergeWizardLaunchSnapshot(
   };
 }
 
-async function hashVfsFiles(files: Record<string, string>): Promise<string> {
+export async function hashVfsFiles(files: Record<string, string>): Promise<string> {
   try {
     const sortedKeys = Object.keys(files).sort();
     const payload = sortedKeys.map((k) => `${k}\0${files[k]}`).join('\n');

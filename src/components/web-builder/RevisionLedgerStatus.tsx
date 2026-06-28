@@ -74,6 +74,48 @@ export default function RevisionLedgerStatus({
     void refresh();
   }, [refresh]);
 
+  // ── Auto-resync on drift ────────────────────────────────────────────────
+  // When the live VFS hash diverges from the latest ledger row, automatically
+  // roll that revision forward as a fresh `system-restore` commit. Tracks the
+  // last-resynced revision id to guarantee at-most-once per ledger row and
+  // prevent thrash if the restored commit itself ends up drifted (e.g. preflight
+  // mutates files).
+  const autoResyncedRevisionIdRef = React.useRef<string | null>(null);
+  const [autoResyncing, setAutoResyncing] = useState(false);
+
+  useEffect(() => {
+    if (!autoResyncOnDrift) return;
+    if (!identity || !projectId) return;
+    if (!report || report.reason !== 'drift') return;
+    const rev = report.revision;
+    if (!rev || rev.status !== 'committed') return;
+    if (autoResyncedRevisionIdRef.current === rev.id) return;
+    autoResyncedRevisionIdRef.current = rev.id;
+    setAutoResyncing(true);
+    void (async () => {
+      try {
+        const result = await restoreRevision({
+          targetRevisionId: rev.id,
+          identity,
+        });
+        if (result.status === 'committed' && result.persistedRevisionId) {
+          toast.success(`Auto-resynced VFS to revision ${rev.id.slice(0, 8)}`);
+          onRestored?.(result.persistedRevisionId);
+          await refresh();
+        } else {
+          toast.warning(
+            `Auto-resync blocked (${result.publishBlockers?.length ?? 0} blocker${(result.publishBlockers?.length ?? 0) === 1 ? '' : 's'})`,
+          );
+        }
+      } catch (err) {
+        console.warn('[RevisionLedgerStatus] auto-resync failed:', err);
+      } finally {
+        setAutoResyncing(false);
+      }
+    })();
+  }, [autoResyncOnDrift, identity, projectId, report, onRestored, refresh]);
+
+
   const handleRestore = React.useCallback(
     async (rev: LoadedRevision) => {
       if (!identity) {

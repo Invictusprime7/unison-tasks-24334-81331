@@ -55,6 +55,13 @@ export interface DeploymentRequest {
    * the vertical contract's `rowCountAssertions` before publish.
    */
   rowCounts?: Record<string, number>;
+  /**
+   * Move D — when supplied, the deploy refuses to ship unless the latest
+   * `publish_ready=true` revision exists for this project, and replaces
+   * `files`/`snapshot` with that durable revision's payload so we never
+   * publish unvetted in-memory state.
+   */
+  projectId?: string | null;
 }
 
 export interface DeploymentResponse {

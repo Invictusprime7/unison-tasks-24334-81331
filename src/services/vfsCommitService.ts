@@ -834,10 +834,11 @@ export async function restoreRevision(args: {
   }
 
   const fileOps = Object.entries(target.vfsFiles).map(([path, contents]) => ({
-    type: 'upsert' as const,
+    type: 'replace' as const,
     path,
     contents,
   }));
+
 
   return commitMutation({
     source: 'system-restore',

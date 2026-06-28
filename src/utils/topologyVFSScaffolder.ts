@@ -21,6 +21,19 @@ import { ALL_COMPOSITIONS, getCompositionById, getCompositionsByIndustry } from 
 import { compositionToReactCode } from '@/sections/PageRenderer';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
+import { PreviewPipelineError } from '@/services/previewPipelineError';
+
+/**
+ * Options shared by the scaffolding entry points. When `strictWizardComposition`
+ * is true, the scaffolder REFUSES to emit the spinner placeholder for any
+ * missing page — instead it throws PreviewPipelineError so the runtime surfaces
+ * the SiteBundleSnapshot ↔ PageRegistry drift rather than silently rendering
+ * a minimal/loading scaffold. This is the post-wizard contract: every page
+ * MUST come from the SiteBundle composition or fail loudly.
+ */
+export interface ScaffoldOptions {
+  strictWizardComposition?: boolean;
+}
 
 // ============================================================================
 // Default per-role section pool — used when a template doesn't define its own.
@@ -160,13 +173,38 @@ export function scaffoldMissingTopologyPages(
   plan: GeneratedSitePlan,
   existingFiles: Record<string, string>,
   template?: TemplateComposition | null,
+  options?: ScaffoldOptions,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   const activeTemplate = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   const missing = getMissingTopologyPages(plan, existingFiles);
+  const strict = options?.strictWizardComposition === true;
+
+  // In strict mode, collect all pages that would degrade to the spinner
+  // placeholder and throw ONE aggregate PreviewPipelineError so the runtime
+  // can surface the full SiteBundle ↔ topology drift.
+  const blocked: string[] = [];
   for (const page of missing) {
-    out[page.filePath] = generateTopologyPlaceholder(page, plan, activeTemplate);
+    const compositional = tryComposeTopologyPage(page, plan, activeTemplate);
+    if (compositional) {
+      out[page.filePath] = compositional;
+      continue;
+    }
+    if (strict) {
+      blocked.push(page.filePath);
+      continue;
+    }
+    out[page.filePath] = generateSpinnerPlaceholder(page, plan);
   }
+
+  if (strict && blocked.length > 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `SiteBundleSnapshot has no composition for ${blocked.length} wizard page(s); refusing to emit minimal scaffold.`,
+      { blockedFiles: blocked, recoverableByRelaunch: true },
+    );
+  }
+
   return out;
 }
 
@@ -180,13 +218,10 @@ export function scaffoldMissingTopologyPagesWithRouter(
   existingFiles: Record<string, string>,
   registry: PageRegistry,
   template?: TemplateComposition | null,
+  options?: ScaffoldOptions,
 ): Record<string, string> {
-  const newFiles = scaffoldMissingTopologyPages(plan, existingFiles, template);
+  const newFiles = scaffoldMissingTopologyPages(plan, existingFiles, template, options);
 
-  // Always regenerate the canonical router so all pages are routable.
-  // IMPORTANT: Use plan-based router generation instead of registry-based,
-  // because the registry may not be populated yet (React state updates are async).
-  // The plan is the authoritative source of truth for page structure.
   const registryPages = Object.values(registry.pages);
   const routerCode = registryPages.length > 0
     ? generateCanonicalRouter(registry, plan.businessName)
@@ -226,18 +261,30 @@ export function generateTopologyPlaceholder(
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null
 ): string {
-  const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
-  if (active) {
-    const sub = buildRoleComposition(active, page.role, page);
-    if (sub) {
-      try {
-        return compositionToReactCode(sub);
-      } catch {
-        // fall through to spinner on any renderer failure
-      }
-    }
-  }
+  const composed = tryComposeTopologyPage(page, plan, template);
+  if (composed) return composed;
   return generateSpinnerPlaceholder(page, plan);
+}
+
+/**
+ * Attempt to compose a page from the active template/SiteBundle composition.
+ * Returns null if no composition is available — caller decides whether to emit
+ * a spinner placeholder (legacy) or throw PreviewPipelineError (strict wizard).
+ */
+function tryComposeTopologyPage(
+  page: PageRouteNode,
+  plan: GeneratedSitePlan,
+  template?: TemplateComposition | null,
+): string | null {
+  const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
+  if (!active) return null;
+  const sub = buildRoleComposition(active, page.role, page);
+  if (!sub) return null;
+  try {
+    return compositionToReactCode(sub);
+  } catch {
+    return null;
+  }
 }
 
 function generateSpinnerPlaceholder(page: PageRouteNode, plan: GeneratedSitePlan): string {

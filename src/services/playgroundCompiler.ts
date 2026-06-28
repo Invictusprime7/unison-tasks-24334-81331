@@ -12,6 +12,7 @@ import type {
 } from '@/types/playground';
 import { generateCanonicalRouterForFiles } from '@/utils/topologyRouterGenerator';
 import { generateTopologyPlaceholder } from '@/utils/topologyVFSScaffolder';
+import { PreviewPipelineError } from './previewPipelineError';
 import { deriveFilePath } from './routeNavigationService';
 import { ensureViteRootFiles } from './previewSession';
 import type { LayoutCategory } from '@/data/templates/types';
@@ -46,7 +47,19 @@ export function compilePlayground(
 
   const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, options);
 
+  // Strict wizard contract: any launch threaded with template/theme/industry
+  // selections is a SiteBundleSnapshot-bound launch and MUST refuse to emit
+  // the minimal spinner scaffold. Drift between PageRegistry and SiteBundle
+  // composition surfaces as a PreviewPipelineError (rendered by
+  // PreviewRuntimeError) instead of a silent loading placeholder.
+  const strictWizardComposition =
+    !!options?.selectedTemplateId ||
+    !!options?.selectedThemeId ||
+    !!options?.themePresetId ||
+    !!options?.industry;
+
   const vfsFiles: Record<string, string> = {};
+  const blockedWizardPages: string[] = [];
 
   for (const page of pages) {
     const fp = page.filePath!;
@@ -58,17 +71,7 @@ export function compilePlayground(
     }
 
     if (page.isHome) {
-      // Legacy compatibility: rebase an inherited `/src/App.tsx` into the
-      // Home page module so older imports keep working. Skip this shortcut
-      // whenever the wizard threaded a Style/Template selection — those
-      // SiteBundleSnapshot-driven launches MUST scaffold Home from the same
-      // themed `generateTopologyPlaceholder(...)` path used by every other
-      // page, otherwise Home renders the un-themed AI seed while subpages
-      // render the wizard's themed composition (visible drift).
-      const hasWizardTheming =
-        !!options?.selectedTemplateId ||
-        !!options?.selectedThemeId ||
-        !!options?.industry;
+      const hasWizardTheming = strictWizardComposition;
       if (!hasWizardTheming) {
         const legacyHomeSource = existingVfsFiles['/src/App.tsx'] || existingVfsFiles['/App.tsx'];
         if (legacyHomeSource) {
@@ -79,9 +82,29 @@ export function compilePlayground(
     }
 
     const node = scaffoldPlan.pages.find((p) => p.id === page.pageId);
-    if (node) {
-      vfsFiles[fp] = generateTopologyPlaceholder(node, scaffoldPlan);
+    if (!node) continue;
+
+    // Try compositional scaffold from active template/SiteBundle.
+    // generateTopologyPlaceholder falls back to the spinner placeholder when
+    // composition is unavailable; in strict mode we detect that case and
+    // route it through PreviewPipelineError instead of writing the spinner.
+    const composed = generateTopologyPlaceholder(node, scaffoldPlan);
+    const isSpinnerFallback =
+      composed.includes('Generating page content...') ||
+      composed.includes('animate-spin rounded-full');
+    if (strictWizardComposition && isSpinnerFallback) {
+      blockedWizardPages.push(fp);
+      continue;
     }
+    vfsFiles[fp] = composed;
+  }
+
+  if (blockedWizardPages.length > 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `SiteBundleSnapshot has no composition for ${blockedWizardPages.length} wizard page(s); refusing to emit minimal scaffold.`,
+      { blockedFiles: blockedWizardPages, recoverableByRelaunch: true },
+    );
   }
 
   const routerContent = generateCanonicalRouterForFiles(registry, vfsFiles, businessName);

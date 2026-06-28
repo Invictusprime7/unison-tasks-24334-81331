@@ -111,7 +111,11 @@ vi.mock('@/integrations/supabase/client', () => {
 
 // -- Imports (after mocks) ---------------------------------------------------
 
-import { commitMutation, loadLatestRevisionForProject } from '@/services/vfsCommitService';
+import {
+  commitMutation,
+  loadLatestRevisionForProject,
+  loadLatestPublishReadyRevisionForProject,
+} from '@/services/vfsCommitService';
 import { commitToPipeline } from '@/platform/core/commitToPipeline';
 import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';

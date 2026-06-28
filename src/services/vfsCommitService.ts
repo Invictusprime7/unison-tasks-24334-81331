@@ -557,6 +557,32 @@ function mergeWizardLaunchSnapshot(
   };
 }
 
+async function hashVfsFiles(files: Record<string, string>): Promise<string> {
+  try {
+    const sortedKeys = Object.keys(files).sort();
+    const payload = sortedKeys.map((k) => `${k}\0${files[k]}`).join('\n');
+    const enc = new TextEncoder().encode(payload);
+    const subtle =
+      typeof globalThis !== 'undefined' && (globalThis.crypto as Crypto | undefined)?.subtle;
+    if (subtle) {
+      const buf = await subtle.digest('SHA-256', enc);
+      return Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+  } catch {
+    /* fall through */
+  }
+  // Fallback: cheap non-crypto hash (only used in environments lacking SubtleCrypto).
+  let h = 5381;
+  const sortedKeys = Object.keys(files).sort();
+  for (const k of sortedKeys) {
+    const s = `${k}\0${files[k]}`;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return `fallback-${(h >>> 0).toString(16)}`;
+}
+
 async function finalize(args: {
   input: CommitMutationInput;
   status: 'committed' | 'rejected';
@@ -565,6 +591,10 @@ async function finalize(args: {
   runtimeManifest: unknown;
   playground: PlaygroundState | null;
   readinessReport: Record<string, unknown>;
+  publishReady: boolean;
+  publishBlockers: PublishBlockerSummary[];
+  vfsHash: string;
+  backendOpsApplied: unknown[];
   diagnostics: CommitDiagnostic[];
   parentRevisionId: string | null;
   rejectMessage: string | null;
@@ -577,6 +607,10 @@ async function finalize(args: {
     runtimeManifest,
     playground,
     readinessReport,
+    publishReady,
+    publishBlockers,
+    vfsHash,
+    backendOpsApplied,
     diagnostics,
     parentRevisionId,
     rejectMessage,
@@ -601,6 +635,10 @@ async function finalize(args: {
         playground_state: (playground ?? {}) as unknown as Record<string, unknown>,
         readiness_report: readinessReport,
         diagnostics: diagnostics as unknown as Record<string, unknown>[],
+        publish_ready: publishReady,
+        publish_blockers: publishBlockers as unknown as Record<string, unknown>[],
+        backend_ops_applied: backendOpsApplied as unknown as Record<string, unknown>[],
+        vfs_hash: vfsHash,
         created_by: input.identity.userId,
       };
       const { data, error } = await supabase
@@ -626,6 +664,29 @@ async function finalize(args: {
         detail: String(err),
       });
     }
+
+    // Move F #1 — fire-and-forget commit telemetry. Never block on failure.
+    try {
+      void supabase.from('ai_events').insert({
+        kind: 'vfs_commit',
+        business_id: input.identity.businessId,
+        user_id: input.identity.userId,
+        payload: {
+          revisionId: persistedRevisionId,
+          parentRevisionId,
+          draftId: input.identity.draftId,
+          projectId: input.identity.projectId,
+          source: input.source,
+          status,
+          publishReady,
+          publishBlockerCount: publishBlockers.length,
+          vfsHash,
+          diagnostics: diagnostics.slice(-20),
+        } as unknown as Record<string, unknown>,
+      });
+    } catch {
+      /* telemetry is best-effort */
+    }
   }
 
   const result: CommitMutationResult = {
@@ -644,6 +705,9 @@ async function finalize(args: {
     persistedRevisionId,
     parentRevisionId,
     committedAt: new Date().toISOString(),
+    publishReady,
+    publishBlockers,
+    vfsHash,
   };
 
   if (status === 'rejected') {
@@ -669,6 +733,9 @@ export interface LoadedRevision {
   playground: PlaygroundState | null;
   readinessReport: Record<string, unknown>;
   diagnostics: CommitDiagnostic[];
+  publishReady: boolean;
+  publishBlockers: PublishBlockerSummary[];
+  vfsHash: string | null;
   createdAt: string;
 }
 
@@ -697,6 +764,27 @@ export async function loadLatestRevisionForProject(
   return mapRevisionRow(data as Record<string, unknown>);
 }
 
+/**
+ * Move D — publish flow loads the latest revision whose publish gate +
+ * element + intent readiness all passed. Returns null when none exist; the
+ * publish UI must refuse to deploy in that case.
+ */
+export async function loadLatestPublishReadyRevisionForProject(
+  projectId: string,
+): Promise<LoadedRevision | null> {
+  const { data, error } = await supabase
+    .from('site_revisions')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('status', 'committed')
+    .eq('publish_ready', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return mapRevisionRow(data as Record<string, unknown>);
+}
+
 function mapRevisionRow(row: Record<string, unknown>): LoadedRevision {
   return {
     id: String(row.id),
@@ -711,6 +799,10 @@ function mapRevisionRow(row: Record<string, unknown>): LoadedRevision {
     playground: (row.playground_state ?? null) as PlaygroundState | null,
     readinessReport: (row.readiness_report ?? {}) as Record<string, unknown>,
     diagnostics: (row.diagnostics ?? []) as CommitDiagnostic[],
+    publishReady: row.publish_ready === true,
+    publishBlockers: (row.publish_blockers ?? []) as PublishBlockerSummary[],
+    vfsHash: (row.vfs_hash as string | null) ?? null,
     createdAt: String(row.created_at),
   };
 }
+

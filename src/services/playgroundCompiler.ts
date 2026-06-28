@@ -67,7 +67,11 @@ export function compilePlayground(
     if (!node) continue;
 
     try {
-      vfsFiles[fp] = generateTopologyPlaceholder(node, scaffoldPlan);
+      // Multi-file emit: page module + per-section components under
+      // /src/components/*. Shared component files are idempotent across
+      // pages and safe to merge by Object.assign.
+      const fileSet = generateTopologyPlaceholderFiles(node, scaffoldPlan);
+      Object.assign(vfsFiles, fileSet);
     } catch (err) {
       if (err instanceof PreviewPipelineError) {
         blockedWizardPages.push(fp);

@@ -41,7 +41,10 @@ import type { CompiledContract } from '@/platform/core/contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gates';
 import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
+import { evaluateElementReadiness, type ElementReadinessReport } from '@/services/elementReadinessEvaluator';
+import { executeBackendOps, type BackendOpExecutionReport } from '@/services/backendOpExecutor';
 import type { PlaygroundControlPlaneModel } from '@/types/playground';
+import type { CapabilityId } from '@/platform/core/capabilityRegistry';
 import {
   assertBuilderIdentity,
   type BuilderIdentity,
@@ -52,6 +55,7 @@ import {
   type PatchPlan,
   type PatchSource,
 } from '@/types/patchPlan';
+
 
 
 // ----------------------------------------------------------------------------

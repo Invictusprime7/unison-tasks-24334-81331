@@ -14,7 +14,7 @@
 import type { LaunchState } from '@/types/launchState';
 import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
-import { ensureSnapshotTokens, projectSnapshotVfsAuthority, resolveSnapshot } from '@/services/snapshotProjector';
+import { ensureSnapshotTokens, resolveSnapshot } from '@/services/snapshotProjector';
 
 export type SandpackFiles = Record<string, string>;
 
@@ -32,12 +32,11 @@ export function launchStateToSandpackFiles(
   // LaunchState.vfsFiles is the durable fallback only when the live VFS hasn't
   // imported yet (first paint window). The snapshot projector still gates any
   // missing artifact, so this can't silently render a default preset.
-  const incomingVfsFiles = Object.keys(vfsFiles).length > 0
+  const sourceVfsFiles = Object.keys(vfsFiles).length > 0
     ? vfsFiles
     : launchState.vfsFiles || {};
 
-  const resolution = resolveSnapshot(incomingVfsFiles, launchState);
-  const sourceVfsFiles = projectSnapshotVfsAuthority(incomingVfsFiles, resolution);
+  const resolution = resolveSnapshot(sourceVfsFiles, launchState);
 
   const entryPoint = resolveLauncherEntryPoint(
     sourceVfsFiles,

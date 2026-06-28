@@ -5,7 +5,6 @@ import { createEmptyCreatorData } from "@/types/creatorData";
 import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry";
 import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";
 import { createLaunchState } from "@/types/launchState";
-import { PreviewPipelineError } from "@/services/previewPipelineError";
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -99,8 +98,8 @@ describe("buildCanonicalLaunchArtifacts", () => {
     });
 
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
-    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Placeholder");
-    expect(artifacts.files["/src/pages/Home.tsx"]).not.toContain("motion.div");
+    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("motion.div");
+    expect(artifacts.files["/package.json"]).toContain("\"framer-motion\"");
     expect(artifacts.runtimeManifest.appContext?.projectId).toBe("project_123");
     expect(artifacts.runtimeManifest.metadataFiles).toContain(CANONICAL_METADATA_FILE_PATHS.appContext);
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
@@ -134,7 +133,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
   });
 
-  it("keeps SiteBundle registered pages authoritative at wizard launch", () => {
+  it("keeps Lane B AI page output authoritative at wizard launch (no canonical lock)", () => {
     const snapshot = createSnapshot();
     // Wizard-themed bundle with a registered About route.
     snapshot.meta = { ...snapshot.meta, themePresetId: "modern" };
@@ -155,8 +154,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
 
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
-    // Lane B authors rich pages for both routes, but Home is owned by the
-    // SiteBundleSnapshot so an AI App/Home shell cannot degrade the first route.
+        // Lane B authors rich pages for both routes — these MUST win.
         "/src/pages/Home.tsx":
           "import Hero from '../components/Hero';\nexport default function Home(){ return <main className='bg-background text-foreground'><Hero/>Lane B Home</main>; }",
         "/src/pages/About.tsx":
@@ -178,15 +176,18 @@ describe("buildCanonicalLaunchArtifacts", () => {
       backendRequired: false,
     });
 
-    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Canonical Home Stub");
-    expect(artifacts.files["/src/pages/About.tsx"]).toContain("Canonical About Stub");
-    expect(artifacts.files["/src/pages/Home.tsx"]).not.toContain("Lane B Home");
-    expect(artifacts.files["/src/pages/About.tsx"]).not.toContain("Lane B About");
+    // Lane B authority: rich AI pages win over canonical stubs even with
+    // a wizard themePresetId present. Themed token classes are preserved
+    // because Lane B authored them; canonical stubs do not preempt.
+    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Lane B Home");
+    expect(artifacts.files["/src/pages/About.tsx"]).toContain("Lane B About");
+    expect(artifacts.files["/src/pages/Home.tsx"]).not.toContain("Canonical Home Stub");
+    expect(artifacts.files["/src/pages/About.tsx"]).not.toContain("Canonical About Stub");
     // Canonical router still owns /src/App.tsx.
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });
 
-  it("throws when SiteBundleSnapshot cannot supply a registered page composition", () => {
+  it("can block canonical page fallback so wizard launches cannot mask missing Lane B pages", () => {
     const snapshot = createSnapshot();
     const aboutPage = {
       ...snapshot.pageRegistry.pages[snapshot.pageRegistry.homePageId!],
@@ -197,12 +198,12 @@ describe("buildCanonicalLaunchArtifacts", () => {
       filePath: "/src/pages/About.tsx",
     };
     snapshot.pageRegistry.pages["page_about"] = aboutPage as typeof aboutPage;
-    delete snapshot.vfsFiles["/src/pages/About.tsx"];
+    snapshot.vfsFiles["/src/pages/About.tsx"] =
+      "export default function About(){ return <div>Canonical About Fallback</div>; }";
 
-    expect(() => buildCanonicalLaunchArtifacts({
+    const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/pages/Home.tsx": "export default function Home(){ return <main>Wizard Home</main>; }",
-        "/src/pages/About.tsx": "export default function About(){ return <main>AI About</main>; }",
       },
       preferredEntryPoint: "/src/App.tsx",
       siteBundleSnapshot: snapshot,
@@ -218,6 +219,10 @@ describe("buildCanonicalLaunchArtifacts", () => {
       industry: "agency",
       aesthetic: "modern",
       backendRequired: false,
-    })).toThrow(PreviewPipelineError);
+    });
+
+    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Wizard Home");
+    expect(artifacts.files["/src/pages/About.tsx"]).toBeUndefined();
+    expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });
 });

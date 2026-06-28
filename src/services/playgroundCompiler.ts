@@ -163,14 +163,6 @@ function buildScaffoldPlan(
 }
 
 function inferTopologyRole(page: BuilderPage): PageRole {
-  // Home is a first-class topology role. Some wizard materialization paths do
-  // not stamp pageRole/pageType on the home node because `isHome` is the
-  // durable identity flag. If we don't check it first, `/` falls through to
-  // `custom`, which composes only navbar+hero+cta+footer and looks like the
-  // deprecated minimal fallback while every other route uses the rich
-  // SiteBundle role composition.
-  if (page.isHome) return 'home';
-
   const raw = (page.pageRole || page.pageType || '').toString();
   if (raw === 'service' || raw === 'landing') return 'services';
   if (raw === 'thankyou' || raw === 'thank_you') return 'thank_you';

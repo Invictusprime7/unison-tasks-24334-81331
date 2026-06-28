@@ -76,64 +76,6 @@ export function resolveSnapshot(
   return { snapshot, isWizardDraft, themePresetId: themePresetId ?? null };
 }
 
-function normalizeSnapshotPath(path: string): string {
-  return path.startsWith('/') ? path : `/${path}`;
-}
-
-/**
- * Project the SiteBundleSnapshot VFS as the sole preview authority.
- *
- * Any stale imported VFS file (especially /src/App.tsx or /src/pages/Home.tsx)
- * is overwritten by snapshot.vfsFiles. Registered page files and the canonical
- * router must exist in the snapshot; otherwise we throw and let the Web Builder
- * render PreviewRuntimeError instead of allowing Sandpack to fabricate a shell.
- */
-export function projectSnapshotVfsAuthority(
-  incomingFiles: Record<string, string>,
-  resolution: SnapshotResolution,
-): Record<string, string> {
-  if (!resolution.snapshot) {
-    if (resolution.isWizardDraft) {
-      throw new PreviewPipelineError(
-        'vfs',
-        'Wizard preview is missing SiteBundleSnapshot; refusing to render a scaffold fallback.',
-        { recoverableByRelaunch: true },
-      );
-    }
-    return incomingFiles;
-  }
-
-  const snapshotFiles = resolution.snapshot.vfsFiles || {};
-  const blockedFiles: string[] = [];
-  const readSnapshot = (path: string): string | undefined => {
-    const normalized = normalizeSnapshotPath(path);
-    return snapshotFiles[normalized] || snapshotFiles[normalized.slice(1)] || snapshotFiles[path];
-  };
-
-  for (const page of Object.values(resolution.snapshot.pageRegistry?.pages || {})) {
-    if (page.filePath && !readSnapshot(page.filePath)) {
-      blockedFiles.push(page.filePath);
-    }
-  }
-
-  const routerPath = resolution.snapshot.routerFile?.path || '/src/App.tsx';
-  const routerContent = readSnapshot(routerPath) || readSnapshot('/src/App.tsx') || resolution.snapshot.routerFile?.content;
-  if (!routerContent) blockedFiles.push(routerPath);
-
-  if (blockedFiles.length > 0) {
-    throw new PreviewPipelineError(
-      'vfs',
-      `SiteBundleSnapshot is missing ${blockedFiles.length} required preview artifact(s); refusing to render fallback topology.`,
-      { blockedFiles: Array.from(new Set(blockedFiles)), recoverableByRelaunch: true },
-    );
-  }
-
-  const projected: Record<string, string> = { ...incomingFiles, ...snapshotFiles };
-  projected[routerPath] = routerContent!;
-  projected['/src/App.tsx'] = routerContent!;
-  return projected;
-}
-
 
 /**
  * Project the canonical themed /src/index.css for the snapshot's themePresetId.

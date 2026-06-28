@@ -267,6 +267,7 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
 
     // Rejected revisions are still persisted for forensics.
     expect(revisionStore[revisionStore.length - 1]?.status).toBe('rejected');
+  });
 });
 
 describe('Move D — publish-ready ledger', () => {

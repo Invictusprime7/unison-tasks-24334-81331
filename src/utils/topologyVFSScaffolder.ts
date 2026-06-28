@@ -173,13 +173,38 @@ export function scaffoldMissingTopologyPages(
   plan: GeneratedSitePlan,
   existingFiles: Record<string, string>,
   template?: TemplateComposition | null,
+  options?: ScaffoldOptions,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   const activeTemplate = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   const missing = getMissingTopologyPages(plan, existingFiles);
+  const strict = options?.strictWizardComposition === true;
+
+  // In strict mode, collect all pages that would degrade to the spinner
+  // placeholder and throw ONE aggregate PreviewPipelineError so the runtime
+  // can surface the full SiteBundle ↔ topology drift.
+  const blocked: string[] = [];
   for (const page of missing) {
-    out[page.filePath] = generateTopologyPlaceholder(page, plan, activeTemplate);
+    const compositional = tryComposeTopologyPage(page, plan, activeTemplate);
+    if (compositional) {
+      out[page.filePath] = compositional;
+      continue;
+    }
+    if (strict) {
+      blocked.push(page.filePath);
+      continue;
+    }
+    out[page.filePath] = generateSpinnerPlaceholder(page, plan);
   }
+
+  if (strict && blocked.length > 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `SiteBundleSnapshot has no composition for ${blocked.length} wizard page(s); refusing to emit minimal scaffold.`,
+      { blockedFiles: blocked, recoverableByRelaunch: true },
+    );
+  }
+
   return out;
 }
 
@@ -193,13 +218,10 @@ export function scaffoldMissingTopologyPagesWithRouter(
   existingFiles: Record<string, string>,
   registry: PageRegistry,
   template?: TemplateComposition | null,
+  options?: ScaffoldOptions,
 ): Record<string, string> {
-  const newFiles = scaffoldMissingTopologyPages(plan, existingFiles, template);
+  const newFiles = scaffoldMissingTopologyPages(plan, existingFiles, template, options);
 
-  // Always regenerate the canonical router so all pages are routable.
-  // IMPORTANT: Use plan-based router generation instead of registry-based,
-  // because the registry may not be populated yet (React state updates are async).
-  // The plan is the authoritative source of truth for page structure.
   const registryPages = Object.values(registry.pages);
   const routerCode = registryPages.length > 0
     ? generateCanonicalRouter(registry, plan.businessName)

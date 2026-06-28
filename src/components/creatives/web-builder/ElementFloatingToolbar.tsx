@@ -83,6 +83,11 @@ interface ElementFloatingToolbarProps {
     publishStatus?: 'ready' | 'partial' | 'blocked' | 'draft' | 'stubbed';
     missingDependencies?: string[];
     onOpenSetup?: () => void;
+    /** Move E — per-element readiness derived from latest site_revisions row. */
+    ledgerIntent?: string;
+    ledgerStatus?: 'ready' | 'capability-missing' | 'rows-missing' | 'unbound' | 'unknown-intent';
+    ledgerBlocker?: string;
+    ledgerFixPath?: string;
   } | null;
 }
 

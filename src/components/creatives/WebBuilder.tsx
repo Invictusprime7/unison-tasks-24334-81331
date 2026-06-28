@@ -87,6 +87,7 @@ import {
   commitMutation,
   isCommitServiceEnabled,
   CommitRejectedError,
+  loadLatestRevisionForProject,
 } from "@/services/vfsCommitService";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
@@ -3528,10 +3529,76 @@ export default function ${componentName}Page() {
     return candidates[0] || null;
   }, [activePageId, creatorPlayground.creatorData.componentInstances, selectedHTMLElement]);
 
+  // ── Move E: per-element readiness from latest committed revision ──────
+  // Reads `readinessReport.elementReadiness.records` off the most recent
+  // site_revisions row and keeps the best (worst-status-wins) record per
+  // canonical intent, so the floating toolbar can show ready/needs-data/
+  // blocked chips for the currently-selected element.
+  const [ledgerElementReadinessByIntent, setLedgerElementReadinessByIntent] = useState<
+    Record<string, { status: 'ready' | 'capability-missing' | 'rows-missing' | 'unbound' | 'unknown-intent'; blocker?: string; fixPath?: string; intent: string }>
+  >({});
+
+  useEffect(() => {
+    if (!projectId) {
+      setLedgerElementReadinessByIntent({});
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const rev = await loadLatestRevisionForProject(projectId);
+        if (cancelled || !rev) return;
+        const er = (rev.readinessReport as { elementReadiness?: { records?: Array<{ intent: string; canonicalIntent: string | null; status: string; blocker?: string; fixPath?: string }> } })?.elementReadiness;
+        const records = er?.records ?? [];
+        const priority: Record<string, number> = { ready: 0, 'unknown-intent': 1, 'capability-missing': 2, 'rows-missing': 3, unbound: 4 };
+        const map: Record<string, { status: 'ready' | 'capability-missing' | 'rows-missing' | 'unbound' | 'unknown-intent'; blocker?: string; fixPath?: string; intent: string }> = {};
+        for (const r of records) {
+          const keys = [r.canonicalIntent, r.intent].filter(Boolean) as string[];
+          const status = (r.status as 'ready' | 'capability-missing' | 'rows-missing' | 'unbound' | 'unknown-intent');
+          for (const k of keys) {
+            const existing = map[k];
+            if (!existing || (priority[status] ?? 0) > (priority[existing.status] ?? 0)) {
+              map[k] = { status, blocker: r.blocker, fixPath: r.fixPath, intent: r.canonicalIntent || r.intent };
+            }
+          }
+        }
+        if (!cancelled) setLedgerElementReadinessByIntent(map);
+      } catch (err) {
+        if (!cancelled) console.warn('[WebBuilder] ledger element readiness load failed:', err);
+      }
+    };
+    void load();
+    const id = window.setInterval(load, 15000);
+    const onLedgerEvt = () => void load();
+    window.addEventListener('unison:ledger-updated', onLedgerEvt);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.removeEventListener('unison:ledger-updated', onLedgerEvt);
+    };
+  }, [projectId]);
+
   const selectedElementReadiness = useMemo(() => {
+    // Pull data-ut-intent off the selected element so we can decorate the
+    // toolbar with ledger-derived status even when no Playground binding/
+    // component is associated yet.
+    const selectedIntent =
+      selectedHTMLElement?.attributes?.['data-ut-intent'] ||
+      selectedHTMLElement?.attributes?.['data-ut-action'] ||
+      null;
+    const ledger = selectedIntent ? ledgerElementReadinessByIntent[selectedIntent] : null;
+    const ledgerOverlay = ledger
+      ? {
+          ledgerIntent: ledger.intent,
+          ledgerStatus: ledger.status,
+          ledgerBlocker: ledger.blocker,
+          ledgerFixPath: ledger.fixPath,
+        }
+      : {};
+
     if (selectedPlaygroundComponent) {
       const readiness = playgroundReadinessReport.componentReadiness[selectedPlaygroundComponent.instanceId];
-      if (!readiness) return null;
+      if (!readiness) return ledger ? { surfaceLabel: selectedIntent ?? undefined, ...ledgerOverlay } : null;
       return {
         surfaceLabel: selectedPlaygroundComponent.label,
         previewStatus: readiness.previewStatus,
@@ -3541,12 +3608,13 @@ export default function ${componentName}Page() {
           setPlaygroundInitialSection('components');
           setPlaygroundModalOpen(true);
         },
+        ...ledgerOverlay,
       };
     }
 
     if (selectedPlaygroundBinding) {
       const readiness = playgroundReadinessReport.readiness[selectedPlaygroundBinding.bindingId];
-      if (!readiness) return null;
+      if (!readiness) return ledger ? { surfaceLabel: selectedIntent ?? undefined, ...ledgerOverlay } : null;
       return {
         surfaceLabel: selectedPlaygroundBinding.coreIntent || selectedPlaygroundBinding.intent,
         previewStatus: readiness.previewStatus,
@@ -3557,11 +3625,22 @@ export default function ${componentName}Page() {
           setPlaygroundInitialBindingId(selectedPlaygroundBinding.bindingId);
           setPlaygroundModalOpen(true);
         },
+        ...ledgerOverlay,
       };
     }
 
+    if (ledger) {
+      return { surfaceLabel: selectedIntent ?? undefined, ...ledgerOverlay };
+    }
     return null;
-  }, [playgroundReadinessReport, selectedPlaygroundBinding, selectedPlaygroundComponent]);
+  }, [
+    playgroundReadinessReport,
+    selectedPlaygroundBinding,
+    selectedPlaygroundComponent,
+    selectedHTMLElement,
+    ledgerElementReadinessByIntent,
+  ]);
+
   
   const referrerPageName = systemName || 
     effectiveRouteState?.from || 

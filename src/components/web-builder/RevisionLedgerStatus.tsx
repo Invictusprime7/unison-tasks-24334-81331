@@ -30,6 +30,11 @@ interface RevisionLedgerStatusProps {
   identity?: BuilderIdentity | null;
   /** Notified after a successful restore so the host can rehydrate the builder. */
   onRestored?: (revisionId: string) => void;
+  /**
+   * When true (default), drift detection auto-fires a `system-restore` commit
+   * from the latest ledger row. Requires `identity` to be set.
+   */
+  autoResyncOnDrift?: boolean;
   className?: string;
 }
 
@@ -38,6 +43,7 @@ export default function RevisionLedgerStatus({
   vfsFiles,
   identity,
   onRestored,
+  autoResyncOnDrift = true,
   className,
 }: RevisionLedgerStatusProps) {
   const [report, setReport] = useState<DriftReport | null>(null);
@@ -67,6 +73,48 @@ export default function RevisionLedgerStatus({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // ── Auto-resync on drift ────────────────────────────────────────────────
+  // When the live VFS hash diverges from the latest ledger row, automatically
+  // roll that revision forward as a fresh `system-restore` commit. Tracks the
+  // last-resynced revision id to guarantee at-most-once per ledger row and
+  // prevent thrash if the restored commit itself ends up drifted (e.g. preflight
+  // mutates files).
+  const autoResyncedRevisionIdRef = React.useRef<string | null>(null);
+  const [autoResyncing, setAutoResyncing] = useState(false);
+
+  useEffect(() => {
+    if (!autoResyncOnDrift) return;
+    if (!identity || !projectId) return;
+    if (!report || report.reason !== 'drift') return;
+    const rev = report.revision;
+    if (!rev || rev.status !== 'committed') return;
+    if (autoResyncedRevisionIdRef.current === rev.id) return;
+    autoResyncedRevisionIdRef.current = rev.id;
+    setAutoResyncing(true);
+    void (async () => {
+      try {
+        const result = await restoreRevision({
+          targetRevisionId: rev.id,
+          identity,
+        });
+        if (result.status === 'committed' && result.persistedRevisionId) {
+          toast.success(`Auto-resynced VFS to revision ${rev.id.slice(0, 8)}`);
+          onRestored?.(result.persistedRevisionId);
+          await refresh();
+        } else {
+          toast.warning(
+            `Auto-resync blocked (${result.publishBlockers?.length ?? 0} blocker${(result.publishBlockers?.length ?? 0) === 1 ? '' : 's'})`,
+          );
+        }
+      } catch (err) {
+        console.warn('[RevisionLedgerStatus] auto-resync failed:', err);
+      } finally {
+        setAutoResyncing(false);
+      }
+    })();
+  }, [autoResyncOnDrift, identity, projectId, report, onRestored, refresh]);
+
 
   const handleRestore = React.useCallback(
     async (rev: LoadedRevision) => {
@@ -178,8 +226,17 @@ export default function RevisionLedgerStatus({
               </div>
             )}
             {drift && (
-              <div className="mt-1 text-[10px] text-red-300/80">
-                Live VFS hash differs from the latest ledger row. Re-commit through the AI Builder or layout fast-path to resync.
+              <div className="mt-1 text-[10px] text-red-300/80 flex items-center gap-1.5">
+                {autoResyncing ? (
+                  <>
+                    <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                    Auto-resyncing VFS to latest ledger row…
+                  </>
+                ) : autoResyncOnDrift && identity ? (
+                  'Drift detected — auto-resync queued.'
+                ) : (
+                  'Live VFS hash differs from the latest ledger row. Re-commit through the AI Builder or layout fast-path to resync.'
+                )}
               </div>
             )}
           </>

@@ -3623,7 +3623,6 @@ export default function ${componentName}Page() {
         onOpenSetup: () => {
           setPlaygroundInitialSection('readiness');
           setPlaygroundInitialBindingId(selectedPlaygroundBinding.bindingId);
-          setPlaygroundInitialBindingId(selectedPlaygroundBinding.bindingId);
           setPlaygroundModalOpen(true);
         },
         ...ledgerOverlay,

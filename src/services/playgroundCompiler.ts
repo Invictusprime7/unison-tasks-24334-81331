@@ -11,7 +11,7 @@ import type {
   PlaygroundBinding,
 } from '@/types/playground';
 import { generateCanonicalRouterForFiles } from '@/utils/topologyRouterGenerator';
-import { generateTopologyPlaceholder } from '@/utils/topologyVFSScaffolder';
+import { generateTopologyPlaceholderFiles } from '@/utils/topologyVFSScaffolder';
 import { PreviewPipelineError } from './previewPipelineError';
 import { deriveFilePath } from './routeNavigationService';
 import { ensureViteRootFiles } from './previewSession';
@@ -67,7 +67,11 @@ export function compilePlayground(
     if (!node) continue;
 
     try {
-      vfsFiles[fp] = generateTopologyPlaceholder(node, scaffoldPlan);
+      // Multi-file emit: page module + per-section components under
+      // /src/components/*. Shared component files are idempotent across
+      // pages and safe to merge by Object.assign.
+      const fileSet = generateTopologyPlaceholderFiles(node, scaffoldPlan);
+      Object.assign(vfsFiles, fileSet);
     } catch (err) {
       if (err instanceof PreviewPipelineError) {
         blockedWizardPages.push(fp);

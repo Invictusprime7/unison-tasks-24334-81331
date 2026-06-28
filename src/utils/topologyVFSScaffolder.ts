@@ -19,6 +19,7 @@ import type { PageRegistry } from '@/types/pageRegistry';
 import type { SectionEntry, SectionType, TemplateComposition, TemplatePageRole } from '@/sections/types';
 import { ALL_COMPOSITIONS, getCompositionById, getCompositionsByIndustry } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
+import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
@@ -186,15 +187,11 @@ export function scaffoldMissingTopologyPages(
   const activeTemplate = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   const missing = getMissingTopologyPages(plan, existingFiles);
 
-  // Composition-only contract: every missing page MUST resolve from the
-  // active SiteBundle/template composition. Any page that cannot be composed
-  // is collected and surfaced as a single PreviewPipelineError. NO spinner,
-  // NO minimal placeholder, NO silent scaffold — ever.
   const blocked: string[] = [];
   for (const page of missing) {
-    const compositional = tryComposeTopologyPage(page, plan, activeTemplate);
+    const compositional = tryComposeTopologyPageFiles(page, plan, activeTemplate);
     if (compositional) {
-      out[page.filePath] = compositional;
+      Object.assign(out, compositional);
       continue;
     }
     blocked.push(page.filePath);
@@ -253,9 +250,10 @@ export function getMissingTopologyPages(
 // ============================================================================
 
 /**
- * Generate a page file for a topology node strictly from the active template /
- * SiteBundle composition. Throws PreviewPipelineError when no composition is
- * resolvable — Unison no longer emits spinner/minimal placeholder scaffolds.
+ * Generate a page file (LEGACY: single self-contained string) for a topology
+ * node. Retained for callers that need a single string (Builder reference,
+ * sectionSwapper). Wizard scaffolding uses `generateTopologyPlaceholderFiles`
+ * to emit per-component files for navigability.
  */
 export function generateTopologyPlaceholder(
   page: PageRouteNode,
@@ -272,9 +270,26 @@ export function generateTopologyPlaceholder(
 }
 
 /**
- * Attempt to compose a page from the active template/SiteBundle composition.
- * Returns null only when composition is genuinely unavailable so callers can
- * aggregate blocked pages into a single PreviewPipelineError.
+ * Multi-file variant. Returns the page file + extracted section components
+ * under `/src/components/`. Throws PreviewPipelineError if no composition.
+ */
+export function generateTopologyPlaceholderFiles(
+  page: PageRouteNode,
+  plan: GeneratedSitePlan,
+  template?: TemplateComposition | null,
+): Record<string, string> {
+  const composed = tryComposeTopologyPageFiles(page, plan, template);
+  if (composed) return composed;
+  throw new PreviewPipelineError(
+    'vfs',
+    `SiteBundleSnapshot has no composition for page "${page.title}" (${page.filePath}); refusing to emit minimal scaffold.`,
+    { blockedFiles: [page.filePath], recoverableByRelaunch: true },
+  );
+}
+
+/**
+ * Attempt to compose a page (single-string form) from the active template.
+ * Returns null when composition is unavailable.
  */
 export function tryComposeTopologyPage(
   page: PageRouteNode,
@@ -287,6 +302,27 @@ export function tryComposeTopologyPage(
   if (!sub) return null;
   try {
     return compositionToReactCode(sub);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Attempt to compose a page (multi-file form). Emits the page module plus
+ * the shared `/src/components/*` files. Section component files are
+ * idempotent across pages within a generation — safe to merge by Object.assign.
+ */
+export function tryComposeTopologyPageFiles(
+  page: PageRouteNode,
+  plan: GeneratedSitePlan,
+  template?: TemplateComposition | null,
+): Record<string, string> | null {
+  const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
+  if (!active) return null;
+  const sub = buildRoleComposition(active, page.role, page);
+  if (!sub) return null;
+  try {
+    return compositionToReactFileSet(sub, page.filePath);
   } catch {
     return null;
   }

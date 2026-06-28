@@ -24,16 +24,23 @@ import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToT
 import { PreviewPipelineError } from '@/services/previewPipelineError';
 
 /**
- * Options shared by the scaffolding entry points. When `strictWizardComposition`
- * is true, the scaffolder REFUSES to emit the spinner placeholder for any
- * missing page — instead it throws PreviewPipelineError so the runtime surfaces
- * the SiteBundleSnapshot ↔ PageRegistry drift rather than silently rendering
- * a minimal/loading scaffold. This is the post-wizard contract: every page
- * MUST come from the SiteBundle composition or fail loudly.
+ * Options shared by the scaffolding entry points.
+ *
+ * Spinner / minimal placeholder scaffolds have been REMOVED from Unison.
+ * Every page MUST render from the site/page topology + SiteBundleSnapshot
+ * composition (industry template + theme preset). If a topology page has no
+ * resolvable composition, the scaffolder throws PreviewPipelineError so the
+ * runtime surfaces the drift via PreviewRuntimeError instead of emitting a
+ * loading/minimal placeholder.
+ *
+ * `strictWizardComposition` is retained for callsite compatibility but is now
+ * effectively always-on — there is no legacy spinner path to opt out to.
  */
 export interface ScaffoldOptions {
+  /** @deprecated Strict composition is now the only supported mode. */
   strictWizardComposition?: boolean;
 }
+
 
 // ============================================================================
 // Default per-role section pool — used when a template doesn't define its own.

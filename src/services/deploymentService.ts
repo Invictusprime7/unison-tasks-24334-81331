@@ -414,6 +414,8 @@ export interface ProviderDeployOptions {
   /** @deprecated Use `snapshot.meta.systemId`. */
   systemId?: BusinessSystemType | null;
   rowCounts?: Record<string, number>;
+  /** Move D — enables ledger-backed publish enforcement. */
+  projectId?: string | null;
 }
 
 /**
@@ -434,6 +436,7 @@ export async function deployToVercel(
       snapshot: options?.snapshot ?? null,
       systemId: options?.systemId ?? null,
       rowCounts: options?.rowCounts,
+      projectId: options?.projectId ?? null,
     },
     onProgress
   );
@@ -457,6 +460,7 @@ export async function deployToNetlify(
       snapshot: options?.snapshot ?? null,
       systemId: options?.systemId ?? null,
       rowCounts: options?.rowCounts,
+      projectId: options?.projectId ?? null,
     },
     onProgress
   );

@@ -1251,7 +1251,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [canvasHeight, setCanvasHeight] = useState(800);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [lastGenerationId, setLastGenerationId] = useState<string>('');
-  const [currentUserId, setCurrentUserId] = useState<string>(''); // This would come from auth
+  const [currentUserId, setCurrentUserId] = useState<string>(''); // hydrated from supabase auth
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        if (!cancelled && user?.id) setCurrentUserId(user.id);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const [codePreviewOpen, setCodePreviewOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [integrationsPanelOpen, setIntegrationsPanelOpen] = useState(false);
@@ -7114,6 +7124,24 @@ export default function ${componentName}() {
                     <RevisionLedgerStatus
                       projectId={projectId ?? null}
                       vfsFiles={virtualFS.getSandpackFiles()}
+                      identity={
+                        currentUserId && businessId && currentTemplateId
+                          ? {
+                              userId: currentUserId,
+                              businessId,
+                              projectId: currentTemplateId,
+                              draftId: currentTemplateId,
+                              revisionId: currentRevisionId,
+                              sessionId: `web-builder:${currentTemplateId}`,
+                            }
+                          : null
+                      }
+                      onRestored={(revId) => {
+                        setCurrentRevisionId(revId);
+                        toast.success('Reloading restored revision…');
+                        // Hydrate from the new revision row.
+                        void templateFiles.loadTemplate(currentTemplateId);
+                      }}
                     />
                   </TabsContent>
                 </Tabs>

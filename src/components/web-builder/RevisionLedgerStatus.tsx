@@ -2,31 +2,48 @@
  * RevisionLedgerStatus — Move D/F surface
  *
  * Reads the most recent `site_revisions` row for the active project and
- * shows publish-readiness, blocker count, and VFS drift versus the
- * hydrated in-memory VFS.
+ * shows publish-readiness, blocker count, VFS drift versus the hydrated
+ * in-memory VFS, plus a short revision history with a one-click Restore
+ * action that funnels through `restoreRevision()` (so the restore goes
+ * through gates + readiness + persistence like any other commit).
  */
 
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, History } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, History, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { evaluateDrift, type DriftReport } from '@/services/vfsDriftWatcher';
+import {
+  listRecentRevisionsForProject,
+  restoreRevision,
+  type LoadedRevision,
+} from '@/services/vfsCommitService';
+import type { BuilderIdentity } from '@/types/builderIdentity';
+import { toast } from 'sonner';
 
 interface RevisionLedgerStatusProps {
   projectId: string | null;
   vfsFiles: Record<string, string>;
+  /** When provided, enables the Restore action against historical revisions. */
+  identity?: BuilderIdentity | null;
+  /** Notified after a successful restore so the host can rehydrate the builder. */
+  onRestored?: (revisionId: string) => void;
   className?: string;
 }
 
 export default function RevisionLedgerStatus({
   projectId,
   vfsFiles,
+  identity,
+  onRestored,
   className,
 }: RevisionLedgerStatusProps) {
   const [report, setReport] = useState<DriftReport | null>(null);
+  const [history, setHistory] = useState<LoadedRevision[]>([]);
   const [loading, setLoading] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
@@ -34,8 +51,12 @@ export default function RevisionLedgerStatus({
     setLoading(true);
     setError(null);
     try {
-      const r = await evaluateDrift({ projectId, vfsFiles });
+      const [r, h] = await Promise.all([
+        evaluateDrift({ projectId, vfsFiles }),
+        listRecentRevisionsForProject(projectId, 8),
+      ]);
       setReport(r);
+      setHistory(h);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -46,6 +67,34 @@ export default function RevisionLedgerStatus({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const handleRestore = React.useCallback(
+    async (rev: LoadedRevision) => {
+      if (!identity) {
+        toast.error('Restore unavailable — builder identity not ready.');
+        return;
+      }
+      setRestoringId(rev.id);
+      try {
+        const result = await restoreRevision({
+          targetRevisionId: rev.id,
+          identity,
+        });
+        if (result.status === 'committed' && result.persistedRevisionId) {
+          toast.success(`Restored revision ${rev.id.slice(0, 8)}`);
+          onRestored?.(result.persistedRevisionId);
+          await refresh();
+        } else {
+          toast.error(`Restore rejected (${result.publishBlockers?.length ?? 0} blockers)`);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        setRestoringId(null);
+      }
+    },
+    [identity, onRestored, refresh],
+  );
 
   if (!projectId) return null;
 
@@ -134,6 +183,60 @@ export default function RevisionLedgerStatus({
               </div>
             )}
           </>
+        )}
+
+        {history.length > 1 && (
+          <div className="mt-3 border-t border-slate-800 pt-2 space-y-1">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Recent revisions</div>
+              {!identity && (
+                <span className="text-[9px] text-slate-600">restore unavailable</span>
+              )}
+            </div>
+            {history.slice(0, 6).map((rev, idx) => {
+              const isLatest = idx === 0;
+              const isRestoring = restoringId === rev.id;
+              return (
+                <div
+                  key={rev.id}
+                  className="flex items-center justify-between gap-2 rounded border border-slate-800/60 bg-slate-900/30 px-1.5 py-1"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <code className="text-[10px] text-slate-300">{rev.id.slice(0, 8)}</code>
+                      <span className="text-[10px] text-slate-500">{rev.source}</span>
+                      {rev.publishReady && (
+                        <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400" />
+                      )}
+                      {rev.status === 'rejected' && (
+                        <XCircle className="h-2.5 w-2.5 text-red-400" />
+                      )}
+                    </div>
+                    <div className="text-[9px] text-slate-500">
+                      {new Date(rev.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-5 px-1.5 text-[10px] border-slate-700 text-slate-300 hover:bg-slate-800"
+                    disabled={!identity || isLatest || isRestoring || rev.status !== 'committed'}
+                    onClick={() => void handleRestore(rev)}
+                    title={
+                      isLatest
+                        ? 'Already current'
+                        : rev.status !== 'committed'
+                          ? 'Only committed revisions can be restored'
+                          : 'Restore as new revision'
+                    }
+                  >
+                    <RotateCcw className={cn('h-2.5 w-2.5 mr-1', isRestoring && 'animate-spin')} />
+                    {isLatest ? 'Current' : 'Restore'}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
         )}
       </CardContent>
     </Card>

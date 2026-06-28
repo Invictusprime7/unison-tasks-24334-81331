@@ -21,6 +21,19 @@ import { ALL_COMPOSITIONS, getCompositionById, getCompositionsByIndustry } from 
 import { compositionToReactCode } from '@/sections/PageRenderer';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
+import { PreviewPipelineError } from '@/services/previewPipelineError';
+
+/**
+ * Options shared by the scaffolding entry points. When `strictWizardComposition`
+ * is true, the scaffolder REFUSES to emit the spinner placeholder for any
+ * missing page — instead it throws PreviewPipelineError so the runtime surfaces
+ * the SiteBundleSnapshot ↔ PageRegistry drift rather than silently rendering
+ * a minimal/loading scaffold. This is the post-wizard contract: every page
+ * MUST come from the SiteBundle composition or fail loudly.
+ */
+export interface ScaffoldOptions {
+  strictWizardComposition?: boolean;
+}
 
 // ============================================================================
 // Default per-role section pool — used when a template doesn't define its own.

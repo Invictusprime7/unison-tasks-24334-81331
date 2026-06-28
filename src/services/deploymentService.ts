@@ -20,6 +20,7 @@ import {
   resolveVerticalLaunchContract,
   type VerticalLaunchContract,
 } from '@/services/verticalLaunchContract';
+import { loadLatestPublishReadyRevisionForProject } from '@/services/vfsCommitService';
 import type { BusinessSystemType } from '@/lib/infrastructureContext';
 
 export type DeploymentProvider = 'vercel' | 'netlify';

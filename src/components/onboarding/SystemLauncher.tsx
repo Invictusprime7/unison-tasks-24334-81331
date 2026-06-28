@@ -2259,6 +2259,23 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 : `sess_${Date.now().toString(36)}`,
             };
             const patch = legacyFilesToPatchPlan(wiredVfsFiles);
+            // Move C: declare transactional backend ops so the commit pipeline
+            // provisions and seeds the selected system atomically with the VFS
+            // write. Maps the launcher's selectedSystem to capability ids that
+            // the backendOpExecutor knows how to provision + seed.
+            const SYSTEM_TO_CAPABILITIES: Record<string, string[]> = {
+              booking: ['booking'],
+              store: ['commerce'],
+              agency: ['lead-capture', 'quoting'],
+              content: ['newsletter'],
+              portfolio: ['lead-capture'],
+              saas: ['auth'],
+            };
+            const caps = SYSTEM_TO_CAPABILITIES[String(selectedSystem)] ?? [];
+            for (const cap of caps) {
+              patch.backendOps.push({ type: 'requireCapability', capability: cap });
+              patch.backendOps.push({ type: 'seedCapability', capability: cap });
+            }
             const result = await commitMutation({
               source: 'wizard-launch',
               identity,
@@ -2274,6 +2291,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
                 selections: wizardSelections,
               },
             });
+
             launcherRevisionId = result.persistedRevisionId;
             if (launcherRevisionId) {
               console.log('[SystemLauncher] commitMutation persisted revision', launcherRevisionId);

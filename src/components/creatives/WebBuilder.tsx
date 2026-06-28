@@ -87,6 +87,7 @@ import {
   commitMutation,
   isCommitServiceEnabled,
   CommitRejectedError,
+  loadLatestRevisionForProject,
 } from "@/services/vfsCommitService";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";

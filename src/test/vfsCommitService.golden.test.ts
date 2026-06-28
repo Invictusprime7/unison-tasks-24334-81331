@@ -267,5 +267,54 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
 
     // Rejected revisions are still persisted for forensics.
     expect(revisionStore[revisionStore.length - 1]?.status).toBe('rejected');
+});
+
+describe('Move D — publish-ready ledger', () => {
+  it('persists publish_ready=false when publish blockers exist and loadLatestPublishReadyRevisionForProject returns null', async () => {
+    const files = { '/src/App.tsx': 'x', '/src/pages/Booking.tsx': '<Booking/>' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents(0, 2); // publish blocked
+
+    const result = await commitMutation({
+      source: 'ai-builder',
+      identity: IDENTITY,
+      current: { vfsFiles: files, playground: { pages: [] } as never },
+      patch: legacyFilesToPatchPlan(files, 'unbooked'),
+    });
+
+    expect(result.status).toBe('committed');
+    expect(result.publishReady).toBe(false);
+    expect(result.publishBlockers.length).toBeGreaterThan(0);
+    expect(result.publishBlockers.some((b) => b.source === 'intentReadiness')).toBe(true);
+    expect(typeof result.vfsHash).toBe('string');
+    expect(result.vfsHash.length).toBeGreaterThan(0);
+
+    // Latest revision exists, but publish-ready loader must refuse it.
+    const latest = await loadLatestRevisionForProject(IDENTITY.projectId);
+    expect(latest?.publishReady).toBe(false);
+    const ready = await loadLatestPublishReadyRevisionForProject(IDENTITY.projectId);
+    expect(ready).toBeNull();
+  });
+
+  it('marks publish_ready=true when all gates pass and exposes it via loadLatestPublishReadyRevisionForProject', async () => {
+    const files = { '/src/App.tsx': 'x', '/src/pages/Home.tsx': '<Hero/>' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents(0, 0); // clean
+
+    const result = await commitMutation({
+      source: 'ai-builder',
+      identity: IDENTITY,
+      current: { vfsFiles: files, playground: { pages: [] } as never },
+      patch: legacyFilesToPatchPlan(files, 'clean'),
+    });
+
+    expect(result.publishReady).toBe(true);
+    expect(result.publishBlockers).toHaveLength(0);
+
+    const ready = await loadLatestPublishReadyRevisionForProject(IDENTITY.projectId);
+    expect(ready?.id).toBe(result.persistedRevisionId);
+    expect(ready?.publishReady).toBe(true);
   });
 });

@@ -407,7 +407,15 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     aliases: ['calendar.open', 'reservation.submit', 'booking.book', 'booking.start'],
     triggerType: 'user-action',
     description: 'Open the booking flow.',
+    backingTable: 'availability_slots',
+    rowAssertion: 'non-empty',
+    handlerBinding: 'native',
+    readinessFixture: {
+      description: 'Add at least one bookable service and an availability slot before publishing.',
+      fixPath: '/settings/calendar',
+    },
   },
+
   'booking.reschedule': {
     name: 'booking.reschedule',
     namespace: 'booking',

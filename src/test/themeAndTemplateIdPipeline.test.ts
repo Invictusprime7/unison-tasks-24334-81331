@@ -24,12 +24,11 @@ describe('Theme deprecation sweep — wizard preset is single source of truth', 
     expect(files['/src/index.css']).toContain(`AESTHETIC: ${organic.label}`);
   });
 
-  it('falls back to default preset when themePresetId is omitted', () => {
-    const files = normalizeLauncherFiles(
+  it('rejects default preset injection when themePresetId is omitted', () => {
+    expect(() => normalizeLauncherFiles(
       { '/src/App.tsx': 'export default () => null;' },
       {},
-    );
-    expect(files['/src/index.css']).toMatch(/AESTHETIC:/);
+    )).toThrow(/themePresetId/);
   });
 });
 

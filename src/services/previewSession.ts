@@ -13,9 +13,10 @@
  */
 
 import { extractDependencies } from '@/utils/dependencyExtractor';
-import { buildDefaultThemedIndexCss, buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
+import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
+import { PreviewPipelineError } from './previewPipelineError';
 
 // ============================================
 // TYPES
@@ -196,12 +197,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );`;
 
-const DEFAULT_INDEX_CSS = buildDefaultThemedIndexCss();
-
-const DEFAULT_APP_TSX = `export default function App() {
-  return null;
-}`;
-
 // ============================================
 // REQUIRED ROOT FILES
 // ============================================
@@ -218,8 +213,6 @@ const REQUIRED_ROOT_FILES: FileMap = {
 
 const REQUIRED_SRC_FILES: FileMap = {
   '/src/main.tsx': DEFAULT_MAIN_TSX,
-  '/src/index.css': DEFAULT_INDEX_CSS,
-  '/src/App.tsx': DEFAULT_APP_TSX,
 };
 
 // ============================================
@@ -336,19 +329,34 @@ export function ensureViteRootFiles(
     }
   });
 
-  // Inject required src files if missing — but resolve /src/index.css from the
-  // wizard's themePresetId when provided so non-store industries (salon/coaching/etc)
-  // never silently fall back to the 'modern' default.
+  // Inject only infrastructure src files. App.tsx is never fabricated here:
+  // wizard/sitebundle previews must supply the canonical router/page modules,
+  // and missing application code should surface as a pipeline error instead of
+  // rendering a null/minimal template.
   Object.entries(REQUIRED_SRC_FILES).forEach(([path, content]) => {
     if (!result[path]) {
-      if (path === '/src/index.css' && options?.themePresetId) {
-        const preset = THEME_PRESETS.find((p) => p.id === options.themePresetId) || DEFAULT_PREVIEW_THEME_PRESET;
-        result[path] = buildThemedIndexCss(preset);
-      } else {
-        result[path] = content;
-      }
+      result[path] = content;
     }
   });
+
+  if (!result['/src/index.css']) {
+    if (!options?.themePresetId) {
+      throw new PreviewPipelineError(
+        'vfs',
+        'Missing wizard themePresetId — refusing to inject default/minimal preview CSS.',
+        { recoverableByRelaunch: true },
+      );
+    }
+    const preset = THEME_PRESETS.find((p) => p.id === options.themePresetId);
+    if (!preset) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `Unknown wizard themePresetId "${options.themePresetId}" — refusing to inject default/minimal preview CSS.`,
+        { recoverableByRelaunch: true },
+      );
+    }
+    result['/src/index.css'] = buildThemedIndexCss(preset);
+  }
 
   return result;
 }

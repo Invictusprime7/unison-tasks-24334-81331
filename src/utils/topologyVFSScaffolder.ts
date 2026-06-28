@@ -174,8 +174,8 @@ function buildRoleComposition(
  * are scaffolded as role-filtered slices of the template's composition via
  * `buildRoleComposition` + `compositionToReactCode`, so sub-pages added
  * post-wizard inherit the same section vocabulary and styling as the seed
- * `/src/App.tsx`. Without a usable composition, falls back to a spinner
- * placeholder that the AI can later enrich.
+ * `/src/App.tsx`. Without a usable composition, this throws; wizard previews
+ * must never render spinner/minimal placeholders that mask a broken SiteBundle.
  */
 export function scaffoldMissingTopologyPages(
   plan: GeneratedSitePlan,

@@ -132,7 +132,7 @@ import { useAIVFS } from '@/hooks/useAIVFS';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
-import { buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
+import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
 import { getTemplateReactCodeWithCSS } from '@/data/templates';
@@ -5066,7 +5066,10 @@ export default function ${componentName}Page() {
       // CSS hadn't yet hydrated into VFS, leaving the modern default. We now rebuild
       // deterministically from the resolved preset, every time.
       if (resolvedThemePresetId) {
-        const preset = THEME_PRESETS.find((p) => p.id === resolvedThemePresetId) || DEFAULT_PREVIEW_THEME_PRESET;
+        const preset = THEME_PRESETS.find((p) => p.id === resolvedThemePresetId);
+        if (!preset) {
+          throw new Error(`[WebBuilder] Unknown wizard themePresetId "${resolvedThemePresetId}"; refusing default template preset.`);
+        }
         const themedCss = buildThemedIndexCss(preset);
         vfsFiles["/src/index.css"] = themedCss;
         // Mirror to any sibling CSS files so secondary stylesheets share the same tokens.

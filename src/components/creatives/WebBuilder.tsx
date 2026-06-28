@@ -6511,6 +6511,7 @@ ${html}
               contract={compiledContract}
               snapshot={effectiveRouteState?.siteBundleSnapshot ?? null}
               systemId={activeSystemType}
+              projectId={projectId ?? null}
               variant="ghost"
               size="sm"
               onDeployComplete={(url) => {

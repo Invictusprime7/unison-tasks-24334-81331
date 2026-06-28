@@ -38,6 +38,16 @@ export type IntentHandler =
 export type IntentStatus = 'stable' | 'preview' | 'deprecated';
 export type IntentTriggerType = 'user-action' | 'system-event' | 'workflow-event';
 
+export type IntentRowAssertion = 'non-empty' | { min: number };
+export type IntentHandlerBinding = 'native' | 'workflow' | 'external';
+
+export interface IntentReadinessFixture {
+  /** Short human description of what's required (surfaced in publish gate). */
+  description: string;
+  /** Optional in-app path users can open to satisfy the fixture (e.g. /settings/calendar). */
+  fixPath?: string;
+}
+
 export interface IntentDef {
   /** Canonical name, dot-namespaced (e.g. "commerce.cart.add") */
   name: string;
@@ -63,7 +73,18 @@ export interface IntentDef {
   aliases?: string[];
   /** Human-readable summary surfaced in the binding inspector */
   description: string;
+
+  // ── Move B: per-element capability contract ─────────────────────────────
+  /** Backend table that must contain at least one (or N) rows for this intent to be publish-ready. */
+  backingTable?: string;
+  /** Row count requirement on `backingTable`. */
+  rowAssertion?: IntentRowAssertion;
+  /** How the intent is fulfilled at runtime — drives "unbound" detection at preview. */
+  handlerBinding?: IntentHandlerBinding;
+  /** Human-readable fixture description + optional in-app fix path. */
+  readinessFixture?: IntentReadinessFixture;
 }
+
 
 // ============================================================================
 // Registry — every recognized intent
@@ -228,7 +249,15 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     status: 'stable',
     triggerType: 'user-action',
     description: 'Add a product to the cart.',
+    backingTable: 'products',
+    rowAssertion: 'non-empty',
+    handlerBinding: 'native',
+    readinessFixture: {
+      description: 'Add at least one product before publishing the storefront.',
+      fixPath: '/settings/products',
+    },
   },
+
   'cart.view': {
     name: 'cart.view',
     namespace: 'commerce',
@@ -249,7 +278,15 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     aliases: ['checkout.start'],
     triggerType: 'user-action',
     description: 'Begin checkout from the current cart.',
+    backingTable: 'products',
+    rowAssertion: 'non-empty',
+    handlerBinding: 'external',
+    readinessFixture: {
+      description: 'Connect Stripe and publish at least one product before enabling checkout.',
+      fixPath: '/settings/payments',
+    },
   },
+
   'cart.update': {
     name: 'cart.update',
     namespace: 'commerce',
@@ -290,7 +327,13 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     status: 'stable',
     triggerType: 'user-action',
     description: 'Start a payment / subscription checkout.',
+    handlerBinding: 'external',
+    readinessFixture: {
+      description: 'Connect Stripe before enabling checkout buttons.',
+      fixPath: '/settings/payments',
+    },
   },
+
   'pay.success': {
     name: 'pay.success',
     namespace: 'commerce',
@@ -364,7 +407,15 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     aliases: ['calendar.open', 'reservation.submit', 'booking.book', 'booking.start'],
     triggerType: 'user-action',
     description: 'Open the booking flow.',
+    backingTable: 'availability_slots',
+    rowAssertion: 'non-empty',
+    handlerBinding: 'native',
+    readinessFixture: {
+      description: 'Add at least one bookable service and an availability slot before publishing.',
+      fixPath: '/settings/calendar',
+    },
   },
+
   'booking.reschedule': {
     name: 'booking.reschedule',
     namespace: 'booking',
@@ -631,7 +682,13 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     aliases: ['donate.start', 'donate.now'],
     triggerType: 'user-action',
     description: 'Start a donation checkout flow.',
+    handlerBinding: 'external',
+    readinessFixture: {
+      description: 'Connect Stripe before enabling donations.',
+      fixPath: '/settings/payments',
+    },
   },
+
   'volunteer.signup': {
     name: 'volunteer.signup',
     namespace: 'nonprofit',

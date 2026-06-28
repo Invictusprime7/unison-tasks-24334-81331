@@ -41,7 +41,10 @@ import type { CompiledContract } from '@/platform/core/contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gates';
 import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
+import { evaluateElementReadiness, type ElementReadinessReport } from '@/services/elementReadinessEvaluator';
+import { executeBackendOps, type BackendOpExecutionReport } from '@/services/backendOpExecutor';
 import type { PlaygroundControlPlaneModel } from '@/types/playground';
+import type { CapabilityId } from '@/platform/core/capabilityRegistry';
 import {
   assertBuilderIdentity,
   type BuilderIdentity,
@@ -52,6 +55,7 @@ import {
   type PatchPlan,
   type PatchSource,
 } from '@/types/patchPlan';
+
 
 
 // ----------------------------------------------------------------------------
@@ -271,10 +275,59 @@ export async function commitMutation(
     }
   }
 
+  // Move B: per-element capability contract evaluation. Walks every
+  // data-ut-intent occurrence in the VFS, checks required capabilities and
+  // backing-table row assertions, and surfaces concrete fix paths in the
+  // readiness report.
+  let elementReadiness: ElementReadinessReport | null = null;
+  let elementPreviewBlocked = 0;
+  let elementPublishBlocked = 0;
+  try {
+    const provisionedCapabilities: CapabilityId[] = compiled
+      ? compiled.provisioningReport.capabilities.map((c) => c.capabilityId as CapabilityId)
+      : [];
+    elementReadiness = await evaluateElementReadiness({
+      vfsFiles: files,
+      provisionedCapabilities,
+      businessId: input.identity.businessId,
+    });
+    elementPreviewBlocked = elementReadiness.summary.previewBlocked;
+    elementPublishBlocked = elementReadiness.summary.publishBlocked;
+    log(
+      'elementReadiness',
+      elementPreviewBlocked === 0 ? 'info' : 'warn',
+      `element preview blocked=${elementPreviewBlocked} publish blocked=${elementPublishBlocked}`,
+      elementReadiness.summary,
+    );
+  } catch (err) {
+    log('elementReadiness', 'warn', 'element readiness evaluation threw', String(err));
+  }
+
+  // Move C: execute transactional backend ops (capability provisioning +
+  // seeding) declared on the patch plan. Runs after all gates so a
+  // rejected commit never mutates the backend.
+  let backendOpsReport: BackendOpExecutionReport | null = null;
+  const backendOps = input.patch.backendOps ?? [];
+  if (backendOps.length > 0) {
+    try {
+      backendOpsReport = await executeBackendOps(backendOps, input.identity);
+      log(
+        'backendOps',
+        backendOpsReport.failedCount === 0 ? 'info' : 'warn',
+        `executed ${backendOpsReport.results.length} ops (failed=${backendOpsReport.failedCount})`,
+        backendOpsReport.results.map((r) => ({ type: r.op.type, cap: r.op.capability, status: r.status })),
+      );
+    } catch (err) {
+      log('backendOps', 'error', 'backend op execution threw', String(err));
+    }
+  }
+
   const readinessOk =
     (!gate || gate.previewReady) &&
     (!previewVerdict || previewVerdict.ok) &&
-    intentPreviewBlocked === 0;
+    intentPreviewBlocked === 0 &&
+    elementPreviewBlocked === 0;
+
 
 
   // 6. Auto-repair-then-hard-reject -----------------------------------------
@@ -299,7 +352,8 @@ export async function commitMutation(
     const readinessOk2 =
       (!gate || gate.previewReady) &&
       (!previewVerdict || previewVerdict.ok) &&
-      intentPreviewBlocked === 0;
+      intentPreviewBlocked === 0 &&
+      elementPreviewBlocked === 0;
     if ((requirePreview && !previewOk2) || (requireReadiness && !readinessOk2)) {
       status = 'rejected';
       log('gate', 'error', 'hard reject after auto-repair', {
@@ -308,6 +362,9 @@ export async function commitMutation(
         publishBlockers: publishVerdict?.reasons ?? [],
         intentPreviewBlocked,
         intentPublishBlocked,
+        elementPreviewBlocked,
+        elementPublishBlocked,
+        backendOpsFailed: backendOpsReport?.failedCount ?? 0,
       });
     } else {
       log('repair', 'info', 'auto-repair recovered the commit');
@@ -335,7 +392,10 @@ export async function commitMutation(
             },
           }
         : {}),
+      ...(elementReadiness ? { elementReadiness } : {}),
+      ...(backendOpsReport ? { backendOps: backendOpsReport } : {}),
     } as Record<string, unknown>,
+
 
     diagnostics,
     parentRevisionId: input.identity.revisionId || null,

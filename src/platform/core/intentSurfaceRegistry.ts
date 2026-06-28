@@ -278,7 +278,15 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     aliases: ['checkout.start'],
     triggerType: 'user-action',
     description: 'Begin checkout from the current cart.',
+    backingTable: 'products',
+    rowAssertion: 'non-empty',
+    handlerBinding: 'external',
+    readinessFixture: {
+      description: 'Connect Stripe and publish at least one product before enabling checkout.',
+      fixPath: '/settings/payments',
+    },
   },
+
   'cart.update': {
     name: 'cart.update',
     namespace: 'commerce',

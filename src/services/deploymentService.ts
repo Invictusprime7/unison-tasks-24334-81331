@@ -384,13 +384,29 @@ export async function deployToProvider(
     }
 
     updateProgress(100, 'Deployment complete!');
-    
+
+    // Ledger loop closer — stamp the published revision back into ai_events
+    // so the ledger view, drift watcher, and ops surfaces can answer
+    // "which revision is currently live?" deterministically.
+    if (publishedRevision) {
+      void recordRepublishEvent({
+        revisionId: publishedRevision.id,
+        projectId: publishedRevision.projectId,
+        businessId: publishedRevision.businessId,
+        userId: null,
+        provider: request.provider,
+        url: (response as { url?: string | null })?.url ?? null,
+        vfsHash: publishedRevision.vfsHash,
+      });
+    }
+
     onProgress?.({
       isDeploying: false,
       progress: 100,
       message: 'Deployment complete!',
       result: response,
     });
+
 
     return response;
   } catch (err) {

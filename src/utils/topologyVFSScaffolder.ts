@@ -261,18 +261,30 @@ export function generateTopologyPlaceholder(
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null
 ): string {
-  const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
-  if (active) {
-    const sub = buildRoleComposition(active, page.role, page);
-    if (sub) {
-      try {
-        return compositionToReactCode(sub);
-      } catch {
-        // fall through to spinner on any renderer failure
-      }
-    }
-  }
+  const composed = tryComposeTopologyPage(page, plan, template);
+  if (composed) return composed;
   return generateSpinnerPlaceholder(page, plan);
+}
+
+/**
+ * Attempt to compose a page from the active template/SiteBundle composition.
+ * Returns null if no composition is available — caller decides whether to emit
+ * a spinner placeholder (legacy) or throw PreviewPipelineError (strict wizard).
+ */
+function tryComposeTopologyPage(
+  page: PageRouteNode,
+  plan: GeneratedSitePlan,
+  template?: TemplateComposition | null,
+): string | null {
+  const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
+  if (!active) return null;
+  const sub = buildRoleComposition(active, page.role, page);
+  if (!sub) return null;
+  try {
+    return compositionToReactCode(sub);
+  } catch {
+    return null;
+  }
 }
 
 function generateSpinnerPlaceholder(page: PageRouteNode, plan: GeneratedSitePlan): string {

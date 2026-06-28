@@ -5,6 +5,8 @@ import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
+import { runFullPreflight } from '@/services/runFullPreflight';
+import { resolveSnapshot } from '@/services/snapshotProjector';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;

@@ -54,6 +54,7 @@ function themeModule(template: TemplateComposition): string {
   return `// Auto-generated theme tokens + style helpers.
 // Shared by every section component in /src/components/.
 // Re-run the wizard or restyle from the builder to regenerate.
+import type React from 'react';
 
 export const THEME = ${themeJson} as const;
 

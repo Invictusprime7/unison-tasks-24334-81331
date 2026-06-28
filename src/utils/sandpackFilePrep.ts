@@ -43,10 +43,9 @@ function buildBaseCssForPreset(presetId?: string | null): string {
   return buildThemedIndexCss(preset);
 }
 
-const BASE_CSS = buildDefaultThemedIndexCss();
-
-/** Extract just the :root { ... } block for prepend-only paths */
-const SEMANTIC_CSS_VARS = (BASE_CSS.match(/:root\s*\{[^}]*\}/) ?? [''])[0] + '\n';
+// SEMANTIC_CSS_VARS removed — CSS authority now flows through snapshotProjector
+// (see src/services/snapshotProjector.ts). Wizard drafts get themed tokens from
+// snapshot.meta.themePresetId; blank drafts get the minimal Tailwind shell.
 
 /**
  * index.html with Tailwind CDN configured to recognize semantic design tokens.

@@ -1,81 +1,39 @@
-## Plan: Move B → Move C
+# Staged Planning — Move D, E, F
 
-Execute the recommended consolidation sequence: per-element capability contracts first (so PublishGate has real teeth), then transactional commits across VFS + playground + bindings + backend rows.
+Moves A–C delivered the `VFSCommitService` ledger, element-level capability contracts, and transactional backend ops. The remaining staged work hardens publish, surfaces readiness in the UI, and closes the loop on observability.
 
----
+## Move D — Publish Gate Hardening
 
-### Move B — Per-element capability contract enforcement
+Make the transactional commit the only path to a publishable revision.
 
-**Goal:** Every interactive slot declares what backend reality it requires, and PublishGate blocks when that reality is missing (not just when JSX compiles).
+1. Extend `site_revisions` with `publish_ready: boolean`, `readiness_report jsonb`, `backend_ops_applied jsonb` (migration + GRANTs).
+2. In `vfsCommitService.commitMutation`, compute and persist `publish_ready` from `PublishGate` + element readiness + backend op results. Never mark ready when any `requireCapability` failed.
+3. Update `deploymentService` / publish flow to load the **latest `publish_ready=true` revision** instead of recomputing from live VFS. Refuse to publish if none exists; surface the blocking `readinessReport` items.
+4. Add a regression test in `vfsCommitService.golden.test.ts` proving a failing intent (e.g. `cart.checkout` with no `products` row) blocks publish but still allows preview.
 
-**B1 — Extend the intent contract surface**
-- Add to `src/platform/core/intentRegistry.ts` (or sibling `intentDef.ts`):
-  - `requiredCapability: CapabilityId` (already exists on some — make mandatory)
-  - `backingTable?: string` (e.g. `availability_slots`, `services`, `products`)
-  - `rowAssertion?: 'non-empty' | 'has-active' | { min: number }`
-  - `handlerBinding: 'native' | 'workflow' | 'external'`
-  - `readinessFixture?: { description: string; fixPath?: string }`
-- Backfill the new fields on the canonical IntentDef registry entries (booking.create, cart.add/checkout, donation.start, contact.submit, quote.request, newsletter.subscribe, lead.capture, auth.login/register, pay.checkout).
+## Move E — Element Readiness Surfacing
 
-**B2 — Per-element readiness evaluator**
-- New `src/services/elementReadinessEvaluator.ts`:
-  - Input: `SiteBundleSnapshot` (walk all `data-ut-intent` slots) + `businessId`.
-  - For each bound element: resolve IntentDef → check `provisionedCapabilities` → check `backingTable` rowAssertion via supabase read (`supabase.from(table).select('id', { count: 'exact', head: true })`).
-  - Output: `ElementReadinessReport { elementId, intent, status: 'ready'|'capability-missing'|'rows-missing'|'unbound', blocker?, fix? }[]`.
-- Cache per-commit (memoize by snapshot hash + businessId).
+Expose Move B's per-element readiness in the surfaces owners actually use.
 
-**B3 — Wire into commitMutation**
-- In `src/services/vfsCommitService.ts`, after `resolvePlaygroundControlPlane`, call `elementReadinessEvaluator`.
-- Merge into `readinessReport.elementReadiness`.
-- `previewBlocked` count includes element-level `unbound` (DOM has intent but no handler resolution).
-- `publishBlocked` count includes `capability-missing` + `rows-missing`.
+1. `ElementFloatingToolbar.tsx`: add a small readiness chip (ready / needs-data / blocked) sourced from the last commit's `readinessReport[intent]` for the selected element's `data-ut-intent`. Click → opens the existing CreatorPlayground Launch Control scoped to that intent.
+2. `CreatorPlaygroundModal.tsx`: render `readinessReport` grouped by capability with one-click "Seed defaults" → calls `backendOpExecutor.seedCapability` through `commitMutation` (no direct DB writes from UI).
+3. `IntentHealthPill` (topbar): include element-level blockers in the working/blocked count so the pill reflects the same source of truth.
 
-**B4 — Surface in UI**
-- Update `src/components/web-builder/LaunchHealthPill.tsx` (or equivalent intent health surface) to show element-level blockers with the fix hint (e.g. "Booking button needs at least 1 availability slot — open Calendar setup").
-- PublishGate verdict already reads `readinessReport`; no UI rewire needed beyond the pill.
+## Move F — Observability & Drift Detection
 
-**B5 — Test**
-- Extend `src/test/vfsCommitService.golden.test.ts` with: salon wizard launch with zero availability slots → commit succeeds, `publishBlocked > 0`, element report names the booking button + fix path.
+Close the loop so we can detect regressions without manual repro.
 
----
+1. Persist every `commitMutation` outcome to `ai_events` with `kind='vfs_commit'` payload `{ revisionId, trigger, gates, readinessReport, durationMs }`.
+2. Add a lightweight `useCommitTelemetry` read in WebBuilder DevTools panel showing the last 20 commits for the active draft (revisionId, trigger, ready flags, blocking reasons).
+3. Drift watcher: on draft hydration, diff the hydrated VFS hash against `site_revisions.latest.vfs_hash`; if mismatched, log a `drift_detected` event and re-commit through the service so the ledger reconverges.
 
-### Move C — Transactional commit across all layers
+## Technical Notes
 
-**Goal:** `commitMutation` writes VFS + playground + bindings + backend rows + snapshot as one durable unit. If any layer fails preflight or capability seeding, the whole commit rolls back to status=`rejected` and the preview doesn't move.
+- All three moves go through `commitMutation` — no new mutation paths.
+- Migration for Move D must include `GRANT SELECT, INSERT, UPDATE ON public.site_revisions TO authenticated;` and `GRANT ALL ... TO service_role;`.
+- Move E UI is presentation-only; seeding still routes through `backendOpExecutor` server-side.
+- Move F telemetry is fire-and-forget; never block a commit on logging failure.
 
-**C1 — Execute `backendOps` inside commitMutation**
-- `PatchPlan.backendOps` already exists but is inert. Wire an executor:
-  - `requireCapability` → call `install-system` edge function (idempotent, scoped to `businessId`).
-  - `seedCapability` → call capability-specific seeder (e.g. `provision-booking` seeds default service + availability window; `provision-commerce` seeds sample product if none exist; `provision-contact` ensures CRM lead capture row).
-- New `src/services/backendOpExecutor.ts` with one entry per capability provisioner.
+## Sequencing
 
-**C2 — Wizard launch emits backendOps**
-- In `src/components/onboarding/SystemLauncher.tsx`, when building the launch PatchPlan, derive `backendOps` from the wizard's selected capabilities (salon → `requireCapability: booking` + `seedCapability: booking`). So a salon launch creates the services + availability rows that Move B's evaluator will check.
-
-**C3 — Transactional semantics**
-- Update `commitMutation` pipeline order:
-  1. assert identity
-  2. validate PatchPlan
-  3. **stage** fileOps (in-memory working VFS)
-  4. **stage** backendOps (dry-run — verify edge function will accept; do NOT persist yet)
-  5. recompile + preflight + gates + intent readiness + element readiness
-  6. all green → **commit** backendOps (write rows) → **commit** site_revisions row → emit `pipeline:commit`
-  7. any red → status=`rejected`, persist diagnostics row, throw `CommitRejectedError`, no preview move, no rows written
-- Add `rollbackBackendOps` for the rare case where row writes succeed but `site_revisions` insert fails.
-
-**C4 — Test**
-- Add golden test: salon wizard launch → backendOps seed availability → element readiness passes → publishBlocked=0.
-- Negative test: nonprofit wizard with `donation.start` slot but `backendOps` seeding throws → entire commit rejected, no `site_revisions` row, preview unchanged.
-
----
-
-### Non-goals (this plan)
-- No changes to layout fast-path, AI Builder panels, or floating toolbar — they already chain through `commitMutation`, so they inherit B + C automatically.
-- No removal of `VITE_USE_COMMIT_SERVICE` escape hatch yet — that's Move A (lock-down pass), explicitly deferred.
-
-### Technical notes
-- Element readiness queries use existing `supabase` client (RLS-scoped to authenticated user / project member).
-- Capability provisioners reuse existing edge functions where possible (`install-system`, etc.); new seeders only where none exists.
-- `backendOps` "dry-run" stage is a no-op for the v1 — we'll execute optimistically and rollback on commit failure. Documented as a known limitation; tightened in a follow-up if seeding side effects become expensive.
-
-Ready to execute on approval.
+D → E → F. D unblocks the publish guarantee; E makes the new readiness visible; F gives us the signal to keep it healthy.

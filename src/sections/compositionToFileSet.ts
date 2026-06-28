@@ -133,9 +133,6 @@ export const RESPONSIVE_CSS = \`
     .ut-footer-bottom { flex-direction: column !important; gap: 1rem !important; text-align: center; }
   }
 \`;
-
-// Type import kept at the bottom so styles above stay readable.
-import type React from 'react';
 `;
 }
 

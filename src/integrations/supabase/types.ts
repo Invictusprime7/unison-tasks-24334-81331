@@ -3068,6 +3068,7 @@ export type Database = {
       }
       site_revisions: {
         Row: {
+          backend_ops_applied: Json
           business_id: string
           created_at: string
           created_by: string
@@ -3078,14 +3079,18 @@ export type Database = {
           patch_json: Json
           playground_state: Json
           project_id: string
+          publish_blockers: Json
+          publish_ready: boolean
           readiness_report: Json
           runtime_manifest: Json
           site_bundle_snapshot: Json
           source: string
           status: string
           vfs_files: Json
+          vfs_hash: string | null
         }
         Insert: {
+          backend_ops_applied?: Json
           business_id: string
           created_at?: string
           created_by: string
@@ -3096,14 +3101,18 @@ export type Database = {
           patch_json?: Json
           playground_state?: Json
           project_id: string
+          publish_blockers?: Json
+          publish_ready?: boolean
           readiness_report?: Json
           runtime_manifest?: Json
           site_bundle_snapshot?: Json
           source: string
           status?: string
           vfs_files?: Json
+          vfs_hash?: string | null
         }
         Update: {
+          backend_ops_applied?: Json
           business_id?: string
           created_at?: string
           created_by?: string
@@ -3114,12 +3123,15 @@ export type Database = {
           patch_json?: Json
           playground_state?: Json
           project_id?: string
+          publish_blockers?: Json
+          publish_ready?: boolean
           readiness_report?: Json
           runtime_manifest?: Json
           site_bundle_snapshot?: Json
           source?: string
           status?: string
           vfs_files?: Json
+          vfs_hash?: string | null
         }
         Relationships: [
           {

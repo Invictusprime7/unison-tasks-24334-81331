@@ -419,7 +419,8 @@ export default function FAQ({ props }: { props: any }) {
 }
 `;
 
-const SECTION_MAP_MODULE = `import Navbar from './Navbar';
+const SECTION_MAP_MODULE = `import type React from 'react';
+import Navbar from './Navbar';
 import Hero from './Hero';
 import Services from './Services';
 import Testimonials from './Testimonials';
@@ -454,8 +455,6 @@ export const SECTION_MAP: Record<string, React.ComponentType<{ props: any }>> = 
   faq: FAQ,
   about: Hero,
 };
-
-import type React from 'react';
 `;
 
 function pageModule(template: TemplateComposition): string {

@@ -73,6 +73,7 @@ import { decideIntentUx } from "@/runtime/intentUx";
 import SystemHealthPanel from "@/components/web-builder/SystemHealthPanel";
 import ReadinessCenterPanel from "@/components/web-builder/ReadinessCenterPanel";
 import GateVerdictStrip from "@/components/web-builder/GateVerdictStrip";
+import RevisionLedgerStatus from "@/components/web-builder/RevisionLedgerStatus";
 import { useCompiledContract } from "@/hooks/useCompiledContract";
 import type { BusinessSystemType } from "@/data/templates/types";
 import { normalizeTemplateForCtaContract, type TemplateCtaAnalysis } from "@/utils/ctaContract";
@@ -7109,6 +7110,10 @@ export default function ${componentName}() {
                       onPublishCheck={() => {
                         toast.info('Running publish checks...');
                       }}
+                    />
+                    <RevisionLedgerStatus
+                      projectId={projectId ?? null}
+                      vfsFiles={virtualFS.getSandpackFiles()}
                     />
                   </TabsContent>
                 </Tabs>

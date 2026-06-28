@@ -183,23 +183,34 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       .filter((path): path is string => Boolean(path))
       .flatMap((path) => [path, normalizePath(path), normalizePath(path).slice(1)]),
   );
-  // Composition Authority lock is OPT-IN ONLY. At wizard launch Lane B is
-  // authoritative — never let canonical scaffolds preempt rich AI-authored
-  // pages just because a themePresetId is present. Callers that need the
-  // lock (post-wizard Builder edits guarding wizard-themed pages) must
-  // explicitly pass `lockRegisteredPagesToCanonical: true`.
+  // Composition Authority lock is OPT-IN for the FULL registry, but the
+  // HOME page is ALWAYS canonical-first when the SiteBundle ships a Home
+  // composition. Reason: AI Lane B almost always emits an inlined /src/App.tsx
+  // shell that gets rebased into /src/pages/Home.tsx and displaces the rich
+  // role-pooled Home composition (navbar+hero+services+features+testimonials+
+  // cta+footer). Sub-pages, by contrast, are usually missing from Lane B and
+  // get backfilled from canonical — producing the visible asymmetry where
+  // every route is rich except Home, which renders a minimal shell.
+  // See: mem://architecture/site-os/composition-authority.
   const lockRegisteredPagesToSiteBundle = Boolean(options.lockRegisteredPagesToCanonical);
-  // Canonical scaffold is metadata-only. It never contributes page file
-  // contents to the merged VFS. Registered pages MUST come from Lane B
-  // (generatedFiles). Missing pages surface as PreviewPipelineError downstream.
+  const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
+  const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
+  const homeFilePathVariants = new Set([
+    homeFilePath,
+    normalizePath(homeFilePath),
+    normalizePath(homeFilePath).slice(1),
+  ]);
+  const homeAuthorityIsCanonical = Boolean(readCanonical(homeFilePath));
+
+  // Canonical scaffold is metadata-only for non-home registered pages (unless
+  // locked). Home content from canonical is ALWAYS preserved when present.
   const merged = Object.fromEntries(
     Object.entries(canonicalFiles).filter(([path]) => {
       if (lockRegisteredPagesToSiteBundle) return true;
+      if (homeAuthorityIsCanonical && homeFilePathVariants.has(path)) return true;
       return !registeredPagePaths.has(path);
     }),
   ) as Record<string, string>;
-  const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
-  const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
 
   for (const [path, content] of Object.entries(generatedFiles)) {
     // Rebase any non-router App.tsx into the home page file whenever the AI
@@ -214,9 +225,16 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       !looksLikeCanonicalRouter(content);
 
     if (shouldMoveLegacyAppIntoHome) {
-      if (!lockRegisteredPagesToSiteBundle || !readCanonical(homeFilePath)) {
+      // Canonical SiteBundle Home is authoritative when present — never let
+      // AI's rebased App shell displace the rich role-pooled composition.
+      if (!homeAuthorityIsCanonical && (!lockRegisteredPagesToSiteBundle || !readCanonical(homeFilePath))) {
         merged[homeFilePath] = rebaseAppModuleForHomePage(content);
       }
+      continue;
+    }
+
+    // Same Composition-Authority guard for a Lane-B-authored Home module.
+    if (homeAuthorityIsCanonical && homeFilePathVariants.has(path)) {
       continue;
     }
 

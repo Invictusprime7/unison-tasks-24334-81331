@@ -6,7 +6,7 @@ import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
 import { runFullPreflight } from '@/services/runFullPreflight';
-import { resolveSnapshot } from '@/services/snapshotProjector';
+import { projectSnapshotVfsAuthority, resolveSnapshot } from '@/services/snapshotProjector';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;
@@ -68,13 +68,15 @@ export function buildPreviewArtifacts(
   const dependencySourceFiles = Object.keys(sourceFiles).length > 0
     ? sourceFiles
     : launchStateWithRecoveredTheme?.vfsFiles || sourceFiles;
+  const initialWizardResolution = resolveSnapshot(sourceFiles, launchStateWithRecoveredTheme);
+  const previewSourceFiles = projectSnapshotVfsAuthority(sourceFiles, initialWizardResolution);
 
   const rawSandpackFiles = launchStateWithRecoveredTheme
     ? launchStateToSandpackFiles({
         launchState: launchStateWithRecoveredTheme,
-        vfsFiles: sourceFiles,
+        vfsFiles: previewSourceFiles,
       })
-    : prepareSandpackFiles(sourceFiles, { themePresetId });
+    : prepareSandpackFiles(previewSourceFiles, { themePresetId });
 
   // Re-stamp AUTO-GENERATED canonical Unison files (data + product widgets)
   // on every compile so AI / editor mutations cannot break the preview.

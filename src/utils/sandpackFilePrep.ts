@@ -1782,78 +1782,7 @@ function injectMissingToggleState(content: string, filePath: string): string {
   return next;
 }
 
-function createProxyApp(targetPath: string): string {
-  const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
-
-  return `import React from 'react';
-import { HashRouter } from 'react-router-dom';
-import * as PreviewEntryModule from '${importPath}';
-
-// Robust component discovery: prefer default export, then find first PascalCase function/class component
-function findRenderableComponent(mod) {
-  if (mod.default && (typeof mod.default === 'function' || (typeof mod.default === 'object' && mod.default.$$typeof))) {
-    return mod.default;
-  }
-  for (const [key, value] of Object.entries(mod)) {
-    if (key === '__esModule' || key === 'default') continue;
-    if (/^[A-Z]/.test(key) && (typeof value === 'function' || (typeof value === 'object' && value !== null && value.$$typeof))) {
-      return value;
-    }
-  }
-  return null;
-}
-
-const PreviewEntry = findRenderableComponent(PreviewEntryModule);
-
-// Error boundary to catch render errors from PreviewEntry
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    this.setState({ errorInfo });
-    console.error('[Sandpack Preview] Component render error:', error);
-    console.error('[Sandpack Preview] Error details:', errorInfo?.componentStack);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return React.createElement('div', {
-        style: { display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', backgroundColor: '#f5f5f5' }
-      }, React.createElement('div', {
-        style: { textAlign: 'center', maxWidth: 600, padding: 32, backgroundColor: 'white', borderRadius: 8, border: '1px solid #e5e5e5', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
-      }, React.createElement('div', { style: { fontSize: 32, marginBottom: 12 } }, '⚠️'), React.createElement('h2', { style: { fontSize: 18, marginBottom: 8, color: '#d32f2f', fontWeight: 500 } }, 'Component Render Error'), React.createElement('p', { style: { color: '#888', fontSize: 14, marginBottom: 16, lineHeight: '1.5' } }, 'An error occurred while rendering the preview component. Check the browser console for details.'), React.createElement('div', { style: { backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, textAlign: 'left', fontSize: 12, color: '#666', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto', marginBottom: 12 } }, React.createElement('div', { style: { fontWeight: 'bold', color: '#333', marginBottom: 4 } }, 'Error:'), this.state.error?.toString(), this.state.errorInfo && React.createElement(React.Fragment, null, React.createElement('div', { style: { fontWeight: 'bold', color: '#333', marginTop: 12, marginBottom: 4 } }, 'Stack:'), this.state.errorInfo.componentStack)), React.createElement('div', { style: { backgroundColor: '#f9f9f9', padding: 12, borderRadius: 4, textAlign: 'left', fontSize: 11, color: '#666', border: '1px solid #eee' } }, React.createElement('div', { style: { fontWeight: 'bold', color: '#333', marginBottom: 6 } }, 'Debugging Tips:'), React.createElement('ul', { style: { margin: 0, paddingLeft: 20 } }, React.createElement('li', null, 'Check the browser console (F12) for detailed error messages'), React.createElement('li', null, 'Verify all imported components exist and export a valid React component'), React.createElement('li', null, "Ensure components use 'export default' or named PascalCase exports"), React.createElement('li', null, 'Source: ${targetPath}')))));
-    }
-
-    return this.props.children;
-  }
-}
-
-export default function App() {
-  if (!PreviewEntry) {
-    return React.createElement('div', {
-      style: { display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui' }
-    }, React.createElement('div', {
-      style: { textAlign: 'center', maxWidth: 420, padding: 32 }
-    }, React.createElement('h2', { style: { fontSize: 18, marginBottom: 8 } }, 'No renderable component found'), React.createElement('p', { style: { color: '#888', fontSize: 14 } }, 'The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.'), React.createElement('p', { style: { color: '#aaa', fontSize: 12, marginTop: 12 } }, 'Source: ${targetPath}')));
-  }
-
-  return React.createElement(
-    HashRouter,
-    null,
-    React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry))
-  );
-}
-`;
-}
-
-// createMissingEntryApp() was intentionally removed. Wizard/launcher-generated
+// createProxyApp() and createMissingEntryApp() were intentionally removed. Wizard/launcher-generated
 // sites must never be replaced with a diagnostic fallback template — if the
 // preview cannot render the AI output, surface the real runtime error from
 // DEFAULT_INDEX instead of substituting a placeholder.
@@ -3786,9 +3715,13 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
  * can find and replace it. This matches the no-op default-export safety net in
  * `repairLocalImportContracts`.
  */
-function synthesizeMissingLocalImports(sandpackFiles: Record<string, string>): void {
+function synthesizeMissingLocalImports(
+  sandpackFiles: Record<string, string>,
+  options?: { forbidSynthesis?: boolean },
+): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
   const extensions = ['.tsx', '.jsx', '.ts', '.js'];
+  const blocked: string[] = [];
 
   for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
@@ -3821,6 +3754,11 @@ function synthesizeMissingLocalImports(sandpackFiles: Record<string, string>): v
       if (existingPaths.has(writePath)) continue;
       if (extensions.some((ext) => existingPaths.has(resolved + ext))) continue;
 
+      if (options?.forbidSynthesis) {
+        blocked.push(writePath);
+        continue;
+      }
+
       // Derive a component name from the import statement (default OR first named).
       const stmt = match[0];
       const defaultMatch = stmt.match(/import\s+([A-Z]\w*)/);
@@ -3850,6 +3788,14 @@ function synthesizeMissingLocalImports(sandpackFiles: Record<string, string>): v
         `[sandpackFilePrep] Synthesized placeholder module ${writePath} for unresolved import "${rawImportPath}" in ${filePath}`,
       );
     }
+  }
+
+  if (blocked.length > 0) {
+    throw new PreviewPipelineError(
+      'prep',
+      `Wizard preview has ${blocked.length} unresolved local import(s); refusing to synthesize placeholder modules.`,
+      { blockedFiles: Array.from(new Set(blocked)), recoverableByRelaunch: true },
+    );
   }
 }
 
@@ -4631,28 +4577,6 @@ function isBootstrapSourceEntry(path?: string | null): boolean {
   return !!path && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(path);
 }
 
-function pickRenderableLauncherEntry(
-  files: Record<string, string>,
-  preferredEntryPoint?: string,
-): string | null {
-  const normalizedPreferred = preferredEntryPoint ? normalizeLauncherPath(preferredEntryPoint) : null;
-
-  if (normalizedPreferred && files[normalizedPreferred] && !isBootstrapSourceEntry(normalizedPreferred)) {
-    return normalizedPreferred;
-  }
-
-  return (
-    Object.keys(files).find((path) => /\/src\/pages\/(Home|Index)[^/]*\.(tsx|jsx)$/i.test(path)) ||
-    Object.keys(files).find((path) => /\/src\/pages\/.+\.(tsx|jsx)$/.test(path)) ||
-    Object.keys(files).find(
-      (path) =>
-        /\/src\/.+\.(tsx|jsx)$/.test(path) &&
-        !/\/(App|main|index)\.(tsx|jsx)$/.test(path),
-    ) ||
-    null
-  );
-}
-
 export function normalizeLauncherFiles(
   files: Record<string, string>,
   options?: { entryPoint?: string; themePresetId?: string | null }
@@ -4727,6 +4651,8 @@ export function normalizeLauncherFiles(
 
   }
 
+  const launcherResolution = resolveSnapshot(out, null);
+
   // Ensure /src/main.tsx exists
   if (!out['/src/main.tsx']) {
     out['/src/main.tsx'] = `import React from 'react';
@@ -4741,9 +4667,18 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );`;
   }
 
-  // Ensure /src/index.css exists — keyed on the wizard's resolved preset, never hard-coded
+  // Ensure /src/index.css exists without masking wizard token failures. Wizard
+  // VFS must carry snapshot CSS or an explicit themePresetId; otherwise surface
+  // the pipeline break instead of defaulting to the preview preset.
   if (!out['/src/index.css']) {
-    out['/src/index.css'] = buildBaseCssForPreset(options?.themePresetId);
+    if (launcherResolution.isWizardDraft && !options?.themePresetId && !launcherResolution.themePresetId) {
+      throw new PreviewPipelineError(
+        'prep',
+        'Wizard VFS is missing /src/index.css and themePresetId; refusing to inject default preview tokens.',
+        { blockedFiles: ['/src/index.css'], recoverableByRelaunch: true },
+      );
+    }
+    out['/src/index.css'] = buildBaseCssForPreset(options?.themePresetId || launcherResolution.themePresetId);
   }
 
   // ── Inject conventional IDE JSON / config files ──────────────────────────
@@ -4859,18 +4794,17 @@ export default {
 `;
   }
 
-  // Ensure /src/App.tsx exists — derive from entryPoint or first page component
+  // Do NOT fabricate /src/App.tsx from a guessed page component. Launcher and
+  // preview runtime must receive the canonical SiteBundleSnapshot router; if it
+  // is missing, prepareSandpackFiles throws a PreviewPipelineError instead of
+  // letting Sandpack render a disconnected Home fallback.
   if (!out['/src/App.tsx'] && !out['/src/App.jsx']) {
-    const targetImport = pickRenderableLauncherEntry(out, options?.entryPoint);
-
-    if (targetImport) {
-      const importPath = targetImport.replace('/src/', './').replace(/\.(tsx|jsx)$/, '');
-      out['/src/App.tsx'] = `import React from 'react';
-import Entry from '${importPath}';
-
-export default function App() {
-  return <Entry />;
-}`;
+    if (launcherResolution.isWizardDraft) {
+      throw new PreviewPipelineError(
+        'prep',
+        'Wizard VFS is missing the SiteBundleSnapshot router at /src/App.tsx; refusing to synthesize a Home fallback.',
+        { blockedFiles: ['/src/App.tsx'], recoverableByRelaunch: true },
+      );
     }
   }
 
@@ -4911,29 +4845,6 @@ function isProseOnlyModule(content: string): boolean {
   return /[A-Za-z]/.test(trimmed) && /\s/.test(trimmed);
 }
 
-function buildProseFallback(normalizedPath: string): string {
-  const safeName = (normalizedPath.split('/').pop() || 'Page').replace(/\.[jt]sx?$/, '').replace(/[^A-Za-z0-9]/g, '') || 'Page';
-  const componentName = /^[A-Z]/.test(safeName) ? safeName : `Page${safeName}`;
-  return `import React from 'react';
-
-// [sandpackFilePrep] Original module at ${normalizedPath} was prose-only;
-// a safe fallback was injected so the Preview recovered without crashing.
-export default function ${componentName}() {
-  return (
-    <main style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: 'system-ui' }}>
-      <div style={{ maxWidth: 480, textAlign: 'center' }}>
-        <div style={{ fontSize: 36, marginBottom: 12 }}>📝</div>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Preview recovered</h2>
-        <p style={{ color: '#666', fontSize: 14, lineHeight: 1.5 }}>
-          The source for <code>${normalizedPath}</code> contained narration instead of a React component, so a safe fallback was injected.
-        </p>
-      </div>
-    </main>
-  );
-}
-`;
-}
-
 /**
  * Repair concise-arrow / object-literal returns where a component accidentally
  * returns <code>{ children }</code> as a plain object instead of JSX. The
@@ -4968,6 +4879,15 @@ function repairConciseArrowChildren(content: string): string {
     (_m, expr) => `return <>{${(expr ?? 'children').trim()}}</>;`,
   );
   return out;
+}
+
+function isInjectedEmptyAppShell(content: string | undefined): boolean {
+  if (!content) return false;
+  const compact = content.replace(/\s+/g, ' ').trim();
+  return (
+    /export\s+default\s+function\s+App\s*\([^)]*\)\s*\{\s*return\s+null\s*;?\s*\}/.test(compact) ||
+    compact.includes('Start building — add a component to /src/App.tsx')
+  );
 }
 
 export function prepareSandpackFiles(
@@ -5208,15 +5128,15 @@ export function prepareSandpackFiles(
   if (!hasApp) {
     if (options?.strict && options?.entryPoint) {
       const entryFlattened = options.entryPoint.replace(/^\/src\//, '/');
-      if (sandpackFiles[entryFlattened]) {
-        sandpackFiles['/App.tsx'] = createProxyApp(entryFlattened);
-      } else if (cssResolution.isWizardDraft) {
+      if (cssResolution.isWizardDraft) {
         throw new PreviewPipelineError(
           'prep',
-          `Wizard draft missing strict entry ${entryFlattened} and no App.tsx — re-run the System Launcher.`,
+          `Wizard draft has strict entry ${entryFlattened} but no SiteBundleSnapshot router at /App.tsx — refusing to synthesize a fallback shell.`,
           { blockedFiles: [entryFlattened], recoverableByRelaunch: true },
         );
       } else {
+        // Non-wizard blank/editor drafts may still show the intentional empty
+        // authoring shell, but no proxy/page fallback is generated.
         sandpackFiles['/App.tsx'] = minimalShellApp();
       }
     } else if (cssResolution.isWizardDraft) {
@@ -5231,6 +5151,12 @@ export function prepareSandpackFiles(
       // "default editorial preset" symptom).
       sandpackFiles['/App.tsx'] = minimalShellApp();
     }
+  } else if (cssResolution.isWizardDraft && isInjectedEmptyAppShell(sandpackFiles['/App.tsx'] || sandpackFiles['/App.jsx'])) {
+    throw new PreviewPipelineError(
+      'prep',
+      'Wizard draft resolved to an injected empty App shell instead of the SiteBundleSnapshot router.',
+      { blockedFiles: ['/src/App.tsx'], recoverableByRelaunch: true },
+    );
   }
 
 
@@ -5335,7 +5261,7 @@ export function prepareSandpackFiles(
   // "Could not find module" crashes from killing the preview, we synthesize
   // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
   // empty slot and replace it on the next turn.
-  synthesizeMissingLocalImports(sandpackFiles);
+  synthesizeMissingLocalImports(sandpackFiles, { forbidSynthesis: cssResolution.isWizardDraft });
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {

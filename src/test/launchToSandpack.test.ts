@@ -4,6 +4,7 @@ import { commitToPipeline } from "@/platform/core";
 import { getCompositionsBySystemType } from "@/sections/templates";
 import { createLaunchState } from "@/types/launchState";
 import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";
+import { PreviewPipelineError } from "@/services/previewPipelineError";
 
 describe("launchStateToSandpackFiles", () => {
   it("does not reintroduce embedded JSON launcher wrappers after normalization", () => {
@@ -72,7 +73,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(previewFiles["/App.tsx"] || "").toContain("return <div>clean</div>");
   });
 
-  it("injects a safe fallback when a TSX module is prose-only", () => {
+  it("throws instead of injecting a safe fallback when a TSX module is prose-only", () => {
     const proseOnly = "I will now create a polished landing page with a modern hero and strong CTA.";
 
     const launchState = createLaunchState({
@@ -87,14 +88,10 @@ describe("launchStateToSandpackFiles", () => {
       preloadedIntents: [],
     });
 
-    const previewFiles = launchStateToSandpackFiles({
+    expect(() => launchStateToSandpackFiles({
       launchState,
       vfsFiles: launchState.vfsFiles,
-    });
-
-    const recoveredPage = previewFiles["/pages/Home.tsx"] || "";
-    expect(recoveredPage).toContain("Preview recovered");
-    expect(recoveredPage).toContain("safe fallback was injected");
+    })).toThrow(PreviewPipelineError);
   });
 
   it("repairs parenthesized and concise-arrow {children} object returns", () => {

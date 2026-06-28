@@ -687,6 +687,26 @@ async function finalize(args: {
     } catch {
       /* telemetry is best-effort */
     }
+
+    // Notify in-process listeners (e.g. WebBuilder's ledger element-readiness
+    // hook, RevisionLedgerStatus) that a new committed revision exists so they
+    // can refetch without waiting for their polling interval.
+    if (persistedRevisionId && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('unison:ledger-updated', {
+            detail: {
+              projectId: input.identity.projectId,
+              revisionId: persistedRevisionId,
+              source: input.source,
+              publishReady,
+            },
+          }),
+        );
+      } catch {
+        /* event dispatch is best-effort */
+      }
+    }
   }
 
   const result: CommitMutationResult = {

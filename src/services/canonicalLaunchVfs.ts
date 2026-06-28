@@ -189,10 +189,13 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   // lock (post-wizard Builder edits guarding wizard-themed pages) must
   // explicitly pass `lockRegisteredPagesToCanonical: true`.
   const lockRegisteredPagesToSiteBundle = Boolean(options.lockRegisteredPagesToCanonical);
+  // Canonical scaffold is metadata-only. It never contributes page file
+  // contents to the merged VFS. Registered pages MUST come from Lane B
+  // (generatedFiles). Missing pages surface as PreviewPipelineError downstream.
   const merged = Object.fromEntries(
     Object.entries(canonicalFiles).filter(([path]) => {
       if (lockRegisteredPagesToSiteBundle) return true;
-      return options.allowCanonicalPageFallback !== false || !registeredPagePaths.has(path);
+      return !registeredPagePaths.has(path);
     }),
   ) as Record<string, string>;
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];

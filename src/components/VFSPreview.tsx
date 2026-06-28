@@ -34,6 +34,8 @@ import { usePreviewService } from '@/hooks/usePreviewService';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
+import { PreviewPipelineError, isPreviewPipelineError } from '@/services/previewPipelineError';
+import { PreviewRuntimeError } from '@/components/PreviewRuntimeError';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
@@ -279,11 +281,24 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
   
-  const { sandpackFiles, dependencies: sandpackDeps } = useMemo(() => {
-    return buildPreviewArtifacts({
-      sourceFiles: files,
-      launchState: launch,
-    });
+  const { sandpackFiles, dependencies: sandpackDeps, pipelineError } = useMemo(() => {
+    try {
+      const result = buildPreviewArtifacts({
+        sourceFiles: files,
+        launchState: launch,
+      });
+      return { ...result, pipelineError: null as PreviewPipelineError | null };
+    } catch (err) {
+      if (isPreviewPipelineError(err)) {
+        console.error('[VFSPreview] Pipeline error:', err);
+        return {
+          sandpackFiles: {} as Record<string, string>,
+          dependencies: {} as Record<string, string>,
+          pipelineError: err,
+        };
+      }
+      throw err;
+    }
   }, [files, launch]);
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
@@ -717,6 +732,23 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return null;
   }, [backend, dockerService.session]);
   
+  if (pipelineError) {
+    return (
+      <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
+        <PreviewRuntimeError
+          error={pipelineError}
+          onRetry={() => window.location.reload()}
+          onRelaunch={() => {
+            try {
+              sessionStorage.removeItem('unison.launcher.handoff');
+            } catch {}
+            window.location.assign('/system-launcher');
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
       {/* Toolbar */}

@@ -25,6 +25,8 @@ import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
 import { buildDefaultThemedIndexCss, buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { PreviewPipelineError } from '@/services/previewPipelineError';
+import { resolveSnapshot, minimalShellApp } from '@/services/snapshotProjector';
 
 const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
 
@@ -41,10 +43,9 @@ function buildBaseCssForPreset(presetId?: string | null): string {
   return buildThemedIndexCss(preset);
 }
 
-const BASE_CSS = buildDefaultThemedIndexCss();
-
-/** Extract just the :root { ... } block for prepend-only paths */
-const SEMANTIC_CSS_VARS = (BASE_CSS.match(/:root\s*\{[^}]*\}/) ?? [''])[0] + '\n';
+// SEMANTIC_CSS_VARS removed — CSS authority now flows through snapshotProjector
+// (see src/services/snapshotProjector.ts). Wizard drafts get themed tokens from
+// snapshot.meta.themePresetId; blank drafts get the minimal Tailwind shell.
 
 /**
  * index.html with Tailwind CDN configured to recognize semantic design tokens.
@@ -5094,19 +5095,22 @@ export function prepareSandpackFiles(
       );
     }
 
-    // SAFETY NET: Prose-only TSX (AI emitted narration instead of a component).
-    // Replace with a visible fallback so the wizard's snapshot/registry still
-    // renders cleanly; the launcher's separate quality contract still rejects
-    // the underlying generation so it can be regenerated.
+    // NO-FALLBACK: prose-only TSX and raw-CSS-in-TSX are hard failures.
+    // The runtime cannot silently fabricate a component for them; surface the
+    // problem via PreviewPipelineError so the user sees it.
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isProseOnlyModule(processedContent)) {
-      console.warn(`[sandpackFilePrep] Prose-only module detected at ${normalizedPath} — injecting safe fallback`);
-      processedContent = buildProseFallback(normalizedPath);
+      throw new PreviewPipelineError(
+        'prep',
+        `Prose-only module at ${normalizedPath} — AI emitted narration instead of a React component.`,
+        { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
+      );
     }
-
-    // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {
-      console.warn(`[sandpackFilePrep] Raw CSS detected in ${normalizedPath} — wrapping in React component`);
-      processedContent = wrapCssInReactComponent(processedContent);
+      throw new PreviewPipelineError(
+        'prep',
+        `Raw CSS in TSX module at ${normalizedPath} — module did not parse as React code.`,
+        { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
+      );
     }
 
     // SAFETY NET: Ensure React imports are present for files using hooks
@@ -5161,14 +5165,34 @@ export function prepareSandpackFiles(
     }
   }
 
+  // ── CSS authority (snapshot-as-primary, no SEMANTIC_CSS_VARS fallback) ──
+  const cssResolution = resolveSnapshot(resolvedFiles, null);
   if (!hasCSS) {
-    // No CSS file exists — create /index.css from the resolved preset (or default)
-    sandpackFiles['/index.css'] = themedCSS || BASE_CSS;
+    if (themedCSS) {
+      sandpackFiles['/index.css'] = themedCSS;
+    } else if (cssResolution.isWizardDraft) {
+      throw new PreviewPipelineError(
+        'prep',
+        'Wizard draft has no /src/index.css and no resolvable themePresetId.',
+        { recoverableByRelaunch: true },
+      );
+    } else {
+      // Blank draft → minimal Tailwind shell, no themed palette.
+      sandpackFiles['/index.css'] = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`;
+    }
   } else if (!themedCSS) {
-    // CSS exists but no preset resolved — ensure semantic vars are present
     const existingIndexCSS = sandpackFiles['/index.css'] || '';
     if (existingIndexCSS && !existingIndexCSS.includes('--primary:')) {
-      sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingIndexCSS;
+      if (cssResolution.isWizardDraft) {
+        // Wizard draft must produce its tokens through the projector chain.
+        // We don't silently prepend SEMANTIC_CSS_VARS — that masks token drift.
+        throw new PreviewPipelineError(
+          'prep',
+          'Wizard draft /src/index.css is missing semantic tokens (--primary). Re-run the System Launcher.',
+          { recoverableByRelaunch: true },
+        );
+      }
+      // Blank draft: leave AI-authored CSS as-is, no token injection.
     }
   }
 
@@ -5179,28 +5203,32 @@ export function prepareSandpackFiles(
 
   if (!hasApp) {
     if (options?.strict && options?.entryPoint) {
-      // In strict mode with explicit entry, create proxy to that entry
       const entryFlattened = options.entryPoint.replace(/^\/src\//, '/');
       if (sandpackFiles[entryFlattened]) {
         sandpackFiles['/App.tsx'] = createProxyApp(entryFlattened);
+      } else if (cssResolution.isWizardDraft) {
+        throw new PreviewPipelineError(
+          'prep',
+          `Wizard draft missing strict entry ${entryFlattened} and no App.tsx — re-run the System Launcher.`,
+          { blockedFiles: [entryFlattened], recoverableByRelaunch: true },
+        );
       } else {
-        const fallbackPath = pickPrimaryComponentPath(componentFilePaths);
-        if (fallbackPath) {
-          sandpackFiles['/App.tsx'] = createProxyApp(fallbackPath);
-          console.warn(`[sandpackFilePrep] Strict entry ${entryFlattened} missing — proxying to ${fallbackPath}`);
-        } else {
-          console.warn('[sandpackFilePrep] Strict entry missing and no component candidates — leaving App.tsx unwritten');
-        }
+        sandpackFiles['/App.tsx'] = minimalShellApp();
       }
+    } else if (cssResolution.isWizardDraft) {
+      throw new PreviewPipelineError(
+        'prep',
+        'Wizard draft is missing /App.tsx — Lane B did not emit a root composition. Re-run the System Launcher.',
+        { recoverableByRelaunch: true },
+      );
     } else {
-      const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
-      if (primaryComponentPath) {
-        sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
-      } else {
-        console.warn('[sandpackFilePrep] No App.tsx and no component candidates — leaving App.tsx unwritten (no fallback template)');
-      }
+      // Blank draft: render the minimal "Start building" shell — never proxy
+      // to a randomly-picked component (that's what produced the misleading
+      // "default editorial preset" symptom).
+      sandpackFiles['/App.tsx'] = minimalShellApp();
     }
   }
+
 
   // ALWAYS use our controlled entry point — it includes the createElement safety
   // guard, error boundary, Tailwind CDN config, and nav bridge. VFS-provided
@@ -5600,7 +5628,7 @@ export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<
   ].join('\n');
 
   // 4. Generate index.css with theme tokens
-  let css = BASE_CSS;
+  let css = buildDefaultThemedIndexCss();
   if (siteBundle.theme) {
     const themeVars = Object.entries(siteBundle.theme)
       .map(([k, v]) => '  --' + k + ': ' + v + ';')

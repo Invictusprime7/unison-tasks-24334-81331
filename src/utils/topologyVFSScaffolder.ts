@@ -185,11 +185,11 @@ export function scaffoldMissingTopologyPages(
   const out: Record<string, string> = {};
   const activeTemplate = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   const missing = getMissingTopologyPages(plan, existingFiles);
-  const strict = options?.strictWizardComposition === true;
 
-  // In strict mode, collect all pages that would degrade to the spinner
-  // placeholder and throw ONE aggregate PreviewPipelineError so the runtime
-  // can surface the full SiteBundle ↔ topology drift.
+  // Composition-only contract: every missing page MUST resolve from the
+  // active SiteBundle/template composition. Any page that cannot be composed
+  // is collected and surfaced as a single PreviewPipelineError. NO spinner,
+  // NO minimal placeholder, NO silent scaffold — ever.
   const blocked: string[] = [];
   for (const page of missing) {
     const compositional = tryComposeTopologyPage(page, plan, activeTemplate);
@@ -197,14 +197,10 @@ export function scaffoldMissingTopologyPages(
       out[page.filePath] = compositional;
       continue;
     }
-    if (strict) {
-      blocked.push(page.filePath);
-      continue;
-    }
-    out[page.filePath] = generateSpinnerPlaceholder(page, plan);
+    blocked.push(page.filePath);
   }
 
-  if (strict && blocked.length > 0) {
+  if (blocked.length > 0) {
     throw new PreviewPipelineError(
       'vfs',
       `SiteBundleSnapshot has no composition for ${blocked.length} wizard page(s); refusing to emit minimal scaffold.`,
@@ -214,6 +210,7 @@ export function scaffoldMissingTopologyPages(
 
   return out;
 }
+
 
 /**
  * Scaffold missing pages AND regenerate the canonical router (App.tsx).

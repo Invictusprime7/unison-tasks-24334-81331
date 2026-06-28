@@ -5094,19 +5094,22 @@ export function prepareSandpackFiles(
       );
     }
 
-    // SAFETY NET: Prose-only TSX (AI emitted narration instead of a component).
-    // Replace with a visible fallback so the wizard's snapshot/registry still
-    // renders cleanly; the launcher's separate quality contract still rejects
-    // the underlying generation so it can be regenerated.
+    // NO-FALLBACK: prose-only TSX and raw-CSS-in-TSX are hard failures.
+    // The runtime cannot silently fabricate a component for them; surface the
+    // problem via PreviewPipelineError so the user sees it.
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isProseOnlyModule(processedContent)) {
-      console.warn(`[sandpackFilePrep] Prose-only module detected at ${normalizedPath} — injecting safe fallback`);
-      processedContent = buildProseFallback(normalizedPath);
+      throw new PreviewPipelineError(
+        'prep',
+        `Prose-only module at ${normalizedPath} — AI emitted narration instead of a React component.`,
+        { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
+      );
     }
-
-    // SAFETY NET: If a .tsx/.jsx file contains raw CSS instead of React code, wrap it
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && isRawCss(processedContent)) {
-      console.warn(`[sandpackFilePrep] Raw CSS detected in ${normalizedPath} — wrapping in React component`);
-      processedContent = wrapCssInReactComponent(processedContent);
+      throw new PreviewPipelineError(
+        'prep',
+        `Raw CSS in TSX module at ${normalizedPath} — module did not parse as React code.`,
+        { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
+      );
     }
 
     // SAFETY NET: Ensure React imports are present for files using hooks

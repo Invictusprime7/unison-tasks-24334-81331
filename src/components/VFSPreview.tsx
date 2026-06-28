@@ -34,6 +34,8 @@ import { usePreviewService } from '@/hooks/usePreviewService';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
+import { PreviewPipelineError, isPreviewPipelineError } from '@/services/previewPipelineError';
+import { PreviewRuntimeError } from '@/components/PreviewRuntimeError';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';

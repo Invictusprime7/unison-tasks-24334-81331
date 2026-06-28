@@ -419,9 +419,16 @@ export function materializePlayground(
   capabilities: CapabilityPack,
 ): PlaygroundMaterializationResult {
   const warnings: string[] = [];
-  const industryKey = OVERLAY_TO_INDUSTRY[selections.industryOverlay] || 'general';
+  const industryKey = OVERLAY_TO_INDUSTRY[selections.industryOverlay];
+  if (!industryKey) {
+    throw new Error(
+      `[WizardMaterializer] Unsupported industry overlay "${selections.industryOverlay}". ` +
+      'Refusing to use a generic/minimal launch path.',
+    );
+  }
 
-  // Resolve scaffold mode. Honor legacy `minimalScaffold` for back-compat.
+  // Resolve scaffold mode. Legacy home-only/minimal is intentionally ignored:
+  // every wizard route must be backed by the selected SiteBundle/template.
   const scaffoldMode = selections.scaffoldMode === 'capability-full'
     ? 'capability-full'
     : 'selected-pages';

@@ -35,15 +35,15 @@ import {
 // ============================================================================
 
 const OVERLAY_TO_INDUSTRY: Record<string, string> = {
-  salon: 'salon', barber: 'salon', medspa: 'wellness',
-  wellness: 'wellness', dental: 'healthcare', fitness: 'fitness',
-  photographer: 'creative', coaching: 'coaching',
-  contractor: 'contractor', hvac: 'contractor', cleaning: 'cleaning',
-  landscaping: 'landscaping', auto_detailing: 'auto_detailing',
-  moving: 'moving', legal: 'legal', real_estate: 'real_estate',
+  salon: 'salon', barber: 'salon', medspa: 'salon', wellness: 'salon',
+  dental: 'local-service', healthcare: 'local-service', contractor: 'local-service',
+  hvac: 'local-service', cleaning: 'local-service', landscaping: 'local-service',
+  auto_detailing: 'local-service', moving: 'local-service', legal: 'agency',
+  real_estate: 'real-estate', realestate: 'real-estate',
   restaurant: 'restaurant', cafe: 'restaurant', bakery: 'restaurant',
-  ecommerce: 'ecommerce', creator: 'creative', agency: 'agency',
-  nonprofit: 'nonprofit', general: 'general',
+  ecommerce: 'ecommerce', store: 'ecommerce', fitness: 'coaching',
+  photographer: 'portfolio', photography: 'portfolio', creator: 'portfolio', creative: 'portfolio',
+  coaching: 'coaching', agency: 'agency', nonprofit: 'nonprofit', saas: 'saas',
 };
 
 // ============================================================================
@@ -422,9 +422,9 @@ export function materializePlayground(
   const industryKey = OVERLAY_TO_INDUSTRY[selections.industryOverlay] || 'general';
 
   // Resolve scaffold mode. Honor legacy `minimalScaffold` for back-compat.
-  const scaffoldMode =
-    selections.scaffoldMode ??
-    (selections.minimalScaffold ? 'home-only' : 'selected-pages');
+  const scaffoldMode = selections.scaffoldMode === 'capability-full'
+    ? 'capability-full'
+    : 'selected-pages';
 
   // Map visitor-selected page roles → PageSpec entries for the topology planner.
   const PAGE_ROLE_TO_SPEC: Record<string, { title: string; path: string; purpose: 'landing' | 'services' | 'portfolio' | 'contact' | 'about' | 'blog' | 'shop' | 'checkout' | 'booking' | 'pricing' | 'faq' }> = {
@@ -448,7 +448,6 @@ export function materializePlayground(
 
   // 1. Generate site topology plan → PageRegistry
   const sitePlan = planSiteTopology(industryKey, selections.businessName, {
-    minimal: scaffoldMode === 'home-only',
     additionalPages,
     primaryIntent: selections.primaryIntent,
     selectedTemplateId: selections.templateId,
@@ -456,12 +455,10 @@ export function materializePlayground(
   });
   const pageRegistry = populateRegistryFromTopology(sitePlan);
 
-  // 2. Ensure ALL capability-required pages exist in the registry.
-  //    Skipped in 'home-only' mode; in 'selected-pages' mode, we still ensure
-  //    visitor-requested + capability-required pages are present.
-  if (!sitePlan.isMinimal) {
-    ensureRequiredPages(pageRegistry, sitePlan, capabilities.requiredPages, selections.businessName);
-  }
+  // 2. Ensure ALL capability-required pages exist in the registry. Minimal/home-only
+  //    topology is intentionally removed from wizard launches; every page must
+  //    flow through the selected SiteBundle/template path.
+  ensureRequiredPages(pageRegistry, sitePlan, capabilities.requiredPages, selections.businessName);
 
   // 3. Create empty creator data
   const creatorData = createEmptyCreatorData(selections.businessName);

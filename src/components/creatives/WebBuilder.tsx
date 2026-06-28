@@ -7111,6 +7111,10 @@ export default function ${componentName}() {
                         toast.info('Running publish checks...');
                       }}
                     />
+                    <RevisionLedgerStatus
+                      projectId={projectId ?? null}
+                      vfsFiles={virtualFS.getSandpackFiles()}
+                    />
                   </TabsContent>
                 </Tabs>
               </TabsContent>

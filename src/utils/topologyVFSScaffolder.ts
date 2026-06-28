@@ -19,6 +19,7 @@ import type { PageRegistry } from '@/types/pageRegistry';
 import type { SectionEntry, SectionType, TemplateComposition, TemplatePageRole } from '@/sections/types';
 import { ALL_COMPOSITIONS, getCompositionById, getCompositionsByIndustry } from '@/sections/templates';
 import { compositionToReactCode } from '@/sections/PageRenderer';
+import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';

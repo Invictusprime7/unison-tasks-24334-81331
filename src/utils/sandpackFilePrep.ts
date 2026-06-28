@@ -25,6 +25,8 @@ import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
 import { buildDefaultThemedIndexCss, buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { PreviewPipelineError } from '@/services/previewPipelineError';
+import { resolveSnapshot, minimalShellApp } from '@/services/snapshotProjector';
 
 const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
 

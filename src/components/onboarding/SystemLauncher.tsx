@@ -1381,7 +1381,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         additionalPages: resolvedScaffoldMode === 'selected-pages'
           ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
           : undefined,
-        minimal: false,
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──

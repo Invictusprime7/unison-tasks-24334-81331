@@ -38,6 +38,16 @@ export type IntentHandler =
 export type IntentStatus = 'stable' | 'preview' | 'deprecated';
 export type IntentTriggerType = 'user-action' | 'system-event' | 'workflow-event';
 
+export type IntentRowAssertion = 'non-empty' | { min: number };
+export type IntentHandlerBinding = 'native' | 'workflow' | 'external';
+
+export interface IntentReadinessFixture {
+  /** Short human description of what's required (surfaced in publish gate). */
+  description: string;
+  /** Optional in-app path users can open to satisfy the fixture (e.g. /settings/calendar). */
+  fixPath?: string;
+}
+
 export interface IntentDef {
   /** Canonical name, dot-namespaced (e.g. "commerce.cart.add") */
   name: string;
@@ -63,7 +73,18 @@ export interface IntentDef {
   aliases?: string[];
   /** Human-readable summary surfaced in the binding inspector */
   description: string;
+
+  // ── Move B: per-element capability contract ─────────────────────────────
+  /** Backend table that must contain at least one (or N) rows for this intent to be publish-ready. */
+  backingTable?: string;
+  /** Row count requirement on `backingTable`. */
+  rowAssertion?: IntentRowAssertion;
+  /** How the intent is fulfilled at runtime — drives "unbound" detection at preview. */
+  handlerBinding?: IntentHandlerBinding;
+  /** Human-readable fixture description + optional in-app fix path. */
+  readinessFixture?: IntentReadinessFixture;
 }
+
 
 // ============================================================================
 // Registry — every recognized intent

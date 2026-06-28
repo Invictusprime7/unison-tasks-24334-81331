@@ -5628,7 +5628,7 @@ export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<
   ].join('\n');
 
   // 4. Generate index.css with theme tokens
-  let css = BASE_CSS;
+  let css = buildDefaultThemedIndexCss();
   if (siteBundle.theme) {
     const themeVars = Object.entries(siteBundle.theme)
       .map(([k, v]) => '  --' + k + ': ' + v + ';')

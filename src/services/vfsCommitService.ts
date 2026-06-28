@@ -352,7 +352,8 @@ export async function commitMutation(
     const readinessOk2 =
       (!gate || gate.previewReady) &&
       (!previewVerdict || previewVerdict.ok) &&
-      intentPreviewBlocked === 0;
+      intentPreviewBlocked === 0 &&
+      elementPreviewBlocked === 0;
     if ((requirePreview && !previewOk2) || (requireReadiness && !readinessOk2)) {
       status = 'rejected';
       log('gate', 'error', 'hard reject after auto-repair', {
@@ -361,6 +362,9 @@ export async function commitMutation(
         publishBlockers: publishVerdict?.reasons ?? [],
         intentPreviewBlocked,
         intentPublishBlocked,
+        elementPreviewBlocked,
+        elementPublishBlocked,
+        backendOpsFailed: backendOpsReport?.failedCount ?? 0,
       });
     } else {
       log('repair', 'info', 'auto-repair recovered the commit');
@@ -388,7 +392,10 @@ export async function commitMutation(
             },
           }
         : {}),
+      ...(elementReadiness ? { elementReadiness } : {}),
+      ...(backendOpsReport ? { backendOps: backendOpsReport } : {}),
     } as Record<string, unknown>,
+
 
     diagnostics,
     parentRevisionId: input.identity.revisionId || null,

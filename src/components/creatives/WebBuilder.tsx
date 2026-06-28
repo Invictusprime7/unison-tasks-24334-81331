@@ -7124,6 +7124,24 @@ export default function ${componentName}() {
                     <RevisionLedgerStatus
                       projectId={projectId ?? null}
                       vfsFiles={virtualFS.getSandpackFiles()}
+                      identity={
+                        currentUserId && businessId && currentTemplateId
+                          ? {
+                              userId: currentUserId,
+                              businessId,
+                              projectId: currentTemplateId,
+                              draftId: currentTemplateId,
+                              revisionId: currentRevisionId,
+                              sessionId: `web-builder:${currentTemplateId}`,
+                            }
+                          : null
+                      }
+                      onRestored={(revId) => {
+                        setCurrentRevisionId(revId);
+                        toast.success('Reloading restored revision…');
+                        // Hydrate from the new revision row.
+                        void templateFiles.loadTemplate(currentTemplateId);
+                      }}
                     />
                   </TabsContent>
                 </Tabs>

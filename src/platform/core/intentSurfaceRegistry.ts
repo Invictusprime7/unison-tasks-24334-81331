@@ -327,7 +327,13 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     status: 'stable',
     triggerType: 'user-action',
     description: 'Start a payment / subscription checkout.',
+    handlerBinding: 'external',
+    readinessFixture: {
+      description: 'Connect Stripe before enabling checkout buttons.',
+      fixPath: '/settings/payments',
+    },
   },
+
   'pay.success': {
     name: 'pay.success',
     namespace: 'commerce',

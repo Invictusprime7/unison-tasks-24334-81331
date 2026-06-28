@@ -732,6 +732,23 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return null;
   }, [backend, dockerService.session]);
   
+  if (pipelineError) {
+    return (
+      <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
+        <PreviewRuntimeError
+          error={pipelineError}
+          onRetry={() => window.location.reload()}
+          onRelaunch={() => {
+            try {
+              sessionStorage.removeItem('unison.launcher.handoff');
+            } catch {}
+            window.location.assign('/system-launcher');
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
       {/* Toolbar */}

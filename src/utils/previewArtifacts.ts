@@ -102,6 +102,15 @@ export function buildPreviewArtifacts(
           .filter((r) => r.status !== 'clean')
           .map((r) => ({ path: r.path, status: r.status, error: r.finalError?.slice(0, 200) })),
       });
+      // DEBUG: dump first 600 chars of each non-clean file so we can see
+      // exactly which prep pass produced the duplicate identifier / bad syntax.
+      for (const r of gate.reports) {
+        if (r.status === 'clean') continue;
+        const src = stampedFiles[r.path];
+        if (typeof src === 'string') {
+          console.warn(`[buildPreviewArtifacts] ${r.status} ${r.path} head:\n${src.slice(0, 600)}`);
+        }
+      }
     }
   } catch (error) {
     console.warn('[buildPreviewArtifacts] Preview parse gate failed; using stamped files', error);

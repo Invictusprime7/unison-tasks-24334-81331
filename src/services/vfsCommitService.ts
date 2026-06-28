@@ -196,6 +196,16 @@ export async function commitMutation(
       runtimeManifest: null,
       playground: input.current.playground ?? null,
       readinessReport: {},
+      publishReady: false,
+      publishBlockers: [
+        {
+          source: 'preview',
+          code: 'canonical-pipeline-threw',
+          message: 'Canonical pipeline failed; nothing safe to publish',
+        },
+      ],
+      vfsHash: await hashVfsFiles(workingFiles),
+      backendOpsApplied: [],
       diagnostics,
       parentRevisionId: input.identity.revisionId || null,
       rejectMessage: 'canonical pipeline threw — see diagnostics',

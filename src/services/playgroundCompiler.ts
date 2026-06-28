@@ -47,17 +47,10 @@ export function compilePlayground(
 
   const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, options);
 
-  // Strict wizard contract: any launch threaded with template/theme/industry
-  // selections is a SiteBundleSnapshot-bound launch and MUST refuse to emit
-  // the minimal spinner scaffold. Drift between PageRegistry and SiteBundle
-  // composition surfaces as a PreviewPipelineError (rendered by
-  // PreviewRuntimeError) instead of a silent loading placeholder.
-  const strictWizardComposition =
-    !!options?.selectedTemplateId ||
-    !!options?.selectedThemeId ||
-    !!options?.themePresetId ||
-    !!options?.industry;
-
+  // Composition-only contract: pages are ONLY emitted from the active
+  // SiteBundle/template composition. Any registry page that cannot be composed
+  // is aggregated into a single PreviewPipelineError instead of being
+  // silently filled with a spinner/minimal placeholder.
   const vfsFiles: Record<string, string> = {};
   const blockedWizardPages: string[] = [];
 
@@ -70,33 +63,18 @@ export function compilePlayground(
       continue;
     }
 
-    if (page.isHome) {
-      const hasWizardTheming = strictWizardComposition;
-      if (!hasWizardTheming) {
-        const legacyHomeSource = existingVfsFiles['/src/App.tsx'] || existingVfsFiles['/App.tsx'];
-        if (legacyHomeSource) {
-          vfsFiles[fp] = rebaseHomeModuleForPageFile(legacyHomeSource);
-          continue;
-        }
-      }
-    }
-
     const node = scaffoldPlan.pages.find((p) => p.id === page.pageId);
     if (!node) continue;
 
-    // Try compositional scaffold from active template/SiteBundle.
-    // generateTopologyPlaceholder falls back to the spinner placeholder when
-    // composition is unavailable; in strict mode we detect that case and
-    // route it through PreviewPipelineError instead of writing the spinner.
-    const composed = generateTopologyPlaceholder(node, scaffoldPlan);
-    const isSpinnerFallback =
-      composed.includes('Generating page content...') ||
-      composed.includes('animate-spin rounded-full');
-    if (strictWizardComposition && isSpinnerFallback) {
-      blockedWizardPages.push(fp);
-      continue;
+    try {
+      vfsFiles[fp] = generateTopologyPlaceholder(node, scaffoldPlan);
+    } catch (err) {
+      if (err instanceof PreviewPipelineError) {
+        blockedWizardPages.push(fp);
+        continue;
+      }
+      throw err;
     }
-    vfsFiles[fp] = composed;
   }
 
   if (blockedWizardPages.length > 0) {
@@ -106,6 +84,7 @@ export function compilePlayground(
       { blockedFiles: blockedWizardPages, recoverableByRelaunch: true },
     );
   }
+
 
   const routerContent = generateCanonicalRouterForFiles(registry, vfsFiles, businessName);
   const routerFile = {

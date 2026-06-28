@@ -5166,14 +5166,34 @@ export function prepareSandpackFiles(
     }
   }
 
+  // ── CSS authority (snapshot-as-primary, no SEMANTIC_CSS_VARS fallback) ──
+  const cssResolution = resolveSnapshot(resolvedFiles, null);
   if (!hasCSS) {
-    // No CSS file exists — create /index.css from the resolved preset (or default)
-    sandpackFiles['/index.css'] = themedCSS || BASE_CSS;
+    if (themedCSS) {
+      sandpackFiles['/index.css'] = themedCSS;
+    } else if (cssResolution.isWizardDraft) {
+      throw new PreviewPipelineError(
+        'prep',
+        'Wizard draft has no /src/index.css and no resolvable themePresetId.',
+        { recoverableByRelaunch: true },
+      );
+    } else {
+      // Blank draft → minimal Tailwind shell, no themed palette.
+      sandpackFiles['/index.css'] = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`;
+    }
   } else if (!themedCSS) {
-    // CSS exists but no preset resolved — ensure semantic vars are present
     const existingIndexCSS = sandpackFiles['/index.css'] || '';
     if (existingIndexCSS && !existingIndexCSS.includes('--primary:')) {
-      sandpackFiles['/index.css'] = SEMANTIC_CSS_VARS + '\n' + existingIndexCSS;
+      if (cssResolution.isWizardDraft) {
+        // Wizard draft must produce its tokens through the projector chain.
+        // We don't silently prepend SEMANTIC_CSS_VARS — that masks token drift.
+        throw new PreviewPipelineError(
+          'prep',
+          'Wizard draft /src/index.css is missing semantic tokens (--primary). Re-run the System Launcher.',
+          { recoverableByRelaunch: true },
+        );
+      }
+      // Blank draft: leave AI-authored CSS as-is, no token injection.
     }
   }
 
@@ -5184,28 +5204,32 @@ export function prepareSandpackFiles(
 
   if (!hasApp) {
     if (options?.strict && options?.entryPoint) {
-      // In strict mode with explicit entry, create proxy to that entry
       const entryFlattened = options.entryPoint.replace(/^\/src\//, '/');
       if (sandpackFiles[entryFlattened]) {
         sandpackFiles['/App.tsx'] = createProxyApp(entryFlattened);
+      } else if (cssResolution.isWizardDraft) {
+        throw new PreviewPipelineError(
+          'prep',
+          `Wizard draft missing strict entry ${entryFlattened} and no App.tsx — re-run the System Launcher.`,
+          { blockedFiles: [entryFlattened], recoverableByRelaunch: true },
+        );
       } else {
-        const fallbackPath = pickPrimaryComponentPath(componentFilePaths);
-        if (fallbackPath) {
-          sandpackFiles['/App.tsx'] = createProxyApp(fallbackPath);
-          console.warn(`[sandpackFilePrep] Strict entry ${entryFlattened} missing — proxying to ${fallbackPath}`);
-        } else {
-          console.warn('[sandpackFilePrep] Strict entry missing and no component candidates — leaving App.tsx unwritten');
-        }
+        sandpackFiles['/App.tsx'] = minimalShellApp();
       }
+    } else if (cssResolution.isWizardDraft) {
+      throw new PreviewPipelineError(
+        'prep',
+        'Wizard draft is missing /App.tsx — Lane B did not emit a root composition. Re-run the System Launcher.',
+        { recoverableByRelaunch: true },
+      );
     } else {
-      const primaryComponentPath = pickPrimaryComponentPath(componentFilePaths);
-      if (primaryComponentPath) {
-        sandpackFiles['/App.tsx'] = createProxyApp(primaryComponentPath);
-      } else {
-        console.warn('[sandpackFilePrep] No App.tsx and no component candidates — leaving App.tsx unwritten (no fallback template)');
-      }
+      // Blank draft: render the minimal "Start building" shell — never proxy
+      // to a randomly-picked component (that's what produced the misleading
+      // "default editorial preset" symptom).
+      sandpackFiles['/App.tsx'] = minimalShellApp();
     }
   }
+
 
   // ALWAYS use our controlled entry point — it includes the createElement safety
   // guard, error boundary, Tailwind CDN config, and nav bridge. VFS-provided

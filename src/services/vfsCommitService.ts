@@ -806,3 +806,89 @@ function mapRevisionRow(row: Record<string, unknown>): LoadedRevision {
   };
 }
 
+// ----------------------------------------------------------------------------
+// Ledger loop closers — restore a prior revision + stamp a republish event.
+// Both flow through (or write to) the same durable surfaces as commitMutation
+// so history, drift detection, and telemetry stay coherent.
+// ----------------------------------------------------------------------------
+
+/**
+ * Roll a prior revision forward as a NEW committed revision with
+ * source='system-restore'. The full file map of the target revision becomes a
+ * single replace-all PatchPlan; the canonical pipeline, gates, readiness, and
+ * persistence all run again so the restored state is judged on its own merits
+ * (no blind trust in the historical row).
+ */
+export async function restoreRevision(args: {
+  targetRevisionId: string;
+  identity: BuilderIdentity;
+}): Promise<CommitMutationResult> {
+  const target = await loadRevision(args.targetRevisionId);
+  if (!target) {
+    throw new Error(`[VFSCommitService] restoreRevision: revision ${args.targetRevisionId} not found`);
+  }
+  if (target.projectId !== args.identity.projectId) {
+    throw new Error(
+      `[VFSCommitService] restoreRevision: revision ${args.targetRevisionId} belongs to a different project`,
+    );
+  }
+
+  const fileOps = Object.entries(target.vfsFiles).map(([path, contents]) => ({
+    type: 'replace' as const,
+    path,
+    contents,
+  }));
+
+
+  return commitMutation({
+    source: 'system-restore',
+    identity: args.identity,
+    current: {
+      vfsFiles: {},
+      playground: target.playground ?? undefined,
+      siteBundleSnapshot: target.siteBundleSnapshot,
+    },
+    patch: {
+      ...emptyPatchPlan(),
+      fileOps,
+      reason: `restore:${args.targetRevisionId}`,
+    } as PatchPlan,
+  });
+}
+
+/**
+ * Stamp a successful publish back into the ledger surfaces. Writes a
+ * fire-and-forget `ai_events` row tying the deploy URL + provider to the
+ * publish-ready revision the deployment actually shipped — so the drift
+ * watcher, RevisionLedgerStatus, and any future ops panel can answer
+ * "which revision is live right now?" deterministically.
+ */
+export async function recordRepublishEvent(args: {
+  revisionId: string;
+  projectId: string;
+  businessId: string;
+  userId: string | null;
+  provider: string;
+  url?: string | null;
+  vfsHash?: string | null;
+}): Promise<void> {
+  try {
+    await supabase.from('ai_events').insert({
+      kind: 'vfs_republish',
+      business_id: args.businessId,
+      user_id: args.userId,
+      payload: {
+        revisionId: args.revisionId,
+        projectId: args.projectId,
+        provider: args.provider,
+        url: args.url ?? null,
+        vfsHash: args.vfsHash ?? null,
+        at: new Date().toISOString(),
+      } as unknown as Record<string, unknown>,
+    });
+  } catch {
+    /* telemetry is best-effort */
+  }
+}
+
+

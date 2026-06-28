@@ -20,7 +20,10 @@ import {
   resolveVerticalLaunchContract,
   type VerticalLaunchContract,
 } from '@/services/verticalLaunchContract';
-import { loadLatestPublishReadyRevisionForProject } from '@/services/vfsCommitService';
+import {
+  loadLatestPublishReadyRevisionForProject,
+  recordRepublishEvent,
+} from '@/services/vfsCommitService';
 import type { BusinessSystemType } from '@/lib/infrastructureContext';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
@@ -217,9 +220,10 @@ export async function deployToProvider(
     // publish_ready=true in the durable revision ledger. When a projectId is
     // supplied we use the ledger as the source of truth for files and
     // snapshot, eliminating any chance of shipping un-committed live state.
+    let publishedRevision: Awaited<ReturnType<typeof loadLatestPublishReadyRevisionForProject>> | null = null;
     if (request.projectId) {
-      const ready = await loadLatestPublishReadyRevisionForProject(request.projectId);
-      if (!ready) {
+      publishedRevision = await loadLatestPublishReadyRevisionForProject(request.projectId);
+      if (!publishedRevision) {
         const errorResponse: DeploymentResponse = {
           status: 'error',
           provider: request.provider,
@@ -237,10 +241,11 @@ export async function deployToProvider(
       // Use the durable ledger payload, not whatever the caller passed in.
       request = {
         ...request,
-        files: ready.vfsFiles,
-        snapshot: (ready.siteBundleSnapshot as SiteBundleSnapshot | null) ?? request.snapshot ?? null,
+        files: publishedRevision.vfsFiles,
+        snapshot: (publishedRevision.siteBundleSnapshot as SiteBundleSnapshot | null) ?? request.snapshot ?? null,
       };
     }
+
 
     // Closure B — publish gate. If a contract was supplied, enforce it BEFORE
     // any network/billing-incurring call. Stubbed business-critical capabilities
@@ -379,13 +384,29 @@ export async function deployToProvider(
     }
 
     updateProgress(100, 'Deployment complete!');
-    
+
+    // Ledger loop closer — stamp the published revision back into ai_events
+    // so the ledger view, drift watcher, and ops surfaces can answer
+    // "which revision is currently live?" deterministically.
+    if (publishedRevision) {
+      void recordRepublishEvent({
+        revisionId: publishedRevision.id,
+        projectId: publishedRevision.projectId,
+        businessId: publishedRevision.businessId,
+        userId: null,
+        provider: request.provider,
+        url: (response as { url?: string | null })?.url ?? null,
+        vfsHash: publishedRevision.vfsHash,
+      });
+    }
+
     onProgress?.({
       isDeploying: false,
       progress: 100,
       message: 'Deployment complete!',
       result: response,
     });
+
 
     return response;
   } catch (err) {

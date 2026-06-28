@@ -93,10 +93,8 @@ export function buildPreviewArtifacts(
   // the cheaper syntax-only gate.
   const industry = launchStateWithRecoveredTheme?.siteBundleSnapshot?.industry;
   const brand = launchStateWithRecoveredTheme?.businessName;
-  const wizardResolution = resolveSnapshot(stampedFiles, launchStateWithRecoveredTheme, {
-    wizardHint: Boolean(themePresetId),
-    themePresetIdHint: themePresetId,
-  });
+  const wizardResolution = resolveSnapshot(stampedFiles, launchStateWithRecoveredTheme);
+
 
   let sandpackFiles: Record<string, string>;
   if (wizardResolution.isWizardDraft) {

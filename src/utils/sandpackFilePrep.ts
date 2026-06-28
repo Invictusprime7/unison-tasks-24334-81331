@@ -5166,13 +5166,11 @@ export function prepareSandpackFiles(
   }
 
   // ── CSS authority (snapshot-as-primary, no SEMANTIC_CSS_VARS fallback) ──
-  // Wizard-draft hint: any caller that passes themePresetId is by definition
-  // routing through the launcher pipeline; treat as wizard even if the
-  // snapshot file hasn't landed in `resolvedFiles` yet (cold-hydration window).
-  const cssResolution = resolveSnapshot(resolvedFiles, null, {
-    wizardHint: Boolean(options?.themePresetId),
-    themePresetIdHint: options?.themePresetId ?? null,
-  });
+  // Wizard-draft classification is derived strictly from artifacts present in
+  // resolvedFiles (snapshot file, wizard-seed, or live launchState upstream).
+  // No cold-hydration hinting — the snapshot must be imported to count.
+  const cssResolution = resolveSnapshot(resolvedFiles, null);
+
   if (!hasCSS) {
     if (themedCSS) {
       sandpackFiles['/index.css'] = themedCSS;

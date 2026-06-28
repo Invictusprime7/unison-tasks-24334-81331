@@ -279,11 +279,24 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
   
-  const { sandpackFiles, dependencies: sandpackDeps } = useMemo(() => {
-    return buildPreviewArtifacts({
-      sourceFiles: files,
-      launchState: launch,
-    });
+  const { sandpackFiles, dependencies: sandpackDeps, pipelineError } = useMemo(() => {
+    try {
+      const result = buildPreviewArtifacts({
+        sourceFiles: files,
+        launchState: launch,
+      });
+      return { ...result, pipelineError: null as PreviewPipelineError | null };
+    } catch (err) {
+      if (isPreviewPipelineError(err)) {
+        console.error('[VFSPreview] Pipeline error:', err);
+        return {
+          sandpackFiles: {} as Record<string, string>,
+          dependencies: {} as Record<string, string>,
+          pipelineError: err,
+        };
+      }
+      throw err;
+    }
   }, [files, launch]);
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.

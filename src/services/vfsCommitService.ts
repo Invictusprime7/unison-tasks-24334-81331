@@ -384,6 +384,49 @@ export async function commitMutation(
     }
   }
 
+  // Move D — compute publish readiness + blockers aggregate.
+  const publishBlockers: PublishBlockerSummary[] = [];
+  if (publishVerdict && !publishVerdict.ok) {
+    for (const r of publishVerdict.reasons) {
+      publishBlockers.push({
+        source: 'publishGate',
+        code: r.code,
+        message: r.message,
+        meta: r.meta as Record<string, unknown> | undefined,
+      });
+    }
+  }
+  if (intentControlPlane && intentControlPlane.readinessReport.summary.publishBlocked > 0) {
+    publishBlockers.push({
+      source: 'intentReadiness',
+      code: 'intent-publish-blocked',
+      message: `${intentControlPlane.readinessReport.summary.publishBlocked} intent binding(s) block publish`,
+      meta: { summary: intentControlPlane.readinessReport.summary },
+    });
+  }
+  if (elementReadiness && elementReadiness.summary.publishBlocked > 0) {
+    publishBlockers.push({
+      source: 'elementReadiness',
+      code: 'element-publish-blocked',
+      message: `${elementReadiness.summary.publishBlocked} element(s) missing required capability/data`,
+      meta: { summary: elementReadiness.summary },
+    });
+  }
+  if (backendOpsReport && backendOpsReport.failedCount > 0) {
+    publishBlockers.push({
+      source: 'backendOps',
+      code: 'backend-op-failed',
+      message: `${backendOpsReport.failedCount} backend op(s) failed`,
+      meta: { failed: backendOpsReport.results.filter((r) => r.status === 'failed') },
+    });
+  }
+  const publishReady =
+    status === 'committed' &&
+    publishBlockers.length === 0 &&
+    (!publishVerdict || publishVerdict.ok);
+
+  const vfsHash = await hashVfsFiles(files);
+
   // 7. Persist revision + return -------------------------------------------
   return finalize({
     input,
@@ -408,8 +451,10 @@ export async function commitMutation(
       ...(elementReadiness ? { elementReadiness } : {}),
       ...(backendOpsReport ? { backendOps: backendOpsReport } : {}),
     } as Record<string, unknown>,
-
-
+    publishReady,
+    publishBlockers,
+    vfsHash,
+    backendOpsApplied: backendOpsReport?.results ?? [],
     diagnostics,
     parentRevisionId: input.identity.revisionId || null,
     rejectMessage:

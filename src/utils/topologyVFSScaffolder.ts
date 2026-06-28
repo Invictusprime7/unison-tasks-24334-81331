@@ -253,12 +253,9 @@ export function getMissingTopologyPages(
 // ============================================================================
 
 /**
- * Generate a page file for a topology node.
- *
- * If the active template can produce a role-filtered sub-composition, the
- * page is rendered as a real industry-styled layout via the section registry.
- * Otherwise falls back to a minimal loading placeholder so the route still
- * imports cleanly while AI fills in content on demand.
+ * Generate a page file for a topology node strictly from the active template /
+ * SiteBundle composition. Throws PreviewPipelineError when no composition is
+ * resolvable — Unison no longer emits spinner/minimal placeholder scaffolds.
  */
 export function generateTopologyPlaceholder(
   page: PageRouteNode,
@@ -267,15 +264,19 @@ export function generateTopologyPlaceholder(
 ): string {
   const composed = tryComposeTopologyPage(page, plan, template);
   if (composed) return composed;
-  return generateSpinnerPlaceholder(page, plan);
+  throw new PreviewPipelineError(
+    'vfs',
+    `SiteBundleSnapshot has no composition for page "${page.title}" (${page.filePath}); refusing to emit minimal scaffold.`,
+    { blockedFiles: [page.filePath], recoverableByRelaunch: true },
+  );
 }
 
 /**
  * Attempt to compose a page from the active template/SiteBundle composition.
- * Returns null if no composition is available — caller decides whether to emit
- * a spinner placeholder (legacy) or throw PreviewPipelineError (strict wizard).
+ * Returns null only when composition is genuinely unavailable so callers can
+ * aggregate blocked pages into a single PreviewPipelineError.
  */
-function tryComposeTopologyPage(
+export function tryComposeTopologyPage(
   page: PageRouteNode,
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null,
@@ -291,49 +292,7 @@ function tryComposeTopologyPage(
   }
 }
 
-function generateSpinnerPlaceholder(page: PageRouteNode, plan: GeneratedSitePlan): string {
-  const componentName = extractComponentName(page.filePath);
-  const navPages = plan.pages.filter(p => plan.navItems.includes(p.id));
 
-  const navLinks = navPages.map(p =>
-    `          <a href="#${p.route}" data-ut-intent="nav.goto_page" data-ut-path="${p.route}" data-ut-target-page-id="${p.id}" className="text-sm ${p.id === page.id ? 'text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground'} transition-colors">${p.title}</a>`
-  ).join('\n');
-
-  return `import React from 'react';
-
-export default function ${componentName}() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Navigation */}
-      <header className="border-b border-border/40 backdrop-blur-sm bg-background/80 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-16">
-          <a href="#/" className="text-xl font-bold">${plan.businessName || 'Home'}</a>
-          <nav className="hidden md:flex items-center gap-6">
-${navLinks}
-          </nav>
-        </div>
-      </header>
-
-      {/* Loading — AI is generating this page */}
-      <main className="flex items-center justify-center py-32">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-6" />
-          <h1 className="text-2xl font-semibold mb-2">${page.title}</h1>
-          <p className="text-muted-foreground">Generating page content...</p>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-border/40 bg-muted/30 py-12">
-        <div className="max-w-7xl mx-auto px-6 text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} ${plan.businessName || 'Company'}. All rights reserved.</p>
-        </div>
-      </footer>
-    </div>
-  );
-}
-`;
-}
 
 function extractComponentName(filePath: string): string {
   const fileName = filePath.split('/').pop()?.replace('.tsx', '') || 'Page';

@@ -45,25 +45,22 @@ function tryParseSnapshot(raw: string | undefined): SiteBundleSnapshot | null {
  * Resolve the authoritative SiteBundleSnapshot from either the live LaunchState
  * or the persisted /.unison/site-bundle-snapshot.json. Also reports whether the
  * draft was created via the wizard (any wizard-produced artifact present).
+ *
+ * Cold-hydration policy: classification is strictly evidence-based. We do NOT
+ * accept "hint" flags from upstream callers. If the snapshot file hasn't been
+ * imported into sourceFiles yet and no LaunchState is in memory, the draft is
+ * treated as non-wizard — the preview will render the minimal shell rather
+ * than throwing a misleading "missing snapshot" error mid-hydration.
  */
-export interface ResolveSnapshotHints {
-  /** Force isWizardDraft=true when the caller already knows (e.g. launcher path). */
-  wizardHint?: boolean;
-  /** Authoritative themePresetId hint when the snapshot file hasn't landed yet. */
-  themePresetIdHint?: string | null;
-}
-
 export function resolveSnapshot(
   sourceFiles: Record<string, string>,
   launchState?: LaunchState | null,
-  hints: ResolveSnapshotHints = {},
 ): SnapshotResolution {
   const snapshotFromState = launchState?.siteBundleSnapshot ?? null;
   const snapshotFromVfs = tryParseSnapshot(sourceFiles[SNAPSHOT_VFS_PATH]);
   const snapshot = snapshotFromState || snapshotFromVfs;
 
   const isWizardDraft = Boolean(
-    hints.wizardHint ||
     launchState ||
     snapshot ||
     sourceFiles[WIZARD_SEED_VFS_PATH] ||
@@ -74,11 +71,11 @@ export function resolveSnapshot(
     snapshot?.meta?.themePresetId ||
     launchState?.themePresetId ||
     launchState?.runtimeManifest?.appContext?.themePresetId ||
-    hints.themePresetIdHint ||
     null;
 
   return { snapshot, isWizardDraft, themePresetId: themePresetId ?? null };
 }
+
 
 /**
  * Project the canonical themed /src/index.css for the snapshot's themePresetId.

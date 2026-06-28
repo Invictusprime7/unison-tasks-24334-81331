@@ -226,8 +226,17 @@ export default function RevisionLedgerStatus({
               </div>
             )}
             {drift && (
-              <div className="mt-1 text-[10px] text-red-300/80">
-                Live VFS hash differs from the latest ledger row. Re-commit through the AI Builder or layout fast-path to resync.
+              <div className="mt-1 text-[10px] text-red-300/80 flex items-center gap-1.5">
+                {autoResyncing ? (
+                  <>
+                    <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                    Auto-resyncing VFS to latest ledger row…
+                  </>
+                ) : autoResyncOnDrift && identity ? (
+                  'Drift detected — auto-resync queued.'
+                ) : (
+                  'Live VFS hash differs from the latest ledger row. Re-commit through the AI Builder or layout fast-path to resync.'
+                )}
               </div>
             )}
           </>

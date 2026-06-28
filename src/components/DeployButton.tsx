@@ -147,6 +147,7 @@ export function DeployButton({
       snapshot,
       systemId: effectiveSystemId,
       rowCounts,
+      projectId,
     });
   };
 

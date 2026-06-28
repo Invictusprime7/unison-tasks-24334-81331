@@ -563,6 +563,38 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
               {readiness.missingDependencies.join(", ")}
             </span>
           ) : null}
+          {readiness.ledgerStatus ? (() => {
+            const s = readiness.ledgerStatus!;
+            const tone =
+              s === 'ready'
+                ? 'bg-emerald-500/15 text-emerald-300'
+                : s === 'rows-missing' || s === 'capability-missing'
+                  ? 'bg-amber-500/15 text-amber-300'
+                  : 'bg-red-500/15 text-red-300';
+            const label =
+              s === 'ready'
+                ? 'Ledger ready'
+                : s === 'rows-missing'
+                  ? 'Needs data'
+                  : s === 'capability-missing'
+                    ? 'Needs setup'
+                    : s === 'unbound'
+                      ? 'Unbound'
+                      : 'Unknown intent';
+            return (
+              <span
+                className={cn('rounded-md px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide', tone)}
+                title={[readiness.ledgerIntent, readiness.ledgerBlocker].filter(Boolean).join(' — ')}
+              >
+                {label}
+              </span>
+            );
+          })() : null}
+          {readiness.ledgerBlocker ? (
+            <span className="max-w-[240px] truncate text-[10px] text-white/55" title={readiness.ledgerBlocker}>
+              {readiness.ledgerBlocker}
+            </span>
+          ) : null}
           {readiness.onOpenSetup && readiness.publishStatus && readiness.publishStatus !== "ready" ? (
             <Button
               variant="outline"

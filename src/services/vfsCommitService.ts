@@ -275,10 +275,59 @@ export async function commitMutation(
     }
   }
 
+  // Move B: per-element capability contract evaluation. Walks every
+  // data-ut-intent occurrence in the VFS, checks required capabilities and
+  // backing-table row assertions, and surfaces concrete fix paths in the
+  // readiness report.
+  let elementReadiness: ElementReadinessReport | null = null;
+  let elementPreviewBlocked = 0;
+  let elementPublishBlocked = 0;
+  try {
+    const provisionedCapabilities: CapabilityId[] = compiled
+      ? compiled.provisioningReport.capabilities.map((c) => c.capabilityId as CapabilityId)
+      : [];
+    elementReadiness = await evaluateElementReadiness({
+      vfsFiles: files,
+      provisionedCapabilities,
+      businessId: input.identity.businessId,
+    });
+    elementPreviewBlocked = elementReadiness.summary.previewBlocked;
+    elementPublishBlocked = elementReadiness.summary.publishBlocked;
+    log(
+      'elementReadiness',
+      elementPreviewBlocked === 0 ? 'info' : 'warn',
+      `element preview blocked=${elementPreviewBlocked} publish blocked=${elementPublishBlocked}`,
+      elementReadiness.summary,
+    );
+  } catch (err) {
+    log('elementReadiness', 'warn', 'element readiness evaluation threw', String(err));
+  }
+
+  // Move C: execute transactional backend ops (capability provisioning +
+  // seeding) declared on the patch plan. Runs after all gates so a
+  // rejected commit never mutates the backend.
+  let backendOpsReport: BackendOpExecutionReport | null = null;
+  const backendOps = input.patch.backendOps ?? [];
+  if (backendOps.length > 0) {
+    try {
+      backendOpsReport = await executeBackendOps(backendOps, input.identity);
+      log(
+        'backendOps',
+        backendOpsReport.failedCount === 0 ? 'info' : 'warn',
+        `executed ${backendOpsReport.results.length} ops (failed=${backendOpsReport.failedCount})`,
+        backendOpsReport.results.map((r) => ({ type: r.op.type, cap: r.op.capability, status: r.status })),
+      );
+    } catch (err) {
+      log('backendOps', 'error', 'backend op execution threw', String(err));
+    }
+  }
+
   const readinessOk =
     (!gate || gate.previewReady) &&
     (!previewVerdict || previewVerdict.ok) &&
-    intentPreviewBlocked === 0;
+    intentPreviewBlocked === 0 &&
+    elementPreviewBlocked === 0;
+
 
 
   // 6. Auto-repair-then-hard-reject -----------------------------------------

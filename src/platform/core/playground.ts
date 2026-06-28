@@ -56,7 +56,7 @@ export type IndustryOverlay =
   | 'nonprofit'
   | 'general';
 
-export type WizardScaffoldMode = 'home-only' | 'selected-pages' | 'capability-full';
+export type WizardScaffoldMode = 'selected-pages' | 'capability-full';
 
 export interface WizardSelections {
   businessName: string;
@@ -103,16 +103,12 @@ export interface WizardSelections {
   requestedPages?: string[];
   /**
    * Scaffold strategy:
-   *  - 'home-only'      → only Home; Builder AI authors every other page.
    *  - 'selected-pages' → Home + visitor-selected pages (default).
    *  - 'capability-full'→ Home + all capability-implied pages.
+   * Home-only/minimal scaffold modes are intentionally unsupported; every
+   * wizard page must be materialized through the selected SiteBundle/template.
    */
   scaffoldMode?: WizardScaffoldMode;
-  /**
-   * @deprecated Use `scaffoldMode === 'home-only'`. Retained for back-compat;
-   * still honored by the materializer/topology planner when present.
-   */
-  minimalScaffold?: boolean;
   /**
    * When true, the launcher should seed first-party Unison defaults so the
    * generated system can pass publish readiness without requiring third-party

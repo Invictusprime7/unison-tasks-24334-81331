@@ -413,7 +413,7 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
       if (altHero) {
         cards.push({
           id: `${tag}-alt`,
-          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Minimal`,
+          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Focused`,
           description: "Clean, focused layout emphasizing clarity and conversions",
           industry: tag,
           sectionTypes: ["hero", "services", "testimonials", "cta", "contact", "footer"],
@@ -424,29 +424,13 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
     }
   }
 
-  // Add universal fallback if empty
-  if (cards.length === 0) {
-    const allRefs = getAllReferences();
-    const universalHero = allRefs.find((r) => r.sectionType === "hero");
-    if (universalHero) {
-      cards.push({
-        id: "universal-default",
-        label: "Modern Professional",
-        description: "Versatile layout for any business type",
-        industry: "universal",
-        sectionTypes: ["hero", "features", "testimonials", "cta", "contact", "footer"],
-        traits: universalHero.traits.slice(0, 3),
-        heroRef: universalHero,
-      });
-    }
-  }
-
   return cards;
 }
 
 /**
  * Build template cards from real TemplateComposition objects.
- * Falls back to reference-based cards when no compositions exist for the system.
+ * Never synthesizes fallback cards; wizard templates must be registered
+ * TemplateComposition objects so the SiteBundle path owns every route.
  */
 function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[] {
   const compositions = getCompositionsBySystemType(systemId);
@@ -465,9 +449,9 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
     }));
   }
 
-  // Fallback: build from section references when no compositions are registered
-  const tags = SYSTEM_TO_INDUSTRY[systemId] || ["universal"];
-  return buildTemplateCards(tags as IndustryTag[]);
+  // No synthetic/reference fallback: every wizard template card must point to a
+  // registered TemplateComposition so the SiteBundle path owns every page.
+  return [];
 }
 
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
@@ -1381,7 +1365,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         additionalPages: resolvedScaffoldMode === 'selected-pages'
           ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
           : undefined,
-        minimal: false,
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
@@ -1408,7 +1391,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         primaryIntent: industryProfile?.primaryIntent,
         requestedPages: resolvedRequestedPages,
         scaffoldMode: resolvedScaffoldMode,
-        minimalScaffold: false,
         nativePublishReady: launchContract.nativePublishCapable && Boolean(ownerEmail),
         ownerEmail: ownerEmail || undefined,
         publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native-first-party' : 'manual-setup',

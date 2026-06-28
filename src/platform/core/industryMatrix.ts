@@ -56,6 +56,28 @@ export interface PageSpec {
 // ============================================================================
 
 export const INDUSTRY_MATRIX: Record<string, IndustryProfile> = {
+  saas: {
+    industry: 'saas',
+    name: 'SaaS & Software',
+    systemType: 'saas',
+    layoutCategories: ['saas', 'landing'],
+    defaultCapabilities: ['contact', 'newsletter', 'lead-capture'],
+    primaryIntent: 'contact.submit',
+    crmPipeline: {
+      name: 'SaaS Pipeline',
+      stages: ['New Lead', 'Demo Requested', 'Trial Started', 'Qualified', 'Customer'],
+      defaultStage: 'New Lead',
+    },
+    defaultPages: [
+      { title: 'Home', path: '/', purpose: 'landing', expectedSections: ['navbar', 'hero', 'features', 'stats', 'testimonials', 'cta', 'footer'] },
+      { title: 'Features', path: '/services', purpose: 'services', expectedSections: ['navbar', 'features', 'services', 'footer'] },
+      { title: 'Pricing', path: '/pricing', purpose: 'pricing', expectedSections: ['navbar', 'pricing', 'faq', 'footer'] },
+      { title: 'Contact', path: '/contact', purpose: 'contact', expectedSections: ['navbar', 'contact', 'footer'] },
+    ],
+    automationPack: 'saas_growth',
+    seedDataKeys: ['business_name', 'business_email', 'features', 'pricing_tiers'],
+  },
+
   salon: {
     industry: 'salon',
     name: 'Salon & Spa',
@@ -247,12 +269,45 @@ export const INDUSTRY_MATRIX: Record<string, IndustryProfile> = {
   },
 };
 
+const INDUSTRY_ALIASES: Record<string, string> = {
+  barber: 'salon',
+  medspa: 'salon',
+  wellness: 'salon',
+  dental: 'local-service',
+  healthcare: 'local-service',
+  contractor: 'local-service',
+  local_service: 'local-service',
+  hvac: 'local-service',
+  cleaning: 'local-service',
+  landscaping: 'local-service',
+  auto_detailing: 'local-service',
+  moving: 'local-service',
+  legal: 'agency',
+  realestate: 'real-estate',
+  real_estate: 'real-estate',
+  ecommerce: 'ecommerce',
+  store: 'ecommerce',
+  'e-commerce': 'ecommerce',
+  photographer: 'portfolio',
+  photography: 'portfolio',
+  creative: 'portfolio',
+  creator: 'portfolio',
+  fitness: 'coaching',
+  content: 'nonprofit',
+  landing: 'agency',
+};
+
 // ============================================================================
 // Lookup Helpers
 // ============================================================================
 
+export function normalizeIndustryKey(industry: string): string {
+  const key = industry.trim().toLowerCase();
+  return INDUSTRY_ALIASES[key] || key;
+}
+
 export function getIndustryProfile(industry: string): IndustryProfile | undefined {
-  return INDUSTRY_MATRIX[industry];
+  return INDUSTRY_MATRIX[normalizeIndustryKey(industry)];
 }
 
 export function getIndustryForCategory(category: LayoutCategory): IndustryProfile | undefined {

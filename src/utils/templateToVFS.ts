@@ -7,7 +7,6 @@
 
 import { fixJsxVoidElements, fixJsxStyleStrings } from './aiCodeCleaner';
 import { htmlDocToReactComponentWithCSS } from './htmlToJsx';
-import { buildDefaultThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 
 // ============================================================================
 // Embedded CSS Extraction
@@ -84,8 +83,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 `;
 
-  // Single source of truth: the wizard's token injection system.
-  const baseCSS = buildDefaultThemedIndexCss();
+  // Generic/manual template imports do not own wizard aesthetics. Wizard and
+  // SiteBundle flows overwrite /src/index.css with resolved theme tokens later;
+  // this converter must not inject a default "modern/minimal" preset.
+  const baseCSS = '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n';
 
   // Legacy HTML documents — auto-migrate to React/TSX component
   if (code.includes('<!DOCTYPE') || code.includes('<html')) {

@@ -46,11 +46,11 @@ export const INDUSTRY_TO_THEME_PRESET_ID: Record<LayoutCategory, ThemePreset['id
 /**
  * Resolve the canonical ThemePreset for a given user selection.
  *
- * Resolution order (deterministic, never returns null):
+ * Resolution order (deterministic):
  *   1. Explicit user selection from the wizard's Style step.
  *   2. Industry-based mapping (INDUSTRY_TO_THEME_PRESET_ID).
- *   3. 'modern' as a last-resort guard (should be unreachable when category
- *      is supplied).
+ *   3. Throw. The wizard must provide a supported industry/template context;
+ *      silently choosing a default reintroduces the minimal-template path.
  */
 export function resolveThemePreset(
   selectedTheme: ThemePreset | null | undefined,
@@ -63,5 +63,8 @@ export function resolveThemePreset(
     return presetById(id);
   }
 
-  return presetById('modern');
+  throw new Error(
+    `[SystemLauncher] Unable to resolve ThemePreset for industry/category "${industryCategory || 'unknown'}". ` +
+    'Refusing to use a default/minimal preset; relaunch with a supported 4-step wizard template selection.',
+  );
 }

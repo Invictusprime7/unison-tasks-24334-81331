@@ -9,8 +9,8 @@
  *       → project theme CSS and router from snapshot.
  *   • Wizard draft + snapshot ABSENT
  *       → throw PreviewPipelineError. The runtime cannot fabricate the wizard's choices.
- *   • Blank draft (no launchState, no wizard-seed, no snapshot)
- *       → render a minimal empty shell (no themed tokens, no fallback palette).
+ *   • Blank draft (no launchState, no wizard/sitebundle evidence)
+ *       → allow only Tailwind boilerplate CSS. No App/template is fabricated.
  */
 import type { LaunchState } from '@/types/launchState';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
@@ -46,11 +46,11 @@ function tryParseSnapshot(raw: string | undefined): SiteBundleSnapshot | null {
  * or the persisted /.unison/site-bundle-snapshot.json. Also reports whether the
  * draft was created via the wizard (any wizard-produced artifact present).
  *
- * Cold-hydration policy: classification is strictly evidence-based. We do NOT
- * accept "hint" flags from upstream callers. If the snapshot file hasn't been
- * imported into sourceFiles yet and no LaunchState is in memory, the draft is
- * treated as non-wizard — the preview will render the minimal shell rather
- * than throwing a misleading "missing snapshot" error mid-hydration.
+ * Cold-hydration policy: classification is evidence-based, but evidence is not
+ * limited to the snapshot file. Persisted app-context/runtime/canonical
+ * playground metadata, wizard seed files, and generated page-registry routes
+ * all prove this draft belongs to the System Launcher. Those drafts must never
+ * degrade into a minimal template while the snapshot is catching up.
  */
 export function resolveSnapshot(
   sourceFiles: Record<string, string>,
@@ -60,17 +60,41 @@ export function resolveSnapshot(
   const snapshotFromVfs = tryParseSnapshot(sourceFiles[SNAPSHOT_VFS_PATH]);
   const snapshot = snapshotFromState || snapshotFromVfs;
 
+  const appContext = tryParseRecord(sourceFiles['/.unison/app-context.json']);
+  const runtimeManifest = tryParseRecord(sourceFiles['/.unison/runtime-manifest.json']);
+  const canonicalPlayground = tryParseRecord(sourceFiles['/.unison/canonical-playground.json']);
+  const runtimeAppContext = readRecord(runtimeManifest?.appContext);
+
+  const hasWizardMetadata = Boolean(
+    sourceFiles[WIZARD_SEED_VFS_PATH] ||
+    sourceFiles[SNAPSHOT_VFS_PATH] ||
+    sourceFiles['/.unison/canonical-playground.json'] ||
+    readRecord(canonicalPlayground?.pageRegistry) ||
+    appContext?.wizardSelections ||
+    runtimeAppContext?.wizardSelections ||
+    appContext?.templateId ||
+    runtimeAppContext?.templateId ||
+    appContext?.industry ||
+    runtimeAppContext?.industry,
+  );
+
+  const hasGeneratedPageRoutes = Object.keys(sourceFiles).some((path) =>
+    /^\/?src\/pages\/[A-Z][A-Za-z0-9_-]*\.(tsx|jsx)$/.test(path),
+  );
+
   const isWizardDraft = Boolean(
     launchState ||
     snapshot ||
-    sourceFiles[WIZARD_SEED_VFS_PATH] ||
-    sourceFiles[SNAPSHOT_VFS_PATH],
+    hasWizardMetadata ||
+    hasGeneratedPageRoutes,
   );
 
   const themePresetId =
     snapshot?.meta?.themePresetId ||
     launchState?.themePresetId ||
     launchState?.runtimeManifest?.appContext?.themePresetId ||
+    (typeof appContext?.themePresetId === 'string' ? appContext.themePresetId : null) ||
+    (typeof runtimeAppContext?.themePresetId === 'string' ? runtimeAppContext.themePresetId : null) ||
     null;
 
   return { snapshot, isWizardDraft, themePresetId: themePresetId ?? null };
@@ -113,26 +137,12 @@ export function ensureSnapshotTokens(
       { recoverableByRelaunch: true },
     );
   }
-  return minimalShellCss();
+  return blankDraftTailwindCss();
 }
 
-/** Minimal Tailwind-only CSS for blank (non-wizard) drafts. No palette. */
-export function minimalShellCss(): string {
+/** Tailwind-only CSS for blank (non-wizard) drafts. No palette or template preset. */
+export function blankDraftTailwindCss(): string {
   return `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`;
-}
-
-/** Minimal App shell for blank drafts — never used when a snapshot exists. */
-export function minimalShellApp(): string {
-  return `import React from 'react';
-
-export default function App() {
-  return (
-    <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', color: '#475569' }}>
-      <p>Start building — add a component to /src/App.tsx.</p>
-    </main>
-  );
-}
-`;
 }
 
 /**
@@ -150,4 +160,20 @@ export function assertWizardSnapshotPresent(
       { recoverableByRelaunch: true },
     );
   }
+}
+
+function tryParseRecord(raw: string | undefined): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'string') return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return readRecord(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }

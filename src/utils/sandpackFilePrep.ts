@@ -23,23 +23,30 @@ import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
 import { LAUNCHER_BASE_THEME } from '@/sections/themes';
 import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
-import { buildDefaultThemedIndexCss, buildThemedIndexCss, DEFAULT_PREVIEW_THEME_PRESET } from '@/components/onboarding/themePresetToIndexCss';
+import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
-import { resolveSnapshot, minimalShellApp } from '@/services/snapshotProjector';
+import { resolveSnapshot } from '@/services/snapshotProjector';
 
 const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
 
 const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 
 /**
- * Build a fallback /src/index.css from a wizard ThemePreset id.
+ * Build /src/index.css from a wizard ThemePreset id.
  * This unifies all CSS-injection sites on a SINGLE wizard-driven token system.
- * No path may hard-code 'modern' — the resolved preset (from wizard pick or
- * industry default) MUST flow through to here.
+ * No path may hard-code or default to 'modern' — the resolved preset (from
+ * wizard pick or industry selection) MUST flow through to here.
  */
 function buildBaseCssForPreset(presetId?: string | null): string {
-  const preset = (presetId && THEME_PRESETS.find((p) => p.id === presetId)) || DEFAULT_PREVIEW_THEME_PRESET;
+  const preset = presetId ? THEME_PRESETS.find((p) => p.id === presetId) : null;
+  if (!preset) {
+    throw new PreviewPipelineError(
+      'prep',
+      'Missing wizard themePresetId — refusing to apply a default/minimal template preset.',
+      { recoverableByRelaunch: true },
+    );
+  }
   return buildThemedIndexCss(preset);
 }
 
@@ -5217,7 +5224,11 @@ export function prepareSandpackFiles(
           { blockedFiles: [entryFlattened], recoverableByRelaunch: true },
         );
       } else {
-        sandpackFiles['/App.tsx'] = minimalShellApp();
+        throw new PreviewPipelineError(
+          'prep',
+          `Preview is missing strict entry ${entryFlattened} and no App.tsx exists — refusing to emit a minimal template.`,
+          { blockedFiles: [entryFlattened], recoverableByRelaunch: true },
+        );
       }
     } else if (cssResolution.isWizardDraft) {
       throw new PreviewPipelineError(
@@ -5226,10 +5237,11 @@ export function prepareSandpackFiles(
         { recoverableByRelaunch: true },
       );
     } else {
-      // Blank draft: render the minimal "Start building" shell — never proxy
-      // to a randomly-picked component (that's what produced the misleading
-      // "default editorial preset" symptom).
-      sandpackFiles['/App.tsx'] = minimalShellApp();
+      throw new PreviewPipelineError(
+        'prep',
+        'Preview is missing /App.tsx — refusing to emit a minimal template.',
+        { recoverableByRelaunch: true },
+      );
     }
   }
 
@@ -5526,6 +5538,7 @@ function recursivelyUnwrapJson(content: string, hintPath?: string, depth = 0): s
 interface SiteBundlePage {
   path: string;
   title?: string;
+  source?: { kind?: string; content?: string };
   output?: { html?: string; react?: string };
   sections?: Array<{ type: string; html?: string }>;
 }
@@ -5538,6 +5551,97 @@ interface SiteBundleCompileConfig {
   };
   entryPath?: string;
   debug?: boolean;
+}
+
+function readThemeValue(theme: Record<string, any>, key: string): string | null {
+  const flat = theme[key] ?? theme[`--${key}`];
+  if (typeof flat === 'string' && flat.trim()) return flat.trim();
+  const camel = key.replace(/-([a-z])/g, (_, char: string) => char.toUpperCase());
+  const nestedColor = theme.colors?.[camel];
+  if (typeof nestedColor === 'string' && nestedColor.trim()) return nestedColor.trim();
+  if (key === 'radius' && typeof theme.radius === 'string') return theme.radius.trim();
+  if (key === 'font-heading' && typeof theme.typography?.headingFont === 'string') return theme.typography.headingFont.trim();
+  if (key === 'font-body' && typeof theme.typography?.bodyFont === 'string') return theme.typography.bodyFont.trim();
+  return null;
+}
+
+function siteBundleThemeToCss(theme: Record<string, any> | undefined): string {
+  if (!theme || Object.keys(theme).length === 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      'SiteBundle is missing theme tokens — refusing to compile a default/minimal template preset.',
+      { recoverableByRelaunch: true },
+    );
+  }
+
+  const semanticKeys = [
+    'background',
+    'foreground',
+    'card',
+    'card-foreground',
+    'primary',
+    'primary-foreground',
+    'secondary',
+    'secondary-foreground',
+    'muted',
+    'muted-foreground',
+    'accent',
+    'accent-foreground',
+    'border',
+  ];
+  const vars = new Map<string, string>();
+  for (const key of semanticKeys) {
+    const value = readThemeValue(theme, key);
+    if (value) vars.set(key, value);
+  }
+  const radius = readThemeValue(theme, 'radius') || '0.75rem';
+  const headingFont = readThemeValue(theme, 'font-heading') || 'ui-sans-serif, system-ui, sans-serif';
+  const bodyFont = readThemeValue(theme, 'font-body') || 'ui-sans-serif, system-ui, sans-serif';
+
+  if (!vars.has('background') || !vars.has('foreground') || !vars.has('primary') || !vars.has('border')) {
+    throw new PreviewPipelineError(
+      'vfs',
+      'SiteBundle theme tokens are incomplete — refusing to compile a default/minimal template preset.',
+      { recoverableByRelaunch: true, cause: { missingKeys: semanticKeys.filter((key) => !vars.has(key)) } },
+    );
+  }
+
+  const background = vars.get('background')!;
+  const foreground = vars.get('foreground')!;
+  const border = vars.get('border')!;
+  vars.set('card', vars.get('card') || background);
+  vars.set('card-foreground', vars.get('card-foreground') || foreground);
+  vars.set('primary-foreground', vars.get('primary-foreground') || foreground);
+  vars.set('secondary', vars.get('secondary') || vars.get('primary')!);
+  vars.set('secondary-foreground', vars.get('secondary-foreground') || foreground);
+  vars.set('muted', vars.get('muted') || background);
+  vars.set('muted-foreground', vars.get('muted-foreground') || foreground);
+  vars.set('accent', vars.get('accent') || vars.get('secondary')!);
+  vars.set('accent-foreground', vars.get('accent-foreground') || foreground);
+  vars.set('input', readThemeValue(theme, 'input') || border);
+  vars.set('ring', readThemeValue(theme, 'ring') || vars.get('primary')!);
+
+  const themeVars = Array.from(vars.entries())
+    .map(([key, value]) => `  --${key}: ${value};`)
+    .join('\n');
+
+  return [
+    '@tailwind base;',
+    '@tailwind components;',
+    '@tailwind utilities;',
+    '',
+    ':root {',
+    themeVars,
+    `  --radius: ${radius};`,
+    `  --font-heading: ${headingFont};`,
+    `  --font-body: ${bodyFont};`,
+    '}',
+    '',
+    '* { border-color: hsl(var(--border)); }',
+    'html, body { min-height: 100vh; margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: var(--font-body); }',
+    'h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }',
+    '',
+  ].join('\n');
 }
 
 /**
@@ -5553,6 +5657,14 @@ export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<
     ? Array.isArray(siteBundle.pages) ? siteBundle.pages : Object.values(siteBundle.pages)
     : [];
 
+  if (pages.length === 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      'SiteBundle contains no pages — refusing to compile a default/minimal template.',
+      { recoverableByRelaunch: true },
+    );
+  }
+
   const vfs: Record<string, string> = {};
 
   // 1. Generate page components
@@ -5563,8 +5675,17 @@ export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<
     let pageCode: string;
     if (page.output?.react) {
       pageCode = page.output.react;
+    } else if (page.source?.kind === 'react_tsx' && page.source.content?.trim()) {
+      pageCode = page.source.content;
     } else {
-      const html = page.output?.html || '<div>Page content not generated</div>';
+      const html = page.output?.html || (page.source?.kind === 'html' ? page.source.content : undefined);
+      if (!html) {
+        throw new PreviewPipelineError(
+          'vfs',
+          `SiteBundle page "${page.path}" has no generated React or HTML output — refusing to emit placeholder content.`,
+          { blockedFiles: ['/src/pages/' + fileName + '.tsx'], recoverableByRelaunch: true },
+        );
+      }
       const jsx = html
         .replace(/ class="/g, ' className="')
         .replace(/<!--([\s\S]*?)-->/g, '{/* $1 */}')
@@ -5631,14 +5752,9 @@ export function compileSiteBundleToVFS(config: SiteBundleCompileConfig): Record<
     ');',
   ].join('\n');
 
-  // 4. Generate index.css with theme tokens
-  let css = buildDefaultThemedIndexCss();
-  if (siteBundle.theme) {
-    const themeVars = Object.entries(siteBundle.theme)
-      .map(([k, v]) => '  --' + k + ': ' + v + ';')
-      .join('\n');
-    css = css.replace(':root {', ':root {\n' + themeVars);
-  }
+  // 4. Generate index.css from SiteBundle theme tokens only. No default
+  // template preset is allowed here — SiteBundle/wizard context is authority.
+  const css = siteBundleThemeToCss(siteBundle.theme);
   vfs['/src/index.css'] = css;
 
   if (debug) {

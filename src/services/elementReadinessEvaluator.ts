@@ -124,30 +124,29 @@ async function getRowCount(
   const cacheKey = `${table}::${businessId ?? '*'}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
   try {
-    // Use a loose typing escape — table names are dynamic and validated by the registry.
-    let query = (supabase as unknown as {
+    // Table names are dynamic and validated by the registry — escape Supabase's
+    // generic typing.
+    type LooseQuery = {
+      eq: (col: string, val: string) => LooseQuery;
+    } & Promise<{ count: number | null; error: unknown }>;
+
+    const builder = (supabase as unknown as {
       from: (t: string) => {
-        select: (cols: string, opts: { count: 'exact'; head: true }) => {
-          eq: (col: string, val: string) => Promise<{ count: number | null; error: unknown }>;
-          then?: never;
-        } & Promise<{ count: number | null; error: unknown }>;
+        select: (cols: string, opts: { count: 'exact'; head: true }) => LooseQuery;
       };
-    }).from(table).select('id', { count: 'exact', head: true });
-    if (businessId) {
-      // Most tenant-scoped tables expose a `business_id` column; if not, the eq
-      // will error and we degrade to null below.
-      query = (query as unknown as { eq: (c: string, v: string) => typeof query }).eq(
-        'business_id',
-        businessId,
-      );
-    }
-    const res = (await query) as { count: number | null; error: unknown };
+    })
+      .from(table)
+      .select('id', { count: 'exact', head: true });
+
+    const query = businessId ? builder.eq('business_id', businessId) : builder;
+    const res = await query;
     if (res.error) {
       cache.set(cacheKey, null);
       return null;
     }
     cache.set(cacheKey, res.count ?? 0);
     return res.count ?? 0;
+
   } catch {
     cache.set(cacheKey, null);
     return null;

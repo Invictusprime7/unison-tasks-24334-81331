@@ -424,29 +424,13 @@ function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
     }
   }
 
-  // Reference cards are legacy-only and must never act as wizard fallbacks.
-  if (cards.length === 0) {
-    const allRefs = getAllReferences();
-    const universalHero = allRefs.find((r) => r.sectionType === "hero");
-    if (universalHero) {
-      cards.push({
-        id: "universal-default",
-        label: "Modern Professional",
-        description: "Versatile layout for any business type",
-        industry: "universal",
-        sectionTypes: ["hero", "features", "testimonials", "cta", "contact", "footer"],
-        traits: universalHero.traits.slice(0, 3),
-        heroRef: universalHero,
-      });
-    }
-  }
-
   return cards;
 }
 
 /**
  * Build template cards from real TemplateComposition objects.
- * Falls back to reference-based cards when no compositions exist for the system.
+ * Never synthesizes fallback cards; wizard templates must be registered
+ * TemplateComposition objects so the SiteBundle path owns every route.
  */
 function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[] {
   const compositions = getCompositionsBySystemType(systemId);
@@ -1407,7 +1391,6 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         primaryIntent: industryProfile?.primaryIntent,
         requestedPages: resolvedRequestedPages,
         scaffoldMode: resolvedScaffoldMode,
-        minimalScaffold: false,
         nativePublishReady: launchContract.nativePublishCapable && Boolean(ownerEmail),
         ownerEmail: ownerEmail || undefined,
         publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native-first-party' : 'manual-setup',

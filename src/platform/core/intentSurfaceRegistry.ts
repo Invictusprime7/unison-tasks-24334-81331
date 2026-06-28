@@ -249,7 +249,15 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     status: 'stable',
     triggerType: 'user-action',
     description: 'Add a product to the cart.',
+    backingTable: 'products',
+    rowAssertion: 'non-empty',
+    handlerBinding: 'native',
+    readinessFixture: {
+      description: 'Add at least one product before publishing the storefront.',
+      fixPath: '/settings/products',
+    },
   },
+
   'cart.view': {
     name: 'cart.view',
     namespace: 'commerce',

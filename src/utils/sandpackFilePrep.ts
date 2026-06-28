@@ -5166,7 +5166,13 @@ export function prepareSandpackFiles(
   }
 
   // ── CSS authority (snapshot-as-primary, no SEMANTIC_CSS_VARS fallback) ──
-  const cssResolution = resolveSnapshot(resolvedFiles, null);
+  // Wizard-draft hint: any caller that passes themePresetId is by definition
+  // routing through the launcher pipeline; treat as wizard even if the
+  // snapshot file hasn't landed in `resolvedFiles` yet (cold-hydration window).
+  const cssResolution = resolveSnapshot(resolvedFiles, null, {
+    wizardHint: Boolean(options?.themePresetId),
+    themePresetIdHint: options?.themePresetId ?? null,
+  });
   if (!hasCSS) {
     if (themedCSS) {
       sandpackFiles['/index.css'] = themedCSS;

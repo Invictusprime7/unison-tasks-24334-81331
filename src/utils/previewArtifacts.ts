@@ -5,6 +5,8 @@ import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
+import { runFullPreflight } from '@/services/runFullPreflight';
+import { resolveSnapshot } from '@/services/snapshotProjector';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;
@@ -83,24 +85,48 @@ export function buildPreviewArtifacts(
   // NO SWALLOW: any PreviewPipelineError (and any other unexpected throw)
   // propagates to VFSPreview, which renders PreviewRuntimeError. Silent
   // recovery here is what masked the "default fallback preset" symptom.
+  //
+  // For wizard drafts we run the FULL preflight (early repair → nav-wiring →
+  // industry forbidden-intent strip → final repair) so industry intent rules
+  // (e.g. nonprofit must not expose checkout/cart) survive even if some
+  // upstream commit bypassed vfsCommitService. For non-wizard drafts we keep
+  // the cheaper syntax-only gate.
   const industry = launchStateWithRecoveredTheme?.siteBundleSnapshot?.industry;
   const brand = launchStateWithRecoveredTheme?.businessName;
-  const gate = runPreflightRepair(stampedFiles, { context: { industry, brand } });
-  const sandpackFiles = gate.files;
-  if (gate.repairedCount > 0 || gate.quarantinedCount > 0) {
-    console.warn('[buildPreviewArtifacts] Preview parse gate:', {
-      clean: gate.cleanCount,
-      repaired: gate.repairedCount,
-      quarantined: gate.quarantinedCount,
-      details: gate.reports
-        .filter((r) => r.status !== 'clean')
-        .map((r) => ({ path: r.path, status: r.status, error: r.finalError?.slice(0, 200) })),
+  const wizardResolution = resolveSnapshot(stampedFiles, launchStateWithRecoveredTheme, {
+    wizardHint: Boolean(themePresetId),
+    themePresetIdHint: themePresetId,
+  });
+
+  let sandpackFiles: Record<string, string>;
+  if (wizardResolution.isWizardDraft) {
+    const full = runFullPreflight(stampedFiles, {
+      siteBundleSnapshot: wizardResolution.snapshot,
+      industry: industry || wizardResolution.snapshot?.industry,
+      brand,
     });
-    for (const r of gate.reports) {
-      if (r.status === 'clean') continue;
-      const src = stampedFiles[r.path];
-      if (typeof src === 'string') {
-        console.warn(`[buildPreviewArtifacts] ${r.status} ${r.path} head:\n${src.slice(0, 600)}`);
+    sandpackFiles = full.files;
+    if (full.stages.forbiddenStrip.stripped > 0) {
+      console.warn('[buildPreviewArtifacts] forbidden intents stripped at preview gate', full.stages.forbiddenStrip);
+    }
+  } else {
+    const gate = runPreflightRepair(stampedFiles, { context: { industry, brand } });
+    sandpackFiles = gate.files;
+    if (gate.repairedCount > 0 || gate.quarantinedCount > 0) {
+      console.warn('[buildPreviewArtifacts] Preview parse gate:', {
+        clean: gate.cleanCount,
+        repaired: gate.repairedCount,
+        quarantined: gate.quarantinedCount,
+        details: gate.reports
+          .filter((r) => r.status !== 'clean')
+          .map((r) => ({ path: r.path, status: r.status, error: r.finalError?.slice(0, 200) })),
+      });
+      for (const r of gate.reports) {
+        if (r.status === 'clean') continue;
+        const src = stampedFiles[r.path];
+        if (typeof src === 'string') {
+          console.warn(`[buildPreviewArtifacts] ${r.status} ${r.path} head:\n${src.slice(0, 600)}`);
+        }
       }
     }
   }

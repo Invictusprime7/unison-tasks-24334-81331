@@ -46,15 +46,24 @@ function tryParseSnapshot(raw: string | undefined): SiteBundleSnapshot | null {
  * or the persisted /.unison/site-bundle-snapshot.json. Also reports whether the
  * draft was created via the wizard (any wizard-produced artifact present).
  */
+export interface ResolveSnapshotHints {
+  /** Force isWizardDraft=true when the caller already knows (e.g. launcher path). */
+  wizardHint?: boolean;
+  /** Authoritative themePresetId hint when the snapshot file hasn't landed yet. */
+  themePresetIdHint?: string | null;
+}
+
 export function resolveSnapshot(
   sourceFiles: Record<string, string>,
   launchState?: LaunchState | null,
+  hints: ResolveSnapshotHints = {},
 ): SnapshotResolution {
   const snapshotFromState = launchState?.siteBundleSnapshot ?? null;
   const snapshotFromVfs = tryParseSnapshot(sourceFiles[SNAPSHOT_VFS_PATH]);
   const snapshot = snapshotFromState || snapshotFromVfs;
 
   const isWizardDraft = Boolean(
+    hints.wizardHint ||
     launchState ||
     snapshot ||
     sourceFiles[WIZARD_SEED_VFS_PATH] ||
@@ -65,6 +74,7 @@ export function resolveSnapshot(
     snapshot?.meta?.themePresetId ||
     launchState?.themePresetId ||
     launchState?.runtimeManifest?.appContext?.themePresetId ||
+    hints.themePresetIdHint ||
     null;
 
   return { snapshot, isWizardDraft, themePresetId: themePresetId ?? null };

@@ -109,6 +109,19 @@ export interface CommitMutationResult {
   persistedRevisionId: string | null;
   parentRevisionId: string | null;
   committedAt: string;
+  /** Move D — true iff PublishGate + element + intent + backend ops all pass. */
+  publishReady: boolean;
+  /** Aggregated, user-facing reasons publish is blocked. */
+  publishBlockers: PublishBlockerSummary[];
+  /** SHA-256 hex of the canonical file map at commit time (drift detection). */
+  vfsHash: string;
+}
+
+export interface PublishBlockerSummary {
+  source: 'publishGate' | 'intentReadiness' | 'elementReadiness' | 'backendOps' | 'preview';
+  code: string;
+  message: string;
+  meta?: Record<string, unknown>;
 }
 
 export class CommitRejectedError extends Error {

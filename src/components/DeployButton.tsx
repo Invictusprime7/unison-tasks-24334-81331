@@ -68,6 +68,11 @@ interface DeployButtonProps {
    * the vertical contract's `rowCountAssertions` server-side.
    */
   rowCounts?: Record<string, number>;
+  /**
+   * Move D — when supplied, the deploy refuses unless the latest
+   * publish_ready=true revision exists in the durable ledger for this project.
+   */
+  projectId?: string | null;
 }
 
 export function DeployButton({
@@ -82,6 +87,7 @@ export function DeployButton({
   snapshot = null,
   systemId = null,
   rowCounts,
+  projectId = null,
 }: DeployButtonProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [siteName, setSiteName] = useState(defaultSiteName || '');
@@ -141,6 +147,7 @@ export function DeployButton({
       snapshot,
       systemId: effectiveSystemId,
       rowCounts,
+      projectId,
     });
   };
 

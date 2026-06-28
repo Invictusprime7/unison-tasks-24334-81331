@@ -20,6 +20,7 @@ import {
   resolveVerticalLaunchContract,
   type VerticalLaunchContract,
 } from '@/services/verticalLaunchContract';
+import { loadLatestPublishReadyRevisionForProject } from '@/services/vfsCommitService';
 import type { BusinessSystemType } from '@/lib/infrastructureContext';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
@@ -54,6 +55,13 @@ export interface DeploymentRequest {
    * the vertical contract's `rowCountAssertions` before publish.
    */
   rowCounts?: Record<string, number>;
+  /**
+   * Move D — when supplied, the deploy refuses to ship unless the latest
+   * `publish_ready=true` revision exists for this project, and replaces
+   * `files`/`snapshot` with that durable revision's payload so we never
+   * publish unvetted in-memory state.
+   */
+  projectId?: string | null;
 }
 
 export interface DeploymentResponse {
@@ -205,6 +213,35 @@ export async function deployToProvider(
   };
 
   try {
+    // Move D — refuse to publish unless the latest commit was marked
+    // publish_ready=true in the durable revision ledger. When a projectId is
+    // supplied we use the ledger as the source of truth for files and
+    // snapshot, eliminating any chance of shipping un-committed live state.
+    if (request.projectId) {
+      const ready = await loadLatestPublishReadyRevisionForProject(request.projectId);
+      if (!ready) {
+        const errorResponse: DeploymentResponse = {
+          status: 'error',
+          provider: request.provider,
+          error:
+            'Publish blocked: no publish-ready revision exists. Resolve preview/readiness blockers and try again.',
+        };
+        onProgress?.({
+          isDeploying: false,
+          progress: 0,
+          message: 'Publish blocked — no publish-ready revision in the ledger.',
+          result: errorResponse,
+        });
+        return errorResponse;
+      }
+      // Use the durable ledger payload, not whatever the caller passed in.
+      request = {
+        ...request,
+        files: ready.vfsFiles,
+        snapshot: (ready.siteBundleSnapshot as SiteBundleSnapshot | null) ?? request.snapshot ?? null,
+      };
+    }
+
     // Closure B — publish gate. If a contract was supplied, enforce it BEFORE
     // any network/billing-incurring call. Stubbed business-critical capabilities
     // (commerce/auth/booking/lead-capture/quoting/donation) block publish even
@@ -377,6 +414,8 @@ export interface ProviderDeployOptions {
   /** @deprecated Use `snapshot.meta.systemId`. */
   systemId?: BusinessSystemType | null;
   rowCounts?: Record<string, number>;
+  /** Move D — enables ledger-backed publish enforcement. */
+  projectId?: string | null;
 }
 
 /**
@@ -397,6 +436,7 @@ export async function deployToVercel(
       snapshot: options?.snapshot ?? null,
       systemId: options?.systemId ?? null,
       rowCounts: options?.rowCounts,
+      projectId: options?.projectId ?? null,
     },
     onProgress
   );
@@ -420,6 +460,7 @@ export async function deployToNetlify(
       snapshot: options?.snapshot ?? null,
       systemId: options?.systemId ?? null,
       rowCounts: options?.rowCounts,
+      projectId: options?.projectId ?? null,
     },
     onProgress
   );

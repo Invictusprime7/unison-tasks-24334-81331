@@ -14,7 +14,7 @@
  */
 
 import type { IndustryProfile, PageSpec } from './industryMatrix';
-import { getIndustryProfile } from './industryMatrix';
+import { getIndustryProfile, normalizeIndustryKey } from './industryMatrix';
 import type {
   PageRegistry,
   BuilderPage,
@@ -110,14 +110,6 @@ export interface GeneratedSitePlan {
    * inherit from `/src/index.css` alone.
    */
   selectedThemePresetId?: string;
-  /**
-   * When true, the plan was produced in "minimal" mode: ONLY a Home page.
-   * Every additional page/funnel/route is expected to be authored by the
-   * in-Builder AI assistant in response to user prompts. Downstream stages
-   * (capability resolver, materializer, VFS scaffolder, router generator)
-   * MUST honor this flag and skip auto-expansion of capability-required pages.
-   */
-  isMinimal?: boolean;
 }
 
 // ============================================================================
@@ -200,69 +192,17 @@ export function planSiteTopology(
     selectedTemplateId?: string;
     /** Resolved ThemePreset id selected by the wizard Style card. */
     selectedThemePresetId?: string;
-    /**
-     * Minimal mode: produce ONLY a Home page. The in-Builder AI assistant is
-     * responsible for adding every other page/route/funnel on user prompt.
-     * Used by the Wizard Launcher to hand a clean canvas to the Builder.
-     */
-    minimal?: boolean;
   }
 ): GeneratedSitePlan {
-  if (options?.minimal) {
-    return planMinimalHomeTopology(businessName, industryKey, options.selectedTemplateId, options.selectedThemePresetId);
-  }
-
   const profile = getIndustryProfile(industryKey);
   if (!profile) {
-    // Fallback: generic site with home + contact
-    const generic = planGenericTopology(businessName);
-    if (options?.selectedTemplateId) generic.selectedTemplateId = options.selectedTemplateId;
-    if (options?.selectedThemePresetId) generic.selectedThemePresetId = options.selectedThemePresetId;
-    return generic;
+    throw new Error(
+      `[SiteTopologyPlanner] Unknown industry "${industryKey}" (normalized "${normalizeIndustryKey(industryKey)}"). ` +
+      'Refusing to emit generic/minimal topology; route generation must use a registered wizard industry profile.',
+    );
   }
 
   return planFromProfile(profile, businessName, options);
-}
-
-/**
- * Minimal topology — Home only. Used when the Wizard hands off to the Builder
- * AI which will create additional pages/routes/funnels on demand.
- */
-function planMinimalHomeTopology(
-  businessName: string,
-  industryKey: string,
-  selectedTemplateId?: string,
-  selectedThemePresetId?: string,
-): GeneratedSitePlan {
-  const siteId = generateUUID();
-  const homeId = generateUUID();
-  return {
-    siteId,
-    industry: industryKey || 'general',
-    businessName,
-    homePageId: homeId,
-    pages: [
-      {
-        id: homeId,
-        name: 'Home',
-        title: 'Home',
-        route: '/',
-        role: 'home',
-        filePath: '/src/pages/Home.tsx',
-        visibleInNav: true,
-        isHome: true,
-        generatedBy: 'wizard',
-        seo: { title: `Home | ${businessName}` },
-      },
-    ],
-    navItems: [homeId],
-    funnels: [],
-    redirects: [],
-    generatedAt: new Date().toISOString(),
-    selectedTemplateId,
-    selectedThemePresetId,
-    isMinimal: true,
-  };
 }
 
 function planFromProfile(
@@ -473,56 +413,6 @@ function planFromProfile(
 
 
   return plan;
-}
-
-function planGenericTopology(businessName: string): GeneratedSitePlan {
-  const siteId = generateUUID();
-  const homeId = generateUUID();
-  const contactId = generateUUID();
-
-  return {
-    siteId,
-    industry: 'general',
-    businessName,
-    homePageId: homeId,
-    pages: [
-      {
-        id: homeId,
-        name: 'Home',
-        title: 'Home',
-        route: '/',
-        role: 'home',
-        filePath: '/src/pages/Home.tsx',
-        visibleInNav: true,
-        isHome: true,
-        generatedBy: 'wizard',
-        seo: { title: `Home | ${businessName}` },
-      },
-      {
-        id: contactId,
-        name: 'Contact',
-        title: 'Contact',
-        route: '/contact',
-        role: 'contact',
-        filePath: '/src/pages/Contact.tsx',
-        visibleInNav: true,
-        isHome: false,
-        generatedBy: 'wizard',
-        seo: { title: `Contact | ${businessName}` },
-      },
-    ],
-    navItems: [homeId, contactId],
-    funnels: [],
-    redirects: [{
-      id: generateUUID(),
-      sourcePageId: homeId,
-      sourceElementLabel: 'Contact Us',
-      intent: 'nav.goto_page',
-      targetPageId: contactId,
-      targetRoute: '/contact',
-    }],
-    generatedAt: new Date().toISOString(),
-  };
 }
 
 // ============================================================================

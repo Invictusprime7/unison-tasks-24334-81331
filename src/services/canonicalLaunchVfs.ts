@@ -100,7 +100,7 @@ function cloneSnapshotWithRuntimeVfs(
       systemId: siteBundleSnapshot.meta?.systemId || appContext.systemType || null,
       themePresetId: appContext.themePresetId || siteBundleSnapshot.meta?.themePresetId,
       templateId: appContext.templateId || siteBundleSnapshot.meta?.templateId,
-      industry: appContext.industry || siteBundleSnapshot.meta?.industry,
+      industry: appContext.industry || siteBundleSnapshot.meta?.industry || siteBundleSnapshot.industry,
       verticalContractId: siteBundleSnapshot.meta?.verticalContractId || appContext.systemType || null,
     },
   };

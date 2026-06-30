@@ -81,6 +81,28 @@ function looksLikeMinimalPreviewFallback(content: string): boolean {
   return /return\s+<div>\s*Placeholder|return\s+<main>\s*Placeholder|Canonical\s+\w+\s+Stub|Canonical\s+\w+\s+Fallback|Generated\s+Home|Preview recovered|safe fallback was injected|AI-generated code will appear here|Welcome to AI Web Builder|fallback keeps the experience polished/i.test(normalized);
 }
 
+function cloneSnapshotWithRuntimeVfs(
+  siteBundleSnapshot: SiteBundleSnapshot,
+  appContext: RuntimeAppContext,
+  files: Record<string, string>,
+): SiteBundleSnapshot {
+  const runtimeVfsFiles = Object.fromEntries(
+    Object.entries(files).filter(([path]) => !path.startsWith('/.unison/')),
+  );
+
+  return {
+    ...siteBundleSnapshot,
+    appContext,
+    vfsFiles: runtimeVfsFiles,
+    meta: {
+      ...(siteBundleSnapshot.meta || {}),
+      themePresetId: appContext.themePresetId || siteBundleSnapshot.meta?.themePresetId,
+      templateId: appContext.templateId || siteBundleSnapshot.meta?.templateId,
+      industry: appContext.industry || siteBundleSnapshot.meta?.industry,
+    },
+  };
+}
+
 function buildCanonicalPlayground(
   siteBundleSnapshot?: SiteBundleSnapshot,
   canonicalPlayground?: PlaygroundState | Record<string, unknown> | null,
@@ -179,56 +201,56 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 ): Record<string, string> {
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
-  const readCanonical = (path: string): string | undefined => {
+  const pathVariants = (path: string): string[] => {
     const normalized = normalizePath(path);
-    return canonicalFiles[normalized] || canonicalFiles[normalized.slice(1)] || canonicalFiles[path];
+    const flattened = normalized.replace(/^\/src\//, '/');
+    return Array.from(new Set([
+      path,
+      normalized,
+      normalized.slice(1),
+      flattened,
+      flattened.slice(1),
+    ]));
+  };
+  const readCanonical = (path: string): string | undefined => {
+    for (const candidate of pathVariants(path)) {
+      const source = canonicalFiles[candidate];
+      if (typeof source === 'string') return source;
+    }
+    return undefined;
+  };
+  const readGenerated = (path: string): string | undefined => {
+    for (const candidate of pathVariants(path)) {
+      const source = generatedFiles[candidate];
+      if (typeof source === 'string') return source;
+    }
+    return undefined;
+  };
+  const removePathVariants = (target: Record<string, string>, path: string) => {
+    for (const candidate of pathVariants(path)) {
+      delete target[candidate];
+    }
   };
   const registeredPagePaths = new Set(
     registryPages
       .map((page) => page.filePath)
       .filter((path): path is string => Boolean(path))
-      .flatMap((path) => [path, normalizePath(path), normalizePath(path).slice(1)]),
+      .flatMap((path) => pathVariants(path)),
   );
-  // Snapshot authority is mandatory for wizard/system-launch sites. Registered
-  // pages, shared section components, App router, and injected CSS must stay
-  // byte-for-byte sourced from the SiteBundleSnapshot/WizardSeed pipeline.
-  // Allowing generated/Lane-B files to overwrite any of those paths is the
-  // remaining route by which hardcoded minimal themed pages surface in preview.
-  const lockRegisteredPagesToSiteBundle = Boolean(options.lockRegisteredPagesToCanonical);
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
-  const homeFilePathVariants = new Set([
-    homeFilePath,
-    normalizePath(homeFilePath),
-    normalizePath(homeFilePath).slice(1),
-  ]);
-  const homeAuthorityIsCanonical = Boolean(readCanonical(homeFilePath));
+  const generatedAppModule = readGenerated('/src/App.tsx');
+  const generatedAppCanSeedHome = Boolean(
+    generatedAppModule &&
+    !looksLikeCanonicalRouter(generatedAppModule) &&
+    !looksLikeMinimalPreviewFallback(generatedAppModule) &&
+    !readGenerated(homeFilePath)
+  );
 
-  const assertCanonicalPageIsRenderable = (path: string, content: string | undefined) => {
-    if (!content || !content.trim()) {
-      throw new PreviewPipelineError(
-        'vfs',
-        `SiteBundleSnapshot is missing registered wizard page ${path}; refusing to render a generated/minimal fallback.`,
-        { blockedFiles: [path], recoverableByRelaunch: true },
-      );
-    }
-    if (looksLikeMinimalPreviewFallback(content)) {
-      throw new PreviewPipelineError(
-        'vfs',
-        `SiteBundleSnapshot registered page ${path} contains minimal/fallback scaffold copy; refusing to surface it in preview.`,
-        { blockedFiles: [path], recoverableByRelaunch: true },
-      );
-    }
-  };
-
-  for (const page of registryPages) {
-    if (!page.filePath) continue;
-    const canonicalPage = readCanonical(page.filePath);
-    assertCanonicalPageIsRenderable(page.filePath, canonicalPage);
-  }
-
-  // Canonical snapshot is the base artifact for every route/component. Generated
-  // files can add non-authoritative extras, but cannot replace snapshot-owned UI.
+  // Canonical snapshot is the base for router/root support. Lane B is the
+  // authority for registered page bodies/components; after this merge we persist
+  // the enriched VFS back into the SiteBundleSnapshot so future preview hydrations
+  // do not restore stale canonical stubs over AI-authored wizard output.
   const merged = { ...canonicalFiles };
 
   for (const [path, content] of Object.entries(generatedFiles)) {
@@ -238,39 +260,73 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     // router, the AI's inlined composition would otherwise stay at /src/App.tsx
     // and get clobbered downstream by the WebBuilder's canonical router sync,
     // leaving the home route pointing at a placeholder.
+    const normalizedPath = normalizePath(path);
     const shouldMoveLegacyAppIntoHome =
-      (path === '/src/App.tsx' || path === '/App.tsx') &&
-      !generatedFiles[homeFilePath] &&
-      !looksLikeCanonicalRouter(content);
+      (normalizedPath === '/src/App.tsx' || normalizedPath === '/App.tsx') &&
+      generatedAppCanSeedHome;
 
     if (shouldMoveLegacyAppIntoHome) {
-      // Canonical SiteBundle Home is authoritative — never let AI's rebased App
-      // shell displace the role-pooled SiteBundle composition.
+      merged[normalizePath(homeFilePath)] = rebaseAppModuleForHomePage(content);
       continue;
     }
 
-    const normalizedPath = normalizePath(path);
-    const hasCanonicalAtPath = Boolean(readCanonical(path));
-    const isSnapshotOwnedPath = Boolean(
-      hasCanonicalAtPath && (
-        registeredPagePaths.has(path) ||
-        registeredPagePaths.has(normalizedPath) ||
-        normalizedPath === '/src/App.tsx' ||
-        normalizedPath === '/src/index.css' ||
-        normalizedPath.startsWith('/src/components/')
-      ),
-    );
-
-    // Snapshot-owned paths cannot be overwritten by generated/Lane-B output.
-    if (isSnapshotOwnedPath) {
+    if (registeredPagePaths.has(path) || registeredPagePaths.has(normalizedPath)) {
+      if (looksLikeMinimalPreviewFallback(content)) {
+        throw new PreviewPipelineError(
+          'vfs',
+          `Lane B generated minimal/fallback scaffold copy for registered page ${normalizedPath}; refusing to persist it into SiteBundleSnapshot.`,
+          { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
+        );
+      }
+      merged[normalizedPath] = content;
       continue;
     }
 
-    if (lockRegisteredPagesToSiteBundle && registeredPagePaths.has(path) && readCanonical(path)) {
+    // App.tsx is always a deterministic registry router and index.css must stay
+    // on the launcher-resolved theme token chain. Generated page/component files
+    // may win; generated routers may not.
+    if (normalizedPath === '/src/App.tsx' || normalizedPath === '/App.tsx') {
       continue;
     }
 
-    merged[path] = content;
+    if (normalizedPath === '/src/index.css') {
+      merged['/src/index.css'] = content;
+      continue;
+    }
+
+    if (looksLikeMinimalPreviewFallback(content)) {
+      continue;
+    }
+
+    merged[normalizedPath] = content;
+  }
+
+  for (const page of registryPages) {
+    if (!page.filePath) continue;
+    const normalizedPagePath = normalizePath(page.filePath);
+    const generatedPage = readGenerated(page.filePath);
+    const canonicalPage = readCanonical(page.filePath);
+    const existingMergedPage = merged[normalizedPagePath];
+
+    if (existingMergedPage && !looksLikeMinimalPreviewFallback(existingMergedPage)) {
+      removePathVariants(merged, page.filePath);
+      merged[normalizedPagePath] = existingMergedPage;
+      continue;
+    }
+
+    if (generatedPage && !looksLikeMinimalPreviewFallback(generatedPage)) {
+      removePathVariants(merged, page.filePath);
+      merged[normalizedPagePath] = generatedPage;
+      continue;
+    }
+
+    if (options.allowCanonicalPageFallback !== false && canonicalPage && !looksLikeMinimalPreviewFallback(canonicalPage)) {
+      removePathVariants(merged, page.filePath);
+      merged[normalizedPagePath] = canonicalPage;
+      continue;
+    }
+
+    removePathVariants(merged, page.filePath);
   }
 
   // Ensure a canonical router exists at /src/App.tsx. Without this the
@@ -480,16 +536,16 @@ export function buildCanonicalLaunchArtifacts(
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(input, entryPoint, input.siteBundleSnapshot);
-  const siteBundleSnapshot = input.siteBundleSnapshot
+  const runtimeSnapshotSeed = input.siteBundleSnapshot
     ? { ...input.siteBundleSnapshot, appContext }
     : undefined;
-  const canonicalPlayground = buildCanonicalPlayground(siteBundleSnapshot, input.canonicalPlayground);
+  const canonicalPlayground = buildCanonicalPlayground(runtimeSnapshotSeed, input.canonicalPlayground);
   const metadataFiles = Object.values(CANONICAL_METADATA_FILE_PATHS);
   const sessionKey = buildSessionKey(appContext, entryPoint);
   const runtimeManifest = createRuntimeManifest(mergedFiles, {
     entryPoint,
-    industry: input.industry || siteBundleSnapshot?.industry,
-    brandName: input.businessName || siteBundleSnapshot?.businessName,
+    industry: input.industry || runtimeSnapshotSeed?.industry,
+    brandName: input.businessName || runtimeSnapshotSeed?.businessName,
     aesthetic: input.aesthetic || undefined,
     backendRequired: input.backendRequired,
     appContext,
@@ -500,6 +556,9 @@ export function buildCanonicalLaunchArtifacts(
     extraDependencies: runtimeManifest.dependencies,
     themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
+  const siteBundleSnapshot = runtimeSnapshotSeed
+    ? cloneSnapshotWithRuntimeVfs(runtimeSnapshotSeed, appContext, viteReadyFiles)
+    : undefined;
   const files = upsertCanonicalMetadataFiles(viteReadyFiles, {
     appContext,
     runtimeManifest,

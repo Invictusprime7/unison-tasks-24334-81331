@@ -3042,9 +3042,6 @@ export default function ${componentName}Page() {
       injectCssIfMissing: !effectiveRouteState?.siteBundleSnapshot,
     });
 
-    const snapshotResolution = resolveSnapshot(normalizedFiles, effectiveRouteState as any);
-    assertNoMinimalFallbackPreview(normalizedFiles, snapshotResolution, 'Builder VFS import');
-
     const appKey = resolveLauncherEntryPoint(
       normalizedFiles,
       normalizedEntryPoint || launchEntryPoint,
@@ -3058,6 +3055,13 @@ export default function ${componentName}Page() {
       }
     }
 
+    const candidateFiles = {
+      ...virtualFS.getSandpackFiles(),
+      ...normalizedFiles,
+    };
+    const snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
+    assertNoMinimalFallbackPreview(candidateFiles, snapshotResolution, 'Builder VFS import');
+
     // End-to-end preflight before any template/page import lands in the VFS.
     // Mirrors the launcher + AI-apply paths so every entry point is guarded.
     const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
@@ -3065,7 +3069,7 @@ export default function ${componentName}Page() {
       siteBundleSnapshot: snapshotForPreflight,
       industry: snapshotForPreflight?.industry,
     }).files;
-    assertNoMinimalFallbackPreview(preflightedFiles, snapshotResolution, 'Builder VFS import preflight');
+    assertNoMinimalFallbackPreview({ ...candidateFiles, ...preflightedFiles }, snapshotResolution, 'Builder VFS import preflight');
 
     vfsImportFiles(preflightedFiles);
     const syncedEntry = syncBuilderFromFiles(

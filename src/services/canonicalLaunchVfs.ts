@@ -96,9 +96,12 @@ function cloneSnapshotWithRuntimeVfs(
     vfsFiles: runtimeVfsFiles,
     meta: {
       ...(siteBundleSnapshot.meta || {}),
+      source: siteBundleSnapshot.meta?.source || 'wizard',
+      systemId: siteBundleSnapshot.meta?.systemId || appContext.systemType || null,
       themePresetId: appContext.themePresetId || siteBundleSnapshot.meta?.themePresetId,
       templateId: appContext.templateId || siteBundleSnapshot.meta?.templateId,
       industry: appContext.industry || siteBundleSnapshot.meta?.industry,
+      verticalContractId: siteBundleSnapshot.meta?.verticalContractId || appContext.systemType || null,
     },
   };
 }

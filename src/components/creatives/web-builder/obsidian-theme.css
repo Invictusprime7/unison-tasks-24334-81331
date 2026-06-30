@@ -134,3 +134,86 @@
 
 /* Selection */
 .wb-obsidian ::selection { background: rgba(99, 102, 241, 0.3); }
+
+/* ---- Editor parity: purple legacy → obsidian indigo ------------------- */
+/* The legacy code-editor surfaces (CodeMirrorEditor, ModernFileExplorer,
+   AICodeAssistant, IntentDirectoryPanel, NavigationPanel, DesignSidebar,
+   design-studio/PropertiesPanel) were authored against a violet palette.
+   Re-map every shade to the same indigo/zinc tokens used by the shell so
+   spacing, type, and glow intensity feel uniform across the IDE. */
+.wb-obsidian [class*="bg-purple-"],
+.wb-obsidian [class*="from-purple-"],
+.wb-obsidian [class*="to-purple-"],
+.wb-obsidian [class*="via-purple-"] {
+  background-color: var(--wb-sub) !important;
+  background-image: none !important;
+}
+.wb-obsidian .bg-purple-600,
+.wb-obsidian .bg-purple-500,
+.wb-obsidian .hover\:bg-purple-500:hover,
+.wb-obsidian .hover\:bg-purple-600:hover {
+  background-color: var(--wb-accent) !important;
+  color: #fafafa !important;
+}
+.wb-obsidian .bg-purple-900\/90,
+.wb-obsidian .bg-purple-600\/20,
+.wb-obsidian .bg-purple-500\/20,
+.wb-obsidian .bg-purple-500\/10,
+.wb-obsidian .bg-purple-500\/5,
+.wb-obsidian .bg-\[\#1a1625\],
+.wb-obsidian .bg-\[\#211b2e\],
+.wb-obsidian .hover\:bg-\[\#1a1625\]:hover,
+.wb-obsidian .hover\:bg-\[\#211b2e\]:hover,
+.wb-obsidian .hover\:bg-purple-500\/10:hover,
+.wb-obsidian .hover\:bg-purple-500\/5:hover {
+  background-color: var(--wb-sub) !important;
+}
+.wb-obsidian [class*="border-purple-"] { border-color: var(--wb-hairline) !important; }
+.wb-obsidian .text-purple-200,
+.wb-obsidian .text-purple-400,
+.wb-obsidian .text-purple-500,
+.wb-obsidian .text-purple-600 { color: var(--wb-text) !important; }
+.wb-obsidian .text-purple-300\/70,
+.wb-obsidian .text-purple-300\/50 { color: var(--wb-muted) !important; }
+
+/* Quiet the pulsing AI-highlight on the file tree to match the shell's
+   restrained glow vocabulary. */
+.wb-obsidian .animate-pulse.bg-purple-500\/20 {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+}
+
+/* ---- Spacing & typography parity -------------------------------------- */
+/* All editor descendants inherit Inter + the shell's tracking/leading so
+   the code panels, file tree, and AI assistant align with the topbar. */
+.wb-obsidian,
+.wb-obsidian button,
+.wb-obsidian input,
+.wb-obsidian textarea,
+.wb-obsidian select,
+.wb-obsidian [role="tab"],
+.wb-obsidian [role="menuitem"] {
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.005em;
+}
+.wb-obsidian textarea.font-mono,
+.wb-obsidian pre,
+.wb-obsidian code,
+.wb-obsidian .font-mono {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace !important;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+}
+/* Code editor panes share a single line-height and 14px default to match
+   the floating dock + topbar density. */
+.wb-obsidian textarea.font-mono { line-height: 1.55 !important; font-size: 13.5px !important; }
+.wb-obsidian .text-\[10px\] { letter-spacing: 0.01em; }
+
+/* ---- Focus rings: one accent, one intensity --------------------------- */
+.wb-obsidian *:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 1.5px var(--wb-accent) !important;
+}
+.wb-obsidian .focus\:ring-2:focus,
+.wb-obsidian .focus\:ring-primary\/50:focus {
+  --tw-ring-color: var(--wb-accent) !important;
+  box-shadow: 0 0 0 1.5px var(--wb-accent) !important;
+}

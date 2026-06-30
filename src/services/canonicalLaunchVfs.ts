@@ -78,7 +78,7 @@ function looksLikeCanonicalRouter(content: string): boolean {
 
 function looksLikeMinimalPreviewFallback(content: string): boolean {
   const normalized = content.replace(/\s+/g, ' ').trim();
-  return /Placeholder|Canonical\s+\w+\s+Stub|Canonical\s+\w+\s+Fallback|Generated\s+Home|Preview recovered|safe fallback was injected|AI-generated code will appear here|Welcome to AI Web Builder|fallback keeps the experience polished/i.test(normalized);
+  return /return\s+<div>\s*Placeholder|return\s+<main>\s*Placeholder|Canonical\s+\w+\s+Stub|Canonical\s+\w+\s+Fallback|Generated\s+Home|Preview recovered|safe fallback was injected|AI-generated code will appear here|Welcome to AI Web Builder|fallback keeps the experience polished/i.test(normalized);
 }
 
 function buildCanonicalPlayground(

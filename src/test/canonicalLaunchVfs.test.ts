@@ -23,6 +23,7 @@ function createSnapshot(): SiteBundleSnapshot {
     vfsFiles: {
       "/src/App.tsx": "import { Routes, Route } from 'react-router-dom';\nimport Home from './pages/Home';\nexport default function App(){ return <Routes><Route path=\"/\" element={<Home />} /></Routes>; }",
       "/src/pages/Home.tsx": "export default function Home(){ return <div>Placeholder</div>; }",
+      "/src/index.css": ":root { --primary: 221.2 83.2% 53.3%; --background: 0 0% 100%; --foreground: 222.2 84% 4.9%; }",
     },
     routerFile: {
       path: "/src/App.tsx",

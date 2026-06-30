@@ -3,6 +3,18 @@ import type { LaunchState } from '@/types/launchState';
 const LAUNCHER_HANDOFF_KEY = 'unison.systemLauncher.pendingHandoff.v1';
 const HANDOFF_TTL_MS = 30 * 60 * 1000;
 
+const COMPACT_UNISON_METADATA_PATHS = new Set([
+  '/.unison/app-context.json',
+  '/.unison/runtime-manifest.json',
+  '/.unison/canonical-playground.json',
+  '/.unison/wizard-seed.json',
+  '/.unison/launch-readiness.json',
+  '/.unison/native-publish-setup.json',
+  '/.unison/setup-snapshot.json',
+  '/.unison/intent-bindings.json',
+  '/.unison/intent-surfaces.json',
+]);
+
 export interface LauncherHandoffSnapshot {
   targetPath: '/web-builder';
   createdAt: string;
@@ -24,12 +36,24 @@ function compactVfsFiles(value: unknown): Record<string, string> | undefined {
   const out: Record<string, string> = {};
   for (const [path, content] of Object.entries(value as Record<string, unknown>)) {
     if (typeof content !== 'string') continue;
-    if (path.startsWith('/.unison/')) continue;
+    if (path.startsWith('/.unison/')) {
+      if (COMPACT_UNISON_METADATA_PATHS.has(path)) out[path] = content;
+      continue;
+    }
     if (/^\/(src|public)\//.test(path) || /^\/(index\.html|package\.json|tsconfig\.json|vite\.config\.ts|tailwind\.config\.ts|postcss\.config\.js)$/.test(path)) {
       out[path] = content;
     }
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function upsertJsonFile(files: Record<string, string>, path: string, value: unknown) {
+  if (files[path] || value === undefined || value === null) return;
+  try {
+    files[path] = JSON.stringify(value, null, 2);
+  } catch {
+    // Ignore non-serializable metadata in the emergency compact handoff.
+  }
 }
 
 function buildFallbackRouteState(routeState: Record<string, unknown>) {
@@ -44,11 +68,19 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // recompile + readiness surfaces don't see "dead" tokens/seeds when the
   // primary sessionStorage write hit quota and we fell through to this trimmed
   // fallback payload.
-  const compactFiles = compactVfsFiles(routeState.vfsFiles);
-  const hasDurableWizardFiles = !!compactFiles && Object.keys(compactFiles).length > 0;
+  const compactFiles = compactVfsFiles(routeState.vfsFiles) || {};
+  upsertJsonFile(compactFiles, '/.unison/runtime-manifest.json', routeState.runtimeManifest);
+  upsertJsonFile(compactFiles, '/.unison/canonical-playground.json', routeState.canonicalPlayground || routeState.materializedPlayground);
+  upsertJsonFile(compactFiles, '/.unison/wizard-seed.json', routeState.wizardSeed);
+  upsertJsonFile(compactFiles, '/.unison/launch-readiness.json', routeState.nativeReadinessManifest || routeState.launchReadiness);
+  upsertJsonFile(compactFiles, '/.unison/native-publish-setup.json', routeState.setupSnapshot);
+  upsertJsonFile(compactFiles, '/.unison/setup-snapshot.json', routeState.setupSnapshot);
+
   const snapshot = routeState.siteBundleSnapshot && typeof routeState.siteBundleSnapshot === 'object'
     ? { ...(routeState.siteBundleSnapshot as Record<string, unknown>), vfsFiles: compactFiles }
     : routeState.siteBundleSnapshot;
+  upsertJsonFile(compactFiles, '/.unison/site-bundle-snapshot.json', snapshot);
+  const hasDurableWizardFiles = Object.keys(compactFiles).length > 0;
   const compiledPlayground = routeState.compiledPlayground && typeof routeState.compiledPlayground === 'object'
     ? { ...(routeState.compiledPlayground as Record<string, unknown>), vfsFiles: compactFiles }
     : routeState.compiledPlayground;

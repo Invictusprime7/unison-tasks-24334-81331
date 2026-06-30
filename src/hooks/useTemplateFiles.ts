@@ -284,10 +284,10 @@ export function useTemplateFiles() {
             updated_at: new Date().toISOString(),
           })
           .eq("id", existingDraftId)
-          .select("id")
+          .select("id, project_id")
           .single();
         if (updateError) throw updateError;
-        data = updated;
+        data = updated as { id: string; project_id?: string | null };
       } else {
         const { data: inserted, error: insertError } = await supabase
           .from("builder_drafts")
@@ -300,21 +300,26 @@ export function useTemplateFiles() {
             vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
             metadata,
           })
-          .select("id")
+          .select("id, project_id")
           .single();
         if (insertError) throw insertError;
-        data = inserted;
+        data = inserted as { id: string; project_id?: string | null };
       }
 
       if (!data) throw new Error("Failed to persist draft");
 
       await syncCanonicalComponentGraph({
-        projectId: payload?.projectId ?? null,
+        projectId: payload?.projectId ?? (data as { project_id?: string | null }).project_id ?? null,
         draftId: data.id,
         canonicalPlayground: payload?.canonicalPlayground,
       });
 
       setCurrentTemplateId(data.id);
+      const resolvedProjectId =
+        payload?.projectId ??
+        (data as { project_id?: string | null }).project_id ??
+        null;
+      setCurrentProjectId(resolvedProjectId);
       toast.success("Project saved!", {
         description: `"${name}" has been saved successfully`,
       });

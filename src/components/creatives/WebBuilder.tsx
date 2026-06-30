@@ -159,7 +159,7 @@ import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistenc
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
-import { assertNoMinimalFallbackPreview, resolveSnapshot } from '@/services/snapshotProjector';
+import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
 import PreviewCartDrawer from '@/components/preview/PreviewCartDrawer';
 import {
@@ -3053,11 +3053,14 @@ export default function ${componentName}Page() {
       }
     }
 
-    const candidateFiles = {
+    let candidateFiles = {
       ...virtualFSRef.current.getSandpackFiles(),
       ...normalizedFiles,
     };
-    const snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
+    let snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
+    candidateFiles = projectSnapshotVfsFiles(candidateFiles, snapshotResolution);
+    snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
+    Object.assign(normalizedFiles, candidateFiles, normalizedFiles);
     assertNoMinimalFallbackPreview(candidateFiles, snapshotResolution, 'Builder VFS import');
 
     // End-to-end preflight before any template/page import lands in the VFS.
@@ -5068,13 +5071,15 @@ export default function ${componentName}Page() {
       const normalizedEntryPoint = launcherEntryPoint
         ? (launcherEntryPoint.startsWith('/') ? launcherEntryPoint : `/${launcherEntryPoint}`)
         : null;
-      const vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
+      let vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
         entryPoint: normalizedEntryPoint || launcherEntryPoint,
         themePresetId: resolvedThemePresetId,
         injectCssIfMissing: !(navState.siteBundleSnapshot || navState.fromLauncher),
       });
 
-      const wizardResolution = resolveSnapshot(vfsFiles, navState as any);
+      let wizardResolution = resolveSnapshot(vfsFiles, navState as any);
+      vfsFiles = projectSnapshotVfsFiles(vfsFiles, wizardResolution);
+      wizardResolution = resolveSnapshot(vfsFiles, navState as any);
       assertNoMinimalFallbackPreview(vfsFiles, wizardResolution, 'Launcher handoff import');
       if (wizardResolution.isWizardDraft && !vfsFiles['/src/index.css']) {
         throw new Error('[WebBuilder] Launcher handoff is missing injected /src/index.css from SiteBundleSnapshot; refusing preview CSS fallback.');

@@ -1407,7 +1407,45 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         throw new Error(msg);
       }
 
-      const pipelineResult = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
+      // ── Pre-seed for page composition ────────────────────────────────────
+      // Build a minimal WizardSeed BEFORE commitToPipeline so the canonical
+      // pipeline's page scaffolder (topologyVFSScaffolder.tryCompose*) can
+      // overlay brand/industry/tagline onto every composed page hash route.
+      // The full seed (canonical pages, intents, binding guide) is written
+      // later at /.unison/wizard-seed.json once all artifacts exist; that
+      // write IDEMPOTENTLY overwrites this pre-seed with the richer payload.
+      const preWizardSeed = {
+        version: '1.0',
+        id: wizardSelections.wizardSeedId,
+        source: 'system-launcher:pre-pipeline',
+        business: {
+          name: businessName.trim(),
+          industry: resolvedIndustry,
+          primaryGoal: resolvedPrimaryGoal,
+          tagline: `Professional ${system.name.toLowerCase()} services you can trust`,
+          systemType: selectedSystem,
+        },
+        template: {
+          id: effectiveTemplate?.id,
+          label: effectiveTemplate?.label || system.name,
+        },
+        theme: {
+          presetId: earlyResolvedPreset.id,
+          presetLabel: earlyResolvedPreset.label,
+        },
+        generation: {
+          scaffoldMode: resolvedScaffoldMode,
+          socials: userSocials,
+        },
+      };
+      const preWiredExistingFiles: Record<string, string> = {
+        '/.unison/wizard-seed.json': JSON.stringify(preWizardSeed, null, 2),
+      };
+
+      const pipelineResult = commitToPipeline(
+        { selections: wizardSelections, existingVfsFiles: preWiredExistingFiles },
+        'wizard-launch',
+      );
       const {
         playground: materializedPlayground,
         compileResult: compiledPlayground,

@@ -211,6 +211,22 @@ function nodesToFileMap(nodes: VirtualNode[]): Record<string, string> {
   return files;
 }
 
+function hasRenderablePreviewSource(files: Record<string, string>): boolean {
+  return Object.entries(files).some(([path, content]) => {
+    if (typeof content !== 'string' || content.trim().length === 0) return false;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+    // Metadata, config, public assets, and hidden Unison handoff files are not
+    // preview entrypoints. A blank builder draft can legitimately contain only
+    // these files while the user is still starting a project.
+    if (normalizedPath.includes('/.') || normalizedPath.endsWith('.json')) return false;
+    if (normalizedPath.includes('/public/') || normalizedPath.includes('node_modules')) return false;
+    if (/\.config\.[cm]?[jt]s$/.test(normalizedPath)) return false;
+
+    return /\.(tsx?|jsx?|css|html)$/.test(normalizedPath);
+  });
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -284,13 +300,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
   const isWizardPreview = useMemo(() => resolveSnapshot(files, launch).isWizardDraft, [files, launch]);
   
-  const { sandpackFiles, dependencies: sandpackDeps, pipelineError } = useMemo(() => {
+  const { sandpackFiles, dependencies: sandpackDeps, pipelineError, emptyDraft } = useMemo(() => {
+    if (!isWizardPreview && !hasRenderablePreviewSource(files)) {
+      return {
+        sandpackFiles: {} as Record<string, string>,
+        dependencies: {} as Record<string, string>,
+        pipelineError: null as PreviewPipelineError | null,
+        emptyDraft: true,
+      };
+    }
+
     try {
       const result = buildPreviewArtifacts({
         sourceFiles: files,
         launchState: launch,
       });
-      return { ...result, pipelineError: null as PreviewPipelineError | null };
+      return { ...result, pipelineError: null as PreviewPipelineError | null, emptyDraft: false };
     } catch (err) {
       if (isPreviewPipelineError(err)) {
         console.error('[VFSPreview] Pipeline error:', err);
@@ -298,11 +323,12 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           sandpackFiles: {} as Record<string, string>,
           dependencies: {} as Record<string, string>,
           pipelineError: err,
+          emptyDraft: false,
         };
       }
       throw err;
     }
-  }, [files, launch]);
+  }, [files, launch, isWizardPreview]);
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
   useEffect(() => {
@@ -752,6 +778,36 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
             window.location.assign('/system-launcher');
           }}
         />
+      </div>
+    );
+  }
+
+  if (emptyDraft) {
+    return (
+      <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
+        {showToolbar && (
+          <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+                <Zap className="h-3 w-3" /> Preview idle
+              </div>
+            </div>
+            <Button size="sm" variant="ghost" onClick={handleRestart} className="h-7 w-7 p-0" title="Refresh preview">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+        <div className="flex flex-1 items-center justify-center p-6 text-center">
+          <div className="max-w-sm space-y-2">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-border bg-muted/60">
+              <Zap className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <h3 className="text-sm font-semibold text-foreground">Preview waiting for app files</h3>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Start from a template or ask AI Builder to create a page. The preview will compile as soon as a real React entry or page file exists.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }

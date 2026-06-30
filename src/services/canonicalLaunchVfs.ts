@@ -243,11 +243,26 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
   const generatedAppModule = readGenerated('/src/App.tsx');
+
+  // SNAPSHOT-FIRST HOME AUTHORITY (Pass 2 — theme parity guarantee).
+  // The canonical SiteBundleSnapshot composes Home.tsx with semantic Tailwind
+  // tokens (bg-background, text-foreground, …) so the wizard's themed
+  // /src/index.css applies uniformly across every industry. If an AI-authored
+  // /src/App.tsx silently rebases into Home.tsx (which historically ships
+  // hardcoded hex colors), the home route loses the theme override while every
+  // other registered page keeps it — the exact regression where Home renders
+  // un-themed across industries. Refuse to seed home from generated App.tsx
+  // whenever the canonical snapshot already provides a real, non-fallback home.
+  const canonicalHome = readCanonical(homeFilePath);
+  const canonicalHomeIsAuthoritative = Boolean(
+    canonicalHome && canonicalHome.trim() && !looksLikeMinimalPreviewFallback(canonicalHome),
+  );
   const generatedAppCanSeedHome = Boolean(
     generatedAppModule &&
     !looksLikeCanonicalRouter(generatedAppModule) &&
     !looksLikeMinimalPreviewFallback(generatedAppModule) &&
-    !readGenerated(homeFilePath)
+    !readGenerated(homeFilePath) &&
+    !canonicalHomeIsAuthoritative
   );
 
   // Canonical snapshot is the base for router/root support. Lane B is the
@@ -257,12 +272,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const merged = { ...canonicalFiles };
 
   for (const [path, content] of Object.entries(generatedFiles)) {
-    // Rebase any non-router App.tsx into the home page file whenever the AI
-    // hasn't already produced a dedicated home page. This must NOT be gated on
-    // `canonicalFiles['/src/App.tsx']` — when the canonical snapshot ships no
-    // router, the AI's inlined composition would otherwise stay at /src/App.tsx
-    // and get clobbered downstream by the WebBuilder's canonical router sync,
-    // leaving the home route pointing at a placeholder.
     const normalizedPath = normalizePath(path);
     const shouldMoveLegacyAppIntoHome =
       (normalizedPath === '/src/App.tsx' || normalizedPath === '/App.tsx') &&

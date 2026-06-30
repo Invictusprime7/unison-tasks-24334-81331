@@ -32,6 +32,8 @@ export interface SnapshotResolution {
   themePresetId: string | null;
 }
 
+const MINIMAL_PREVIEW_FALLBACK_RE = /return\s+<div>\s*Placeholder|return\s+<main>\s*Placeholder|Canonical\s+\w+\s+Stub|Canonical\s+\w+\s+Fallback|Generated\s+Home|Preview recovered|safe fallback was injected|AI-generated code will appear here|Welcome to AI Web Builder|New site preview|Coming soon|fallback keeps the experience polished/i;
+
 function tryParseSnapshot(raw: string | undefined): SiteBundleSnapshot | null {
   if (!raw || typeof raw !== 'string') return null;
   try {
@@ -112,6 +114,8 @@ export function ensureSnapshotTokens(
   existingCss: string | undefined,
   resolution: SnapshotResolution,
 ): string {
+  assertWizardSnapshotPresent(resolution, 'Preview CSS projection');
+
   const existing = existingCss ?? '';
   if (existing && TOKEN_PROBE_RE.test(existing)) {
     return existing;
@@ -149,6 +153,54 @@ export function assertWizardSnapshotPresent(
       `${context} — Wizard draft is missing SiteBundleSnapshot. Re-run the System Launcher.`,
       { recoverableByRelaunch: true },
     );
+  }
+}
+
+/**
+ * Registered wizard routes must be backed by real SiteBundleSnapshot page files.
+ * This is the final runtime guard against old hardcoded/minimal preview shells
+ * leaking into hash routes after VFS import, flattening, or handoff recovery.
+ */
+export function assertNoMinimalFallbackPreview(
+  files: Record<string, string>,
+  resolution: SnapshotResolution,
+  context = 'Preview runtime',
+): void {
+  if (!resolution.isWizardDraft) return;
+  assertWizardSnapshotPresent(resolution, context);
+
+  const pages = Object.values(resolution.snapshot?.pageRegistry?.pages || {});
+  for (const page of pages) {
+    const filePath = (page as { filePath?: string }).filePath;
+    if (!filePath) continue;
+    const normalized = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    const flattened = normalized.replace(/^\/src\//, '/');
+    const variants = [
+      normalized,
+      normalized.slice(1),
+      flattened,
+      flattened.slice(1),
+    ];
+    const source = variants
+      .map((candidate) => files[candidate])
+      .find((value): value is string => typeof value === 'string');
+
+    if (!source || !source.trim()) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `${context} is missing registered SiteBundleSnapshot page ${normalized}; refusing to render a minimal fallback route.`,
+        { blockedFiles: [normalized], recoverableByRelaunch: true },
+      );
+    }
+
+    const compact = source.replace(/\s+/g, ' ').trim();
+    if (MINIMAL_PREVIEW_FALLBACK_RE.test(compact)) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `${context} detected minimal/fallback scaffold copy in registered page ${normalized}; refusing to surface it in preview.`,
+        { blockedFiles: [normalized], recoverableByRelaunch: true },
+      );
+    }
   }
 }
 

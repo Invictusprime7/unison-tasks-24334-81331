@@ -1960,6 +1960,15 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // Template file management
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const templateFiles = useTemplateFiles();
+  // Pass 2 (identity hardening): resolved real projects.id for the active
+  // draft. Used to construct BuilderIdentity at commit/deploy/AI-apply
+  // boundaries instead of aliasing the draft id as projectId.
+  const resolvedProjectId =
+    templateFiles.currentProjectId ||
+    (effectiveRouteState?.projectId as string | undefined) ||
+    (urlId as string | undefined) ||
+    currentTemplateId ||
+    null;
 
   const hydrateSavedTemplate = useCallback((template: {
     name: string;

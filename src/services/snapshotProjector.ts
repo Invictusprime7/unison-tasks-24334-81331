@@ -19,6 +19,7 @@ import {
 } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { PreviewPipelineError } from './previewPipelineError';
+import { CanonicalRuntimeError } from '@/platform/core/canonicalRuntimeError';
 
 const SNAPSHOT_VFS_PATH = '/.unison/site-bundle-snapshot.json';
 const WIZARD_SEED_VFS_PATH = '/.unison/wizard-seed.json';

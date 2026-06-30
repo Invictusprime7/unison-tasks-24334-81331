@@ -177,6 +177,11 @@ const draftRowToTemplate = (row: any): SavedTemplate => {
 export function useTemplateFiles() {
   const [loading, setLoading] = useState(false);
   const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null);
+  // Pass 2 (identity hardening): real `projects.id` for the active draft.
+  // Tracked separately from `currentTemplateId` (which is the draft id) to
+  // purge the long-standing `projectId === templateId === draftId` aliasing
+  // that fed BuilderIdentity at commit/deploy/AI-apply boundaries.
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const cloudDraftWritesDisabledRef = useRef(false);
   const cloudDraftWarningShownRef = useRef(false);
 

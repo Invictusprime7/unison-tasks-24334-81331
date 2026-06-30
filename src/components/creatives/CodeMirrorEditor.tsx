@@ -147,12 +147,12 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
       />
       
       {/* Language indicator */}
-      <div className="absolute top-2 right-2 px-3 py-1 bg-purple-900/90 text-purple-200 text-xs font-semibold rounded backdrop-blur-sm border border-purple-500/30">
+      <div className="absolute top-2 right-2 px-2.5 py-1 bg-zinc-900/90 text-zinc-200 text-[10px] font-medium tracking-wide rounded-md backdrop-blur-sm border border-zinc-700/50">
         {language.toUpperCase()}
       </div>
-      
+
       {/* Line count indicator */}
-      <div className="absolute bottom-2 right-2 px-3 py-1 bg-purple-900/90 text-purple-300 text-xs rounded backdrop-blur-sm border border-purple-500/30">
+      <div className="absolute bottom-2 right-2 px-2.5 py-1 bg-zinc-900/90 text-zinc-400 text-[10px] rounded-md backdrop-blur-sm border border-zinc-700/50">
         {value.split('\n').length} lines
       </div>
     </div>

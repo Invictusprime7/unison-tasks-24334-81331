@@ -75,6 +75,11 @@ function looksLikeCanonicalRouter(content: string): boolean {
   return /react-router-dom|<Routes\b|<Route\b|BrowserRouter|HashRouter|createBrowserRouter/.test(content);
 }
 
+function looksLikeMinimalPreviewFallback(content: string): boolean {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  return /Placeholder|Canonical\s+\w+\s+Stub|Canonical\s+\w+\s+Fallback|Generated\s+Home|Preview recovered|safe fallback was injected|AI-generated code will appear here|Welcome to AI Web Builder|fallback keeps the experience polished/i.test(normalized);
+}
+
 function buildCanonicalPlayground(
   siteBundleSnapshot?: SiteBundleSnapshot,
   canonicalPlayground?: PlaygroundState | Record<string, unknown> | null,
@@ -183,15 +188,11 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       .filter((path): path is string => Boolean(path))
       .flatMap((path) => [path, normalizePath(path), normalizePath(path).slice(1)]),
   );
-  // Composition Authority lock is OPT-IN for the FULL registry, but the
-  // HOME page is ALWAYS canonical-first when the SiteBundle ships a Home
-  // composition. Reason: AI Lane B almost always emits an inlined /src/App.tsx
-  // shell that gets rebased into /src/pages/Home.tsx and displaces the rich
-  // role-pooled Home composition (navbar+hero+services+features+testimonials+
-  // cta+footer). Sub-pages, by contrast, are usually missing from Lane B and
-  // get backfilled from canonical — producing the visible asymmetry where
-  // every route is rich except Home, which renders a minimal shell.
-  // See: mem://architecture/site-os/composition-authority.
+  // Snapshot authority is mandatory for wizard/system-launch sites. Registered
+  // pages, shared section components, App router, and injected CSS must stay
+  // byte-for-byte sourced from the SiteBundleSnapshot/WizardSeed pipeline.
+  // Allowing generated/Lane-B files to overwrite any of those paths is the
+  // remaining route by which hardcoded minimal themed pages surface in preview.
   const lockRegisteredPagesToSiteBundle = Boolean(options.lockRegisteredPagesToCanonical);
   const homePage = registryPages.find((page) => page.isHome) || registryPages[0];
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
@@ -202,15 +203,32 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   ]);
   const homeAuthorityIsCanonical = Boolean(readCanonical(homeFilePath));
 
-  // Canonical scaffold is metadata-only for non-home registered pages (unless
-  // locked). Home content from canonical is ALWAYS preserved when present.
-  const merged = Object.fromEntries(
-    Object.entries(canonicalFiles).filter(([path]) => {
-      if (lockRegisteredPagesToSiteBundle) return true;
-      if (homeAuthorityIsCanonical && homeFilePathVariants.has(path)) return true;
-      return !registeredPagePaths.has(path);
-    }),
-  ) as Record<string, string>;
+  const assertCanonicalPageIsRenderable = (path: string, content: string | undefined) => {
+    if (!content || !content.trim()) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `SiteBundleSnapshot is missing registered wizard page ${path}; refusing to render a generated/minimal fallback.`,
+        { blockedFiles: [path], recoverableByRelaunch: true },
+      );
+    }
+    if (looksLikeMinimalPreviewFallback(content)) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `SiteBundleSnapshot registered page ${path} contains minimal/fallback scaffold copy; refusing to surface it in preview.`,
+        { blockedFiles: [path], recoverableByRelaunch: true },
+      );
+    }
+  };
+
+  for (const page of registryPages) {
+    if (!page.filePath) continue;
+    const canonicalPage = readCanonical(page.filePath);
+    assertCanonicalPageIsRenderable(page.filePath, canonicalPage);
+  }
+
+  // Canonical snapshot is the base artifact for every route/component. Generated
+  // files can add non-authoritative extras, but cannot replace snapshot-owned UI.
+  const merged = { ...canonicalFiles };
 
   for (const [path, content] of Object.entries(generatedFiles)) {
     // Rebase any non-router App.tsx into the home page file whenever the AI
@@ -225,16 +243,25 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       !looksLikeCanonicalRouter(content);
 
     if (shouldMoveLegacyAppIntoHome) {
-      // Canonical SiteBundle Home is authoritative when present — never let
-      // AI's rebased App shell displace the rich role-pooled composition.
-      if (!homeAuthorityIsCanonical && (!lockRegisteredPagesToSiteBundle || !readCanonical(homeFilePath))) {
-        merged[homeFilePath] = rebaseAppModuleForHomePage(content);
-      }
+      // Canonical SiteBundle Home is authoritative — never let AI's rebased App
+      // shell displace the role-pooled SiteBundle composition.
       continue;
     }
 
-    // Same Composition-Authority guard for a Lane-B-authored Home module.
-    if (homeAuthorityIsCanonical && homeFilePathVariants.has(path)) {
+    const normalizedPath = normalizePath(path);
+    const hasCanonicalAtPath = Boolean(readCanonical(path));
+    const isSnapshotOwnedPath = Boolean(
+      hasCanonicalAtPath && (
+        registeredPagePaths.has(path) ||
+        registeredPagePaths.has(normalizedPath) ||
+        normalizedPath === '/src/App.tsx' ||
+        normalizedPath === '/src/index.css' ||
+        normalizedPath.startsWith('/src/components/')
+      ),
+    );
+
+    // Snapshot-owned paths cannot be overwritten by generated/Lane-B output.
+    if (isSnapshotOwnedPath) {
       continue;
     }
 
@@ -251,12 +278,23 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   //   • no App.tsx survived the merge, or
   //   • the surviving App.tsx is not a recognizable router (e.g. an AI
   //     composition that slipped through outside the rebase branch).
-  const existingApp = merged['/src/App.tsx'];
-  if (!existingApp || !looksLikeCanonicalRouter(existingApp)) {
-    const generatedRouter = generateCanonicalRouter(snapshot.pageRegistry, snapshot.businessName);
-    if (generatedRouter) {
-      merged['/src/App.tsx'] = generatedRouter;
-    }
+  const generatedRouter = generateCanonicalRouter(snapshot.pageRegistry, snapshot.businessName);
+  if (generatedRouter) {
+    merged['/src/App.tsx'] = generatedRouter;
+  } else if (!looksLikeCanonicalRouter(merged['/src/App.tsx'] || '')) {
+    throw new PreviewPipelineError(
+      'vfs',
+      'SiteBundleSnapshot did not produce a deterministic /src/App.tsx router; refusing to render a generated/minimal fallback.',
+      { recoverableByRelaunch: true },
+    );
+  }
+
+  if (!merged['/src/index.css']) {
+    throw new PreviewPipelineError(
+      'vfs',
+      'SiteBundleSnapshot is missing injected /src/index.css; refusing to inject default/minimal preview CSS.',
+      { recoverableByRelaunch: true },
+    );
   }
 
   return merged;
@@ -305,6 +343,7 @@ export function buildCanonicalLaunchArtifacts(
     entryPoint: input.preferredEntryPoint,
     themePresetId: resolvedThemePresetId,
     allowMissingWizardArtifacts: true,
+    injectCssIfMissing: false,
   });
 
   // ── Early syntax repair ────────────────────────────────────────────────
@@ -431,11 +470,10 @@ export function buildCanonicalLaunchArtifacts(
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
-        // Lane B is the authority at wizard launch. Do NOT lock pages to the
-        // canonical scaffold here — that would degrade rich AI pages back to
-        // minimal stubs. The lock is reserved for post-launch Builder paths
-        // that explicitly opt in.
-        lockRegisteredPagesToCanonical: false,
+        // SiteBundleSnapshot/WizardSeed is the authority for all registered
+        // routes and shared section components. Lane-B files may add extras but
+        // cannot replace snapshot-owned UI artifacts.
+        lockRegisteredPagesToCanonical: true,
       })
     : { ...safeFiles };
 

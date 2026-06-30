@@ -3148,7 +3148,7 @@ export default function ${componentName}Page() {
           const identity: BuilderIdentity = {
             userId: user.id,
             businessId,
-            projectId: currentTemplateId,
+            projectId: resolvedProjectId || currentTemplateId,
             draftId: currentTemplateId,
             revisionId: currentRevisionId,
             sessionId: `web-builder:${currentTemplateId}`,
@@ -3212,7 +3212,7 @@ export default function ${componentName}Page() {
           const identity: BuilderIdentity = {
             userId: user.id,
             businessId,
-            projectId: currentTemplateId,
+            projectId: resolvedProjectId || currentTemplateId,
             draftId: currentTemplateId,
             revisionId: currentRevisionId,
             sessionId: `web-builder:${currentTemplateId}`,
@@ -6882,7 +6882,7 @@ export default function ${componentName}() {
                           const identity: BuilderIdentity = {
                             userId: user.id,
                             businessId,
-                            projectId: currentTemplateId,
+                            projectId: resolvedProjectId || currentTemplateId,
                             draftId: currentTemplateId,
                             revisionId: currentRevisionId,
                             sessionId: `web-builder:${currentTemplateId}`,
@@ -7227,7 +7227,7 @@ export default function ${componentName}() {
                           ? {
                               userId: currentUserId,
                               businessId,
-                              projectId: currentTemplateId,
+                              projectId: resolvedProjectId || currentTemplateId,
                               draftId: currentTemplateId,
                               revisionId: currentRevisionId,
                               sessionId: `web-builder:${currentTemplateId}`,
@@ -7320,7 +7320,7 @@ export default function ${componentName}() {
                         const identity: BuilderIdentity = {
                           userId: user.id,
                           businessId,
-                          projectId: currentTemplateId,
+                          projectId: resolvedProjectId || currentTemplateId,
                           draftId: currentTemplateId,
                           revisionId: currentRevisionId,
                           sessionId: `web-builder:${currentTemplateId}`,

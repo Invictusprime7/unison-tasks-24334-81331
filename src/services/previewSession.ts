@@ -340,23 +340,56 @@ export function ensureViteRootFiles(
   });
 
   if (!result['/src/index.css']) {
-    if (!options?.themePresetId) {
+    // Per checkpoint invariant 5 (Theme injection unconditional): when the
+    // caller doesn't pass themePresetId explicitly, recover it from the
+    // persisted wizard metadata files in the VFS. This mirrors the recovery
+    // already implemented in canonicalPipeline.recompileFromPlayground and
+    // snapshotProjector.resolveSnapshot — the chain of custody is:
+    //   snapshot.meta.themePresetId
+    //     → app-context.themePresetId
+    //     → runtime-manifest.appContext.themePresetId
+    let presetId: string | null | undefined = options?.themePresetId ?? null;
+    if (!presetId) {
+      const tryRead = (path: string): Record<string, unknown> | null => {
+        const raw = result[path];
+        if (!raw || typeof raw !== 'string') return null;
+        try { return JSON.parse(raw) as Record<string, unknown>; } catch { return null; }
+      };
+      const snap = tryRead('/.unison/site-bundle-snapshot.json') as
+        | { meta?: { themePresetId?: string }; appContext?: { themePresetId?: string } }
+        | null;
+      const appCtx = tryRead('/.unison/app-context.json') as { themePresetId?: string } | null;
+      const runtime = tryRead('/.unison/runtime-manifest.json') as
+        | { appContext?: { themePresetId?: string } }
+        | null;
+      presetId =
+        snap?.meta?.themePresetId ||
+        snap?.appContext?.themePresetId ||
+        appCtx?.themePresetId ||
+        runtime?.appContext?.themePresetId ||
+        null;
+      if (presetId) {
+        console.log(`[ensureViteRootFiles] Recovered themePresetId="${presetId}" from VFS metadata`);
+      }
+    }
+    if (!presetId) {
       throw new PreviewPipelineError(
         'vfs',
         'Missing wizard themePresetId — refusing to inject default/minimal preview CSS.',
         { recoverableByRelaunch: true },
       );
     }
-    const preset = THEME_PRESETS.find((p) => p.id === options.themePresetId);
+    const preset = THEME_PRESETS.find((p) => p.id === presetId);
     if (!preset) {
       throw new PreviewPipelineError(
         'vfs',
-        `Unknown wizard themePresetId "${options.themePresetId}" — refusing to inject default/minimal preview CSS.`,
+        `Unknown wizard themePresetId "${presetId}" — refusing to inject default/minimal preview CSS.`,
         { recoverableByRelaunch: true },
       );
     }
     result['/src/index.css'] = buildThemedIndexCss(preset);
   }
+
 
   return result;
 }

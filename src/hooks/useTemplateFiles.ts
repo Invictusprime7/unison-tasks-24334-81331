@@ -227,7 +227,7 @@ export function useTemplateFiles() {
       // "My Business" placeholder). Never fall back to a business name here.
       const trimmedName = (name || '').trim() || 'Untitled project';
       const incomingMeta = (payload?.metadata || {}) as Record<string, unknown>;
-      const metadata = {
+      const baseMeta: Record<string, unknown> = {
         ...incomingMeta,
         name: trimmedName,
         projectName: trimmedName,
@@ -237,7 +237,8 @@ export function useTemplateFiles() {
         projectId: payload?.projectId ?? null,
         canonicalPlayground: payload?.canonicalPlayground ?? null,
         siteBundleSnapshot: payload?.siteBundleSnapshot ?? null,
-      } as unknown as Json;
+      };
+      const metadata = bootstrapSnapshotIfMissing(baseMeta, payload, trimmedName) as unknown as Json;
 
       // If a draft already exists for this (user, business, project), update it instead of inserting.
       // This prevents `uq_builder_drafts_user_business*` collisions when users save multiple times

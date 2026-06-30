@@ -3060,7 +3060,7 @@ export default function ${componentName}Page() {
     let snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
     candidateFiles = projectSnapshotVfsFiles(candidateFiles, snapshotResolution);
     snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
-    Object.assign(normalizedFiles, candidateFiles, normalizedFiles);
+    Object.assign(normalizedFiles, candidateFiles);
     assertNoMinimalFallbackPreview(candidateFiles, snapshotResolution, 'Builder VFS import');
 
     // End-to-end preflight before any template/page import lands in the VFS.

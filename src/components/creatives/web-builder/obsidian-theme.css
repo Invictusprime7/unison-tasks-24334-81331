@@ -27,25 +27,40 @@
 }
 
 /* ---- Backgrounds ------------------------------------------------------- */
-.wb-obsidian .bg-\[\#1a0a14\],
-.wb-obsidian .bg-\[\#0a0a14\],
-.wb-obsidian .bg-\[\#0a0a12\] { background-color: var(--wb-hull) !important; }
-
-.wb-obsidian .bg-\[\#0d0d18\],
-.wb-obsidian .bg-\[\#0d0d18\]\/80,
-.wb-obsidian .bg-\[\#0a0a14\]\/80 { background-color: var(--wb-panel) !important; }
+/* Wildcard match every legacy dark arbitrary hex used by the editor shell,
+   the VFSCodeView panel, file tabs, and inline preview headers. */
+.wb-obsidian [class*="bg-[#0a0a"],
+.wb-obsidian [class*="bg-[#0d0d"],
+.wb-obsidian [class*="bg-[#0f0f"],
+.wb-obsidian [class*="bg-[#1010"],
+.wb-obsidian [class*="bg-[#12121"],
+.wb-obsidian [class*="bg-[#14142"],
+.wb-obsidian [class*="bg-[#1a0a"],
+.wb-obsidian [class*="bg-[#1a16"],
+.wb-obsidian [class*="bg-[#211b"] {
+  background-color: var(--wb-panel) !important;
+  background-image: none !important;
+}
+.wb-obsidian .bg-\[\#09090b\],
+.wb-obsidian [class*="bg-[#09090"] { background-color: var(--wb-hull) !important; }
 
 /* ---- Hairlines & neon borders ----------------------------------------- */
-.wb-obsidian .border-fuchsia-500\/50,
-.wb-obsidian .border-fuchsia-500\/30,
-.wb-obsidian .border-cyan-500\/30,
-.wb-obsidian .border-cyan-500\/40,
-.wb-obsidian .border-yellow-500\/30,
-.wb-obsidian .border-yellow-400\/30,
-.wb-obsidian .border-white\/\[0\.06\] { border-color: var(--wb-hairline) !important; }
+.wb-obsidian [class*="border-fuchsia-"],
+.wb-obsidian [class*="border-cyan-"],
+.wb-obsidian [class*="border-yellow-"],
+.wb-obsidian [class*="border-pink-"],
+.wb-obsidian [class*="border-lime-"],
+.wb-obsidian .border-white\/\[0\.06\],
+.wb-obsidian .border-white\/\[0\.08\],
+.wb-obsidian .border-white\/\[0\.12\] { border-color: var(--wb-hairline) !important; }
 
-.wb-obsidian .bg-fuchsia-500\/50,
-.wb-obsidian .bg-cyan-500\/50 { background-color: var(--wb-hairline) !important; }
+.wb-obsidian [class*="bg-fuchsia-"],
+.wb-obsidian [class*="bg-cyan-"],
+.wb-obsidian [class*="bg-pink-"],
+.wb-obsidian [class*="bg-lime-"] {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+  background-image: none !important;
+}
 
 /* ---- Neon glow shadows → quiet shadows -------------------------------- */
 .wb-obsidian [class*="shadow-[0_4px_20px_rgba(255,0,255"],

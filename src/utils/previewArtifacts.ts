@@ -6,7 +6,7 @@ import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
 import { runFullPreflight } from '@/services/runFullPreflight';
-import { assertNoMinimalFallbackPreview, resolveSnapshot } from '@/services/snapshotProjector';
+import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;
@@ -51,10 +51,13 @@ export function buildPreviewArtifacts(
   options: PreviewArtifactsOptions
 ): PreviewArtifactsResult {
   const {
-    sourceFiles,
+    sourceFiles: rawSourceFiles,
     launchState = null,
     baseDependencies = SANDPACK_DEPENDENCIES,
   } = options;
+
+  const initialResolution = resolveSnapshot(rawSourceFiles, launchState);
+  const sourceFiles = projectSnapshotVfsFiles(rawSourceFiles, initialResolution);
 
   const metadataThemePresetId = readThemePresetIdFromSourceFiles(sourceFiles);
   const themePresetId = metadataThemePresetId ||

@@ -1,4 +1,5 @@
 /* cache-bust: 20260309 */
+import "./web-builder/obsidian-theme.css";
 import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense, Component, type ReactNode, type ErrorInfo } from "react";
 import TemplateFeedback from "./TemplateFeedback";
 import { Canvas as FabricCanvas } from "fabric";

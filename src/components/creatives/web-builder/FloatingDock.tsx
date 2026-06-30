@@ -84,7 +84,7 @@ export const FloatingDock = ({
   return (
     <div className="relative">
       {/* Dock Bar - inline within the topbar */}
-      <div className="flex items-center gap-1 px-2.5 py-1.5 bg-[#0d0d18] rounded-lg shadow-[0_0_15px_rgba(255,255,0,0.15)]">
+      <div className="flex items-center gap-1 px-2 py-1 bg-zinc-900/60 border border-zinc-800/60 rounded-lg backdrop-blur-sm">
         {dockItems.map((item) => {
           const Icon = item.icon;
           const isActive = activePanel === item.id;
@@ -95,10 +95,10 @@ export const FloatingDock = ({
               size="sm"
               onClick={() => togglePanel(item.id)}
               className={cn(
-                "h-7 px-3 rounded-md text-xs font-bold transition-all duration-200",
+                "h-7 px-2.5 rounded-md text-xs font-medium transition-colors duration-150",
                 isActive
-                  ? "bg-yellow-400 text-black shadow-[0_0_15px_rgba(255,255,0,0.6)]"
-                  : "text-yellow-400/70 hover:text-yellow-300 hover:bg-yellow-500/20"
+                  ? "bg-indigo-500/15 text-indigo-300 border border-indigo-500/30"
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 border border-transparent"
               )}
             >
               <Icon className="h-3.5 w-3.5 mr-1.5" />

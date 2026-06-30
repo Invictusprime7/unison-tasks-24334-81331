@@ -124,60 +124,6 @@ function hasRealSource(files: Record<string, string>): boolean {
 }
 
 // ============================================================================
-// CanonicalRuntimeError — launch gate, not a crash
-// ============================================================================
-
-export type CanonicalRuntimeSurface =
-  | 'preview'
-  | 'readiness'
-  | 'publish'
-  | 'artifacts'
-  | 'deploy';
-
-export type CanonicalRuntimeCode =
-  | 'MISSING_SNAPSHOT'
-  | 'MISSING_THEME_PRESET'
-  | 'MISSING_SYSTEM_ID'
-  | 'LEGACY_FALLBACK_BLOCKED';
-
-export type CanonicalRecoveryAction = 'run-system-launcher' | 'migrate-legacy-draft';
-
-export interface CanonicalRuntimeErrorMeta {
-  surface: CanonicalRuntimeSurface;
-  code: CanonicalRuntimeCode;
-  userMessage: string;
-  developerMessage: string;
-  recoveryActions: CanonicalRecoveryAction[];
-}
-
-export class CanonicalRuntimeError extends PreviewPipelineError {
-  readonly isCanonicalRuntimeError = true;
-  readonly canonical: CanonicalRuntimeErrorMeta;
-
-  constructor(
-    meta: CanonicalRuntimeErrorMeta,
-    details: PreviewPipelineErrorDetails = {},
-  ) {
-    // Stage = 'vfs' — keeps it compatible with the existing PreviewRuntimeError
-    // rendering path while UIs that know about canonical errors can branch.
-    super('vfs', meta.developerMessage, {
-      recoverableByRelaunch: true,
-      ...details,
-    });
-    this.name = 'CanonicalRuntimeError';
-    this.canonical = meta;
-  }
-}
-
-export function isCanonicalRuntimeError(value: unknown): value is CanonicalRuntimeError {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { isCanonicalRuntimeError?: boolean }).isCanonicalRuntimeError === true
-  );
-}
-
-// ============================================================================
 // requireCanonicalSnapshot — the gate
 // ============================================================================
 
@@ -194,8 +140,7 @@ export interface RequireSnapshotSkipped {
   classification: DraftClassification;
 }
 
-const USER_MESSAGE_MISSING_SNAPSHOT =
-  'This project has not been launched yet. Unison needs a SiteBundleSnapshot before it can render a live business preview.';
+const USER_MESSAGE_MISSING_SNAPSHOT = CANONICAL_USER_MESSAGE;
 
 /**
  * Throws CanonicalRuntimeError when a launcher-backed draft lacks a snapshot.

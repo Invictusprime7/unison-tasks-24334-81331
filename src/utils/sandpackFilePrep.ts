@@ -5244,11 +5244,23 @@ export function prepareSandpackFiles(
         );
       }
     } else {
-      throw new PreviewPipelineError(
-        'prep',
-        'Preview is missing /App.tsx — refusing to emit a minimal template.',
-        { recoverableByRelaunch: true },
-      );
+      // Non-wizard (blank) draft missing /App.tsx — synthesize a proxy that
+      // mounts the first available component module so the preview can render
+      // user-authored code without inventing a themed minimal template.
+      const proxyTarget =
+        componentFilePaths.find((p) => /\/pages\/Home\.(tsx|jsx)$/i.test(p)) ||
+        componentFilePaths.find((p) => /\/pages\//i.test(p)) ||
+        componentFilePaths.find((p) => p !== '/index.tsx' && p !== '/index.jsx');
+      if (proxyTarget) {
+        sandpackFiles['/App.tsx'] = createProxyApp(proxyTarget);
+        hasApp = true;
+      } else {
+        throw new PreviewPipelineError(
+          'prep',
+          'Preview is missing /App.tsx — refusing to emit a minimal template.',
+          { recoverableByRelaunch: true },
+        );
+      }
     }
   }
 

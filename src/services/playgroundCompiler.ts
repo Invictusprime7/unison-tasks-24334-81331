@@ -57,14 +57,28 @@ export function compilePlayground(
   for (const page of pages) {
     const fp = page.filePath!;
     const existingPageFile = existingVfsFiles[fp];
+    const node = scaffoldPlan.pages.find((p) => p.id === page.pageId);
 
-    if (existingPageFile) {
+    // ── Home authority (snapshot-first) ──────────────────────────────────
+    // The Home route is the single most-visited surface of every wizard
+    // generated site, and must always reflect the SiteBundleSnapshot's
+    // composed topology — never an AI-authored shell that escaped Lane B
+    // (which historically wired Home to /src/sections/Site* while subpages
+    // composed correctly from /src/components/*, producing the exact
+    // "minimal Home vs rich subpages" split this guard fixes). If a
+    // composable node exists for Home, ALWAYS re-emit the composed file
+    // set even when an existingPageFile is present.
+    const isHomeRoute = Boolean(page.isHome) || page.path === '/' || (node?.role === 'home');
+
+    if (existingPageFile && !isHomeRoute) {
       vfsFiles[fp] = existingPageFile;
       continue;
     }
 
-    const node = scaffoldPlan.pages.find((p) => p.id === page.pageId);
-    if (!node) continue;
+    if (!node) {
+      if (existingPageFile) vfsFiles[fp] = existingPageFile;
+      continue;
+    }
 
     try {
       // Multi-file emit: page module + per-section components under
@@ -74,6 +88,13 @@ export function compilePlayground(
       Object.assign(vfsFiles, fileSet);
     } catch (err) {
       if (err instanceof PreviewPipelineError) {
+        // If composition fails for Home but an AI-authored Home exists,
+        // preserve it so preflight still has something to surface rather
+        // than dropping the entire route.
+        if (existingPageFile) {
+          vfsFiles[fp] = existingPageFile;
+          continue;
+        }
         blockedWizardPages.push(fp);
         continue;
       }

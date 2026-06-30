@@ -6362,7 +6362,7 @@ ${html}
         draftId: currentTemplateId || undefined,
       }}
     >
-    <div ref={mainContainerRef} className={cn("flex flex-col h-screen bg-[#1a0a14]", isMobile && "pb-14")}>
+    <div ref={mainContainerRef} className={cn("wb-obsidian flex flex-col h-screen bg-[#09090b]", isMobile && "pb-14")}>
       {/* SystemLauncher — auto-opens when no pre-generated content */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
 

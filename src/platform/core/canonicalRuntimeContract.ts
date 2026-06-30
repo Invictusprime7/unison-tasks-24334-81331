@@ -262,15 +262,14 @@ export function assertNoLegacyFallback(
   const classification = classifyDraft(files, launchState);
   if (!classification.isLauncherBacked) return;
 
-  // Re-use the existing strict scanner from snapshotProjector via the new
-  // require path so the error type is consistent.
   try {
-    // Lazy require to avoid a hard import cycle.
-    const projector = require('@/services/snapshotProjector') as typeof import('@/services/snapshotProjector');
-    const resolution = projector.resolveSnapshot(files, launchState ?? null);
-    projector.assertNoMinimalFallbackPreview(files, resolution, `canonical:${surface}`);
+    const resolution = resolveSnapshot(files, launchState ?? null);
+    assertNoMinimalFallbackPreview(files, resolution, `canonical:${surface}`);
   } catch (err) {
-    if (err instanceof PreviewPipelineError && !isCanonicalRuntimeError(err)) {
+    if (isCanonicalRuntimeError(err)) {
+      throw err;
+    }
+    if (err instanceof PreviewPipelineError) {
       const canonical = new CanonicalRuntimeError(
         {
           surface,

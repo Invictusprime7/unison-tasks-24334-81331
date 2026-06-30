@@ -34,6 +34,12 @@ export interface SnapshotResolution {
 
 const MINIMAL_PREVIEW_FALLBACK_RE = /return\s+<div>\s*Placeholder|return\s+<main>\s*Placeholder|Canonical\s+\w+\s+Stub|Canonical\s+\w+\s+Fallback|Generated\s+Home|Preview recovered|safe fallback was injected|AI-generated code will appear here|Welcome to AI Web Builder|New site preview|Coming soon|fallback keeps the experience polished/i;
 
+export function isMinimalPreviewFallbackSource(content: string | undefined): boolean {
+  if (!content) return false;
+  const compact = content.replace(/\s+/g, ' ').trim();
+  return MINIMAL_PREVIEW_FALLBACK_RE.test(compact);
+}
+
 function tryParseSnapshot(raw: string | undefined): SiteBundleSnapshot | null {
   if (!raw || typeof raw !== 'string') return null;
   try {
@@ -193,8 +199,7 @@ export function assertNoMinimalFallbackPreview(
       );
     }
 
-    const compact = source.replace(/\s+/g, ' ').trim();
-    if (MINIMAL_PREVIEW_FALLBACK_RE.test(compact)) {
+    if (isMinimalPreviewFallbackSource(source)) {
       throw new PreviewPipelineError(
         'vfs',
         `${context} detected minimal/fallback scaffold copy in registered page ${normalized}; refusing to surface it in preview.`,
@@ -202,6 +207,61 @@ export function assertNoMinimalFallbackPreview(
       );
     }
   }
+}
+
+/**
+ * Snapshot-as-primary projection bridge. If a registered wizard route was
+ * polluted by a legacy placeholder/minimal shell, restore the route from the
+ * snapshot VFS before any preview compiler sees it. If the snapshot itself is
+ * missing the route, the downstream assert still hard-fails instead of falling
+ * back.
+ */
+export function projectSnapshotVfsFiles(
+  files: Record<string, string>,
+  resolution: SnapshotResolution,
+): Record<string, string> {
+  if (!resolution.isWizardDraft || !resolution.snapshot) return files;
+
+  const snapshotFiles = (resolution.snapshot as { vfsFiles?: Record<string, string> }).vfsFiles || {};
+  if (Object.keys(snapshotFiles).length === 0) return files;
+
+  const next = { ...files };
+  const pages = Object.values(resolution.snapshot.pageRegistry?.pages || {});
+
+  const assignFromSnapshot = (path: string) => {
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    const flattened = normalized.replace(/^\/src\//, '/');
+    const snapshotSource = snapshotFiles[normalized] || snapshotFiles[normalized.slice(1)] || snapshotFiles[flattened] || snapshotFiles[flattened.slice(1)];
+    if (!snapshotSource) return;
+
+    const current = next[normalized] || next[normalized.slice(1)] || next[flattened] || next[flattened.slice(1)];
+    if (!current || isMinimalPreviewFallbackSource(current)) {
+      next[normalized] = snapshotSource;
+      if (flattened !== normalized && next[flattened] !== undefined) {
+        next[flattened] = snapshotSource;
+      }
+    }
+  };
+
+  for (const page of pages) {
+    const filePath = (page as { filePath?: string }).filePath;
+    if (filePath) assignFromSnapshot(filePath);
+  }
+
+  for (const canonicalPath of ['/src/App.tsx', '/src/main.tsx', '/src/index.css']) {
+    const snapshotSource = snapshotFiles[canonicalPath] || snapshotFiles[canonicalPath.slice(1)];
+    if (!snapshotSource) continue;
+    const current = next[canonicalPath] || next[canonicalPath.slice(1)];
+    if (!current || isMinimalPreviewFallbackSource(current) || (canonicalPath.endsWith('.css') && !TOKEN_PROBE_RE.test(current))) {
+      next[canonicalPath] = snapshotSource;
+    }
+  }
+
+  if (!next[SNAPSHOT_VFS_PATH]) {
+    next[SNAPSHOT_VFS_PATH] = JSON.stringify(resolution.snapshot, null, 2);
+  }
+
+  return next;
 }
 
 function tryParseRecord(raw: string | undefined): Record<string, unknown> | null {

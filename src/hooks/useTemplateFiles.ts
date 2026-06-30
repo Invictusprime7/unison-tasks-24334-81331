@@ -487,6 +487,13 @@ export function useTemplateFiles() {
 
       if (draft) {
         setCurrentTemplateId(draft.id);
+        const draftProjectId =
+          (draft as { project_id?: string | null }).project_id ??
+          ((draft.metadata as Record<string, unknown> | null)?.projectId as
+            | string
+            | undefined) ??
+          null;
+        setCurrentProjectId(draftProjectId ?? null);
         return draftRowToTemplate(draft);
       }
 

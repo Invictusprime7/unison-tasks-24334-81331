@@ -5,7 +5,7 @@
  * proxies, and SEMANTIC_CSS_VARS) with deterministic projections.
  *
  * Behavior:
- *   • Wizard draft (launchState or /.unison/wizard-seed.json present) + snapshot present
+ *   • Wizard draft (SiteBundleSnapshot or /.unison/wizard-seed.json present) + snapshot present
  *       → project theme CSS and router from snapshot.
  *   • Wizard draft + snapshot ABSENT
  *       → throw PreviewPipelineError. The runtime cannot fabricate the wizard's choices.
@@ -43,14 +43,10 @@ function tryParseSnapshot(raw: string | undefined): SiteBundleSnapshot | null {
 
 /**
  * Resolve the authoritative SiteBundleSnapshot from either the live LaunchState
- * or the persisted /.unison/site-bundle-snapshot.json. Also reports whether the
- * draft was created via the wizard (any wizard-produced artifact present).
- *
- * Cold-hydration policy: classification is evidence-based, but evidence is not
- * limited to the snapshot file. Persisted app-context/runtime/canonical
- * playground metadata, wizard seed files, and generated page-registry routes
- * all prove this draft belongs to the System Launcher. Those drafts must never
- * degrade into a minimal template while the snapshot is catching up.
+ * or the persisted /.unison/site-bundle-snapshot.json. Wizard classification is
+ * strict: only snapshot/seed/explicit wizard-selection metadata counts. Bare
+ * LaunchState or generated `/src/pages/*` files are not enough, because that
+ * cold-hydration shortcut was the path that allowed minimal templates to render.
  */
 export function resolveSnapshot(
   sourceFiles: Record<string, string>,
@@ -65,28 +61,19 @@ export function resolveSnapshot(
   const canonicalPlayground = tryParseRecord(sourceFiles['/.unison/canonical-playground.json']);
   const runtimeAppContext = readRecord(runtimeManifest?.appContext);
 
-  const hasWizardMetadata = Boolean(
-    sourceFiles[WIZARD_SEED_VFS_PATH] ||
-    sourceFiles[SNAPSHOT_VFS_PATH] ||
-    sourceFiles['/.unison/canonical-playground.json'] ||
-    readRecord(canonicalPlayground?.pageRegistry) ||
+  const hasWizardSeed = Boolean(sourceFiles[WIZARD_SEED_VFS_PATH]);
+  const hasExplicitWizardMetadata = Boolean(
     appContext?.wizardSelections ||
     runtimeAppContext?.wizardSelections ||
-    appContext?.templateId ||
-    runtimeAppContext?.templateId ||
-    appContext?.industry ||
-    runtimeAppContext?.industry,
-  );
-
-  const hasGeneratedPageRoutes = Object.keys(sourceFiles).some((path) =>
-    /^\/?src\/pages\/[A-Z][A-Za-z0-9_-]*\.(tsx|jsx)$/.test(path),
+    appContext?.wizardSeedId ||
+    runtimeAppContext?.wizardSeedId ||
+    readRecord(canonicalPlayground?.wizardSelections),
   );
 
   const isWizardDraft = Boolean(
-    launchState ||
     snapshot ||
-    hasWizardMetadata ||
-    hasGeneratedPageRoutes,
+    hasWizardSeed ||
+    hasExplicitWizardMetadata,
   );
 
   const themePresetId =

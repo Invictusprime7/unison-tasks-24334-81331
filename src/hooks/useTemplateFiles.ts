@@ -669,6 +669,7 @@ export function useTemplateFiles() {
 
   const clearCurrentTemplate = useCallback(() => {
     setCurrentTemplateId(null);
+    setCurrentProjectId(null);
   }, []);
 
   /** List all saved projects for the current user (builder_drafts + local). */
@@ -696,6 +697,7 @@ export function useTemplateFiles() {
   return {
     loading,
     currentTemplateId,
+    currentProjectId,
     saveTemplate,
     updateTemplate,
     ensureDraft,
@@ -704,6 +706,7 @@ export function useTemplateFiles() {
     autoSave,
     clearCurrentTemplate,
     setCurrentTemplateId,
+    setCurrentProjectId,
     getAllTemplates,
     getLocalTemplates,
   };

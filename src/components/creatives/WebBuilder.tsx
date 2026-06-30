@@ -3056,7 +3056,7 @@ export default function ${componentName}Page() {
     }
 
     const candidateFiles = {
-      ...virtualFS.getSandpackFiles(),
+      ...virtualFSRef.current.getSandpackFiles(),
       ...normalizedFiles,
     };
     const snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);

@@ -15,14 +15,30 @@
  */
 import type { LaunchState } from '@/types/launchState';
 import type { SiteBundleSnapshot } from './canonicalPipeline';
-import {
-  PreviewPipelineError,
-  type PreviewPipelineErrorDetails,
-} from '@/services/previewPipelineError';
+import { PreviewPipelineError } from '@/services/previewPipelineError';
 import {
   resolveSnapshot,
+  assertNoMinimalFallbackPreview,
   type SnapshotResolution,
 } from '@/services/snapshotProjector';
+import {
+  CanonicalRuntimeError,
+  isCanonicalRuntimeError,
+  CANONICAL_USER_MESSAGE,
+  type CanonicalRuntimeSurface,
+  type CanonicalRuntimeCode,
+  type CanonicalRecoveryAction,
+  type CanonicalRuntimeErrorMeta,
+} from './canonicalRuntimeError';
+
+export {
+  CanonicalRuntimeError,
+  isCanonicalRuntimeError,
+  type CanonicalRuntimeSurface,
+  type CanonicalRuntimeCode,
+  type CanonicalRecoveryAction,
+  type CanonicalRuntimeErrorMeta,
+};
 
 // ============================================================================
 // Draft classification

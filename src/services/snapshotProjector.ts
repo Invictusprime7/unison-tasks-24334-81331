@@ -115,9 +115,11 @@ export function projectThemeCss(resolution: SnapshotResolution): string | null {
 }
 
 /**
- * If existing CSS already declares semantic tokens, return it unchanged
- * (respects AI/builder edits). Otherwise overwrite with snapshot-projected CSS.
- * For blank drafts with no snapshot, return the minimal Tailwind shell.
+ * If existing CSS already declares semantic tokens, return it unchanged.
+ * Wizard drafts must bring injected VFS CSS from the SiteBundleSnapshot compile
+ * stage; preview rendering is not allowed to synthesize themed CSS from a
+ * preset because that masks a broken snapshot/seed chain of custody.
+ * For blank drafts with no wizard evidence, return the minimal Tailwind shell.
  */
 export function ensureSnapshotTokens(
   existingCss: string | undefined,
@@ -127,16 +129,17 @@ export function ensureSnapshotTokens(
   if (existing && TOKEN_PROBE_RE.test(existing)) {
     return existing;
   }
-  const projected = projectThemeCss(resolution);
-  if (projected) return projected;
 
   if (resolution.isWizardDraft) {
     throw new PreviewPipelineError(
       'vfs',
-      'Wizard draft is missing a resolvable themePresetId in SiteBundleSnapshot.',
+      'Wizard draft is missing injected semantic /src/index.css from SiteBundleSnapshot; refusing to synthesize fallback preview CSS.',
       { recoverableByRelaunch: true },
     );
   }
+
+  const projected = projectThemeCss(resolution);
+  if (projected) return projected;
   return blankDraftTailwindCss();
 }
 

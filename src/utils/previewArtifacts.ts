@@ -6,7 +6,7 @@ import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
 import { runFullPreflight } from '@/services/runFullPreflight';
-import { resolveSnapshot } from '@/services/snapshotProjector';
+import { assertNoMinimalFallbackPreview, resolveSnapshot } from '@/services/snapshotProjector';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;
@@ -94,6 +94,7 @@ export function buildPreviewArtifacts(
   const industry = launchStateWithRecoveredTheme?.siteBundleSnapshot?.industry;
   const brand = launchStateWithRecoveredTheme?.businessName;
   const wizardResolution = resolveSnapshot(stampedFiles, launchStateWithRecoveredTheme);
+  assertNoMinimalFallbackPreview(stampedFiles, wizardResolution, 'Preview artifact gate');
 
 
   let sandpackFiles: Record<string, string>;
@@ -104,6 +105,7 @@ export function buildPreviewArtifacts(
       brand,
     });
     sandpackFiles = full.files;
+    assertNoMinimalFallbackPreview(sandpackFiles, wizardResolution, 'Preview artifact preflight');
     if (full.stages.forbiddenStrip.stripped > 0) {
       console.warn('[buildPreviewArtifacts] forbidden intents stripped at preview gate', full.stages.forbiddenStrip);
     }

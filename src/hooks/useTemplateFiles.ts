@@ -269,7 +269,7 @@ export function useTemplateFiles() {
         existingDraftId = existingRow?.id ?? null;
       }
 
-      let data: { id: string } | null = null;
+      let data: { id: string; project_id?: string | null } | null = null;
 
       if (existingDraftId) {
         const { data: updated, error: updateError } = await supabase

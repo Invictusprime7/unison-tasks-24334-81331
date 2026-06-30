@@ -47,6 +47,25 @@ export function compilePlayground(
 
   const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, options);
 
+  // ── Wizard-seed injection (page hash routes) ─────────────────────────────
+  // Parse the durable WizardSeed from `/.unison/wizard-seed.json` if the
+  // wizard pre-wrote it into `existingVfsFiles`, and attach it to the scaffold
+  // plan. Downstream `topologyVFSScaffolder.tryComposeTopologyPageFiles` reads
+  // `plan.wizardSeed` and overlays brand/contact/tagline onto every composed
+  // page module — so subpages reflect the wizard selections instead of the
+  // template's neutral sample copy. Without this overlay, only Lane B's
+  // AI-authored Home page would carry brand context.
+  const seedRaw = existingVfsFiles['/.unison/wizard-seed.json'];
+  if (seedRaw) {
+    try {
+      const parsed = JSON.parse(seedRaw) as Record<string, unknown>;
+      (scaffoldPlan as GeneratedSitePlan & { wizardSeed?: Record<string, unknown> }).wizardSeed = parsed;
+    } catch (err) {
+      console.warn('[playgroundCompiler] Failed to parse /.unison/wizard-seed.json; subpages will use template defaults.', err);
+    }
+  }
+
+
   // Composition-only contract: pages are ONLY emitted from the active
   // SiteBundle/template composition. Any registry page that cannot be composed
   // is aggregated into a single PreviewPipelineError instead of being

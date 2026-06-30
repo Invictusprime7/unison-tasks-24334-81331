@@ -110,6 +110,14 @@ export interface GeneratedSitePlan {
    * inherit from `/src/index.css` alone.
    */
   selectedThemePresetId?: string;
+  /**
+   * Optional WizardSeed payload (see /.unison/wizard-seed.json). When present,
+   * page scaffolders apply seed-derived brand/contact/tagline overrides to
+   * every composed page so subpages reflect the wizard selections — not the
+   * template's static sample content. Threaded by `compilePlayground` after
+   * parsing the seed file from `existingVfsFiles`.
+   */
+  wizardSeed?: Record<string, unknown>;
 }
 
 // ============================================================================

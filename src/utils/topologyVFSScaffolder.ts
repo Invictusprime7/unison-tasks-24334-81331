@@ -106,6 +106,152 @@ function applyPlanThemeToTemplate(
   };
 }
 
+// ============================================================================
+// Wizard-seed → composition brand/content injection
+//
+// The WizardSeed (persisted at `/.unison/wizard-seed.json`) is the durable
+// record of every wizard selection (business name, industry, tagline, social
+// links, intents). Template compositions ship with neutral sample copy —
+// without this overlay, sub-pages render generic "Brand" / "Welcome" content
+// even though the seed file is present in the VFS. This helper threads seed
+// values into a TemplateComposition immediately before it is split into per-
+// section files, so every page hash route reflects the wizard selections.
+//
+// Substitution rules (conservative — never clobber rich AI/user content):
+//   • navbar/footer `brand`              → always overwritten with seed.business.name
+//   • hero `headline` (empty/placeholder)→ filled from seed.business.tagline
+//   • hero `subheadline` (empty)         → filled from seed.business.tagline
+//   • contact email / phone (empty)      → filled from seed.generation.socials
+//   • footer copyright (empty)           → filled with `© <year> <brand>`
+//   • any string field containing the literal `{{businessName}}` is replaced
+// ============================================================================
+
+const BRAND_PLACEHOLDER_RE = /\{\{\s*businessName\s*\}\}/gi;
+const TEMPLATE_BRAND_LITERALS = new Set([
+  'Brand', 'BRAND', 'Your Brand', 'Your Business', 'Acme', 'Acme Inc.',
+  'Company', 'Your Company', 'Lorem', 'Lorem Ipsum',
+]);
+
+function isBlank(value: unknown): boolean {
+  return typeof value !== 'string' || value.trim().length === 0;
+}
+
+function looksLikePlaceholder(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return true;
+  return TEMPLATE_BRAND_LITERALS.has(trimmed);
+}
+
+function substituteBrandTokens<T>(value: T, brand: string): T {
+  if (typeof value === 'string') {
+    return value.replace(BRAND_PLACEHOLDER_RE, brand) as unknown as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => substituteBrandTokens(item, brand)) as unknown as T;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = substituteBrandTokens(v, brand);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+interface NormalizedSeed {
+  brand?: string;
+  tagline?: string;
+  industry?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  socials?: Array<{ platform?: string; href?: string }>;
+}
+
+function normalizeWizardSeed(seed: Record<string, unknown> | undefined): NormalizedSeed {
+  if (!seed || typeof seed !== 'object') return {};
+  const business = (seed.business as Record<string, unknown> | undefined) || {};
+  const generation = (seed.generation as Record<string, unknown> | undefined) || {};
+  const socials = Array.isArray(generation.socials)
+    ? (generation.socials as Array<{ platform?: string; href?: string; email?: string; phone?: string }>)
+    : [];
+  const findSocial = (kind: string) =>
+    socials.find((s) => String(s?.platform || '').toLowerCase() === kind)?.href;
+  return {
+    brand: typeof business.name === 'string' ? business.name : undefined,
+    tagline: typeof business.tagline === 'string' ? business.tagline : undefined,
+    industry: typeof business.industry === 'string' ? business.industry : undefined,
+    email: findSocial('email') || (socials.find((s) => s.email)?.email as string | undefined),
+    phone: findSocial('phone') || (socials.find((s) => s.phone)?.phone as string | undefined),
+    address: findSocial('address'),
+    socials,
+  };
+}
+
+function applyWizardSeedToComposition(
+  composition: TemplateComposition,
+  plan: GeneratedSitePlan,
+): TemplateComposition {
+  const seed = normalizeWizardSeed(
+    (plan as GeneratedSitePlan & { wizardSeed?: Record<string, unknown> }).wizardSeed,
+  );
+  const brand = seed.brand || plan.businessName;
+  if (!brand && !seed.tagline && !seed.email && !seed.phone) return composition;
+
+  // 1. Recursively substitute `{{businessName}}` tokens across every section.
+  let nextSections = brand
+    ? composition.sections.map((s) => substituteBrandTokens(s, brand))
+    : composition.sections.slice();
+
+  // 2. Per-section structural overrides for brand-critical fields.
+  nextSections = nextSections.map((section) => {
+    const props = { ...(section.props as Record<string, unknown> | undefined) } as Record<string, unknown>;
+    switch (section.type) {
+      case 'navbar':
+      case 'footer': {
+        if (brand && (looksLikePlaceholder(props.brand) || isBlank(props.brand))) {
+          props.brand = brand;
+        }
+        if (section.type === 'footer') {
+          if (isBlank(props.copyright) && brand) {
+            props.copyright = `© ${new Date().getFullYear()} ${brand}. All rights reserved.`;
+          }
+          if (isBlank(props.tagline) && seed.tagline) {
+            props.tagline = seed.tagline;
+          }
+        }
+        break;
+      }
+      case 'hero': {
+        if (looksLikePlaceholder(props.headline) && seed.tagline) {
+          props.headline = seed.tagline;
+        }
+        if (isBlank(props.subheadline) && seed.tagline) {
+          props.subheadline = seed.tagline;
+        }
+        break;
+      }
+      case 'contact': {
+        if (isBlank(props.email) && seed.email) props.email = seed.email;
+        if (isBlank(props.phone) && seed.phone) props.phone = seed.phone;
+        if (isBlank(props.address) && seed.address) props.address = seed.address;
+        if (isBlank(props.headline) && brand) {
+          props.headline = `Contact ${brand}`;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    return { ...section, props } as SectionEntry;
+  });
+
+  return { ...composition, sections: nextSections };
+}
+
+
 /**
  * Build a synthetic sub-composition for a given page role by filtering the
  * template's source sections through the per-role pool.
@@ -300,8 +446,9 @@ export function tryComposeTopologyPage(
   if (!active) return null;
   const sub = buildRoleComposition(active, page.role, page);
   if (!sub) return null;
+  const seeded = applyWizardSeedToComposition(sub, plan);
   try {
-    return compositionToReactCode(sub);
+    return compositionToReactCode(seeded);
   } catch {
     return null;
   }
@@ -321,8 +468,9 @@ export function tryComposeTopologyPageFiles(
   if (!active) return null;
   const sub = buildRoleComposition(active, page.role, page);
   if (!sub) return null;
+  const seeded = applyWizardSeedToComposition(sub, plan);
   try {
-    return compositionToReactFileSet(sub, page.filePath);
+    return compositionToReactFileSet(seeded, page.filePath);
   } catch {
     return null;
   }

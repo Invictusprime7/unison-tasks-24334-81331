@@ -177,6 +177,11 @@ const draftRowToTemplate = (row: any): SavedTemplate => {
 export function useTemplateFiles() {
   const [loading, setLoading] = useState(false);
   const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null);
+  // Pass 2 (identity hardening): real `projects.id` for the active draft.
+  // Tracked separately from `currentTemplateId` (which is the draft id) to
+  // purge the long-standing `projectId === templateId === draftId` aliasing
+  // that fed BuilderIdentity at commit/deploy/AI-apply boundaries.
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const cloudDraftWritesDisabledRef = useRef(false);
   const cloudDraftWarningShownRef = useRef(false);
 
@@ -264,7 +269,7 @@ export function useTemplateFiles() {
         existingDraftId = existingRow?.id ?? null;
       }
 
-      let data: { id: string } | null = null;
+      let data: { id: string; project_id?: string | null } | null = null;
 
       if (existingDraftId) {
         const { data: updated, error: updateError } = await supabase
@@ -279,10 +284,10 @@ export function useTemplateFiles() {
             updated_at: new Date().toISOString(),
           })
           .eq("id", existingDraftId)
-          .select("id")
+          .select("id, project_id")
           .single();
         if (updateError) throw updateError;
-        data = updated;
+        data = updated as { id: string; project_id?: string | null };
       } else {
         const { data: inserted, error: insertError } = await supabase
           .from("builder_drafts")
@@ -295,21 +300,26 @@ export function useTemplateFiles() {
             vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
             metadata,
           })
-          .select("id")
+          .select("id, project_id")
           .single();
         if (insertError) throw insertError;
-        data = inserted;
+        data = inserted as { id: string; project_id?: string | null };
       }
 
       if (!data) throw new Error("Failed to persist draft");
 
       await syncCanonicalComponentGraph({
-        projectId: payload?.projectId ?? null,
+        projectId: payload?.projectId ?? (data as { project_id?: string | null }).project_id ?? null,
         draftId: data.id,
         canonicalPlayground: payload?.canonicalPlayground,
       });
 
       setCurrentTemplateId(data.id);
+      const resolvedProjectId =
+        payload?.projectId ??
+        (data as { project_id?: string | null }).project_id ??
+        null;
+      setCurrentProjectId(resolvedProjectId);
       toast.success("Project saved!", {
         description: `"${name}" has been saved successfully`,
       });
@@ -477,6 +487,13 @@ export function useTemplateFiles() {
 
       if (draft) {
         setCurrentTemplateId(draft.id);
+        const draftProjectId =
+          (draft as { project_id?: string | null }).project_id ??
+          ((draft.metadata as Record<string, unknown> | null)?.projectId as
+            | string
+            | undefined) ??
+          null;
+        setCurrentProjectId(draftProjectId ?? null);
         return draftRowToTemplate(draft);
       }
 
@@ -652,6 +669,7 @@ export function useTemplateFiles() {
 
   const clearCurrentTemplate = useCallback(() => {
     setCurrentTemplateId(null);
+    setCurrentProjectId(null);
   }, []);
 
   /** List all saved projects for the current user (builder_drafts + local). */
@@ -679,6 +697,7 @@ export function useTemplateFiles() {
   return {
     loading,
     currentTemplateId,
+    currentProjectId,
     saveTemplate,
     updateTemplate,
     ensureDraft,
@@ -687,6 +706,7 @@ export function useTemplateFiles() {
     autoSave,
     clearCurrentTemplate,
     setCurrentTemplateId,
+    setCurrentProjectId,
     getAllTemplates,
     getLocalTemplates,
   };

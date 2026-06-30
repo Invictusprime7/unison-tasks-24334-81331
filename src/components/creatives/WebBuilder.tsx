@@ -1960,6 +1960,15 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // Template file management
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const templateFiles = useTemplateFiles();
+  // Pass 2 (identity hardening): resolved real projects.id for the active
+  // draft. Used to construct BuilderIdentity at commit/deploy/AI-apply
+  // boundaries instead of aliasing the draft id as projectId.
+  const resolvedProjectId =
+    templateFiles.currentProjectId ||
+    (effectiveRouteState?.projectId as string | undefined) ||
+    (effectiveRouteState?.returnProjectId as string | undefined) ||
+    currentTemplateId ||
+    null;
 
   const hydrateSavedTemplate = useCallback((template: {
     name: string;
@@ -3139,7 +3148,7 @@ export default function ${componentName}Page() {
           const identity: BuilderIdentity = {
             userId: user.id,
             businessId,
-            projectId: currentTemplateId,
+            projectId: resolvedProjectId || currentTemplateId,
             draftId: currentTemplateId,
             revisionId: currentRevisionId,
             sessionId: `web-builder:${currentTemplateId}`,
@@ -3203,7 +3212,7 @@ export default function ${componentName}Page() {
           const identity: BuilderIdentity = {
             userId: user.id,
             businessId,
-            projectId: currentTemplateId,
+            projectId: resolvedProjectId || currentTemplateId,
             draftId: currentTemplateId,
             revisionId: currentRevisionId,
             sessionId: `web-builder:${currentTemplateId}`,
@@ -6356,7 +6365,7 @@ ${html}
   return (
     <BuilderSessionProvider
       value={{
-        projectId: projectId || undefined,
+        projectId: resolvedProjectId || projectId || undefined,
         businessId: businessId || undefined,
         currentUserId,
         draftId: currentTemplateId || undefined,
@@ -6873,7 +6882,7 @@ export default function ${componentName}() {
                           const identity: BuilderIdentity = {
                             userId: user.id,
                             businessId,
-                            projectId: currentTemplateId,
+                            projectId: resolvedProjectId || currentTemplateId,
                             draftId: currentTemplateId,
                             revisionId: currentRevisionId,
                             sessionId: `web-builder:${currentTemplateId}`,
@@ -7218,7 +7227,7 @@ export default function ${componentName}() {
                           ? {
                               userId: currentUserId,
                               businessId,
-                              projectId: currentTemplateId,
+                              projectId: resolvedProjectId || currentTemplateId,
                               draftId: currentTemplateId,
                               revisionId: currentRevisionId,
                               sessionId: `web-builder:${currentTemplateId}`,
@@ -7311,7 +7320,7 @@ export default function ${componentName}() {
                         const identity: BuilderIdentity = {
                           userId: user.id,
                           businessId,
-                          projectId: currentTemplateId,
+                          projectId: resolvedProjectId || currentTemplateId,
                           draftId: currentTemplateId,
                           revisionId: currentRevisionId,
                           sessionId: `web-builder:${currentTemplateId}`,

@@ -402,7 +402,11 @@ export function buildCanonicalLaunchArtifacts(
   const normalizedFiles = normalizeLauncherFiles(input.generatedFiles, {
     entryPoint: input.preferredEntryPoint,
     themePresetId: resolvedThemePresetId,
-    allowMissingWizardArtifacts: true,
+    // Checkpoint invariant: wizard/sitebundle launches must arrive with the
+    // deterministic PageRegistry router. Do not let normalizeLauncherFiles
+    // derive App.tsx from an arbitrary page, because that is the minimal shell
+    // path that disconnects VFS preview from SiteBundleSnapshot authority.
+    allowMissingWizardArtifacts: !input.siteBundleSnapshot,
     injectCssIfMissing: false,
   });
 

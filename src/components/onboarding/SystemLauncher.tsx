@@ -1435,7 +1435,14 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         },
         generation: {
           scaffoldMode: resolvedScaffoldMode,
-          socials: userSocials,
+          socials: Object.entries(socialLinks)
+            .map(([platform, raw]) => {
+              const v = (raw || '').trim();
+              if (!v) return null;
+              const href = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+              return { platform, href };
+            })
+            .filter((s): s is { platform: string; href: string } => !!s),
         },
       };
       const preWiredExistingFiles: Record<string, string> = {

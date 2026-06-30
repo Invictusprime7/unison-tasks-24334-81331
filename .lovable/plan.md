@@ -1,128 +1,89 @@
+## Milestone: Canonical Runtime Enforcement Pass
 
-# Snapshot-as-Primary Preview Pipeline
-
-## Goal
-Make `SiteBundleSnapshot` (the artifact the 4-step wizard already persists in `/.unison/site-bundle-snapshot.json`) the single authoritative input to preview prep. Delete the four independent fallback paths so the runtime cannot silently render a "default editorial" preset.
-
-## Pipeline shape (after)
-
-```text
-LaunchState ──┐
-              ├─► SiteBundleSnapshot ──► snapshotProjector ──► prepared VFS ──► Sandpack
-VFS files ────┘                              │
-                                             └─► PreviewPipelineError ──► PreviewRuntimeError panel
-```
-
-One source of truth (snapshot). One projector. One error surface. No conditional fallback branches.
+**Rule:** Launcher-backed drafts cannot preview, run readiness, or publish without a valid `SiteBundleSnapshot`. Failure is a *launch gate*, not a crash.
 
 ---
 
-## Move 1 — New `snapshotProjector` service
+### 1. Single source of truth: `requireCanonicalSnapshot`
 
-**New file:** `src/services/snapshotProjector.ts`
+New module `src/platform/core/canonicalRuntimeContract.ts`:
 
-Pure functions that project required preview artifacts from a `SiteBundleSnapshot`:
+- `classifyDraft(draft) → 'launcher-backed' | 'manual' | 'blank'` (reads `/.unison/seed.json`, `meta.systemId`, `launchOrigin`).
+- `requireCanonicalSnapshot(draft, surface)` — returns `{ snapshot, manifest }` or throws `CanonicalRuntimeError` with:
+  - `surface`: `'preview' | 'readiness' | 'publish' | 'artifacts'`
+  - `code`: `MISSING_SNAPSHOT | MISSING_THEME_PRESET | MISSING_SYSTEM_ID | LEGACY_FALLBACK_BLOCKED`
+  - `userMessage`: "This project has not been launched yet. Unison needs a SiteBundleSnapshot before it can render a live business preview."
+  - `developerMessage` + `recoveryActions: ['run-system-launcher', 'migrate-legacy-draft']`
+- `tryGetCanonicalSnapshot(draft)` — non-throwing variant for blank/manual drafts.
+- `assertNoLegacyFallback(files, surface)` — promotes the existing `assertNoMinimalFallbackPreview` into the contract.
 
-- `projectThemeCss(snapshot)` → calls existing `themePresetToIndexCss(snapshot.meta.themePresetId, snapshot.theme)`. Single source for `/src/index.css` tokens.
-- `projectAppRouter(snapshot)` → deterministic `App.tsx` derived from `snapshot.pages[]` (HashRouter + page imports). Replaces `createProxyApp`.
-- `projectMissingPageStub(snapshot, pagePath)` → only used when a page declared in `snapshot.pages` is absent from VFS. Throws if the path is not in the snapshot.
-- `hasUsableSnapshot(sourceFiles, launchState)` → reads `/.unison/site-bundle-snapshot.json` (or `launchState.siteBundleSnapshot`) and returns the parsed snapshot, or `null`.
-- `isWizardDraft(launchState, sourceFiles)` → true if launchState exists OR `/.unison/wizard-seed.json` is present.
+Manual/blank drafts get a `createMinimalValidSnapshot()` helper that mints a real (not minimal-fallback) snapshot before any preview attempts.
 
-No fallback palettes, no prose stubs, no SEMANTIC_CSS_VARS.
+### 2. Strict surfaces
 
----
+Each surface calls `requireCanonicalSnapshot` for launcher-backed drafts:
 
-## Move 2 — `launchToSandpack.ts`
+| Surface | File | Behavior |
+|---|---|---|
+| Preview artifacts | `src/utils/webBuilderArtifacts.ts` | Throw `CanonicalRuntimeError` instead of building from raw VFS |
+| Preview shell | `src/components/VFSPreview.tsx` | Catch error → render `<LaunchGateNotice>` (not error boundary) |
+| Snapshot projection | `src/services/snapshotProjector.ts` | Already strict — wrap existing throws in the new error type |
+| Canonical launch VFS | `src/services/canonicalLaunchVfs.ts` | Stop emitting legacy fallback paths when snapshot missing |
+| Readiness | `src/services/nativePublishReadiness.ts` + `ReadinessCenterPanel.tsx` | Refuse to compute; show launch gate state |
+| Publish gate | `src/platform/core/gates.ts` (`PublishGate`) | Add snapshot presence as first invariant |
+| Deploy button | `src/components/.../DeployButton.tsx` | Disabled with tooltip when gate fails |
+| Preview gate | `src/platform/core/gates.ts` (`PreviewGate`) | Same first invariant |
 
-- **Delete** `generateThemeCss()` and the `aestheticPalettes` table.
-- **Delete** the "prepend theme CSS if existing CSS doesn't contain `--primary:`" branch.
-- Replace with a single call:
-  ```ts
-  const snapshot = hasUsableSnapshot(sourceVfsFiles, launchState);
-  if (snapshot) files[cssKey] = ensureSnapshotTokens(files[cssKey], snapshot);
-  ```
-  where `ensureSnapshotTokens` (per the user's Q2 choice) only writes the snapshot token block if the existing CSS lacks the expected token shape; otherwise leaves AI-authored CSS untouched.
-- Keep `prepareSandpackFiles` delegation. Remove the durable-fallback empty-vfs branch (already partially removed); replace with a `PreviewPipelineError('sandpack', 'No VFS files and no snapshot to project from')` raised inside the projector when both are empty AND it's a wizard draft.
+### 3. Launch gate UI
 
----
+New `src/components/creatives/web-builder/LaunchGateNotice.tsx`:
 
-## Move 3 — `sandpackFilePrep.ts`
+- Calm dark panel matching obsidian theme (no red error chrome).
+- Primary copy: *"This project has not been launched yet."*
+- Sub: *"Unison needs a SiteBundleSnapshot before it can render a live business preview."*
+- Primary action: **Run System Launcher** (routes to wizard).
+- Secondary (only when legacy draft detected): **Migrate legacy draft** (invokes a one-shot adapter that runs the wizard topology over existing files).
+- Developer details collapsed under a "Details" disclosure (error code + surface).
 
-Remove the four safety nets entirely:
+Mounted by `VFSPreview`, `ReadinessCenterPanel`, and the deploy flow when `CanonicalRuntimeError` is caught.
 
-| Removed | Replacement |
-|---|---|
-| `buildProseFallback` / `throwIfMissingProse` | Hard throw `PreviewPipelineError('prep', 'Prose-only module: <path>')` — no replacement content |
-| `wrapCssInReactComponent` / `throwIfMissingCss` | Hard throw `PreviewPipelineError('prep', 'CSS in TSX module: <path>')` |
-| `createProxyApp` / `throwIfMissingApp` | If snapshot present → `projectAppRouter(snapshot)`. If no snapshot AND wizard draft → throw. If no snapshot AND blank draft → write minimal empty `App.tsx` shell (Move 6) |
-| `SEMANTIC_CSS_VARS` and "chip-inject FINAL FALLBACK" | Delete. CSS comes only from `projectThemeCss(snapshot)` or stays as-is for blank drafts |
+### 4. Manual / blank drafts stay friendly
 
-The `themePresetId` force-overwrite block (lines 5148–5173) is removed; the projector owns CSS authority via Move 2.
+- Blank drafts (no `/.unison/seed.json`, no `systemId`) classify as `'blank'` and skip the gate — they keep the existing "Preview waiting for app files" idle state.
+- A user mutating a blank draft into a real project must run the launcher; the gate only fires once classification flips to `'launcher-backed'` via metadata.
 
----
+### 5. Telemetry + lint
 
-## Move 4 — `canonicalLaunchVfs.ts`
+- Each `CanonicalRuntimeError` increments `window.__unisonCanonicalGate.blocks` and emits `unison:canonical-gate:blocked` so the Debug Agent / Intent Inspector can surface it.
+- Add `scripts/lint-canonical-runtime.mjs` to forbid direct imports of `prepareSandpackFiles` / `buildCanonicalArtifacts` from outside `platform/core` and approved surfaces.
 
-- **Delete** the `allowCanonicalPageFallback` flag and every code path it gated. Canonical scaffold becomes metadata-only (page identity, route registry) and never contributes file contents to the merged VFS.
-- `mergeGeneratedVfsWithCanonicalSnapshot` now: takes Lane B output as the file source, validates against `snapshot.pages[]`, and raises `PreviewPipelineError('vfs', 'Lane B missing pages: …')` listing the gaps. The SystemLauncher catches it and surfaces the PreviewRuntimeError panel with a "Re-run launch" action.
+### 6. Tests (acceptance criteria)
 
----
+`src/test/canonicalRuntimeEnforcement.test.ts`:
 
-## Move 5 — `previewArtifacts.ts`
+1. Launcher-backed draft with no snapshot → `requireCanonicalSnapshot('preview')` throws `MISSING_SNAPSHOT`.
+2. Same draft → `webBuilderArtifacts.buildCanonicalArtifacts` throws (not silently emits legacy VFS).
+3. Same draft → `PreviewGate.evaluate` returns `{ ok: false, reason: 'MISSING_SNAPSHOT' }`.
+4. Same draft → `PublishGate.evaluate` returns `{ ok: false }`.
+5. Same draft → `nativePublishReadiness.compute` refuses with launch-gate result.
+6. Blank draft → all of the above pass (no gate).
+7. Manual draft after `createMinimalValidSnapshot()` → all gates pass.
+8. Legacy minimal-fallback VFS injected into a launcher-backed draft → `assertNoLegacyFallback` throws `LEGACY_FALLBACK_BLOCKED`.
 
-- Remove the `try { runPreflightRepair } catch { use stamped files }` swallow. Errors propagate.
-- The debug-dump branch (head-of-file logging for non-clean files) stays — that's diagnostics, not a fallback.
+### 7. Explicit non-goals (deferred)
 
----
-
-## Move 6 — Blank-draft minimal shell (per Q1 answer)
-
-A draft is "blank" iff: no `launchState`, no `/.unison/wizard-seed.json`, no `/.unison/site-bundle-snapshot.json`.
-
-For blank drafts only, the projector emits a *minimal empty shell* (not a themed preset):
-
-- `/src/index.css` → empty file with a single `@tailwind base; @tailwind components; @tailwind utilities;` block. No tokens, no fonts, no palette.
-- `/src/App.tsx` → empty `<div>` root with one "Start building" placeholder.
-- `/src/main.tsx` → standard mount.
-
-This is the *only* generative path that survives outside the snapshot, and it is explicitly visually empty so the user cannot mistake it for a wizard-themed default.
-
-For wizard drafts, the same projector with a missing snapshot raises `PreviewPipelineError('vfs', 'Wizard draft missing SiteBundleSnapshot — re-run System Launcher')`.
-
----
-
-## Move 7 — Error surface
-
-`PreviewRuntimeError.tsx` already exists. Extend it to render:
-
-- Stage chip (`vfs` / `prep` / `sandpack`)
-- Cause line from `PreviewPipelineError.summary`
-- Action buttons: "Retry preview", "Re-run launch" (for `vfs` stage on wizard drafts), "Open Health"
-
-`VFSPreview.tsx` mounts the panel when `buildPreviewArtifacts` throws `PreviewPipelineError`. All other throws still flow into the existing `SandpackErrorBoundary`.
+- No WebBuilder.tsx decomposition.
+- No AI commit preflight gating (next milestone).
+- No new product/CRM/services UI.
+- No schema/DB changes.
 
 ---
 
-## Move 8 — Tests
+### Technical notes
 
-- `src/test/snapshotProjector.test.ts` — token projection determinism, page router projection, blank-draft shell, wizard-draft missing-snapshot throws.
-- `src/test/previewPipeline.noFallback.test.ts` — golden test that asserts no `SEMANTIC_CSS_VARS`, no `buildProseFallback`, no `createProxyApp`, no `generateThemeCss`, no `allowCanonicalPageFallback` symbols remain in the source tree (grep-based guard so regressions fail CI).
-- Extend `vfsCommitService.golden.test.ts` to verify a wizard draft's preview CSS matches `themePresetToIndexCss(snapshot.meta.themePresetId)` byte-for-byte when AI CSS lacks tokens, and is left untouched when AI CSS contains them.
+- The contract reads snapshots from the same source `snapshotProjector` and `canonicalLaunchVfs` already use (`/.unison/snapshot.json` + `builder_drafts.metadata.siteBundleSnapshot`). No new persistence.
+- `CanonicalRuntimeError` extends a base `LaunchGateError` so existing `PreviewPipelineError` catches still work; UI prefers the new type when present.
+- All changes are additive at the contract boundary; existing strict paths (snapshotProjector, assertNoMinimalFallbackPreview, Composition Authority) are routed through the new error type rather than rewritten.
+- Estimated diff: ~8 files modified, 3 new files, 1 test file. No package installs.
 
----
-
-## What this fixes
-
-- **Path 1 (`generateThemeCss`):** deleted. CSS authority lives in the projector, keyed off `snapshot.meta.themePresetId`.
-- **Path 2 (four `sandpackFilePrep` safety nets):** deleted. Each becomes either a snapshot projection or a hard error.
-- **Path 3 (`allowCanonicalPageFallback`):** deleted. Canonical scaffold is metadata-only.
-- **Path 4 (`previewArtifacts` swallow):** deleted. Parse errors propagate to the error panel.
-
-The user's reported symptom ("default fallback preset rendered while logs say clean") becomes structurally impossible: there is no code path that can produce the editorial-default tokens unless the snapshot itself specifies `themePresetId: 'editorial'`.
-
-## Files touched
-
-- New: `src/services/snapshotProjector.ts`, `src/test/snapshotProjector.test.ts`, `src/test/previewPipeline.noFallback.test.ts`
-- Edited: `src/utils/launchToSandpack.ts`, `src/utils/sandpackFilePrep.ts`, `src/services/canonicalLaunchVfs.ts`, `src/utils/previewArtifacts.ts`, `src/components/PreviewRuntimeError.tsx`, `src/components/VFSPreview.tsx`, `src/components/onboarding/SystemLauncher.tsx` (error catch → panel)
-- Deleted symbols: `generateThemeCss`, `aestheticPalettes`, `buildProseFallback`, `wrapCssInReactComponent`, `createProxyApp`, `SEMANTIC_CSS_VARS`, `allowCanonicalPageFallback`
+Approve to implement.

@@ -10,6 +10,7 @@ import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from '.
 import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair } from './aiSitePreflightRepair';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
+import { PreviewPipelineError } from './previewPipelineError';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',

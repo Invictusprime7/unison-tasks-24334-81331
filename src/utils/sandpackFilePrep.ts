@@ -4866,8 +4866,21 @@ export default {
 `;
   }
 
-  // Ensure /src/App.tsx exists — derive from entryPoint or first page component
+  const normalizationResolution = resolveSnapshot(out, null);
+
+  // Ensure /src/App.tsx exists for blank/non-wizard drafts only. Wizard drafts
+  // must arrive with the deterministic router generated from PageRegistry;
+  // deriving App from the first page silently renders a minimal single-route
+  // shell and bypasses SiteBundleSnapshot authority.
   if (!out['/src/App.tsx'] && !out['/src/App.jsx']) {
+    if (normalizationResolution.isWizardDraft) {
+      throw new PreviewPipelineError(
+        'prep',
+        'Wizard draft is missing deterministic /src/App.tsx router — refusing to derive a minimal preview shell.',
+        { recoverableByRelaunch: true },
+      );
+    }
+
     const targetImport = pickRenderableLauncherEntry(out, options?.entryPoint);
 
     if (targetImport) {
@@ -5151,26 +5164,13 @@ export function prepareSandpackFiles(
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // THEME THREADING (canonical): Apply the wizard-resolved Style-card preset
-  // to ALL CSS files. The single source of truth is `themePresetId` (or its
-  // alias `aesthetic`); we delegate to buildBaseCssForPreset() so the SAME
-  // token system used by the launcher VFS is used here too.
+  // CSS THREADING (snapshot-as-primary): Preview must consume the injected VFS
+  // stylesheet. Rebuilding CSS here from themePresetId was a hidden hardcoded
+  // themed fallback and could overwrite the SiteBundleSnapshot/WizardSeed CSS.
+  // Only blank/non-wizard drafts may receive a Tailwind shell below; wizard
+  // drafts without CSS fail loudly.
   // ─────────────────────────────────────────────────────────────────────────
   const resolvedPresetId = options?.themePresetId || (options?.aesthetic && isValidAesthetic(options.aesthetic) ? options.aesthetic : null);
-  const themedCSS = resolvedPresetId ? buildBaseCssForPreset(resolvedPresetId) : '';
-
-  if (themedCSS) {
-    console.log(`[prepareSandpackFiles] Applying themePresetId: ${resolvedPresetId}`);
-
-    // Overwrite (not prepend) every existing CSS file so the wizard preset is
-    // authoritative across multi-file VFS structures. Prepend caused stale
-    // tokens to win for non-store industries (salon/coaching) — see prior fix.
-    for (const [filePath] of Object.entries(sandpackFiles)) {
-      if (filePath.endsWith('.css') && !filePath.includes('shim')) {
-        sandpackFiles[filePath] = themedCSS;
-      }
-    }
-  }
 
   // ── CSS authority (snapshot-as-primary, no SEMANTIC_CSS_VARS fallback) ──
   // Wizard-draft classification is derived strictly from artifacts present in
@@ -5179,19 +5179,17 @@ export function prepareSandpackFiles(
   const cssResolution = resolveSnapshot(resolvedFiles, null);
 
   if (!hasCSS) {
-    if (themedCSS) {
-      sandpackFiles['/index.css'] = themedCSS;
-    } else if (cssResolution.isWizardDraft) {
+    if (cssResolution.isWizardDraft) {
       throw new PreviewPipelineError(
         'prep',
-        'Wizard draft has no /src/index.css and no resolvable themePresetId.',
+        'Wizard draft has no injected /src/index.css from SiteBundleSnapshot — refusing to render fallback CSS.',
         { recoverableByRelaunch: true },
       );
     } else {
       // Blank draft → minimal Tailwind shell, no themed palette.
       sandpackFiles['/index.css'] = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`;
     }
-  } else if (!themedCSS) {
+  } else {
     const existingIndexCSS = sandpackFiles['/index.css'] || '';
     if (existingIndexCSS && !existingIndexCSS.includes('--primary:')) {
       if (cssResolution.isWizardDraft) {
@@ -5207,22 +5205,28 @@ export function prepareSandpackFiles(
     }
   }
 
+  if (resolvedPresetId && hasCSS) {
+    console.log(`[prepareSandpackFiles] Preserving injected VFS CSS for themePresetId: ${resolvedPresetId}`);
+  }
+
   // Enforce contrast on final CSS
   if (sandpackFiles['/index.css']) {
     sandpackFiles['/index.css'] = enforceContrastInCSS(sandpackFiles['/index.css']);
   }
 
   if (!hasApp) {
+    if (cssResolution.isWizardDraft) {
+      throw new PreviewPipelineError(
+        'prep',
+        'Wizard draft is missing /App.tsx — deterministic PageRegistry router was not injected.',
+        { recoverableByRelaunch: true },
+      );
+    }
+
     if (options?.strict && options?.entryPoint) {
       const entryFlattened = options.entryPoint.replace(/^\/src\//, '/');
       if (sandpackFiles[entryFlattened]) {
         sandpackFiles['/App.tsx'] = createProxyApp(entryFlattened);
-      } else if (cssResolution.isWizardDraft) {
-        throw new PreviewPipelineError(
-          'prep',
-          `Wizard draft missing strict entry ${entryFlattened} and no App.tsx — re-run the System Launcher.`,
-          { blockedFiles: [entryFlattened], recoverableByRelaunch: true },
-        );
       } else {
         throw new PreviewPipelineError(
           'prep',
@@ -5230,12 +5234,6 @@ export function prepareSandpackFiles(
           { blockedFiles: [entryFlattened], recoverableByRelaunch: true },
         );
       }
-    } else if (cssResolution.isWizardDraft) {
-      throw new PreviewPipelineError(
-        'prep',
-        'Wizard draft is missing /App.tsx — Lane B did not emit a root composition. Re-run the System Launcher.',
-        { recoverableByRelaunch: true },
-      );
     } else {
       throw new PreviewPipelineError(
         'prep',

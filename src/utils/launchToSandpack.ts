@@ -14,7 +14,7 @@
 import type { LaunchState } from '@/types/launchState';
 import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
-import { ensureSnapshotTokens, resolveSnapshot } from '@/services/snapshotProjector';
+import { assertNoMinimalFallbackPreview, ensureSnapshotTokens, resolveSnapshot } from '@/services/snapshotProjector';
 
 export type SandpackFiles = Record<string, string>;
 
@@ -37,6 +37,7 @@ export function launchStateToSandpackFiles(
     : launchState.vfsFiles || {};
 
   const resolution = resolveSnapshot(sourceVfsFiles, launchState);
+  assertNoMinimalFallbackPreview(sourceVfsFiles, resolution, 'Launch preview gate');
 
   const entryPoint = resolveLauncherEntryPoint(
     sourceVfsFiles,
@@ -67,6 +68,7 @@ export function launchStateToSandpackFiles(
           ? '/index.css'
           : '/src/index.css';
   files[cssKey] = ensureSnapshotTokens(files[cssKey], resolution);
+  assertNoMinimalFallbackPreview(files, resolution, 'Launch preview files');
 
   // Intent comment marker (unchanged behavior; not a fallback).
   if (launchState.intentRuntime && launchState.preloadedIntents.length > 0) {
@@ -93,6 +95,7 @@ export function launchStateToSandpackFiles(
     aesthetic: launchState.aesthetic,
     themePresetId: resolution.themePresetId,
   });
+  assertNoMinimalFallbackPreview(previewFiles, resolution, 'Launch preview compiler');
 
   if (debug) {
     previewFiles['/launch-metadata.json'] = JSON.stringify(

@@ -446,8 +446,9 @@ export function tryComposeTopologyPage(
   if (!active) return null;
   const sub = buildRoleComposition(active, page.role, page);
   if (!sub) return null;
+  const seeded = applyWizardSeedToComposition(sub, plan);
   try {
-    return compositionToReactCode(sub);
+    return compositionToReactCode(seeded);
   } catch {
     return null;
   }
@@ -467,8 +468,9 @@ export function tryComposeTopologyPageFiles(
   if (!active) return null;
   const sub = buildRoleComposition(active, page.role, page);
   if (!sub) return null;
+  const seeded = applyWizardSeedToComposition(sub, plan);
   try {
-    return compositionToReactFileSet(sub, page.filePath);
+    return compositionToReactFileSet(seeded, page.filePath);
   } catch {
     return null;
   }

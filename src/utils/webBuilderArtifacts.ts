@@ -1,5 +1,10 @@
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { bundleCode } from '@/utils/codeBundler';
+import {
+  assertNoMinimalFallbackPreview,
+  projectSnapshotVfsFiles,
+  resolveSnapshot,
+} from '@/services/snapshotProjector';
 
 export interface CanonicalBuildArtifacts {
   exportHtml: string;
@@ -19,9 +24,19 @@ export function buildCanonicalArtifacts(
     return null;
   }
 
-  const compiled = prepareSandpackFiles(sourceFiles, {
+  // Snapshot-as-primary: restore any legacy/minimal placeholders from the
+  // SiteBundleSnapshot before compiling deploy/export artifacts. This is the
+  // final bridge that keeps wizard seed/sitebundle registries authoritative
+  // for deploy bundles (preview already routes through buildPreviewArtifacts).
+  const resolution = resolveSnapshot(sourceFiles);
+  const projectedSource = projectSnapshotVfsFiles(sourceFiles, resolution);
+  assertNoMinimalFallbackPreview(projectedSource, resolution, 'Canonical artifact gate');
+
+  const compiled = prepareSandpackFiles(projectedSource, {
     entryPoint: options?.entryPoint,
+    themePresetId: resolution.themePresetId ?? undefined,
   });
+  assertNoMinimalFallbackPreview(compiled, resolution, 'Canonical artifact compiler');
 
   const entryCode = compiled['/App.tsx']
     || compiled['/App.jsx']

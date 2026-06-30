@@ -15,6 +15,36 @@ import { syncCanonicalComponentGraph } from "@/services/componentGraphPersistenc
 import { findBuilderDraftIdForProject } from "@/services/builderDraftBridge";
 import { generateCanonicalRouterForFiles } from "@/utils/topologyRouterGenerator";
 import type { PageRegistry } from "@/types/pageRegistry";
+import { createMinimalValidSnapshot } from "@/platform/core/canonicalRuntimeContract";
+
+/**
+ * Pass 1 (Canonical Preview Enforcement): if a draft is being created without
+ * a SiteBundleSnapshot AND without wizard evidence in metadata, mint a real
+ * minimal snapshot up-front so canonical preview / readiness / publish never
+ * have to fall back to a fabricated shell at render time. Blank drafts now
+ * enter the system already-canonical.
+ */
+function bootstrapSnapshotIfMissing(
+  metadata: Record<string, unknown>,
+  payload?: SaveProjectPayload,
+  projectName?: string,
+): Record<string, unknown> {
+  if (payload?.siteBundleSnapshot) return metadata;
+  if (metadata.siteBundleSnapshot) return metadata;
+  // Honor explicit wizard handoff if present — wizard pipeline mints its own.
+  if (metadata.wizardSeedId || metadata.canonicalPlayground) return metadata;
+  try {
+    const snapshot = createMinimalValidSnapshot({
+      businessName: projectName || 'Untitled project',
+      themePresetId: (metadata.themePresetId as string) || 'default',
+      systemId: (metadata.systemId as string) || 'manual',
+    });
+    return { ...metadata, siteBundleSnapshot: snapshot as unknown as Record<string, unknown> };
+  } catch (err) {
+    console.warn('[useTemplateFiles] minimal snapshot bootstrap failed:', err);
+    return metadata;
+  }
+}
 
 interface TemplateData {
   html: string;

@@ -4662,7 +4662,14 @@ function pickRenderableLauncherEntry(
 
 export function normalizeLauncherFiles(
   files: Record<string, string>,
-  options?: { entryPoint?: string; themePresetId?: string | null }
+  options?: {
+    entryPoint?: string;
+    themePresetId?: string | null;
+    /** Internal launch-assembly path: router/CSS may be added after canonical snapshot merge. */
+    allowMissingWizardArtifacts?: boolean;
+    /** Preview artifact path should preserve VFS CSS and let snapshotProjector gate missing CSS. */
+    injectCssIfMissing?: boolean;
+  }
 ): Record<string, string> {
   // ── Unwrap JSON envelope leaked into file content ──────────────────────
   // The AI sometimes wraps output in {"files":{...}} — if ANY file's content
@@ -4748,8 +4755,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );`;
   }
 
-  // Ensure /src/index.css exists — keyed on the wizard's resolved preset, never hard-coded
-  if (!out['/src/index.css']) {
+  const normalizationResolution = resolveSnapshot(out, null);
+
+  // Ensure /src/index.css exists only for callers that are still assembling the
+  // canonical VFS. Preview artifact rendering preserves injected VFS CSS and
+  // fails later if a wizard draft is missing it.
+  if (!out['/src/index.css'] && options?.injectCssIfMissing !== false) {
     out['/src/index.css'] = buildBaseCssForPreset(options?.themePresetId);
   }
 
@@ -4866,14 +4877,12 @@ export default {
 `;
   }
 
-  const normalizationResolution = resolveSnapshot(out, null);
-
   // Ensure /src/App.tsx exists for blank/non-wizard drafts only. Wizard drafts
   // must arrive with the deterministic router generated from PageRegistry;
   // deriving App from the first page silently renders a minimal single-route
   // shell and bypasses SiteBundleSnapshot authority.
   if (!out['/src/App.tsx'] && !out['/src/App.jsx']) {
-    if (normalizationResolution.isWizardDraft) {
+    if (normalizationResolution.isWizardDraft && !options?.allowMissingWizardArtifacts) {
       throw new PreviewPipelineError(
         'prep',
         'Wizard draft is missing deterministic /src/App.tsx router — refusing to derive a minimal preview shell.',

@@ -46,6 +46,7 @@ export function launchStateToSandpackFiles(
   const normalizedFiles = normalizeLauncherFiles(sourceVfsFiles, {
     entryPoint,
     themePresetId: resolution.themePresetId,
+    injectCssIfMissing: false,
   });
 
   const files: SandpackFiles = { ...normalizedFiles };

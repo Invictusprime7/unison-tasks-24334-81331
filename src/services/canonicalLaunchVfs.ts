@@ -304,6 +304,7 @@ export function buildCanonicalLaunchArtifacts(
   const normalizedFiles = normalizeLauncherFiles(input.generatedFiles, {
     entryPoint: input.preferredEntryPoint,
     themePresetId: resolvedThemePresetId,
+    allowMissingWizardArtifacts: true,
   });
 
   // ── Early syntax repair ────────────────────────────────────────────────

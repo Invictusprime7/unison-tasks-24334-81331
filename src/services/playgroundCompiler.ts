@@ -67,35 +67,19 @@ export function compilePlayground(
 
 
   // Composition-only contract: pages are ONLY emitted from the active
-  // SiteBundle/template composition. Any registry page that cannot be composed
-  // is aggregated into a single PreviewPipelineError instead of being
-  // silently filled with a spinner/minimal placeholder.
+  // SiteBundle/template composition. Existing page files are intentionally not
+  // preserved for wizard-generated routes: stale AI/Lane-B shells are the
+  // source of the hardcoded minimal preview regressions. The SiteBundleSnapshot
+  // + WizardSeed pipeline is authoritative for every registered hash route.
   const vfsFiles: Record<string, string> = {};
   const blockedWizardPages: string[] = [];
 
   for (const page of pages) {
     const fp = page.filePath!;
-    const existingPageFile = existingVfsFiles[fp];
     const node = scaffoldPlan.pages.find((p) => p.id === page.pageId);
 
-    // ── Home authority (snapshot-first) ──────────────────────────────────
-    // The Home route is the single most-visited surface of every wizard
-    // generated site, and must always reflect the SiteBundleSnapshot's
-    // composed topology — never an AI-authored shell that escaped Lane B
-    // (which historically wired Home to /src/sections/Site* while subpages
-    // composed correctly from /src/components/*, producing the exact
-    // "minimal Home vs rich subpages" split this guard fixes). If a
-    // composable node exists for Home, ALWAYS re-emit the composed file
-    // set even when an existingPageFile is present.
-    const isHomeRoute = Boolean(page.isHome) || page.path === '/' || (node?.role === 'home');
-
-    if (existingPageFile && !isHomeRoute) {
-      vfsFiles[fp] = existingPageFile;
-      continue;
-    }
-
     if (!node) {
-      if (existingPageFile) vfsFiles[fp] = existingPageFile;
+      blockedWizardPages.push(fp);
       continue;
     }
 
@@ -107,13 +91,6 @@ export function compilePlayground(
       Object.assign(vfsFiles, fileSet);
     } catch (err) {
       if (err instanceof PreviewPipelineError) {
-        // If composition fails for Home but an AI-authored Home exists,
-        // preserve it so preflight still has something to surface rather
-        // than dropping the entire route.
-        if (existingPageFile) {
-          vfsFiles[fp] = existingPageFile;
-          continue;
-        }
         blockedWizardPages.push(fp);
         continue;
       }

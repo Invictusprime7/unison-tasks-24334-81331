@@ -14,7 +14,7 @@
 import type { LaunchState } from '@/types/launchState';
 import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
-import { ensureSnapshotTokens, resolveSnapshot } from '@/services/snapshotProjector';
+import { assertNoMinimalFallbackPreview, ensureSnapshotTokens, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
 
 export type SandpackFiles = Record<string, string>;
 
@@ -32,11 +32,14 @@ export function launchStateToSandpackFiles(
   // LaunchState.vfsFiles is the durable fallback only when the live VFS hasn't
   // imported yet (first paint window). The snapshot projector still gates any
   // missing artifact, so this can't silently render a default preset.
-  const sourceVfsFiles = Object.keys(vfsFiles).length > 0
+  let sourceVfsFiles = Object.keys(vfsFiles).length > 0
     ? vfsFiles
     : launchState.vfsFiles || {};
 
-  const resolution = resolveSnapshot(sourceVfsFiles, launchState);
+  let resolution = resolveSnapshot(sourceVfsFiles, launchState);
+  sourceVfsFiles = projectSnapshotVfsFiles(sourceVfsFiles, resolution);
+  resolution = resolveSnapshot(sourceVfsFiles, launchState);
+  assertNoMinimalFallbackPreview(sourceVfsFiles, resolution, 'Launch preview gate');
 
   const entryPoint = resolveLauncherEntryPoint(
     sourceVfsFiles,
@@ -46,6 +49,7 @@ export function launchStateToSandpackFiles(
   const normalizedFiles = normalizeLauncherFiles(sourceVfsFiles, {
     entryPoint,
     themePresetId: resolution.themePresetId,
+    injectCssIfMissing: false,
   });
 
   const files: SandpackFiles = { ...normalizedFiles };
@@ -66,6 +70,7 @@ export function launchStateToSandpackFiles(
           ? '/index.css'
           : '/src/index.css';
   files[cssKey] = ensureSnapshotTokens(files[cssKey], resolution);
+  assertNoMinimalFallbackPreview(files, resolution, 'Launch preview files');
 
   // Intent comment marker (unchanged behavior; not a fallback).
   if (launchState.intentRuntime && launchState.preloadedIntents.length > 0) {
@@ -92,6 +97,7 @@ export function launchStateToSandpackFiles(
     aesthetic: launchState.aesthetic,
     themePresetId: resolution.themePresetId,
   });
+  assertNoMinimalFallbackPreview(previewFiles, resolution, 'Launch preview compiler');
 
   if (debug) {
     previewFiles['/launch-metadata.json'] = JSON.stringify(

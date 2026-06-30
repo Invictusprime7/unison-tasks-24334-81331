@@ -36,6 +36,7 @@ import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
 import { PreviewPipelineError, isPreviewPipelineError } from '@/services/previewPipelineError';
 import { PreviewRuntimeError } from '@/components/PreviewRuntimeError';
+import { resolveSnapshot } from '@/services/snapshotProjector';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
@@ -280,6 +281,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     const nodeFiles = nodesToFileMap(nodes);
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
+
+  const isWizardPreview = useMemo(() => resolveSnapshot(files, launch).isWizardDraft, [files, launch]);
   
   const { sandpackFiles, dependencies: sandpackDeps, pipelineError } = useMemo(() => {
     try {
@@ -587,9 +590,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     if (startAttemptedRef.current) return;
     startAttemptedRef.current = true;
 
-    if (forceBackend === 'sandpack') {
+    if (pipelineError || isWizardPreview || forceBackend === 'sandpack') {
       setBackend('sandpack');
-      onReady?.();
+      if (!pipelineError) onReady?.();
       return;
     }
 
@@ -618,7 +621,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     // Default: always Sandpack
     setBackend('sandpack');
     onReady?.();
-  }, [autoStart, dockerGatewayConfigured, dockerService, forceBackend, localViteConfigured, nodes, onReady]);
+  }, [autoStart, dockerGatewayConfigured, dockerService, forceBackend, isWizardPreview, localViteConfigured, nodes, onReady, pipelineError]);
   
   // Sync file changes to Docker when running
   useEffect(() => {
@@ -631,6 +634,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   // Handlers
   const handleStartDocker = useCallback(async () => {
+    if (isWizardPreview) {
+      onError?.('Wizard previews render through the SiteBundleSnapshot artifact pipeline; Docker/local preview is blocked to prevent fallback routes.');
+      return;
+    }
     if (!dockerGatewayConfigured) {
       onError?.('Docker gateway not configured');
       return;
@@ -645,7 +652,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       setBackend('sandpack');
       onError?.('Failed to start Docker preview, using Sandpack');
     }
-  }, [dockerGatewayConfigured, dockerService, nodes, onReady, onError]);
+  }, [dockerGatewayConfigured, dockerService, isWizardPreview, nodes, onReady, onError]);
   
   const handleStopDocker = useCallback(async () => {
     await dockerService.stopSession();

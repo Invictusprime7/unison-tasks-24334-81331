@@ -132,8 +132,6 @@ import { useAIVFS } from '@/hooks/useAIVFS';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
-import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
-import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { buildCanonicalArtifacts } from '@/utils/webBuilderArtifacts';
 import { getTemplateReactCodeWithCSS } from '@/data/templates';
 import type { LauncherHandoff, RuntimeManifest } from '@/types/runtimeManifest';
@@ -161,6 +159,7 @@ import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistenc
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
+import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
 import PreviewCartDrawer from '@/components/preview/PreviewCartDrawer';
 import {
@@ -3038,6 +3037,7 @@ export default function ${componentName}Page() {
     const normalizedFiles = normalizeLauncherFiles({ ...incomingFiles }, {
       entryPoint: normalizedEntryPoint,
       themePresetId: resolvedThemePresetId,
+      injectCssIfMissing: !effectiveRouteState?.siteBundleSnapshot,
     });
 
     const appKey = resolveLauncherEntryPoint(
@@ -3053,6 +3053,16 @@ export default function ${componentName}Page() {
       }
     }
 
+    let candidateFiles = {
+      ...virtualFSRef.current.getSandpackFiles(),
+      ...normalizedFiles,
+    };
+    let snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
+    candidateFiles = projectSnapshotVfsFiles(candidateFiles, snapshotResolution);
+    snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
+    Object.assign(normalizedFiles, candidateFiles);
+    assertNoMinimalFallbackPreview(candidateFiles, snapshotResolution, 'Builder VFS import');
+
     // End-to-end preflight before any template/page import lands in the VFS.
     // Mirrors the launcher + AI-apply paths so every entry point is guarded.
     const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
@@ -3060,6 +3070,7 @@ export default function ${componentName}Page() {
       siteBundleSnapshot: snapshotForPreflight,
       industry: snapshotForPreflight?.industry,
     }).files;
+    assertNoMinimalFallbackPreview({ ...candidateFiles, ...preflightedFiles }, snapshotResolution, 'Builder VFS import preflight');
 
     vfsImportFiles(preflightedFiles);
     const syncedEntry = syncBuilderFromFiles(
@@ -3271,7 +3282,11 @@ export default function ${componentName}Page() {
               ...currentFiles,
               [targetPath]: previewCode,
             },
-            { entryPoint: targetPath, themePresetId: resolvedThemePresetId }
+              {
+                entryPoint: targetPath,
+                themePresetId: resolvedThemePresetId,
+                injectCssIfMissing: !effectiveRouteState?.siteBundleSnapshot,
+              }
           )
         : {
             [targetPath]: previewCode,
@@ -5056,32 +5071,18 @@ export default function ${componentName}Page() {
       const normalizedEntryPoint = launcherEntryPoint
         ? (launcherEntryPoint.startsWith('/') ? launcherEntryPoint : `/${launcherEntryPoint}`)
         : null;
-      const vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
+      let vfsFiles = normalizeLauncherFiles(launcherSourceFiles, {
         entryPoint: normalizedEntryPoint || launcherEntryPoint,
         themePresetId: resolvedThemePresetId,
+        injectCssIfMissing: !(navState.siteBundleSnapshot || navState.fromLauncher),
       });
 
-      // Force /src/index.css to the wizard's themed CSS — OVERWRITE, not prepend.
-      // The previous prepend-based approach lost to a race where the launcher's themed
-      // CSS hadn't yet hydrated into VFS, leaving the modern default. We now rebuild
-      // deterministically from the resolved preset, every time.
-      if (resolvedThemePresetId) {
-        const preset = THEME_PRESETS.find((p) => p.id === resolvedThemePresetId);
-        if (!preset) {
-          throw new Error(`[WebBuilder] Unknown wizard themePresetId "${resolvedThemePresetId}"; refusing default template preset.`);
-        }
-        const themedCss = buildThemedIndexCss(preset);
-        vfsFiles["/src/index.css"] = themedCss;
-        // Mirror to any sibling CSS files so secondary stylesheets share the same tokens.
-        Object.keys(vfsFiles).forEach((path) => {
-          if (path.endsWith('.css') && path !== '/src/index.css' && !path.includes('shim')) {
-            const existing = vfsFiles[path];
-            if (typeof existing === 'string' && !existing.includes('/* AESTHETIC:')) {
-              vfsFiles[path] = themedCss + '\n\n' + existing;
-            }
-          }
-        });
-        console.log('[WebBuilder] Applied wizard theme preset:', resolvedThemePresetId);
+      let wizardResolution = resolveSnapshot(vfsFiles, navState as any);
+      vfsFiles = projectSnapshotVfsFiles(vfsFiles, wizardResolution);
+      wizardResolution = resolveSnapshot(vfsFiles, navState as any);
+      assertNoMinimalFallbackPreview(vfsFiles, wizardResolution, 'Launcher handoff import');
+      if (wizardResolution.isWizardDraft && !vfsFiles['/src/index.css']) {
+        throw new Error('[WebBuilder] Launcher handoff is missing injected /src/index.css from SiteBundleSnapshot; refusing preview CSS fallback.');
       }
 
       if (Object.keys(vfsFiles).length > 0) {
@@ -5205,7 +5206,11 @@ export default function ${componentName}Page() {
 
         nextFiles[launchEntryPoint] = nextCode;
         // Normalize to ensure main.tsx and index.css exist
-        const normalizedFiles = normalizeLauncherFiles(nextFiles, { entryPoint: launchEntryPoint, themePresetId: resolvedThemePresetId });
+        const normalizedFiles = normalizeLauncherFiles(nextFiles, {
+          entryPoint: launchEntryPoint,
+          themePresetId: resolvedThemePresetId,
+          injectCssIfMissing: !navState.siteBundleSnapshot,
+        });
         replaceProjectFiles(normalizedFiles, {
           activePath: launchEntryPoint,
           entryContent: nextCode,
@@ -5277,6 +5282,7 @@ ${sectionsJsx}
       }, {
         entryPoint: launchEntryPoint,
         themePresetId: resolvedThemePresetId,
+        injectCssIfMissing: !navState.siteBundleSnapshot,
       });
       replaceProjectFiles(templateFiles, {
         activePath: launchEntryPoint,

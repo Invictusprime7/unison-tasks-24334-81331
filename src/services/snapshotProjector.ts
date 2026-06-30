@@ -158,11 +158,6 @@ export function assertWizardSnapshotPresent(
   context: string,
 ): void {
   if (resolution.isWizardDraft && !resolution.snapshot) {
-    // Lazy import to avoid a hard cycle with platform/core.
-    // Both error types share the PreviewPipelineError base class, so existing
-    // catch sites stay correct while launch-gate-aware UIs render the calm
-    // gate notice instead of the red error panel.
-    const { CanonicalRuntimeError } = require('@/platform/core/canonicalRuntimeContract') as typeof import('@/platform/core/canonicalRuntimeContract');
     throw new CanonicalRuntimeError({
       surface: 'preview',
       code: 'MISSING_SNAPSHOT',

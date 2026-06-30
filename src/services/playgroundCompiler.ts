@@ -104,7 +104,10 @@ export function compilePlayground(
   // VFS always has package.json/tsconfig/vite/tailwind/postcss, matching what
   // canonical launch and live preview expect. Idempotent — won't overwrite
   // existing user-authored config files.
-  const hydratedVfsFiles = ensureViteRootFiles(vfsFiles);
+  const hydratedVfsFiles = ensureViteRootFiles(vfsFiles, {
+    themePresetId: options?.themePresetId ?? null,
+  });
+
   for (const [p, c] of Object.entries(hydratedVfsFiles)) {
     if (!(p in vfsFiles)) vfsFiles[p] = c;
   }

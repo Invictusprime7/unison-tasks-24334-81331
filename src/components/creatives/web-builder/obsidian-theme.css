@@ -80,27 +80,46 @@
 }
 
 /* ---- Neon text colors → calm zinc/indigo ------------------------------ */
-.wb-obsidian .text-cyan-400,
-.wb-obsidian .text-cyan-300,
-.wb-obsidian .text-cyan-100,
-.wb-obsidian .text-fuchsia-400,
-.wb-obsidian .text-fuchsia-300,
-.wb-obsidian .text-lime-400,
-.wb-obsidian .text-yellow-400,
-.wb-obsidian .text-yellow-300,
-.wb-obsidian .text-yellow-200 { color: var(--wb-text) !important; }
+.wb-obsidian [class*="text-cyan-"],
+.wb-obsidian [class*="text-fuchsia-"],
+.wb-obsidian [class*="text-lime-"],
+.wb-obsidian [class*="text-yellow-"],
+.wb-obsidian [class*="text-pink-"] { color: var(--wb-text) !important; }
 
-.wb-obsidian .text-cyan-400\/70,
-.wb-obsidian .text-cyan-400\/60,
-.wb-obsidian .text-fuchsia-400\/60,
-.wb-obsidian .text-yellow-400\/70,
-.wb-obsidian .text-yellow-400\/60,
-.wb-obsidian .text-lime-400\/60,
-.wb-obsidian .text-purple-300 { color: var(--wb-muted) !important; }
+.wb-obsidian [class*="text-cyan-"][class*="\\/30"],
+.wb-obsidian [class*="text-cyan-"][class*="\\/40"],
+.wb-obsidian [class*="text-cyan-"][class*="\\/50"],
+.wb-obsidian [class*="text-cyan-"][class*="\\/60"],
+.wb-obsidian [class*="text-cyan-"][class*="\\/70"],
+.wb-obsidian [class*="text-fuchsia-"][class*="\\/40"],
+.wb-obsidian [class*="text-fuchsia-"][class*="\\/50"],
+.wb-obsidian [class*="text-fuchsia-"][class*="\\/60"],
+.wb-obsidian [class*="text-yellow-"][class*="\\/60"],
+.wb-obsidian [class*="text-yellow-"][class*="\\/70"],
+.wb-obsidian [class*="text-lime-"][class*="\\/60"],
+.wb-obsidian .text-purple-300,
+.wb-obsidian .text-white\/30,
+.wb-obsidian .text-white\/35,
+.wb-obsidian .text-white\/40,
+.wb-obsidian .text-white\/50 { color: var(--wb-muted) !important; }
 
-/* Drop-shadow text */
-.wb-obsidian [class*="drop-shadow-[0_0_5px_rgba(0,255,255"],
-.wb-obsidian [class*="drop-shadow-[0_0_8px_rgba"] { filter: none !important; }
+.wb-obsidian .text-white\/60,
+.wb-obsidian .text-white\/70,
+.wb-obsidian .text-white\/80 { color: var(--wb-text) !important; }
+
+/* Drop-shadow + ring glow neutralization */
+.wb-obsidian [class*="drop-shadow-["],
+.wb-obsidian [class*="shadow-fuchsia-"],
+.wb-obsidian [class*="shadow-cyan-"] { filter: none !important; box-shadow: 0 8px 24px -12px rgba(0,0,0,0.6) !important; }
+
+/* Legacy multi-stop gradient headers (file tabs, preview chrome) → flat panel */
+.wb-obsidian [class*="bg-gradient-to-"][class*="from-[#"],
+.wb-obsidian [class*="bg-gradient-to-"][class*="from-fuchsia"],
+.wb-obsidian [class*="bg-gradient-to-"][class*="from-cyan"],
+.wb-obsidian [class*="bg-gradient-to-"][class*="from-slate-100"] {
+  background-image: none !important;
+  background-color: var(--wb-panel) !important;
+}
 
 /* ---- Active/selected pills (cyan/yellow/fuchsia bg) → indigo --------- */
 .wb-obsidian .bg-cyan-500,

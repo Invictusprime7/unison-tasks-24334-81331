@@ -57,8 +57,9 @@ export function classifyDraft(
   const seedExists = Boolean(sourceFiles?.['/.unison/wizard-seed.json']);
   const launchOrigin = readLaunchOrigin(sourceFiles);
   const systemId =
-    resolution.snapshot?.meta?.systemId ??
-    launchState?.runtimeManifest?.appContext?.systemId ??
+    (resolution.snapshot?.meta as { systemId?: string } | undefined)?.systemId ??
+    (launchState?.runtimeManifest?.appContext as { systemId?: string } | undefined)?.systemId ??
+    (launchState?.runtimeManifest?.appContext?.systemType as string | undefined) ??
     null;
 
   const isLauncherBacked = Boolean(

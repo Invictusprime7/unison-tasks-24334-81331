@@ -1,89 +1,110 @@
-## Milestone: Canonical Runtime Enforcement Pass
+# Milestone: Canonical Preview + Durable Commit Enforcement
 
-**Rule:** Launcher-backed drafts cannot preview, run readiness, or publish without a valid `SiteBundleSnapshot`. Failure is a *launch gate*, not a crash.
+Turn Unison from "advanced builder" into "business OS runtime" by making `SiteBundleSnapshot` + `BuilderIdentity` the non-negotiable contract for every preview, AI edit, playground sync, and publish.
 
----
+We already shipped the foundation in prior turns:
+- `canonicalRuntimeContract.ts` + `CanonicalRuntimeError`
+- `LaunchGateNotice` UI
+- `VFSCommitService` + `site_revisions` ledger
+- `BuilderIdentity` type + assertions
+- Hard-error throws inside `snapshotProjector`, `webBuilderArtifacts`, `VFSPreview`, `DeployButton`
 
-### 1. Single source of truth: `requireCanonicalSnapshot`
-
-New module `src/platform/core/canonicalRuntimeContract.ts`:
-
-- `classifyDraft(draft) → 'launcher-backed' | 'manual' | 'blank'` (reads `/.unison/seed.json`, `meta.systemId`, `launchOrigin`).
-- `requireCanonicalSnapshot(draft, surface)` — returns `{ snapshot, manifest }` or throws `CanonicalRuntimeError` with:
-  - `surface`: `'preview' | 'readiness' | 'publish' | 'artifacts'`
-  - `code`: `MISSING_SNAPSHOT | MISSING_THEME_PRESET | MISSING_SYSTEM_ID | LEGACY_FALLBACK_BLOCKED`
-  - `userMessage`: "This project has not been launched yet. Unison needs a SiteBundleSnapshot before it can render a live business preview."
-  - `developerMessage` + `recoveryActions: ['run-system-launcher', 'migrate-legacy-draft']`
-- `tryGetCanonicalSnapshot(draft)` — non-throwing variant for blank/manual drafts.
-- `assertNoLegacyFallback(files, surface)` — promotes the existing `assertNoMinimalFallbackPreview` into the contract.
-
-Manual/blank drafts get a `createMinimalValidSnapshot()` helper that mints a real (not minimal-fallback) snapshot before any preview attempts.
-
-### 2. Strict surfaces
-
-Each surface calls `requireCanonicalSnapshot` for launcher-backed drafts:
-
-| Surface | File | Behavior |
-|---|---|---|
-| Preview artifacts | `src/utils/webBuilderArtifacts.ts` | Throw `CanonicalRuntimeError` instead of building from raw VFS |
-| Preview shell | `src/components/VFSPreview.tsx` | Catch error → render `<LaunchGateNotice>` (not error boundary) |
-| Snapshot projection | `src/services/snapshotProjector.ts` | Already strict — wrap existing throws in the new error type |
-| Canonical launch VFS | `src/services/canonicalLaunchVfs.ts` | Stop emitting legacy fallback paths when snapshot missing |
-| Readiness | `src/services/nativePublishReadiness.ts` + `ReadinessCenterPanel.tsx` | Refuse to compute; show launch gate state |
-| Publish gate | `src/platform/core/gates.ts` (`PublishGate`) | Add snapshot presence as first invariant |
-| Deploy button | `src/components/.../DeployButton.tsx` | Disabled with tooltip when gate fails |
-| Preview gate | `src/platform/core/gates.ts` (`PreviewGate`) | Same first invariant |
-
-### 3. Launch gate UI
-
-New `src/components/creatives/web-builder/LaunchGateNotice.tsx`:
-
-- Calm dark panel matching obsidian theme (no red error chrome).
-- Primary copy: *"This project has not been launched yet."*
-- Sub: *"Unison needs a SiteBundleSnapshot before it can render a live business preview."*
-- Primary action: **Run System Launcher** (routes to wizard).
-- Secondary (only when legacy draft detected): **Migrate legacy draft** (invokes a one-shot adapter that runs the wizard topology over existing files).
-- Developer details collapsed under a "Details" disclosure (error code + surface).
-
-Mounted by `VFSPreview`, `ReadinessCenterPanel`, and the deploy flow when `CanonicalRuntimeError` is caught.
-
-### 4. Manual / blank drafts stay friendly
-
-- Blank drafts (no `/.unison/seed.json`, no `systemId`) classify as `'blank'` and skip the gate — they keep the existing "Preview waiting for app files" idle state.
-- A user mutating a blank draft into a real project must run the launcher; the gate only fires once classification flips to `'launcher-backed'` via metadata.
-
-### 5. Telemetry + lint
-
-- Each `CanonicalRuntimeError` increments `window.__unisonCanonicalGate.blocks` and emits `unison:canonical-gate:blocked` so the Debug Agent / Intent Inspector can surface it.
-- Add `scripts/lint-canonical-runtime.mjs` to forbid direct imports of `prepareSandpackFiles` / `buildCanonicalArtifacts` from outside `platform/core` and approved surfaces.
-
-### 6. Tests (acceptance criteria)
-
-`src/test/canonicalRuntimeEnforcement.test.ts`:
-
-1. Launcher-backed draft with no snapshot → `requireCanonicalSnapshot('preview')` throws `MISSING_SNAPSHOT`.
-2. Same draft → `webBuilderArtifacts.buildCanonicalArtifacts` throws (not silently emits legacy VFS).
-3. Same draft → `PreviewGate.evaluate` returns `{ ok: false, reason: 'MISSING_SNAPSHOT' }`.
-4. Same draft → `PublishGate.evaluate` returns `{ ok: false }`.
-5. Same draft → `nativePublishReadiness.compute` refuses with launch-gate result.
-6. Blank draft → all of the above pass (no gate).
-7. Manual draft after `createMinimalValidSnapshot()` → all gates pass.
-8. Legacy minimal-fallback VFS injected into a launcher-backed draft → `assertNoLegacyFallback` throws `LEGACY_FALLBACK_BLOCKED`.
-
-### 7. Explicit non-goals (deferred)
-
-- No WebBuilder.tsx decomposition.
-- No AI commit preflight gating (next milestone).
-- No new product/CRM/services UI.
-- No schema/DB changes.
+What's left is to **close the loops** — make the contracts unbypassable and start shrinking `WebBuilder.tsx`.
 
 ---
 
-### Technical notes
+## Pass 1 — Hard-error preview everywhere (finish it)
 
-- The contract reads snapshots from the same source `snapshotProjector` and `canonicalLaunchVfs` already use (`/.unison/snapshot.json` + `builder_drafts.metadata.siteBundleSnapshot`). No new persistence.
-- `CanonicalRuntimeError` extends a base `LaunchGateError` so existing `PreviewPipelineError` catches still work; UI prefers the new type when present.
-- All changes are additive at the contract boundary; existing strict paths (snapshotProjector, assertNoMinimalFallbackPreview, Composition Authority) are routed through the new error type rather than rewritten.
-- Estimated diff: ~8 files modified, 3 new files, 1 test file. No package installs.
+Goal: Preview never silently renders a canonical project without a `SiteBundleSnapshot`.
 
-Approve to implement.
+- Add **blank-project snapshot bootstrap**: `createMinimalValidSnapshot()` already exists in `canonicalRuntimeContract.ts` — wire it into the "Start from Blank" path so blank drafts get a real snapshot at draft creation, not a fake shell at render time.
+- Audit remaining preview entry points (`buildPreviewArtifacts`, `playgroundCompiler.recompileFromPlayground`, `useTemplateFiles` hot paths) and route every launcher-backed render through `requireCanonicalSnapshot()`.
+- Replace any lingering "minimal fallback" branches with `LaunchGateNotice`.
+
+## Pass 2 — Identity hardening
+
+Goal: `templateId`, `draftId`, `projectId`, `businessId`, `revisionId`, `sessionId` never collapse.
+
+- Grep + remove every place where `currentTemplateId` is passed where `projectId`/`draftId` is expected (AI Builder handlers, deploy, revisions writer, drafts persistence).
+- Make `BuilderSessionProvider` the single source: `WebBuilder` reads identity from context, never from props/local state.
+- Add a dev-only `assertBuilderIdentity` call at every commit/deploy/AI-apply boundary; fail loud in dev, telemetry-log in prod.
+
+## Pass 3 — VFSCommitService as the only durable writer
+
+Goal: Every accepted mutation goes through `commitMutation` → canonical pipeline → preflight → revision ledger.
+
+- Flip `VITE_USE_COMMIT_SERVICE` on for the migrated writers and migrate the remaining ones: AI Builder apply, theme change, layout fast-path, page add/remove, intent binding change.
+- Add CI lint rule extending `scripts/lint-pipeline-bypass.mjs` to forbid direct `aiVFS.applyCode` / `executeCanonicalPipeline` / `recompileFromPlayground` imports outside `platform/core` + `vfsCommitService`.
+- Move AI apply from "fire-and-forget persist" to "dry-run → preflight → commit; on reject, surface diff in AIBuilderPanel with one-click repair".
+
+## Pass 4 — Snapshot-only preview runtime
+
+Goal: Preview's single input is `SiteBundleSnapshot`.
+
+- Refactor `PreviewRuntimeController` to take `{ snapshot }` only; derive VFS, manifest, router from the snapshot internally.
+- Delete the parallel "loose VFS" preview path; keep VFS as a materialization cache, not a source.
+- Document the kernel model in `mem://architecture/site-os/snapshot-only-preview.md`.
+
+## Pass 5 — WebBuilder.tsx decomposition (Phase D)
+
+Goal: Shrink the god component below 3,000 lines by extracting controllers it already has scaffolds for.
+
+Extract in order (smallest blast radius first):
+1. **DeploymentController** — deploy handoff + readiness display.
+2. **AIEditApplicationController** — AI apply pipeline (now thin, since Pass 3 routes through commit service).
+3. **SnapshotHydrationController** — revision-first hydration + sessionStorage recovery.
+4. **RouteImportController** — file-tree route import.
+
+Each extraction: move logic into `src/builder/controllers/*`, expose via context, delete from `WebBuilder.tsx`, run golden tests.
+
+## Pass 6 — Readiness inspects real vertical data
+
+Goal: Readiness verifies actual business rows, not caller-supplied counts.
+
+- Add `verticalDataProbe(projectId, businessId, verticalContractId)` that queries Lovable Cloud for the contract's required entities (services, products, menu items, lead forms, etc.).
+- Wire into `nativePublishReadiness` so PublishGate blocks until row-count + relationship requirements are met.
+- Surface findings in `ReadinessCenterPanel` with deep links to the entity editor.
+
+## Pass 7 — Telemetry + golden tests
+
+Goal: Lock the invariants behind tests so they can't regress.
+
+- Extend `vfsCommitService.golden.test.ts`: blank-project bootstrap, identity assertion failure, snapshot-only preview, AI apply rejection on failed preflight.
+- Add a runtime invariant logger: every `CanonicalRuntimeError` ships to telemetry with `{draftId, classification, missingFields}`.
+- Add a dashboard query that surfaces "previews blocked by missing snapshot" per day as a north-star regression signal.
+
+---
+
+## Technical details
+
+**Touch list (high-level):**
+
+```
+src/platform/core/canonicalRuntimeContract.ts        (Pass 1 — blank bootstrap)
+src/services/playgroundCompiler.ts                   (Pass 1)
+src/services/canonicalLaunchVfs.ts                   (Pass 1)
+src/hooks/useTemplateFiles.ts                        (Pass 1, 2)
+src/components/creatives/WebBuilder.tsx              (Pass 2, 5 — large)
+src/builder/controllers/BuilderSessionProvider.tsx   (Pass 2)
+src/builder/controllers/*Controller.ts               (Pass 5 — new files)
+src/services/vfsCommitService.ts                     (Pass 3)
+src/components/AIBuilderPanel.tsx                    (Pass 3)
+src/services/snapshotProjector.ts                    (Pass 4)
+src/services/nativePublishReadiness.ts               (Pass 6)
+src/services/verticalDataProbe.ts                    (Pass 6 — new)
+src/test/vfsCommitService.golden.test.ts             (Pass 7)
+scripts/lint-pipeline-bypass.mjs                     (Pass 3)
+```
+
+**Sequencing rule:** Pass 1 → 2 → 3 must land in order (each unblocks the next). Passes 4 + 5 can run in parallel after 3. Passes 6 + 7 are last.
+
+**No-regression rule:** every pass ends with `bunx tsgo --noEmit` clean and the golden E2E test green before moving on.
+
+**Out of scope for this milestone:**
+- New visual features in the builder UI.
+- New AI prompt templates.
+- Any YAML migration (per execution hierarchy memory).
+
+---
+
+Reply **approve** to start Pass 1, or tell me which pass to pull forward / drop.

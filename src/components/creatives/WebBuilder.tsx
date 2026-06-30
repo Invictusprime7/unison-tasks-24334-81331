@@ -1966,7 +1966,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const resolvedProjectId =
     templateFiles.currentProjectId ||
     (effectiveRouteState?.projectId as string | undefined) ||
-    (urlId as string | undefined) ||
+    (effectiveRouteState?.returnProjectId as string | undefined) ||
     currentTemplateId ||
     null;
 

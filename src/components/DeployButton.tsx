@@ -26,6 +26,10 @@ import { Rocket, ChevronDown, ExternalLink, Check, AlertCircle } from 'lucide-re
 import { useDeployment } from '@/hooks/useDeployment';
 import { DeploymentProvider, wrapHtmlForDeployment } from '@/services/deploymentService';
 import { toast } from 'sonner';
+import {
+  requireCanonicalSnapshot,
+  isCanonicalRuntimeError,
+} from '@/platform/core/canonicalRuntimeContract';
 import GateVerdictStrip from '@/components/web-builder/GateVerdictStrip';
 import PublishBlockersList from '@/components/web-builder/PublishBlockersList';
 import type { CompiledContract, SiteBundleSnapshot } from '@/platform/core';
@@ -127,6 +131,24 @@ export function DeployButton({
     if (!files || Object.keys(files).length === 0) {
       toast.error('No files to deploy');
       return;
+    }
+
+    // Canonical runtime gate — launcher-backed drafts cannot deploy without a
+    // valid SiteBundleSnapshot. Blank/manual drafts bypass this check.
+    try {
+      requireCanonicalSnapshot(files, 'deploy');
+    } catch (err) {
+      if (isCanonicalRuntimeError(err)) {
+        toast.error('Deployment blocked by launch gate', {
+          description: err.canonical.userMessage,
+          action: {
+            label: 'Run System Launcher',
+            onClick: () => window.location.assign('/system-launcher'),
+          },
+        });
+        return;
+      }
+      throw err;
     }
 
     const name = siteName.trim() || `unison-site-${Date.now()}`;

@@ -19,6 +19,7 @@ import {
 } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { PreviewPipelineError } from './previewPipelineError';
+import { CanonicalRuntimeError } from '@/platform/core/canonicalRuntimeError';
 
 const SNAPSHOT_VFS_PATH = '/.unison/site-bundle-snapshot.json';
 const WIZARD_SEED_VFS_PATH = '/.unison/wizard-seed.json';
@@ -158,11 +159,14 @@ export function assertWizardSnapshotPresent(
   context: string,
 ): void {
   if (resolution.isWizardDraft && !resolution.snapshot) {
-    throw new PreviewPipelineError(
-      'vfs',
-      `${context} — Wizard draft is missing SiteBundleSnapshot. Re-run the System Launcher.`,
-      { recoverableByRelaunch: true },
-    );
+    throw new CanonicalRuntimeError({
+      surface: 'preview',
+      code: 'MISSING_SNAPSHOT',
+      userMessage:
+        'This project has not been launched yet. Unison needs a SiteBundleSnapshot before it can render a live business preview.',
+      developerMessage: `${context} — Wizard draft is missing SiteBundleSnapshot. Re-run the System Launcher.`,
+      recoveryActions: ['run-system-launcher', 'migrate-legacy-draft'],
+    });
   }
 }
 

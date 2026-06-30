@@ -36,6 +36,8 @@ import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
 import { PreviewPipelineError, isPreviewPipelineError } from '@/services/previewPipelineError';
 import { PreviewRuntimeError } from '@/components/PreviewRuntimeError';
+import { LaunchGateNotice } from '@/components/creatives/web-builder/LaunchGateNotice';
+import { isCanonicalRuntimeError } from '@/platform/core/canonicalRuntimeContract';
 import { resolveSnapshot } from '@/services/snapshotProjector';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
@@ -766,17 +768,30 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [backend, dockerService.session]);
   
   if (pipelineError) {
+    const goLauncher = () => {
+      try {
+        sessionStorage.removeItem('unison.launcher.handoff');
+      } catch {}
+      window.location.assign('/system-launcher');
+    };
+
+    if (isCanonicalRuntimeError(pipelineError)) {
+      return (
+        <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
+          <LaunchGateNotice
+            error={pipelineError}
+            onRunLauncher={goLauncher}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
         <PreviewRuntimeError
           error={pipelineError}
           onRetry={() => window.location.reload()}
-          onRelaunch={() => {
-            try {
-              sessionStorage.removeItem('unison.launcher.handoff');
-            } catch {}
-            window.location.assign('/system-launcher');
-          }}
+          onRelaunch={goLauncher}
         />
       </div>
     );

@@ -161,6 +161,7 @@ import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistenc
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
+import { assertNoMinimalFallbackPreview, resolveSnapshot } from '@/services/snapshotProjector';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
 import PreviewCartDrawer from '@/components/preview/PreviewCartDrawer';
 import {
@@ -3038,7 +3039,11 @@ export default function ${componentName}Page() {
     const normalizedFiles = normalizeLauncherFiles({ ...incomingFiles }, {
       entryPoint: normalizedEntryPoint,
       themePresetId: resolvedThemePresetId,
+      injectCssIfMissing: !effectiveRouteState?.siteBundleSnapshot,
     });
+
+    const snapshotResolution = resolveSnapshot(normalizedFiles, effectiveRouteState as any);
+    assertNoMinimalFallbackPreview(normalizedFiles, snapshotResolution, 'Builder VFS import');
 
     const appKey = resolveLauncherEntryPoint(
       normalizedFiles,
@@ -3060,6 +3065,7 @@ export default function ${componentName}Page() {
       siteBundleSnapshot: snapshotForPreflight,
       industry: snapshotForPreflight?.industry,
     }).files;
+    assertNoMinimalFallbackPreview(preflightedFiles, snapshotResolution, 'Builder VFS import preflight');
 
     vfsImportFiles(preflightedFiles);
     const syncedEntry = syncBuilderFromFiles(
@@ -3271,7 +3277,11 @@ export default function ${componentName}Page() {
               ...currentFiles,
               [targetPath]: previewCode,
             },
-            { entryPoint: targetPath, themePresetId: resolvedThemePresetId }
+              {
+                entryPoint: targetPath,
+                themePresetId: resolvedThemePresetId,
+                injectCssIfMissing: !effectiveRouteState?.siteBundleSnapshot,
+              }
           )
         : {
             [targetPath]: previewCode,

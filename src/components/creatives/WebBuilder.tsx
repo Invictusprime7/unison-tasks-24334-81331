@@ -6365,7 +6365,7 @@ ${html}
   return (
     <BuilderSessionProvider
       value={{
-        projectId: projectId || undefined,
+        projectId: resolvedProjectId || projectId || undefined,
         businessId: businessId || undefined,
         currentUserId,
         draftId: currentTemplateId || undefined,

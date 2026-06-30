@@ -5,6 +5,7 @@ import {
   projectSnapshotVfsFiles,
   resolveSnapshot,
 } from '@/services/snapshotProjector';
+import { isPreviewPipelineError } from '@/services/previewPipelineError';
 
 export interface CanonicalBuildArtifacts {
   exportHtml: string;
@@ -28,15 +29,28 @@ export function buildCanonicalArtifacts(
   // SiteBundleSnapshot before compiling deploy/export artifacts. This is the
   // final bridge that keeps wizard seed/sitebundle registries authoritative
   // for deploy bundles (preview already routes through buildPreviewArtifacts).
-  const resolution = resolveSnapshot(sourceFiles);
-  const projectedSource = projectSnapshotVfsFiles(sourceFiles, resolution);
-  assertNoMinimalFallbackPreview(projectedSource, resolution, 'Canonical artifact gate');
+  let compiled: Record<string, string>;
+  try {
+    const resolution = resolveSnapshot(sourceFiles);
+    const projectedSource = projectSnapshotVfsFiles(sourceFiles, resolution);
+    assertNoMinimalFallbackPreview(projectedSource, resolution, 'Canonical artifact gate');
 
-  const compiled = prepareSandpackFiles(projectedSource, {
-    entryPoint: options?.entryPoint,
-    themePresetId: resolution.themePresetId ?? undefined,
-  });
-  assertNoMinimalFallbackPreview(compiled, resolution, 'Canonical artifact compiler');
+    compiled = prepareSandpackFiles(projectedSource, {
+      entryPoint: options?.entryPoint,
+      themePresetId: resolution.themePresetId ?? undefined,
+    });
+    assertNoMinimalFallbackPreview(compiled, resolution, 'Canonical artifact compiler');
+  } catch (err) {
+    // Export/deploy artifact generation runs inside WebBuilder render as a
+    // convenience for the export dialog. It must never take down the builder
+    // shell; PreviewPipelineError still surfaces through the dedicated preview
+    // runtime path where users can relaunch or repair the draft.
+    if (isPreviewPipelineError(err)) {
+      console.warn('[webBuilderArtifacts] Canonical artifact build deferred:', err.message);
+      return null;
+    }
+    throw err;
+  }
 
   const entryCode = compiled['/App.tsx']
     || compiled['/App.jsx']

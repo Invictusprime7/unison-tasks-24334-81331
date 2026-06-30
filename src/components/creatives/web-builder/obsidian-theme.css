@@ -1,70 +1,101 @@
 /**
- * Web Builder · Obsidian Space Theme Overlay
+ * Web Builder · Carbon Cyan Theme Overlay
  *
- * Scoped re-skin for the Web Builder IDE (and its FloatingDock + nested panels).
- * All overrides live under `.wb-obsidian` so the rest of the app is unaffected.
+ * Sleek fullscreen IDE re-skin scoped to the Web Builder shell. All overrides
+ * live under `.wb-obsidian` so the rest of the app stays untouched.
  *
- * Palette:
- *   Hull        #09090b  (zinc-950)
- *   Panel       #0f0f11
- *   Sub-panel   #18181b  (zinc-900)
- *   Hairline    rgba(63,63,70,0.5)  (zinc-700/50)
- *   Text        #e4e4e7  (zinc-200)
- *   Muted text  #71717a  (zinc-500)
- *   Accent      #6366f1  (indigo-500) — single glow, used sparingly
+ * Palette (Carbon Cyan):
+ *   Hull        #0a0f1c
+ *   Panel       #0e1422
+ *   Sub-panel   #111827
+ *   Raised      #1f2937
+ *   Hairline    rgba(148, 163, 184, 0.10)
+ *   Text        #e2e8f0
+ *   Muted text  #64748b
+ *   Accent      #06b6d4  (cyan-500)
+ *   Accent soft #67e8f9  (cyan-300)
+ *
+ * Typography: Geist Sans (UI) + Geist Mono (code).
  */
 
 .wb-obsidian {
-  --wb-hull: #09090b;
-  --wb-panel: #0f0f11;
-  --wb-sub: #18181b;
-  --wb-hairline: rgba(63, 63, 70, 0.5);
-  --wb-text: #e4e4e7;
-  --wb-muted: #71717a;
-  --wb-accent: #6366f1;
-  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --wb-hull: #0a0f1c;
+  --wb-panel: #0e1422;
+  --wb-sub: #111827;
+  --wb-raised: #1f2937;
+  --wb-hairline: rgba(148, 163, 184, 0.10);
+  --wb-hairline-strong: rgba(148, 163, 184, 0.18);
+  --wb-text: #e2e8f0;
+  --wb-muted: #64748b;
+  --wb-accent: #06b6d4;
+  --wb-accent-soft: #67e8f9;
+  --wb-danger: #ef4444;
+  font-family: 'Geist Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
   color: var(--wb-text);
+  background-color: var(--wb-hull);
 }
 
-/* ---- Backgrounds ------------------------------------------------------- */
+/* ---- Fullscreen guarantee --------------------------------------------- */
+.wb-obsidian {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ---- Backgrounds → tuned to Carbon Cyan tokens ------------------------ */
+.wb-obsidian .bg-\[\#09090b\],
 .wb-obsidian .bg-\[\#1a0a14\],
 .wb-obsidian .bg-\[\#0a0a14\],
 .wb-obsidian .bg-\[\#0a0a12\] { background-color: var(--wb-hull) !important; }
 
+.wb-obsidian .bg-\[\#0f0f11\],
 .wb-obsidian .bg-\[\#0d0d18\],
 .wb-obsidian .bg-\[\#0d0d18\]\/80,
 .wb-obsidian .bg-\[\#0a0a14\]\/80 { background-color: var(--wb-panel) !important; }
 
-/* ---- Hairlines & neon borders ----------------------------------------- */
+.wb-obsidian .bg-\[\#18181b\],
+.wb-obsidian .bg-\[\#12121e\] { background-color: var(--wb-sub) !important; }
+
+/* ---- Hairlines & neon borders → calm cyan-tinted slate ---------------- */
 .wb-obsidian .border-fuchsia-500\/50,
 .wb-obsidian .border-fuchsia-500\/30,
 .wb-obsidian .border-cyan-500\/30,
 .wb-obsidian .border-cyan-500\/40,
+.wb-obsidian .border-cyan-500\/20,
 .wb-obsidian .border-yellow-500\/30,
 .wb-obsidian .border-yellow-400\/30,
+.wb-obsidian .border-zinc-700\/50,
+.wb-obsidian .border-zinc-800,
+.wb-obsidian .border-gray-800,
 .wb-obsidian .border-white\/\[0\.06\] { border-color: var(--wb-hairline) !important; }
 
 .wb-obsidian .bg-fuchsia-500\/50,
-.wb-obsidian .bg-cyan-500\/50 { background-color: var(--wb-hairline) !important; }
+.wb-obsidian .bg-cyan-500\/50 { background-color: var(--wb-hairline-strong) !important; }
 
-/* ---- Neon glow shadows → quiet shadows -------------------------------- */
+/* ---- Neon glow shadows → quiet cyan-tinted shadows ------------------- */
 .wb-obsidian [class*="shadow-[0_4px_20px_rgba(255,0,255"],
 .wb-obsidian [class*="shadow-[0_0_30px_rgba(0,255,255"],
+.wb-obsidian [class*="shadow-[0_0_20px_rgba(0,255,255"],
 .wb-obsidian [class*="shadow-[0_0_15px_rgba(255,255,0"],
 .wb-obsidian [class*="shadow-[0_0_15px_rgba(0,255,255"],
 .wb-obsidian [class*="shadow-[0_0_10px_rgba(0,255,255"],
 .wb-obsidian [class*="shadow-[0_0_10px_rgba(0,255,0"],
 .wb-obsidian [class*="shadow-[0_0_10px_rgba(255,0,0"],
 .wb-obsidian [class*="shadow-[0_0_10px_rgba(255,0,255"] {
-  box-shadow: 0 1px 0 0 rgba(255,255,255,0.02) inset, 0 8px 24px -12px rgba(0,0,0,0.6) !important;
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.02) inset,
+    0 8px 24px -12px rgba(0, 0, 0, 0.65) !important;
 }
 
-/* Active accent gets a soft indigo glow only when explicitly active */
+/* Active accent gets a soft cyan glow only when explicitly active */
 .wb-obsidian .wb-glow-accent {
-  box-shadow: 0 0 16px -4px rgba(99, 102, 241, 0.45) !important;
+  box-shadow: 0 0 18px -4px rgba(6, 182, 212, 0.45) !important;
 }
 
-/* ---- Neon text colors → calm zinc/indigo ------------------------------ */
+/* ---- Neon text colors → cool slate + cyan accents -------------------- */
 .wb-obsidian .text-cyan-400,
 .wb-obsidian .text-cyan-300,
 .wb-obsidian .text-cyan-100,
@@ -77,22 +108,27 @@
 
 .wb-obsidian .text-cyan-400\/70,
 .wb-obsidian .text-cyan-400\/60,
+.wb-obsidian .text-cyan-400\/80,
 .wb-obsidian .text-fuchsia-400\/60,
 .wb-obsidian .text-yellow-400\/70,
 .wb-obsidian .text-yellow-400\/60,
 .wb-obsidian .text-lime-400\/60,
+.wb-obsidian .text-gray-400,
+.wb-obsidian .text-gray-500,
+.wb-obsidian .text-gray-600,
 .wb-obsidian .text-purple-300 { color: var(--wb-muted) !important; }
 
-/* Drop-shadow text */
+/* Drop-shadow text → flat */
 .wb-obsidian [class*="drop-shadow-[0_0_5px_rgba(0,255,255"],
-.wb-obsidian [class*="drop-shadow-[0_0_8px_rgba"] { filter: none !important; }
+.wb-obsidian [class*="drop-shadow-[0_0_8px_rgba"],
+.wb-obsidian [class*="drop-shadow-[0_0_10px_rgba"] { filter: none !important; }
 
-/* ---- Active/selected pills (cyan/yellow/fuchsia bg) → indigo --------- */
+/* ---- Active/selected pills → cyan accent ----------------------------- */
 .wb-obsidian .bg-cyan-500,
 .wb-obsidian .bg-yellow-400,
 .wb-obsidian .bg-fuchsia-500 {
   background-color: var(--wb-accent) !important;
-  color: #fafafa !important;
+  color: #0a0f1c !important;
 }
 
 .wb-obsidian .bg-cyan-500\/20,
@@ -102,7 +138,7 @@
 .wb-obsidian .bg-lime-500\/20,
 .wb-obsidian .bg-lime-500\/10,
 .wb-obsidian .bg-yellow-500\/15 {
-  background-color: rgba(99, 102, 241, 0.12) !important;
+  background-color: rgba(6, 182, 212, 0.10) !important;
   color: var(--wb-text) !important;
 }
 
@@ -112,35 +148,12 @@
 .wb-obsidian .hover\:bg-yellow-500\/20:hover,
 .wb-obsidian .hover\:bg-lime-500\/30:hover,
 .wb-obsidian .hover\:bg-lime-500\/10:hover {
-  background-color: rgba(99, 102, 241, 0.16) !important;
+  background-color: rgba(6, 182, 212, 0.16) !important;
 }
 
 .wb-obsidian .hover\:bg-red-500\/20:hover { background-color: rgba(239, 68, 68, 0.14) !important; }
 
-/* ---- Generic surface harmonization ------------------------------------ */
-.wb-obsidian [class*="bg-zinc-"],
-.wb-obsidian [class*="bg-neutral-"] { /* leave as-is */ }
-
-/* Scrollbars */
-.wb-obsidian *::-webkit-scrollbar { width: 10px; height: 10px; }
-.wb-obsidian *::-webkit-scrollbar-track { background: transparent; }
-.wb-obsidian *::-webkit-scrollbar-thumb {
-  background: rgba(63, 63, 70, 0.5);
-  border-radius: 8px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-.wb-obsidian *::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.4); background-clip: padding-box; }
-
-/* Selection */
-.wb-obsidian ::selection { background: rgba(99, 102, 241, 0.3); }
-
-/* ---- Editor parity: purple legacy → obsidian indigo ------------------- */
-/* The legacy code-editor surfaces (CodeMirrorEditor, ModernFileExplorer,
-   AICodeAssistant, IntentDirectoryPanel, NavigationPanel, DesignSidebar,
-   design-studio/PropertiesPanel) were authored against a violet palette.
-   Re-map every shade to the same indigo/zinc tokens used by the shell so
-   spacing, type, and glow intensity feel uniform across the IDE. */
+/* ---- Editor legacy purple → carbon cyan ------------------------------ */
 .wb-obsidian [class*="bg-purple-"],
 .wb-obsidian [class*="from-purple-"],
 .wb-obsidian [class*="to-purple-"],
@@ -153,7 +166,7 @@
 .wb-obsidian .hover\:bg-purple-500:hover,
 .wb-obsidian .hover\:bg-purple-600:hover {
   background-color: var(--wb-accent) !important;
-  color: #fafafa !important;
+  color: #0a0f1c !important;
 }
 .wb-obsidian .bg-purple-900\/90,
 .wb-obsidian .bg-purple-600\/20,
@@ -176,15 +189,28 @@
 .wb-obsidian .text-purple-300\/70,
 .wb-obsidian .text-purple-300\/50 { color: var(--wb-muted) !important; }
 
-/* Quiet the pulsing AI-highlight on the file tree to match the shell's
-   restrained glow vocabulary. */
 .wb-obsidian .animate-pulse.bg-purple-500\/20 {
-  background-color: rgba(99, 102, 241, 0.12) !important;
+  background-color: rgba(6, 182, 212, 0.12) !important;
 }
 
-/* ---- Spacing & typography parity -------------------------------------- */
-/* All editor descendants inherit Inter + the shell's tracking/leading so
-   the code panels, file tree, and AI assistant align with the topbar. */
+/* ---- Scrollbars ------------------------------------------------------- */
+.wb-obsidian *::-webkit-scrollbar { width: 10px; height: 10px; }
+.wb-obsidian *::-webkit-scrollbar-track { background: transparent; }
+.wb-obsidian *::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.wb-obsidian *::-webkit-scrollbar-thumb:hover {
+  background: rgba(6, 182, 212, 0.45);
+  background-clip: padding-box;
+}
+
+/* ---- Selection -------------------------------------------------------- */
+.wb-obsidian ::selection { background: rgba(6, 182, 212, 0.32); color: #f8fafc; }
+
+/* ---- Typography ------------------------------------------------------- */
 .wb-obsidian,
 .wb-obsidian button,
 .wb-obsidian input,
@@ -192,22 +218,23 @@
 .wb-obsidian select,
 .wb-obsidian [role="tab"],
 .wb-obsidian [role="menuitem"] {
-  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: -0.005em;
+  font-family: 'Geist Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.006em;
 }
 .wb-obsidian textarea.font-mono,
 .wb-obsidian pre,
 .wb-obsidian code,
 .wb-obsidian .font-mono {
-  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace !important;
+  font-family: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace !important;
   font-feature-settings: 'liga' 0, 'calt' 0;
 }
-/* Code editor panes share a single line-height and 14px default to match
-   the floating dock + topbar density. */
-.wb-obsidian textarea.font-mono { line-height: 1.55 !important; font-size: 13.5px !important; }
-.wb-obsidian .text-\[10px\] { letter-spacing: 0.01em; }
+.wb-obsidian textarea.font-mono {
+  line-height: 1.6 !important;
+  font-size: 13.5px !important;
+}
+.wb-obsidian .text-\[10px\] { letter-spacing: 0.02em; text-transform: uppercase; }
 
-/* ---- Focus rings: one accent, one intensity --------------------------- */
+/* ---- Focus rings ------------------------------------------------------ */
 .wb-obsidian *:focus-visible {
   outline: none !important;
   box-shadow: 0 0 0 1.5px var(--wb-accent) !important;
@@ -217,3 +244,81 @@
   --tw-ring-color: var(--wb-accent) !important;
   box-shadow: 0 0 0 1.5px var(--wb-accent) !important;
 }
+
+/* ---- Refined chrome: topbar, panel headers, dock --------------------- */
+.wb-obsidian .wb-topbar,
+.wb-obsidian header[class*="border-b"],
+.wb-obsidian [class*="border-b"][class*="bg-"]:not([class*="bg-transparent"]) {
+  border-bottom-color: var(--wb-hairline) !important;
+}
+
+/* Panel header chips/labels get a refined uppercase micro-label */
+.wb-obsidian .text-\[11px\].uppercase,
+.wb-obsidian .text-xs.uppercase {
+  letter-spacing: 0.08em;
+  color: var(--wb-muted) !important;
+  font-weight: 500;
+}
+
+/* Buttons — soften default ghost surfaces */
+.wb-obsidian button:not([class*="bg-"]):hover {
+  background-color: rgba(148, 163, 184, 0.06);
+}
+
+/* Inputs */
+.wb-obsidian input:not([type="checkbox"]):not([type="radio"]),
+.wb-obsidian textarea,
+.wb-obsidian select {
+  background-color: rgba(15, 23, 42, 0.6);
+  border-color: var(--wb-hairline) !important;
+  color: var(--wb-text);
+}
+.wb-obsidian input::placeholder,
+.wb-obsidian textarea::placeholder { color: var(--wb-muted); }
+
+/* Dividers between resizable panes */
+.wb-obsidian [data-panel-resize-handle-enabled],
+.wb-obsidian [data-resize-handle] {
+  background-color: var(--wb-hairline) !important;
+  transition: background-color 150ms ease;
+}
+.wb-obsidian [data-panel-resize-handle-enabled]:hover,
+.wb-obsidian [data-resize-handle]:hover {
+  background-color: var(--wb-accent) !important;
+}
+
+/* Tabs — flatten and add cyan underline on active */
+.wb-obsidian [role="tab"][data-state="active"] {
+  color: var(--wb-text) !important;
+  background-color: transparent !important;
+  box-shadow: inset 0 -2px 0 0 var(--wb-accent) !important;
+}
+.wb-obsidian [role="tab"] {
+  color: var(--wb-muted) !important;
+  background-color: transparent !important;
+}
+
+/* Cards / popovers / dropdowns */
+.wb-obsidian [role="menu"],
+.wb-obsidian [role="dialog"],
+.wb-obsidian [data-radix-popper-content-wrapper] > * {
+  background-color: var(--wb-panel) !important;
+  border: 1px solid var(--wb-hairline) !important;
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.03) inset,
+    0 24px 48px -16px rgba(0, 0, 0, 0.7) !important;
+  border-radius: 10px;
+}
+
+/* Subtle ambient gradient behind the editor — gives the "fullscreen IDE" depth */
+.wb-obsidian::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(6, 182, 212, 0.07), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(103, 232, 249, 0.04), transparent 60%);
+  z-index: 0;
+}
+.wb-obsidian > * { position: relative; z-index: 1; }

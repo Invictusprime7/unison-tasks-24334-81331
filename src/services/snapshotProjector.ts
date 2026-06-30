@@ -60,9 +60,13 @@ export function resolveSnapshot(
   sourceFiles: Record<string, string>,
   launchState?: LaunchState | null,
 ): SnapshotResolution {
-  const snapshotFromState = launchState?.siteBundleSnapshot ?? null;
   const snapshotFromVfs = tryParseSnapshot(sourceFiles[SNAPSHOT_VFS_PATH]);
-  const snapshot = snapshotFromState || snapshotFromVfs;
+  const snapshotFromState = launchState?.siteBundleSnapshot ?? null;
+  // Prefer the snapshot embedded in the live VFS. During launcher handoff the
+  // navigation state can still carry the pre-Lane-B canonical snapshot, while
+  // `/.unison/site-bundle-snapshot.json` is rewritten after merge with the final
+  // Lane B page bodies. Using navState first resurrects stale minimal stubs.
+  const snapshot = snapshotFromVfs || snapshotFromState;
 
   const appContext = tryParseRecord(sourceFiles['/.unison/app-context.json']);
   const runtimeManifest = tryParseRecord(sourceFiles['/.unison/runtime-manifest.json']);

@@ -1,0 +1,136 @@
+/**
+ * Web Builder · Obsidian Space Theme Overlay
+ *
+ * Scoped re-skin for the Web Builder IDE (and its FloatingDock + nested panels).
+ * All overrides live under `.wb-obsidian` so the rest of the app is unaffected.
+ *
+ * Palette:
+ *   Hull        #09090b  (zinc-950)
+ *   Panel       #0f0f11
+ *   Sub-panel   #18181b  (zinc-900)
+ *   Hairline    rgba(63,63,70,0.5)  (zinc-700/50)
+ *   Text        #e4e4e7  (zinc-200)
+ *   Muted text  #71717a  (zinc-500)
+ *   Accent      #6366f1  (indigo-500) — single glow, used sparingly
+ */
+
+.wb-obsidian {
+  --wb-hull: #09090b;
+  --wb-panel: #0f0f11;
+  --wb-sub: #18181b;
+  --wb-hairline: rgba(63, 63, 70, 0.5);
+  --wb-text: #e4e4e7;
+  --wb-muted: #71717a;
+  --wb-accent: #6366f1;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  color: var(--wb-text);
+}
+
+/* ---- Backgrounds ------------------------------------------------------- */
+.wb-obsidian .bg-\[\#1a0a14\],
+.wb-obsidian .bg-\[\#0a0a14\],
+.wb-obsidian .bg-\[\#0a0a12\] { background-color: var(--wb-hull) !important; }
+
+.wb-obsidian .bg-\[\#0d0d18\],
+.wb-obsidian .bg-\[\#0d0d18\]\/80,
+.wb-obsidian .bg-\[\#0a0a14\]\/80 { background-color: var(--wb-panel) !important; }
+
+/* ---- Hairlines & neon borders ----------------------------------------- */
+.wb-obsidian .border-fuchsia-500\/50,
+.wb-obsidian .border-fuchsia-500\/30,
+.wb-obsidian .border-cyan-500\/30,
+.wb-obsidian .border-cyan-500\/40,
+.wb-obsidian .border-yellow-500\/30,
+.wb-obsidian .border-yellow-400\/30,
+.wb-obsidian .border-white\/\[0\.06\] { border-color: var(--wb-hairline) !important; }
+
+.wb-obsidian .bg-fuchsia-500\/50,
+.wb-obsidian .bg-cyan-500\/50 { background-color: var(--wb-hairline) !important; }
+
+/* ---- Neon glow shadows → quiet shadows -------------------------------- */
+.wb-obsidian [class*="shadow-[0_4px_20px_rgba(255,0,255"],
+.wb-obsidian [class*="shadow-[0_0_30px_rgba(0,255,255"],
+.wb-obsidian [class*="shadow-[0_0_15px_rgba(255,255,0"],
+.wb-obsidian [class*="shadow-[0_0_15px_rgba(0,255,255"],
+.wb-obsidian [class*="shadow-[0_0_10px_rgba(0,255,255"],
+.wb-obsidian [class*="shadow-[0_0_10px_rgba(0,255,0"],
+.wb-obsidian [class*="shadow-[0_0_10px_rgba(255,0,0"],
+.wb-obsidian [class*="shadow-[0_0_10px_rgba(255,0,255"] {
+  box-shadow: 0 1px 0 0 rgba(255,255,255,0.02) inset, 0 8px 24px -12px rgba(0,0,0,0.6) !important;
+}
+
+/* Active accent gets a soft indigo glow only when explicitly active */
+.wb-obsidian .wb-glow-accent {
+  box-shadow: 0 0 16px -4px rgba(99, 102, 241, 0.45) !important;
+}
+
+/* ---- Neon text colors → calm zinc/indigo ------------------------------ */
+.wb-obsidian .text-cyan-400,
+.wb-obsidian .text-cyan-300,
+.wb-obsidian .text-cyan-100,
+.wb-obsidian .text-fuchsia-400,
+.wb-obsidian .text-fuchsia-300,
+.wb-obsidian .text-lime-400,
+.wb-obsidian .text-yellow-400,
+.wb-obsidian .text-yellow-300,
+.wb-obsidian .text-yellow-200 { color: var(--wb-text) !important; }
+
+.wb-obsidian .text-cyan-400\/70,
+.wb-obsidian .text-cyan-400\/60,
+.wb-obsidian .text-fuchsia-400\/60,
+.wb-obsidian .text-yellow-400\/70,
+.wb-obsidian .text-yellow-400\/60,
+.wb-obsidian .text-lime-400\/60,
+.wb-obsidian .text-purple-300 { color: var(--wb-muted) !important; }
+
+/* Drop-shadow text */
+.wb-obsidian [class*="drop-shadow-[0_0_5px_rgba(0,255,255"],
+.wb-obsidian [class*="drop-shadow-[0_0_8px_rgba"] { filter: none !important; }
+
+/* ---- Active/selected pills (cyan/yellow/fuchsia bg) → indigo --------- */
+.wb-obsidian .bg-cyan-500,
+.wb-obsidian .bg-yellow-400,
+.wb-obsidian .bg-fuchsia-500 {
+  background-color: var(--wb-accent) !important;
+  color: #fafafa !important;
+}
+
+.wb-obsidian .bg-cyan-500\/20,
+.wb-obsidian .bg-cyan-500\/10,
+.wb-obsidian .bg-fuchsia-500\/20,
+.wb-obsidian .bg-yellow-500\/20,
+.wb-obsidian .bg-lime-500\/20,
+.wb-obsidian .bg-lime-500\/10,
+.wb-obsidian .bg-yellow-500\/15 {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+  color: var(--wb-text) !important;
+}
+
+.wb-obsidian .hover\:bg-cyan-500\/20:hover,
+.wb-obsidian .hover\:bg-cyan-500\/30:hover,
+.wb-obsidian .hover\:bg-fuchsia-500\/20:hover,
+.wb-obsidian .hover\:bg-yellow-500\/20:hover,
+.wb-obsidian .hover\:bg-lime-500\/30:hover,
+.wb-obsidian .hover\:bg-lime-500\/10:hover {
+  background-color: rgba(99, 102, 241, 0.16) !important;
+}
+
+.wb-obsidian .hover\:bg-red-500\/20:hover { background-color: rgba(239, 68, 68, 0.14) !important; }
+
+/* ---- Generic surface harmonization ------------------------------------ */
+.wb-obsidian [class*="bg-zinc-"],
+.wb-obsidian [class*="bg-neutral-"] { /* leave as-is */ }
+
+/* Scrollbars */
+.wb-obsidian *::-webkit-scrollbar { width: 10px; height: 10px; }
+.wb-obsidian *::-webkit-scrollbar-track { background: transparent; }
+.wb-obsidian *::-webkit-scrollbar-thumb {
+  background: rgba(63, 63, 70, 0.5);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.wb-obsidian *::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.4); background-clip: padding-box; }
+
+/* Selection */
+.wb-obsidian ::selection { background: rgba(99, 102, 241, 0.3); }

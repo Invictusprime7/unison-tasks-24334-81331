@@ -1,4 +1,5 @@
 /* cache-bust: 20260309 */
+import "./web-builder/obsidian-theme.css";
 import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense, Component, type ReactNode, type ErrorInfo } from "react";
 import TemplateFeedback from "./TemplateFeedback";
 import { Canvas as FabricCanvas } from "fabric";
@@ -6361,7 +6362,7 @@ ${html}
         draftId: currentTemplateId || undefined,
       }}
     >
-    <div ref={mainContainerRef} className={cn("flex flex-col h-screen bg-[#1a0a14]", isMobile && "pb-14")}>
+    <div ref={mainContainerRef} className={cn("wb-obsidian flex flex-col h-screen bg-[#09090b]", isMobile && "pb-14")}>
       {/* SystemLauncher — auto-opens when no pre-generated content */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
 

@@ -36,6 +36,8 @@ import type { BuilderPage } from '@/types/pageRegistry';
 interface IndustryFixture {
   label: string;
   industryKey: keyof typeof INDUSTRY_INTENT_PROFILES;
+  /** Industry string used to resolve a TemplateComposition in playgroundCompiler. */
+  templateIndustry: string;
   selections: WizardSelections;
 }
 

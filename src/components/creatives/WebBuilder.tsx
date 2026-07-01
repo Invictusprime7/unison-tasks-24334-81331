@@ -1011,24 +1011,17 @@ interface WebBuilderRouteState {
   revisionId?: string;
 }
 
-function hasNonEmptyVfsFiles(files?: Record<string, string>): boolean {
-  return !!files && Object.keys(files).length > 0;
-}
-
-function mergeRouteStatePreservingFiles(
+// hasNonEmptyVfsFiles + mergeRouteStatePreservingFiles are imported from
+// ./web-builder/aiCodeHelpers as a typed helper for WebBuilderRouteState.
+import {
+  hasNonEmptyVfsFiles,
+  mergeRouteStatePreservingFiles as mergeRouteStatePreservingFilesGeneric,
+} from "./web-builder/aiCodeHelpers";
+const mergeRouteStatePreservingFiles = (
   ...states: Array<WebBuilderRouteState | null | undefined>
-): WebBuilderRouteState | null {
-  const present = states.filter(Boolean) as WebBuilderRouteState[];
-  if (present.length === 0) return null;
-  const merged = Object.assign({}, ...present) as WebBuilderRouteState;
-  for (let i = present.length - 1; i >= 0; i--) {
-    if (hasNonEmptyVfsFiles(present[i].vfsFiles)) {
-      merged.vfsFiles = present[i].vfsFiles;
-      break;
-    }
-  }
-  return merged;
-}
+): WebBuilderRouteState | null =>
+  mergeRouteStatePreservingFilesGeneric<WebBuilderRouteState>(...states);
+
 
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
   const location = useLocation();

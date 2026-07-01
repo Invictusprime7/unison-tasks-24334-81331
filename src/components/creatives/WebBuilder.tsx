@@ -164,38 +164,6 @@ import {
   readBrowserCart,
 } from '@/runtime/browserCartManager';
 
-function getOrCreatePreviewBusinessId(systemType?: string): string {
-  const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
-  try {
-    const existing = localStorage.getItem(key);
-    if (existing) return existing;
-    const id = generateUUID();
-    localStorage.setItem(key, id);
-    return id;
-  } catch {
-    // Fallback when localStorage is unavailable
-    return generateUUID();
-  }
-}
-
-function isBuilderBootstrapPreviewCode(code: string): boolean {
-  return /Welcome to AI Web Builder|AI-generated code will appear here|Use the AI Code Assistant to generate components/.test(code);
-}
-
-function isCanonicalRouterSource(code: string): boolean {
-  return /react-router-dom|<Routes\b|<Route\b|HashRouter|BrowserRouter|createBrowserRouter/.test(code);
-}
-
-function isWizardFallbackOrRouterOnlySource(code: string): boolean {
-  const trimmed = code.trim();
-  if (!trimmed) return true;
-  if (isBuilderBootstrapPreviewCode(trimmed)) return true;
-  if (isCanonicalRouterSource(trimmed)) return true;
-  if (/Generating page content|This page is ready to be edited|A refined launch page ready for your next edit|New site preview/i.test(trimmed)) {
-    return true;
-  }
-  return false;
-}
 
 // JSX/CSS-selector source manipulation helpers extracted to web-builder/jsxSourceUtils.ts
 import {

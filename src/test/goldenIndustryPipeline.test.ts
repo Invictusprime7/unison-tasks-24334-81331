@@ -58,12 +58,12 @@ const FIXTURES: IndustryFixture[] = [
     },
   },
   {
-    label: 'local-service',
-    industryKey: 'local-service',
+    label: 'agency',
+    industryKey: 'agency',
     selections: {
-      businessName: 'Northgate HVAC',
-      businessModel: 'appointment_service',
-      industryOverlay: 'hvac',
+      businessName: 'North Pier Studio',
+      businessModel: 'quote_lead',
+      industryOverlay: 'agency',
       primaryGoal: 'contact',
       secondaryGoals: [],
       wantsLeadCapture: true,

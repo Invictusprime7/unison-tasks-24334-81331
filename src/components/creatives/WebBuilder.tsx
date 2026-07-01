@@ -4138,7 +4138,7 @@ export default function ${componentName}Page() {
       },
     ).then((draftId) => {
       if (draftId) {
-        templateFiles.setCurrentDraftId(draftId);
+        templateFiles.setCurrentTemplateId(draftId);
         setCurrentDraftId(draftId);
         setCurrentTemplateName(effectiveName);
         if (!saveProjectName.trim()) {

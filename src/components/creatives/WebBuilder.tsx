@@ -6006,21 +6006,13 @@ ${html}
             const nextLink = nextStep
               ? `<Link to="${nextStep.path}" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">Continue →</Link>`
               : `<p className="text-lg text-muted-foreground">You're all set!</p>`;
-            newFiles[vfsPath] = `import { Link } from 'react-router-dom';
-
-export default function ${componentName}() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <main className="max-w-2xl mx-auto px-6 py-16 text-center">
-        <div className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary mb-4">Step ${idx + 1} · ${step.role}</div>
-        <h1 className="text-4xl font-bold mb-6">${step.title}</h1>
-        <p className="text-muted-foreground text-lg mb-8">This is the ${step.role} step of your funnel.</p>
-        ${nextLink}
-      </main>
-    </div>
-  );
-}
-`;
+            newFiles[vfsPath] = buildFunnelStepSeed({
+              componentName,
+              idx,
+              role: step.role,
+              title: step.title,
+              nextLink,
+            });
           });
           virtualFS.importFiles(newFiles);
           toast.success(`Funnel scaffolded: ${stepPages.length} pages created in VFS`);

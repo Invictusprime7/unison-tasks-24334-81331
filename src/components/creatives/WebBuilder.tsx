@@ -7274,13 +7274,38 @@ export default function ${componentName}() {
               projectId={currentDraftId ?? null}
               businessId={businessId ?? null}
               layoutOps={layoutOpsForAI}
-              onApplyToVFS={(rawFiles, applyMeta) => {
+              onApplyToVFS={async (rawFiles, applyMeta) => {
                 const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
                 const files = runFullPreflight(rawFiles, {
                   siteBundleSnapshot: snapshotForPreflight,
                   industry: snapshotForPreflight?.industry,
                 }).files;
                 const beforeFiles = virtualFS.getSandpackFiles();
+
+                // Pass 3 — VFSCommitService gate (mobile mount).
+                const projectIdForCommit = resolvedProjectId || currentDraftId || '';
+                const commitCtx = businessId && currentDraftId
+                  ? {
+                      businessId,
+                      projectId: projectIdForCommit,
+                      draftId: currentDraftId,
+                      revisionId: currentRevisionId,
+                      beforeFiles,
+                      nextFiles: files,
+                      snapshotForPreflight,
+                    }
+                  : null;
+                if (commitCtx) {
+                  const dry = await dryRunAiCommit(commitCtx);
+                  if (!dry.accepted) {
+                    toast.error('AI edit rejected — preview would break', {
+                      description: dry.rejectMessage ?? 'Canonical preview gate blocked this patch.',
+                      duration: 8000,
+                    });
+                    return;
+                  }
+                }
+
                 const result = aiVFS.applyCode(files);
                 if (result.success) {
                   const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
@@ -7301,45 +7326,10 @@ export default function ${componentName}() {
                       meta: applyMeta,
                     });
                   }
-                  // Additive: mirror through VFSCommitService behind feature flag.
-                  if (isCommitServiceEnabled() && businessId && currentDraftId) {
-                    void (async () => {
-                      try {
-                        const { data: { user } } = await supabaseClient.auth.getUser();
-                        if (!user) return;
-                        const identity: BuilderIdentity = {
-                          userId: user.id,
-                          businessId,
-                          projectId: resolvedProjectId || currentDraftId,
-                          draftId: currentDraftId,
-                          revisionId: currentRevisionId,
-                          sessionId: `web-builder:${currentDraftId}`,
-                        };
-                        const patch = legacyFilesToPatchPlan(files, 'ai-builder');
-                        const commit = await commitMutation({
-                          source: 'ai-builder',
-                          identity,
-                          current: {
-                            vfsFiles: beforeFiles,
-                            siteBundleSnapshot: snapshotForPreflight ?? undefined,
-                          },
-                          patch,
-                          options: {
-                            requirePreviewPass: false,
-                            requireReadinessPass: false,
-                            industry: snapshotForPreflight?.industry,
-                          },
-                        });
-                        console.log('[WebBuilder] ai-builder(secondary) commit persisted:', commit.persistedRevisionId);
-                        if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
-                      } catch (err) {
-                        if (err instanceof CommitRejectedError) {
-                          console.warn('[WebBuilder] ai-builder(secondary) commit rejected:', err.message);
-                        } else {
-                          console.warn('[WebBuilder] ai-builder(secondary) commit failed:', err);
-                        }
-                      }
-                    })();
+                  if (commitCtx) {
+                    void persistAiCommit(commitCtx).then((revId) => {
+                      if (revId) setCurrentRevisionId(revId);
+                    });
                   }
                 }
               }}

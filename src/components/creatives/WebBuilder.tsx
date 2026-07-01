@@ -210,6 +210,7 @@ import {
   findElementBoundsInJSX,
   withSourceManipulation,
   safeFindElement,
+  findJSXClosingTag,
 } from "./web-builder/jsxSourceUtils";
 
 

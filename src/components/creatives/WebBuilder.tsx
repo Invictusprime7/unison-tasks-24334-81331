@@ -217,6 +217,7 @@ import {
 
 // Dynamic page prompt builder extracted to web-builder/dynamicPagePrompt.ts
 import { buildDynamicPagePrompt } from "./web-builder/dynamicPagePrompt";
+import { buildPageSeed, buildFunnelStepSeed, WELCOME_APP_TSX, CLEAR_CANVAS_JS_SEED } from "./web-builder/seedTemplates";
 
 /**
  * Validate AI-generated code against the original template to detect destructive changes.
@@ -573,7 +574,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [isInteractiveMode, setIsInteractiveMode] = useState(false);
   const [isInteractiveModeHelpOpen, setIsInteractiveModeHelpOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [editorCode, setEditorCode] = useState('// AI Web Builder - JavaScript Mode\n// Use vanilla JavaScript to create interactive web experiences\n\n// Example: Create a simple interactive button\nconst createButton = () => {\n  const button = document.createElement("button");\n  button.textContent = "Click Me!";\n  button.style.padding = "12px 24px";\n  button.style.fontSize = "16px";\n  button.style.cursor = "pointer";\n  \n  button.onclick = () => {\n    alert("Hello from Web Builder!");\n  };\n  \n  return button;\n};\n\n// Usage: Uncomment to test\n// document.body.appendChild(createButton());');
+  const [editorCode, setEditorCode] = useState(CLEAR_CANVAS_JS_SEED);
   const [previewCode, setPreviewCode] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const splitViewDropZoneRef = useRef<HTMLDivElement>(null);
@@ -2107,25 +2108,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       return;
     }
     const label = sanitized.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    const newPageCode = `import { Link } from 'react-router-dom';
+    const newPageCode = buildPageSeed(componentName, label);
 
-export default function ${componentName}Page() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border/40 px-6 py-4">
-        <nav className="flex items-center gap-6">
-          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">Home</Link>
-          <span className="text-sm text-foreground font-medium">${label}</span>
-        </nav>
-      </header>
-      <main className="max-w-4xl mx-auto px-6 py-16">
-        <h1 className="text-4xl font-bold mb-6">${label}</h1>
-        <p className="text-muted-foreground text-lg">This is the ${label} page. Start editing to add your content.</p>
-      </main>
-    </div>
-  );
-}
-`;
     vfsImportFiles({ [path]: newPageCode });
     openBuilderFile(path, newPageCode);
     toast.success(`Page "${label}" created`);
@@ -3616,7 +3600,7 @@ export default function ${componentName}Page() {
                 label: 'Discard',
                 onClick: () => {
                   localStorage.removeItem('webbuilder_autosave_draft');
-                  setPreviewCode('import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}');
+                  setPreviewCode(WELCOME_APP_TSX);
                 },
               },
             });
@@ -4613,12 +4597,9 @@ ${sectionsJsx}
 
   // Clear canvas and reset to initial state
   const handleClearCanvas = () => {
-    const defaultCode = '// AI Web Builder - JavaScript Mode\n// Use vanilla JavaScript to create interactive web experiences\n\n// Example: Create a simple interactive button\nconst createButton = () => {\n  const button = document.createElement("button");\n  button.textContent = "Click Me!";\n  button.style.padding = "12px 24px";\n  button.style.fontSize = "16px";\n  button.style.cursor = "pointer";\n  \n  button.onclick = () => {\n    alert("Hello from Web Builder!");\n  };\n  \n  return button;\n};\n\n// Usage: Uncomment to test\n// document.body.appendChild(createButton());';
-    
-    const defaultPreview = 'import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}';
-    
-    setEditorCode(defaultCode);
-    setPreviewCode(defaultPreview);
+    setEditorCode(CLEAR_CANVAS_JS_SEED);
+    setPreviewCode(WELCOME_APP_TSX);
+
     
     // Clear VFS to empty state
     virtualFS.resetToEmpty();
@@ -6025,21 +6006,13 @@ ${html}
             const nextLink = nextStep
               ? `<Link to="${nextStep.path}" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">Continue →</Link>`
               : `<p className="text-lg text-muted-foreground">You're all set!</p>`;
-            newFiles[vfsPath] = `import { Link } from 'react-router-dom';
-
-export default function ${componentName}() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <main className="max-w-2xl mx-auto px-6 py-16 text-center">
-        <div className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary mb-4">Step ${idx + 1} · ${step.role}</div>
-        <h1 className="text-4xl font-bold mb-6">${step.title}</h1>
-        <p className="text-muted-foreground text-lg mb-8">This is the ${step.role} step of your funnel.</p>
-        ${nextLink}
-      </main>
-    </div>
-  );
-}
-`;
+            newFiles[vfsPath] = buildFunnelStepSeed({
+              componentName,
+              idx,
+              role: step.role,
+              title: step.title,
+              nextLink,
+            });
           });
           virtualFS.importFiles(newFiles);
           toast.success(`Funnel scaffolded: ${stepPages.length} pages created in VFS`);

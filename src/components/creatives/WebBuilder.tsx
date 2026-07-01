@@ -3600,7 +3600,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                 label: 'Discard',
                 onClick: () => {
                   localStorage.removeItem('webbuilder_autosave_draft');
-                  setPreviewCode('import React from "react";\n\nexport default function App() {\n  return (\n    <div style={{ padding: "40px", textAlign: "center" }}>\n      <h1>Welcome to AI Web Builder</h1>\n      <p>Use the AI Code Assistant to generate components</p>\n    </div>\n  );\n}');
+                  setPreviewCode(WELCOME_APP_TSX);
                 },
               },
             });

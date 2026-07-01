@@ -45,6 +45,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'salon',
     industryKey: 'salon',
+    templateIndustry: 'salon',
     selections: {
       businessName: 'Aurora Salon',
       businessModel: 'appointment_service',
@@ -62,6 +63,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'agency',
     industryKey: 'agency',
+    templateIndustry: 'agency',
     selections: {
       businessName: 'North Pier Studio',
       businessModel: 'quote_lead',
@@ -78,6 +80,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'restaurant',
     industryKey: 'restaurant',
+    templateIndustry: 'restaurant',
     selections: {
       businessName: 'Rossi Trattoria',
       businessModel: 'appointment_service',
@@ -94,6 +97,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'ecommerce',
     industryKey: 'ecommerce',
+    templateIndustry: 'ecommerce',
     selections: {
       businessName: 'Fern & Fjord',
       businessModel: 'ecommerce',
@@ -110,6 +114,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'coaching',
     industryKey: 'coaching',
+    templateIndustry: 'coaching',
     selections: {
       businessName: 'Ridgeline Coaching',
       businessModel: 'appointment_service',
@@ -125,16 +130,17 @@ const FIXTURES: IndustryFixture[] = [
     },
   },
   {
-    label: 'saas',
-    industryKey: 'saas',
+    label: 'portfolio',
+    industryKey: 'portfolio',
+    templateIndustry: 'photography',
     selections: {
-      businessName: 'Loomstack',
-      businessModel: 'saas_digital',
-      industryOverlay: 'saas',
-      primaryGoal: 'signup',
+      businessName: 'Vale Imagery',
+      businessModel: 'quote_lead',
+      industryOverlay: 'photographer',
+      primaryGoal: 'contact',
       secondaryGoals: [],
       wantsLeadCapture: true,
-      requestedPages: ['about', 'pricing', 'contact'],
+      requestedPages: ['about', 'gallery', 'contact'],
       scaffoldMode: 'selected-pages',
       themePresetId: 'organic',
       primaryIntent: 'contact.submit',

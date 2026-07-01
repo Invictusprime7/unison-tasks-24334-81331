@@ -4320,35 +4320,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     } else if (navState?.generatedTemplate) {
       const { generatedTemplate, templateName, aesthetic } = navState;
       console.log('[WebBuilder] Loading template from Web Design Kit:', templateName);
-      
-      // Build React/JSX sections directly — no raw HTML with class= attributes
-      const sectionsJsx = (generatedTemplate.sections || []).map((section: any) => {
-        const colCount = section.components?.length > 2 ? 3 : 2;
-        const comps = (section.components || []).map((comp: any) =>
-          `<div className="p-6 bg-white rounded-lg shadow-lg">
-            <h3 className="text-2xl font-semibold mb-4">${comp.props?.title || 'Component'}</h3>
-            <p className="text-gray-600">${comp.props?.description || 'Component content'}</p>
-          </div>`
-        ).join('\n          ');
-        return `      <section className="py-16 px-6">
-          <div className="max-w-7xl mx-auto">
-            <h2 className="text-4xl font-bold mb-8">${section.name}</h2>
-            <div className="grid gap-6 md:grid-cols-${colCount}">${comps}</div>
-          </div>
-        </section>`;
-      }).join('\n');
 
-      const componentTitle = generatedTemplate.name || templateName || 'Template';
-      const reactCode = `import React from 'react';
-
-export default function App() {
-  return (
-    <div className="min-h-screen bg-gray-50">
-${sectionsJsx}
-    </div>
-  );
-}
-`;
+      const reactCode = buildSectionsReactApp(generatedTemplate);
       // Wire through VFS so preview stays in sync
       const templateFiles = normalizeLauncherFiles({
         [launchEntryPoint]: reactCode,
@@ -4371,6 +4344,7 @@ ${sectionsJsx}
       window.history.replaceState({}, document.title);
     }
   }, [effectiveRouteState, activePagePath, activeSystemType, creatorPlayground, launchEntryPoint, replaceProjectFiles, virtualFS]);
+
 
   const launcherDraftBootstrapKey = useMemo(() => {
     if (!routeStateHasStructuredProject) return null;

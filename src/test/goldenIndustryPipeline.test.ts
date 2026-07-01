@@ -165,12 +165,12 @@ describe('Golden industry pipeline — canonical round-trip', () => {
     const compileA = compilePlayground(state, {}, fx.selections.businessName, {
       selectedTemplateId: fx.selections.templateId,
       themePresetId: fx.selections.themePresetId,
-      industry: fx.selections.industryOverlay,
+      industry: fx.templateIndustry,
     });
     const compileB = compilePlayground(state, compileA.vfsFiles, fx.selections.businessName, {
       selectedTemplateId: fx.selections.templateId,
       themePresetId: fx.selections.themePresetId,
-      industry: fx.selections.industryOverlay,
+      industry: fx.templateIndustry,
     });
 
     it('materializes a non-empty PageRegistry with a home page', () => {

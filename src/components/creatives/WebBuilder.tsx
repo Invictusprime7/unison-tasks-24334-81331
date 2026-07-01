@@ -4138,7 +4138,7 @@ export default function ${componentName}Page() {
       },
     ).then((draftId) => {
       if (draftId) {
-        templateFiles.setCurrentDraftId(draftId);
+        templateFiles.setCurrentTemplateId(draftId);
         setCurrentDraftId(draftId);
         setCurrentTemplateName(effectiveName);
         if (!saveProjectName.trim()) {
@@ -5469,7 +5469,7 @@ ${html}
     });
     
     // Track the current template ID and name for re-save
-    templateFiles.setCurrentDraftId(template.id);
+    templateFiles.setCurrentTemplateId(template.id);
     setCurrentTemplateName(template.name);
     setSaveProjectName(template.name);
     setProjectDisplayName(template.name);

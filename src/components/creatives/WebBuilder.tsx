@@ -2165,7 +2165,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   useEffect(() => {
     const urlId = new URLSearchParams(location.search).get('id');
-    if (!projectId || urlId || routeStateHasStructuredProject || templateFiles.currentTemplateId) {
+    if (!projectId || urlId || routeStateHasStructuredProject || templateFiles.currentDraftId) {
       return;
     }
 
@@ -2200,7 +2200,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     projectId,
     projectNameFromState,
     routeStateHasStructuredProject,
-    templateFiles.currentTemplateId,
+    templateFiles.currentDraftId,
     templateFiles.loadTemplate,
   ]);
 
@@ -2212,7 +2212,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   useEffect(() => {
     const urlId = new URLSearchParams(location.search).get('id');
     if (recoveredDraftRef.current) return;
-    if (urlId || projectId || effectiveRouteState || templateFiles.currentTemplateId) return;
+    if (urlId || projectId || effectiveRouteState || templateFiles.currentDraftId) return;
 
     let cancelled = false;
     recoveredDraftRef.current = true;
@@ -2248,7 +2248,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     projectId,
     effectiveRouteState,
     location.search,
-    templateFiles.currentTemplateId,
+    templateFiles.currentDraftId,
     templateFiles.loadTemplate,
     hydrateSavedTemplate,
   ]);
@@ -2577,7 +2577,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   useEffect(() => {
     const registry = creatorPlayground.pageRegistry;
     if (!registry || Object.keys(registry.pages).length === 0) return;
-    const draftKey = templateFiles.currentTemplateId || '__no-draft__';
+    const draftKey = templateFiles.currentDraftId || '__no-draft__';
     const syncKey = `${draftKey}:${registry.version}`;
     if (lastSyncedRouterKeyRef.current === syncKey) return;
     try {
@@ -2603,7 +2603,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     } catch (err) {
       console.error('[WebBuilder] Canonical router sync failed:', err);
     }
-  }, [creatorPlayground.pageRegistry, launchEntryPoint, virtualFS, templateFiles.currentTemplateId]);
+  }, [creatorPlayground.pageRegistry, launchEntryPoint, virtualFS, templateFiles.currentDraftId]);
 
   // Page manifest for async multi-page navigation (all HTML pages from VFS)
   const pageManifest = useMemo(() => {
@@ -3339,11 +3339,11 @@ export default function ${componentName}Page() {
   }, []);
   // Keep the current template id in a ref so callbacks always read the
   // latest value without stale-closure issues (avoids re-creating intervals).
-  const currentDraftIdRef = useRef<string | null>(templateFiles.currentTemplateId);
-  currentDraftIdRef.current = templateFiles.currentTemplateId;
+  const currentDraftIdRef = useRef<string | null>(templateFiles.currentDraftId);
+  currentDraftIdRef.current = templateFiles.currentDraftId;
   useEffect(() => {
-    setCurrentDraftId(templateFiles.currentTemplateId || null);
-  }, [templateFiles.currentTemplateId]);
+    setCurrentDraftId(templateFiles.currentDraftId || null);
+  }, [templateFiles.currentDraftId]);
   const getAutoSaveKey = useCallback(() =>
     currentDraftIdRef.current
       ? `webbuilder_autosave_${currentDraftIdRef.current}`
@@ -4138,7 +4138,7 @@ export default function ${componentName}Page() {
       },
     ).then((draftId) => {
       if (draftId) {
-        templateFiles.setCurrentTemplateId(draftId);
+        templateFiles.setCurrentDraftId(draftId);
         setCurrentDraftId(draftId);
         setCurrentTemplateName(effectiveName);
         if (!saveProjectName.trim()) {
@@ -5330,7 +5330,7 @@ ${sectionsJsx}
   ]);
 
   useEffect(() => {
-    if (!launcherDraftBootstrapKey || templateFiles.currentTemplateId) {
+    if (!launcherDraftBootstrapKey || templateFiles.currentDraftId) {
       return;
     }
 
@@ -5350,7 +5350,7 @@ ${sectionsJsx}
     });
   }, [
     launcherDraftBootstrapKey,
-    templateFiles.currentTemplateId,
+    templateFiles.currentDraftId,
     previewCode,
     ensureLauncherDraftSaved,
   ]);
@@ -5469,7 +5469,7 @@ ${html}
     });
     
     // Track the current template ID and name for re-save
-    templateFiles.setCurrentTemplateId(template.id);
+    templateFiles.setCurrentDraftId(template.id);
     setCurrentTemplateName(template.name);
     setSaveProjectName(template.name);
     setProjectDisplayName(template.name);
@@ -5554,9 +5554,9 @@ ${html}
 
   // Handle quick save (update existing template)
   const handleQuickSave = useCallback(async () => {
-    if (templateFiles.currentTemplateId) {
+    if (templateFiles.currentDraftId) {
       const finalCode = getFinalCodeWithOverrides();
-      await templateFiles.updateTemplate(templateFiles.currentTemplateId, finalCode, buildSavePayload());
+      await templateFiles.updateTemplate(templateFiles.currentDraftId, finalCode, buildSavePayload());
     } else {
       setFileManagerOpen(true);
     }
@@ -5571,13 +5571,13 @@ ${html}
     
     setIsSavingProject(true);
     try {
-      const isUpdating = templateFiles.currentTemplateId && !saveAsNew;
+      const isUpdating = templateFiles.currentDraftId && !saveAsNew;
       const finalCode = getFinalCodeWithOverrides();
       const payload = buildSavePayload();
       
       if (isUpdating) {
         // Update existing project
-        await templateFiles.updateTemplate(templateFiles.currentTemplateId, finalCode, payload);
+        await templateFiles.updateTemplate(templateFiles.currentDraftId, finalCode, payload);
         toast.success(`Updated "${saveProjectName}"`);
       } else {
         // Save as new project
@@ -8325,10 +8325,10 @@ export default function ${componentName}() {
         <DialogContent className="sm:max-w-[400px] backdrop-blur-2xl bg-gradient-to-b from-[#0d0d14]/98 to-[#0a0a0f]/98 border-white/[0.08]">
           <DialogHeader>
             <DialogTitle className="text-base text-white">
-              {templateFiles.currentTemplateId ? 'Update Template' : 'Save to Projects'}
+              {templateFiles.currentDraftId ? 'Update Template' : 'Save to Projects'}
             </DialogTitle>
             <DialogDescription className="text-xs text-white/50">
-              {templateFiles.currentTemplateId 
+              {templateFiles.currentDraftId 
                 ? `Updating "${currentTemplateName}" - or save as a new template`
                 : 'Save your current template design to access it later'
               }
@@ -8336,7 +8336,7 @@ export default function ${componentName}() {
           </DialogHeader>
           
           <div className="grid gap-3 py-3">
-            {templateFiles.currentTemplateId && (
+            {templateFiles.currentDraftId && (
               <div className="flex items-center gap-2 px-2 py-1.5 bg-primary/20 border border-primary/30 rounded-lg text-xs text-primary">
                 <Cloud className="h-3 w-3" />
                 <span>Editing: {currentTemplateName}</span>
@@ -8369,7 +8369,7 @@ export default function ${componentName}() {
             <Button variant="outline" size="sm" onClick={() => setSaveProjectDialogOpen(false)} className="bg-transparent border-white/[0.1] text-white/70 hover:text-white hover:bg-white/[0.06]">
               Cancel
             </Button>
-            {templateFiles.currentTemplateId && (
+            {templateFiles.currentDraftId && (
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -8390,7 +8390,7 @@ export default function ${componentName}() {
               ) : (
                 <Save className="h-3 w-3 mr-1" />
               )}
-              {templateFiles.currentTemplateId ? 'Update' : 'Save'}
+              {templateFiles.currentDraftId ? 'Update' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

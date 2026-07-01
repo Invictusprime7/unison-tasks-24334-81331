@@ -221,7 +221,7 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { getAllTemplates, deleteTemplate, saveTemplate, currentTemplateId } = useTemplateFiles();
+  const { getAllTemplates, deleteTemplate, saveTemplate, currentDraftId } = useTemplateFiles();
 
   const fetchTemplates = useCallback(async () => {
     if (loading) return;
@@ -505,7 +505,7 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
                     key={template.id}
                     className={cn(
                       "cursor-pointer hover:border-primary/50 transition-colors",
-                      currentTemplateId === template.id && "border-primary bg-primary/5"
+                      currentDraftId === template.id && "border-primary bg-primary/5"
                     )}
                     onClick={() => handleLoad(template)}
                   >
@@ -579,7 +579,7 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
                     key={template.id}
                     className={cn(
                       "cursor-pointer group hover:border-primary/50 transition-colors",
-                      currentTemplateId === template.id && "border-primary bg-primary/5"
+                      currentDraftId === template.id && "border-primary bg-primary/5"
                     )}
                     onClick={() => handleLoad(template)}
                   >
@@ -590,7 +590,7 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-xs font-medium truncate">{template.name}</p>
-                          {currentTemplateId === template.id && (
+                          {currentDraftId === template.id && (
                             <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4">Open</Badge>
                           )}
                         </div>

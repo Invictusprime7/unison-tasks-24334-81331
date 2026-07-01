@@ -176,9 +176,9 @@ const draftRowToTemplate = (row: any): SavedTemplate => {
 
 export function useTemplateFiles() {
   const [loading, setLoading] = useState(false);
-  const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   // Pass 2 (identity hardening): real `projects.id` for the active draft.
-  // Tracked separately from `currentTemplateId` (which is the draft id) to
+  // Tracked separately from `currentDraftId` (which is the draft id) to
   // purge the long-standing `projectId === templateId === draftId` aliasing
   // that fed BuilderIdentity at commit/deploy/AI-apply boundaries.
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
@@ -220,7 +220,7 @@ export function useTemplateFiles() {
         };
         localTemplates.unshift(newTemplate);
         saveLocalTemplates(localTemplates);
-        setCurrentTemplateId(newTemplate.id);
+        setCurrentDraftId(newTemplate.id);
         toast.success("Project saved locally!", {
           description: `"${name}" saved to browser storage`,
         });
@@ -314,7 +314,7 @@ export function useTemplateFiles() {
         canonicalPlayground: payload?.canonicalPlayground,
       });
 
-      setCurrentTemplateId(data.id);
+      setCurrentDraftId(data.id);
       const resolvedProjectId =
         payload?.projectId ??
         (data as { project_id?: string | null }).project_id ??
@@ -442,7 +442,7 @@ export function useTemplateFiles() {
       return null;
     }
 
-    const existingId = currentTemplateId || await findBuilderDraftIdForProject({
+    const existingId = currentDraftId || await findBuilderDraftIdForProject({
       projectId: payload?.projectId ?? null,
       projectName: trimmedName,
       businessId: payload?.businessId ?? null,
@@ -453,12 +453,12 @@ export function useTemplateFiles() {
       if (!didUpdate) {
         return null;
       }
-      setCurrentTemplateId(existingId);
+      setCurrentDraftId(existingId);
       return existingId;
     }
 
     return saveTemplate(trimmedName, description, false, code, payload);
-  }, [currentTemplateId, saveTemplate, updateTemplate]);
+  }, [currentDraftId, saveTemplate, updateTemplate]);
 
   const loadTemplate = useCallback(async (id: string): Promise<SavedTemplate | null> => {
     setLoading(true);
@@ -467,7 +467,7 @@ export function useTemplateFiles() {
         const localTemplates = getLocalTemplates();
         const template = localTemplates.find(t => t.id === id);
         if (template) {
-          setCurrentTemplateId(template.id);
+          setCurrentDraftId(template.id);
           return template;
         }
         throw new Error("Project not found");
@@ -486,7 +486,7 @@ export function useTemplateFiles() {
       }
 
       if (draft) {
-        setCurrentTemplateId(draft.id);
+        setCurrentDraftId(draft.id);
         const draftProjectId =
           (draft as { project_id?: string | null }).project_id ??
           ((draft.metadata as Record<string, unknown> | null)?.projectId as
@@ -509,7 +509,7 @@ export function useTemplateFiles() {
         ...legacy,
         canvas_data: legacy.canvas_data as unknown as TemplateData,
       };
-      setCurrentTemplateId(template.id);
+      setCurrentDraftId(template.id);
       return template;
     } catch (error) {
       console.error("Error loading project:", error);
@@ -546,15 +546,15 @@ export function useTemplateFiles() {
   }, []);
 
   const autoSave = useCallback(async (code: string, payload?: SaveProjectPayload): Promise<boolean> => {
-    if (!currentTemplateId) return false;
+    if (!currentDraftId) return false;
     try {
       if (cloudDraftWritesDisabledRef.current) {
         return true;
       }
 
-      if (currentTemplateId.startsWith("local-")) {
+      if (currentDraftId.startsWith("local-")) {
         const localTemplates = getLocalTemplates();
-        const index = localTemplates.findIndex(t => t.id === currentTemplateId);
+        const index = localTemplates.findIndex(t => t.id === currentDraftId);
         if (index !== -1) {
           localTemplates[index] = {
             ...localTemplates[index],
@@ -629,7 +629,7 @@ export function useTemplateFiles() {
         const { data: existing } = await supabase
           .from("builder_drafts")
           .select("metadata")
-          .eq("id", currentTemplateId)
+          .eq("id", currentDraftId)
           .maybeSingle();
 
         const prevMeta = (existing?.metadata || {}) as Record<string, unknown>;
@@ -647,7 +647,7 @@ export function useTemplateFiles() {
       const { error } = await supabase
         .from("builder_drafts")
         .update(updatePatch)
-        .eq("id", currentTemplateId);
+        .eq("id", currentDraftId);
       if (error) {
         if (isRecoverableBuilderDraftWriteError(error)) {
           disableCloudDraftWrites(error);
@@ -657,7 +657,7 @@ export function useTemplateFiles() {
       }
       await syncCanonicalComponentGraph({
         projectId: payload?.projectId ?? null,
-        draftId: currentTemplateId,
+        draftId: currentDraftId,
         canonicalPlayground: payload?.canonicalPlayground,
       });
       return true;
@@ -665,10 +665,10 @@ export function useTemplateFiles() {
       console.error("Auto-save failed:", error);
       return false;
     }
-  }, [currentTemplateId, disableCloudDraftWrites]);
+  }, [currentDraftId, disableCloudDraftWrites]);
 
   const clearCurrentTemplate = useCallback(() => {
-    setCurrentTemplateId(null);
+    setCurrentDraftId(null);
     setCurrentProjectId(null);
   }, []);
 
@@ -696,7 +696,7 @@ export function useTemplateFiles() {
 
   return {
     loading,
-    currentTemplateId,
+    currentDraftId,
     currentProjectId,
     saveTemplate,
     updateTemplate,
@@ -705,7 +705,7 @@ export function useTemplateFiles() {
     deleteTemplate,
     autoSave,
     clearCurrentTemplate,
-    setCurrentTemplateId,
+    setCurrentDraftId,
     setCurrentProjectId,
     getAllTemplates,
     getLocalTemplates,

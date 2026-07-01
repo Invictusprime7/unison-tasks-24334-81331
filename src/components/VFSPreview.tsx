@@ -941,8 +941,38 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           </div>
         )}
         
+        {/* Snapshot-only gate: pipeline error surfaces instead of a stale/minimal preview */}
+        {backend === 'sandpack' && pipelineError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background p-6 z-10">
+            <div className="max-w-md text-center space-y-3">
+              <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+              <h3 className="text-sm font-semibold">Preview blocked by canonical gate</h3>
+              <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                {pipelineError.summary}
+              </p>
+              <p className="text-[10px] text-muted-foreground/70 font-mono">
+                [{pipelineError.stage}] {pipelineError.message}
+              </p>
+
+            </div>
+          </div>
+        )}
+
+        {/* Empty draft — no snapshot, no source. Render idle, never a minimal fallback. */}
+        {backend === 'sandpack' && !pipelineError && emptyDraft && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background p-6 z-10">
+            <div className="max-w-sm text-center space-y-2">
+              <Zap className="h-8 w-8 mx-auto text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Preview idle</h3>
+              <p className="text-xs text-muted-foreground">
+                No SiteBundleSnapshot is bound to this draft yet. Launch the wizard or ask the AI Builder to generate the first page — the canonical preview will hydrate automatically.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Sandpack In-Browser React Preview — the primary rendering engine */}
-        {backend === 'sandpack' && (
+        {backend === 'sandpack' && !pipelineError && !emptyDraft && (
           <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
             <SandpackProvider
               key={`sandpack-${sandpackKey}`}
@@ -976,6 +1006,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
             </SandpackProvider>
           </SandpackErrorBoundary>
         )}
+
         
         {/* Logs Panel */}
         {showLogs && backend === 'docker' && (

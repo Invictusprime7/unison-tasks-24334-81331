@@ -94,8 +94,7 @@ import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 
-// isMissingBusinessInstallsError extracted to web-builder/sourceClassifiers.ts
-// isMissingBusinessInstallsError extracted to web-builder/sourceClassifiers.ts
+// Helpers extracted to web-builder/*
 import {
   isMissingBusinessInstallsError,
   getOrCreatePreviewBusinessId,
@@ -105,7 +104,6 @@ import {
 } from "./web-builder/sourceClassifiers";
 import { CodeViewErrorBoundary } from "./web-builder/CodeViewErrorBoundary";
 import { applyCustomizerOverridesToIframe } from "./web-builder/customizerDomPatcher";
-import { CodeViewErrorBoundary } from "./web-builder/CodeViewErrorBoundary";
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
 import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';

@@ -4434,38 +4434,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     });
   };
 
-  // Helper to integrate CSS into HTML document
-  const integrateCSSIntoHTML = useCallback((html: string, css: string): string => {
-    if (!css || !css.trim()) return html;
-    
-    const styleTag = `<style>\n${css}\n</style>`;
-    
-    // Check if it's a full HTML document
-    if (html.includes('</head>')) {
-      // Insert CSS before </head>
-      return html.replace('</head>', `${styleTag}\n</head>`);
-    } else if (html.includes('<html') || html.includes('<!DOCTYPE')) {
-      // Has HTML but no head - add before body or at start
-      if (html.includes('<body')) {
-        return html.replace('<body', `<head>${styleTag}</head>\n<body`);
-      }
-      return html.replace(/<html[^>]*>/i, (match) => `${match}\n<head>${styleTag}</head>`);
-    } else {
-      // Fragment - wrap in full document with CSS
-      return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"></script>
-  ${styleTag}
-</head>
-<body>
-${html}
-</body>
-</html>`;
-    }
-  }, []);
+  // Helper to integrate CSS into HTML document (pure impl extracted to web-builder/htmlAssembly)
+  const integrateCSSIntoHTML = useCallback(
+    (html: string, css: string): string => integrateCSSIntoHTMLPure(html, css),
+    [],
+  );
+
 
   // Handle loading a saved template
   const handleLoadTemplate = useCallback((template: {

@@ -94,21 +94,15 @@ import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 
-function isMissingBusinessInstallsError(error: unknown): boolean {
-  const candidate = error as {
-    code?: string;
-    status?: number;
-    message?: string;
-    details?: string;
-  } | null;
-  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
-  return (
-    candidate?.code === '42P01' ||
-    candidate?.code === 'PGRST205' ||
-    candidate?.status === 404 ||
-    combined.includes('business_installs')
-  );
-}
+// isMissingBusinessInstallsError extracted to web-builder/sourceClassifiers.ts
+import {
+  isMissingBusinessInstallsError,
+  getOrCreatePreviewBusinessId,
+  isBuilderBootstrapPreviewCode,
+  isCanonicalRouterSource,
+  isWizardFallbackOrRouterOnlySource,
+} from "./web-builder/sourceClassifiers";
+import { CodeViewErrorBoundary } from "./web-builder/CodeViewErrorBoundary";
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
 import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';
@@ -170,38 +164,6 @@ import {
   readBrowserCart,
 } from '@/runtime/browserCartManager';
 
-function getOrCreatePreviewBusinessId(systemType?: string): string {
-  const key = systemType ? `webbuilder_businessId:${systemType}` : 'webbuilder_businessId';
-  try {
-    const existing = localStorage.getItem(key);
-    if (existing) return existing;
-    const id = generateUUID();
-    localStorage.setItem(key, id);
-    return id;
-  } catch {
-    // Fallback when localStorage is unavailable
-    return generateUUID();
-  }
-}
-
-function isBuilderBootstrapPreviewCode(code: string): boolean {
-  return /Welcome to AI Web Builder|AI-generated code will appear here|Use the AI Code Assistant to generate components/.test(code);
-}
-
-function isCanonicalRouterSource(code: string): boolean {
-  return /react-router-dom|<Routes\b|<Route\b|HashRouter|BrowserRouter|createBrowserRouter/.test(code);
-}
-
-function isWizardFallbackOrRouterOnlySource(code: string): boolean {
-  const trimmed = code.trim();
-  if (!trimmed) return true;
-  if (isBuilderBootstrapPreviewCode(trimmed)) return true;
-  if (isCanonicalRouterSource(trimmed)) return true;
-  if (/Generating page content|This page is ready to be edited|A refined launch page ready for your next edit|New site preview/i.test(trimmed)) {
-    return true;
-  }
-  return false;
-}
 
 // JSX/CSS-selector source manipulation helpers extracted to web-builder/jsxSourceUtils.ts
 import {
@@ -319,54 +281,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BuilderSessionProvider } from "@/builder/controllers/BuilderSessionProvider";
 
-// ---------------------------------------------------------------------------
-// Error boundary for the code/split view panels
-// ---------------------------------------------------------------------------
-class CodeViewErrorBoundary extends Component<
-  { children: ReactNode; onFallbackClick?: () => void },
-  { hasError: boolean; errorMsg: string }
-> {
-  constructor(props: { children: ReactNode; onFallbackClick?: () => void }) {
-    super(props);
-    this.state = { hasError: false, errorMsg: '' };
-  }
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, errorMsg: error.message };
-  }
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[WebBuilder] Code view crashed:', error, info.componentStack);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="w-full h-full flex items-center justify-center bg-[#0d1117] rounded-lg border border-white/10">
-          <div className="text-center max-w-sm p-8">
-            <div className="text-4xl mb-4">⚠️</div>
-            <h3 className="text-lg font-semibold text-white mb-2">Code Editor failed to load</h3>
-            <p className="text-sm text-white/50 mb-4">{this.state.errorMsg || 'An unexpected error occurred.'}</p>
-            <div className="flex gap-2 justify-center">
-              <button
-                onClick={() => this.setState({ hasError: false, errorMsg: '' })}
-                className="px-4 py-2 text-sm bg-white/10 hover:bg-white/20 text-white rounded-md transition-colors"
-              >
-                Retry
-              </button>
-              {this.props.onFallbackClick && (
-                <button
-                  onClick={this.props.onFallbackClick}
-                  className="px-4 py-2 text-sm bg-primary/80 hover:bg-primary text-white rounded-md transition-colors"
-                >
-                  Switch to Canvas
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+// CodeViewErrorBoundary extracted to web-builder/CodeViewErrorBoundary.tsx
 
 interface WebBuilderProps {
   initialHtml?: string;

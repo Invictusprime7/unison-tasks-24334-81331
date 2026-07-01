@@ -90,6 +90,7 @@ import {
   CommitRejectedError,
   loadLatestRevisionForProject,
 } from "@/services/vfsCommitService";
+import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 

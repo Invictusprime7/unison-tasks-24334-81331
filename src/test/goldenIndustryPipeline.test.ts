@@ -30,7 +30,8 @@ import { resolveCapabilities } from '@/services/wizardCapabilityResolver';
 import { materializePlayground } from '@/services/wizardPlaygroundMaterializer';
 import { compilePlayground } from '@/services/playgroundCompiler';
 import { INDUSTRY_INTENT_PROFILES } from '@/platform/core/industryIntentProfiles';
-import type { WizardSelections } from '@/platform/core/playground';
+import type { PlaygroundBinding, WizardSelections } from '@/platform/core/playground';
+import type { BuilderPage } from '@/types/pageRegistry';
 
 interface IndustryFixture {
   label: string;

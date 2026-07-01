@@ -181,6 +181,8 @@ import {
 // Dynamic page prompt builder extracted to web-builder/dynamicPagePrompt.ts
 import { buildDynamicPagePrompt } from "./web-builder/dynamicPagePrompt";
 import { buildPageSeed, buildFunnelStepSeed, WELCOME_APP_TSX, CLEAR_CANVAS_JS_SEED } from "./web-builder/seedTemplates";
+import { integrateCSSIntoHTML as integrateCSSIntoHTMLPure, buildSectionsReactApp } from "./web-builder/htmlAssembly";
+
 
 /**
  * Validate AI-generated code against the original template to detect destructive changes.

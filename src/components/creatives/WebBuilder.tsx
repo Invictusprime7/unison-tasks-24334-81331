@@ -182,6 +182,7 @@ import {
 import { buildDynamicPagePrompt } from "./web-builder/dynamicPagePrompt";
 import { buildPageSeed, buildFunnelStepSeed, WELCOME_APP_TSX, CLEAR_CANVAS_JS_SEED } from "./web-builder/seedTemplates";
 import { integrateCSSIntoHTML as integrateCSSIntoHTMLPure, buildSectionsReactApp } from "./web-builder/htmlAssembly";
+import { exportFabricCanvasToHtmlCss } from "./web-builder/fabricExport";
 
 
 /**

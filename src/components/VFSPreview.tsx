@@ -948,11 +948,12 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
               <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
               <h3 className="text-sm font-semibold">Preview blocked by canonical gate</h3>
               <p className="text-xs text-muted-foreground whitespace-pre-wrap">
-                {pipelineError.userMessage || pipelineError.message}
+                {pipelineError.summary}
               </p>
               <p className="text-[10px] text-muted-foreground/70 font-mono">
-                {pipelineError.developerMessage || ''}
+                [{pipelineError.stage}] {pipelineError.message}
               </p>
+
             </div>
           </div>
         )}

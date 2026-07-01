@@ -1297,7 +1297,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [currentTemplateCategory, setCurrentTemplateCategory] = useState<string | null>(
     effectiveRouteState?.templateCategory || null
   );
-  const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(
     effectiveRouteState?.templateId
       || (effectiveRouteState?.runtimeManifest?.appContext as { templateId?: string } | undefined)?.templateId
       || null
@@ -1967,7 +1967,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     templateFiles.currentProjectId ||
     (effectiveRouteState?.projectId as string | undefined) ||
     (effectiveRouteState?.returnProjectId as string | undefined) ||
-    currentTemplateId ||
+    currentDraftId ||
     null;
 
   const hydrateSavedTemplate = useCallback((template: {
@@ -3136,7 +3136,7 @@ export default function ${componentName}Page() {
   // AI Builder LLM applies. Non-blocking; preview/editor already updated.
   useEffect(() => {
     commitLayoutFastPathRef.current = (nextCode, summary) => {
-      if (!isCommitServiceEnabled() || !businessId || !currentTemplateId) return;
+      if (!isCommitServiceEnabled() || !businessId || !currentDraftId) return;
       const targetPath = activePagePath?.endsWith('.tsx') ? activePagePath : launchEntryPoint;
       if (!targetPath || !nextCode) return;
       const beforeFiles = virtualFSRef.current.getSandpackFiles();
@@ -3148,10 +3148,10 @@ export default function ${componentName}Page() {
           const identity: BuilderIdentity = {
             userId: user.id,
             businessId,
-            projectId: resolvedProjectId || currentTemplateId,
-            draftId: currentTemplateId,
+            projectId: resolvedProjectId || currentDraftId,
+            draftId: currentDraftId,
             revisionId: currentRevisionId,
-            sessionId: `web-builder:${currentTemplateId}`,
+            sessionId: `web-builder:${currentDraftId}`,
           };
           const patch = legacyFilesToPatchPlan(
             { [targetPath]: nextCode },
@@ -3186,7 +3186,7 @@ export default function ${componentName}Page() {
     };
   }, [
     businessId,
-    currentTemplateId,
+    currentDraftId,
     currentRevisionId,
     activePagePath,
     launchEntryPoint,
@@ -3200,7 +3200,7 @@ export default function ${componentName}Page() {
   // intent readiness gating.
   useEffect(() => {
     commitToolbarMutationRef.current = (nextCode, summary) => {
-      if (!isCommitServiceEnabled() || !businessId || !currentTemplateId) return;
+      if (!isCommitServiceEnabled() || !businessId || !currentDraftId) return;
       const targetPath = activePagePath?.endsWith('.tsx') ? activePagePath : launchEntryPoint;
       if (!targetPath || !nextCode) return;
       const beforeFiles = virtualFSRef.current.getSandpackFiles();
@@ -3212,10 +3212,10 @@ export default function ${componentName}Page() {
           const identity: BuilderIdentity = {
             userId: user.id,
             businessId,
-            projectId: resolvedProjectId || currentTemplateId,
-            draftId: currentTemplateId,
+            projectId: resolvedProjectId || currentDraftId,
+            draftId: currentDraftId,
             revisionId: currentRevisionId,
-            sessionId: `web-builder:${currentTemplateId}`,
+            sessionId: `web-builder:${currentDraftId}`,
           };
           const patch = legacyFilesToPatchPlan(
             { [targetPath]: nextCode },
@@ -3250,7 +3250,7 @@ export default function ${componentName}Page() {
     };
   }, [
     businessId,
-    currentTemplateId,
+    currentDraftId,
     currentRevisionId,
     activePagePath,
     launchEntryPoint,
@@ -3339,14 +3339,14 @@ export default function ${componentName}Page() {
   }, []);
   // Keep the current template id in a ref so callbacks always read the
   // latest value without stale-closure issues (avoids re-creating intervals).
-  const currentTemplateIdRef = useRef<string | null>(templateFiles.currentTemplateId);
-  currentTemplateIdRef.current = templateFiles.currentTemplateId;
+  const currentDraftIdRef = useRef<string | null>(templateFiles.currentTemplateId);
+  currentDraftIdRef.current = templateFiles.currentTemplateId;
   useEffect(() => {
-    setCurrentTemplateId(templateFiles.currentTemplateId || null);
+    setCurrentDraftId(templateFiles.currentTemplateId || null);
   }, [templateFiles.currentTemplateId]);
   const getAutoSaveKey = useCallback(() =>
-    currentTemplateIdRef.current
-      ? `webbuilder_autosave_${currentTemplateIdRef.current}`
+    currentDraftIdRef.current
+      ? `webbuilder_autosave_${currentDraftIdRef.current}`
       : 'webbuilder_autosave_draft'
   , []);
   const AUTO_SAVE_INTERVAL = 30000; // 30 seconds
@@ -3771,12 +3771,12 @@ export default function ${componentName}Page() {
     const lines: string[] = [];
     lines.push(`- backendInstalled: ${backendInstalled ? "yes" : "no"}`);
     if (activeSystemType) lines.push(`- systemType: ${activeSystemType}`);
-    if (currentTemplateId) lines.push(`- templateId: ${currentTemplateId}`);
+    if (currentDraftId) lines.push(`- templateId: ${currentDraftId}`);
     if (manifestIdFromState || currentManifestId) lines.push(`- manifestId: ${manifestIdFromState || currentManifestId}`);
     if (businessId) lines.push(`- businessId: ${businessId}`);
     if (redirectPageContext) lines.push(redirectPageContext);
     return lines.join("\n");
-  }, [backendInstalled, activeSystemType, currentTemplateId, manifestIdFromState, currentManifestId, businessId, redirectPageContext]);
+  }, [backendInstalled, activeSystemType, currentDraftId, manifestIdFromState, currentManifestId, businessId, redirectPageContext]);
 
   const [businessDataContext, setBusinessDataContext] = useState<string | null>(null);
 
@@ -3983,7 +3983,7 @@ export default function ${componentName}Page() {
       currentDesignPreset ||
       undefined;
     const effectiveTemplateId =
-      currentTemplateId ||
+      currentDraftId ||
       snapshotMeta?.templateId ||
       undefined;
     const effectiveSelectedThemeId =
@@ -4087,7 +4087,7 @@ export default function ${componentName}Page() {
     systemType,
     currentTemplateCategory,
     currentDesignPreset,
-    currentTemplateId,
+    currentDraftId,
     resolvedThemePresetId,
     routeStateHasStructuredProject,
   ]);
@@ -4138,8 +4138,8 @@ export default function ${componentName}Page() {
       },
     ).then((draftId) => {
       if (draftId) {
-        templateFiles.setCurrentTemplateId(draftId);
-        setCurrentTemplateId(draftId);
+        templateFiles.setCurrentDraftId(draftId);
+        setCurrentDraftId(draftId);
         setCurrentTemplateName(effectiveName);
         if (!saveProjectName.trim()) {
           setSaveProjectName(effectiveName);
@@ -4183,7 +4183,7 @@ export default function ${componentName}Page() {
         code: previewCode,
         editorCode: editorCode,
         savedAt: new Date().toISOString(),
-        templateId: currentTemplateIdRef.current || null,
+        templateId: currentDraftIdRef.current || null,
         vfsSignature,
       };
       try { localStorage.setItem(saveKey, JSON.stringify(draft)); } catch { /* quota — ignore */ }
@@ -4191,7 +4191,7 @@ export default function ${componentName}Page() {
       lastSavedVfsSignatureRef.current = vfsSignature;
       setLastSavedAt(new Date());
 
-      const existingDraftId = currentTemplateIdRef.current;
+      const existingDraftId = currentDraftIdRef.current;
       const reason = 'interval_autosave' as const;
       if (existingDraftId) {
         // buildSavePayload() snapshots the FULL VFS file map into payload.vfsFiles,
@@ -4294,7 +4294,7 @@ export default function ${componentName}Page() {
             code: previewCode,
             editorCode,
             savedAt: new Date().toISOString(),
-            templateId: currentTemplateIdRef.current || null,
+            templateId: currentDraftIdRef.current || null,
             vfsSignature: sig,
             vfsFiles: currentVfsFiles,
           }));
@@ -5469,7 +5469,7 @@ ${html}
     });
     
     // Track the current template ID and name for re-save
-    templateFiles.setCurrentTemplateId(template.id);
+    templateFiles.setCurrentDraftId(template.id);
     setCurrentTemplateName(template.name);
     setSaveProjectName(template.name);
     setProjectDisplayName(template.name);
@@ -5496,7 +5496,7 @@ ${html}
     const effectiveSystemType = (selectedSystemType || (systemType as BusinessSystemType) || null) as BusinessSystemType | null;
     setActiveSystemType(effectiveSystemType);
     setCurrentTemplateName(name);
-    setCurrentTemplateId(templateId || null);
+    setCurrentDraftId(templateId || null);
     if (manifestIdFromState) setCurrentManifestId(manifestIdFromState);
 
     // Normalize + auto-migrate CTAs into the slot/intent contract
@@ -6368,7 +6368,7 @@ ${html}
         projectId: resolvedProjectId || projectId || undefined,
         businessId: businessId || undefined,
         currentUserId,
-        draftId: currentTemplateId || undefined,
+        draftId: currentDraftId || undefined,
       }}
     >
     <div ref={mainContainerRef} className={cn("wb-obsidian flex flex-col h-screen bg-[#09090b]", isMobile && "pb-14")}>
@@ -6399,12 +6399,12 @@ ${html}
           </Button>
 
           <AIEditHistoryMenu
-            projectId={currentTemplateId ?? null}
+            projectId={currentDraftId ?? null}
             onRevert={(snap) => {
               const beforeFiles = virtualFS.getSandpackFiles();
               virtualFS.importFiles(snap.before);
               syncBuilderFromFiles(snap.before, activePagePath);
-              pushAISnapshot(currentTemplateId ?? null, {
+              pushAISnapshot(currentDraftId ?? null, {
                 label: `Revert · ${snap.label}`,
                 source: 'manual',
                 before: beforeFiles,
@@ -6417,7 +6417,7 @@ ${html}
               const beforeFiles = virtualFS.getSandpackFiles();
               virtualFS.importFiles(snap.after);
               syncBuilderFromFiles(snap.after, activePagePath);
-              pushAISnapshot(currentTemplateId ?? null, {
+              pushAISnapshot(currentDraftId ?? null, {
                 label: `Reapply · ${snap.label}`,
                 source: 'manual',
                 before: beforeFiles,
@@ -6825,7 +6825,7 @@ export default function ${componentName}() {
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
-                projectId={currentTemplateId ?? null}
+                projectId={currentDraftId ?? null}
                 businessId={businessId ?? null}
                 layoutOps={layoutOpsForAI}
                 onApplyToVFS={(rawFiles, applyMeta) => {
@@ -6857,7 +6857,7 @@ export default function ${componentName}() {
                       const promptPreview = applyMeta?.prompt
                         ? applyMeta.prompt.length > 60 ? `${applyMeta.prompt.slice(0, 57)}…` : applyMeta.prompt
                         : `${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`;
-                      pushAISnapshot(currentTemplateId ?? null, {
+                      pushAISnapshot(currentDraftId ?? null, {
                         label: `AI · ${promptPreview}`,
                         source: applyMeta?.origin === 'debug-fix' ? 'debug' : 'ai',
                         before: beforeFiles,
@@ -6873,7 +6873,7 @@ export default function ${componentName}() {
                     if (
                       isCommitServiceEnabled() &&
                       businessId &&
-                      currentTemplateId
+                      currentDraftId
                     ) {
                       void (async () => {
                         try {
@@ -6882,10 +6882,10 @@ export default function ${componentName}() {
                           const identity: BuilderIdentity = {
                             userId: user.id,
                             businessId,
-                            projectId: resolvedProjectId || currentTemplateId,
-                            draftId: currentTemplateId,
+                            projectId: resolvedProjectId || currentDraftId,
+                            draftId: currentDraftId,
                             revisionId: currentRevisionId,
-                            sessionId: `web-builder:${currentTemplateId}`,
+                            sessionId: `web-builder:${currentDraftId}`,
                           };
                           const patch = legacyFilesToPatchPlan(files, 'ai-builder');
                           const commit = await commitMutation({
@@ -7223,14 +7223,14 @@ export default function ${componentName}() {
                       projectId={projectId ?? null}
                       vfsFiles={virtualFS.getSandpackFiles()}
                       identity={
-                        currentUserId && businessId && currentTemplateId
+                        currentUserId && businessId && currentDraftId
                           ? {
                               userId: currentUserId,
                               businessId,
-                              projectId: resolvedProjectId || currentTemplateId,
-                              draftId: currentTemplateId,
+                              projectId: resolvedProjectId || currentDraftId,
+                              draftId: currentDraftId,
                               revisionId: currentRevisionId,
-                              sessionId: `web-builder:${currentTemplateId}`,
+                              sessionId: `web-builder:${currentDraftId}`,
                             }
                           : null
                       }
@@ -7238,7 +7238,7 @@ export default function ${componentName}() {
                         setCurrentRevisionId(revId);
                         toast.success('Reloading restored revision…');
                         // Hydrate from the new revision row.
-                        void templateFiles.loadTemplate(currentTemplateId);
+                        void templateFiles.loadTemplate(currentDraftId);
                       }}
                     />
                   </TabsContent>
@@ -7281,7 +7281,7 @@ export default function ${componentName}() {
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
-              projectId={currentTemplateId ?? null}
+              projectId={currentDraftId ?? null}
               businessId={businessId ?? null}
               layoutOps={layoutOpsForAI}
               onApplyToVFS={(rawFiles, applyMeta) => {
@@ -7302,7 +7302,7 @@ export default function ${componentName}() {
                     const promptPreview = applyMeta?.prompt
                       ? applyMeta.prompt.length > 60 ? `${applyMeta.prompt.slice(0, 57)}…` : applyMeta.prompt
                       : `${changedPaths.length} file${changedPaths.length > 1 ? 's' : ''}`;
-                    pushAISnapshot(currentTemplateId ?? null, {
+                    pushAISnapshot(currentDraftId ?? null, {
                       label: `AI · ${promptPreview}`,
                       source: applyMeta?.origin === 'debug-fix' ? 'debug' : 'ai',
                       before: beforeFiles,
@@ -7312,7 +7312,7 @@ export default function ${componentName}() {
                     });
                   }
                   // Additive: mirror through VFSCommitService behind feature flag.
-                  if (isCommitServiceEnabled() && businessId && currentTemplateId) {
+                  if (isCommitServiceEnabled() && businessId && currentDraftId) {
                     void (async () => {
                       try {
                         const { data: { user } } = await supabaseClient.auth.getUser();
@@ -7320,10 +7320,10 @@ export default function ${componentName}() {
                         const identity: BuilderIdentity = {
                           userId: user.id,
                           businessId,
-                          projectId: resolvedProjectId || currentTemplateId,
-                          draftId: currentTemplateId,
+                          projectId: resolvedProjectId || currentDraftId,
+                          draftId: currentDraftId,
                           revisionId: currentRevisionId,
-                          sessionId: `web-builder:${currentTemplateId}`,
+                          sessionId: `web-builder:${currentDraftId}`,
                         };
                         const patch = legacyFilesToPatchPlan(files, 'ai-builder');
                         const commit = await commitMutation({
@@ -7995,7 +7995,7 @@ export default function ${componentName}() {
                 const primary = applyElementHtmlUpdate(previewCode, selector, newHtml);
                 if (primary.ok) {
                   try {
-                    pushAISnapshot(currentTemplateId ?? null, {
+                    pushAISnapshot(currentDraftId ?? null, {
                       label: `AI · element edit ${selector.slice(0, 40)}`,
                       source: 'ai',
                       before: { [activePagePath]: previewCode },
@@ -8021,7 +8021,7 @@ export default function ${componentName}() {
                     const attempt = applyElementHtmlUpdate(code, selector, newHtml);
                     if (attempt.ok) {
                       try {
-                        pushAISnapshot(currentTemplateId ?? null, {
+                        pushAISnapshot(currentDraftId ?? null, {
                           label: `AI · element edit in ${path.split('/').pop()}`,
                           source: 'ai',
                           before: { [path]: code },

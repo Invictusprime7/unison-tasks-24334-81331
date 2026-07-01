@@ -609,88 +609,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
     console.log('[WebBuilder] Patching iframe DOM, elementOverrides count:', templateCustomizer.elementOverrides.size);
 
-    // 0. Ensure color scheme is enforced (prevent dark mode inversion)
-    if (!iframeDoc.querySelector('meta[name="color-scheme"]')) {
-      const colorSchemeMeta = iframeDoc.createElement('meta');
-      colorSchemeMeta.name = 'color-scheme';
-      colorSchemeMeta.content = 'light';
-      iframeDoc.head.insertBefore(colorSchemeMeta, iframeDoc.head.firstChild);
-    }
-    if (!iframeDoc.getElementById('color-scheme-enforcement')) {
-      const colorSchemeStyle = iframeDoc.createElement('style');
-      colorSchemeStyle.id = 'color-scheme-enforcement';
-      colorSchemeStyle.textContent = ':root { color-scheme: light; }';
-      iframeDoc.head.appendChild(colorSchemeStyle);
-    }
+    applyCustomizerOverridesToIframe(iframeDoc, templateCustomizer);
 
-    // 1. Inject / update the customizer override CSS in-place
-    const overrideCSS = templateCustomizer.generateOverrideCSS();
-    let styleEl = iframeDoc.getElementById('customizer-overrides') as HTMLStyleElement | null;
-    if (!styleEl) {
-      styleEl = iframeDoc.createElement('style');
-      styleEl.id = 'customizer-overrides';
-      iframeDoc.head.appendChild(styleEl);
-    }
-    styleEl.textContent = overrideCSS;
-
-    // Helper to safely query selectors
-    const safeQuery = (selector: string): Element | null => safeFindElement(iframeDoc, selector);
-
-    // 2. Apply text / image / style element overrides directly on DOM nodes
-    templateCustomizer.elementOverrides.forEach((override) => {
-      try {
-        if (override.textContent !== undefined) {
-          const el = safeQuery(override.selector);
-          if (el) el.textContent = override.textContent;
-        }
-        if (override.imageSrc) {
-          const el = safeQuery(override.selector) as HTMLImageElement | null;
-          if (el) el.setAttribute('src', override.imageSrc);
-        }
-        if (override.styles && Object.keys(override.styles).length) {
-          const el = safeQuery(override.selector) as HTMLElement | null;
-          if (el) {
-            Object.entries(override.styles).forEach(([k, v]) => {
-              el.style.setProperty(
-                k.replace(/([A-Z])/g, '-$1').toLowerCase(),
-                v,
-                'important',
-              );
-            });
-          }
-        }
-        if (override.attributes && Object.keys(override.attributes).length) {
-          const el = safeQuery(override.selector) as HTMLElement | null;
-          if (el) {
-            Object.entries(override.attributes).forEach(([key, value]) => {
-              if (value == null || value === '') {
-                el.removeAttribute(key);
-              } else {
-                el.setAttribute(key, value);
-              }
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('[Customizer] DOM patch failed for', override.selector, e);
-      }
-    });
-
-    // 3. Apply image replacements
-    templateCustomizer.images.forEach((img) => {
-      try {
-        let el = safeQuery(img.selector) as HTMLImageElement | null;
-        if (!el) {
-          const allImgs = iframeDoc.querySelectorAll('img');
-          const idx = parseInt(img.id.replace('img-', ''), 10);
-          if (!isNaN(idx) && idx < allImgs.length) el = allImgs[idx] as HTMLImageElement;
-        }
-        if (el && el.getAttribute('src') !== img.src) {
-          el.setAttribute('src', img.src);
-          if (img.alt) el.setAttribute('alt', img.alt);
-        }
-      } catch { /* ignore selector errors */ }
-    });
 
     // 4. Keep previewCode AND editorCode in sync — apply TSX source-level overrides (images)
     const baseSource = templateCustomizer.getOriginalSource() || previewCode;

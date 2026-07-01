@@ -2107,25 +2107,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       return;
     }
     const label = sanitized.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    const newPageCode = `import { Link } from 'react-router-dom';
+    const newPageCode = buildPageSeed(componentName, label);
 
-export default function ${componentName}Page() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border/40 px-6 py-4">
-        <nav className="flex items-center gap-6">
-          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">Home</Link>
-          <span className="text-sm text-foreground font-medium">${label}</span>
-        </nav>
-      </header>
-      <main className="max-w-4xl mx-auto px-6 py-16">
-        <h1 className="text-4xl font-bold mb-6">${label}</h1>
-        <p className="text-muted-foreground text-lg">This is the ${label} page. Start editing to add your content.</p>
-      </main>
-    </div>
-  );
-}
-`;
     vfsImportFiles({ [path]: newPageCode });
     openBuilderFile(path, newPageCode);
     toast.success(`Page "${label}" created`);

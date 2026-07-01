@@ -94,21 +94,15 @@ import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 
-function isMissingBusinessInstallsError(error: unknown): boolean {
-  const candidate = error as {
-    code?: string;
-    status?: number;
-    message?: string;
-    details?: string;
-  } | null;
-  const combined = [candidate?.message, candidate?.details].filter(Boolean).join(' ').toLowerCase();
-  return (
-    candidate?.code === '42P01' ||
-    candidate?.code === 'PGRST205' ||
-    candidate?.status === 404 ||
-    combined.includes('business_installs')
-  );
-}
+// isMissingBusinessInstallsError extracted to web-builder/sourceClassifiers.ts
+import {
+  isMissingBusinessInstallsError,
+  getOrCreatePreviewBusinessId,
+  isBuilderBootstrapPreviewCode,
+  isCanonicalRouterSource,
+  isWizardFallbackOrRouterOnlySource,
+} from "./web-builder/sourceClassifiers";
+import { CodeViewErrorBoundary } from "./web-builder/CodeViewErrorBoundary";
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
 import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';

@@ -149,7 +149,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'local-service (HVAC)',
     industryKey: 'local-service',
-    templateIndustry: 'local-service',
+    templateIndustry: 'agency',
     selections: {
       businessName: 'Cedar Peak HVAC',
       businessModel: 'quote_lead',
@@ -166,7 +166,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'contractor',
     industryKey: 'contractor',
-    templateIndustry: 'local-service',
+    templateIndustry: 'agency',
     selections: {
       businessName: 'Ironbark Contracting',
       businessModel: 'quote_lead',
@@ -183,7 +183,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'nonprofit',
     industryKey: 'nonprofit',
-    templateIndustry: 'nonprofit',
+    templateIndustry: 'agency',
     selections: {
       businessName: 'Riverkeep Foundation',
       businessModel: 'nonprofit',
@@ -200,7 +200,7 @@ const FIXTURES: IndustryFixture[] = [
   {
     label: 'real-estate',
     industryKey: 'real-estate',
-    templateIndustry: 'real-estate',
+    templateIndustry: 'agency',
     selections: {
       businessName: 'Harbor Line Realty',
       businessModel: 'quote_lead',

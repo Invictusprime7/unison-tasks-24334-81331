@@ -42,7 +42,7 @@ const OVERLAY_TO_INDUSTRY: Record<string, string> = {
   real_estate: 'real-estate', realestate: 'real-estate',
   restaurant: 'restaurant', cafe: 'restaurant', bakery: 'restaurant',
   ecommerce: 'ecommerce', store: 'ecommerce', fitness: 'coaching',
-  photographer: 'portfolio', photography: 'portfolio', creator: 'portfolio', creative: 'portfolio',
+  portfolio: 'portfolio', photographer: 'portfolio', photography: 'portfolio', creator: 'portfolio', creative: 'portfolio',
   coaching: 'coaching', agency: 'agency', nonprofit: 'nonprofit', saas: 'saas',
 };
 

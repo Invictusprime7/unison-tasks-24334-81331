@@ -181,6 +181,8 @@ import {
 // Dynamic page prompt builder extracted to web-builder/dynamicPagePrompt.ts
 import { buildDynamicPagePrompt } from "./web-builder/dynamicPagePrompt";
 import { buildPageSeed, buildFunnelStepSeed, WELCOME_APP_TSX, CLEAR_CANVAS_JS_SEED } from "./web-builder/seedTemplates";
+import { integrateCSSIntoHTML as integrateCSSIntoHTMLPure, buildSectionsReactApp } from "./web-builder/htmlAssembly";
+
 
 /**
  * Validate AI-generated code against the original template to detect destructive changes.
@@ -4320,35 +4322,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     } else if (navState?.generatedTemplate) {
       const { generatedTemplate, templateName, aesthetic } = navState;
       console.log('[WebBuilder] Loading template from Web Design Kit:', templateName);
-      
-      // Build React/JSX sections directly — no raw HTML with class= attributes
-      const sectionsJsx = (generatedTemplate.sections || []).map((section: any) => {
-        const colCount = section.components?.length > 2 ? 3 : 2;
-        const comps = (section.components || []).map((comp: any) =>
-          `<div className="p-6 bg-white rounded-lg shadow-lg">
-            <h3 className="text-2xl font-semibold mb-4">${comp.props?.title || 'Component'}</h3>
-            <p className="text-gray-600">${comp.props?.description || 'Component content'}</p>
-          </div>`
-        ).join('\n          ');
-        return `      <section className="py-16 px-6">
-          <div className="max-w-7xl mx-auto">
-            <h2 className="text-4xl font-bold mb-8">${section.name}</h2>
-            <div className="grid gap-6 md:grid-cols-${colCount}">${comps}</div>
-          </div>
-        </section>`;
-      }).join('\n');
 
-      const componentTitle = generatedTemplate.name || templateName || 'Template';
-      const reactCode = `import React from 'react';
-
-export default function App() {
-  return (
-    <div className="min-h-screen bg-gray-50">
-${sectionsJsx}
-    </div>
-  );
-}
-`;
+      const reactCode = buildSectionsReactApp(generatedTemplate);
       // Wire through VFS so preview stays in sync
       const templateFiles = normalizeLauncherFiles({
         [launchEntryPoint]: reactCode,
@@ -4371,6 +4346,7 @@ ${sectionsJsx}
       window.history.replaceState({}, document.title);
     }
   }, [effectiveRouteState, activePagePath, activeSystemType, creatorPlayground, launchEntryPoint, replaceProjectFiles, virtualFS]);
+
 
   const launcherDraftBootstrapKey = useMemo(() => {
     if (!routeStateHasStructuredProject) return null;
@@ -4458,38 +4434,12 @@ ${sectionsJsx}
     });
   };
 
-  // Helper to integrate CSS into HTML document
-  const integrateCSSIntoHTML = useCallback((html: string, css: string): string => {
-    if (!css || !css.trim()) return html;
-    
-    const styleTag = `<style>\n${css}\n</style>`;
-    
-    // Check if it's a full HTML document
-    if (html.includes('</head>')) {
-      // Insert CSS before </head>
-      return html.replace('</head>', `${styleTag}\n</head>`);
-    } else if (html.includes('<html') || html.includes('<!DOCTYPE')) {
-      // Has HTML but no head - add before body or at start
-      if (html.includes('<body')) {
-        return html.replace('<body', `<head>${styleTag}</head>\n<body`);
-      }
-      return html.replace(/<html[^>]*>/i, (match) => `${match}\n<head>${styleTag}</head>`);
-    } else {
-      // Fragment - wrap in full document with CSS
-      return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"></script>
-  ${styleTag}
-</head>
-<body>
-${html}
-</body>
-</html>`;
-    }
-  }, []);
+  // Helper to integrate CSS into HTML document (pure impl extracted to web-builder/htmlAssembly)
+  const integrateCSSIntoHTML = useCallback(
+    (html: string, css: string): string => integrateCSSIntoHTMLPure(html, css),
+    [],
+  );
+
 
   // Handle loading a saved template
   const handleLoadTemplate = useCallback((template: {

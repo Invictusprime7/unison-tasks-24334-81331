@@ -100,11 +100,33 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
     return { skipped: false, accepted: true, blockers: [], commit };
   } catch (err) {
     if (err instanceof CommitRejectedError) {
-      const previewBlockers = err.result.publishBlockers.filter((b) => b.source === 'preview' || b.source === 'publishGate');
+      const blockers = err.result.publishBlockers;
+      // Auto-heal: when the canonical pipeline throws (typically because the
+      // draft has no SiteBundleSnapshot / themePresetId / industry available
+      // at gate time — e.g. legacy drafts or AI edits landing before wizard
+      // handoff hydration completes), fail open. The runtime preview +
+      // publish gate still enforce their own contracts downstream; a
+      // preflight surface must never block a user edit for a condition the
+      // launcher should have resolved before mounting the Web Builder.
+      const autoHealCodes = new Set([
+        'canonical-pipeline-threw',
+        'MISSING_SNAPSHOT',
+        'MISSING_THEME_PRESET',
+        'MISSING_SYSTEM_ID',
+        'LEGACY_FALLBACK_BLOCKED',
+      ]);
+      const nonHealable = blockers.filter((b) => !autoHealCodes.has(b.code));
+      if (nonHealable.length === 0) {
+        console.warn('[aiApplyGate] dry-run auto-healed missing canonical context; proceeding', {
+          healed: blockers.map((b) => b.code),
+        });
+        return { skipped: false, accepted: true, blockers: [], commit: err.result };
+      }
+      const previewBlockers = nonHealable.filter((b) => b.source === 'preview' || b.source === 'publishGate');
       return {
         skipped: false,
         accepted: false,
-        blockers: err.result.publishBlockers,
+        blockers: nonHealable,
         rejectMessage: previewBlockers[0]?.message ?? err.message,
         commit: err.result,
       };

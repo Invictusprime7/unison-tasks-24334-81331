@@ -45,7 +45,7 @@ const FIXTURES: IndustryFixture[] = [
     industryKey: 'salon',
     selections: {
       businessName: 'Aurora Salon',
-      businessModel: 'service',
+      businessModel: 'appointment_service',
       industryOverlay: 'salon',
       primaryGoal: 'book',
       secondaryGoals: ['contact'],
@@ -62,7 +62,7 @@ const FIXTURES: IndustryFixture[] = [
     industryKey: 'local-service',
     selections: {
       businessName: 'Northgate HVAC',
-      businessModel: 'service',
+      businessModel: 'appointment_service',
       industryOverlay: 'hvac',
       primaryGoal: 'contact',
       secondaryGoals: [],
@@ -78,7 +78,7 @@ const FIXTURES: IndustryFixture[] = [
     industryKey: 'restaurant',
     selections: {
       businessName: 'Rossi Trattoria',
-      businessModel: 'service',
+      businessModel: 'appointment_service',
       industryOverlay: 'restaurant',
       primaryGoal: 'reserve',
       secondaryGoals: [],
@@ -94,7 +94,7 @@ const FIXTURES: IndustryFixture[] = [
     industryKey: 'ecommerce',
     selections: {
       businessName: 'Fern & Fjord',
-      businessModel: 'product',
+      businessModel: 'ecommerce',
       industryOverlay: 'ecommerce',
       primaryGoal: 'sell',
       secondaryGoals: [],
@@ -110,7 +110,7 @@ const FIXTURES: IndustryFixture[] = [
     industryKey: 'coaching',
     selections: {
       businessName: 'Ridgeline Coaching',
-      businessModel: 'service',
+      businessModel: 'appointment_service',
       industryOverlay: 'coaching',
       primaryGoal: 'book',
       secondaryGoals: [],
@@ -127,7 +127,7 @@ const FIXTURES: IndustryFixture[] = [
     industryKey: 'nonprofit',
     selections: {
       businessName: 'Riverkeepers Alliance',
-      businessModel: 'service',
+      businessModel: 'appointment_service',
       industryOverlay: 'nonprofit',
       primaryGoal: 'donate',
       secondaryGoals: ['contact'],
@@ -153,7 +153,7 @@ describe('Golden industry pipeline — canonical round-trip', () => {
   describe.each(FIXTURES)('$label', (fx) => {
     const pack = resolveCapabilities(fx.selections);
     const materialization = materializePlayground(fx.selections, pack);
-    const state = materialization.state;
+    const state = materialization.playground;
     const compileA = compilePlayground(state, {}, fx.selections.businessName, {
       selectedTemplateId: fx.selections.templateId,
       themePresetId: fx.selections.themePresetId,
@@ -174,7 +174,7 @@ describe('Golden industry pipeline — canonical round-trip', () => {
 
     it('registers every requested wizard page role', () => {
       const registeredRoles = new Set(
-        Object.values(state.pageRegistry.pages).map((p) => p.pageType),
+        Object.values(state.pageRegistry.pages).map((p: BuilderPage) => p.pageType),
       );
       for (const requested of fx.selections.requestedPages ?? []) {
         expect(registeredRoles.has(requested as never), `role ${requested}`).toBe(true);
@@ -182,7 +182,7 @@ describe('Golden industry pipeline — canonical round-trip', () => {
     });
 
     it('every registered page has a VFS module', () => {
-      for (const page of Object.values(state.pageRegistry.pages)) {
+      for (const page of Object.values(state.pageRegistry.pages) as BuilderPage[]) {
         expect(page.filePath, `filePath for ${page.pageId}`).toBeTruthy();
         expect(
           compileA.vfsFiles[page.filePath!],
@@ -193,7 +193,7 @@ describe('Golden industry pipeline — canonical round-trip', () => {
 
     it('canonical router imports every registered page module', () => {
       const router = compileA.routerFile.content;
-      for (const page of Object.values(state.pageRegistry.pages)) {
+      for (const page of Object.values(state.pageRegistry.pages) as BuilderPage[]) {
         const modulePath = page.filePath!.replace(/^\/src\//, './').replace(/\.tsx?$/, '');
         expect(
           router.includes(modulePath) || router.includes(page.filePath!),
@@ -203,7 +203,7 @@ describe('Golden industry pipeline — canonical round-trip', () => {
     });
 
     it('bindings carry canonical coreIntent + slot identity (V2 contract)', () => {
-      const bindings = Object.values(state.bindings);
+      const bindings = Object.values(state.bindings) as PlaygroundBinding[];
       expect(bindings.length, 'wizard should produce at least one binding').toBeGreaterThan(0);
       for (const b of bindings) {
         expect(b.coreIntent ?? b.intent, `binding ${b.bindingId} needs an intent`).toBeTruthy();

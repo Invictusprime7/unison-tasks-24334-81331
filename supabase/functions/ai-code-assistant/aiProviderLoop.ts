@@ -63,12 +63,17 @@ export async function runProviderLoop(opts: {
     
     const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
     const fallbackTokens = providerPlan.fallbackMaxTokens;
+    // Model-specific output token limits (max_completion_tokens caps).
+    // gpt-4.1 supports 32 768 — enough for a full wizard seed (9+ pages).
+    // gpt-4o and gpt-4o-mini top out at 16 384.
     const openaiModels = [
       ...(configuredOpenAIModel
-        ? [{ id: configuredOpenAIModel, maxTokens: fallbackTokens, label: `OpenAI ${configuredOpenAIModel}` }]
+        ? [{ id: configuredOpenAIModel, maxTokens: Math.min(fallbackTokens, 32768), label: `OpenAI ${configuredOpenAIModel}` }]
         : []),
-      { id: 'gpt-4o', maxTokens: fallbackTokens, label: 'OpenAI gpt-4o' },
-      { id: 'gpt-4o-mini', maxTokens: Math.min(fallbackTokens, 16000), label: 'OpenAI gpt-4o-mini' },
+      // gpt-4.1: faster throughput + 32 k output — primary direct-API choice.
+      { id: 'gpt-4.1', maxTokens: Math.min(fallbackTokens, 32768), label: 'OpenAI gpt-4.1' },
+      { id: 'gpt-4o', maxTokens: Math.min(fallbackTokens, 16384), label: 'OpenAI gpt-4o' },
+      { id: 'gpt-4o-mini', maxTokens: Math.min(fallbackTokens, 16384), label: 'OpenAI gpt-4o-mini' },
     ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
     
     for (const model of openaiModels) {

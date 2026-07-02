@@ -40,6 +40,7 @@ import { LaunchGateNotice } from '@/components/creatives/web-builder/LaunchGateN
 import { isCanonicalRuntimeError } from '@/platform/core/canonicalRuntimeContract';
 import { resolveSnapshot } from '@/services/snapshotProjector';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
+import { resolveHydrationRequest, projectRowsForSection } from '@/services/catalogRuntime';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 import { useLaunch } from '@/contexts/useLaunchHooks';
@@ -607,11 +608,69 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           }
         }
       }
+      // ── Catalog hydration bridge (Track B, Pass 3) ────────────────────────
+      // Generated sections post CATALOG_HYDRATE_REQUEST asking the host to
+      // resolve their live rows against site_data_bindings. We look up the
+      // binding, project rows through its displayMapping, and echo back.
+      if (data.type === 'CATALOG_HYDRATE_REQUEST') {
+        const source = event.source as Window | null;
+        const requestId = data.requestId;
+        const pagePath: string = (data.pagePath as string) || '/';
+        const sectionId: string | null = data.sectionId ?? null;
+        const sectionType: string | null = data.sectionType ?? null;
+        const occurrenceIndex: number | null =
+          typeof data.occurrenceIndex === 'number' ? data.occurrenceIndex : null;
+        // Derive projectId from the current builder URL (?id=...).
+        let projectId = '';
+        try {
+          projectId = new URLSearchParams(window.location.search).get('id') || '';
+        } catch { /* ignore */ }
+        if (!projectId || !source) {
+          try {
+            source?.postMessage(
+              { type: 'CATALOG_HYDRATE_RESPONSE', requestId, rows: null, fallback: 'hide_section' },
+              '*',
+            );
+          } catch { /* ignore */ }
+          return;
+        }
+        void resolveHydrationRequest({ projectId, pagePath, sectionId, sectionType, occurrenceIndex })
+          .then((result) => {
+            const rows = projectRowsForSection(result);
+            try {
+              source.postMessage(
+                {
+                  type: 'CATALOG_HYDRATE_RESPONSE',
+                  requestId,
+                  rows,
+                  fallback: result.fallback,
+                },
+                '*',
+              );
+            } catch { /* ignore */ }
+          })
+          .catch((err) => {
+            try {
+              source.postMessage(
+                {
+                  type: 'CATALOG_HYDRATE_RESPONSE',
+                  requestId,
+                  rows: null,
+                  fallback: 'hide_section',
+                  error: String(err),
+                },
+                '*',
+              );
+            } catch { /* ignore */ }
+          });
+        return;
+      }
     };
 
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
   }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
+
   
   // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {

@@ -111,6 +111,7 @@ import { swapSectionVariant } from '@/utils/sectionSwapper';
 import type { VariantId } from '@/sections/variants/types';
 import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { ElementIntentInspector } from "./web-builder/ElementIntentInspector";
+import { CatalogInspectorPanel } from "@/components/business-center/CatalogInspectorPanel";
 import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
@@ -473,6 +474,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(true);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [catalogPanelOpen, setCatalogPanelOpen] = useState(false);
   const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
   const [playgroundInitialSection, setPlaygroundInitialSection] = useState<"launch" | "pages" | "funnels" | "overview" | "intent_registry" | "readiness" | "business" | "components" | undefined>(undefined);
   const [playgroundInitialBindingId, setPlaygroundInitialBindingId] = useState<string | undefined>(undefined);
@@ -7023,6 +7025,32 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   onTestIntent={(intent, payload) => {
                     handleIntent(intent, { ...payload, businessId, projectId });
                   }}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Catalog Inspector — toggle button + floating panel (Track B) */}
+        {viewMode === 'canvas' && (
+          <>
+            <button
+              onClick={() => setCatalogPanelOpen((v) => !v)}
+              className={cn(
+                "fixed top-20 right-32 z-50 px-3 py-1.5 rounded-md border text-xs font-medium transition-all",
+                catalogPanelOpen
+                  ? "bg-indigo-500 text-white border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.4)]"
+                  : "bg-[#0d0d18] text-indigo-300 border-indigo-500/40 hover:bg-indigo-500/10"
+              )}
+              title="Connected Data / Catalog"
+            >
+              🗃 Data {catalogPanelOpen ? '▾' : '▸'}
+            </button>
+            {catalogPanelOpen && (
+              <div className="fixed top-32 right-32 z-50">
+                <CatalogInspectorPanel
+                  projectId={projectId}
+                  onClose={() => setCatalogPanelOpen(false)}
                 />
               </div>
             )}

@@ -3,8 +3,9 @@
  *
  * Lists every `site_data_binding` for the active project, shows the live row
  * count for each bound section, and calls out sections that block publish.
- * B4: bindings are now inline-editable — pick collection, cap limit, sort
- * without leaving the Builder.
+ * B4: bindings are inline-editable — pick collection, cap limit, sort.
+ * B5: rows are inline-editable — edit name / description / price / image and
+ * write back to the source table; the preview re-hydrates on save.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -14,6 +15,10 @@ import {
 } from '@/services/catalogReadinessGate';
 import { listCollections } from '@/services/catalogCollectionService';
 import { upsertBinding } from '@/services/sectionDataBindingService';
+import {
+  loadRowsForBinding,
+  updateCatalogRow,
+} from '@/services/catalogRowService';
 import type {
   CatalogCollectionDTO,
   SectionDataBindingDTO,
@@ -26,6 +31,17 @@ interface CatalogInspectorPanelProps {
   className?: string;
 }
 
+type RowRec = Record<string, unknown>;
+
+interface RowDraft {
+  name: string;
+  description: string;
+  price: string;
+  image_url: string;
+  saving: boolean;
+  dirty: boolean;
+}
+
 interface DraftState {
   collectionId: string | null;
   limitCount: number | null;
@@ -34,6 +50,9 @@ interface DraftState {
   saving: boolean;
   collections: CatalogCollectionDTO[];
   loadedCollections: boolean;
+  rows: RowRec[];
+  loadedRows: boolean;
+  rowDrafts: Record<string, RowDraft>;
 }
 
 function draftFromBinding(b: SectionDataBindingDTO): DraftState {
@@ -45,8 +64,23 @@ function draftFromBinding(b: SectionDataBindingDTO): DraftState {
     saving: false,
     collections: [],
     loadedCollections: false,
+    rows: [],
+    loadedRows: false,
+    rowDrafts: {},
   };
 }
+
+function toRowDraft(row: RowRec): RowDraft {
+  return {
+    name: String(row.name ?? ''),
+    description: String(row.description ?? ''),
+    price: row.price != null ? String(row.price) : '',
+    image_url: String(row.image_url ?? ''),
+    saving: false,
+    dirty: false,
+  };
+}
+
 
 export function CatalogInspectorPanel({
   projectId,

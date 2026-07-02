@@ -438,6 +438,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [exportJs, setExportJs] = useState("");
   const [exportProjectName, setExportProjectName] = useState("my-project");
   const [saveProjectDialogOpen, setSaveProjectDialogOpen] = useState(false);
+  const [businessCenterOpen, setBusinessCenterOpen] = useState(false);
   const [saveProjectName, setSaveProjectName] = useState("");
   const [saveProjectDescription, setSaveProjectDescription] = useState("");
   const [currentTemplateName, setCurrentTemplateName] = useState<string | null>(null);

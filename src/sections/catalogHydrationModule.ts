@@ -108,7 +108,7 @@ export function useSectionData(
       window.removeEventListener('message', onMessage);
       window.clearTimeout(timer);
     };
-  }, [sectionId, sectionType, occurrenceIndex]);
+  }, [sectionId, sectionType, occurrenceIndex, bump]);
 
   return state;
 }

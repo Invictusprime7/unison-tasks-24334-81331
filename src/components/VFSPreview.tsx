@@ -40,6 +40,7 @@ import { LaunchGateNotice } from '@/components/creatives/web-builder/LaunchGateN
 import { isCanonicalRuntimeError } from '@/platform/core/canonicalRuntimeContract';
 import { resolveSnapshot } from '@/services/snapshotProjector';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
+import { resolveHydrationRequest, projectRowsForSection } from '@/services/catalogRuntime';
 import { getSelectedElementData, highlightElement, removeHighlight } from '@/utils/htmlElementSelector';
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 import { useLaunch } from '@/contexts/useLaunchHooks';

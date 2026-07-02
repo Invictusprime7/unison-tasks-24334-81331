@@ -433,8 +433,101 @@ export function CatalogInspectorPanel({
                       {draft.saving ? 'Saving…' : 'Save binding'}
                     </button>
                   </div>
+
+                  <div className="mt-3 pt-2 border-t border-zinc-800/70">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                        Rows ({draft.rows.length})
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => loadRows(binding)}
+                        className="text-[10px] text-indigo-300 hover:text-indigo-200"
+                      >
+                        Reload
+                      </button>
+                    </div>
+                    {!draft.loadedRows && (
+                      <div className="text-[11px] text-zinc-500">Loading rows…</div>
+                    )}
+                    {draft.loadedRows && draft.rows.length === 0 && (
+                      <div className="text-[11px] text-zinc-500">
+                        No rows yet. Add items in the {binding.sourceTable} table.
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      {draft.rows.map((row) => {
+                        const rowId = String(row.id ?? '');
+                        const rd = draft.rowDrafts[rowId];
+                        if (!rd) return null;
+                        return (
+                          <div
+                            key={rowId}
+                            className="rounded border border-zinc-800 bg-zinc-950/60 p-2 space-y-1"
+                          >
+                            <input
+                              type="text"
+                              value={rd.name}
+                              onChange={(e) =>
+                                updateRowDraft(binding.id, rowId, { name: e.target.value })
+                              }
+                              placeholder="Name"
+                              className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-100"
+                            />
+                            <textarea
+                              value={rd.description}
+                              onChange={(e) =>
+                                updateRowDraft(binding.id, rowId, {
+                                  description: e.target.value,
+                                })
+                              }
+                              placeholder="Description"
+                              rows={2}
+                              className="w-full text-[11px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 resize-none"
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={rd.price}
+                                onChange={(e) =>
+                                  updateRowDraft(binding.id, rowId, {
+                                    price: e.target.value,
+                                  })
+                                }
+                                placeholder="Price"
+                                className="w-full text-[11px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                              />
+                              <input
+                                type="text"
+                                value={rd.image_url}
+                                onChange={(e) =>
+                                  updateRowDraft(binding.id, rowId, {
+                                    image_url: e.target.value,
+                                  })
+                                }
+                                placeholder="Image URL"
+                                className="w-full text-[11px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                              />
+                            </div>
+                            <div className="flex items-center justify-end">
+                              <button
+                                type="button"
+                                disabled={rd.saving || !rd.dirty}
+                                onClick={() => saveRow(binding, rowId)}
+                                className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 border border-emerald-500/30 disabled:opacity-40"
+                              >
+                                {rd.saving ? 'Saving…' : rd.dirty ? 'Save row' : 'Saved'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
+
             </div>
           );
         })}

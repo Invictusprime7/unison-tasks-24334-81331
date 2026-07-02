@@ -284,6 +284,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BuilderSessionProvider } from "@/builder/controllers/BuilderSessionProvider";
+import { ConnectedBusinessStrip } from "@/components/business-center/ConnectedBusinessStrip";
+import { BusinessCenterPanel } from "@/components/business-center/BusinessCenterPanel";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 // CodeViewErrorBoundary extracted to web-builder/CodeViewErrorBoundary.tsx
 

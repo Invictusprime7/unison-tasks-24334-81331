@@ -665,11 +665,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           });
         return;
       }
+
+      // Forward binding-change bumps from the Builder into the preview iframe
+      // so mounted sections re-request their live rows.
+      if (data.type === 'CATALOG_BINDINGS_CHANGED') {
+        try {
+          const target = getPreviewWindow();
+          target?.postMessage({ type: 'CATALOG_BINDINGS_CHANGED' }, '*');
+        } catch { /* ignore */ }
+        return;
+      }
     };
 
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
   }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
+
 
   
   // Initialize backend — Docker for local dev, Sandpack for production

@@ -41,6 +41,7 @@ export async function runProviderLoop(opts: {
   const startedAt = Date.now();
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
+  const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY'));
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
   const recordProviderError = (label: string, detail: string) => {
@@ -164,6 +165,109 @@ export async function runProviderLoop(opts: {
         content = extracted.content;
         modelUsed = model.id;
         console.log(`[AI-Hybrid] Success with fallback ${model.label}`);
+        break;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
+          recordProviderError(model.label, 'timeout');
+          continue;
+        }
+        console.warn(`[AI-Hybrid] ${model.label} failed:`, err);
+        recordProviderError(model.label, err instanceof Error ? err.message : 'unknown');
+        continue;
+      }
+    }
+  };
+
+  // ── Direct Gemini API helper ──────────────────────────────────────────
+  // gemini-2.5-flash supports 65 536 output tokens — the most capable
+  // single-shot provider for large wizard seed generation (9+ pages).
+  const runDirectGemini = async (): Promise<void> => {
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
+    if (!GEMINI_API_KEY || content) return;
+
+    const isGatewayAbsent = !lovableApiKey;
+    const role = isGatewayAbsent ? 'primary' : 'gemini-direct';
+    console.log(`[AI-Hybrid] Direct Gemini API configured as ${role} provider`);
+
+    const geminiModels = [
+      // 65 536 output tokens — ideal for multi-page wizard generation
+      { id: 'gemini-2.5-flash', maxTokens: Math.min(providerPlan.fallbackMaxTokens, 65536), label: 'Gemini 2.5 Flash' },
+      { id: 'gemini-2.0-flash', maxTokens: Math.min(providerPlan.fallbackMaxTokens, 8192), label: 'Gemini 2.0 Flash' },
+    ];
+
+    for (const model of geminiModels) {
+      const remaining = budgetRemaining();
+      if (remaining < 8000) {
+        console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining Gemini models`);
+        lastError = lastError || 'budget exhausted before all models tried';
+        break;
+      }
+      const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, remaining - 2000));
+      try {
+        console.log(`[AI-Hybrid] Trying ${role} ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+
+        const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${GEMINI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model.id,
+            messages: aiMessages,
+            max_tokens: model.maxTokens,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (resp.status === 429 || resp.status === 402) {
+          const errText = await resp.text().catch(() => '');
+          const earlyError: ProviderEarlyError = resp.status === 429
+            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
+            : { status: 402, error: 'Payment required. Please add credits to your Google AI account.' };
+          recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
+          deferredEarlyError ??= earlyError;
+          console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next...`);
+          break;
+        }
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          console.warn(`[AI-Hybrid] ${model.label} error ${resp.status}: ${errText.substring(0, 300)}`);
+          recordProviderError(model.label, `${resp.status} ${errText.substring(0, 200)}`);
+          continue;
+        }
+
+        const responseText = await resp.text();
+        if (!responseText || responseText.trim() === '') {
+          recordProviderError(model.label, 'empty response');
+          continue;
+        }
+
+        let data;
+        try { data = JSON.parse(responseText); } catch {
+          recordProviderError(model.label, 'invalid JSON');
+          continue;
+        }
+
+        const parsedContent = data.choices?.[0]?.message?.content || '';
+        if (!parsedContent) {
+          recordProviderError(model.label, 'no content');
+          continue;
+        }
+
+        const extracted = extractThinkingTags(parsedContent);
+        if (extracted.reasoning) {
+          reasoning = extracted.reasoning;
+          console.log(`[AI-Hybrid] Thinking tags extracted from ${model.label}: ${extracted.reasoning.length} chars`);
+        }
+        content = extracted.content;
+        modelUsed = model.id;
+        console.log(`[AI-Hybrid] Success with ${role} ${model.label}`);
         break;
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -308,12 +412,17 @@ export async function runProviderLoop(opts: {
     }
   }
 
-  // ── Phase 2: Direct OpenAI API (FALLBACK) ─────────────────────────────
-  if (allowDirectFallbacks) {
+  // ── Phase 2: Direct Gemini API (65k output tokens, fast) ──────────────
+  if (!content && allowDirectFallbacks) {
+    await runDirectGemini();
+  }
+
+  // ── Phase 3: Direct OpenAI API ────────────────────────────────────────
+  if (!content && allowDirectFallbacks) {
     await runDirectOpenAI();
   }
 
-  // ── Phase 3: Direct Anthropic API fallback ───────────────────────────
+  // ── Phase 4: Direct Anthropic API ─────────────────────────────────────
   if (!content && allowDirectFallbacks) {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (ANTHROPIC_API_KEY) {
@@ -375,6 +484,7 @@ export async function runProviderLoop(opts: {
     }
     const configuredProviders = [
       lovableApiKey ? 'lovable-gateway' : '',
+      hasDirectGemini ? 'gemini' : '',
       hasDirectOpenAI ? 'openai' : '',
     ].filter(Boolean);
     const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';

@@ -29,6 +29,11 @@
 
 import type { TemplateComposition } from './types';
 import { resolveThemeTokens } from './themes';
+import {
+  CATALOG_HYDRATION_MODULE,
+  CATALOG_HYDRATION_PATH,
+  HYDRATABLE_SECTION_TYPES,
+} from './catalogHydrationModule';
 
 const THEME_PATH = '/src/components/theme.ts';
 const LAYOUT_PATH = '/src/components/SiteLayout.tsx';

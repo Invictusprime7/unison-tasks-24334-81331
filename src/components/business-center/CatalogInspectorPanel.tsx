@@ -18,6 +18,8 @@ import { upsertBinding } from '@/services/sectionDataBindingService';
 import {
   loadRowsForBinding,
   updateCatalogRow,
+  createCatalogRow,
+  deleteCatalogRow,
 } from '@/services/catalogRowService';
 import type {
   CatalogCollectionDTO,

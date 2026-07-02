@@ -18,6 +18,8 @@ import { upsertBinding } from '@/services/sectionDataBindingService';
 import {
   loadRowsForBinding,
   updateCatalogRow,
+  createCatalogRow,
+  deleteCatalogRow,
 } from '@/services/catalogRowService';
 import type {
   CatalogCollectionDTO,
@@ -212,6 +214,36 @@ export function CatalogInspectorPanel({
     if (ok) {
       await loadRows(binding);
       bumpPreview();
+    }
+  };
+
+  const createRow = async (binding: SectionDataBindingDTO) => {
+    updateDraft(binding.id, { saving: true });
+    const created = await createCatalogRow(binding.sourceTable, binding.businessId, {
+      name: 'New item',
+      description: '',
+      price: 0,
+      image_url: '',
+    });
+    updateDraft(binding.id, { saving: false });
+    if (created) {
+      await loadRows(binding);
+      bumpPreview();
+    }
+  };
+
+  const removeRow = async (binding: SectionDataBindingDTO, rowId: string) => {
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm('Delete this row? This cannot be undone.');
+      if (!ok) return;
+    }
+    updateRowDraft(binding.id, rowId, { saving: true });
+    const ok = await deleteCatalogRow(binding.sourceTable, rowId);
+    if (ok) {
+      await loadRows(binding);
+      bumpPreview();
+    } else {
+      updateRowDraft(binding.id, rowId, { saving: false });
     }
   };
 
@@ -439,13 +471,22 @@ export function CatalogInspectorPanel({
                       <div className="text-[10px] uppercase tracking-wider text-zinc-500">
                         Rows ({draft.rows.length})
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => loadRows(binding)}
-                        className="text-[10px] text-indigo-300 hover:text-indigo-200"
-                      >
-                        Reload
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => createRow(binding)}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 border border-indigo-500/30"
+                        >
+                          + Add row
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => loadRows(binding)}
+                          className="text-[10px] text-indigo-300 hover:text-indigo-200"
+                        >
+                          Reload
+                        </button>
+                      </div>
                     </div>
                     {!draft.loadedRows && (
                       <div className="text-[11px] text-zinc-500">Loading rows…</div>
@@ -510,7 +551,15 @@ export function CatalogInspectorPanel({
                                 className="w-full text-[11px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
                               />
                             </div>
-                            <div className="flex items-center justify-end">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                disabled={rd.saving}
+                                onClick={() => removeRow(binding, rowId)}
+                                className="text-[11px] px-2 py-0.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-200 border border-red-500/30 disabled:opacity-40"
+                              >
+                                Delete
+                              </button>
                               <button
                                 type="button"
                                 disabled={rd.saving || !rd.dirty}

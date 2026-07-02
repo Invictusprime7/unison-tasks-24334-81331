@@ -471,13 +471,22 @@ export function CatalogInspectorPanel({
                       <div className="text-[10px] uppercase tracking-wider text-zinc-500">
                         Rows ({draft.rows.length})
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => loadRows(binding)}
-                        className="text-[10px] text-indigo-300 hover:text-indigo-200"
-                      >
-                        Reload
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => createRow(binding)}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 border border-indigo-500/30"
+                        >
+                          + Add row
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => loadRows(binding)}
+                          className="text-[10px] text-indigo-300 hover:text-indigo-200"
+                        >
+                          Reload
+                        </button>
+                      </div>
                     </div>
                     {!draft.loadedRows && (
                       <div className="text-[11px] text-zinc-500">Loading rows…</div>

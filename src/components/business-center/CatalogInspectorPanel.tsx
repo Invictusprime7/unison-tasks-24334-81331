@@ -551,7 +551,15 @@ export function CatalogInspectorPanel({
                                 className="w-full text-[11px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
                               />
                             </div>
-                            <div className="flex items-center justify-end">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                disabled={rd.saving}
+                                onClick={() => removeRow(binding, rowId)}
+                                className="text-[11px] px-2 py-0.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-200 border border-red-500/30 disabled:opacity-40"
+                              >
+                                Delete
+                              </button>
                               <button
                                 type="button"
                                 disabled={rd.saving || !rd.dirty}

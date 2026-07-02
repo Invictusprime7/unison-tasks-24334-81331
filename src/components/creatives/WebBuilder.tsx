@@ -7274,6 +7274,22 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         onSaveTemplate={handleSaveTemplate}
       />
 
+      {/* Business Center Sheet */}
+      <Sheet open={businessCenterOpen} onOpenChange={setBusinessCenterOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto p-0">
+          {businessId ? (
+            <BusinessCenterPanel
+              businessId={businessId}
+              onClose={() => setBusinessCenterOpen(false)}
+            />
+          ) : (
+            <div className="p-8 text-sm text-muted-foreground">
+              No business is connected to this project yet.
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
       {/* Save to Projects Dialog */}
       <Dialog open={saveProjectDialogOpen} onOpenChange={setSaveProjectDialogOpen}>
         <DialogContent className="sm:max-w-[400px] backdrop-blur-2xl bg-gradient-to-b from-[#0d0d14]/98 to-[#0a0a0f]/98 border-white/[0.08]">

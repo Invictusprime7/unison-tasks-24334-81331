@@ -5574,6 +5574,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           <div className="h-5 w-px bg-cyan-500/50 hidden sm:block" />
           
           {/* Save/Deploy/Settings — hidden on small screens */}
+          <div className="hidden md:flex items-center mr-2">
+            <ConnectedBusinessStrip
+              businessId={businessId || undefined}
+              onOpenBusinessCenter={() => setBusinessCenterOpen(true)}
+            />
+          </div>
           <div className="hidden sm:flex items-center gap-1.5">
             {autoSaveStatus === 'saving' && (
               <div className="animate-spin h-3 w-3 border-2 border-yellow-500/30 border-t-yellow-400 rounded-full" />

@@ -217,6 +217,36 @@ export function CatalogInspectorPanel({
     }
   };
 
+  const createRow = async (binding: SectionDataBindingDTO) => {
+    updateDraft(binding.id, { saving: true });
+    const created = await createCatalogRow(binding.sourceTable, binding.businessId, {
+      name: 'New item',
+      description: '',
+      price: 0,
+      image_url: '',
+    });
+    updateDraft(binding.id, { saving: false });
+    if (created) {
+      await loadRows(binding);
+      bumpPreview();
+    }
+  };
+
+  const removeRow = async (binding: SectionDataBindingDTO, rowId: string) => {
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm('Delete this row? This cannot be undone.');
+      if (!ok) return;
+    }
+    updateRowDraft(binding.id, rowId, { saving: true });
+    const ok = await deleteCatalogRow(binding.sourceTable, rowId);
+    if (ok) {
+      await loadRows(binding);
+      bumpPreview();
+    } else {
+      updateRowDraft(binding.id, rowId, { saving: false });
+    }
+  };
+
   const saveBinding = async (binding: SectionDataBindingDTO) => {
     const d = drafts[binding.id];
     if (!d) return;

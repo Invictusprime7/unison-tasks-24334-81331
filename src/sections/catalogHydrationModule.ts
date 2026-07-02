@@ -42,7 +42,9 @@ export function useSectionData(
     fallback: null,
     error: null,
   });
+  const [bump, setBump] = useState(0);
   const mounted = useRef(true);
+
 
   useEffect(() => {
     mounted.current = true;

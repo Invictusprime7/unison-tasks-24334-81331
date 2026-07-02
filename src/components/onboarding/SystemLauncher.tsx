@@ -2232,6 +2232,20 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         } catch (err) {
           console.warn('[SystemLauncher] persistGeneratedBindings failed (non-fatal)', err);
         }
+
+        // Track B, Pass 2 — auto-emit site_data_bindings for every generated
+        // section type that the catalog runtime knows how to hydrate. Idempotent.
+        try {
+          const { autoEmitSectionBindings } = await import('@/services/autoEmitSectionBindings');
+          const emitResult = await autoEmitSectionBindings({
+            businessId: provisionedBusinessId,
+            projectId: launchProjectId,
+            snapshot: launchArtifacts.siteBundleSnapshot,
+          });
+          console.log('[SystemLauncher] Auto-emitted catalog bindings', emitResult);
+        } catch (err) {
+          console.warn('[SystemLauncher] autoEmitSectionBindings failed (non-fatal)', err);
+        }
       }
 
       // ── Move 2: additive commit through VFSCommitService (behind flag) ──

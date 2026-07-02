@@ -1000,31 +1000,73 @@ export type Database = {
       }
       businesses: {
         Row: {
+          address: Json
+          brand_color: string | null
           created_at: string
+          description: string | null
+          email: string | null
+          hours: Json
           id: string
+          industry: string | null
+          logo_url: string | null
           name: string
           notification_email: string | null
           notification_phone: string | null
           owner_id: string
+          phone: string | null
+          settings: Json
+          slug: string | null
+          social_links: Json
+          tagline: string | null
+          timezone: string
           updated_at: string
+          website: string | null
         }
         Insert: {
+          address?: Json
+          brand_color?: string | null
           created_at?: string
+          description?: string | null
+          email?: string | null
+          hours?: Json
           id?: string
+          industry?: string | null
+          logo_url?: string | null
           name?: string
           notification_email?: string | null
           notification_phone?: string | null
           owner_id: string
+          phone?: string | null
+          settings?: Json
+          slug?: string | null
+          social_links?: Json
+          tagline?: string | null
+          timezone?: string
           updated_at?: string
+          website?: string | null
         }
         Update: {
+          address?: Json
+          brand_color?: string | null
           created_at?: string
+          description?: string | null
+          email?: string | null
+          hours?: Json
           id?: string
+          industry?: string | null
+          logo_url?: string | null
           name?: string
           notification_email?: string | null
           notification_phone?: string | null
           owner_id?: string
+          phone?: string | null
+          settings?: Json
+          slug?: string | null
+          social_links?: Json
+          tagline?: string | null
+          timezone?: string
           updated_at?: string
+          website?: string | null
         }
         Relationships: []
       }

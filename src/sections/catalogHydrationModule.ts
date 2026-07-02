@@ -42,7 +42,9 @@ export function useSectionData(
     fallback: null,
     error: null,
   });
+  const [bump, setBump] = useState(0);
   const mounted = useRef(true);
+
 
   useEffect(() => {
     mounted.current = true;
@@ -59,7 +61,14 @@ export function useSectionData(
 
     const onMessage = (event: MessageEvent) => {
       const data: any = event.data;
-      if (!data || data.type !== 'CATALOG_HYDRATE_RESPONSE') return;
+      if (!data) return;
+      if (data.type === 'CATALOG_BINDINGS_CHANGED') {
+        // Force a fresh hydration request.
+        setState((prev) => ({ ...prev, loading: true }));
+        setBump((b) => b + 1);
+        return;
+      }
+      if (data.type !== 'CATALOG_HYDRATE_RESPONSE') return;
       if (data.requestId !== requestId) return;
       if (!mounted.current) return;
       setState({
@@ -70,6 +79,7 @@ export function useSectionData(
       });
     };
     window.addEventListener('message', onMessage);
+
 
     try {
       window.parent.postMessage(
@@ -98,7 +108,7 @@ export function useSectionData(
       window.removeEventListener('message', onMessage);
       window.clearTimeout(timer);
     };
-  }, [sectionId, sectionType, occurrenceIndex]);
+  }, [sectionId, sectionType, occurrenceIndex, bump]);
 
   return state;
 }

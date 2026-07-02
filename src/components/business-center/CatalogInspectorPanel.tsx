@@ -3,22 +3,49 @@
  *
  * Lists every `site_data_binding` for the active project, shows the live row
  * count for each bound section, and calls out sections that block publish.
- * Read-only for now: editing filters/collections happens through the future
- * Catalog editor; this panel is the "does my generated site have data yet?"
- * mirror of the ConnectedBusinessStrip.
+ * B4: bindings are now inline-editable — pick collection, cap limit, sort
+ * without leaving the Builder.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
   evaluateCatalogReadinessGate,
   type CatalogGateVerdict,
 } from '@/services/catalogReadinessGate';
+import { listCollections } from '@/services/catalogCollectionService';
+import { upsertBinding } from '@/services/sectionDataBindingService';
+import type {
+  CatalogCollectionDTO,
+  SectionDataBindingDTO,
+} from '@/types/catalog';
 
 interface CatalogInspectorPanelProps {
   projectId: string | null | undefined;
   sectionTypeMap?: Record<string, string>;
   onClose?: () => void;
   className?: string;
+}
+
+interface DraftState {
+  collectionId: string | null;
+  limitCount: number | null;
+  sortField: string;
+  sortDirection: 'asc' | 'desc';
+  saving: boolean;
+  collections: CatalogCollectionDTO[];
+  loadedCollections: boolean;
+}
+
+function draftFromBinding(b: SectionDataBindingDTO): DraftState {
+  return {
+    collectionId: b.collectionId,
+    limitCount: b.limitCount,
+    sortField: b.sort?.field ?? '',
+    sortDirection: b.sort?.direction ?? 'asc',
+    saving: false,
+    collections: [],
+    loadedCollections: false,
+  };
 }
 
 export function CatalogInspectorPanel({
@@ -29,6 +56,9 @@ export function CatalogInspectorPanel({
 }: CatalogInspectorPanelProps) {
   const [verdict, setVerdict] = useState<CatalogGateVerdict | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,12 +77,74 @@ export function CatalogInspectorPanel({
     return () => {
       cancelled = true;
     };
-  }, [projectId, sectionTypeMap]);
+  }, [projectId, sectionTypeMap, reloadKey]);
+
+  const toggleExpand = useCallback(
+    async (binding: SectionDataBindingDTO) => {
+      const isOpen = expanded === binding.id;
+      if (isOpen) {
+        setExpanded(null);
+        return;
+      }
+      setExpanded(binding.id);
+      setDrafts((prev) => ({
+        ...prev,
+        [binding.id]: prev[binding.id] ?? draftFromBinding(binding),
+      }));
+      // Lazy-load collections for this binding's kind.
+      const existing = drafts[binding.id];
+      if (!existing?.loadedCollections) {
+        const cols = await listCollections(binding.businessId, binding.sourceKind);
+        setDrafts((prev) => ({
+          ...prev,
+          [binding.id]: {
+            ...(prev[binding.id] ?? draftFromBinding(binding)),
+            collections: cols,
+            loadedCollections: true,
+          },
+        }));
+      }
+    },
+    [expanded, drafts],
+  );
+
+  const updateDraft = (id: string, patch: Partial<DraftState>) => {
+    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  };
+
+  const saveBinding = async (binding: SectionDataBindingDTO) => {
+    const d = drafts[binding.id];
+    if (!d) return;
+    updateDraft(binding.id, { saving: true });
+    await upsertBinding({
+      businessId: binding.businessId,
+      projectId: binding.projectId,
+      snapshotId: binding.snapshotId,
+      pagePath: binding.pagePath,
+      sectionId: binding.sectionId,
+      slotKey: binding.slotKey,
+      bindingType: binding.bindingType,
+      sourceKind: binding.sourceKind,
+      sourceTable: binding.sourceTable,
+      collectionId: d.collectionId,
+      filters: binding.filters,
+      sort: d.sortField ? { field: d.sortField, direction: d.sortDirection } : {},
+      limitCount: d.limitCount,
+      displayMapping: binding.displayMapping,
+      fallbackMode: binding.fallbackMode,
+    });
+    updateDraft(binding.id, { saving: false });
+    setReloadKey((k) => k + 1);
+    // Notify preview to re-hydrate.
+    try {
+      window.postMessage({ type: 'CATALOG_BINDINGS_CHANGED', projectId }, '*');
+    } catch { /* noop */ }
+  };
 
   return (
     <div
       className={cn(
-        'w-[360px] max-h-[70vh] overflow-auto rounded-lg border border-indigo-500/30 bg-zinc-950/95 backdrop-blur-md shadow-[0_0_25px_rgba(99,102,241,0.15)] text-zinc-200',
+        'w-[380px] max-h-[75vh] overflow-auto rounded-lg border border-indigo-500/30 bg-zinc-950/95 backdrop-blur-md shadow-[0_0_25px_rgba(99,102,241,0.15)] text-zinc-200',
         className,
       )}
     >
@@ -105,11 +197,13 @@ export function CatalogInspectorPanel({
           const soft = verdict.recommended.some(
             (r) => r.pagePath === binding.pagePath && r.sectionId === binding.sectionId,
           );
+          const isOpen = expanded === binding.id;
+          const draft = drafts[binding.id];
           return (
             <div
               key={binding.id}
               className={cn(
-                'rounded-md border px-3 py-2 bg-zinc-900/60',
+                'rounded-md border bg-zinc-900/60',
                 blocked
                   ? 'border-red-500/40'
                   : soft
@@ -117,34 +211,128 @@ export function CatalogInspectorPanel({
                     : 'border-zinc-800',
               )}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-medium text-zinc-100 truncate">
-                  {binding.pagePath} · {binding.sectionId}
+              <button
+                type="button"
+                onClick={() => toggleExpand(binding)}
+                className="w-full text-left px-3 py-2 hover:bg-zinc-900/80 rounded-md"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-medium text-zinc-100 truncate">
+                    {binding.pagePath} · {binding.sectionId}
+                  </div>
+                  <span
+                    className={cn(
+                      'text-[10px] px-1.5 py-0.5 rounded-full',
+                      rowCount === 0
+                        ? 'bg-zinc-800 text-zinc-500'
+                        : 'bg-indigo-500/10 text-indigo-300',
+                    )}
+                  >
+                    {rowCount} row{rowCount === 1 ? '' : 's'}
+                  </span>
                 </div>
-                <span
-                  className={cn(
-                    'text-[10px] px-1.5 py-0.5 rounded-full',
-                    rowCount === 0
-                      ? 'bg-zinc-800 text-zinc-500'
-                      : 'bg-indigo-500/10 text-indigo-300',
+                <div className="mt-1 text-[10px] text-zinc-500 flex items-center gap-2">
+                  <span>{binding.sourceKind}</span>
+                  <span>·</span>
+                  <span>{binding.sourceTable}</span>
+                  {binding.collectionId && (
+                    <>
+                      <span>·</span>
+                      <span>collection</span>
+                    </>
                   )}
-                >
-                  {rowCount} row{rowCount === 1 ? '' : 's'}
-                </span>
-              </div>
-              <div className="mt-1 text-[10px] text-zinc-500 flex items-center gap-2">
-                <span>{binding.sourceKind}</span>
-                <span>·</span>
-                <span>{binding.sourceTable}</span>
-                {binding.collectionId && (
-                  <>
-                    <span>·</span>
-                    <span>collection</span>
-                  </>
-                )}
-                <span>·</span>
-                <span>fallback: {binding.fallbackMode}</span>
-              </div>
+                  <span>·</span>
+                  <span>fallback: {binding.fallbackMode}</span>
+                  <span className="ml-auto text-indigo-400">{isOpen ? '▾' : '▸'}</span>
+                </div>
+              </button>
+
+              {isOpen && draft && (
+                <div className="px-3 pb-3 pt-1 border-t border-zinc-800/70 space-y-2">
+                  <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                    Collection
+                  </label>
+                  <select
+                    value={draft.collectionId ?? ''}
+                    onChange={(e) =>
+                      updateDraft(binding.id, {
+                        collectionId: e.target.value || null,
+                      })
+                    }
+                    className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                  >
+                    <option value="">— All rows —</option>
+                    {draft.collections.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.slug})
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                        Limit
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={draft.limitCount ?? ''}
+                        onChange={(e) =>
+                          updateDraft(binding.id, {
+                            limitCount: e.target.value ? Number(e.target.value) : null,
+                          })
+                        }
+                        placeholder="none"
+                        className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                        Sort dir
+                      </label>
+                      <select
+                        value={draft.sortDirection}
+                        onChange={(e) =>
+                          updateDraft(binding.id, {
+                            sortDirection: e.target.value as 'asc' | 'desc',
+                          })
+                        }
+                        className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                      >
+                        <option value="asc">asc</option>
+                        <option value="desc">desc</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                      Sort field
+                    </label>
+                    <input
+                      type="text"
+                      value={draft.sortField}
+                      onChange={(e) =>
+                        updateDraft(binding.id, { sortField: e.target.value })
+                      }
+                      placeholder="e.g. sort_order, created_at"
+                      className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={draft.saving}
+                      onClick={() => saveBinding(binding)}
+                      className="text-xs px-2.5 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 disabled:opacity-50"
+                    >
+                      {draft.saving ? 'Saving…' : 'Save binding'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

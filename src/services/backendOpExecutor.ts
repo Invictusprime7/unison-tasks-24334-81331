@@ -93,7 +93,7 @@ async function seedBooking(businessId: string): Promise<BackendOpStatus> {
           name: 'Default Service',
           duration_minutes: 60,
           price_cents: 0,
-          active: true,
+          is_active: true,
         })
         .select('id')
         .single();
@@ -118,9 +118,9 @@ async function seedBooking(businessId: string): Promise<BackendOpStatus> {
       slots.push({
         business_id: businessId,
         service_id: serviceId,
-        start_time: day.toISOString(),
-        end_time: end.toISOString(),
-        is_available: true,
+        starts_at: day.toISOString(),
+        ends_at: end.toISOString(),
+        is_booked: false,
       });
     }
     const { error: slotErr } = await supabase.from('availability_slots').insert(slots);

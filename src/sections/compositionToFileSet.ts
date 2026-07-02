@@ -557,6 +557,7 @@ export function compositionToReactFileSet(
     [SECTION_FILES.Team]: TEAM_MODULE,
     [SECTION_FILES.FAQ]: FAQ_MODULE,
     [SECTION_MAP_PATH]: SECTION_MAP_MODULE,
+    [CATALOG_HYDRATION_PATH]: CATALOG_HYDRATION_MODULE,
     [pageFilePath]: pageModule(template),
   };
   return files;

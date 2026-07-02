@@ -284,9 +284,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BuilderSessionProvider } from "@/builder/controllers/BuilderSessionProvider";
-import { ConnectedBusinessStrip } from "@/components/business-center/ConnectedBusinessStrip";
-import { BusinessCenterPanel } from "@/components/business-center/BusinessCenterPanel";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 // CodeViewErrorBoundary extracted to web-builder/CodeViewErrorBoundary.tsx
 
@@ -438,7 +435,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [exportJs, setExportJs] = useState("");
   const [exportProjectName, setExportProjectName] = useState("my-project");
   const [saveProjectDialogOpen, setSaveProjectDialogOpen] = useState(false);
-  const [businessCenterOpen, setBusinessCenterOpen] = useState(false);
   const [saveProjectName, setSaveProjectName] = useState("");
   const [saveProjectDescription, setSaveProjectDescription] = useState("");
   const [currentTemplateName, setCurrentTemplateName] = useState<string | null>(null);
@@ -5574,12 +5570,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           <div className="h-5 w-px bg-cyan-500/50 hidden sm:block" />
           
           {/* Save/Deploy/Settings — hidden on small screens */}
-          <div className="hidden md:flex items-center mr-2">
-            <ConnectedBusinessStrip
-              businessId={businessId || undefined}
-              onOpenBusinessCenter={() => setBusinessCenterOpen(true)}
-            />
-          </div>
           <div className="hidden sm:flex items-center gap-1.5">
             {autoSaveStatus === 'saving' && (
               <div className="animate-spin h-3 w-3 border-2 border-yellow-500/30 border-t-yellow-400 rounded-full" />
@@ -7273,22 +7263,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         onLoadTemplate={handleLoadTemplate}
         onSaveTemplate={handleSaveTemplate}
       />
-
-      {/* Business Center Sheet */}
-      <Sheet open={businessCenterOpen} onOpenChange={setBusinessCenterOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto p-0">
-          {businessId ? (
-            <BusinessCenterPanel
-              businessId={businessId}
-              onClose={() => setBusinessCenterOpen(false)}
-            />
-          ) : (
-            <div className="p-8 text-sm text-muted-foreground">
-              No business is connected to this project yet.
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
 
       {/* Save to Projects Dialog */}
       <Dialog open={saveProjectDialogOpen} onOpenChange={setSaveProjectDialogOpen}>

@@ -113,6 +113,25 @@ export function CatalogInspectorPanel({
     };
   }, [projectId, sectionTypeMap, reloadKey]);
 
+  const loadRows = useCallback(async (binding: SectionDataBindingDTO) => {
+    const result = await loadRowsForBinding(binding);
+    const rowsArr = result.rows ?? [];
+    const rowDrafts: Record<string, RowDraft> = {};
+    for (const r of rowsArr) {
+      const id = String(r.id ?? '');
+      if (id) rowDrafts[id] = toRowDraft(r);
+    }
+    setDrafts((prev) => ({
+      ...prev,
+      [binding.id]: {
+        ...(prev[binding.id] ?? draftFromBinding(binding)),
+        rows: rowsArr,
+        loadedRows: true,
+        rowDrafts,
+      },
+    }));
+  }, []);
+
   const toggleExpand = useCallback(
     async (binding: SectionDataBindingDTO) => {
       const isOpen = expanded === binding.id;
@@ -125,7 +144,6 @@ export function CatalogInspectorPanel({
         ...prev,
         [binding.id]: prev[binding.id] ?? draftFromBinding(binding),
       }));
-      // Lazy-load collections for this binding's kind.
       const existing = drafts[binding.id];
       if (!existing?.loadedCollections) {
         const cols = await listCollections(binding.businessId, binding.sourceKind);
@@ -138,12 +156,63 @@ export function CatalogInspectorPanel({
           },
         }));
       }
+      if (!existing?.loadedRows) {
+        void loadRows(binding);
+      }
     },
-    [expanded, drafts],
+    [expanded, drafts, loadRows],
   );
 
   const updateDraft = (id: string, patch: Partial<DraftState>) => {
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  };
+
+  const updateRowDraft = (
+    bindingId: string,
+    rowId: string,
+    patch: Partial<RowDraft>,
+  ) => {
+    setDrafts((prev) => {
+      const d = prev[bindingId];
+      if (!d) return prev;
+      const current = d.rowDrafts[rowId];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [bindingId]: {
+          ...d,
+          rowDrafts: {
+            ...d.rowDrafts,
+            [rowId]: { ...current, ...patch, dirty: true },
+          },
+        },
+      };
+    });
+  };
+
+  const bumpPreview = () => {
+    try {
+      window.postMessage({ type: 'CATALOG_BINDINGS_CHANGED', projectId }, '*');
+    } catch { /* noop */ }
+  };
+
+  const saveRow = async (binding: SectionDataBindingDTO, rowId: string) => {
+    const d = drafts[binding.id];
+    const rd = d?.rowDrafts[rowId];
+    if (!d || !rd) return;
+    updateRowDraft(binding.id, rowId, { saving: true });
+    const priceNum = rd.price.trim() === '' ? null : Number(rd.price);
+    const ok = await updateCatalogRow(binding.sourceTable, rowId, {
+      name: rd.name,
+      description: rd.description || null,
+      price: Number.isFinite(priceNum as number) ? (priceNum as number) : null,
+      image_url: rd.image_url || null,
+    });
+    updateRowDraft(binding.id, rowId, { saving: false, dirty: !ok });
+    if (ok) {
+      await loadRows(binding);
+      bumpPreview();
+    }
   };
 
   const saveBinding = async (binding: SectionDataBindingDTO) => {
@@ -168,12 +237,11 @@ export function CatalogInspectorPanel({
       fallbackMode: binding.fallbackMode,
     });
     updateDraft(binding.id, { saving: false });
+    await loadRows(binding);
     setReloadKey((k) => k + 1);
-    // Notify preview to re-hydrate.
-    try {
-      window.postMessage({ type: 'CATALOG_BINDINGS_CHANGED', projectId }, '*');
-    } catch { /* noop */ }
+    bumpPreview();
   };
+
 
   return (
     <div

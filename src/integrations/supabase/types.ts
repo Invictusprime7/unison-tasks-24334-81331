@@ -1108,6 +1108,72 @@ export type Database = {
           },
         ]
       }
+      catalog_collections: {
+        Row: {
+          business_id: string
+          created_at: string
+          description: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          kind: string
+          manual_item_ids: string[]
+          name: string
+          project_id: string | null
+          rules: Json
+          slug: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          kind: string
+          manual_item_ids?: string[]
+          name: string
+          project_id?: string | null
+          rules?: Json
+          slug: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          kind?: string
+          manual_item_ids?: string[]
+          name?: string
+          project_id?: string | null
+          rules?: Json
+          slug?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_collections_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_collections_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_conversations: {
         Row: {
           created_at: string
@@ -2461,6 +2527,71 @@ export type Database = {
         }
         Relationships: []
       }
+      menu_items: {
+        Row: {
+          available: boolean
+          business_id: string
+          category: string | null
+          created_at: string
+          currency: string
+          description: string | null
+          dietary_tags: string[]
+          featured: boolean
+          id: string
+          image_url: string | null
+          metadata: Json
+          name: string
+          price_cents: number
+          slug: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          available?: boolean
+          business_id: string
+          category?: string | null
+          created_at?: string
+          currency?: string
+          description?: string | null
+          dietary_tags?: string[]
+          featured?: boolean
+          id?: string
+          image_url?: string | null
+          metadata?: Json
+          name: string
+          price_cents?: number
+          slug?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          available?: boolean
+          business_id?: string
+          category?: string | null
+          created_at?: string
+          currency?: string
+          description?: string | null
+          dietary_tags?: string[]
+          featured?: boolean
+          id?: string
+          image_url?: string | null
+          metadata?: Json
+          name?: string
+          price_cents?: number
+          slug?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "menu_items_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           business_id: string | null
@@ -2630,6 +2761,71 @@ export type Database = {
           },
         ]
       }
+      pricing_plans: {
+        Row: {
+          billing_interval: string | null
+          business_id: string
+          created_at: string
+          cta_intent: string | null
+          currency: string
+          description: string | null
+          features: Json
+          highlighted: boolean
+          id: string
+          is_active: boolean
+          metadata: Json
+          name: string
+          price_cents: number
+          slug: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          billing_interval?: string | null
+          business_id: string
+          created_at?: string
+          cta_intent?: string | null
+          currency?: string
+          description?: string | null
+          features?: Json
+          highlighted?: boolean
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name: string
+          price_cents?: number
+          slug?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          billing_interval?: string | null
+          business_id?: string
+          created_at?: string
+          cta_intent?: string | null
+          currency?: string
+          description?: string | null
+          features?: Json
+          highlighted?: boolean
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name?: string
+          price_cents?: number
+          slug?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_plans_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           business_id: string | null
@@ -2637,6 +2833,7 @@ export type Database = {
           created_at: string | null
           currency: string | null
           description: string | null
+          featured: boolean
           id: string
           image_url: string | null
           inventory_count: number | null
@@ -2644,6 +2841,8 @@ export type Database = {
           metadata: Json | null
           name: string
           price: number
+          slug: string | null
+          sort_order: number
           updated_at: string | null
           user_id: string | null
         }
@@ -2653,6 +2852,7 @@ export type Database = {
           created_at?: string | null
           currency?: string | null
           description?: string | null
+          featured?: boolean
           id?: string
           image_url?: string | null
           inventory_count?: number | null
@@ -2660,6 +2860,8 @@ export type Database = {
           metadata?: Json | null
           name: string
           price: number
+          slug?: string | null
+          sort_order?: number
           updated_at?: string | null
           user_id?: string | null
         }
@@ -2669,6 +2871,7 @@ export type Database = {
           created_at?: string | null
           currency?: string | null
           description?: string | null
+          featured?: boolean
           id?: string
           image_url?: string | null
           inventory_count?: number | null
@@ -2676,6 +2879,8 @@ export type Database = {
           metadata?: Json | null
           name?: string
           price?: number
+          slug?: string | null
+          sort_order?: number
           updated_at?: string | null
           user_id?: string | null
         }
@@ -2974,35 +3179,53 @@ export type Database = {
       services: {
         Row: {
           business_id: string
+          category: string | null
           created_at: string
           description: string | null
           duration_minutes: number
+          featured: boolean
           id: string
+          image_url: string | null
           is_active: boolean
+          metadata: Json
           name: string
           price_cents: number | null
+          slug: string | null
+          sort_order: number
           updated_at: string
         }
         Insert: {
           business_id: string
+          category?: string | null
           created_at?: string
           description?: string | null
           duration_minutes?: number
+          featured?: boolean
           id?: string
+          image_url?: string | null
           is_active?: boolean
+          metadata?: Json
           name: string
           price_cents?: number | null
+          slug?: string | null
+          sort_order?: number
           updated_at?: string
         }
         Update: {
           business_id?: string
+          category?: string | null
           created_at?: string
           description?: string | null
           duration_minutes?: number
+          featured?: boolean
           id?: string
+          image_url?: string | null
           is_active?: boolean
+          metadata?: Json
           name?: string
           price_cents?: number | null
+          slug?: string | null
+          sort_order?: number
           updated_at?: string
         }
         Relationships: []
@@ -3047,6 +3270,91 @@ export type Database = {
             columns: ["file_id"]
             isOneToOne: false
             referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_data_bindings: {
+        Row: {
+          binding_type: string
+          business_id: string
+          collection_id: string | null
+          created_at: string
+          display_mapping: Json
+          fallback_mode: string
+          filters: Json
+          id: string
+          limit_count: number | null
+          page_path: string
+          project_id: string
+          section_id: string
+          slot_key: string | null
+          snapshot_id: string | null
+          sort: Json
+          source_kind: string
+          source_table: string
+          updated_at: string
+        }
+        Insert: {
+          binding_type?: string
+          business_id: string
+          collection_id?: string | null
+          created_at?: string
+          display_mapping?: Json
+          fallback_mode?: string
+          filters?: Json
+          id?: string
+          limit_count?: number | null
+          page_path: string
+          project_id: string
+          section_id: string
+          slot_key?: string | null
+          snapshot_id?: string | null
+          sort?: Json
+          source_kind: string
+          source_table: string
+          updated_at?: string
+        }
+        Update: {
+          binding_type?: string
+          business_id?: string
+          collection_id?: string | null
+          created_at?: string
+          display_mapping?: Json
+          fallback_mode?: string
+          filters?: Json
+          id?: string
+          limit_count?: number | null
+          page_path?: string
+          project_id?: string
+          section_id?: string
+          slot_key?: string | null
+          snapshot_id?: string | null
+          sort?: Json
+          source_kind?: string
+          source_table?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_data_bindings_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_data_bindings_collection_id_fkey"
+            columns: ["collection_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_collections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_data_bindings_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]

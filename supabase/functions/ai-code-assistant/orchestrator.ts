@@ -181,6 +181,10 @@ async function runBuilderLane(
   })`);
 
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  // OpenAI direct API counts as a configured text provider so wizard/builder
+  // tasks get their full per-task model plan (e.g. 110 s for wizard_seed_generation)
+  // instead of the degraded no-provider fallback plan (25 s).
+  const hasConfiguredProvider = Boolean(LOVABLE_API_KEY || Deno.env.get('OPENAI_API_KEY'));
   const {
     messages, mode, savePattern = true, generateImage = false, imagePlacement,
     currentCode, editMode = false, debugMode: _debugMode = false,
@@ -433,7 +437,7 @@ async function runBuilderLane(
 
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────
   console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
-  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY), gatewayOptions, preprocessed.complexity.tier);
+  const providerPlan = buildProviderPlan(task, hasConfiguredProvider, gatewayOptions, preprocessed.complexity.tier);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,

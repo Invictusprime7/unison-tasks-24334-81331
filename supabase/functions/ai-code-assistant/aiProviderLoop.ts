@@ -54,17 +54,21 @@ export async function runProviderLoop(opts: {
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     if (!OPENAI_API_KEY || content) return;
 
-    // OpenAI is a direct fallback only. Workspace-owned accounts can hit 429s,
-    // so do not let that path gate the Lovable gateway launch path.
-    console.log('[AI-Hybrid] Direct OpenAI configured as secondary fallback');
+    // When no Lovable gateway key is configured, OpenAI is the PRIMARY provider.
+    // Use the plan's per-model timeout so wizard/builder tasks get their full budget
+    // (e.g. 110 s for wizard_seed_generation) instead of a hardcoded 25 s cap.
+    const isGatewayAbsent = !lovableApiKey;
+    const role = isGatewayAbsent ? 'primary' : 'fallback';
+    console.log(`[AI-Hybrid] Direct OpenAI configured as ${role} provider`);
     
     const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
+    const fallbackTokens = providerPlan.fallbackMaxTokens;
     const openaiModels = [
       ...(configuredOpenAIModel
-        ? [{ id: configuredOpenAIModel, maxTokens: providerPlan.fallbackMaxTokens, label: `OpenAI ${configuredOpenAIModel}` }]
+        ? [{ id: configuredOpenAIModel, maxTokens: fallbackTokens, label: `OpenAI ${configuredOpenAIModel}` }]
         : []),
-      { id: 'gpt-4o', maxTokens: 16000, label: 'OpenAI gpt-4o' },
-      { id: 'gpt-4o-mini', maxTokens: 16000, label: 'OpenAI gpt-4o-mini' },
+      { id: 'gpt-4o', maxTokens: fallbackTokens, label: 'OpenAI gpt-4o' },
+      { id: 'gpt-4o-mini', maxTokens: Math.min(fallbackTokens, 16000), label: 'OpenAI gpt-4o-mini' },
     ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
     
     for (const model of openaiModels) {
@@ -74,9 +78,11 @@ export async function runProviderLoop(opts: {
         lastError = lastError || 'budget exhausted before all models tried';
         break;
       }
-      const perModelMs = Math.min(25000, Math.max(8000, remaining - 2000));
+      // Use the plan's per-model timeout — not a hardcoded cap — so large tasks
+      // (wizard seed = 110 s) are not artificially cut short.
+      const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, remaining - 2000));
       try {
-        console.log(`[AI-Hybrid] Trying fallback ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        console.log(`[AI-Hybrid] Trying ${role} ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), perModelMs);
         

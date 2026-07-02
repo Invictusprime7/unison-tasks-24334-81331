@@ -465,9 +465,11 @@ export const SECTION_MAP: Record<string, React.ComponentType<{ props: any }>> = 
 function pageModule(template: TemplateComposition): string {
   const sectionsJson = JSON.stringify(template.sections, null, 2);
   const title = JSON.stringify(template.name);
+  const hydratableJson = JSON.stringify(HYDRATABLE_SECTION_TYPES);
   return `import React, { useEffect } from 'react';
 import SiteLayout from '@/components/SiteLayout';
 import { SECTION_MAP } from '@/components/SectionMap';
+import { useSectionData, mergeHydratedItems } from '@/components/catalogHydration';
 
 // ============================================================================
 // Page Content (data only)
@@ -477,25 +479,53 @@ import { SECTION_MAP } from '@/components/SectionMap';
 // in its own file under /src/components/ — e.g. Hero.tsx, Services.tsx.
 // ============================================================================
 const SECTIONS = ${sectionsJson};
+const HYDRATABLE = new Set(${hydratableJson});
+
+/**
+ * Renders a single section. Live-catalog section types subscribe to
+ * useSectionData; when the host resolves rows, they override the seeded
+ * items. Static sections render exactly as authored.
+ */
+function RenderedSection({ section, occurrence }: { section: any; occurrence: number }) {
+  const C = SECTION_MAP[section.type];
+  const isHydratable = HYDRATABLE.has(section.type);
+  const hydration = useSectionData(section.id, isHydratable ? section.type : undefined, occurrence);
+  if (!C) return null;
+
+  let props = section.props;
+  let hidden = false;
+  if (isHydratable) {
+    const merged = mergeHydratedItems(section.props && section.props.items, hydration);
+    if (merged.hide) hidden = true;
+    props = { ...section.props, items: merged.items };
+  }
+  if (hidden) return null;
+
+  const layoutToken = props && props.layout;
+  return (
+    <div
+      data-ut-section-id={section.id}
+      data-ut-section-type={section.type}
+      data-ut-layout={layoutToken || undefined}
+      data-ut-hydration={isHydratable ? (hydration.loading ? 'loading' : (hydration.rows ? 'live' : 'seed')) : undefined}
+    >
+      <C props={props} />
+    </div>
+  );
+}
 
 export default function Page() {
   useEffect(() => { document.title = ${title}; }, []);
+  const visible = SECTIONS.filter((s: any) => !s.hidden);
+  // Assign per-type occurrence indices so the host can map a wizard-type
+  // section to its emitted binding (\`\${requirementKey}-\${index}\`).
+  const typeCounters: Record<string, number> = {};
   return (
     <SiteLayout>
-      {SECTIONS.filter((s: any) => !s.hidden).map((s: any) => {
-        const C = SECTION_MAP[s.type];
-        if (!C) return null;
-        const layoutToken = s.props && s.props.layout;
-        return (
-          <div
-            key={s.id}
-            data-ut-section-id={s.id}
-            data-ut-section-type={s.type}
-            data-ut-layout={layoutToken || undefined}
-          >
-            <C props={s.props} />
-          </div>
-        );
+      {visible.map((s: any) => {
+        const occurrence = typeCounters[s.type] ?? 0;
+        typeCounters[s.type] = occurrence + 1;
+        return <RenderedSection key={s.id} section={s} occurrence={occurrence} />;
       })}
     </SiteLayout>
   );

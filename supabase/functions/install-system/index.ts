@@ -4,6 +4,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, verifyBusinessAccess, authError } from "../_shared/auth.ts";
 import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString, isValidUUID } from "../_shared/validate.ts";
+import { getIndustrySeeds, normalizeIndustry } from "./industrySeeds.ts";
 
 type SystemType =
   | "booking"

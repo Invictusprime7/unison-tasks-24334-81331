@@ -2359,6 +2359,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         startInPreview: true,
         intentRuntime: true,
         businessId: provisionedBusinessId || undefined,
+        industry: resolvedIndustry,
         runtimeManifest,
         entryPoint: launchArtifacts.entryPoint,
         sitePlan,

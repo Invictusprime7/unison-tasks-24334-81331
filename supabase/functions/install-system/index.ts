@@ -386,6 +386,7 @@ serve(async (req) => {
         businessCreated,
         packs,
         systemType,
+        industry: industryKey,
         templateId: body.templateId ? sanitizeString(body.templateId, 100) : null,
         intentsRegistered: 0,
         warnings,

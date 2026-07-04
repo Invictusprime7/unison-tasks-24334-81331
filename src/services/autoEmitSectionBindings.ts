@@ -29,7 +29,7 @@ import {
  * mapping conservative — only add an entry when there is a real runtime
  * hydrator for the target kind.
  */
-const WIZARD_TYPE_TO_REQUIREMENT: Record<string, string> = {
+export const WIZARD_TYPE_TO_REQUIREMENT: Record<string, string> = {
   services: 'ServiceGrid',
   service_grid: 'ServiceGrid',
   featured_services: 'ServiceGrid',
@@ -43,6 +43,34 @@ const WIZARD_TYPE_TO_REQUIREMENT: Record<string, string> = {
   pricing_table: 'PricingTable',
   plans: 'PricingTable',
 };
+
+/**
+ * Build the sectionId → requirementKey map used by the CatalogInspectorPanel /
+ * CatalogReadinessGate. Mirrors the sectionId scheme emitted below
+ * (`${requirementKey}-${index}`) so a snapshot alone is enough to derive it —
+ * no DB round-trip required.
+ */
+export function buildSectionTypeMap(
+  snapshot: SiteBundleSnapshot | null | undefined,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  const pages = snapshot?.pageRegistry?.pages;
+  if (!pages) return map;
+  for (const page of Object.values(pages)) {
+    const sectionTypes = (page as unknown as { sectionTypes?: unknown }).sectionTypes;
+    if (!Array.isArray(sectionTypes)) continue;
+    for (let index = 0; index < sectionTypes.length; index++) {
+      const raw = String(sectionTypes[index] ?? '').trim();
+      if (!raw) continue;
+      const normalized = raw.toLowerCase().replace(/[-\s]/g, '_');
+      const key =
+        WIZARD_TYPE_TO_REQUIREMENT[normalized] ?? WIZARD_TYPE_TO_REQUIREMENT[raw];
+      if (!key) continue;
+      map[`${key}-${index}`] = key;
+    }
+  }
+  return map;
+}
 
 export interface AutoEmitOptions {
   businessId: string;

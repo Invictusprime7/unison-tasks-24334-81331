@@ -60,6 +60,14 @@ export interface LaunchState {
   businessName: string;
   templateName: string;
   templateCategory: LayoutCategory;
+  /**
+   * Resolved industry key that drove seeding + intent-profile selection.
+   * Top-level mirror of `blueprint.identity.industry` so downstream
+   * consumers (WebBuilder, IntentRouter, publish gate) don't need to
+   * dig through the blueprint. Populated by SystemLauncher.
+   */
+  industry?: string;
+
   
   // Blueprint (structured guidance for AI)
   blueprint: LaunchBlueprint;
@@ -167,7 +175,9 @@ export function createLaunchState(
     intentRuntime: input.intentRuntime ?? true,
     businessId: input.businessId,
     projectId: input.projectId,
+    industry: input.industry ?? input.blueprint?.identity?.industry,
     manifestId: input.manifestId,
+
     entryPoint: input.entryPoint,
     runtimeManifest: input.runtimeManifest,
     siteBundle: input.siteBundle,

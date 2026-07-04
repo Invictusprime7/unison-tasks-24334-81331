@@ -62,7 +62,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { useIsMobile } from "@/hooks/use-mobile";
 import { templateToVFSFiles, elementToVFSPatch } from "@/utils/templateToVFS";
 import { htmlToJsx } from "@/utils/htmlToJsx";
-import { setDefaultBusinessId, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
+import { setDefaultBusinessId, setDefaultIndustry, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
 import { buildRedirectPageContext } from "@/utils/redirectPageGenerator";
 // scaffoldMultiPageVFS was removed; topologyVFSScaffolder owns multi-page scaffolding now.
 import { classifyLabel, type ElementContext } from "@/utils/redirectLabelClassifier";
@@ -2978,15 +2978,36 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     };
   }, [businessId, currentDesignPreset, currentTemplateCategory]);
   
-  // Set default businessId for intent routing
+  // Set default businessId + industry for intent routing
   useEffect(() => {
     // Use a UUID so backend tables that store business_id as UUID don't fail
     const effectiveBusinessId = businessId || getOrCreatePreviewBusinessId(systemType);
-    
+    const isRealBusinessId = !!businessId;
+
     if (effectiveBusinessId) {
       setDefaultBusinessId(effectiveBusinessId);
-      console.log('[WebBuilder] Set default businessId for intents:', effectiveBusinessId);
+      console.log('[WebBuilder] Set default businessId for intents:', effectiveBusinessId, {
+        provenance: isRealBusinessId ? 'launcher' : 'preview-placeholder',
+      });
+      if (!isRealBusinessId) {
+        // Boot-time assertion: a preview placeholder means install-system did
+        // not return a real business — automatable intents (booking, orders,
+        // donations) will write to a scratch row and never surface in the
+        // owner's dashboards. Fire a loud warn so the OS Health surface can
+        // pick it up.
+        console.warn(
+          '[WebBuilder] businessId is a preview placeholder — real backend intents will not persist. ' +
+            'Re-run the System Launcher to provision a durable business.',
+        );
+      }
     }
+
+    // Resolve industry from launch state → snapshot → system type fallback.
+    const effectiveIndustry =
+      launch?.industry ||
+      (launch?.siteBundleSnapshot as { industry?: string } | undefined)?.industry ||
+      (typeof activeSystemType === 'string' ? activeSystemType : null);
+    setDefaultIndustry(effectiveIndustry || null);
 
     // Set up system type and demo mode for AI-generated content
     if (activeSystemType) {
@@ -2995,14 +3016,15 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       setDemoMode(true);
       console.log('[WebBuilder] Enabled demo mode for system type:', activeSystemType);
     }
-    
+
     // Cleanup on unmount
     return () => {
       setDefaultBusinessId(null);
+      setDefaultIndustry(null);
       setCurrentSystemType(null);
       setDemoMode(false);
     };
-  }, [businessId, systemType, activeSystemType]);
+  }, [businessId, systemType, activeSystemType, launch?.industry, launch?.siteBundleSnapshot]);
 
   // Production readiness signal: check if this businessId has been installed
   useEffect(() => {

@@ -2244,6 +2244,21 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
             snapshot: launchArtifacts.siteBundleSnapshot,
           });
           console.log('[SystemLauncher] Auto-emitted catalog bindings', emitResult);
+          // Signal downstream consumers (CatalogInspectorPanel, catalog
+          // runtime, readiness gate) that fresh rows have landed so they
+          // re-query without waiting for a manual refresh.
+          if (typeof window !== 'undefined' && emitResult.emitted > 0) {
+            window.dispatchEvent(
+              new CustomEvent('lovable:catalog-seeded', {
+                detail: {
+                  businessId: provisionedBusinessId,
+                  projectId: launchProjectId,
+                  industry: resolvedIndustry,
+                  bindingIds: emitResult.bindingIds,
+                },
+              }),
+            );
+          }
         } catch (err) {
           console.warn('[SystemLauncher] autoEmitSectionBindings failed (non-fatal)', err);
         }
@@ -2359,6 +2374,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         startInPreview: true,
         intentRuntime: true,
         businessId: provisionedBusinessId || undefined,
+        industry: resolvedIndustry,
         runtimeManifest,
         entryPoint: launchArtifacts.entryPoint,
         sitePlan,

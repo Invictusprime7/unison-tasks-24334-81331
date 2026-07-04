@@ -441,6 +441,7 @@ async function handleAutomationIntent(
 // Default businessId for templates (can be overridden by location state or template config)
 let defaultBusinessId: string | null = null;
 let defaultProjectId: string | null = null;
+let defaultIndustry: string | null = null;
 let currentSystemType: BusinessSystemType | null = null;
 let isDemoMode: boolean = false;
 
@@ -459,6 +460,21 @@ export function setDefaultBusinessId(businessId: string | null): void {
 export function setDefaultProjectId(projectId: string | null): void {
   defaultProjectId = projectId;
   console.log("[IntentRouter] Default projectId set:", projectId);
+}
+
+/**
+ * Set the default industry key for intent routing. Forwarded on every
+ * payload so intent-router (edge) can branch industry-specific handlers
+ * (restaurant reservations, ecommerce checkout, nonprofit donations)
+ * without a DB round-trip on cold requests.
+ */
+export function setDefaultIndustry(industry: string | null): void {
+  defaultIndustry = industry;
+  console.log("[IntentRouter] Default industry set:", industry);
+}
+
+export function getDefaultIndustry(): string | null {
+  return defaultIndustry;
 }
 
 /**
@@ -767,6 +783,9 @@ export async function handleIntent(intent: string, payload: IntentPayload): Prom
   }
   if (!payload.projectId && defaultProjectId) {
     payload.projectId = defaultProjectId;
+  }
+  if (!(payload as Record<string, unknown>).industry && defaultIndustry) {
+    (payload as Record<string, unknown>).industry = defaultIndustry;
   }
 
   // =========================================================================

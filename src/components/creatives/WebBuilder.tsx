@@ -1238,13 +1238,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const catalogSectionTypeMap = useMemo(() => {
     const snapshot = effectiveRouteState?.siteBundleSnapshot;
     if (!snapshot) return {} as Record<string, string>;
-    // Lazy require to avoid circular import at module init.
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = require('@/services/autoEmitSectionBindings') as {
-        buildSectionTypeMap?: (s: unknown) => Record<string, string>;
-      };
-      return mod.buildSectionTypeMap ? mod.buildSectionTypeMap(snapshot) : {};
+      return buildSectionTypeMap(snapshot);
     } catch {
       return {};
     }

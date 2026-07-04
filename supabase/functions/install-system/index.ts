@@ -24,6 +24,10 @@ interface InstallRequest {
   businessId?: string; // Use existing business if provided
   ownerEmail?: string;
   publishMode?: "native" | "manual";
+  /** Normalized industry key from IndustryMatrix (e.g. "salon", "restaurant",
+   * "coaching", "saas"). Drives per-industry catalog seeding. Optional; when
+   * absent we fall back to systemType-only seeding for backwards compat. */
+  industry?: string;
 }
 
 function packsForSystem(systemType: SystemType): string[] {

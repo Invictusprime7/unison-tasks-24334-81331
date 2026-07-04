@@ -113,12 +113,14 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
-// Load business settings for notification dispatch
+// Load business settings for notification dispatch + industry-scoped routing
 async function loadBusinessSettings(supabase: any, businessId: string) {
-  // Only query columns that exist in the businesses table
+  // industry drives per-vertical intent handling (restaurant booking uses
+  // party_size + reservation naming; ecommerce cart.checkout writes orders;
+  // nonprofit donation.start writes crm_lead with donation source).
   const { data, error } = await supabase
     .from("businesses")
-    .select("id, name, notification_email, notification_phone, owner_id")
+    .select("id, name, notification_email, notification_phone, owner_id, industry")
     .eq("id", businessId)
     .maybeSingle();
   

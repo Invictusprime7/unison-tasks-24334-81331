@@ -784,6 +784,9 @@ export async function handleIntent(intent: string, payload: IntentPayload): Prom
   if (!payload.projectId && defaultProjectId) {
     payload.projectId = defaultProjectId;
   }
+  if (!(payload as Record<string, unknown>).industry && defaultIndustry) {
+    (payload as Record<string, unknown>).industry = defaultIndustry;
+  }
 
   // =========================================================================
   // LANE-BASED ROUTING — The classifier is the single source of truth.

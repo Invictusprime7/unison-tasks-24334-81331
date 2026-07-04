@@ -558,13 +558,14 @@ async function handleBookingRequest(
     console.log("[intent-router] Booking created:", bookingId);
   }
   
-  // 3. Send notification email
-  const bizSettings = await loadBusinessSettings(supabase, businessId);
+  // 3. Notification setup — reuse the early-loaded business settings.
+  const bizSettings = bizSettingsEarly;
   let emailSent = false;
   
   // Determine notification target - use business email if available, otherwise use form email as fallback
   const notificationEmail = bizSettings?.notification_email;
   const businessName = bizSettings?.name || "Your Business";
+  
   
   if (notificationEmail) {
     // Send to business owner

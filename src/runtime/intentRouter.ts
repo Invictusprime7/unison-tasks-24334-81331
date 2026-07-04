@@ -441,6 +441,7 @@ async function handleAutomationIntent(
 // Default businessId for templates (can be overridden by location state or template config)
 let defaultBusinessId: string | null = null;
 let defaultProjectId: string | null = null;
+let defaultIndustry: string | null = null;
 let currentSystemType: BusinessSystemType | null = null;
 let isDemoMode: boolean = false;
 

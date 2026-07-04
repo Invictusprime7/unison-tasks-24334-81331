@@ -200,19 +200,35 @@ serve(async (req) => {
       }
     }
 
-    // 4) Seed publish-ready first-party data (real tables, real writes).
-    // Booking launches should have bookable services + visible availability on
-    // first open, not just an attractive preview shell.
-    if (systemType === "booking") {
-      const { data: seededServices, error: servicesError } = await admin.from("services").insert([
-        { business_id: businessId, name: "Signature Styling Appointment", description: "Core salon appointment for cuts, styling, and client consultation.", duration_minutes: 60, price_cents: 8500, is_active: true },
-        { business_id: businessId, name: "Color Consultation", description: "Focused color planning and treatment consultation.", duration_minutes: 30, price_cents: 3500, is_active: true },
-        { business_id: businessId, name: "Treatment & Blowout", description: "Conditioning treatment finished with a professional blowout.", duration_minutes: 90, price_cents: 12000, is_active: true },
-      ]).select("id, duration_minutes");
+    // 4) Seed publish-ready first-party data (real tables, real writes) per
+    // industry. Booking sites still get availability_slots so the calendar has
+    // visible openings on first load. Restaurants get menu_items; coaching /
+    // agency / saas get pricing_plans; ecommerce gets products. See
+    // ./industrySeeds.ts for the full per-industry bundle.
+    const industryKey = normalizeIndustry(body.industry);
+    const seedBundle = getIndustrySeeds(body.industry);
+
+    // 4a) services + availability_slots (booking systemTypes)
+    if (systemType === "booking" && Array.isArray(seedBundle.services) && seedBundle.services.length > 0) {
+      const serviceRows = seedBundle.services.map((s, i) => ({
+        business_id: businessId,
+        name: s.name,
+        description: s.description,
+        duration_minutes: s.duration_minutes || 60,
+        price_cents: s.price_cents ?? null,
+        category: s.category ?? null,
+        featured: Boolean(s.featured),
+        sort_order: i,
+        is_active: true,
+      }));
+      const { data: seededServices, error: servicesError } = await admin
+        .from("services").insert(serviceRows).select("id, duration_minutes");
       if (servicesError) {
         console.error("[install-system] seed services failed", servicesError);
         warnings.push("services_seed_failed");
       } else if (Array.isArray(seededServices) && seededServices.length > 0) {
+        // Restaurants use reservations without service duration mechanics —
+        // still scaffold basic availability slots so the booking UI works.
         const slots: Array<{ business_id: string; service_id: string | null; starts_at: string; ends_at: string; is_booked: boolean }> = [];
         const now = new Date();
         let dayOffset = 1;
@@ -222,7 +238,6 @@ serve(async (req) => {
           const dayOfWeek = day.getUTCDay();
           dayOffset += 1;
           if (dayOfWeek === 0) continue;
-
           for (const hour of [15, 17, 19]) {
             const service = seededServices[slots.length % seededServices.length] as { id: string; duration_minutes?: number | null };
             const startsAt = new Date(day);
@@ -239,7 +254,6 @@ serve(async (req) => {
             if (slots.length >= 18) break;
           }
         }
-
         if (slots.length > 0) {
           const { error: slotsError } = await admin.from("availability_slots").insert(slots);
           if (slotsError) {
@@ -247,6 +261,74 @@ serve(async (req) => {
             warnings.push("availability_seed_failed");
           }
         }
+      }
+    }
+
+    // 4b) menu_items (restaurants) — hydrates the Menu page bindings
+    if (Array.isArray(seedBundle.menu_items) && seedBundle.menu_items.length > 0) {
+      const menuRows = seedBundle.menu_items.map((m, i) => ({
+        business_id: businessId,
+        name: m.name,
+        description: m.description,
+        price_cents: m.price_cents,
+        category: m.category,
+        dietary_tags: m.dietary_tags ?? [],
+        featured: Boolean(m.featured),
+        sort_order: i,
+        available: true,
+      }));
+      const { error: menuError } = await admin.from("menu_items").insert(menuRows);
+      if (menuError) {
+        console.error("[install-system] seed menu_items failed", menuError);
+        warnings.push("menu_items_seed_failed");
+      }
+    }
+
+    // 4c) pricing_plans (saas / agency / coaching) — hydrates Pricing sections
+    if (Array.isArray(seedBundle.pricing_plans) && seedBundle.pricing_plans.length > 0) {
+      const planRows = seedBundle.pricing_plans.map((p, i) => ({
+        business_id: businessId,
+        name: p.name,
+        description: p.description,
+        price_cents: p.price_cents,
+        billing_interval: p.billing_interval,
+        features: p.features,
+        highlighted: Boolean(p.highlighted),
+        cta_intent: p.cta_intent ?? null,
+        sort_order: i,
+        is_active: true,
+      }));
+      const { error: plansError } = await admin.from("pricing_plans").insert(planRows);
+      if (plansError) {
+        console.error("[install-system] seed pricing_plans failed", plansError);
+        warnings.push("pricing_plans_seed_failed");
+      }
+    }
+
+    // 4d) products (ecommerce) — hydrates Shop grids
+    if ((systemType === "store" || (seedBundle.products && seedBundle.products.length > 0))) {
+      const productSeeds = seedBundle.products && seedBundle.products.length > 0
+        ? seedBundle.products
+        : [
+            { name: "Starter Product", price: 29, inventory_count: 100, featured: false },
+            { name: "Premium Product", price: 99, inventory_count: 25, featured: true },
+          ];
+      const productRows = productSeeds.map((p, i) => ({
+        business_id: businessId,
+        name: p.name,
+        description: p.description ?? null,
+        price: p.price,
+        currency: "USD",
+        is_active: true,
+        inventory_count: p.inventory_count,
+        category: p.category ?? null,
+        featured: Boolean(p.featured),
+        sort_order: i,
+      }));
+      const { error: productsError } = await admin.from("products").insert(productRows);
+      if (productsError) {
+        console.error("[install-system] seed products failed", productsError);
+        warnings.push("products_seed_failed");
       }
     }
 
@@ -291,16 +373,8 @@ serve(async (req) => {
       }
     }
 
-    if (systemType === "store") {
-      const { error: productsError } = await admin.from("products").insert([
-        { business_id: businessId, name: "Starter Product", price: 29, currency: "USD", is_active: true, inventory_count: 100 },
-        { business_id: businessId, name: "Premium Product", price: 99, currency: "USD", is_active: true, inventory_count: 25 },
-      ]);
-      if (productsError) {
-        console.error("[install-system] seed products failed", productsError);
-        warnings.push("products_seed_failed");
-      }
-    }
+    console.log(`[install-system] Seeded industry="${industryKey ?? "unknown"}" systemType=${systemType} business=${businessId}`);
+
 
     // 5) Intent bindings are written launcher-side via persistGeneratedBindings —
     //    install-system no longer seeds them. See src/services/persistGeneratedBindings.ts.

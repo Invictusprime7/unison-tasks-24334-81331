@@ -123,9 +123,12 @@ serve(async (req) => {
     } else {
       // Create a new business
       const businessName = sanitizeString(body.businessName || body.templateName || "New Business", 120);
+      const normalizedIndustry = normalizeIndustry(body.industry);
+      const insertPayload: Record<string, unknown> = { owner_id: userId, name: businessName };
+      if (normalizedIndustry) insertPayload.industry = normalizedIndustry;
       const { data: business, error: businessError } = await admin
         .from("businesses")
-        .insert({ owner_id: userId, name: businessName })
+        .insert(insertPayload)
         .select("id")
         .single();
 
@@ -135,7 +138,7 @@ serve(async (req) => {
       }
       businessId = business.id as string;
       businessCreated = true;
-      console.log("[install-system] Created new business:", businessId);
+      console.log("[install-system] Created new business:", businessId, "industry:", normalizedIndustry);
 
       // 2) Add owner membership for new businesses
       const { error: memberError } = await admin
@@ -144,6 +147,23 @@ serve(async (req) => {
       if (memberError) {
         console.error("[install-system] create membership failed", memberError);
         // Non-fatal if duplicate
+      }
+    }
+
+    // 2a) Backfill industry on existing businesses when launcher supplies it.
+    // Runtime intent routing (booking / cart.checkout / donation) reads
+    // businesses.industry to pick the correct handler branch.
+    {
+      const normalizedIndustry = normalizeIndustry(body.industry);
+      if (normalizedIndustry && !businessCreated) {
+        const { error: industryError } = await admin
+          .from("businesses")
+          .update({ industry: normalizedIndustry })
+          .eq("id", businessId);
+        if (industryError) {
+          console.error("[install-system] backfill industry failed", industryError);
+          warnings.push("industry_backfill_failed");
+        }
       }
     }
 

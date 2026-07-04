@@ -30,7 +30,7 @@ const PAY_INTENTS = [
   "pay.cancel",
 ] as const;
 
-// Action intents - CRM persistence + notifications
+// Action intents - CRM persistence + notifications + industry-scoped writes
 const ACTION_INTENTS = [
   "contact.submit",
   "contact.call",
@@ -41,6 +41,9 @@ const ACTION_INTENTS = [
   "quote.request",
   "newsletter.subscribe",
   "lead.capture",
+  "cart.add",
+  "cart.checkout",
+  "donation.start",
 ] as const;
 
 // Automation intents - event-driven workflow triggers

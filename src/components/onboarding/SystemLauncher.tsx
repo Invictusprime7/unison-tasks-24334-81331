@@ -1311,6 +1311,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       const installSystemType = selectedSystem as string;
       const installBody: any = {
         systemType: installSystemType,
+        industry: resolvedIndustry,
         businessName: businessName.trim(),
         templateName: effectiveTemplate?.label || system.name,
         templateCategory: generationCategory,

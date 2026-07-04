@@ -115,6 +115,21 @@ export function CatalogInspectorPanel({
     };
   }, [projectId, sectionTypeMap, reloadKey]);
 
+  // Auto-reload when the System Launcher (or any downstream service) reports
+  // that fresh catalog rows have been seeded for this project. Keeps the
+  // inspector in sync with `autoEmitSectionBindings` without a manual refresh.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !projectId) return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string }>).detail;
+      if (!detail?.projectId || detail.projectId === projectId) {
+        setReloadKey((k) => k + 1);
+      }
+    };
+    window.addEventListener('lovable:catalog-seeded', handler as EventListener);
+    return () => window.removeEventListener('lovable:catalog-seeded', handler as EventListener);
+  }, [projectId]);
+
   const loadRows = useCallback(async (binding: SectionDataBindingDTO) => {
     const result = await loadRowsForBinding(binding);
     const rowsArr = result.rows ?? [];

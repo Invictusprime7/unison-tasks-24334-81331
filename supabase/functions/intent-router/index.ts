@@ -470,12 +470,19 @@ async function handleBookingRequest(
   projectId: string | undefined,
   data: Record<string, any>
 ): Promise<IntentResult> {
+  // Load business early so industry can shape defaults (restaurant → reservation).
+  const bizSettingsEarly = await loadBusinessSettings(supabase, businessId);
+  const industry = (bizSettingsEarly?.industry || "").toString().toLowerCase();
+  const isRestaurant = industry === "restaurant";
+
   // Extract and normalize customer contact info
   const customerName = data.name || data.customerName || data.fullName || "";
   const customerEmail = data.email || data.customerEmail || "";
   const customerPhone = data.phone || data.customerPhone || data.phoneNumber || null;
-  const serviceName = data.service || data.serviceName || data.serviceType || "Appointment";
+  const defaultService = isRestaurant ? "Table Reservation" : "Appointment";
+  const serviceName = data.service || data.serviceName || data.serviceType || defaultService;
   const notes = data.notes || data.message || null;
+  const partySize = isRestaurant ? Number(data.partySize || data.party_size || data.guests || 2) : null;
   
   // Parse date/time - handle various input formats
   const dateInput = data.date || data.preferredDate || data.bookingDate;

@@ -112,6 +112,7 @@ import type { VariantId } from '@/sections/variants/types';
 import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { ElementIntentInspector } from "./web-builder/ElementIntentInspector";
 import { CatalogInspectorPanel } from "@/components/business-center/CatalogInspectorPanel";
+import { buildSectionTypeMap } from "@/services/autoEmitSectionBindings";
 import { SEOSettingsPanel } from "./web-builder/SEOSettingsPanel";
 import { usePageSEO } from "@/hooks/usePageSEO";
 import { generateUUID } from "@/utils/uuid";
@@ -1229,6 +1230,58 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       setRenamingProject(false);
     }
   }, [projectId, projectDisplayName]);
+
+  // ── Catalog wiring (Track B end-to-end) ──
+  // Derive sectionId → requirementKey map from the launcher snapshot so
+  // CatalogInspectorPanel + CatalogReadinessGate know each bound section's
+  // minRows requirement without a round-trip.
+  const catalogSectionTypeMap = useMemo(() => {
+    const snapshot = effectiveRouteState?.siteBundleSnapshot;
+    if (!snapshot) return {} as Record<string, string>;
+    try {
+      return buildSectionTypeMap(snapshot);
+    } catch {
+      return {};
+    }
+  }, [effectiveRouteState?.siteBundleSnapshot]);
+
+  // Re-emit site_data_bindings whenever the canonical pipeline commits a new
+  // snapshot (AI Builder edit, Playground recompile, republish). The wizard
+  // launcher already emits on first launch; this keeps bindings in sync for
+  // every subsequent structural change.
+  useEffect(() => {
+    if (!businessId || !projectId) return;
+    const handler = async (e: Event) => {
+      const snapshot =
+        (e as CustomEvent).detail?.siteBundleSnapshot ||
+        effectiveRouteState?.siteBundleSnapshot;
+      if (!snapshot?.pageRegistry?.pages) return;
+      try {
+        const { autoEmitSectionBindings } = await import(
+          '@/services/autoEmitSectionBindings'
+        );
+        const res = await autoEmitSectionBindings({
+          businessId,
+          projectId,
+          snapshot,
+        });
+        if (res.emitted > 0) {
+          try {
+            window.postMessage(
+              { type: 'CATALOG_BINDINGS_CHANGED', projectId },
+              '*',
+            );
+          } catch { /* noop */ }
+        }
+      } catch (err) {
+        console.warn('[WebBuilder] autoEmitSectionBindings on commit failed', err);
+      }
+    };
+    window.addEventListener('unison:pipeline:commit', handler);
+    return () => window.removeEventListener('unison:pipeline:commit', handler);
+  }, [businessId, projectId, effectiveRouteState?.siteBundleSnapshot]);
+
+
 
   const [previewCartVersion, setPreviewCartVersion] = useState(0);
   const previewCartManager = useMemo(
@@ -7050,6 +7103,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               <div className="fixed top-32 right-32 z-50">
                 <CatalogInspectorPanel
                   projectId={projectId}
+                  sectionTypeMap={catalogSectionTypeMap}
                   onClose={() => setCatalogPanelOpen(false)}
                 />
               </div>

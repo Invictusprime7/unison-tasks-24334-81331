@@ -463,6 +463,21 @@ export function setDefaultProjectId(projectId: string | null): void {
 }
 
 /**
+ * Set the default industry key for intent routing. Forwarded on every
+ * payload so intent-router (edge) can branch industry-specific handlers
+ * (restaurant reservations, ecommerce checkout, nonprofit donations)
+ * without a DB round-trip on cold requests.
+ */
+export function setDefaultIndustry(industry: string | null): void {
+  defaultIndustry = industry;
+  console.log("[IntentRouter] Default industry set:", industry);
+}
+
+export function getDefaultIndustry(): string | null {
+  return defaultIndustry;
+}
+
+/**
  * Get the current default business ID
  */
 export function getDefaultBusinessId(): string | null {

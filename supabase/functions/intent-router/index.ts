@@ -1011,6 +1011,19 @@ async function routeIntent(payload: IntentPayload): Promise<IntentResult> {
         result = await handleCTA(supabase, payload.businessId, payload.projectId, dataWithSource, "secondary");
         break;
       
+      case "cart.add":
+        result = await handleCartAdd(supabase, payload.businessId, payload.projectId, dataWithSource);
+        break;
+      
+      case "cart.checkout":
+        result = await handleCartCheckout(supabase, payload.businessId, payload.projectId, dataWithSource);
+        break;
+      
+      case "donation.start":
+        result = await handleDonationStart(supabase, payload.businessId, payload.projectId, dataWithSource);
+        break;
+      
+      
       case "contact.call":
       case "contact.email":
         // These are typically client-side actions (tel: or mailto: links)

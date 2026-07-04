@@ -62,7 +62,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { useIsMobile } from "@/hooks/use-mobile";
 import { templateToVFSFiles, elementToVFSPatch } from "@/utils/templateToVFS";
 import { htmlToJsx } from "@/utils/htmlToJsx";
-import { setDefaultBusinessId, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
+import { setDefaultBusinessId, setDefaultIndustry, setCurrentSystemType, setDemoMode, handleIntent, IntentPayload } from "@/runtime/intentRouter";
 import { buildRedirectPageContext } from "@/utils/redirectPageGenerator";
 // scaffoldMultiPageVFS was removed; topologyVFSScaffolder owns multi-page scaffolding now.
 import { classifyLabel, type ElementContext } from "@/utils/redirectLabelClassifier";

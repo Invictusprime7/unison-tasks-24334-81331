@@ -175,7 +175,9 @@ export function createLaunchState(
     intentRuntime: input.intentRuntime ?? true,
     businessId: input.businessId,
     projectId: input.projectId,
+    industry: input.industry ?? input.blueprint?.identity?.industry,
     manifestId: input.manifestId,
+
     entryPoint: input.entryPoint,
     runtimeManifest: input.runtimeManifest,
     siteBundle: input.siteBundle,

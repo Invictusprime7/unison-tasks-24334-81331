@@ -782,6 +782,121 @@ async function handleCTA(
   };
 }
 
+// Handle cart.add intent - append item to cart_items for the visitor session.
+async function handleCartAdd(
+  supabase: any,
+  _businessId: string,
+  _projectId: string | undefined,
+  data: Record<string, any>
+): Promise<IntentResult> {
+  const productId = data.productId || data.product_id;
+  const sessionId = data.sessionId || data.session_id || data.visitorId || null;
+  const quantity = Number(data.quantity || 1);
+
+  if (!productId) {
+    return { success: false, error: "productId is required for cart.add" };
+  }
+
+  const { data: item, error } = await supabase
+    .from("cart_items")
+    .insert({
+      session_id: sessionId,
+      user_id: data.userId || null,
+      product_id: productId,
+      quantity,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.warn("[intent-router] cart_items insert failed:", error.message);
+    return { success: false, error: error.message };
+  }
+
+  return {
+    success: true,
+    message: "Added to cart",
+    data: { itemId: item?.id, productId, quantity },
+  };
+}
+
+// Handle cart.checkout — persist an order row (ecommerce industry writes).
+// For sites with Stripe wired the client should follow up with create-checkout;
+// this handler guarantees a durable order record either way.
+async function handleCartCheckout(
+  supabase: any,
+  businessId: string,
+  projectId: string | undefined,
+  data: Record<string, any>
+): Promise<IntentResult> {
+  const items = Array.isArray(data.items) ? data.items : [];
+  const subtotal = Number(data.subtotal || data.total || 0);
+  const total = Number(data.total || subtotal || 0);
+  const customerEmail = data.customerEmail || data.email || null;
+  const customerName = data.customerName || data.name || null;
+
+  const { data: order, error } = await supabase
+    .from("orders")
+    .insert({
+      business_id: businessId,
+      user_id: data.userId || null,
+      session_id: data.sessionId || data.visitorId || null,
+      customer_email: customerEmail,
+      customer_name: customerName,
+      items,
+      subtotal,
+      tax: Number(data.tax || 0),
+      total,
+      currency: (data.currency || "USD").toString().toUpperCase().slice(0, 3),
+      status: "pending",
+      metadata: { projectId: projectId || null, source: data._source || "published" },
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("[intent-router] orders insert failed:", error);
+    return { success: false, error: error.message };
+  }
+
+  // Best-effort: also create a lead so the sale shows up in the CRM.
+  if (customerEmail || customerName) {
+    await createLead(supabase, businessId, projectId, {
+      email: customerEmail,
+      name: customerName,
+      source: "cart_checkout",
+      message: `Order ${order?.id} for ${items.length} item(s), total ${total}`,
+    }).catch(() => undefined);
+  }
+
+  return {
+    success: true,
+    message: "Order created",
+    data: { orderId: order?.id, total },
+  };
+}
+
+// Handle donation.start — nonprofit-specific: capture donor intent as a lead.
+async function handleDonationStart(
+  supabase: any,
+  businessId: string,
+  projectId: string | undefined,
+  data: Record<string, any>
+): Promise<IntentResult> {
+  const lead = await createLead(supabase, businessId, projectId, {
+    email: data.email || data.customerEmail || null,
+    name: data.name || data.donorName || null,
+    phone: data.phone || null,
+    message: `Donation intent: ${data.amount || "unspecified"} ${data.currency || "USD"}${data.campaign ? ` — ${data.campaign}` : ""}`,
+    source: "donation",
+  });
+  return {
+    success: true,
+    message: "Thanks for your support!",
+    data: { leadId: lead?.id },
+  };
+}
+
 // Handle button.click intent - generic button automation trigger
 async function handleButtonClick(
   supabase: any,

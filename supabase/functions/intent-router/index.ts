@@ -538,6 +538,9 @@ async function handleBookingRequest(
     metadata: {
       leadId: lead.id,
       projectId: projectId || null,
+      industry: industry || null,
+      partySize: partySize,
+      bookingType: isRestaurant ? "reservation" : "appointment",
       rawData: data,
     },
   };

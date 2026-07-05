@@ -62,6 +62,81 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_builder_proposals: {
+        Row: {
+          applied_at: string | null
+          apply_result: Json | null
+          business_id: string | null
+          created_at: string
+          dry_run_report: Json | null
+          id: string
+          kind: Database["public"]["Enums"]["ai_builder_proposal_kind"]
+          payload: Json
+          project_id: string | null
+          proposed_by: string
+          rationale: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: Database["public"]["Enums"]["ai_builder_proposal_status"]
+          summary: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          applied_at?: string | null
+          apply_result?: Json | null
+          business_id?: string | null
+          created_at?: string
+          dry_run_report?: Json | null
+          id?: string
+          kind: Database["public"]["Enums"]["ai_builder_proposal_kind"]
+          payload?: Json
+          project_id?: string | null
+          proposed_by: string
+          rationale?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["ai_builder_proposal_status"]
+          summary?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          applied_at?: string | null
+          apply_result?: Json | null
+          business_id?: string | null
+          created_at?: string
+          dry_run_report?: Json | null
+          id?: string
+          kind?: Database["public"]["Enums"]["ai_builder_proposal_kind"]
+          payload?: Json
+          project_id?: string | null
+          proposed_by?: string
+          rationale?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["ai_builder_proposal_status"]
+          summary?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_builder_proposals_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_builder_proposals_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_code_patterns: {
         Row: {
           code_snippet: string
@@ -3850,6 +3925,16 @@ export type Database = {
         | "cancelled"
       agent_tier: "free" | "pro" | "enterprise" | "system"
       agent_ui_kind: "hidden" | "widget" | "modal" | "inline"
+      ai_builder_proposal_kind:
+        | "sql_migration"
+        | "edge_function"
+        | "config_change"
+      ai_builder_proposal_status:
+        | "pending"
+        | "approved"
+        | "rejected"
+        | "applied"
+        | "failed"
       app_role: "admin" | "user"
       blend_mode:
         | "normal"
@@ -4003,6 +4088,18 @@ export const Constants = {
       ],
       agent_tier: ["free", "pro", "enterprise", "system"],
       agent_ui_kind: ["hidden", "widget", "modal", "inline"],
+      ai_builder_proposal_kind: [
+        "sql_migration",
+        "edge_function",
+        "config_change",
+      ],
+      ai_builder_proposal_status: [
+        "pending",
+        "approved",
+        "rejected",
+        "applied",
+        "failed",
+      ],
       app_role: ["admin", "user"],
       blend_mode: [
         "normal",

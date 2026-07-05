@@ -24,6 +24,7 @@ import { executeIntent, configureIntentExecutor } from './intentExecutor';
 import { createCheckoutSession, resolveCheckoutSessionBody } from './checkoutClient';
 import { setupEventBridge, createInngestEventsManager } from '@/lib/inngest-event-bridge';
 import type { InteractiveIconProps } from '@/components/ui/InteractiveIcon';
+import { BROWSER_CART_EVENT, readBrowserCart } from './browserCartManager';
 
 // ============ TYPES ============
 
@@ -444,16 +445,56 @@ export function TemplateRuntimeProvider({ config, children }: TemplateRuntimePro
     }
   };
 
-  // Refresh cart state
+  // Refresh cart state — merges Supabase-backed cart with in-preview browser cart
+  // so the shopping-cart icon badge stays in sync across every industry template
+  // regardless of which cart manager handled the cart.add intent.
   const refreshCart = useCallback(async () => {
-    const cart = await getCart(sessionId, user?.id);
-    setCartItemCount(cart.items.length);
-    setCartTotal(cart.total);
-  }, [sessionId, user?.id]);
+    const remote = await getCart(sessionId, user?.id);
+    const local = readBrowserCart({
+      businessId: config.businessId,
+      siteId: config.siteId,
+      sessionId,
+    });
+
+    const sumQty = (items: Array<{ quantity?: number }>) =>
+      items.reduce((sum, it) => sum + (it.quantity || 1), 0);
+
+    const remoteCount = sumQty(remote.items);
+    const localCount = sumQty(local.items);
+    const remoteTotal = remote.total || 0;
+    const localTotal = local.total || 0;
+
+    // Prefer whichever cart has items — in Wizard/Builder preview, browser cart is
+    // authoritative; on published sites, Supabase cart is authoritative.
+    const useLocal = localCount > 0 && remoteCount === 0;
+    setCartItemCount(useLocal ? localCount : remoteCount || localCount);
+    setCartTotal(useLocal ? localTotal : remoteTotal || localTotal);
+  }, [sessionId, user?.id, config.businessId, config.siteId]);
 
   // Initial cart load
   useEffect(() => {
     refreshCart();
+  }, [refreshCart]);
+
+  // Live cart badge — every industry template's shopping-cart icon reflects
+  // add-to-bag / add-to-cart / remove / clear intents the instant they fire.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as
+        | { items?: Array<{ quantity?: number; price?: number }>; total?: number }
+        | undefined;
+      if (detail?.items) {
+        const count = detail.items.reduce((sum, it) => sum + (it.quantity || 1), 0);
+        setCartItemCount(count);
+        setCartTotal(detail.total ?? 0);
+      } else {
+        // Fallback: re-read from source of truth
+        refreshCart();
+      }
+    };
+    window.addEventListener(BROWSER_CART_EVENT, handler as EventListener);
+    return () => window.removeEventListener(BROWSER_CART_EVENT, handler as EventListener);
   }, [refreshCart]);
 
   // Auth actions

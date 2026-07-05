@@ -24,6 +24,7 @@ import { executeIntent, configureIntentExecutor } from './intentExecutor';
 import { createCheckoutSession, resolveCheckoutSessionBody } from './checkoutClient';
 import { setupEventBridge, createInngestEventsManager } from '@/lib/inngest-event-bridge';
 import type { InteractiveIconProps } from '@/components/ui/InteractiveIcon';
+import { BROWSER_CART_EVENT, readBrowserCart } from './browserCartManager';
 
 // ============ TYPES ============
 

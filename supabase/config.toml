@@ -143,3 +143,9 @@ verify_jwt = false
 
 [functions.ghl-reactions-runner]
 verify_jwt = false
+
+[functions.ai-builder-propose]
+verify_jwt = true
+
+[functions.ai-builder-apply]
+verify_jwt = true

@@ -160,57 +160,49 @@ export function createLaunchState(
     | 'templateCategory' | 'aesthetic' | 'vfsFiles' | 'preloadedIntents'
   > & Partial<LaunchState>
 ): LaunchState {
+  const blueprint: LaunchBlueprint = input.blueprint || {
+    version: '1.0',
+    identity: {
+      industry: 'universal',
+      business_model: input.systemType,
+      primary_goal: `Grow ${input.businessName}`,
+    },
+    brand: {
+      business_name: input.businessName,
+      tagline: `Professional ${input.systemName.toLowerCase()} services`,
+      tone: 'professional',
+      typography: {
+        headingFont: 'system',
+        bodyFont: 'system',
+      },
+    },
+    design: {
+      dominantStyle: input.aesthetic || 'modern',
+    },
+    intents: input.preloadedIntents.map(i => ({ intent: i })),
+  };
+
   return {
+    // Spread ALL caller-provided fields first so nothing gets dropped
+    // (e.g. setupSnapshot, nativeReadinessManifest, routes, siteBundle,
+    // systemsBuildContext, manifestId, projectId, launchReliabilityMode…).
+    // This keeps LaunchState the canonical source of truth for the launcher
+    // → WebBuilder → VFSPreview handoff and prevents silent disconnects
+    // between wizard selections, siteBundleSnapshot and theme token seeds.
+    ...input,
+
+    // Normalize required + derived fields with defaults.
     systemType: input.systemType,
     systemName: input.systemName,
     businessName: input.businessName,
     templateName: input.templateName,
     templateCategory: input.templateCategory,
-    aesthetic: input.aesthetic,
-    themePresetId: input.themePresetId,
-    templateId: input.templateId,
     vfsFiles: input.vfsFiles,
     preloadedIntents: input.preloadedIntents || [],
     startInPreview: input.startInPreview ?? true,
     intentRuntime: input.intentRuntime ?? true,
-    businessId: input.businessId,
-    projectId: input.projectId,
-    industry: input.industry ?? input.blueprint?.identity?.industry,
-    manifestId: input.manifestId,
-
-    entryPoint: input.entryPoint,
-    runtimeManifest: input.runtimeManifest,
-    siteBundle: input.siteBundle,
-    sitePlan: input.sitePlan,
-    systemsBuildContext: input.systemsBuildContext,
-    siteBundleSnapshot: input.siteBundleSnapshot,
-    materializedPlayground: input.materializedPlayground,
-    compiledPlayground: input.compiledPlayground,
-    pipelineManifest: input.pipelineManifest,
-    wizardSelections: input.wizardSelections,
-    wizardSeed: input.wizardSeed,
-    deferTopologyHydration: input.deferTopologyHydration,
-    blueprint: input.blueprint || {
-      version: '1.0',
-      identity: {
-        industry: 'universal',
-        business_model: input.systemType,
-        primary_goal: `Grow ${input.businessName}`,
-      },
-      brand: {
-        business_name: input.businessName,
-        tagline: `Professional ${input.systemName.toLowerCase()} services`,
-        tone: 'professional',
-        typography: {
-          headingFont: 'system',
-          bodyFont: 'system',
-        },
-      },
-      design: {
-        dominantStyle: input.aesthetic || 'modern',
-      },
-      intents: input.preloadedIntents.map(i => ({ intent: i })),
-    },
+    industry: input.industry ?? blueprint.identity?.industry,
+    blueprint,
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || new Date().toISOString(),
   };

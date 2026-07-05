@@ -754,6 +754,69 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     setDroppedFiles([]);
     setIsLoading(true);
 
+    // ── Icon Wire Fast Path ──────────────────────────────────────────────
+    // Deterministic NL → data-ut-* stamp on the named Lucide icon in the
+    // current preview file. Skips the LLM. Also handles workflow-ref prompts
+    // ("wire the Bell icon to workflow <uuid>") by delegating to the GHL path.
+    if (!isLaunchPlanningRequest && droppedFiles.length === 0 && layoutOps) {
+      try {
+        const iconIntent = parseIconWireIntent(userContent);
+        if (iconIntent && iconIntent.confidence >= 0.7) {
+          // Workflow refs — delegate to the existing GHL wire fast path below.
+          if (!iconIntent.workflowRef && iconIntent.coreIntent) {
+            const previewSrc = layoutOps.getPreviewCode();
+            const stamp = stampIconIntentInSource({
+              source: previewSrc,
+              iconName: iconIntent.iconName,
+              coreIntent: iconIntent.coreIntent,
+              iconKey: iconIntent.iconKey,
+              placement: iconIntent.placement,
+              sectionHint: iconIntent.sectionHint,
+            });
+
+            if (stamp.ok) {
+              const summary = `Wire <${iconIntent.iconName}/> → ${iconIntent.coreIntent}` +
+                (iconIntent.placement ? ` (${iconIntent.placement})` : '');
+              const applied = layoutOps.applyLayoutCode(stamp.nextSource, summary);
+              const badge = applied ? '✓' : '⚠';
+              const details = [
+                `${badge} Stamped **${stamp.matches}** \`<${iconIntent.iconName}/>\` element${stamp.matches === 1 ? '' : 's'} in the current file`,
+                `→ \`data-ut-intent="${iconIntent.coreIntent}"\`` +
+                  (iconIntent.iconKey ? `, \`data-ut-icon-key="${iconIntent.iconKey}"\`` : '') +
+                  (iconIntent.placement ? `, \`data-ut-placement="${iconIntent.placement}"\`` : ''),
+                '',
+                applied
+                  ? '_Runtime autoBinder + TemplateRuntimeProvider will now handle clicks on this icon end-to-end._'
+                  : '_Preview refused the patch — revert from history if unexpected._',
+              ].join('\n');
+              setMessages((prev) => [
+                ...prev,
+                { id: generateId(), role: 'assistant', content: details, timestamp: new Date() },
+              ]);
+              setIsLoading(false);
+              return;
+            }
+
+            // Fall through with an explanatory assistant message so the LLM
+            // doesn't get a second bite — the icon just wasn't in this file.
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: generateId(),
+                role: 'assistant',
+                content: `⚠ Couldn't find a \`<${iconIntent.iconName}/>\` element in the current preview file. Open the page/section that contains this icon and try again, or specify the section (e.g. "…in navbar").`,
+                timestamp: new Date(),
+              },
+            ]);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('[AIBuilderPanel] Icon wire fast-path error:', err);
+      }
+    }
+
     // ── GHL Wire Fast Path ───────────────────────────────────────────────
     // Deterministic NL → site_intent_bindings write for GoHighLevel workflows.
     if (!isLaunchPlanningRequest && droppedFiles.length === 0 && projectId && businessId) {

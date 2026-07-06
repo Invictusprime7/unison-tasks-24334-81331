@@ -221,6 +221,24 @@ function applyWizardSeedToComposition(
           if (isBlank(props.tagline) && seed.tagline) {
             props.tagline = seed.tagline;
           }
+          // Merge wizard-seed socials into footer.socials so that the runtime
+          // Footer renders lucide icons even when the composition step was
+          // bypassed. Seed uses `href`; Footer runtime uses `url`.
+          if (Array.isArray(seed.socials) && seed.socials.length > 0) {
+            const existing = (Array.isArray(props.socials) ? props.socials : []) as Array<{ platform?: string; url?: string; href?: string }>;
+            const byPlatform = new Map<string, { platform: string; url: string }>();
+            for (const s of existing) {
+              const p = String(s?.platform || '').toLowerCase();
+              if (p) byPlatform.set(p, { platform: p, url: (s.url || s.href || '#') });
+            }
+            for (const s of seed.socials) {
+              const p = String(s?.platform || '').toLowerCase();
+              if (!p) continue;
+              const url = s.href || (s as { url?: string }).url || '#';
+              byPlatform.set(p, { platform: p, url });
+            }
+            props.socials = Array.from(byPlatform.values());
+          }
         }
         break;
       }

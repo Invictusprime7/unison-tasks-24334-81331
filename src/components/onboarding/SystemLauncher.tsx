@@ -1538,12 +1538,22 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           }
           if (sec.type === 'footer') {
             const existing = ((sec.props as any).socials || []) as { platform: string; url: string }[];
-            // Prefer user-supplied URLs; fall back to template's existing entries
-            // for any platforms the user did not fill in. If the user supplied
-            // any socials at all, they become the canonical list.
-            const merged = userSocials.length > 0
-              ? userSocials
-              : existing.filter((s) => s && s.url && s.url !== '#');
+            // Merge policy (hardened):
+            //  • If the user supplied any socials, those become the canonical
+            //    list AND we backfill any platforms the template exposed that
+            //    the user didn't fill in (so icons still render).
+            //  • If the user supplied none, keep the template's socials
+            //    verbatim (placeholder `#` URLs are intentional — the icons
+            //    must still show so the layout doesn't collapse).
+            //  • Always de-duplicate by platform (user > template).
+            const byPlatform = new Map<string, { platform: string; url: string }>();
+            for (const s of existing) {
+              if (s && s.platform) byPlatform.set(s.platform.toLowerCase(), s);
+            }
+            for (const s of userSocials) {
+              if (s && s.platform) byPlatform.set(s.platform.toLowerCase(), s);
+            }
+            const merged = Array.from(byPlatform.values());
             return {
               ...sec,
               props: { ...(sec.props as any), brand, socials: merged },

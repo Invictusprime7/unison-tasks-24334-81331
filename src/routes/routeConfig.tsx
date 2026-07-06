@@ -33,6 +33,7 @@ const ProjectSetup = lazy(() => import("@/pages/ProjectSetup"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const TeamManagement = lazy(() => import("@/pages/TeamManagement"));
 const AIChat = lazy(() => import("@/pages/AIChat"));
+const OAuthConsent = lazy(() => import("@/pages/OAuthConsent"));
 
 export type RouteShell = "public" | "onboarding" | "workspace" | "project" | "builder" | "focus";
 export type RouteChrome = "none" | "legacy" | "canonical" | "fullscreen";
@@ -97,6 +98,17 @@ export const appRoutes: AppRouteConfig[] = [
     meta: {
       id: "auth",
       title: "Sign in",
+      section: "auth",
+      shell: "public",
+      chrome: "none",
+    },
+  },
+  {
+    path: "/.lovable/oauth/consent",
+    element: withAsyncBoundary(<OAuthConsent />),
+    meta: {
+      id: "oauth-consent",
+      title: "Authorize app",
       section: "auth",
       shell: "public",
       chrome: "none",

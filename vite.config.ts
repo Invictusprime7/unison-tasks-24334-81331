@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "node:path";
 import { componentTagger } from "lovable-tagger";
 import { visualizer } from 'rollup-plugin-visualizer';
+import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/supabase/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -14,6 +15,7 @@ export default defineConfig(({ mode }) => ({
     react({
       jsxImportSource: undefined, // Use automatic JSX runtime
     }),
+    mcpPlugin(),
     mode === "development" && componentTagger(),
     mode === "analyze" && visualizer({
       filename: "dist/bundle-analysis.html",

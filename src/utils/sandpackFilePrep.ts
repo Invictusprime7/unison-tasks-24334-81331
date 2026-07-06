@@ -40,14 +40,30 @@ const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
  */
 function buildBaseCssForPreset(presetId?: string | null): string {
   const preset = presetId ? THEME_PRESETS.find((p) => p.id === presetId) : null;
-  if (!preset) {
+  if (preset) {
+    return buildThemedIndexCss(preset);
+  }
+  // Soft fallback: a missing themePresetId used to hard-throw and crash the
+  // preview mount whenever the Builder opened without a wizard-launched draft
+  // (e.g. blank canvas, template import, direct route load). We now warn and
+  // fall back to the first preset so the preview stays alive. The Wizard →
+  // Launcher path still threads themePresetId unconditionally; this guard is
+  // only for callers that legitimately have no theme yet.
+  const fallback = THEME_PRESETS[0];
+  if (!fallback) {
     throw new PreviewPipelineError(
       'prep',
-      'Missing wizard themePresetId — refusing to apply a default/minimal template preset.',
-      { recoverableByRelaunch: true },
+      'No theme presets registered — cannot build /src/index.css.',
+      { recoverableByRelaunch: false },
     );
   }
-  return buildThemedIndexCss(preset);
+  if (typeof console !== 'undefined') {
+    console.warn(
+      `[sandpackFilePrep] Missing themePresetId — falling back to "${fallback.id}". ` +
+        'Wizard-launched sites should always thread themePresetId; check the caller.',
+    );
+  }
+  return buildThemedIndexCss(fallback);
 }
 
 // SEMANTIC_CSS_VARS removed — CSS authority now flows through snapshotProjector

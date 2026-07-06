@@ -46,6 +46,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@huggingface/transformers": "^3.8.1",
     "@lovable.dev/cloud-auth-js": "^1.1.2",
+    "@lovable.dev/mcp-js": "^0.20.0",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -120,7 +121,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
     "ws": "^8.18.3",
-    "zod": "^4.1.12"
+    "zod": "^4.4.3"
   },
   "overrides": {
     "prismjs": "^1.30.0",

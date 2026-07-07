@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, DollarSign, Trash2, Edit } from "lucide-react";
+import { Search, Plus, DollarSign, Trash2, Edit, Mail, Phone, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCRMActions } from "@/hooks/useCRMActions";
 import { sendInngestEvent } from "@/services/inngestService";
@@ -96,7 +96,64 @@ export function CRMLeads({ businessId, projectId }: CRMLeadsProps = {}) {
   useEffect(() => {
     fetchLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBusinessId, projectId]);
+  }, [selectedBusinessId, projectId, businessId]);
+
+  // Milestone 1: realtime — new leads submitted from the live site appear
+  // in CRM without a page refresh. Scoped by the currently selected business.
+  useEffect(() => {
+    const scopeBiz = businessId || (selectedBusinessId !== "all" ? selectedBusinessId : null);
+    if (!scopeBiz && !projectId) return;
+    const filter = projectId
+      ? `project_id=eq.${projectId}`
+      : `business_id=eq.${scopeBiz}`;
+    const channel = supabase
+      .channel(`crm_leads_${scopeBiz || projectId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'crm_leads', filter },
+        (payload: any) => {
+          if (payload.eventType === 'INSERT') {
+            toast.success(`New lead: ${payload.new?.title || payload.new?.name || 'Untitled'}`);
+          }
+          fetchLeads();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessId, projectId, selectedBusinessId]);
+
+  // Milestone 1: quick "Mark contacted" writes crm_activities + flips status.
+  async function markContacted(lead: Lead) {
+    try {
+      await supabase.from('crm_leads').update({ status: 'contacted' }).eq('id', lead.id);
+      const bizId = lead.business_id || activeBizId;
+      if (bizId) {
+        await supabase.from('crm_activities').insert({
+          business_id: bizId,
+          lead_id: lead.id,
+          type: 'contacted',
+          notes: 'Marked contacted from CRM',
+        });
+      }
+      toast.success('Marked as contacted');
+      fetchLeads();
+    } catch (e) {
+      console.warn('[CRMLeads] markContacted failed', e);
+      toast.error('Could not mark contacted');
+    }
+  }
+
+  function extractContact(lead: Lead): { email?: string; phone?: string } {
+    const md = (lead.metadata || {}) as Record<string, any>;
+    const raw = (md.rawData || {}) as Record<string, any>;
+    return {
+      email: md.email || raw.email || undefined,
+      phone: md.phone || raw.phone || raw.phoneNumber || undefined,
+    };
+  }
 
   async function loadBusinesses() {
     try {
@@ -476,20 +533,34 @@ export function CRMLeads({ businessId, projectId }: CRMLeadsProps = {}) {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(lead)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(lead.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {(() => {
+                          const { email, phone } = extractContact(lead);
+                          return (
+                            <>
+                              {email && (
+                                <Button variant="ghost" size="icon" title={`Email ${email}`} asChild>
+                                  <a href={`mailto:${email}`}><Mail className="h-4 w-4" /></a>
+                                </Button>
+                              )}
+                              {phone && (
+                                <Button variant="ghost" size="icon" title={`Call ${phone}`} asChild>
+                                  <a href={`tel:${phone}`}><Phone className="h-4 w-4" /></a>
+                                </Button>
+                              )}
+                              {lead.status !== 'contacted' && lead.status !== 'won' && lead.status !== 'lost' && (
+                                <Button variant="ghost" size="icon" title="Mark contacted" onClick={() => markContacted(lead)}>
+                                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                </Button>
+                              )}
+                              <Button variant="ghost" size="icon" onClick={() => openEditDialog(lead)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleDelete(lead.id)}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </>
+                          );
+                        })()}
                       </div>
                     </TableCell>
                   </TableRow>

@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, DollarSign, Trash2, Edit } from "lucide-react";
+import { Search, Plus, DollarSign, Trash2, Edit, Mail, Phone, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCRMActions } from "@/hooks/useCRMActions";
 import { sendInngestEvent } from "@/services/inngestService";
@@ -533,20 +533,34 @@ export function CRMLeads({ businessId, projectId }: CRMLeadsProps = {}) {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(lead)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(lead.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {(() => {
+                          const { email, phone } = extractContact(lead);
+                          return (
+                            <>
+                              {email && (
+                                <Button variant="ghost" size="icon" title={`Email ${email}`} asChild>
+                                  <a href={`mailto:${email}`}><Mail className="h-4 w-4" /></a>
+                                </Button>
+                              )}
+                              {phone && (
+                                <Button variant="ghost" size="icon" title={`Call ${phone}`} asChild>
+                                  <a href={`tel:${phone}`}><Phone className="h-4 w-4" /></a>
+                                </Button>
+                              )}
+                              {lead.status !== 'contacted' && lead.status !== 'won' && lead.status !== 'lost' && (
+                                <Button variant="ghost" size="icon" title="Mark contacted" onClick={() => markContacted(lead)}>
+                                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                </Button>
+                              )}
+                              <Button variant="ghost" size="icon" onClick={() => openEditDialog(lead)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleDelete(lead.id)}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </>
+                          );
+                        })()}
                       </div>
                     </TableCell>
                   </TableRow>

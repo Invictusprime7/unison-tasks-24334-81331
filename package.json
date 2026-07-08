@@ -135,7 +135,11 @@
     "systeminformation": "^5.31.0",
     "cookie": "^0.7.0",
     "undici": "^7.10.0",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "protobufjs": "^8.6.5"
+  },
+  "resolutions": {
+    "protobufjs": "^8.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",

@@ -1,130 +1,184 @@
-# Milestone 1 — Golden Journey: Local Service / Booking
 
-**Vertical chosen:** `local-service` (covers salon, cleaning, contractor, barber, detailing, photographer). Salon already has the most complete intent profile + catalog seeding, so we harden that path first and use `local-service` as the second vertical on the same rails.
+# Blueprint — System Launcher Theming & Template Injection (SiteBundleSnapshot-Driven)
 
-**Definition of done:** a non-technical owner can complete the full journey below in one session, from a fresh account, without hitting a dead end or needing developer help.
+Purpose: Document the runtime contract that turns Wizard selections into a themed, template-injected preview, and enumerate every file needed to port this subsystem into a local dev clone.
 
 ---
 
-## The 9 steps of the journey (and what we do for each)
+## 1. Runtime Contract (single execution hierarchy)
 
 ```text
-1. Sign up
-2. Create business profile
-3. Launch site (wizard)
-4. Add services / products
-5. Preview live data
-6. Publish
-7. Visitor submits lead / booking
-8. Lead appears in CRM
-9. Owner gets email (SMS optional) and can follow up
+WizardSelections (industry, themePresetId, templateId, capabilities, contact)
+        │
+        ▼
+BusinessBlueprint            ← src/platform/core/blueprintSchema.ts
+        │  createBlueprintFromIndustry()
+        ▼
+CanonicalPipeline (stages)   ← src/platform/core/canonicalPipeline.ts
+  1. Resolve topology         (SiteTopologyPlanner)
+  2. Materialize PageRegistry (wizardPlaygroundMaterializer)
+  3. Scaffold VFS pages       (topologyVFSScaffolder)
+  4a. Inject template bodies  (sandpackFilePrep.normalizeLauncherFiles)
+  4b. Inject theme CSS        (sandpackFilePrep.buildBaseCssForPreset)  ← theming injection point
+  5. Auto-bind intents        (autoEmitSectionBindings + wizardBindingBridge)
+  6. Emit canonical router    (topologyRouterGenerator → /src/App.tsx)
+        │
+        ▼
+SiteBundleSnapshot           ← single source of truth
+  { registry, files, bindings, theme, capabilities, contract }
+        │
+        ├─► VFS commit         (vfsCommitService)
+        ├─► Preview            (unifiedPreviewPipeline → VFSPreview + Sandpack)
+        ├─► Persistence        (builder_drafts.snapshot / launcherHandoffPersistence)
+        └─► Publish/Deploy     (deploymentService + publishAttestation)
 ```
 
-### 1. Sign up
-- Keep existing email + Google auth on `/auth`.
-- After sign-up, force redirect to `/onboarding` (not `/dashboard`) if no business exists yet.
-- Auto-create a `profiles` row (already wired via trigger) and a default `user_subscriptions` row (already wired).
-
-### 2. Create business profile
-- One short form in `/onboarding`: business name, industry (default `local-service`, salon preselectable), city, phone, contact email.
-- Writes to `businesses` + `business_members(owner)` + `business_setup_progress`.
-- Persists `industry` so the intent runtime + catalog seeding branch correctly.
-
-### 3. Launch site (wizard)
-- Reuse existing `SystemLauncher` / wizard. Force `themePresetId` to always be set (recent soft-fallback stays as safety net).
-- Wizard calls `install-system` edge function with `{ businessId, industry, templateId, themePresetId }`.
-- `install-system` seeds `services` (haircut, color, blowout / cleaning visit / consultation, etc. per industry) via existing `industrySeeds.ts`. Verify local-service seeds exist; add if missing.
-
-### 4. Add services / products
-- New minimal `/business/catalog` page (tabs: Services, Products) using existing `services` / `products` tables.
-- CRUD with name, price, duration (services), description, active toggle. RLS scoped by `business_id` via `is_business_member`.
-- Optional; the seeded rows from step 3 already make the site usable.
-
-### 5. Preview live data
-- Preview surface (`WebBuilder` / `VFSPreview`) already hydrates from `builder_drafts`. Verify the services/products from step 3–4 render in the site's Services section by binding the catalog hydration module to the live table (already stubbed as `catalogHydrationModule.ts`).
-- Add a small "Live data" badge in preview when the section is reading real rows vs seed placeholder.
-
-### 6. Publish
-- Publish button in Web Builder calls existing publish flow. Enforce `isPublishReady` gate (already stricter than preview). Required capabilities for local-service: `contact.call`, `quote.request` or `booking.create`, `contact.submit`. Block publish with a single actionable message if any are missing (not a wall of errors).
-- On success: show live URL + copy button + "Send me the link" email.
-
-### 7. Visitor submits lead / booking
-- Public site CTAs already fire `data-ut-intent`. Ensure the `intent-router` edge function handles:
-  - `contact.submit` → `crm_leads` (source=`contact_form`)
-  - `quote.request` → `crm_leads` (source=`quote`)
-  - `booking.create` → `bookings` row + `crm_leads` (source=`booking`)
-- Add missing input validation (Zod) and CORS on the edge function response.
-
-### 8. Lead appears in CRM
-- `/crm` Leads view already exists. Verify realtime subscription on `crm_leads` filtered by `business_id` so new submissions appear without refresh.
-- Show source, contact info, service requested, timestamp, and a "Mark contacted" action that writes `crm_activities`.
-
-### 9. Owner notification + follow-up
-- On insert into `crm_leads` / `bookings`, trigger `send-transactional-email` (Lovable Emails) to the business `notification_email` with a compact summary + deep link back to `/crm`.
-- SMS optional / behind a "Connect SMS" button (GatewayAPI connector); do not block the journey on it in Milestone 1.
-- Follow-up: from the lead row, one-click "Reply via email" opens `mailto:` prefilled; "Call" opens `tel:` on mobile.
+Non-negotiable rules (already enforced in this repo):
+- `themePresetId` MUST thread unconditionally from Wizard into Stage 4b.
+- Stage 4b overwrites `/src/index.css` for every industry (no per-industry guard).
+- `/src/App.tsx` is ALWAYS deterministic; AI never authors it.
+- `buildBaseCssForPreset` soft-falls back to `THEME_PRESETS[0]` when preset id is missing (keeps preview alive) but logs a `console.warn` so wizard flows surface the drift.
+- After Wizard runs, preview NEVER falls back to editorial/default seed — hydration reads `builder_drafts` via `launcherHandoffPersistence`.
 
 ---
 
-## Technical work list (grouped by area)
+## 2. Theming Injection — Contract Detail
 
-**Auth & onboarding**
-- Redirect gate: signed-in user with no business → `/onboarding`.
-- Onboarding form + write path (`businesses`, `business_members`, `business_setup_progress`).
+Location: `src/utils/sandpackFilePrep.ts` → `buildBaseCssForPreset(presetId)`.
 
-**Launcher & seeding**
-- Confirm `install-system` writes `industry` on `businesses` and seeds `services` for `local-service` (add seeds if missing in `supabase/functions/install-system/industrySeeds.ts`).
-- Keep the recent `buildBaseCssForPreset` soft fallback; always pass `themePresetId` from wizard.
+Inputs
+- `presetId: string | null` from `WizardSelections.themePresetId`
+- `THEME_PRESETS[]` (industry-neutral palette+typography registry)
+- `industryThemePresetMap` (`src/components/onboarding/industryThemePresetMap.ts`) — defaults per industry when the wizard doesn't pick a preset
 
-**Catalog UI**
-- `/business/catalog` page: list + create/edit/delete for `services` and `products`. Reuse shadcn table + dialog.
+Output
+- `/src/index.css` with:
+  - `@tailwind base/components/utilities`
+  - `:root` HSL tokens (background/foreground/primary/secondary/muted/accent/border/ring)
+  - `.dark` overrides
+  - Font-face + `--font-sans` / `--font-heading`
+  - `AESTHETIC: <label>` marker comment (used by tests + debug tools)
 
-**Preview binding**
-- Wire `catalogHydrationModule` to fetch `services` / `products` for the current `business_id` and inject into the Services/Products section props at preview time.
-
-**Publish gate**
-- Trim publish blockers to the small set that actually breaks the journey; make the failure message user-friendly.
-
-**Intent router (edge function)**
-- Zod validation on payloads.
-- Branches: `contact.submit`, `quote.request`, `booking.create`.
-- Writes lead + optional booking, then invokes `send-transactional-email`.
-- Return `{ ok, leadId }` with CORS.
-
-**Notifications**
-- Use existing Lovable Emails infra + `send-transactional-email` + a new template `new-lead-notification` (owner-facing).
-- Uses `businesses.notification_email` (fallback: owner's auth email).
-
-**CRM view**
-- Realtime channel on `crm_leads` filtered by `business_id`.
-- "Mark contacted" writes `crm_activities`.
-
-**Tests**
-- One Playwright happy-path script that runs steps 1–9 against localhost, screenshotting each step.
-- Vitest: intent-router payload validation + lead insert shape.
+Failure modes handled
+- Missing `presetId` → soft fallback + warn (non-recoverable throw only if `THEME_PRESETS` is empty).
+- Missing registry entry → same soft fallback path.
+- Downstream `buildPreviewArtifacts` no longer crashes on `undefined.forbidden` (fixed in `runFullPreflight`).
 
 ---
 
-## Out of scope for Milestone 1
+## 3. Template Injection — Contract Detail
 
-- Other industries beyond salon/local-service (restaurant, SaaS, ecommerce, etc.) — they keep working but are not the golden path.
-- SMS notifications (button present, wiring optional).
-- Advanced CRM (pipeline automations, workflows) — already exist, not part of the golden loop.
-- Payments / checkout.
-- Custom domains.
+Location: `src/utils/sandpackFilePrep.ts` → `normalizeLauncherFiles(files, selections)`.
+
+Steps
+1. Merge scaffolded page shells from `topologyVFSScaffolder`.
+2. For each page in `PageRegistry`, resolve section variants via `src/sections/variants/registry.ts` and emit JSX using `renderJSX(extractedContent)`.
+3. Sanitize JSX (`aiCodeCleaner.fixJsxVoidElements`, `fixJsxStyleStrings`).
+4. Bind interactive elements to canonical `data-ut-intent` values (never legacy).
+5. Guarantee entry points: `/src/main.tsx`, `/src/App.tsx`, `/src/index.css` (scaffold-normalization policy).
 
 ---
 
-## Suggested execution order (small PRs)
+## 4. SiteBundleSnapshot as Migration Unit
 
-1. Onboarding redirect + business profile form.
-2. Confirm/patch `install-system` seeds for local-service; thread `themePresetId` unconditionally.
-3. Catalog CRUD page.
-4. Preview hydration from live `services` / `products`.
-5. Intent router hardening (validation + booking branch + email trigger).
-6. Owner email template + wiring.
-7. CRM realtime + "Mark contacted".
-8. Publish gate trim + friendly message.
-9. Playwright end-to-end happy path + fix whatever it surfaces.
+`SiteBundleSnapshot` (see `src/types/launchState.ts` + `src/platform/core/`) is the atomic artifact you copy between environments. Persisted in `builder_drafts.snapshot`. When cloning locally:
 
-Ship each step behind the same journey so it is testable in isolation, then run the full Playwright script as the acceptance check for Milestone 1.
+- Export snapshot JSON → import via `snapshotProjector.projectToVFS(snapshot)` → hydrates VFS + PageRegistry + bindings + theme in one call.
+- No environment-specific ids inside the snapshot except `business_id` (rewrite on import).
+
+---
+
+## 5. File Migration Manifest (copy these into the local clone, preserving paths)
+
+Core contract & pipeline
+- `src/platform/core/blueprintSchema.ts`
+- `src/platform/core/capabilityRegistry.ts`
+- `src/platform/core/coreIntents.ts`
+- `src/platform/core/industryMatrix.ts`
+- `src/platform/core/canonicalPipeline.ts`
+- `src/platform/core/canonicalRuntimeContract.ts`
+- `src/platform/core/canonicalRuntimeError.ts`
+- `src/platform/core/commitToPipeline.ts`
+- `src/platform/core/playground.ts`
+- `src/platform/core/runtimeManifest.ts`
+
+Launcher + handoff
+- `src/components/onboarding/SystemLauncher.tsx`
+- `src/components/onboarding/industryThemePresetMap.ts`
+- `src/services/launcherHandoffPersistence.ts`
+- `src/services/canonicalLaunchVfs.ts`
+- `src/services/wizardPlaygroundMaterializer.ts`
+- `src/services/wizardBindingBridge.ts`
+
+Theming + template injection
+- `src/utils/sandpackFilePrep.ts`               ← `buildBaseCssForPreset`, `normalizeLauncherFiles`
+- `src/utils/aestheticToCSS.ts`
+- `src/utils/designVariation.ts`
+- `src/utils/topologyVFSScaffolder.ts`
+- `src/utils/topologyRouterGenerator.ts`
+- `src/utils/templateToVFS.ts`
+- `src/utils/aiCodeCleaner.ts`
+- `src/utils/htmlToJsx.ts`
+- `src/utils/launchToSandpack.ts`
+- `src/utils/previewArtifacts.ts`
+- `src/utils/webBuilderArtifacts.ts`
+- `src/utils/sandpackDependencies.ts`
+
+Section registry (variants that renderJSX consumes)
+- `src/sections/variants/index.ts`
+- `src/sections/variants/registry.ts`
+- `src/sections/variants/types.ts`
+- `src/sections/variants/contentExtractor.ts`
+- `src/sections/variants/jsxTemplates/**`
+- `public/variants/*.svg`
+
+Snapshot + preview
+- `src/types/launchState.ts`
+- `src/types/pageRegistry.ts`
+- `src/services/snapshotProjector.ts`
+- `src/services/vfsCommitService.ts`
+- `src/services/unifiedPreviewPipeline.ts`
+- `src/services/previewSession.ts`
+- `src/services/previewPipelineError.ts`
+- `src/services/preflightNavWiring.ts`
+- `src/services/runFullPreflight.ts`
+- `src/services/playgroundCompiler.ts`
+- `src/services/pageTopologyOrchestrator.ts`
+- `src/services/pageTopologyValidator.ts`
+- `src/services/routeNavigationService.ts`
+- `src/components/VFSPreview.tsx`
+
+Publish gate
+- `src/services/deploymentService.ts`
+- `src/services/publishAttestation.ts`
+- `src/services/aiApplyGate.ts`
+
+Backend seeding (edge function + migrations)
+- `supabase/functions/install-system/**`
+- Migrations that create `builder_drafts`, `businesses`, `business_members`, `crm_leads`, `crm_activities`, `site_intent_bindings`, `intent_execution_log`, `user_roles` (+ `has_role`).
+
+Tests to copy (they lock the contract)
+- `src/test/themeAndTemplateIdPipeline.test.ts`
+- `src/test/launcherHandoffPersistence.test.ts`
+- `src/test/launchToSandpack.test.ts`
+
+---
+
+## 6. Local Clone Bring-up Checklist
+
+1. Copy the file manifest above (preserve directory structure).
+2. `npm ci && npm run type-check && npm run lint && npx vitest && npm run build` must pass green.
+3. Provision backend: run migrations, deploy `install-system`, seed `THEME_PRESETS` if stored server-side.
+4. Set env (from `.env.example`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_PROJECT_ID`.
+5. Smoke test the golden path: Wizard → SystemLauncher → preview mounts with themed CSS marker `AESTHETIC: <label>` in `/src/index.css`.
+6. Import a `SiteBundleSnapshot` via `snapshotProjector.projectToVFS` and confirm identical preview output — proves migration parity.
+
+---
+
+## 7. Hardening Rules (do not regress)
+
+- Never guard theme injection by industry; always overwrite `/src/index.css`.
+- Never let `buildBaseCssForPreset` throw when a preset is unresolved — soft fallback + warn.
+- Never author `/src/App.tsx` from AI; always from `topologyRouterGenerator`.
+- Never persist wizard output to anything other than `builder_drafts.snapshot`.
+- Never bypass `SiteBundleSnapshot` when moving state across environments.

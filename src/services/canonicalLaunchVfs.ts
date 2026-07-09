@@ -90,10 +90,50 @@ function cloneSnapshotWithRuntimeVfs(
     Object.entries(files).filter(([path]) => !path.startsWith('/.unison/')),
   );
 
+  // WIZARD PAGE AUTHORITY (Pass A — snapshot capture preservation).
+  // Do NOT overwrite the snapshot's wizard-authored vfsFiles with the fully
+  // merged runtime output. The runtime files reflect post-Lane-B merges, nav
+  // wiring, forbidden-intent strips, and repair passes — perfectly correct
+  // for preview mounting, but if we then persist them as the new snapshot
+  // page bodies we lose the wizard's rich composition (feature cards, product
+  // grids, gallery items, floating flex layouts) on every subsequent
+  // hydration. That is exactly the "Home reverts to sparse output" regression.
+  //
+  // Rule: registered wizard page files + shared /src/components/* stay pinned
+  // to the ORIGINAL snapshot bodies. Everything else (index.css theme output,
+  // /src/main.tsx, /src/App.tsx canonical router, any additional runtime
+  // helpers) is refreshed from the runtime vfs. AI edits still win because
+  // VFSCommitService writes updated bodies back into snapshot.vfsFiles as
+  // part of its recompile — this clone is only about "don't erase the wizard
+  // authoring during initial launch merge".
+  const originalSnapshotFiles = (siteBundleSnapshot.vfsFiles || {}) as Record<string, string>;
+  const registeredPagePaths = new Set<string>();
+  for (const page of Object.values(siteBundleSnapshot.pageRegistry?.pages || {})) {
+    const fp = (page as { filePath?: string }).filePath;
+    if (!fp) continue;
+    const normalized = fp.startsWith('/') ? fp : `/${fp}`;
+    registeredPagePaths.add(normalized);
+    registeredPagePaths.add(normalized.slice(1));
+    registeredPagePaths.add(normalized.replace(/^\/src\//, '/'));
+  }
+
+  const preservedVfsFiles: Record<string, string> = { ...runtimeVfsFiles };
+  for (const [path, content] of Object.entries(originalSnapshotFiles)) {
+    if (typeof content !== 'string' || !content.trim()) continue;
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    const isRegisteredPage = registeredPagePaths.has(normalized) || registeredPagePaths.has(path);
+    const isSharedSection = normalized.startsWith('/src/components/') || normalized.startsWith('/src/sections/');
+    if (isRegisteredPage || isSharedSection) {
+      preservedVfsFiles[normalized] = content;
+    } else if (!preservedVfsFiles[normalized]) {
+      preservedVfsFiles[normalized] = content;
+    }
+  }
+
   return {
     ...siteBundleSnapshot,
     appContext,
-    vfsFiles: runtimeVfsFiles,
+    vfsFiles: preservedVfsFiles,
     meta: {
       ...(siteBundleSnapshot.meta || {}),
       source: siteBundleSnapshot.meta?.source || 'wizard',

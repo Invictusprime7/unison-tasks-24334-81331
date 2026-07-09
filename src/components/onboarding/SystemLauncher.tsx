@@ -2065,17 +2065,41 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         launchReliabilityMode = 'lane-b-blocked';
         throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
       }
-      const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
+      // Fill missing page files from the canonical scaffold in siteBundleSnapshot.
+      // Lane B occasionally omits selected pages (esp. on high-page verticals like
+      // ecommerce with 9+ pages) — the canonical scaffold already provides valid
+      // role-filtered page modules for every registered page, so we fill from it
+      // rather than blocking the entire launch. Only pages that neither Lane B
+      // NOR the scaffold produced are hard failures.
+      const scaffoldVfs = (siteBundleSnapshot?.vfsFiles || {}) as Record<string, string>;
+      const registeredPagePaths = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
-        .filter((path): path is string => Boolean(path))
-        .filter((path) => {
-          const normalized = path.startsWith('/') ? path : `/${path}`;
-          return !aiSourcedFiles[normalized] && !aiSourcedFiles[path];
+        .filter((path): path is string => Boolean(path));
+      const scaffoldFilled: string[] = [];
+      const stillMissing: string[] = [];
+      for (const path of registeredPagePaths) {
+        const normalized = path.startsWith('/') ? path : `/${path}`;
+        if (aiSourcedFiles[normalized] || aiSourcedFiles[path]) continue;
+        const scaffoldSource = scaffoldVfs[normalized] || scaffoldVfs[path];
+        if (scaffoldSource && typeof scaffoldSource === 'string' && scaffoldSource.trim().length > 0) {
+          aiSourcedFiles[normalized] = scaffoldSource;
+          scaffoldFilled.push(normalized);
+        } else {
+          stillMissing.push(normalized);
+        }
+      }
+      if (scaffoldFilled.length > 0) {
+        wizardGenerationGaps.completedFromScaffold = true;
+        wizardGenerationGaps.scaffoldFilledPaths = scaffoldFilled;
+        console.warn('[SystemLauncher] Lane B missed page files; filled from canonical scaffold', {
+          filled: scaffoldFilled,
+          totalRegistered: registeredPagePaths.length,
         });
-      if (missingWizardPageFiles.length > 0) {
+      }
+      if (stillMissing.length > 0) {
         launchReliabilityMode = 'lane-b-blocked';
         throw new Error(
-          `Wizard Lane B missed ${missingWizardPageFiles.length} selected page file(s); minimal/canonical scaffold fallback is blocked: ${missingWizardPageFiles.join(', ')}`,
+          `Wizard Lane B missed ${stillMissing.length} selected page file(s) and canonical scaffold has no source for them: ${stillMissing.join(', ')}`,
         );
       }
 

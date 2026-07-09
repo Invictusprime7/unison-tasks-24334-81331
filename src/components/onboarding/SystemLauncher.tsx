@@ -175,10 +175,12 @@ function extractLaneBLauncherPayload(
 function isBlockingWizardQualityFailure(reason?: string): boolean {
   // Pages from AI outputs must ALWAYS render — industry-contract misses
   // (missing required data-ut-intent, missing vocabulary term) are repairable
-  // downstream via applyWizardBindingsToVfs + canonical scaffold merge, so we
-  // do NOT hard-block the launch on those. Only truly structural failures
-  // (no renderable page, placeholder copy, too-small output, zero sections,
-  // zero intents anywhere) remain blocking.
+  // downstream via applyWizardBindingsToVfs + canonical scaffold merge, and
+  // registered wizard pages are re-projected from SiteBundleSnapshot by the
+  // snapshotProjector before compile. Only truly structural failures block
+  // the launch (no renderable page, placeholder copy, too-small output, zero
+  // sections, zero intents). Contract violations are non-blocking and will be
+  // healed by the snapshot-first projection at preview time.
   if (!reason) return true;
   if (reason.includes('contract violation')) return false;
   return true;

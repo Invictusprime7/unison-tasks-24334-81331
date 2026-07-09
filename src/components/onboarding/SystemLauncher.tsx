@@ -173,9 +173,14 @@ function extractLaneBLauncherPayload(
 }
 
 function isBlockingWizardQualityFailure(reason?: string): boolean {
-  // System Launcher first generation has no repairable quality failures: any
-  // miss here previously flowed into canonical scaffold gap-fill and produced
-  // minimal fallback output with valid-looking wizard tokens.
+  // Pages from AI outputs must ALWAYS render — industry-contract misses
+  // (missing required data-ut-intent, missing vocabulary term) are repairable
+  // downstream via applyWizardBindingsToVfs + canonical scaffold merge, so we
+  // do NOT hard-block the launch on those. Only truly structural failures
+  // (no renderable page, placeholder copy, too-small output, zero sections,
+  // zero intents anywhere) remain blocking.
+  if (!reason) return true;
+  if (reason.includes('contract violation')) return false;
   return true;
 }
 

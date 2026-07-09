@@ -44,7 +44,6 @@ import {
   type GeneratedSitePlan,
 } from "@/platform/core/siteTopologyPlanner";
 import type { PageSpec } from "@/platform/core/industryMatrix";
-import { scaffoldMissingTopologyPages } from "@/utils/topologyVFSScaffolder";
 import {
   generateDesignVariation,
 } from "@/utils/designVariation";
@@ -173,16 +172,9 @@ function extractLaneBLauncherPayload(
 }
 
 function isBlockingWizardQualityFailure(reason?: string): boolean {
-  // Pages from AI outputs must ALWAYS render — industry-contract misses
-  // (missing required data-ut-intent, missing vocabulary term) are repairable
-  // downstream via applyWizardBindingsToVfs + canonical scaffold merge, and
-  // registered wizard pages are re-projected from SiteBundleSnapshot by the
-  // snapshotProjector before compile. Only truly structural failures block
-  // the launch (no renderable page, placeholder copy, too-small output, zero
-  // sections, zero intents). Contract violations are non-blocking and will be
-  // healed by the snapshot-first projection at preview time.
-  if (!reason) return true;
-  if (reason.includes('contract violation')) return false;
+  // System Launcher first generation has no repairable quality failures: any
+  // miss here previously flowed into canonical scaffold gap-fill and produced
+  // minimal fallback output with valid-looking wizard tokens.
   return true;
 }
 
@@ -2073,57 +2065,18 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         launchReliabilityMode = 'lane-b-blocked';
         throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
       }
-      // Fill missing page files from the canonical scaffold in siteBundleSnapshot.
-      // Lane B occasionally omits selected pages (esp. on high-page verticals like
-      // ecommerce with 9+ pages) — the canonical scaffold already provides valid
-      // role-filtered page modules for every registered page, so we fill from it
-      // rather than blocking the entire launch. Only pages that neither Lane B
-      // NOR the scaffold produced are hard failures.
-      const scaffoldVfs = (siteBundleSnapshot?.vfsFiles || {}) as Record<string, string>;
-      const registeredPagePaths = Object.values(siteBundleSnapshot.pageRegistry.pages)
+      const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
-        .filter((path): path is string => Boolean(path));
-      const scaffoldFilled: string[] = [];
-      const stillMissing: string[] = [];
-      for (const path of registeredPagePaths) {
-        const normalized = path.startsWith('/') ? path : `/${path}`;
-        if (aiSourcedFiles[normalized] || aiSourcedFiles[path]) continue;
-        const scaffoldSource = scaffoldVfs[normalized] || scaffoldVfs[path];
-        if (scaffoldSource && typeof scaffoldSource === 'string' && scaffoldSource.trim().length > 0) {
-          aiSourcedFiles[normalized] = scaffoldSource;
-          scaffoldFilled.push(normalized);
-        } else {
-          stillMissing.push(normalized);
-        }
-      }
-      if (scaffoldFilled.length > 0) {
-        wizardGenerationGaps.completedFromScaffold = true;
-        wizardGenerationGaps.scaffoldFilledPaths = scaffoldFilled;
-        console.warn('[SystemLauncher] Lane B missed page files; filled from canonical scaffold', {
-          filled: scaffoldFilled,
-          totalRegistered: registeredPagePaths.length,
+        .filter((path): path is string => Boolean(path))
+        .filter((path) => {
+          const normalized = path.startsWith('/') ? path : `/${path}`;
+          return !aiSourcedFiles[normalized] && !aiSourcedFiles[path];
         });
-      }
-      if (stillMissing.length > 0) {
-        // Never fail the launch: synthesize role-filtered composition pages
-        // from the resolved template so every registered page ALWAYS renders.
-        try {
-          const synthesized = scaffoldMissingTopologyPages(sitePlan, aiSourcedFiles, composition);
-          for (const [path, source] of Object.entries(synthesized)) {
-            if (source && typeof source === 'string' && source.trim().length > 0) {
-              aiSourcedFiles[path] = source;
-              scaffoldFilled.push(path);
-            }
-          }
-          wizardGenerationGaps.completedFromScaffold = true;
-          wizardGenerationGaps.scaffoldFilledPaths = scaffoldFilled;
-          console.warn('[SystemLauncher] Lane B missed page files; synthesized from composition scaffold', {
-            synthesized: Object.keys(synthesized),
-            requested: stillMissing,
-          });
-        } catch (scaffoldError) {
-          console.error('[SystemLauncher] Composition scaffold synthesis failed; continuing with partial pages', scaffoldError);
-        }
+      if (missingWizardPageFiles.length > 0) {
+        launchReliabilityMode = 'lane-b-blocked';
+        throw new Error(
+          `Wizard Lane B missed ${missingWizardPageFiles.length} selected page file(s); minimal/canonical scaffold fallback is blocked: ${missingWizardPageFiles.join(', ')}`,
+        );
       }
 
       // Stamp gaps so downstream readiness artifacts can record them.

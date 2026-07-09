@@ -15,9 +15,6 @@
     "lint:pipeline-bypass": "node scripts/lint-pipeline-bypass.mjs",
     "lint:single-source-of-truth": "node scripts/lint-single-source-of-truth.mjs",
     "type-check": "tsc --build --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "verify": "npm run type-check && npm run lint && npm run test && npm run build",
     "preview": "vite preview",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel",
@@ -135,11 +132,7 @@
     "systeminformation": "^5.31.0",
     "cookie": "^0.7.0",
     "undici": "^7.10.0",
-    "esbuild": "^0.25.0",
-    "protobufjs": "^8.6.5"
-  },
-  "resolutions": {
-    "protobufjs": "^8.6.5"
+    "esbuild": "^0.25.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",

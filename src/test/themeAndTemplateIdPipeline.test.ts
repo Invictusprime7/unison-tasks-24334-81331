@@ -24,17 +24,11 @@ describe('Theme deprecation sweep — wizard preset is single source of truth', 
     expect(files['/src/index.css']).toContain(`AESTHETIC: ${organic.label}`);
   });
 
-  it('falls back to the first registered preset when themePresetId is omitted', () => {
-    // Soft fallback: builder routes without a wizard-launched draft (blank
-    // canvas, direct route load) must still get a working /src/index.css so
-    // the preview mounts. The Wizard path still threads themePresetId
-    // unconditionally; this only guards non-wizard callers.
-    const files = normalizeLauncherFiles(
+  it('rejects default preset injection when themePresetId is omitted', () => {
+    expect(() => normalizeLauncherFiles(
       { '/src/App.tsx': 'export default () => null;' },
       {},
-    );
-    const fallback = THEME_PRESETS[0];
-    expect(files['/src/index.css']).toContain(`AESTHETIC: ${fallback.label}`);
+    )).toThrow(/themePresetId/);
   });
 });
 

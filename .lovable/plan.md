@@ -1,184 +1,110 @@
+# Milestone: Canonical Preview + Durable Commit Enforcement
 
-# Blueprint — System Launcher Theming & Template Injection (SiteBundleSnapshot-Driven)
+Turn Unison from "advanced builder" into "business OS runtime" by making `SiteBundleSnapshot` + `BuilderIdentity` the non-negotiable contract for every preview, AI edit, playground sync, and publish.
 
-Purpose: Document the runtime contract that turns Wizard selections into a themed, template-injected preview, and enumerate every file needed to port this subsystem into a local dev clone.
+We already shipped the foundation in prior turns:
+- `canonicalRuntimeContract.ts` + `CanonicalRuntimeError`
+- `LaunchGateNotice` UI
+- `VFSCommitService` + `site_revisions` ledger
+- `BuilderIdentity` type + assertions
+- Hard-error throws inside `snapshotProjector`, `webBuilderArtifacts`, `VFSPreview`, `DeployButton`
+
+What's left is to **close the loops** — make the contracts unbypassable and start shrinking `WebBuilder.tsx`.
 
 ---
 
-## 1. Runtime Contract (single execution hierarchy)
+## Pass 1 — Hard-error preview everywhere (finish it)
 
-```text
-WizardSelections (industry, themePresetId, templateId, capabilities, contact)
-        │
-        ▼
-BusinessBlueprint            ← src/platform/core/blueprintSchema.ts
-        │  createBlueprintFromIndustry()
-        ▼
-CanonicalPipeline (stages)   ← src/platform/core/canonicalPipeline.ts
-  1. Resolve topology         (SiteTopologyPlanner)
-  2. Materialize PageRegistry (wizardPlaygroundMaterializer)
-  3. Scaffold VFS pages       (topologyVFSScaffolder)
-  4a. Inject template bodies  (sandpackFilePrep.normalizeLauncherFiles)
-  4b. Inject theme CSS        (sandpackFilePrep.buildBaseCssForPreset)  ← theming injection point
-  5. Auto-bind intents        (autoEmitSectionBindings + wizardBindingBridge)
-  6. Emit canonical router    (topologyRouterGenerator → /src/App.tsx)
-        │
-        ▼
-SiteBundleSnapshot           ← single source of truth
-  { registry, files, bindings, theme, capabilities, contract }
-        │
-        ├─► VFS commit         (vfsCommitService)
-        ├─► Preview            (unifiedPreviewPipeline → VFSPreview + Sandpack)
-        ├─► Persistence        (builder_drafts.snapshot / launcherHandoffPersistence)
-        └─► Publish/Deploy     (deploymentService + publishAttestation)
+Goal: Preview never silently renders a canonical project without a `SiteBundleSnapshot`.
+
+- Add **blank-project snapshot bootstrap**: `createMinimalValidSnapshot()` already exists in `canonicalRuntimeContract.ts` — wire it into the "Start from Blank" path so blank drafts get a real snapshot at draft creation, not a fake shell at render time.
+- Audit remaining preview entry points (`buildPreviewArtifacts`, `playgroundCompiler.recompileFromPlayground`, `useTemplateFiles` hot paths) and route every launcher-backed render through `requireCanonicalSnapshot()`.
+- Replace any lingering "minimal fallback" branches with `LaunchGateNotice`.
+
+## Pass 2 — Identity hardening
+
+Goal: `templateId`, `draftId`, `projectId`, `businessId`, `revisionId`, `sessionId` never collapse.
+
+- Grep + remove every place where `currentTemplateId` is passed where `projectId`/`draftId` is expected (AI Builder handlers, deploy, revisions writer, drafts persistence).
+- Make `BuilderSessionProvider` the single source: `WebBuilder` reads identity from context, never from props/local state.
+- Add a dev-only `assertBuilderIdentity` call at every commit/deploy/AI-apply boundary; fail loud in dev, telemetry-log in prod.
+
+## Pass 3 — VFSCommitService as the only durable writer
+
+Goal: Every accepted mutation goes through `commitMutation` → canonical pipeline → preflight → revision ledger.
+
+- Flip `VITE_USE_COMMIT_SERVICE` on for the migrated writers and migrate the remaining ones: AI Builder apply, theme change, layout fast-path, page add/remove, intent binding change.
+- Add CI lint rule extending `scripts/lint-pipeline-bypass.mjs` to forbid direct `aiVFS.applyCode` / `executeCanonicalPipeline` / `recompileFromPlayground` imports outside `platform/core` + `vfsCommitService`.
+- Move AI apply from "fire-and-forget persist" to "dry-run → preflight → commit; on reject, surface diff in AIBuilderPanel with one-click repair".
+
+## Pass 4 — Snapshot-only preview runtime
+
+Goal: Preview's single input is `SiteBundleSnapshot`.
+
+- Refactor `PreviewRuntimeController` to take `{ snapshot }` only; derive VFS, manifest, router from the snapshot internally.
+- Delete the parallel "loose VFS" preview path; keep VFS as a materialization cache, not a source.
+- Document the kernel model in `mem://architecture/site-os/snapshot-only-preview.md`.
+
+## Pass 5 — WebBuilder.tsx decomposition (Phase D)
+
+Goal: Shrink the god component below 3,000 lines by extracting controllers it already has scaffolds for.
+
+Extract in order (smallest blast radius first):
+1. **DeploymentController** — deploy handoff + readiness display.
+2. **AIEditApplicationController** — AI apply pipeline (now thin, since Pass 3 routes through commit service).
+3. **SnapshotHydrationController** — revision-first hydration + sessionStorage recovery.
+4. **RouteImportController** — file-tree route import.
+
+Each extraction: move logic into `src/builder/controllers/*`, expose via context, delete from `WebBuilder.tsx`, run golden tests.
+
+## Pass 6 — Readiness inspects real vertical data
+
+Goal: Readiness verifies actual business rows, not caller-supplied counts.
+
+- Add `verticalDataProbe(projectId, businessId, verticalContractId)` that queries Lovable Cloud for the contract's required entities (services, products, menu items, lead forms, etc.).
+- Wire into `nativePublishReadiness` so PublishGate blocks until row-count + relationship requirements are met.
+- Surface findings in `ReadinessCenterPanel` with deep links to the entity editor.
+
+## Pass 7 — Telemetry + golden tests
+
+Goal: Lock the invariants behind tests so they can't regress.
+
+- Extend `vfsCommitService.golden.test.ts`: blank-project bootstrap, identity assertion failure, snapshot-only preview, AI apply rejection on failed preflight.
+- Add a runtime invariant logger: every `CanonicalRuntimeError` ships to telemetry with `{draftId, classification, missingFields}`.
+- Add a dashboard query that surfaces "previews blocked by missing snapshot" per day as a north-star regression signal.
+
+---
+
+## Technical details
+
+**Touch list (high-level):**
+
+```
+src/platform/core/canonicalRuntimeContract.ts        (Pass 1 — blank bootstrap)
+src/services/playgroundCompiler.ts                   (Pass 1)
+src/services/canonicalLaunchVfs.ts                   (Pass 1)
+src/hooks/useTemplateFiles.ts                        (Pass 1, 2)
+src/components/creatives/WebBuilder.tsx              (Pass 2, 5 — large)
+src/builder/controllers/BuilderSessionProvider.tsx   (Pass 2)
+src/builder/controllers/*Controller.ts               (Pass 5 — new files)
+src/services/vfsCommitService.ts                     (Pass 3)
+src/components/AIBuilderPanel.tsx                    (Pass 3)
+src/services/snapshotProjector.ts                    (Pass 4)
+src/services/nativePublishReadiness.ts               (Pass 6)
+src/services/verticalDataProbe.ts                    (Pass 6 — new)
+src/test/vfsCommitService.golden.test.ts             (Pass 7)
+scripts/lint-pipeline-bypass.mjs                     (Pass 3)
 ```
 
-Non-negotiable rules (already enforced in this repo):
-- `themePresetId` MUST thread unconditionally from Wizard into Stage 4b.
-- Stage 4b overwrites `/src/index.css` for every industry (no per-industry guard).
-- `/src/App.tsx` is ALWAYS deterministic; AI never authors it.
-- `buildBaseCssForPreset` soft-falls back to `THEME_PRESETS[0]` when preset id is missing (keeps preview alive) but logs a `console.warn` so wizard flows surface the drift.
-- After Wizard runs, preview NEVER falls back to editorial/default seed — hydration reads `builder_drafts` via `launcherHandoffPersistence`.
+**Sequencing rule:** Pass 1 → 2 → 3 must land in order (each unblocks the next). Passes 4 + 5 can run in parallel after 3. Passes 6 + 7 are last.
+
+**No-regression rule:** every pass ends with `bunx tsgo --noEmit` clean and the golden E2E test green before moving on.
+
+**Out of scope for this milestone:**
+- New visual features in the builder UI.
+- New AI prompt templates.
+- Any YAML migration (per execution hierarchy memory).
 
 ---
 
-## 2. Theming Injection — Contract Detail
-
-Location: `src/utils/sandpackFilePrep.ts` → `buildBaseCssForPreset(presetId)`.
-
-Inputs
-- `presetId: string | null` from `WizardSelections.themePresetId`
-- `THEME_PRESETS[]` (industry-neutral palette+typography registry)
-- `industryThemePresetMap` (`src/components/onboarding/industryThemePresetMap.ts`) — defaults per industry when the wizard doesn't pick a preset
-
-Output
-- `/src/index.css` with:
-  - `@tailwind base/components/utilities`
-  - `:root` HSL tokens (background/foreground/primary/secondary/muted/accent/border/ring)
-  - `.dark` overrides
-  - Font-face + `--font-sans` / `--font-heading`
-  - `AESTHETIC: <label>` marker comment (used by tests + debug tools)
-
-Failure modes handled
-- Missing `presetId` → soft fallback + warn (non-recoverable throw only if `THEME_PRESETS` is empty).
-- Missing registry entry → same soft fallback path.
-- Downstream `buildPreviewArtifacts` no longer crashes on `undefined.forbidden` (fixed in `runFullPreflight`).
-
----
-
-## 3. Template Injection — Contract Detail
-
-Location: `src/utils/sandpackFilePrep.ts` → `normalizeLauncherFiles(files, selections)`.
-
-Steps
-1. Merge scaffolded page shells from `topologyVFSScaffolder`.
-2. For each page in `PageRegistry`, resolve section variants via `src/sections/variants/registry.ts` and emit JSX using `renderJSX(extractedContent)`.
-3. Sanitize JSX (`aiCodeCleaner.fixJsxVoidElements`, `fixJsxStyleStrings`).
-4. Bind interactive elements to canonical `data-ut-intent` values (never legacy).
-5. Guarantee entry points: `/src/main.tsx`, `/src/App.tsx`, `/src/index.css` (scaffold-normalization policy).
-
----
-
-## 4. SiteBundleSnapshot as Migration Unit
-
-`SiteBundleSnapshot` (see `src/types/launchState.ts` + `src/platform/core/`) is the atomic artifact you copy between environments. Persisted in `builder_drafts.snapshot`. When cloning locally:
-
-- Export snapshot JSON → import via `snapshotProjector.projectToVFS(snapshot)` → hydrates VFS + PageRegistry + bindings + theme in one call.
-- No environment-specific ids inside the snapshot except `business_id` (rewrite on import).
-
----
-
-## 5. File Migration Manifest (copy these into the local clone, preserving paths)
-
-Core contract & pipeline
-- `src/platform/core/blueprintSchema.ts`
-- `src/platform/core/capabilityRegistry.ts`
-- `src/platform/core/coreIntents.ts`
-- `src/platform/core/industryMatrix.ts`
-- `src/platform/core/canonicalPipeline.ts`
-- `src/platform/core/canonicalRuntimeContract.ts`
-- `src/platform/core/canonicalRuntimeError.ts`
-- `src/platform/core/commitToPipeline.ts`
-- `src/platform/core/playground.ts`
-- `src/platform/core/runtimeManifest.ts`
-
-Launcher + handoff
-- `src/components/onboarding/SystemLauncher.tsx`
-- `src/components/onboarding/industryThemePresetMap.ts`
-- `src/services/launcherHandoffPersistence.ts`
-- `src/services/canonicalLaunchVfs.ts`
-- `src/services/wizardPlaygroundMaterializer.ts`
-- `src/services/wizardBindingBridge.ts`
-
-Theming + template injection
-- `src/utils/sandpackFilePrep.ts`               ← `buildBaseCssForPreset`, `normalizeLauncherFiles`
-- `src/utils/aestheticToCSS.ts`
-- `src/utils/designVariation.ts`
-- `src/utils/topologyVFSScaffolder.ts`
-- `src/utils/topologyRouterGenerator.ts`
-- `src/utils/templateToVFS.ts`
-- `src/utils/aiCodeCleaner.ts`
-- `src/utils/htmlToJsx.ts`
-- `src/utils/launchToSandpack.ts`
-- `src/utils/previewArtifacts.ts`
-- `src/utils/webBuilderArtifacts.ts`
-- `src/utils/sandpackDependencies.ts`
-
-Section registry (variants that renderJSX consumes)
-- `src/sections/variants/index.ts`
-- `src/sections/variants/registry.ts`
-- `src/sections/variants/types.ts`
-- `src/sections/variants/contentExtractor.ts`
-- `src/sections/variants/jsxTemplates/**`
-- `public/variants/*.svg`
-
-Snapshot + preview
-- `src/types/launchState.ts`
-- `src/types/pageRegistry.ts`
-- `src/services/snapshotProjector.ts`
-- `src/services/vfsCommitService.ts`
-- `src/services/unifiedPreviewPipeline.ts`
-- `src/services/previewSession.ts`
-- `src/services/previewPipelineError.ts`
-- `src/services/preflightNavWiring.ts`
-- `src/services/runFullPreflight.ts`
-- `src/services/playgroundCompiler.ts`
-- `src/services/pageTopologyOrchestrator.ts`
-- `src/services/pageTopologyValidator.ts`
-- `src/services/routeNavigationService.ts`
-- `src/components/VFSPreview.tsx`
-
-Publish gate
-- `src/services/deploymentService.ts`
-- `src/services/publishAttestation.ts`
-- `src/services/aiApplyGate.ts`
-
-Backend seeding (edge function + migrations)
-- `supabase/functions/install-system/**`
-- Migrations that create `builder_drafts`, `businesses`, `business_members`, `crm_leads`, `crm_activities`, `site_intent_bindings`, `intent_execution_log`, `user_roles` (+ `has_role`).
-
-Tests to copy (they lock the contract)
-- `src/test/themeAndTemplateIdPipeline.test.ts`
-- `src/test/launcherHandoffPersistence.test.ts`
-- `src/test/launchToSandpack.test.ts`
-
----
-
-## 6. Local Clone Bring-up Checklist
-
-1. Copy the file manifest above (preserve directory structure).
-2. `npm ci && npm run type-check && npm run lint && npx vitest && npm run build` must pass green.
-3. Provision backend: run migrations, deploy `install-system`, seed `THEME_PRESETS` if stored server-side.
-4. Set env (from `.env.example`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_PROJECT_ID`.
-5. Smoke test the golden path: Wizard → SystemLauncher → preview mounts with themed CSS marker `AESTHETIC: <label>` in `/src/index.css`.
-6. Import a `SiteBundleSnapshot` via `snapshotProjector.projectToVFS` and confirm identical preview output — proves migration parity.
-
----
-
-## 7. Hardening Rules (do not regress)
-
-- Never guard theme injection by industry; always overwrite `/src/index.css`.
-- Never let `buildBaseCssForPreset` throw when a preset is unresolved — soft fallback + warn.
-- Never author `/src/App.tsx` from AI; always from `topologyRouterGenerator`.
-- Never persist wizard output to anything other than `builder_drafts.snapshot`.
-- Never bypass `SiteBundleSnapshot` when moving state across environments.
+Reply **approve** to start Pass 1, or tell me which pass to pull forward / drop.

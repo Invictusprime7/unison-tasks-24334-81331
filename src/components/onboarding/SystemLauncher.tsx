@@ -44,6 +44,7 @@ import {
   type GeneratedSitePlan,
 } from "@/platform/core/siteTopologyPlanner";
 import type { PageSpec } from "@/platform/core/industryMatrix";
+import { scaffoldMissingTopologyPages } from "@/utils/topologyVFSScaffolder";
 import {
   generateDesignVariation,
 } from "@/utils/designVariation";

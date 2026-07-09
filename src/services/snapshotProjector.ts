@@ -242,12 +242,16 @@ export function projectSnapshotVfsFiles(
     const snapshotSource = snapshotFiles[normalized] || snapshotFiles[normalized.slice(1)] || snapshotFiles[flattened] || snapshotFiles[flattened.slice(1)];
     if (!snapshotSource) return;
 
-    const current = next[normalized] || next[normalized.slice(1)] || next[flattened] || next[flattened.slice(1)];
-    if (!current || isMinimalPreviewFallbackSource(current)) {
-      next[normalized] = snapshotSource;
-      if (flattened !== normalized && next[flattened] !== undefined) {
-        next[flattened] = snapshotSource;
-      }
+    // SNAPSHOT-FIRST FOR REGISTERED WIZARD ROUTES (Pass B).
+    // Historically we only projected the snapshot body when the current file
+    // was missing or matched the minimal-fallback regex. That let non-fallback
+    // but sparse AI-authored Home files (which pass the regex) silently
+    // override the wizard's rich composition. AI edits still win because
+    // VFSCommitService writes updated bodies back into snapshot.vfsFiles on
+    // every commit, so this projection reflects the latest committed state.
+    next[normalized] = snapshotSource;
+    if (flattened !== normalized) {
+      next[flattened] = snapshotSource;
     }
   };
 

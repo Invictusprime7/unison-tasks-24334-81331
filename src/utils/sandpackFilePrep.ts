@@ -39,14 +39,13 @@ const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
  * wizard pick or industry selection) MUST flow through to here.
  */
 function buildBaseCssForPreset(presetId?: string | null): string {
-  const preset = presetId ? THEME_PRESETS.find((p) => p.id === presetId) : null;
-  if (!preset) {
-    throw new PreviewPipelineError(
-      'prep',
-      'Missing wizard themePresetId — refusing to apply a default/minimal template preset.',
-      { recoverableByRelaunch: true },
-    );
-  }
+  // themePresetId is no longer required. Wizard runtime (AI + siteBundle
+  // Lane B / Stage 4b merge) owns final theming. Honor the preset when
+  // provided; otherwise emit themed tokens from the first registered preset
+  // so the preview never falls back to an un-themed minimal template shell.
+  const preset =
+    (presetId ? THEME_PRESETS.find((p) => p.id === presetId) : null) ??
+    THEME_PRESETS[0];
   return buildThemedIndexCss(preset);
 }
 

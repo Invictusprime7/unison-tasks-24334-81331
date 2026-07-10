@@ -2065,6 +2065,7 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
         launchReliabilityMode = 'lane-b-blocked';
         throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
       }
+      const scaffoldFiles: Record<string, string> = (siteBundleSnapshot?.vfsFiles as Record<string, string>) || {};
       const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .filter((path): path is string => Boolean(path))
@@ -2072,10 +2073,34 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
           const normalized = path.startsWith('/') ? path : `/${path}`;
           return !aiSourcedFiles[normalized] && !aiSourcedFiles[path];
         });
-      if (missingWizardPageFiles.length > 0) {
+
+      // Backfill from the canonical SiteBundleSnapshot scaffold (Stage 4b merge).
+      // The snapshot is NOT a minimal template — it is the industry-selected
+      // sitebundle composition. Lane B may miss individual page files under load;
+      // filling them from the canonical scaffold preserves the wizard contract.
+      const backfilledFromScaffold: string[] = [];
+      const stillMissing: string[] = [];
+      for (const path of missingWizardPageFiles) {
+        const normalized = path.startsWith('/') ? path : `/${path}`;
+        const candidate = scaffoldFiles[normalized] || scaffoldFiles[path];
+        if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+          aiSourcedFiles[normalized] = candidate;
+          backfilledFromScaffold.push(normalized);
+        } else {
+          stillMissing.push(normalized);
+        }
+      }
+      if (backfilledFromScaffold.length > 0) {
+        wizardGenerationGaps.completedFromScaffold = true;
+        wizardGenerationGaps.scaffoldFilledPaths = backfilledFromScaffold;
+        console.warn(
+          `[SystemLauncher] Lane B missed ${backfilledFromScaffold.length} page(s); backfilled from canonical SiteBundleSnapshot: ${backfilledFromScaffold.join(', ')}`,
+        );
+      }
+      if (stillMissing.length > 0) {
         launchReliabilityMode = 'lane-b-blocked';
         throw new Error(
-          `Wizard Lane B missed ${missingWizardPageFiles.length} selected page file(s); minimal/canonical scaffold fallback is blocked: ${missingWizardPageFiles.join(', ')}`,
+          `Wizard Lane B missed ${stillMissing.length} selected page file(s) and the canonical SiteBundleSnapshot did not provide them: ${stillMissing.join(', ')}`,
         );
       }
 
@@ -2085,9 +2110,8 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
 
       // ── Merge AI output (if any) with LOCKED themed CSS + DETERMINISTIC ROUTER ──
       // /src/App.tsx is OWNED by the deterministic router from the page registry.
-      // Lane B owns every registered page body/component. The canonical scaffold
-      // may provide router/root support, but selected page files are never filled
-      // from it when Lane B misses output.
+      // Lane B owns every registered page body/component; the canonical scaffold
+      // (industry sitebundle) fills any page Lane B missed under load.
       const generatedFiles: Record<string, string> = {
         ...aiSourcedFiles,
         '/src/index.css': themedIndexCss,

@@ -538,6 +538,14 @@ export function buildComponentBehaviorMap(
   for (const [filePath, content] of Object.entries(vfsFiles)) {
     if (!/\.(tsx|jsx)$/.test(filePath)) continue;
 
+    // Reset regex lastIndex per file — `/g` regexes retain state across
+    // exec() calls, so without this only the first file yields matches
+    // (which is why the map was reporting "1 stateful file").
+    stateNameRegex.lastIndex = 0;
+    effectRegex.lastIndex = 0;
+    hookRegex.lastIndex = 0;
+
+
     // Extract state variable names
     const stateVars: string[] = [];
     let match: RegExpExecArray | null;

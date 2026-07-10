@@ -72,7 +72,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(previewFiles["/App.tsx"] || "").toContain("return <div>clean</div>");
   });
 
-  it("throws a PreviewPipelineError when a TSX module is prose-only", () => {
+  it("injects a safe fallback when a TSX module is prose-only", () => {
     const proseOnly = "I will now create a polished landing page with a modern hero and strong CTA.";
 
     const launchState = createLaunchState({
@@ -87,14 +87,14 @@ describe("launchStateToSandpackFiles", () => {
       preloadedIntents: [],
     });
 
-    // No-fallback policy: prose-only TSX must surface as a hard failure so
-    // the user (and Debug Agent) sees the problem instead of a silent stub.
-    expect(() =>
-      launchStateToSandpackFiles({
-        launchState,
-        vfsFiles: launchState.vfsFiles,
-      }),
-    ).toThrow(/Prose-only module/);
+    const previewFiles = launchStateToSandpackFiles({
+      launchState,
+      vfsFiles: launchState.vfsFiles,
+    });
+
+    const recoveredPage = previewFiles["/pages/Home.tsx"] || "";
+    expect(recoveredPage).toContain("Preview recovered");
+    expect(recoveredPage).toContain("safe fallback was injected");
   });
 
   it("repairs parenthesized and concise-arrow {children} object returns", () => {

@@ -50,14 +50,8 @@ function walk(dir) {
     const rel = relative(ROOT, full).split(sep).join('/');
     if (ALLOWLIST.has(rel)) continue;
 
-    const rawText = readFileSync(full, 'utf8');
-    if (!FORBIDDEN_SYMBOLS.some((s) => rawText.includes(s))) continue;
-
-    // Blank out block comments (/* ... */ and JSDoc) so symbol mentions in
-    // doc comments don't trigger false positives while preserving line numbers.
-    const text = rawText.replace(/\/\*[\s\S]*?\*\//g, (block) =>
-      block.replace(/[^\n]/g, ' '),
-    );
+    const text = readFileSync(full, 'utf8');
+    if (!FORBIDDEN_SYMBOLS.some((s) => text.includes(s))) continue;
 
     const lines = text.split('\n');
     lines.forEach((line, idx) => {

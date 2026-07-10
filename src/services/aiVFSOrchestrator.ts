@@ -451,25 +451,49 @@ export function buildComponentBehaviorMap(
   const hooksByFile: Record<string, string[]> = {};
 
   // ── DOM Inspection ──
-  try {
-    const iframe = previewHandle.getIframe?.();
-    const doc = iframe?.contentDocument;
-    if (doc) {
-      const interactiveSelectors = 'button, a, [onclick], [data-ut-intent], [role="button"], input, textarea, select, form, [data-editable], [contenteditable]';
-      const els = doc.querySelectorAll(interactiveSelectors);
+  // Sandpack wraps the running app in one or more nested iframes. Walk them so
+  // we inspect the actual rendered app DOM instead of the outer shell (which is
+  // why the behavior map was reporting 0 interactive elements).
+  const collectDocs = (rootIframe: HTMLIFrameElement | null): Document[] => {
+    const docs: Document[] = [];
+    const visited = new Set<HTMLIFrameElement>();
+    const walk = (frame: HTMLIFrameElement | null) => {
+      if (!frame || visited.has(frame)) return;
+      visited.add(frame);
+      let doc: Document | null = null;
+      try { doc = frame.contentDocument || frame.contentWindow?.document || null; } catch { doc = null; }
+      if (!doc) return;
+      docs.push(doc);
+      try {
+        const nested = doc.querySelectorAll('iframe');
+        nested.forEach((f) => walk(f as HTMLIFrameElement));
+      } catch { /* cross-origin nested iframe */ }
+    };
+    walk(rootIframe);
+    return docs;
+  };
 
+  try {
+    const rootIframe = previewHandle.getIframe?.() ?? null;
+    const docs = collectDocs(rootIframe);
+    const interactiveSelectors = 'button, a, [onclick], [data-ut-intent], [role="button"], input, textarea, select, form, [data-editable], [contenteditable]';
+    const seen = new Set<Element>();
+
+    for (const doc of docs) {
+      let els: NodeListOf<Element>;
+      try { els = doc.querySelectorAll(interactiveSelectors); } catch { continue; }
       els.forEach((el) => {
+        if (seen.has(el)) return;
+        seen.add(el);
         const htmlEl = el as HTMLElement;
         const handlers: string[] = [];
 
-        // Detect inline handlers
         for (const attr of Array.from(el.attributes)) {
           if (attr.name.startsWith('on') || attr.name === 'data-onclick') {
             handlers.push(attr.name);
           }
         }
 
-        // Check for React event props via __reactProps (React 18+)
         const reactPropsKey = Object.keys(htmlEl).find(k => k.startsWith('__reactProps'));
         if (reactPropsKey) {
           const props = (htmlEl as any)[reactPropsKey];
@@ -482,7 +506,6 @@ export function buildComponentBehaviorMap(
           }
         }
 
-        // Build selector
         let selector = htmlEl.tagName.toLowerCase();
         if (htmlEl.id) selector += `#${htmlEl.id}`;
         else if (htmlEl.className && typeof htmlEl.className === 'string') {
@@ -494,7 +517,7 @@ export function buildComponentBehaviorMap(
           selector,
           tagName: htmlEl.tagName.toLowerCase(),
           textContent: (htmlEl.textContent || '').trim().slice(0, 80),
-          sourceFile: null, // resolved below via VFS matching
+          sourceFile: null,
           handlers,
           intent: el.getAttribute('data-ut-intent'),
           ctaLabel: el.getAttribute('data-ut-cta'),

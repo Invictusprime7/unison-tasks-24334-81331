@@ -966,7 +966,42 @@ function autoRepairMissingIntents(
     } else if (/(donat|give)/.test(lower)) {
       ok = tryInject(intent, /<(?:button|a)\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)/);
     } else if (/(checkout|cart|buy|purchase)/.test(lower)) {
-      ok = tryInject(intent, /<(?:button|a)\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)/);
+      // 1) Prefer buttons/links whose visible text mentions checkout/cart/buy/purchase.
+      const textMatch = /<(?:button|a)\b(?![^>]*\bdata-ut-intent=)[^>]*?>[^<]*(?:Checkout|Check\s*Out|Complete\s*Order|Place\s*Order|Buy\s*Now|Purchase|Proceed\s*to\s*Checkout|View\s*Cart|Cart)\b/i;
+      const tm = textMatch.exec(combinedAll());
+      if (tm) {
+        // Inject at the opening tag position for the file that contains it.
+        for (const path of tsxPaths) {
+          const src = out[path] ?? files[path];
+          const localMatch = /<(?:button|a)\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)[^<]*?(?:Checkout|Check\s*Out|Complete\s*Order|Place\s*Order|Buy\s*Now|Purchase|Proceed\s*to\s*Checkout|View\s*Cart|Cart)/i;
+          const lm = localMatch.exec(src);
+          if (lm) {
+            // Find end of opening tag for this element.
+            const openEnd = src.indexOf('>', lm.index);
+            if (openEnd > lm.index) {
+              out[path] = src.slice(0, openEnd) + ` data-ut-intent="${intent}"` + src.slice(openEnd);
+              ok = true;
+              break;
+            }
+          }
+        }
+      }
+      // 2) Overwrite an existing mismatched intent on a checkout-labeled element.
+      if (!ok) {
+        for (const path of tsxPaths) {
+          const src = out[path] ?? files[path];
+          const rewrite = /(<(?:button|a)\b[^>]*?)\bdata-ut-intent=["'][^"']*["']([^>]*?>\s*(?:[^<]*?)(?:Checkout|Complete\s*Order|Place\s*Order|Proceed\s*to\s*Checkout))/i;
+          if (rewrite.test(src)) {
+            out[path] = src.replace(rewrite, `$1data-ut-intent="${intent}"$2`);
+            ok = true;
+            break;
+          }
+        }
+      }
+      // 3) Any button/link without an intent as broad fallback.
+      if (!ok) {
+        ok = tryInject(intent, /<(?:button|a)\b(?![^>]*\bdata-ut-intent=)[^>]*?(?=>)/);
+      }
     }
 
     if (!ok) {
@@ -974,6 +1009,24 @@ function autoRepairMissingIntents(
     }
     if (!ok) {
       ok = tryInject(intent, /<a\b(?![^>]*\bdata-ut-intent=)[^>]*\bhref=[^>]*?(?=>)/);
+    }
+
+    // 4) Last-resort synthesis for cart/checkout: inject a visible CTA into
+    // Checkout.tsx / Cart.tsx / Shop.tsx so the ecommerce contract is satisfied
+    // even when the AI omitted an interactive slot entirely.
+    if (!ok && /(checkout|cart|buy|purchase)/.test(lower)) {
+      const preferredOrder = ['/src/pages/Checkout.tsx', '/src/pages/Cart.tsx', '/src/pages/Shop.tsx'];
+      const targetPath = preferredOrder.find((p) => tsxPaths.includes(p)) || tsxPaths.find((p) => /\/src\/pages\/.+\.tsx$/.test(p));
+      if (targetPath) {
+        const src = out[targetPath] ?? files[targetPath];
+        const cta = `\n      <div className="mt-8 flex justify-center"><button type="button" data-ut-intent="${intent}" className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-primary-foreground shadow hover:opacity-90 transition">Proceed to Checkout</button></div>\n`;
+        // Inject just before the last closing </div> or </section>/</main> in the returned JSX.
+        const closeIdx = Math.max(src.lastIndexOf('</main>'), src.lastIndexOf('</section>'), src.lastIndexOf('</div>'));
+        if (closeIdx > 0) {
+          out[targetPath] = src.slice(0, closeIdx) + cta + src.slice(closeIdx);
+          ok = true;
+        }
+      }
     }
 
     if (ok) injected.push(intent);

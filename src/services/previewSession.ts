@@ -372,21 +372,12 @@ export function ensureViteRootFiles(
         console.log(`[ensureViteRootFiles] Recovered themePresetId="${presetId}" from VFS metadata`);
       }
     }
-    if (!presetId) {
-      throw new PreviewPipelineError(
-        'vfs',
-        'Missing wizard themePresetId — refusing to inject default/minimal preview CSS.',
-        { recoverableByRelaunch: true },
-      );
-    }
-    const preset = THEME_PRESETS.find((p) => p.id === presetId);
-    if (!preset) {
-      throw new PreviewPipelineError(
-        'vfs',
-        `Unknown wizard themePresetId "${presetId}" — refusing to inject default/minimal preview CSS.`,
-        { recoverableByRelaunch: true },
-      );
-    }
+    // themePresetId is no longer required. Lane B / Stage 4b merges the real
+    // theme from siteBundle + AI. If nothing is recoverable here, fall back to
+    // the first registered preset so preview always has themed tokens.
+    const preset =
+      (presetId ? THEME_PRESETS.find((p) => p.id === presetId) : null) ??
+      THEME_PRESETS[0];
     result['/src/index.css'] = buildThemedIndexCss(preset);
   }
 

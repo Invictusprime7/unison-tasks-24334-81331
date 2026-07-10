@@ -63,8 +63,8 @@ export function resolveThemePreset(
     return presetById(id);
   }
 
-  throw new Error(
-    `[SystemLauncher] Unable to resolve ThemePreset for industry/category "${industryCategory || 'unknown'}". ` +
-    'Refusing to use a default/minimal preset; relaunch with a supported 4-step wizard template selection.',
-  );
+  // themePresetId is no longer required. Wizard runtime (AI + siteBundle
+  // Lane B / Stage 4b merge) authors the final theme. Return the first
+  // registered preset as a neutral seed instead of throwing.
+  return THEME_PRESETS[0];
 }

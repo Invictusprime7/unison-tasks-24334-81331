@@ -24,11 +24,13 @@ describe('Theme deprecation sweep — wizard preset is single source of truth', 
     expect(files['/src/index.css']).toContain(`AESTHETIC: ${organic.label}`);
   });
 
-  it('rejects default preset injection when themePresetId is omitted', () => {
-    expect(() => normalizeLauncherFiles(
+  it('emits themed CSS from a neutral preset when themePresetId is omitted', () => {
+    const files = normalizeLauncherFiles(
       { '/src/App.tsx': 'export default () => null;' },
       {},
-    )).toThrow(/themePresetId/);
+    );
+    // themePresetId is no longer required; Lane B / Stage 4b merges final theme.
+    expect(files['/src/index.css']).toMatch(/AESTHETIC:/);
   });
 });
 

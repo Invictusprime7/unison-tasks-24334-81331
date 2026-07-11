@@ -20,8 +20,16 @@
 import type { LayoutCategory } from '@/data/templates/types';
 import { THEME_PRESETS, type ThemePreset } from './themePresets';
 
-const presetById = (id: string): ThemePreset =>
-  THEME_PRESETS.find((p) => p.id === id) ?? THEME_PRESETS[0];
+const presetById = (id: string): ThemePreset => {
+  const found = THEME_PRESETS.find((p) => p.id === id);
+  if (!found) {
+    throw new Error(
+      `[industryThemePresetMap] Unknown themePresetId "${id}". ` +
+      'Add the preset to themePresets.ts — silent fallback is disabled.',
+    );
+  }
+  return found;
+};
 
 /**
  * Exhaustive industry → preset map. Every LayoutCategory is covered so there
@@ -49,8 +57,9 @@ export const INDUSTRY_TO_THEME_PRESET_ID: Record<LayoutCategory, ThemePreset['id
  * Resolution order (deterministic):
  *   1. Explicit user selection from the wizard's Style step.
  *   2. Industry-based mapping (INDUSTRY_TO_THEME_PRESET_ID).
- *   3. Throw. The wizard must provide a supported industry/template context;
- *      silently choosing a default reintroduces the minimal-template path.
+ *   3. Throw. Default preset fallback is permanently disabled — the wizard
+ *      MUST supply either a Style-card selection or a registered industry
+ *      category. Anything else is a contract violation.
  */
 export function resolveThemePreset(
   selectedTheme: ThemePreset | null | undefined,
@@ -63,8 +72,9 @@ export function resolveThemePreset(
     return presetById(id);
   }
 
-  // themePresetId is no longer required. Wizard runtime (AI + siteBundle
-  // Lane B / Stage 4b merge) authors the final theme. Return the first
-  // registered preset as a neutral seed instead of throwing.
-  return THEME_PRESETS[0];
+  throw new Error(
+    `[resolveThemePreset] Refusing to return a default preset (industry="${industryCategory ?? 'null'}"). ` +
+    'Wizard must supply either an explicit Style-card selection or a registered LayoutCategory — ' +
+    'default template preset fallback is permanently disabled.',
+  );
 }

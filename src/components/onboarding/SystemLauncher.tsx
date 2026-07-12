@@ -1032,11 +1032,31 @@ function autoRepairMissingIntents(
       if (targetPath) {
         const src = out[targetPath] ?? files[targetPath];
         const cta = `\n      <div className="mt-8 flex justify-center"><button type="button" data-ut-intent="${intent}" className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-primary-foreground shadow hover:opacity-90 transition">Proceed to Checkout</button></div>\n`;
-        // Inject just before the last closing </div> or </section>/</main> in the returned JSX.
         const closeIdx = Math.max(src.lastIndexOf('</main>'), src.lastIndexOf('</section>'), src.lastIndexOf('</div>'));
         if (closeIdx > 0) {
           out[targetPath] = src.slice(0, closeIdx) + cta + src.slice(closeIdx);
           ok = true;
+        }
+      }
+    }
+
+    // 5) Universal synthesis for common contact / location / booking /
+    // newsletter / donation / auth / order intents — every industry profile
+    // may require one. Injects a themed CTA when no stampable slot exists so
+    // the 4-step contract passes across all verticals (not just ecommerce).
+    if (!ok) {
+      const synth = pickSynthesisForIntent(lower, intent);
+      if (synth) {
+        const targetPath = synth.targets.find((p) => tsxPaths.includes(p))
+          || tsxPaths.find((p) => /\/src\/pages\/Home\.tsx$/.test(p))
+          || tsxPaths.find((p) => /\/src\/pages\/.+\.tsx$/.test(p));
+        if (targetPath) {
+          const src = out[targetPath] ?? files[targetPath];
+          const closeIdx = Math.max(src.lastIndexOf('</main>'), src.lastIndexOf('</section>'), src.lastIndexOf('</div>'));
+          if (closeIdx > 0) {
+            out[targetPath] = src.slice(0, closeIdx) + synth.cta + src.slice(closeIdx);
+            ok = true;
+          }
         }
       }
     }
@@ -1046,6 +1066,59 @@ function autoRepairMissingIntents(
   }
 
   return { files: out, injected, missing };
+}
+
+/**
+ * Universal synthesis recipes for required intents that were not stampable
+ * on any existing element. Emits an accessible themed CTA appropriate to the
+ * intent family so the industry contract passes on every vertical.
+ */
+function pickSynthesisForIntent(
+  lower: string,
+  intent: string,
+): { targets: string[]; cta: string } | null {
+  const btn = (label: string) =>
+    `\n      <div className="mt-8 flex justify-center"><button type="button" data-ut-intent="${intent}" className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-primary-foreground shadow hover:opacity-90 transition">${label}</button></div>\n`;
+  const anchor = (label: string, href: string, extra = '') =>
+    `\n      <div className="mt-8 flex justify-center"><a href="${href}" data-ut-intent="${intent}" ${extra}className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-primary-foreground shadow hover:opacity-90 transition">${label}</a></div>\n`;
+
+  if (/(\.call|contact\.call|\.phone)/.test(lower)) {
+    return { targets: ['/src/pages/Contact.tsx', '/src/pages/Home.tsx'], cta: anchor('Call Us', 'tel:+15555555555') };
+  }
+  if (/(\.email|contact\.email|mailto)/.test(lower)) {
+    return { targets: ['/src/pages/Contact.tsx', '/src/pages/Home.tsx'], cta: anchor('Email Us', 'mailto:hello@example.com') };
+  }
+  if (/(\.sms|contact\.sms)/.test(lower)) {
+    return { targets: ['/src/pages/Contact.tsx', '/src/pages/Home.tsx'], cta: anchor('Text Us', 'sms:+15555555555') };
+  }
+  if (/(directions|location\.directions)/.test(lower)) {
+    return { targets: ['/src/pages/Contact.tsx', '/src/pages/Home.tsx'], cta: anchor('Get Directions', 'https://maps.google.com/', 'target="_blank" rel="noreferrer" ') };
+  }
+  if (/(booking|appointment|schedule|reservation)/.test(lower)) {
+    return { targets: ['/src/pages/Booking.tsx', '/src/pages/Home.tsx'], cta: btn('Book Now') };
+  }
+  if (/(quote|estimate)/.test(lower)) {
+    return { targets: ['/src/pages/Contact.tsx', '/src/pages/Services.tsx', '/src/pages/Home.tsx'], cta: btn('Request a Quote') };
+  }
+  if (/newsletter|subscribe/.test(lower)) {
+    return { targets: ['/src/pages/Home.tsx', '/src/pages/Contact.tsx'], cta: btn('Subscribe') };
+  }
+  if (/(donat|give)/.test(lower)) {
+    return { targets: ['/src/pages/Donate.tsx', '/src/pages/Home.tsx'], cta: btn('Donate Now') };
+  }
+  if (/(auth\.register|register)/.test(lower)) {
+    return { targets: ['/src/pages/Home.tsx'], cta: btn('Create Account') };
+  }
+  if (/(contact\.submit|contact\.form|form\.open|lead\.capture)/.test(lower)) {
+    return { targets: ['/src/pages/Contact.tsx', '/src/pages/Home.tsx'], cta: btn('Contact Us') };
+  }
+  if (/(order\.create|order\.start)/.test(lower)) {
+    return { targets: ['/src/pages/Menu.tsx', '/src/pages/Home.tsx'], cta: btn('Order Online') };
+  }
+  if (/(chat\.open|support)/.test(lower)) {
+    return { targets: ['/src/pages/Home.tsx', '/src/pages/Contact.tsx'], cta: btn('Chat With Us') };
+  }
+  return null;
 }
 
 

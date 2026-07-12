@@ -319,6 +319,13 @@ export async function updateSectionBinding(args: {
 
   const id = args.locator ? await locateBindingId(args.locator) : null;
   if (id) {
+    // Authorize against the binding's owning project (falls back to
+    // business membership if the row has no project_id).
+    const scope = await fetchBindingScope(id);
+    const denied = scope.projectId
+      ? await assertProjectAccess(scope.projectId)
+      : await assertBusinessAccess(scope.businessId);
+    if (denied) return { ok: false, op: 'updateSectionBinding', message: denied };
     const dto = await patchBindingById(id, args.patch);
     return {
       ok: !!dto,
@@ -336,6 +343,13 @@ export async function updateSectionBinding(args: {
         'No existing binding found and no upsert payload provided. Include upsert:{businessId,projectId,pagePath,sectionId,sourceKind}.',
     };
   }
+  // Upsert path: caller must own the target project (or business, if no project).
+  const upsertProjectId = (args.upsert as { projectId?: string }).projectId ?? null;
+  const upsertBusinessId = (args.upsert as { businessId?: string }).businessId ?? null;
+  const denied = upsertProjectId
+    ? await assertProjectAccess(upsertProjectId)
+    : await assertBusinessAccess(upsertBusinessId);
+  if (denied) return { ok: false, op: 'updateSectionBinding', message: denied };
   const dto = await upsertBinding({
     ...args.upsert,
     ...args.patch,

@@ -1403,6 +1403,7 @@ export type Database = {
       crm_activities: {
         Row: {
           activity_type: string
+          business_id: string | null
           completed_at: string | null
           contact_id: string | null
           created_at: string | null
@@ -1410,12 +1411,14 @@ export type Database = {
           description: string | null
           id: string
           lead_id: string | null
+          metadata: Json
           scheduled_at: string | null
           title: string
           user_id: string | null
         }
         Insert: {
           activity_type: string
+          business_id?: string | null
           completed_at?: string | null
           contact_id?: string | null
           created_at?: string | null
@@ -1423,12 +1426,14 @@ export type Database = {
           description?: string | null
           id?: string
           lead_id?: string | null
+          metadata?: Json
           scheduled_at?: string | null
           title: string
           user_id?: string | null
         }
         Update: {
           activity_type?: string
+          business_id?: string | null
           completed_at?: string | null
           contact_id?: string | null
           created_at?: string | null
@@ -1436,11 +1441,19 @@ export type Database = {
           description?: string | null
           id?: string
           lead_id?: string | null
+          metadata?: Json
           scheduled_at?: string | null
           title?: string
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "crm_activities_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "crm_activities_contact_id_fkey"
             columns: ["contact_id"]
@@ -3731,11 +3744,13 @@ export type Database = {
       tasks: {
         Row: {
           assignee_id: string | null
+          business_id: string | null
           created_at: string | null
           created_by: string
           description: string | null
           due_date: string | null
           id: string
+          metadata: Json
           priority: string | null
           project_id: string
           status: string | null
@@ -3744,11 +3759,13 @@ export type Database = {
         }
         Insert: {
           assignee_id?: string | null
+          business_id?: string | null
           created_at?: string | null
           created_by: string
           description?: string | null
           due_date?: string | null
           id?: string
+          metadata?: Json
           priority?: string | null
           project_id: string
           status?: string | null
@@ -3757,11 +3774,13 @@ export type Database = {
         }
         Update: {
           assignee_id?: string | null
+          business_id?: string | null
           created_at?: string | null
           created_by?: string
           description?: string | null
           due_date?: string | null
           id?: string
+          metadata?: Json
           priority?: string | null
           project_id?: string
           status?: string | null
@@ -3774,6 +3793,13 @@ export type Database = {
             columns: ["assignee_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
           {

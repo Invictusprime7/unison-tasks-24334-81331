@@ -97,6 +97,89 @@ function resolveSurfaceOrFail(surfaceId: string): CatalogSurface {
   return s;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Authorization — enforce RLS-aligned membership BEFORE any mutation.
+// The DB has RLS + is_business_member / is_project_member security-definer
+// helpers; we mirror those checks client-side so the AI's tool calls fail
+// fast with a friendly message instead of a raw Postgres error, and so we
+// never issue a mutation the current user is not entitled to make.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const UNAUTHORIZED_SIGN_IN = 'Please sign in to edit catalog data.';
+const UNAUTHORIZED_BUSINESS =
+  "You don't have permission to edit this business's catalog.";
+const UNAUTHORIZED_PROJECT =
+  "You don't have permission to edit this project's section bindings.";
+
+async function currentUserId(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function assertBusinessAccess(
+  businessId: string | null | undefined,
+): Promise<string | null> {
+  if (!businessId) return 'businessId is required for this catalog operation.';
+  const uid = await currentUserId();
+  if (!uid) return UNAUTHORIZED_SIGN_IN;
+  const { data, error } = await supabase.rpc(
+    'is_business_member' as never,
+    { _business_id: businessId } as never,
+  );
+  if (error) return `Authorization check failed: ${error.message}`;
+  if (data !== true) return UNAUTHORIZED_BUSINESS;
+  return null;
+}
+
+async function assertProjectAccess(
+  projectId: string | null | undefined,
+): Promise<string | null> {
+  if (!projectId) return 'projectId is required for this catalog operation.';
+  const uid = await currentUserId();
+  if (!uid) return UNAUTHORIZED_SIGN_IN;
+  const { data, error } = await supabase.rpc(
+    'is_project_member' as never,
+    { _user_id: uid, _project_id: projectId } as never,
+  );
+  if (error) return `Authorization check failed: ${error.message}`;
+  if (data !== true) return UNAUTHORIZED_PROJECT;
+  return null;
+}
+
+/** Look up the owning business_id for a catalog row before mutating it. */
+async function fetchRowBusinessId(
+  table: string,
+  rowId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from(table as never)
+    .select('business_id')
+    .eq('id', rowId)
+    .maybeSingle();
+  return (data as { business_id?: string } | null)?.business_id ?? null;
+}
+
+/** Look up the owning project/business for a binding row. */
+async function fetchBindingScope(
+  bindingId: string,
+): Promise<{ projectId: string | null; businessId: string | null }> {
+  const { data } = await supabase
+    .from('site_data_bindings' as never)
+    .select('project_id, business_id')
+    .eq('id', bindingId)
+    .maybeSingle();
+  const row = data as { project_id?: string; business_id?: string } | null;
+  return {
+    projectId: row?.project_id ?? null,
+    businessId: row?.business_id ?? null,
+  };
+}
+
+
 /** Split a caller-supplied field patch into (editable-shape, raw-column-writes). */
 function splitPatch(
   surface: CatalogSurface,
@@ -144,6 +227,8 @@ export async function createCatalogRow(args: {
   patch: CatalogRowFieldPatch;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
+  const denied = await assertBusinessAccess(args.businessId);
+  if (denied) return { ok: false, op: 'createCatalogRow', message: denied };
   const { editable, extraColumns } = splitPatch(surface, args.patch);
   const created = await createRow(surface.sourceTable, args.businessId, editable);
   if (!created) {
@@ -169,6 +254,9 @@ export async function updateCatalogRow(args: {
   patch: CatalogRowFieldPatch;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
+  const ownerBusinessId = await fetchRowBusinessId(surface.sourceTable, args.rowId);
+  const denied = await assertBusinessAccess(ownerBusinessId);
+  if (denied) return { ok: false, op: 'updateCatalogRow', message: denied };
   const { editable, extraColumns } = splitPatch(surface, args.patch);
 
   const ok1 = Object.keys(editable).length === 0
@@ -199,6 +287,9 @@ export async function deleteCatalogRow(args: {
   rowId: string;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
+  const ownerBusinessId = await fetchRowBusinessId(surface.sourceTable, args.rowId);
+  const denied = await assertBusinessAccess(ownerBusinessId);
+  if (denied) return { ok: false, op: 'deleteCatalogRow', message: denied };
   const ok = await deleteRow(surface.sourceTable, args.rowId);
   return {
     ok,
@@ -228,6 +319,13 @@ export async function updateSectionBinding(args: {
 
   const id = args.locator ? await locateBindingId(args.locator) : null;
   if (id) {
+    // Authorize against the binding's owning project (falls back to
+    // business membership if the row has no project_id).
+    const scope = await fetchBindingScope(id);
+    const denied = scope.projectId
+      ? await assertProjectAccess(scope.projectId)
+      : await assertBusinessAccess(scope.businessId);
+    if (denied) return { ok: false, op: 'updateSectionBinding', message: denied };
     const dto = await patchBindingById(id, args.patch);
     return {
       ok: !!dto,
@@ -245,6 +343,13 @@ export async function updateSectionBinding(args: {
         'No existing binding found and no upsert payload provided. Include upsert:{businessId,projectId,pagePath,sectionId,sourceKind}.',
     };
   }
+  // Upsert path: caller must own the target project (or business, if no project).
+  const upsertProjectId = (args.upsert as { projectId?: string }).projectId ?? null;
+  const upsertBusinessId = (args.upsert as { businessId?: string }).businessId ?? null;
+  const denied = upsertProjectId
+    ? await assertProjectAccess(upsertProjectId)
+    : await assertBusinessAccess(upsertBusinessId);
+  if (denied) return { ok: false, op: 'updateSectionBinding', message: denied };
   const dto = await upsertBinding({
     ...args.upsert,
     ...args.patch,

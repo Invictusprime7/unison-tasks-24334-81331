@@ -10,6 +10,7 @@ import { upsertBinding } from '@/services/sectionDataBindingService';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import {
   buildDisplayMappingForBinding,
+  CATALOG_SURFACES,
   getCatalogSurface,
   type CatalogKind,
   type CatalogSurface,
@@ -23,11 +24,7 @@ import type { SectionDataFallback } from '@/types/catalog';
  */
 export const WIZARD_TYPE_TO_REQUIREMENT: Record<string, string> = (() => {
   const out: Record<string, string> = {};
-  for (const surface of Object.values(
-    // Avoid a static import cycle: read from registry via getCatalogSurface's
-    // module. We do a one-shot pass over aliases here.
-    (await import('@/platform/core/catalogSurfaceRegistry')).CATALOG_SURFACES,
-  )) {
+  for (const surface of Object.values(CATALOG_SURFACES)) {
     const spellings = new Set<string>([
       surface.surfaceId,
       surface.componentType,

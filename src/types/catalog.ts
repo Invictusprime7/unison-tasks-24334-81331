@@ -27,10 +27,11 @@ export const CATALOG_KIND_TO_TABLE: Record<CatalogKind, string> = {
   service: 'services',
   menu_item: 'menu_items',
   pricing_plan: 'pricing_plans',
-  offer: 'offers',
-  project: 'projects',
+  offer: 'featured_offers',
+  project: 'portfolio_projects',
   testimonial: 'testimonials',
 };
+
 
 export type SectionDataFallback = 'empty_state' | 'hide_section' | 'show_placeholder';
 export type BindingType = 'section' | 'slot' | 'card';
@@ -121,7 +122,29 @@ export const SECTION_DATA_REQUIREMENTS: Record<string, SectionDataRequirement> =
     emptyState: 'empty_state',
     supportedIntents: ['checkout.start', 'contact.form'],
   },
+  FeaturedOffers: {
+    sectionType: 'FeaturedOffers',
+    requiredKind: 'offer',
+    minRows: 1,
+    emptyState: 'hide_section',
+    supportedIntents: ['nav.goto', 'cart.add', 'contact.form'],
+  },
+  Testimonials: {
+    sectionType: 'Testimonials',
+    requiredKind: 'testimonial',
+    minRows: 1,
+    emptyState: 'hide_section',
+    supportedIntents: [],
+  },
+  PortfolioGrid: {
+    sectionType: 'PortfolioGrid',
+    requiredKind: 'project',
+    minRows: 1,
+    emptyState: 'hide_section',
+    supportedIntents: ['nav.goto'],
+  },
 };
+
 
 export function requirementForSection(sectionType: string): SectionDataRequirement | null {
   return SECTION_DATA_REQUIREMENTS[sectionType] ?? null;

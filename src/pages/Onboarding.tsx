@@ -21,6 +21,12 @@ const Onboarding = () => {
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [gateOpen, setGateOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [prefill, setPrefill] = useState<{
+    businessId: string;
+    businessName: string | null;
+    industry: string | null;
+    notificationEmail: string | null;
+  } | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {

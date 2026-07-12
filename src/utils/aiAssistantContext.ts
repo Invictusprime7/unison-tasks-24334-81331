@@ -3,6 +3,30 @@ import { getSystemContract } from "@/data/templates/contracts";
 import { getDefaultManifestForSystem, getManifestStats } from "@/data/templates/manifest";
 import type { TemplateCtaAnalysis } from "@/utils/ctaContract";
 import { CORE_INTENTS } from "@/platform/core/coreIntents";
+import { CATALOG_SURFACES } from "@/platform/core/catalogSurfaceRegistry";
+
+function buildCatalogRegistrySummary(): string {
+  const lines: string[] = [];
+  lines.push("\nCanonical catalog registry (Supabase-backed — edit ROWS, not TSX):");
+  for (const s of Object.values(CATALOG_SURFACES)) {
+    const priceCol = s.fields.priceCents
+      ? `${s.fields.priceCents} (cents)`
+      : s.fields.price
+        ? `${s.fields.price} (dollars)`
+        : "n/a";
+    const editable = s.editableFields.map((f) => `${f.key}:${f.type}`).join(", ");
+    lines.push(
+      `- surfaceId=${s.surfaceId} kind=${s.catalogKind} table=${s.sourceTable} component=${s.componentType} route=${s.editorRoute} price=${priceCol}`,
+    );
+    lines.push(`    aliases: ${s.aliases.join(", ")}`);
+    lines.push(`    editable: ${editable}`);
+    lines.push(`    intents: ${s.supportedIntents.join(", ") || "(none)"}`);
+  }
+  lines.push(
+    "Rules: to add/edit services, products, menu items, pricing plans, offers, testimonials, or portfolio projects, propose a catalog row change (surfaceId + patch) — do NOT hand-edit component TSX with hardcoded content. Sections auto-hydrate from these tables at runtime.",
+  );
+  return lines.join("\n");
+}
 
 /**
  * Builds a compact “backend awareness” context string for the AI assistant.

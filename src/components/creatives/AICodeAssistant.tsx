@@ -52,6 +52,7 @@ import { rewriteDemoEmbeds } from "@/utils/demoEmbedRewriter";
 import type { BusinessSystemType } from "@/data/templates/types";
 import type { TemplateCtaAnalysis } from "@/utils/ctaContract";
 import { buildWebBuilderAIContext } from "@/utils/aiAssistantContext";
+import { buildCatalogContext, renderCatalogContextForPrompt, type SelectedSectionRef } from "@/utils/catalogContext";
 // Removed deprecated aiFileTags - functionality consolidated in aiResponseParser
 import { parseAIResponse, getPrimaryCodeBlock, type AIResponseParseResult } from "@/utils/aiResponseParser";
 

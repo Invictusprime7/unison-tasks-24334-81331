@@ -143,12 +143,18 @@ const Onboarding = () => {
       <BusinessProfileGate
         open={gateOpen}
         onOpenChange={setGateOpen}
-        onReady={() => {
+        onReady={(businessId, profile: BusinessProfileDTO) => {
+          setPrefill({
+            businessId,
+            businessName: profile?.name ?? null,
+            industry: profile?.industry ?? null,
+            notificationEmail: profile?.notificationEmail ?? null,
+          });
           setGateOpen(false);
           setLauncherOpen(true);
         }}
       />
-      <SystemLauncher open={launcherOpen} onOpenChange={handleLauncherClose} />
+      <SystemLauncher open={launcherOpen} onOpenChange={handleLauncherClose} prefill={prefill} />
     </div>
   );
 };

@@ -39,8 +39,15 @@ export function buildWebBuilderAIContext(opts: {
   pageStructure?: string | null;
   backendState?: string | null;
   businessData?: string | null;
+  /**
+   * Pre-rendered catalogContext block (see @/utils/catalogContext).
+   * Callers that have businessId/projectId should build+render it with
+   * `renderCatalogContextForPrompt(await buildCatalogContext({...}))`
+   * so the assistant sees live row counts + active bindings.
+   */
+  catalogContext?: string | null;
 }): string {
-  const { systemType, templateName, ctaAnalysis, pageStructure, backendState, businessData } = opts;
+  const { systemType, templateName, ctaAnalysis, pageStructure, backendState, businessData, catalogContext } = opts;
 
   const lines: string[] = [];
   lines.push("\n\n=== WEB BUILDER BACKEND CONTEXT (builder-author; propose+approve) ===");

@@ -102,10 +102,17 @@ export function buildWebBuilderAIContext(opts: {
 
   lines.push(buildCatalogRegistrySummary());
 
+  if (catalogContext) {
+    lines.push(catalogContext);
+  }
+
   lines.push("\nRules:");
   lines.push("- Prefer editing existing template HTML in-place (broad UI edits allowed).");
   lines.push("- CTAs should use data-ut-cta + data-ut-intent + data-ut-label (also keep data-intent for compatibility).");
   lines.push("- Backend changes are allowed only as a PROPOSED plan; user approves before execution.");
+  lines.push("- For catalog content (products/services/menu/pricing/offers/testimonials/portfolio) call the catalog operation tools — never hand-edit card copy or prices in TSX.");
+  lines.push("- For section data-source changes use updateSectionBinding / switchSectionCollection / changeSectionLimit / changeSectionSort / changeSectionFallback — never edit data-ut-section-type strings by hand.");
+  lines.push("- Use only canonical intents from the CoreIntents registry, and only intents allowed for the surface being edited (catalogContext.supportedIntentsBySurface).");
   lines.push("- If you propose multi-file changes, output them as <file path=\"/path\">...content...</file> blocks (no markdown).");
 
   return lines.join("\n");

@@ -93,6 +93,8 @@ export function buildWebBuilderAIContext(opts: {
   lines.push("\nRuntime intent registry (executable):");
   lines.push(availableIntents.join(", "));
 
+  lines.push(buildCatalogRegistrySummary());
+
   lines.push("\nRules:");
   lines.push("- Prefer editing existing template HTML in-place (broad UI edits allowed).");
   lines.push("- CTAs should use data-ut-cta + data-ut-intent + data-ut-label (also keep data-intent for compatibility).");

@@ -31,232 +31,45 @@ import {
 import {
   SECTION_DATA_CONTRACTS,
   type SectionDataContract,
-  type CatalogSourceTable,
 } from '@/services/catalog/sectionDataContracts';
+import {
+  getCatalogSurface,
+  type CatalogFieldSpec,
+  type CatalogFieldType,
+  type CatalogSurface,
+} from '@/platform/core/catalogSurfaceRegistry';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Field schemas
+// Editor schema (derived from the canonical catalogSurfaceRegistry — the
+// single source of truth for every catalog surface's shape).
 // ─────────────────────────────────────────────────────────────────────────────
 
-type FieldType =
-  | 'text'
-  | 'textarea'
-  | 'number'
-  | 'money' // stored as numeric dollars
-  | 'money-cents' // stored as integer cents (menu_items, pricing_plans)
-  | 'image'
-  | 'boolean'
-  | 'rating'; // numeric(2,1) 0-5
-
-interface FieldSpec {
-  key: string;
-  label: string;
-  type: FieldType;
-  placeholder?: string;
-  required?: boolean;
-  span?: 'full' | 'half';
-}
+type FieldType = CatalogFieldType;
+type FieldSpec = CatalogFieldSpec;
 
 interface TableSchema {
-  table: CatalogSourceTable;
+  table: string;
   titleField: string;
   subtitleField?: string;
   imageField?: string;
-  featuredField?: 'featured' | 'is_active' | 'available' | 'active';
-  fields: FieldSpec[];
+  featuredField?: string;
+  fields: readonly FieldSpec[];
   defaults: Record<string, unknown>;
 }
 
-const TABLE_SCHEMAS: Record<CatalogSourceTable, TableSchema> = {
-  services: {
-    table: 'services',
-    titleField: 'name',
-    subtitleField: 'category',
-    imageField: 'image_url',
-    featuredField: 'is_active',
-    fields: [
-      { key: 'name', label: 'Name', type: 'text', required: true, span: 'full' },
-      { key: 'category', label: 'Category', type: 'text', span: 'half' },
-      { key: 'duration_minutes', label: 'Duration (min)', type: 'number', span: 'half' },
-      { key: 'price_cents', label: 'Price', type: 'money-cents', span: 'half' },
-      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
-      { key: 'image_url', label: 'Image URL', type: 'image', span: 'full' },
-      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
-      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
-      { key: 'is_active', label: 'Active', type: 'boolean', span: 'half' },
-    ],
-    defaults: {
-      name: 'New service',
-      duration_minutes: 30,
-      price_cents: 0,
-      sort_order: 0,
-      is_active: true,
-      featured: false,
-    },
-  },
-  products: {
-    table: 'products',
-    titleField: 'name',
-    subtitleField: 'category',
-    imageField: 'image_url',
-    featuredField: 'is_active',
-    fields: [
-      { key: 'name', label: 'Name', type: 'text', required: true, span: 'full' },
-      { key: 'category', label: 'Category', type: 'text', span: 'half' },
-      { key: 'price', label: 'Price', type: 'money', span: 'half' },
-      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'USD', span: 'half' },
-      { key: 'inventory_count', label: 'Inventory', type: 'number', span: 'half' },
-      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
-      { key: 'image_url', label: 'Image URL', type: 'image', span: 'full' },
-      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
-      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
-      { key: 'is_active', label: 'Active', type: 'boolean', span: 'half' },
-    ],
-    defaults: {
-      name: 'New product',
-      currency: 'USD',
-      price: 0,
-      inventory_count: 0,
-      sort_order: 0,
-      is_active: true,
-      featured: false,
-    },
-  },
-  menu_items: {
-    table: 'menu_items',
-    titleField: 'name',
-    subtitleField: 'category',
-    imageField: 'image_url',
-    featuredField: 'available',
-    fields: [
-      { key: 'name', label: 'Name', type: 'text', required: true, span: 'full' },
-      { key: 'category', label: 'Category', type: 'text', span: 'half' },
-      { key: 'price_cents', label: 'Price', type: 'money-cents', span: 'half' },
-      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'usd', span: 'half' },
-      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
-      { key: 'image_url', label: 'Image URL', type: 'image', span: 'full' },
-      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
-      { key: 'available', label: 'Available', type: 'boolean', span: 'half' },
-      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
-    ],
-    defaults: {
-      name: 'New menu item',
-      currency: 'usd',
-      price_cents: 0,
-      sort_order: 0,
-      available: true,
-      featured: false,
-    },
-  },
-  pricing_plans: {
-    table: 'pricing_plans',
-    titleField: 'name',
-    subtitleField: 'billing_interval',
-    featuredField: 'is_active',
-    fields: [
-      { key: 'name', label: 'Plan name', type: 'text', required: true, span: 'full' },
-      { key: 'price_cents', label: 'Price', type: 'money-cents', span: 'half' },
-      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'usd', span: 'half' },
-      {
-        key: 'billing_interval',
-        label: 'Billing interval',
-        type: 'text',
-        placeholder: 'monthly | yearly | one-time',
-        span: 'half',
-      },
-      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
-      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
-      { key: 'highlighted', label: 'Highlighted', type: 'boolean', span: 'half' },
-      { key: 'is_active', label: 'Active', type: 'boolean', span: 'half' },
-    ],
-    defaults: {
-      name: 'New plan',
-      currency: 'usd',
-      price_cents: 0,
-      billing_interval: 'monthly',
-      sort_order: 0,
-      is_active: true,
-      highlighted: false,
-    },
-  },
-  featured_offers: {
-    table: 'featured_offers',
-    titleField: 'title',
-    subtitleField: 'subtitle',
-    imageField: 'image_url',
-    featuredField: 'active',
-    fields: [
-      { key: 'title', label: 'Title', type: 'text', required: true, span: 'full' },
-      { key: 'subtitle', label: 'Subtitle', type: 'text', span: 'full' },
-      { key: 'discount_label', label: 'Discount label', type: 'text', span: 'half' },
-      { key: 'cta_label', label: 'CTA label', type: 'text', span: 'half' },
-      { key: 'cta_href', label: 'CTA link', type: 'text', span: 'half' },
-      { key: 'cta_intent', label: 'CTA intent', type: 'text', placeholder: 'nav.goto', span: 'half' },
-      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
-      { key: 'image_url', label: 'Image URL', type: 'image', span: 'full' },
-      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
-      { key: 'active', label: 'Active', type: 'boolean', span: 'half' },
-    ],
-    defaults: {
-      title: 'New offer',
-      sort_order: 0,
-      active: true,
-    },
-  },
-  testimonials: {
-    table: 'testimonials',
-    titleField: 'author_name',
-    subtitleField: 'author_role',
-    imageField: 'author_avatar_url',
-    featuredField: 'featured',
-    fields: [
-      { key: 'author_name', label: 'Author name', type: 'text', required: true, span: 'half' },
-      { key: 'author_role', label: 'Author role', type: 'text', span: 'half' },
-      { key: 'rating', label: 'Rating (0–5)', type: 'rating', span: 'half' },
-      { key: 'source', label: 'Source', type: 'text', placeholder: 'Google, Yelp…', span: 'half' },
-      { key: 'author_avatar_url', label: 'Avatar URL', type: 'image', span: 'full' },
-      { key: 'quote', label: 'Quote', type: 'textarea', required: true, span: 'full' },
-      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
-      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
-    ],
-    defaults: {
-      author_name: 'New reviewer',
-      quote: '',
-      sort_order: 0,
-      featured: false,
-    },
-  },
-  portfolio_projects: {
-    table: 'portfolio_projects',
-    titleField: 'title',
-    subtitleField: 'client_name',
-    imageField: 'cover_image_url',
-    featuredField: 'featured',
-    fields: [
-      { key: 'title', label: 'Title', type: 'text', required: true, span: 'full' },
-      { key: 'subtitle', label: 'Subtitle', type: 'text', span: 'half' },
-      { key: 'client_name', label: 'Client', type: 'text', span: 'half' },
-      { key: 'external_url', label: 'External URL', type: 'text', span: 'half' },
-      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
-      { key: 'cover_image_url', label: 'Cover image URL', type: 'image', span: 'full' },
-      { key: 'summary', label: 'Summary', type: 'textarea', span: 'full' },
-      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
-    ],
-    defaults: {
-      title: 'New project',
-      sort_order: 0,
-      featured: false,
-    },
-  },
-  availability_slots: {
-    // Not exposed via BusinessCatalogEditor — availability lives in its own
-    // dedicated calendar surface. Included here so TABLE_SCHEMAS stays total.
-    table: 'availability_slots',
-    titleField: 'starts_at',
-    fields: [],
-    defaults: {},
-  },
-};
+function schemaFromSurface(surface: CatalogSurface): TableSchema {
+  const f = surface.fields;
+  return {
+    table: surface.sourceTable,
+    titleField: f.title,
+    subtitleField: f.category ?? f.description,
+    imageField: f.image,
+    featuredField: f.featured ?? f.active,
+    fields: surface.editableFields,
+    defaults: surface.newRowDefaults,
+  };
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Value coercion helpers
@@ -317,7 +130,12 @@ interface Props {
 
 export function BusinessCatalogEditor({ sectionType }: Props) {
   const contract: SectionDataContract | undefined = SECTION_DATA_CONTRACTS[sectionType];
-  const schema = contract ? TABLE_SCHEMAS[contract.sourceTable] : null;
+  const surface = useMemo(
+    () => getCatalogSurface(sectionType) ?? (contract ? getCatalogSurface(contract.sourceTable) : null),
+    [sectionType, contract],
+  );
+  const schema = useMemo(() => (surface ? schemaFromSurface(surface) : null), [surface]);
+
 
   const [businesses, setBusinesses] = useState<BusinessRow[]>([]);
   const [businessId, setBusinessId] = useState<string | null>(null);

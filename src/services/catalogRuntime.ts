@@ -181,7 +181,12 @@ const WIZARD_TYPE_TO_REQUIREMENT_LOCAL: Record<string, string> = {
   featured_products: 'FeaturedProducts',
   menu: 'MenuSection', menu_section: 'MenuSection',
   pricing: 'PricingTable', pricing_table: 'PricingTable', plans: 'PricingTable',
+  offers: 'FeaturedOffers', featured_offers: 'FeaturedOffers', promotions: 'FeaturedOffers', deals: 'FeaturedOffers',
+  testimonials: 'Testimonials', reviews: 'Testimonials', social_proof: 'Testimonials',
+  portfolio: 'PortfolioGrid', portfolio_grid: 'PortfolioGrid', projects: 'PortfolioGrid',
+  case_studies: 'PortfolioGrid', gallery: 'PortfolioGrid', work: 'PortfolioGrid',
 };
+
 
 function mapWizardTypeToRequirement(t: string): string | null {
   if (!t) return null;

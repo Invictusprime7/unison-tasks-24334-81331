@@ -42,7 +42,80 @@ export const WIZARD_TYPE_TO_REQUIREMENT: Record<string, string> = {
   pricing: 'PricingTable',
   pricing_table: 'PricingTable',
   plans: 'PricingTable',
+  // Milestone 3 — additional live-data sections
+  offers: 'FeaturedOffers',
+  featured_offers: 'FeaturedOffers',
+  promotions: 'FeaturedOffers',
+  deals: 'FeaturedOffers',
+  testimonials: 'Testimonials',
+  reviews: 'Testimonials',
+  social_proof: 'Testimonials',
+  portfolio: 'PortfolioGrid',
+  portfolio_grid: 'PortfolioGrid',
+  projects: 'PortfolioGrid',
+  case_studies: 'PortfolioGrid',
+  gallery: 'PortfolioGrid',
+  work: 'PortfolioGrid',
 };
+
+/**
+ * Per-kind defaults so auto-emitted bindings match each table's actual
+ * schema (columns differ: services uses `is_active`, featured_offers uses
+ * `active`, testimonials/portfolio use `featured`, etc.). Filters/sort/
+ * displayMapping produced here flow straight into `site_data_bindings`.
+ */
+type KindDefaults = {
+  filters: Record<string, unknown>;
+  sort: { field: string; direction: 'asc' | 'desc' };
+  limit: number;
+  displayMapping: Record<string, string>;
+};
+
+const KIND_DEFAULTS: Partial<Record<import('@/types/catalog').CatalogKind, KindDefaults>> = {
+  service: {
+    filters: { is_active: true },
+    sort: { field: 'sort_order', direction: 'asc' },
+    limit: 12,
+    displayMapping: { title: 'name', description: 'description', price: 'price', image: 'image_url', duration: 'duration_minutes' },
+  },
+  product: {
+    filters: { is_active: true },
+    sort: { field: 'sort_order', direction: 'asc' },
+    limit: 12,
+    displayMapping: { title: 'name', description: 'description', price: 'price', image: 'image_url', badge: 'badge' },
+  },
+  menu_item: {
+    filters: { is_available: true },
+    sort: { field: 'sort_order', direction: 'asc' },
+    limit: 24,
+    displayMapping: { title: 'name', description: 'description', price: 'price', image: 'image_url' },
+  },
+  pricing_plan: {
+    filters: { is_active: true },
+    sort: { field: 'sort_order', direction: 'asc' },
+    limit: 6,
+    displayMapping: { title: 'name', description: 'description', price: 'price', badge: 'badge' },
+  },
+  offer: {
+    filters: { active: true },
+    sort: { field: 'sort_order', direction: 'asc' },
+    limit: 6,
+    displayMapping: { title: 'title', description: 'description', image: 'image_url', badge: 'discount_label', cta: 'cta_label' },
+  },
+  testimonial: {
+    filters: {},
+    sort: { field: 'sort_order', direction: 'asc' },
+    limit: 9,
+    displayMapping: { title: 'author_name', description: 'quote', image: 'author_avatar_url', badge: 'rating', role: 'author_role' },
+  },
+  project: {
+    filters: {},
+    sort: { field: 'sort_order', direction: 'asc' },
+    limit: 12,
+    displayMapping: { title: 'title', description: 'summary', image: 'cover_image_url', badge: 'client_name' },
+  },
+};
+
 
 /**
  * Build the sectionId → requirementKey map used by the CatalogInspectorPanel /
@@ -129,6 +202,11 @@ export async function autoEmitSectionBindings(
 
       const sourceTable = CATALOG_KIND_TO_TABLE[req.requiredKind];
       const sectionId = `${requirementKey}-${index}`;
+      const kindDefaults = KIND_DEFAULTS[req.requiredKind];
+      const fallbackDefault =
+        (req.emptyState as SectionDataFallback) === 'hide_section'
+          ? 'hide_section'
+          : defaultFallback;
 
       try {
         const dto = await upsertBinding({
@@ -140,11 +218,16 @@ export async function autoEmitSectionBindings(
           bindingType: 'section',
           sourceKind: req.requiredKind,
           sourceTable,
-          filters: defaultFilters[req.requiredKind] ?? { is_active: true },
-          sort: { field: 'sort_order', direction: 'asc' },
-          limitCount: defaultLimit,
-          fallbackMode: defaultFallback,
+          filters:
+            defaultFilters[req.requiredKind] ??
+            kindDefaults?.filters ??
+            { is_active: true },
+          sort: kindDefaults?.sort ?? { field: 'sort_order', direction: 'asc' },
+          limitCount: kindDefaults?.limit ?? defaultLimit,
+          displayMapping: kindDefaults?.displayMapping ?? {},
+          fallbackMode: fallbackDefault,
         });
+
         if (dto) {
           result.emitted++;
           result.bindingIds.push(dto.id);

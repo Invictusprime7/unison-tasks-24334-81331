@@ -825,7 +825,21 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     stopDocker: handleStopDocker,
     getBackend: () => backend,
     openInNewTab: handleOpenInNewTab,
-    getIframe: () => iframeRef.current,
+    getIframe: () => {
+      // Docker/local backends attach iframeRef directly. On Sandpack the
+      // rendered iframe lives inside <SandpackPreview>, so fall back to a
+      // DOM query so consumers (behavior map, edit-mode bridge) can still
+      // reach the running app iframe.
+      if (iframeRef.current) return iframeRef.current;
+      try {
+        const sp = document.querySelector(
+          'iframe.sp-preview-iframe, .sp-preview iframe'
+        ) as HTMLIFrameElement | null;
+        return sp ?? null;
+      } catch {
+        return null;
+      }
+    },
     navigateToRoute: handleNavigateToRoute,
     clearSelectedElement,
   }), [handleRestart, handleStartDocker, handleStopDocker, backend, handleOpenInNewTab, handleNavigateToRoute, clearSelectedElement]);

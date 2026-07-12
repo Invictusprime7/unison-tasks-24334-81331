@@ -1,0 +1,725 @@
+/**
+ * BusinessCatalogEditor — Milestone 3 (M3) Business Center CRUD surface.
+ *
+ * Given a section contract (e.g. "ServicesGrid" → services table), renders
+ * a browsable/editable list of rows scoped to the selected business. All
+ * writes flow directly through Supabase; RLS enforces business membership.
+ *
+ * Field schemas are declared per table below so we can support every catalog
+ * source in `sectionDataContracts.ts` without hand-rolling seven pages.
+ * When a row is added/edited/deleted we dispatch:
+ *   - `lovable:catalog-seeded` so CatalogInspectorPanel refreshes
+ *   - `postMessage({ type: 'CATALOG_BINDINGS_CHANGED' })` so live previews re-hydrate
+ */
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { Loader2, Plus, Save, Trash2, Star } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  SECTION_DATA_CONTRACTS,
+  type SectionDataContract,
+  type CatalogSourceTable,
+} from '@/services/catalog/sectionDataContracts';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Field schemas
+// ─────────────────────────────────────────────────────────────────────────────
+
+type FieldType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'money' // stored as numeric dollars
+  | 'money-cents' // stored as integer cents (menu_items, pricing_plans)
+  | 'image'
+  | 'boolean'
+  | 'rating'; // numeric(2,1) 0-5
+
+interface FieldSpec {
+  key: string;
+  label: string;
+  type: FieldType;
+  placeholder?: string;
+  required?: boolean;
+  span?: 'full' | 'half';
+}
+
+interface TableSchema {
+  table: CatalogSourceTable;
+  titleField: string;
+  subtitleField?: string;
+  imageField?: string;
+  featuredField?: 'featured' | 'is_active' | 'available' | 'active';
+  fields: FieldSpec[];
+  defaults: Record<string, unknown>;
+}
+
+const TABLE_SCHEMAS: Record<CatalogSourceTable, TableSchema> = {
+  services: {
+    table: 'services',
+    titleField: 'name',
+    subtitleField: 'category',
+    imageField: 'image_url',
+    featuredField: 'is_active',
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true, span: 'full' },
+      { key: 'category', label: 'Category', type: 'text', span: 'half' },
+      { key: 'duration_minutes', label: 'Duration (min)', type: 'number', span: 'half' },
+      { key: 'price_cents', label: 'Price', type: 'money-cents', span: 'half' },
+      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
+      { key: 'image_url', label: 'Image URL', type: 'image', span: 'full' },
+      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
+      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
+      { key: 'is_active', label: 'Active', type: 'boolean', span: 'half' },
+    ],
+    defaults: {
+      name: 'New service',
+      duration_minutes: 30,
+      price_cents: 0,
+      sort_order: 0,
+      is_active: true,
+      featured: false,
+    },
+  },
+  products: {
+    table: 'products',
+    titleField: 'name',
+    subtitleField: 'category',
+    imageField: 'image_url',
+    featuredField: 'is_active',
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true, span: 'full' },
+      { key: 'category', label: 'Category', type: 'text', span: 'half' },
+      { key: 'price', label: 'Price', type: 'money', span: 'half' },
+      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'USD', span: 'half' },
+      { key: 'inventory_count', label: 'Inventory', type: 'number', span: 'half' },
+      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
+      { key: 'image_url', label: 'Image URL', type: 'image', span: 'full' },
+      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
+      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
+      { key: 'is_active', label: 'Active', type: 'boolean', span: 'half' },
+    ],
+    defaults: {
+      name: 'New product',
+      currency: 'USD',
+      price: 0,
+      inventory_count: 0,
+      sort_order: 0,
+      is_active: true,
+      featured: false,
+    },
+  },
+  menu_items: {
+    table: 'menu_items',
+    titleField: 'name',
+    subtitleField: 'category',
+    imageField: 'image_url',
+    featuredField: 'available',
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true, span: 'full' },
+      { key: 'category', label: 'Category', type: 'text', span: 'half' },
+      { key: 'price_cents', label: 'Price', type: 'money-cents', span: 'half' },
+      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'usd', span: 'half' },
+      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
+      { key: 'image_url', label: 'Image URL', type: 'image', span: 'full' },
+      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
+      { key: 'available', label: 'Available', type: 'boolean', span: 'half' },
+      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
+    ],
+    defaults: {
+      name: 'New menu item',
+      currency: 'usd',
+      price_cents: 0,
+      sort_order: 0,
+      available: true,
+      featured: false,
+    },
+  },
+  pricing_plans: {
+    table: 'pricing_plans',
+    titleField: 'name',
+    subtitleField: 'billing_interval',
+    featuredField: 'is_active',
+    fields: [
+      { key: 'name', label: 'Plan name', type: 'text', required: true, span: 'full' },
+      { key: 'price_cents', label: 'Price', type: 'money-cents', span: 'half' },
+      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'usd', span: 'half' },
+      {
+        key: 'billing_interval',
+        label: 'Billing interval',
+        type: 'text',
+        placeholder: 'monthly | yearly | one-time',
+        span: 'half',
+      },
+      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
+      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
+      { key: 'highlighted', label: 'Highlighted', type: 'boolean', span: 'half' },
+      { key: 'is_active', label: 'Active', type: 'boolean', span: 'half' },
+    ],
+    defaults: {
+      name: 'New plan',
+      currency: 'usd',
+      price_cents: 0,
+      billing_interval: 'monthly',
+      sort_order: 0,
+      is_active: true,
+      highlighted: false,
+    },
+  },
+  featured_offers: {
+    table: 'featured_offers',
+    titleField: 'title',
+    subtitleField: 'subtitle',
+    imageField: 'image_url',
+    featuredField: 'active',
+    fields: [
+      { key: 'title', label: 'Title', type: 'text', required: true, span: 'full' },
+      { key: 'subtitle', label: 'Subtitle', type: 'text', span: 'full' },
+      { key: 'discount_label', label: 'Discount label', type: 'text', span: 'half' },
+      { key: 'cta_label', label: 'CTA label', type: 'text', span: 'half' },
+      { key: 'cta_href', label: 'CTA link', type: 'text', span: 'half' },
+      { key: 'cta_intent', label: 'CTA intent', type: 'text', placeholder: 'nav.goto', span: 'half' },
+      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
+      { key: 'image_url', label: 'Image URL', type: 'image', span: 'full' },
+      { key: 'description', label: 'Description', type: 'textarea', span: 'full' },
+      { key: 'active', label: 'Active', type: 'boolean', span: 'half' },
+    ],
+    defaults: {
+      title: 'New offer',
+      sort_order: 0,
+      active: true,
+    },
+  },
+  testimonials: {
+    table: 'testimonials',
+    titleField: 'author_name',
+    subtitleField: 'author_role',
+    imageField: 'author_avatar_url',
+    featuredField: 'featured',
+    fields: [
+      { key: 'author_name', label: 'Author name', type: 'text', required: true, span: 'half' },
+      { key: 'author_role', label: 'Author role', type: 'text', span: 'half' },
+      { key: 'rating', label: 'Rating (0–5)', type: 'rating', span: 'half' },
+      { key: 'source', label: 'Source', type: 'text', placeholder: 'Google, Yelp…', span: 'half' },
+      { key: 'author_avatar_url', label: 'Avatar URL', type: 'image', span: 'full' },
+      { key: 'quote', label: 'Quote', type: 'textarea', required: true, span: 'full' },
+      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
+      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
+    ],
+    defaults: {
+      author_name: 'New reviewer',
+      quote: '',
+      sort_order: 0,
+      featured: false,
+    },
+  },
+  portfolio_projects: {
+    table: 'portfolio_projects',
+    titleField: 'title',
+    subtitleField: 'client_name',
+    imageField: 'cover_image_url',
+    featuredField: 'featured',
+    fields: [
+      { key: 'title', label: 'Title', type: 'text', required: true, span: 'full' },
+      { key: 'subtitle', label: 'Subtitle', type: 'text', span: 'half' },
+      { key: 'client_name', label: 'Client', type: 'text', span: 'half' },
+      { key: 'external_url', label: 'External URL', type: 'text', span: 'half' },
+      { key: 'sort_order', label: 'Order', type: 'number', span: 'half' },
+      { key: 'cover_image_url', label: 'Cover image URL', type: 'image', span: 'full' },
+      { key: 'summary', label: 'Summary', type: 'textarea', span: 'full' },
+      { key: 'featured', label: 'Featured', type: 'boolean', span: 'half' },
+    ],
+    defaults: {
+      title: 'New project',
+      sort_order: 0,
+      featured: false,
+    },
+  },
+  availability_slots: {
+    // Not exposed via BusinessCatalogEditor — availability lives in its own
+    // dedicated calendar surface. Included here so TABLE_SCHEMAS stays total.
+    table: 'availability_slots',
+    titleField: 'starts_at',
+    fields: [],
+    defaults: {},
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Value coercion helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function coerceInput(field: FieldSpec, raw: string | boolean): unknown {
+  switch (field.type) {
+    case 'boolean':
+      return Boolean(raw);
+    case 'number': {
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : 0;
+    }
+    case 'money': {
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : 0;
+    }
+    case 'money-cents': {
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.round(n * 100) : 0;
+    }
+    case 'rating': {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return null;
+      return Math.min(5, Math.max(0, n));
+    }
+    case 'text':
+    case 'textarea':
+    case 'image':
+    default:
+      return typeof raw === 'string' ? raw : String(raw);
+  }
+}
+
+function displayValue(field: FieldSpec, row: Record<string, unknown>): string {
+  const raw = row[field.key];
+  if (raw === null || raw === undefined) return '';
+  if (field.type === 'money-cents') {
+    const cents = Number(raw);
+    if (!Number.isFinite(cents)) return '';
+    return (cents / 100).toFixed(2);
+  }
+  return String(raw);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface BusinessRow {
+  id: string;
+  name: string;
+}
+
+interface Props {
+  sectionType: string; // key into SECTION_DATA_CONTRACTS
+}
+
+export function BusinessCatalogEditor({ sectionType }: Props) {
+  const contract: SectionDataContract | undefined = SECTION_DATA_CONTRACTS[sectionType];
+  const schema = contract ? TABLE_SCHEMAS[contract.sourceTable] : null;
+
+  const [businesses, setBusinesses] = useState<BusinessRow[]>([]);
+  const [businessId, setBusinessId] = useState<string | null>(null);
+  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | 'new' | null>(null);
+  const [draft, setDraft] = useState<Record<string, unknown>>({});
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ── Load businesses the caller is a member of ─────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('businesses' as never)
+        .select('id, name')
+        .order('created_at', { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        console.warn('[BusinessCatalogEditor] load businesses failed', error);
+        toast.error('Could not load your businesses');
+        setLoading(false);
+        return;
+      }
+      const list = (data ?? []) as unknown as BusinessRow[];
+      setBusinesses(list);
+      setBusinessId((prev) => prev ?? list[0]?.id ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ── Load rows for the active business+table ───────────────────────────────
+  const loadRows = useCallback(async () => {
+    if (!schema || !businessId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from(schema.table as never)
+      .select('*')
+      .eq('business_id', businessId)
+      .order('sort_order', { ascending: true });
+    if (error) {
+      console.warn('[BusinessCatalogEditor] load rows failed', error);
+      toast.error('Failed to load rows');
+      setRows([]);
+    } else {
+      setRows((data ?? []) as unknown as Array<Record<string, unknown>>);
+    }
+    setLoading(false);
+  }, [schema, businessId]);
+
+  useEffect(() => {
+    void loadRows();
+  }, [loadRows]);
+
+  const bumpPreview = useCallback(() => {
+    try {
+      window.postMessage(
+        { type: 'CATALOG_BINDINGS_CHANGED', projectId: null, businessId },
+        '*',
+      );
+      window.dispatchEvent(
+        new CustomEvent('lovable:catalog-seeded', {
+          detail: { businessId, table: schema?.table },
+        }),
+      );
+    } catch {
+      /* noop */
+    }
+  }, [businessId, schema?.table]);
+
+  const startNew = () => {
+    if (!schema) return;
+    setEditingId('new');
+    setDraft({ ...schema.defaults });
+  };
+
+  const startEdit = (row: Record<string, unknown>) => {
+    setEditingId(String(row.id));
+    setDraft({ ...row });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft({});
+  };
+
+  const save = async () => {
+    if (!schema || !businessId) return;
+    // Required-field guard.
+    for (const f of schema.fields) {
+      if (f.required) {
+        const v = draft[f.key];
+        if (v === undefined || v === null || String(v).trim() === '') {
+          toast.error(`${f.label} is required`);
+          return;
+        }
+      }
+    }
+    setSaving(true);
+    const payload: Record<string, unknown> = { ...draft, business_id: businessId };
+    // Never allow client to override server-managed columns.
+    delete payload.id;
+    delete payload.created_at;
+    delete payload.updated_at;
+
+    let error: unknown = null;
+    if (editingId === 'new') {
+      const res = await supabase.from(schema.table as never).insert(payload as never);
+      error = res.error;
+    } else if (editingId) {
+      const res = await supabase
+        .from(schema.table as never)
+        .update(payload as never)
+        .eq('id', editingId);
+      error = res.error;
+    }
+    setSaving(false);
+    if (error) {
+      console.warn('[BusinessCatalogEditor] save failed', error);
+      toast.error('Save failed — check required fields');
+      return;
+    }
+    toast.success(editingId === 'new' ? 'Added' : 'Saved');
+    setEditingId(null);
+    setDraft({});
+    bumpPreview();
+    await loadRows();
+  };
+
+  const remove = async (id: string) => {
+    if (!schema) return;
+    if (typeof window !== 'undefined' && !window.confirm('Delete this row?')) return;
+    setDeletingId(id);
+    const { error } = await supabase.from(schema.table as never).delete().eq('id', id);
+    setDeletingId(null);
+    if (error) {
+      console.warn('[BusinessCatalogEditor] delete failed', error);
+      toast.error('Delete failed');
+      return;
+    }
+    toast.success('Deleted');
+    bumpPreview();
+    await loadRows();
+  };
+
+  const listSummary = useMemo(() => {
+    if (!schema) return '';
+    return `${rows.length} ${rows.length === 1 ? contract?.rowLabel ?? 'row' : `${contract?.rowLabel ?? 'row'}s`}`;
+  }, [rows.length, contract, schema]);
+
+  if (!contract || !schema || schema.fields.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          Editor not available for section type <code>{sectionType}</code>.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{contract.friendlyName}</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage the {contract.rowLabel}s that fill your live {contract.friendlyName.toLowerCase()} sections.
+            {' '}
+            {listSummary && <span className="text-muted-foreground/80">· {listSummary}</span>}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {businesses.length > 1 && (
+            <Select value={businessId ?? undefined} onValueChange={(v) => setBusinessId(v)}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Select business" />
+              </SelectTrigger>
+              <SelectContent>
+                {businesses.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button onClick={startNew} disabled={!businessId || editingId === 'new'}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add {contract.rowLabel}
+          </Button>
+        </div>
+      </header>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : businesses.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            You don't have a business yet. Create one from the launcher to start adding {contract.rowLabel}s.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {editingId === 'new' && (
+            <EditorForm
+              schema={schema}
+              draft={draft}
+              setDraft={setDraft}
+              onSave={save}
+              onCancel={cancelEdit}
+              saving={saving}
+              heading={`New ${contract.rowLabel}`}
+            />
+          )}
+
+          {rows.length === 0 && editingId !== 'new' ? (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No {contract.rowLabel}s yet. Add your first one to start hydrating your live sections.
+              </CardContent>
+            </Card>
+          ) : (
+            rows.map((row) => {
+              const id = String(row.id);
+              const isEditing = editingId === id;
+              if (isEditing) {
+                return (
+                  <EditorForm
+                    key={id}
+                    schema={schema}
+                    draft={draft}
+                    setDraft={setDraft}
+                    onSave={save}
+                    onCancel={cancelEdit}
+                    saving={saving}
+                    heading={`Edit ${contract.rowLabel}`}
+                  />
+                );
+              }
+              return (
+                <Card key={id}>
+                  <CardContent className="flex items-start justify-between gap-4 py-4">
+                    <div className="flex min-w-0 items-start gap-4">
+                      {schema.imageField && row[schema.imageField] ? (
+                        <img
+                          src={String(row[schema.imageField])}
+                          alt=""
+                          className="h-16 w-16 flex-shrink-0 rounded-md object-cover"
+                        />
+                      ) : (
+                        <div className="h-16 w-16 flex-shrink-0 rounded-md bg-muted" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="truncate font-medium">
+                            {String(row[schema.titleField] ?? '(untitled)')}
+                          </h3>
+                          {schema.featuredField && row[schema.featuredField] ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                              <Star className="h-3 w-3" /> live
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              hidden
+                            </span>
+                          )}
+                        </div>
+                        {schema.subtitleField && row[schema.subtitleField] && (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {String(row[schema.subtitleField])}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => startEdit(row)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => remove(id)}
+                        disabled={deletingId === id}
+                      >
+                        {deletingId === id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EditorForm — inline card used for both create and edit
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface EditorFormProps {
+  schema: TableSchema;
+  draft: Record<string, unknown>;
+  setDraft: (d: Record<string, unknown>) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+  heading: string;
+}
+
+function EditorForm({ schema, draft, setDraft, onSave, onCancel, saving, heading }: EditorFormProps) {
+  const update = (field: FieldSpec, value: string | boolean) => {
+    setDraft({ ...draft, [field.key]: coerceInput(field, value) });
+  };
+
+  return (
+    <Card className="border-primary/40">
+      <CardContent className="space-y-4 py-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-medium">{heading}</h3>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onCancel} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={onSave} disabled={saving}>
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {schema.fields.map((field) => {
+            const span = field.span === 'full' ? 'sm:col-span-2' : '';
+            const value = displayValue(field, draft);
+            if (field.type === 'textarea') {
+              return (
+                <div key={field.key} className={span}>
+                  <Label htmlFor={field.key}>{field.label}</Label>
+                  <Textarea
+                    id={field.key}
+                    value={value}
+                    onChange={(e) => update(field, e.target.value)}
+                    rows={3}
+                  />
+                </div>
+              );
+            }
+            if (field.type === 'boolean') {
+              return (
+                <div key={field.key} className={`flex items-center justify-between rounded-md border px-3 py-2 ${span}`}>
+                  <Label htmlFor={field.key} className="cursor-pointer">
+                    {field.label}
+                  </Label>
+                  <Switch
+                    id={field.key}
+                    checked={Boolean(draft[field.key])}
+                    onCheckedChange={(v) => update(field, v)}
+                  />
+                </div>
+              );
+            }
+            const inputType =
+              field.type === 'number' || field.type === 'money' || field.type === 'money-cents' || field.type === 'rating'
+                ? 'number'
+                : 'text';
+            const step = field.type === 'rating' ? '0.1' : field.type === 'money' || field.type === 'money-cents' ? '0.01' : '1';
+            return (
+              <div key={field.key} className={span}>
+                <Label htmlFor={field.key}>{field.label}</Label>
+                <Input
+                  id={field.key}
+                  type={inputType}
+                  step={inputType === 'number' ? step : undefined}
+                  value={value}
+                  placeholder={field.placeholder}
+                  onChange={(e) => update(field, e.target.value)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

@@ -1961,6 +1961,74 @@ export type Database = {
         }
         Relationships: []
       }
+      featured_offers: {
+        Row: {
+          active: boolean
+          business_id: string
+          created_at: string
+          cta_href: string | null
+          cta_intent: string | null
+          cta_label: string | null
+          description: string | null
+          discount_label: string | null
+          ends_at: string | null
+          id: string
+          image_url: string | null
+          metadata: Json
+          sort_order: number
+          starts_at: string | null
+          subtitle: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          business_id: string
+          created_at?: string
+          cta_href?: string | null
+          cta_intent?: string | null
+          cta_label?: string | null
+          description?: string | null
+          discount_label?: string | null
+          ends_at?: string | null
+          id?: string
+          image_url?: string | null
+          metadata?: Json
+          sort_order?: number
+          starts_at?: string | null
+          subtitle?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          business_id?: string
+          created_at?: string
+          cta_href?: string | null
+          cta_intent?: string | null
+          cta_label?: string | null
+          description?: string | null
+          discount_label?: string | null
+          ends_at?: string | null
+          id?: string
+          image_url?: string | null
+          metadata?: Json
+          sort_order?: number
+          starts_at?: string | null
+          subtitle?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "featured_offers_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       file_access_tokens: {
         Row: {
           created_at: string | null
@@ -2836,6 +2904,71 @@ export type Database = {
           },
         ]
       }
+      portfolio_projects: {
+        Row: {
+          business_id: string
+          client_name: string | null
+          completed_at: string | null
+          cover_image_url: string | null
+          created_at: string
+          external_url: string | null
+          featured: boolean
+          gallery: Json
+          id: string
+          metadata: Json
+          sort_order: number
+          subtitle: string | null
+          summary: string | null
+          tags: string[]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          client_name?: string | null
+          completed_at?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          external_url?: string | null
+          featured?: boolean
+          gallery?: Json
+          id?: string
+          metadata?: Json
+          sort_order?: number
+          subtitle?: string | null
+          summary?: string | null
+          tags?: string[]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          client_name?: string | null
+          completed_at?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          external_url?: string | null
+          featured?: boolean
+          gallery?: Json
+          id?: string
+          metadata?: Json
+          sort_order?: number
+          subtitle?: string | null
+          summary?: string | null
+          tags?: string[]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portfolio_projects_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pricing_plans: {
         Row: {
           billing_interval: string | null
@@ -3690,6 +3823,62 @@ export type Database = {
             columns: ["template_id"]
             isOneToOne: false
             referencedRelation: "design_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      testimonials: {
+        Row: {
+          author_avatar_url: string | null
+          author_name: string
+          author_role: string | null
+          business_id: string
+          created_at: string
+          featured: boolean
+          id: string
+          metadata: Json
+          quote: string
+          rating: number | null
+          sort_order: number
+          source: string | null
+          updated_at: string
+        }
+        Insert: {
+          author_avatar_url?: string | null
+          author_name: string
+          author_role?: string | null
+          business_id: string
+          created_at?: string
+          featured?: boolean
+          id?: string
+          metadata?: Json
+          quote: string
+          rating?: number | null
+          sort_order?: number
+          source?: string | null
+          updated_at?: string
+        }
+        Update: {
+          author_avatar_url?: string | null
+          author_name?: string
+          author_role?: string | null
+          business_id?: string
+          created_at?: string
+          featured?: boolean
+          id?: string
+          metadata?: Json
+          quote?: string
+          rating?: number | null
+          sort_order?: number
+          source?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "testimonials_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]

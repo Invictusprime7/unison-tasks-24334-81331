@@ -1,88 +1,129 @@
-# Golden Journey + Business Profile Hardening
+# Milestones 3-5 — Catalog Wiring, Friendly Gates, Real Outcomes
 
-## Milestone 1 — Golden Journey: Local Service / Booking
+Three tightly-coupled milestones executed as one continuous pass so the Business OS stops feeling like a launcher and starts feeling like an operating system. Each milestone builds on the previous — do not split them across sessions.
 
-Target vertical: **local service / booking** (salon, cleaning, contractor, barber, detailing, photographer). Highest overlap with what already works: booking capability, services catalog, CRM lead capture, notification email — all wired in current pipeline (`industry-intent-runtime`, `industryIntentProfiles`, `services` table, `bookings` table, `crm_leads`, `intent-router` → `booking.create`).
+---
 
-### End-to-end flow to lock in
+## Milestone 3 — Section ↔ Catalog Backend Wiring
 
-```text
-Sign up
-  → Create Business Profile (name, industry=local-service, contact, hours, timezone)
-    → Launch site via System Launcher (Lane B, industry=local-service preset)
-      → Owner adds Services (CatalogInspectorPanel: name, duration, price)
-        → Preview reads live services (CatalogRuntime hydration)
-          → Publish
-            → Visitor books via data-ut-intent="booking.create"
-              → intent-router writes bookings row + crm_leads row
-                → send-transactional-email → owner notification_email
-                  → Owner opens CRM Dashboard → sees lead → replies
+### Goal
+Every generated section declares what data it needs, where it comes from, and how the owner edits it. Preview + published site both hydrate from Supabase.
+
+### Data model (already partially exists)
+Reuse existing tables where possible:
+- `services`, `products`, `menu_items`, `pricing_plans`, `availability_slots`, `catalog_collections`, `site_intent_bindings`
+- Add missing: `featured_offers`, `testimonials`, `portfolio_projects`
+- All new tables: business_id FK, RLS via `is_business_member`, GRANT to authenticated + service_role, updated_at trigger
+
+### Section contract (`SectionDataContract`)
+New file `src/services/catalog/sectionDataContracts.ts` — one record per section type:
+```ts
+{
+  sectionType: 'ServicesGrid',
+  requiredDataType: 'service',
+  sourceTable: 'services',
+  minRows: 3,
+  emptyState: 'placeholder-cards',
+  editPath: '/business/services',
+  bindingIdPrefix: 'services',
+}
 ```
 
-### Concrete gaps to close for this journey only
+### Runtime wiring
+- Extend `catalogHydrationModule.ts` to read section binding IDs from VFS metadata and fetch from the declared `sourceTable` scoped by `businessId`.
+- `autoEmitSectionBindings.ts` writes `sectionBindingId` + `sourceTable` + `businessId` into each rendered section's `data-*` attributes so runtime can rehydrate deterministically.
+- Empty state renders a "Add your first X" CTA linking to `editPath` (owner view only; anonymous visitors see graceful placeholder copy).
 
-1. **Signup → Business Profile completeness gate.** After signup, force `BusinessProfileWizard` (name, industry, phone, email, timezone, address, hours) before Launcher. Gate uses existing `scoreProfileCompleteness`; owner cannot launch until `readyForPublish=true` on core fields.
-2. **Launcher pre-fills from profile.** `SystemLauncher` must read `BusinessProfileDTO` and skip re-asking for name/industry/contact. Wizard becomes 2 steps for returning owners.
-3. **Services CRUD in builder.** Confirm `CatalogInspectorPanel` for `services` collection is functional for local-service (create/edit/delete/reorder); expose it as a first-class "Services" tab in WebBuilder, not buried in catalog inspector.
-4. **Booking form contract for local-service.** Ensure every generated local-service site has one visible booking form bound to `booking.create` with `service_id`, `date`, `time`, `name`, `email`, `phone`. Add to `IndustryIntentProfiles.local-service.required`.
-5. **Owner notification email.** After booking, `intent-router` invokes `send-transactional-email` with `booking-received` template → `businesses.notification_email`. Scaffold the template + wire the call (missing today for booking; only present for contact-confirmation).
-6. **CRM Dashboard shows bookings alongside leads.** `CRMDashboard.tsx` unified view: `crm_leads` + `bookings` filtered by `business_id`.
-7. **Publish gate honors the journey.** `buildNativePublishReadinessManifest` for local-service requires: profile complete, ≥1 service row, ≥1 booking form on site, notification_email set.
-
-### Deliverables (Milestone 1)
-- `BusinessProfileGate.tsx` post-signup
-- Launcher pre-fill from `businessProfileService`
-- `Services` tab surface in WebBuilder
-- `booking-received` email template + `intent-router` send call
-- CRM Dashboard bookings merge
-- Local-service publish readiness rules
+### Business Center CRUD
+- `src/pages/business/` routes for services / products / menu / pricing / offers / testimonials / portfolio / availability.
+- Reuse existing `CatalogInspectorPanel` pattern; one page per catalog table with list + drawer editor.
+- All routes gated by `useBusinessProfile()` + `has_role` where relevant.
 
 ---
 
-## Milestone 2 — Business Profile as Root Object
+## Milestone 4 — Friendly Readiness Gates
 
-Make `BusinessProfileDTO` the single hydration source for every generated artifact. No component reads scattered fields from wizard state, launch state, or hardcoded seeds.
+### Goal
+Convert `businessProfileReadinessGate` + publish gate errors into actionable, human-readable checklists with one-click repair paths.
 
-### Wiring targets
+### Repair registry
+New `src/services/readiness/repairActions.ts`:
+```ts
+{
+  id: 'add-business-phone',
+  label: 'Add business phone',
+  reason: 'Contact section needs a phone number visitors can call.',
+  fix: { type: 'route', path: '/business/profile#phone' },
+}
+```
+Actions cover: phone, email, address, service (min 3), product image, booking connect, payment connect (Stripe/Paddle), notification email domain, publish destination verify.
 
-| Consumer | Field(s) from profile | Change |
-|---|---|---|
-| Hero section | `name`, `tagline`, `industry` | Section template reads `useBusinessProfile()` context, no wizard prop passthrough |
-| Footer | `name`, `phone`, `email`, `address`, `socialLinks`, `hours` | Same context |
-| Contact page | `email`, `phone`, `address`, `hours`, `notificationEmail` | Same context; form action = `contact.submit` bound to `business_id` |
-| SEO metadata | `name`, `description`, `slug`, `logoUrl` | `index.html` head + per-route Helmet reads profile at build/preview time |
-| Booking / contact forms | `businessId`, `industry`, `notificationEmail`, `timezone` | Form runtime auto-injects `business_id`; timezone drives slot rendering |
-| CRM ownership | `businessId` | Every `crm_leads`/`bookings` row scoped by RLS to `business_members` |
-| Catalog ownership | `businessId` | Every `services`/`products`/`menu_items`/`collections` row scoped identically |
-| Published site identity | `slug`, `logoUrl`, `brandColor`, `name` | Publish artifact writes `businesses.published_slug` + preview URL manifest |
-| Workspace/project nav | `businessId`, `name`, `logoUrl` | Topbar `Connected Business` chip becomes primary switcher |
+### UI component
+`src/components/business/ReadinessChecklist.tsx` mounted in:
+- Web Builder topbar popover (replaces raw "catalog rows missing" toast)
+- Business OS shell dashboard
+- Publish modal (blocks publish until green or explicitly overridden)
 
-### Architecture change
+Each row: status dot, plain-language sentence, single primary action button. On click → navigate to repair path, open relevant drawer, or launch connector flow.
 
-Introduce `BusinessProfileProvider` at the WebBuilder root (mirrors `BuilderSessionProvider`). Every downstream reader (`Hero`, `Footer`, `ContactSection`, `BookingForm`, SEO layer, CatalogInspector, CRM) resolves the profile from context — never from `LaunchState`, `WizardSelections`, or hardcoded seed JSON.
-
-Runtime injection into preview VFS: `businessProfileHydrationModule.ts` (mirrors `catalogHydrationModule`) exposes `window.__UNISON_BUSINESS__` so section templates in the iframe read live profile without prop drilling.
-
-### Golden test to prove Milestone 2
-
-Change the business name in `BusinessSettings` → within one preview refresh, the new name appears in: hero, footer, contact page, browser tab title, SEO description, published-site preview card, CRM header, topbar chip. If any surface still shows the old name, that surface is not yet reading from profile context and is on the punch list.
-
-### Deliverables (Milestone 2)
-- `BusinessProfileProvider` + inline context reader
-- `businessProfileHydrationModule` injected by preview session
-- Section templates refactored: Hero, Footer, ContactSection, BookingForm read from `window.__UNISON_BUSINESS__`
-- SEO layer (Helmet + `index.html` head) reads profile
-- Publish artifact writes canonical business identity
-- Golden name-change test
+### Backend
+Extend `businessProfileReadinessGate.ts` to return `{ blockers: RepairAction[], warnings: RepairAction[] }` instead of raw error strings. Preview readiness stays permissive; publish readiness stays strict.
 
 ---
 
-## Sequencing
+## Milestone 5 — Real Outcome Workflows
 
-Milestone 1 first (proves one journey works end-to-end for a real owner). Milestone 2 second (generalizes profile-as-root so remaining industries in later milestones inherit the plumbing for free).
+### Goal
+Wire the canonical intents that today only log to actually persist + notify + follow up.
 
-## Not in scope now
-- Other industries (restaurant, ecommerce, nonprofit, coaching) — reuse Milestone 2 plumbing later
-- SMS notifications (email-only for M1; SMS is a follow-up)
-- Multi-location businesses
-- Team member roles beyond owner
+### Intent → outcome map
+| Intent | Persist | Notify Owner | Notify Visitor | CRM effect |
+|---|---|---|---|---|
+| `lead.capture` | `crm_leads` | email + optional SMS | confirmation email | new lead row + activity |
+| `booking.create` | `bookings` | email + SMS | confirmation email | lead + deal + follow-up task |
+| `quote.request` | `crm_leads` (type=quote) | email | confirmation email | deal in "quote" stage + task |
+| `contact.submit` | `crm_form_submissions` | email | confirmation email | activity log |
+| `newsletter.subscribe` | `crm_leads` (source=newsletter) | — | welcome email | tag only |
+| `cart.checkout` | `orders` | email | receipt | deal in "won" on success |
+| `donation.start` | `orders` (type=donation) | email | receipt | activity |
+
+### Backend edge functions
+Audit + finish (many already exist as stubs):
+- `create-booking` ✅ (already sends both emails per prior audit)
+- `create-lead` — extend to also insert `crm_activities` row + optional follow-up `tasks` row
+- `submit-contact-form` — verify template + owner notification
+- `request-quote` — new function, mirrors create-lead with deal insert
+- `notify-owner` shared helper — pulls owner email from `businesses.notification_email` with fallback to profile email
+
+### Templates
+Ensure app email templates exist in `supabase/functions/_shared/transactional-email-templates/`:
+- `lead-received-owner`, `lead-confirmation-visitor`
+- `quote-request-owner`, `quote-confirmation-visitor`
+- `contact-received-owner`, `contact-confirmation-visitor`
+Register in `registry.ts`, redeploy affected functions.
+
+### Frontend intent router
+`src/services/intentRouter.ts` — replace "log-only" default handlers with dispatchers that call the correct edge function via `supabase.functions.invoke`, then emit a UI toast confirming to visitor and dispatch `lovable:outcome-recorded` for the OS shell activity feed.
+
+### CRM surface
+`CRMDashboard` gains a live activity feed reading `crm_activities` (already exists) plus a "Follow-ups due" panel reading `tasks` filtered by `type=follow_up`.
+
+---
+
+## Execution Order
+1. Schema migration for `featured_offers`, `testimonials`, `portfolio_projects` (+ any missing columns on `businesses` for `notification_email`, `notification_phone`).
+2. `sectionDataContracts.ts` + runtime hydration wiring.
+3. Business Center CRUD routes (one page per table).
+4. `repairActions.ts` + `ReadinessChecklist` + gate refactor.
+5. Edge functions + email templates for outcomes.
+6. Frontend intent router dispatch.
+7. CRM activity feed + follow-up panel.
+8. Smoke test: launch new site → checklist walks owner through fixes → submit lead form → confirm owner + visitor emails logged + CRM row appears.
+
+## Notes
+- No new theme preset fallbacks — respects existing "kill the fallback" rule.
+- All new tables get GRANT + RLS via `is_business_member` in the same migration.
+- No standalone custom hook files — inline `useState`/`useEffect` only per project memory.
+- Reuse existing `catalogHydrationModule` rather than a parallel pipeline.
+
+Approve to begin with the migration + section contracts, or tell me to reorder/trim scope.

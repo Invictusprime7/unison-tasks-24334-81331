@@ -97,6 +97,89 @@ function resolveSurfaceOrFail(surfaceId: string): CatalogSurface {
   return s;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Authorization — enforce RLS-aligned membership BEFORE any mutation.
+// The DB has RLS + is_business_member / is_project_member security-definer
+// helpers; we mirror those checks client-side so the AI's tool calls fail
+// fast with a friendly message instead of a raw Postgres error, and so we
+// never issue a mutation the current user is not entitled to make.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const UNAUTHORIZED_SIGN_IN = 'Please sign in to edit catalog data.';
+const UNAUTHORIZED_BUSINESS =
+  "You don't have permission to edit this business's catalog.";
+const UNAUTHORIZED_PROJECT =
+  "You don't have permission to edit this project's section bindings.";
+
+async function currentUserId(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function assertBusinessAccess(
+  businessId: string | null | undefined,
+): Promise<string | null> {
+  if (!businessId) return 'businessId is required for this catalog operation.';
+  const uid = await currentUserId();
+  if (!uid) return UNAUTHORIZED_SIGN_IN;
+  const { data, error } = await supabase.rpc(
+    'is_business_member' as never,
+    { _business_id: businessId } as never,
+  );
+  if (error) return `Authorization check failed: ${error.message}`;
+  if (data !== true) return UNAUTHORIZED_BUSINESS;
+  return null;
+}
+
+async function assertProjectAccess(
+  projectId: string | null | undefined,
+): Promise<string | null> {
+  if (!projectId) return 'projectId is required for this catalog operation.';
+  const uid = await currentUserId();
+  if (!uid) return UNAUTHORIZED_SIGN_IN;
+  const { data, error } = await supabase.rpc(
+    'is_project_member' as never,
+    { _user_id: uid, _project_id: projectId } as never,
+  );
+  if (error) return `Authorization check failed: ${error.message}`;
+  if (data !== true) return UNAUTHORIZED_PROJECT;
+  return null;
+}
+
+/** Look up the owning business_id for a catalog row before mutating it. */
+async function fetchRowBusinessId(
+  table: string,
+  rowId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from(table as never)
+    .select('business_id')
+    .eq('id', rowId)
+    .maybeSingle();
+  return (data as { business_id?: string } | null)?.business_id ?? null;
+}
+
+/** Look up the owning project/business for a binding row. */
+async function fetchBindingScope(
+  bindingId: string,
+): Promise<{ projectId: string | null; businessId: string | null }> {
+  const { data } = await supabase
+    .from('site_data_bindings' as never)
+    .select('project_id, business_id')
+    .eq('id', bindingId)
+    .maybeSingle();
+  const row = data as { project_id?: string; business_id?: string } | null;
+  return {
+    projectId: row?.project_id ?? null,
+    businessId: row?.business_id ?? null,
+  };
+}
+
+
 /** Split a caller-supplied field patch into (editable-shape, raw-column-writes). */
 function splitPatch(
   surface: CatalogSurface,

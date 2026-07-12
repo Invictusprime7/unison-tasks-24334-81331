@@ -52,6 +52,7 @@ import { rewriteDemoEmbeds } from "@/utils/demoEmbedRewriter";
 import type { BusinessSystemType } from "@/data/templates/types";
 import type { TemplateCtaAnalysis } from "@/utils/ctaContract";
 import { buildWebBuilderAIContext } from "@/utils/aiAssistantContext";
+import { buildCatalogContext, renderCatalogContextForPrompt, type SelectedSectionRef } from "@/utils/catalogContext";
 // Removed deprecated aiFileTags - functionality consolidated in aiResponseParser
 import { parseAIResponse, getPrimaryCodeBlock, type AIResponseParseResult } from "@/utils/aiResponseParser";
 
@@ -307,6 +308,11 @@ interface AICodeAssistantProps {
   pageStructureContext?: string | null;
   backendStateContext?: string | null;
   businessDataContext?: string | null;
+  /** Identity for AI Builder catalog awareness (M5–M7). */
+  businessId?: string | null;
+  projectId?: string | null;
+  industry?: string | null;
+  selectedSectionRef?: SelectedSectionRef | null;
   selectedElement?: {
     html: string;
     selector: string;
@@ -342,6 +348,10 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
   pageStructureContext,
   backendStateContext,
   businessDataContext,
+  businessId,
+  projectId,
+  industry,
+  selectedSectionRef,
   selectedElement,
   userDesignProfile,
   requestAIEdit,
@@ -933,6 +943,22 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
         }
       }
       
+      // Catalog awareness context (M6): live row counts + bindings + selected surface.
+      let catalogContextStr: string | null = null;
+      if (businessId || projectId) {
+        try {
+          const ctx = await buildCatalogContext({
+            businessId: businessId ?? null,
+            projectId: projectId ?? null,
+            industry: industry ?? null,
+            selectedSection: selectedSectionRef ?? null,
+          });
+          catalogContextStr = renderCatalogContextForPrompt(ctx);
+        } catch (err) {
+          console.warn('[AICodeAssistant] buildCatalogContext failed; continuing without it', err);
+        }
+      }
+
       // Backend + template awareness context (Web Builder only)
       const backendContext = buildWebBuilderAIContext({
         systemType: systemType ?? null,
@@ -941,6 +967,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
         pageStructure: pageStructureContext ?? null,
         backendState: backendStateContext ?? null,
         businessData: businessDataContext ?? null,
+        catalogContext: catalogContextStr,
       });
 
       // Enhanced context for element editing

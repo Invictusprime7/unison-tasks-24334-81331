@@ -202,6 +202,11 @@ export async function autoEmitSectionBindings(
 
       const sourceTable = CATALOG_KIND_TO_TABLE[req.requiredKind];
       const sectionId = `${requirementKey}-${index}`;
+      const kindDefaults = KIND_DEFAULTS[req.requiredKind];
+      const fallbackDefault =
+        (req.emptyState as SectionDataFallback) === 'hide_section'
+          ? 'hide_section'
+          : defaultFallback;
 
       try {
         const dto = await upsertBinding({
@@ -213,11 +218,16 @@ export async function autoEmitSectionBindings(
           bindingType: 'section',
           sourceKind: req.requiredKind,
           sourceTable,
-          filters: defaultFilters[req.requiredKind] ?? { is_active: true },
-          sort: { field: 'sort_order', direction: 'asc' },
-          limitCount: defaultLimit,
-          fallbackMode: defaultFallback,
+          filters:
+            defaultFilters[req.requiredKind] ??
+            kindDefaults?.filters ??
+            { is_active: true },
+          sort: kindDefaults?.sort ?? { field: 'sort_order', direction: 'asc' },
+          limitCount: kindDefaults?.limit ?? defaultLimit,
+          displayMapping: kindDefaults?.displayMapping ?? {},
+          fallbackMode: fallbackDefault,
         });
+
         if (dto) {
           result.emitted++;
           result.bindingIds.push(dto.id);

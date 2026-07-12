@@ -23,7 +23,10 @@ import {
   type BusinessProfilePatch,
 } from '@/services/businessProfileService';
 import { evaluateBusinessProfileGate } from '@/services/businessProfileReadinessGate';
+import { buildRepairActions } from '@/services/readiness/repairActions';
+import { ReadinessChecklist } from '@/components/business/ReadinessChecklist';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
+
 
 export interface BusinessCenterPanelProps {
   businessId: string;

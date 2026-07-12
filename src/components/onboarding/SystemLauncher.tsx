@@ -93,9 +93,21 @@ import { templateToVFSFiles } from "@/utils/templateToVFS";
 
 type WizardStep = "industry" | "questions" | "templates" | "aesthetic";
 
+interface SystemLauncherPrefill {
+  businessId?: string | null;
+  businessName?: string | null;
+  industry?: string | null;
+  notificationEmail?: string | null;
+}
+
 interface SystemLauncherProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Milestone 1: pre-populate the wizard from the BusinessProfileGate so
+   * owners don't retype the identity they just entered post-signup.
+   */
+  prefill?: SystemLauncherPrefill | null;
 }
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;

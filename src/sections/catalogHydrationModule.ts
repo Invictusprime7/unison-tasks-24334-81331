@@ -145,4 +145,19 @@ export const HYDRATABLE_SECTION_TYPES: readonly string[] = [
   'products',
   'menu',
   'plans',
+  // Milestone 3 additions
+  'offers',
+  'featured_offers',
+  'promotions',
+  'deals',
+  'testimonials',
+  'reviews',
+  'social_proof',
+  'portfolio',
+  'portfolio_grid',
+  'projects',
+  'case_studies',
+  'gallery',
+  'work',
 ];
+

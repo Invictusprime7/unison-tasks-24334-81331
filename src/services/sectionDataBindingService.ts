@@ -158,3 +158,44 @@ export async function deleteBinding(id: string): Promise<boolean> {
   if (error) return false;
   return true;
 }
+
+/**
+ * Partial patch for an existing site_data_binding row. Used by AI Builder
+ * catalog operations (updateSectionBinding / switchSectionCollection /
+ * changeSectionLimit / changeSectionSort / changeSectionFallback) so the
+ * assistant never has to reconstruct a full upsert payload.
+ */
+export interface BindingPatch {
+  collectionId?: string | null;
+  filters?: Record<string, unknown>;
+  sort?: { field?: string; direction?: 'asc' | 'desc' };
+  limitCount?: number | null;
+  displayMapping?: Record<string, string>;
+  fallbackMode?: SectionDataFallback;
+}
+
+export async function patchBindingById(
+  id: string,
+  patch: BindingPatch,
+): Promise<SectionDataBindingDTO | null> {
+  const row: Record<string, unknown> = {};
+  if (patch.collectionId !== undefined) row.collection_id = patch.collectionId;
+  if (patch.filters !== undefined) row.filters = patch.filters;
+  if (patch.sort !== undefined) row.sort = patch.sort;
+  if (patch.limitCount !== undefined) row.limit_count = patch.limitCount;
+  if (patch.displayMapping !== undefined) row.display_mapping = patch.displayMapping;
+  if (patch.fallbackMode !== undefined) row.fallback_mode = patch.fallbackMode;
+  if (Object.keys(row).length === 0) return null;
+
+  const { data, error } = await supabase
+    .from('site_data_bindings' as never)
+    .update(row as never)
+    .eq('id', id)
+    .select(COLS)
+    .maybeSingle();
+  if (error) {
+    console.warn('[sectionDataBindingService] patch failed', id, error);
+    return null;
+  }
+  return data ? rowToDto(data as unknown as BindingRow) : null;
+}

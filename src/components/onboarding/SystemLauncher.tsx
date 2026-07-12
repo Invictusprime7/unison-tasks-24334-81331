@@ -93,9 +93,21 @@ import { templateToVFSFiles } from "@/utils/templateToVFS";
 
 type WizardStep = "industry" | "questions" | "templates" | "aesthetic";
 
+interface SystemLauncherPrefill {
+  businessId?: string | null;
+  businessName?: string | null;
+  industry?: string | null;
+  notificationEmail?: string | null;
+}
+
 interface SystemLauncherProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Milestone 1: pre-populate the wizard from the BusinessProfileGate so
+   * owners don't retype the identity they just entered post-signup.
+   */
+  prefill?: SystemLauncherPrefill | null;
 }
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
@@ -1141,7 +1153,7 @@ const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData
 // Component
 // ============================================================================
 
-export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
+export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherProps) => {
   const navigate = useNavigate();
   const { setLaunch } = useLaunch();
   const { profile: userDesignProfile, fetchProfile: fetchDesignProfile, hasProfile: hasDesignProfile } = useUserDesignProfile();
@@ -1190,6 +1202,31 @@ export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
       fetchDesignProfile();
     }
   }, [open, fetchDesignProfile]);
+
+  // Milestone 1 — prefill wizard identity from BusinessProfileGate handoff.
+  // Only seeds empty fields so a returning user editing the wizard is never overwritten.
+  useEffect(() => {
+    if (!open || !prefill) return;
+    if (prefill.businessName && !businessName) {
+      setBusinessName(prefill.businessName);
+    }
+    if (prefill.industry && !selectedSystem) {
+      const industryToSystem: Record<string, BusinessSystemType> = {
+        'local-service': 'booking',
+        salon: 'booking',
+        fitness: 'booking',
+        restaurant: 'booking',
+        coaching: 'agency',
+        agency: 'agency',
+        'real-estate': 'agency',
+        ecommerce: 'store',
+        nonprofit: 'content',
+      };
+      const mapped = industryToSystem[prefill.industry];
+      if (mapped) setSelectedSystem(mapped);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefill]);
 
   // Build template cards from real compositions (falls back to references if none exist)
   const templateCards = useMemo(() => {

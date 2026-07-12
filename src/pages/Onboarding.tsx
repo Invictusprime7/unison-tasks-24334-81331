@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
 import { BusinessProfileGate } from "@/components/onboarding/BusinessProfileGate";
+import type { BusinessProfileDTO } from "@/types/businessProfile";
 import { Button } from "@/components/ui/button";
 import { Zap, ArrowRight, CheckSquare } from "lucide-react";
 
@@ -20,6 +21,12 @@ const Onboarding = () => {
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [gateOpen, setGateOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [prefill, setPrefill] = useState<{
+    businessId: string;
+    businessName: string | null;
+    industry: string | null;
+    notificationEmail: string | null;
+  } | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -136,12 +143,18 @@ const Onboarding = () => {
       <BusinessProfileGate
         open={gateOpen}
         onOpenChange={setGateOpen}
-        onReady={() => {
+        onReady={(businessId, profile: BusinessProfileDTO) => {
+          setPrefill({
+            businessId,
+            businessName: profile?.name ?? null,
+            industry: profile?.industry ?? null,
+            notificationEmail: profile?.notificationEmail ?? null,
+          });
           setGateOpen(false);
           setLauncherOpen(true);
         }}
       />
-      <SystemLauncher open={launcherOpen} onOpenChange={handleLauncherClose} />
+      <SystemLauncher open={launcherOpen} onOpenChange={handleLauncherClose} prefill={prefill} />
     </div>
   );
 };

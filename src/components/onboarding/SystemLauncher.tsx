@@ -1203,6 +1203,31 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     }
   }, [open, fetchDesignProfile]);
 
+  // Milestone 1 — prefill wizard identity from BusinessProfileGate handoff.
+  // Only seeds empty fields so a returning user editing the wizard is never overwritten.
+  useEffect(() => {
+    if (!open || !prefill) return;
+    if (prefill.businessName && !businessName) {
+      setBusinessName(prefill.businessName);
+    }
+    if (prefill.industry && !selectedSystem) {
+      const industryToSystem: Record<string, BusinessSystemType> = {
+        'local-service': 'booking',
+        salon: 'booking',
+        fitness: 'booking',
+        restaurant: 'booking',
+        coaching: 'agency',
+        agency: 'agency',
+        'real-estate': 'agency',
+        ecommerce: 'store',
+        nonprofit: 'content',
+      };
+      const mapped = industryToSystem[prefill.industry];
+      if (mapped) setSelectedSystem(mapped);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefill]);
+
   // Build template cards from real compositions (falls back to references if none exist)
   const templateCards = useMemo(() => {
     if (!selectedSystem) return [];

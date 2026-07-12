@@ -1153,7 +1153,7 @@ const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData
 // Component
 // ============================================================================
 
-export const SystemLauncher = ({ open, onOpenChange }: SystemLauncherProps) => {
+export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherProps) => {
   const navigate = useNavigate();
   const { setLaunch } = useLaunch();
   const { profile: userDesignProfile, fetchProfile: fetchDesignProfile, hasProfile: hasDesignProfile } = useUserDesignProfile();

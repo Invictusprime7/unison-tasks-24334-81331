@@ -55,6 +55,7 @@ const FALLBACK_TO_EMPTY_STATE: Record<string, EmptyStateBehavior> = {
  * Consumers that lookup with legacy names (ServicesGrid, Portfolio, Menu…)
  * should call `getSectionContract(name)` which routes through the alias index.
  */
+// Derived from catalogSurfaceRegistry — do not declare a local map here.
 export const SECTION_DATA_CONTRACTS: Record<string, SectionDataContract> = (() => {
   const out: Record<string, SectionDataContract> = {};
   for (const surface of Object.values(CATALOG_SURFACES)) {

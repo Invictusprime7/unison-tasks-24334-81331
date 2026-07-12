@@ -141,6 +141,7 @@ export function mergeHydratedItems(
  */
 import { listHydratableSectionTypes } from '@/platform/core/catalogSurfaceRegistry';
 
+// Derived from catalogSurfaceRegistry — do not declare a local list here.
 export const HYDRATABLE_SECTION_TYPES: readonly string[] = listHydratableSectionTypes();
 
 

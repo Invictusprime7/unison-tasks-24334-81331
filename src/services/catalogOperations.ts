@@ -227,6 +227,8 @@ export async function createCatalogRow(args: {
   patch: CatalogRowFieldPatch;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
+  const denied = await assertBusinessAccess(args.businessId);
+  if (denied) return { ok: false, op: 'createCatalogRow', message: denied };
   const { editable, extraColumns } = splitPatch(surface, args.patch);
   const created = await createRow(surface.sourceTable, args.businessId, editable);
   if (!created) {
@@ -245,6 +247,58 @@ export async function createCatalogRow(args: {
     data: { id: created.id, surfaceId: surface.surfaceId, table: surface.sourceTable },
   };
 }
+
+export async function updateCatalogRow(args: {
+  surfaceId: string;
+  rowId: string;
+  patch: CatalogRowFieldPatch;
+}): Promise<CatalogOperationResult> {
+  const surface = resolveSurfaceOrFail(args.surfaceId);
+  const ownerBusinessId = await fetchRowBusinessId(surface.sourceTable, args.rowId);
+  const denied = await assertBusinessAccess(ownerBusinessId);
+  if (denied) return { ok: false, op: 'updateCatalogRow', message: denied };
+  const { editable, extraColumns } = splitPatch(surface, args.patch);
+
+  const ok1 = Object.keys(editable).length === 0
+    ? true
+    : await updateRow(surface.sourceTable, args.rowId, editable);
+
+  let ok2 = true;
+  if (Object.keys(extraColumns).length > 0) {
+    const { error } = await supabase
+      .from(surface.sourceTable as never)
+      .update(extraColumns as never)
+      .eq('id', args.rowId);
+    ok2 = !error;
+  }
+
+  return {
+    ok: ok1 && ok2,
+    op: 'updateCatalogRow',
+    message: ok1 && ok2
+      ? `Updated ${surface.rowLabel} ${args.rowId}`
+      : `Partial/failed update on ${surface.sourceTable}#${args.rowId}`,
+    data: { surfaceId: surface.surfaceId, table: surface.sourceTable, rowId: args.rowId },
+  };
+}
+
+export async function deleteCatalogRow(args: {
+  surfaceId: string;
+  rowId: string;
+}): Promise<CatalogOperationResult> {
+  const surface = resolveSurfaceOrFail(args.surfaceId);
+  const ownerBusinessId = await fetchRowBusinessId(surface.sourceTable, args.rowId);
+  const denied = await assertBusinessAccess(ownerBusinessId);
+  if (denied) return { ok: false, op: 'deleteCatalogRow', message: denied };
+  const ok = await deleteRow(surface.sourceTable, args.rowId);
+  return {
+    ok,
+    op: 'deleteCatalogRow',
+    message: ok ? `Deleted ${surface.rowLabel} ${args.rowId}` : 'delete failed',
+    data: { surfaceId: surface.surfaceId, rowId: args.rowId },
+  };
+}
+
 
 export async function updateCatalogRow(args: {
   surfaceId: string;

@@ -1,128 +1,45 @@
 /**
- * autoEmitSectionBindings — Track B, Pass 2.
+ * autoEmitSectionBindings — Track B, Pass 2. (Milestone 1 refactor)
  *
- * Scans a SiteBundleSnapshot's PageRegistry for section types that the
- * runtime knows how to hydrate (see SECTION_DATA_REQUIREMENTS in
- * `@/types/catalog`) and upserts a `site_data_binding` row for each so
- * `catalogRuntime` can serve live Supabase rows into the preview.
- *
- * This is idempotent — bindings are keyed by
- * (project_id, page_path, section_id, slot_key) — so re-running it after
- * every canonical recompile just refreshes filters/limits and never
- * duplicates rows.
- *
- * Called from the System Launcher after a snapshot is produced, and from
- * `recompileFromPlayground` when the section topology changes.
+ * All naming / kind / table / filter / sort / limit / display-mapping data
+ * now comes from the canonical `catalogSurfaceRegistry`. This file is a
+ * thin walker that maps snapshot section-types → registry surfaces →
+ * `site_data_bindings` rows.
  */
 import { upsertBinding } from '@/services/sectionDataBindingService';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import {
-  CATALOG_KIND_TO_TABLE,
-  requirementForSection,
+  buildDisplayMappingForBinding,
+  CATALOG_SURFACES,
+  getCatalogSurface,
   type CatalogKind,
-  type SectionDataFallback,
-} from '@/types/catalog';
+  type CatalogSurface,
+} from '@/platform/core/catalogSurfaceRegistry';
+import type { SectionDataFallback } from '@/types/catalog';
 
 /**
- * Wizard section-type vocabulary (lowercase, industry-neutral) → the
- * PascalCase section-type keyed in SECTION_DATA_REQUIREMENTS. Keep this
- * mapping conservative — only add an entry when there is a real runtime
- * hydrator for the target kind.
+ * Legacy export. Consumers should call `getCatalogSurface(rawType)` directly.
+ * We synthesize the old (wizard-type → componentType) map from the registry
+ * so any existing importers still resolve correctly.
  */
-export const WIZARD_TYPE_TO_REQUIREMENT: Record<string, string> = {
-  services: 'ServiceGrid',
-  service_grid: 'ServiceGrid',
-  featured_services: 'ServiceGrid',
-  products: 'ProductGrid',
-  product_grid: 'ProductGrid',
-  shop: 'ProductGrid',
-  featured_products: 'FeaturedProducts',
-  menu: 'MenuSection',
-  menu_section: 'MenuSection',
-  pricing: 'PricingTable',
-  pricing_table: 'PricingTable',
-  plans: 'PricingTable',
-  // Milestone 3 — additional live-data sections
-  offers: 'FeaturedOffers',
-  featured_offers: 'FeaturedOffers',
-  promotions: 'FeaturedOffers',
-  deals: 'FeaturedOffers',
-  testimonials: 'Testimonials',
-  reviews: 'Testimonials',
-  social_proof: 'Testimonials',
-  portfolio: 'PortfolioGrid',
-  portfolio_grid: 'PortfolioGrid',
-  projects: 'PortfolioGrid',
-  case_studies: 'PortfolioGrid',
-  gallery: 'PortfolioGrid',
-  work: 'PortfolioGrid',
-};
+export const WIZARD_TYPE_TO_REQUIREMENT: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  for (const surface of Object.values(CATALOG_SURFACES)) {
+    const spellings = new Set<string>([
+      surface.surfaceId,
+      surface.componentType,
+      ...surface.aliases,
+    ]);
+    for (const s of spellings) {
+      out[s.toLowerCase().replace(/[-\s]/g, '_')] = surface.componentType;
+    }
+  }
+  return out;
+})();
 
 /**
- * Per-kind defaults so auto-emitted bindings match each table's actual
- * schema (columns differ: services uses `is_active`, featured_offers uses
- * `active`, testimonials/portfolio use `featured`, etc.). Filters/sort/
- * displayMapping produced here flow straight into `site_data_bindings`.
- */
-type KindDefaults = {
-  filters: Record<string, unknown>;
-  sort: { field: string; direction: 'asc' | 'desc' };
-  limit: number;
-  displayMapping: Record<string, string>;
-};
-
-const KIND_DEFAULTS: Partial<Record<import('@/types/catalog').CatalogKind, KindDefaults>> = {
-  service: {
-    filters: { is_active: true },
-    sort: { field: 'sort_order', direction: 'asc' },
-    limit: 12,
-    displayMapping: { title: 'name', description: 'description', price: 'price', image: 'image_url', duration: 'duration_minutes' },
-  },
-  product: {
-    filters: { is_active: true },
-    sort: { field: 'sort_order', direction: 'asc' },
-    limit: 12,
-    displayMapping: { title: 'name', description: 'description', price: 'price', image: 'image_url', badge: 'badge' },
-  },
-  menu_item: {
-    filters: { available: true },
-    sort: { field: 'sort_order', direction: 'asc' },
-    limit: 24,
-    displayMapping: { title: 'name', description: 'description', price: 'price_cents', image: 'image_url' },
-  },
-
-  pricing_plan: {
-    filters: { is_active: true },
-    sort: { field: 'sort_order', direction: 'asc' },
-    limit: 6,
-    displayMapping: { title: 'name', description: 'description', price: 'price', badge: 'badge' },
-  },
-  offer: {
-    filters: { active: true },
-    sort: { field: 'sort_order', direction: 'asc' },
-    limit: 6,
-    displayMapping: { title: 'title', description: 'description', image: 'image_url', badge: 'discount_label', cta: 'cta_label' },
-  },
-  testimonial: {
-    filters: {},
-    sort: { field: 'sort_order', direction: 'asc' },
-    limit: 9,
-    displayMapping: { title: 'author_name', description: 'quote', image: 'author_avatar_url', badge: 'rating', role: 'author_role' },
-  },
-  project: {
-    filters: {},
-    sort: { field: 'sort_order', direction: 'asc' },
-    limit: 12,
-    displayMapping: { title: 'title', description: 'summary', image: 'cover_image_url', badge: 'client_name' },
-  },
-};
-
-
-/**
- * Build the sectionId → requirementKey map used by the CatalogInspectorPanel /
- * CatalogReadinessGate. Mirrors the sectionId scheme emitted below
- * (`${requirementKey}-${index}`) so a snapshot alone is enough to derive it —
- * no DB round-trip required.
+ * Build the sectionId → componentType map used by inspector/readiness panels.
+ * Mirrors the emission scheme: `${surface.bindingPrefix}-${index}`.
  */
 export function buildSectionTypeMap(
   snapshot: SiteBundleSnapshot | null | undefined,
@@ -135,12 +52,9 @@ export function buildSectionTypeMap(
     if (!Array.isArray(sectionTypes)) continue;
     for (let index = 0; index < sectionTypes.length; index++) {
       const raw = String(sectionTypes[index] ?? '').trim();
-      if (!raw) continue;
-      const normalized = raw.toLowerCase().replace(/[-\s]/g, '_');
-      const key =
-        WIZARD_TYPE_TO_REQUIREMENT[normalized] ?? WIZARD_TYPE_TO_REQUIREMENT[raw];
-      if (!key) continue;
-      map[`${key}-${index}`] = key;
+      const surface = getCatalogSurface(raw);
+      if (!surface) continue;
+      map[`${surface.bindingPrefix}-${index}`] = surface.componentType;
     }
   }
   return map;
@@ -150,11 +64,8 @@ export interface AutoEmitOptions {
   businessId: string;
   projectId: string;
   snapshot: SiteBundleSnapshot;
-  /** Optional per-kind default filters (e.g. { service: { is_active: true } }). */
   defaultFilters?: Partial<Record<CatalogKind, Record<string, unknown>>>;
-  /** Default fallback per kind — otherwise 'empty_state'. */
   defaultFallback?: SectionDataFallback;
-  /** Max rows per section — mirrors design intent (e.g. 6 for grids). */
   defaultLimit?: number;
 }
 
@@ -173,8 +84,8 @@ export async function autoEmitSectionBindings(
     projectId,
     snapshot,
     defaultFilters = {},
-    defaultFallback = 'empty_state',
-    defaultLimit = 12,
+    defaultFallback,
+    defaultLimit,
   } = opts;
 
   const result: AutoEmitResult = { emitted: 0, skipped: 0, errors: 0, bindingIds: [] };
@@ -188,26 +99,17 @@ export async function autoEmitSectionBindings(
     for (let index = 0; index < sectionTypes.length; index++) {
       const raw = String(sectionTypes[index] ?? '').trim();
       if (!raw) continue;
-      const normalized = raw.toLowerCase().replace(/[-\s]/g, '_');
-      const requirementKey =
-        WIZARD_TYPE_TO_REQUIREMENT[normalized] ?? WIZARD_TYPE_TO_REQUIREMENT[raw];
-      if (!requirementKey) {
-        result.skipped++;
-        continue;
-      }
-      const req = requirementForSection(requirementKey);
-      if (!req) {
+      const surface: CatalogSurface | null = getCatalogSurface(raw);
+      if (!surface) {
         result.skipped++;
         continue;
       }
 
-      const sourceTable = CATALOG_KIND_TO_TABLE[req.requiredKind];
-      const sectionId = `${requirementKey}-${index}`;
-      const kindDefaults = KIND_DEFAULTS[req.requiredKind];
-      const fallbackDefault =
-        (req.emptyState as SectionDataFallback) === 'hide_section'
+      const sectionId = `${surface.bindingPrefix}-${index}`;
+      const fallbackDefault: SectionDataFallback =
+        surface.fallbackMode === 'hide_section'
           ? 'hide_section'
-          : defaultFallback;
+          : defaultFallback ?? surface.fallbackMode;
 
       try {
         const dto = await upsertBinding({
@@ -217,15 +119,14 @@ export async function autoEmitSectionBindings(
           pagePath,
           sectionId,
           bindingType: 'section',
-          sourceKind: req.requiredKind,
-          sourceTable,
+          sourceKind: surface.catalogKind,
+          sourceTable: surface.sourceTable,
           filters:
-            defaultFilters[req.requiredKind] ??
-            kindDefaults?.filters ??
-            { is_active: true },
-          sort: kindDefaults?.sort ?? { field: 'sort_order', direction: 'asc' },
-          limitCount: kindDefaults?.limit ?? defaultLimit,
-          displayMapping: kindDefaults?.displayMapping ?? {},
+            defaultFilters[surface.catalogKind] ??
+            surface.defaultFilters,
+          sort: surface.defaultSort,
+          limitCount: defaultLimit ?? surface.defaultLimit,
+          displayMapping: buildDisplayMappingForBinding(surface),
           fallbackMode: fallbackDefault,
         });
 

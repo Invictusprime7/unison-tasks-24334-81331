@@ -135,29 +135,12 @@ export function mergeHydratedItems(
 `;
 
 /**
- * Section types (in the composition's `s.type` vocabulary) that should
- * subscribe to live catalog hydration in the preview.
+ * Section-type strings (in the composition's `s.type` vocabulary) that should
+ * subscribe to live catalog hydration in the preview. Derived from the
+ * canonical `catalogSurfaceRegistry` so there is no drift.
  */
-export const HYDRATABLE_SECTION_TYPES: readonly string[] = [
-  'services',
-  'features',
-  'pricing',
-  'products',
-  'menu',
-  'plans',
-  // Milestone 3 additions
-  'offers',
-  'featured_offers',
-  'promotions',
-  'deals',
-  'testimonials',
-  'reviews',
-  'social_proof',
-  'portfolio',
-  'portfolio_grid',
-  'projects',
-  'case_studies',
-  'gallery',
-  'work',
-];
+import { listHydratableSectionTypes } from '@/platform/core/catalogSurfaceRegistry';
+
+export const HYDRATABLE_SECTION_TYPES: readonly string[] = listHydratableSectionTypes();
+
 

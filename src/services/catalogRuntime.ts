@@ -1,18 +1,19 @@
 /**
  * catalogRuntime — read-side hydration for generated sections.
  *
- * Given a SectionDataBindingDTO, resolve the actual rows the section
- * should render. Applies filters, sort, limit, and collection membership
- * (rules or manual_item_ids).
- *
- * Returns a `CatalogRenderResult` that includes the rows plus a fallback
- * decision so the section renderer knows whether to show data, an empty
- * state, a placeholder, or hide itself.
+ * Milestone 1 refactor: all section-type resolution + row projection now
+ * derives from `catalogSurfaceRegistry`. No local wizard-type maps and no
+ * hand-rolled display projections in this file.
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import { getCollectionBySlug } from '@/services/catalogCollectionService';
 import { getBinding } from '@/services/sectionDataBindingService';
+import {
+  getCatalogSurface,
+  getCatalogSurfaceByTable,
+  projectRowToCardViewModel,
+  type CatalogCardViewModel,
+} from '@/platform/core/catalogSurfaceRegistry';
 import type {
   CatalogCollectionDTO,
   SectionDataBindingDTO,
@@ -73,12 +74,10 @@ export async function hydrateBinding(
     .select('*')
     .eq('business_id', binding.businessId);
 
-  // Apply flat equality filters (e.g. { featured: true, is_active: true }).
   for (const [key, value] of Object.entries(binding.filters ?? {})) {
     query = query.eq(key, value as never);
   }
 
-  // Manual collection membership overrides filter set.
   if (collection && collection.manualItemIds.length > 0) {
     query = query.in('id', collection.manualItemIds);
   }
@@ -109,11 +108,7 @@ export async function hydrateBinding(
 
 /**
  * Resolve a hydration request coming from the preview iframe.
- *
- * The generated site posts `{ pagePath, sectionId?, sectionType?, occurrenceIndex? }`.
- * When `sectionId` matches an emitted binding directly we use it; otherwise
- * we fall back to (page + sectionType occurrence) which is what
- * `autoEmitSectionBindings` currently keys on (`${requirementKey}-${index}`).
+ * Direct sectionId match first; otherwise (page + sectionType occurrence).
  */
 export async function resolveHydrationRequest(params: {
   projectId: string;
@@ -127,16 +122,13 @@ export async function resolveHydrationRequest(params: {
     return { rows: [], binding: null, collection: null, fallback: 'hide_section' };
   }
 
-  // 1) Direct match by explicit sectionId.
   if (params.sectionId) {
     const direct = await resolveSectionData(projectId, pagePath, params.sectionId, null);
     if (direct.binding) return direct;
   }
 
-  // 2) Occurrence-based match: pull all bindings for the page whose sectionId
-  //    starts with the requirement key implied by `sectionType`.
-  const requirementKey = mapWizardTypeToRequirement(params.sectionType ?? '');
-  if (!requirementKey) {
+  const surface = getCatalogSurface(params.sectionType ?? '');
+  if (!surface) {
     return { rows: [], binding: null, collection: null, fallback: 'hide_section' };
   }
   const { data, error } = await supabase
@@ -144,7 +136,7 @@ export async function resolveHydrationRequest(params: {
     .select('id, business_id, project_id, snapshot_id, page_path, section_id, slot_key, binding_type, source_kind, source_table, collection_id, filters, sort, limit_count, display_mapping, fallback_mode, created_at, updated_at')
     .eq('project_id', projectId)
     .eq('page_path', pagePath)
-    .like('section_id', `${requirementKey}-%`)
+    .like('section_id', `${surface.bindingPrefix}-%`)
     .order('section_id', { ascending: true });
   if (error || !data || (data as unknown[]).length === 0) {
     return { rows: [], binding: null, collection: null, fallback: 'hide_section' };
@@ -175,50 +167,16 @@ export async function resolveHydrationRequest(params: {
   return hydrateBinding(binding);
 }
 
-const WIZARD_TYPE_TO_REQUIREMENT_LOCAL: Record<string, string> = {
-  services: 'ServiceGrid', service_grid: 'ServiceGrid', featured_services: 'ServiceGrid',
-  products: 'ProductGrid', product_grid: 'ProductGrid', shop: 'ProductGrid',
-  featured_products: 'FeaturedProducts',
-  menu: 'MenuSection', menu_section: 'MenuSection',
-  pricing: 'PricingTable', pricing_table: 'PricingTable', plans: 'PricingTable',
-  offers: 'FeaturedOffers', featured_offers: 'FeaturedOffers', promotions: 'FeaturedOffers', deals: 'FeaturedOffers',
-  testimonials: 'Testimonials', reviews: 'Testimonials', social_proof: 'Testimonials',
-  portfolio: 'PortfolioGrid', portfolio_grid: 'PortfolioGrid', projects: 'PortfolioGrid',
-  case_studies: 'PortfolioGrid', gallery: 'PortfolioGrid', work: 'PortfolioGrid',
-};
-
-
-function mapWizardTypeToRequirement(t: string): string | null {
-  if (!t) return null;
-  const n = t.toLowerCase().replace(/[-\s]/g, '_');
-  return WIZARD_TYPE_TO_REQUIREMENT_LOCAL[n] ?? null;
-}
-
 /**
- * Given a hydration result and the binding's displayMapping, project the raw
- * DB rows into the shape generated section components consume (title,
- * description, price, image, cta, badge).
+ * Project raw DB rows into the canonical CatalogCardViewModel — so generated
+ * sections only ever see `title`, `description`, `imageUrl`, `priceCents`,
+ * `priceLabel`, etc., regardless of whether the DB stored dollars or cents.
  */
 export function projectRowsForSection(
   result: CatalogRenderResult,
-): Array<Record<string, unknown>> {
+): CatalogCardViewModel[] {
   if (!result.binding || result.rows.length === 0) return [];
-  const map = result.binding.displayMapping ?? {};
-  const defaults: Record<string, string> = {
-    title: map.title ?? 'name',
-    description: map.description ?? 'description',
-    price: map.price ?? 'price',
-    image: map.image ?? 'image_url',
-    badge: map.badge ?? 'badge',
-    duration: map.duration ?? 'duration_minutes',
-  };
-  return result.rows.map((row) => {
-    const out: Record<string, unknown> = { ...row };
-    for (const [outKey, srcKey] of Object.entries(defaults)) {
-      if (out[outKey] === undefined && row[srcKey] !== undefined) {
-        out[outKey] = row[srcKey];
-      }
-    }
-    return out;
-  });
+  const surface = getCatalogSurfaceByTable(result.binding.sourceTable);
+  if (!surface) return [];
+  return result.rows.map((row) => projectRowToCardViewModel(surface, row));
 }

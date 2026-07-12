@@ -299,52 +299,6 @@ export async function deleteCatalogRow(args: {
   };
 }
 
-
-export async function updateCatalogRow(args: {
-  surfaceId: string;
-  rowId: string;
-  patch: CatalogRowFieldPatch;
-}): Promise<CatalogOperationResult> {
-  const surface = resolveSurfaceOrFail(args.surfaceId);
-  const { editable, extraColumns } = splitPatch(surface, args.patch);
-
-  const ok1 = Object.keys(editable).length === 0
-    ? true
-    : await updateRow(surface.sourceTable, args.rowId, editable);
-
-  let ok2 = true;
-  if (Object.keys(extraColumns).length > 0) {
-    const { error } = await supabase
-      .from(surface.sourceTable as never)
-      .update(extraColumns as never)
-      .eq('id', args.rowId);
-    ok2 = !error;
-  }
-
-  return {
-    ok: ok1 && ok2,
-    op: 'updateCatalogRow',
-    message: ok1 && ok2
-      ? `Updated ${surface.rowLabel} ${args.rowId}`
-      : `Partial/failed update on ${surface.sourceTable}#${args.rowId}`,
-    data: { surfaceId: surface.surfaceId, table: surface.sourceTable, rowId: args.rowId },
-  };
-}
-
-export async function deleteCatalogRow(args: {
-  surfaceId: string;
-  rowId: string;
-}): Promise<CatalogOperationResult> {
-  const surface = resolveSurfaceOrFail(args.surfaceId);
-  const ok = await deleteRow(surface.sourceTable, args.rowId);
-  return {
-    ok,
-    op: 'deleteCatalogRow',
-    message: ok ? `Deleted ${surface.rowLabel} ${args.rowId}` : 'delete failed',
-    data: { surfaceId: surface.surfaceId, rowId: args.rowId },
-  };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Binding operations (M5)
 // ─────────────────────────────────────────────────────────────────────────────

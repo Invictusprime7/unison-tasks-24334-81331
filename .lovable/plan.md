@@ -1,110 +1,88 @@
-# Milestone: Canonical Preview + Durable Commit Enforcement
+# Golden Journey + Business Profile Hardening
 
-Turn Unison from "advanced builder" into "business OS runtime" by making `SiteBundleSnapshot` + `BuilderIdentity` the non-negotiable contract for every preview, AI edit, playground sync, and publish.
+## Milestone 1 — Golden Journey: Local Service / Booking
 
-We already shipped the foundation in prior turns:
-- `canonicalRuntimeContract.ts` + `CanonicalRuntimeError`
-- `LaunchGateNotice` UI
-- `VFSCommitService` + `site_revisions` ledger
-- `BuilderIdentity` type + assertions
-- Hard-error throws inside `snapshotProjector`, `webBuilderArtifacts`, `VFSPreview`, `DeployButton`
+Target vertical: **local service / booking** (salon, cleaning, contractor, barber, detailing, photographer). Highest overlap with what already works: booking capability, services catalog, CRM lead capture, notification email — all wired in current pipeline (`industry-intent-runtime`, `industryIntentProfiles`, `services` table, `bookings` table, `crm_leads`, `intent-router` → `booking.create`).
 
-What's left is to **close the loops** — make the contracts unbypassable and start shrinking `WebBuilder.tsx`.
+### End-to-end flow to lock in
 
----
-
-## Pass 1 — Hard-error preview everywhere (finish it)
-
-Goal: Preview never silently renders a canonical project without a `SiteBundleSnapshot`.
-
-- Add **blank-project snapshot bootstrap**: `createMinimalValidSnapshot()` already exists in `canonicalRuntimeContract.ts` — wire it into the "Start from Blank" path so blank drafts get a real snapshot at draft creation, not a fake shell at render time.
-- Audit remaining preview entry points (`buildPreviewArtifacts`, `playgroundCompiler.recompileFromPlayground`, `useTemplateFiles` hot paths) and route every launcher-backed render through `requireCanonicalSnapshot()`.
-- Replace any lingering "minimal fallback" branches with `LaunchGateNotice`.
-
-## Pass 2 — Identity hardening
-
-Goal: `templateId`, `draftId`, `projectId`, `businessId`, `revisionId`, `sessionId` never collapse.
-
-- Grep + remove every place where `currentTemplateId` is passed where `projectId`/`draftId` is expected (AI Builder handlers, deploy, revisions writer, drafts persistence).
-- Make `BuilderSessionProvider` the single source: `WebBuilder` reads identity from context, never from props/local state.
-- Add a dev-only `assertBuilderIdentity` call at every commit/deploy/AI-apply boundary; fail loud in dev, telemetry-log in prod.
-
-## Pass 3 — VFSCommitService as the only durable writer
-
-Goal: Every accepted mutation goes through `commitMutation` → canonical pipeline → preflight → revision ledger.
-
-- Flip `VITE_USE_COMMIT_SERVICE` on for the migrated writers and migrate the remaining ones: AI Builder apply, theme change, layout fast-path, page add/remove, intent binding change.
-- Add CI lint rule extending `scripts/lint-pipeline-bypass.mjs` to forbid direct `aiVFS.applyCode` / `executeCanonicalPipeline` / `recompileFromPlayground` imports outside `platform/core` + `vfsCommitService`.
-- Move AI apply from "fire-and-forget persist" to "dry-run → preflight → commit; on reject, surface diff in AIBuilderPanel with one-click repair".
-
-## Pass 4 — Snapshot-only preview runtime
-
-Goal: Preview's single input is `SiteBundleSnapshot`.
-
-- Refactor `PreviewRuntimeController` to take `{ snapshot }` only; derive VFS, manifest, router from the snapshot internally.
-- Delete the parallel "loose VFS" preview path; keep VFS as a materialization cache, not a source.
-- Document the kernel model in `mem://architecture/site-os/snapshot-only-preview.md`.
-
-## Pass 5 — WebBuilder.tsx decomposition (Phase D)
-
-Goal: Shrink the god component below 3,000 lines by extracting controllers it already has scaffolds for.
-
-Extract in order (smallest blast radius first):
-1. **DeploymentController** — deploy handoff + readiness display.
-2. **AIEditApplicationController** — AI apply pipeline (now thin, since Pass 3 routes through commit service).
-3. **SnapshotHydrationController** — revision-first hydration + sessionStorage recovery.
-4. **RouteImportController** — file-tree route import.
-
-Each extraction: move logic into `src/builder/controllers/*`, expose via context, delete from `WebBuilder.tsx`, run golden tests.
-
-## Pass 6 — Readiness inspects real vertical data
-
-Goal: Readiness verifies actual business rows, not caller-supplied counts.
-
-- Add `verticalDataProbe(projectId, businessId, verticalContractId)` that queries Lovable Cloud for the contract's required entities (services, products, menu items, lead forms, etc.).
-- Wire into `nativePublishReadiness` so PublishGate blocks until row-count + relationship requirements are met.
-- Surface findings in `ReadinessCenterPanel` with deep links to the entity editor.
-
-## Pass 7 — Telemetry + golden tests
-
-Goal: Lock the invariants behind tests so they can't regress.
-
-- Extend `vfsCommitService.golden.test.ts`: blank-project bootstrap, identity assertion failure, snapshot-only preview, AI apply rejection on failed preflight.
-- Add a runtime invariant logger: every `CanonicalRuntimeError` ships to telemetry with `{draftId, classification, missingFields}`.
-- Add a dashboard query that surfaces "previews blocked by missing snapshot" per day as a north-star regression signal.
-
----
-
-## Technical details
-
-**Touch list (high-level):**
-
-```
-src/platform/core/canonicalRuntimeContract.ts        (Pass 1 — blank bootstrap)
-src/services/playgroundCompiler.ts                   (Pass 1)
-src/services/canonicalLaunchVfs.ts                   (Pass 1)
-src/hooks/useTemplateFiles.ts                        (Pass 1, 2)
-src/components/creatives/WebBuilder.tsx              (Pass 2, 5 — large)
-src/builder/controllers/BuilderSessionProvider.tsx   (Pass 2)
-src/builder/controllers/*Controller.ts               (Pass 5 — new files)
-src/services/vfsCommitService.ts                     (Pass 3)
-src/components/AIBuilderPanel.tsx                    (Pass 3)
-src/services/snapshotProjector.ts                    (Pass 4)
-src/services/nativePublishReadiness.ts               (Pass 6)
-src/services/verticalDataProbe.ts                    (Pass 6 — new)
-src/test/vfsCommitService.golden.test.ts             (Pass 7)
-scripts/lint-pipeline-bypass.mjs                     (Pass 3)
+```text
+Sign up
+  → Create Business Profile (name, industry=local-service, contact, hours, timezone)
+    → Launch site via System Launcher (Lane B, industry=local-service preset)
+      → Owner adds Services (CatalogInspectorPanel: name, duration, price)
+        → Preview reads live services (CatalogRuntime hydration)
+          → Publish
+            → Visitor books via data-ut-intent="booking.create"
+              → intent-router writes bookings row + crm_leads row
+                → send-transactional-email → owner notification_email
+                  → Owner opens CRM Dashboard → sees lead → replies
 ```
 
-**Sequencing rule:** Pass 1 → 2 → 3 must land in order (each unblocks the next). Passes 4 + 5 can run in parallel after 3. Passes 6 + 7 are last.
+### Concrete gaps to close for this journey only
 
-**No-regression rule:** every pass ends with `bunx tsgo --noEmit` clean and the golden E2E test green before moving on.
+1. **Signup → Business Profile completeness gate.** After signup, force `BusinessProfileWizard` (name, industry, phone, email, timezone, address, hours) before Launcher. Gate uses existing `scoreProfileCompleteness`; owner cannot launch until `readyForPublish=true` on core fields.
+2. **Launcher pre-fills from profile.** `SystemLauncher` must read `BusinessProfileDTO` and skip re-asking for name/industry/contact. Wizard becomes 2 steps for returning owners.
+3. **Services CRUD in builder.** Confirm `CatalogInspectorPanel` for `services` collection is functional for local-service (create/edit/delete/reorder); expose it as a first-class "Services" tab in WebBuilder, not buried in catalog inspector.
+4. **Booking form contract for local-service.** Ensure every generated local-service site has one visible booking form bound to `booking.create` with `service_id`, `date`, `time`, `name`, `email`, `phone`. Add to `IndustryIntentProfiles.local-service.required`.
+5. **Owner notification email.** After booking, `intent-router` invokes `send-transactional-email` with `booking-received` template → `businesses.notification_email`. Scaffold the template + wire the call (missing today for booking; only present for contact-confirmation).
+6. **CRM Dashboard shows bookings alongside leads.** `CRMDashboard.tsx` unified view: `crm_leads` + `bookings` filtered by `business_id`.
+7. **Publish gate honors the journey.** `buildNativePublishReadinessManifest` for local-service requires: profile complete, ≥1 service row, ≥1 booking form on site, notification_email set.
 
-**Out of scope for this milestone:**
-- New visual features in the builder UI.
-- New AI prompt templates.
-- Any YAML migration (per execution hierarchy memory).
+### Deliverables (Milestone 1)
+- `BusinessProfileGate.tsx` post-signup
+- Launcher pre-fill from `businessProfileService`
+- `Services` tab surface in WebBuilder
+- `booking-received` email template + `intent-router` send call
+- CRM Dashboard bookings merge
+- Local-service publish readiness rules
 
 ---
 
-Reply **approve** to start Pass 1, or tell me which pass to pull forward / drop.
+## Milestone 2 — Business Profile as Root Object
+
+Make `BusinessProfileDTO` the single hydration source for every generated artifact. No component reads scattered fields from wizard state, launch state, or hardcoded seeds.
+
+### Wiring targets
+
+| Consumer | Field(s) from profile | Change |
+|---|---|---|
+| Hero section | `name`, `tagline`, `industry` | Section template reads `useBusinessProfile()` context, no wizard prop passthrough |
+| Footer | `name`, `phone`, `email`, `address`, `socialLinks`, `hours` | Same context |
+| Contact page | `email`, `phone`, `address`, `hours`, `notificationEmail` | Same context; form action = `contact.submit` bound to `business_id` |
+| SEO metadata | `name`, `description`, `slug`, `logoUrl` | `index.html` head + per-route Helmet reads profile at build/preview time |
+| Booking / contact forms | `businessId`, `industry`, `notificationEmail`, `timezone` | Form runtime auto-injects `business_id`; timezone drives slot rendering |
+| CRM ownership | `businessId` | Every `crm_leads`/`bookings` row scoped by RLS to `business_members` |
+| Catalog ownership | `businessId` | Every `services`/`products`/`menu_items`/`collections` row scoped identically |
+| Published site identity | `slug`, `logoUrl`, `brandColor`, `name` | Publish artifact writes `businesses.published_slug` + preview URL manifest |
+| Workspace/project nav | `businessId`, `name`, `logoUrl` | Topbar `Connected Business` chip becomes primary switcher |
+
+### Architecture change
+
+Introduce `BusinessProfileProvider` at the WebBuilder root (mirrors `BuilderSessionProvider`). Every downstream reader (`Hero`, `Footer`, `ContactSection`, `BookingForm`, SEO layer, CatalogInspector, CRM) resolves the profile from context — never from `LaunchState`, `WizardSelections`, or hardcoded seed JSON.
+
+Runtime injection into preview VFS: `businessProfileHydrationModule.ts` (mirrors `catalogHydrationModule`) exposes `window.__UNISON_BUSINESS__` so section templates in the iframe read live profile without prop drilling.
+
+### Golden test to prove Milestone 2
+
+Change the business name in `BusinessSettings` → within one preview refresh, the new name appears in: hero, footer, contact page, browser tab title, SEO description, published-site preview card, CRM header, topbar chip. If any surface still shows the old name, that surface is not yet reading from profile context and is on the punch list.
+
+### Deliverables (Milestone 2)
+- `BusinessProfileProvider` + inline context reader
+- `businessProfileHydrationModule` injected by preview session
+- Section templates refactored: Hero, Footer, ContactSection, BookingForm read from `window.__UNISON_BUSINESS__`
+- SEO layer (Helmet + `index.html` head) reads profile
+- Publish artifact writes canonical business identity
+- Golden name-change test
+
+---
+
+## Sequencing
+
+Milestone 1 first (proves one journey works end-to-end for a real owner). Milestone 2 second (generalizes profile-as-root so remaining industries in later milestones inherit the plumbing for free).
+
+## Not in scope now
+- Other industries (restaurant, ecommerce, nonprofit, coaching) — reuse Milestone 2 plumbing later
+- SMS notifications (email-only for M1; SMS is a follow-up)
+- Multi-location businesses
+- Team member roles beyond owner

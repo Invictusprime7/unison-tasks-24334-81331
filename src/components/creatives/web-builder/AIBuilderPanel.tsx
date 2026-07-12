@@ -80,6 +80,8 @@ import { parseIconWireIntent, stampIconIntentInSource } from '@/utils/iconWireIn
 import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
 import { runBuilderTurn } from '@/services/builderBrainClient';
+import { buildCatalogContext, renderCatalogContextForPrompt, type SelectedSectionRef } from '@/utils/catalogContext';
+import { executeCatalogToolCalls, type RawToolCall } from '@/services/catalogToolExecutor';
 
 // ============================================================================
 /**

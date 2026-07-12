@@ -308,6 +308,11 @@ interface AICodeAssistantProps {
   pageStructureContext?: string | null;
   backendStateContext?: string | null;
   businessDataContext?: string | null;
+  /** Identity for AI Builder catalog awareness (M5–M7). */
+  businessId?: string | null;
+  projectId?: string | null;
+  industry?: string | null;
+  selectedSectionRef?: SelectedSectionRef | null;
   selectedElement?: {
     html: string;
     selector: string;

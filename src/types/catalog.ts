@@ -24,7 +24,7 @@ export type SectionDataFallback = CatalogFallbackMode;
 export type BindingType = 'section' | 'slot' | 'card';
 
 /** kind → table map. Now sourced from catalogSurfaceRegistry. */
-export const CATALOG_KIND_TO_TABLE = REGISTRY_KIND_TO_TABLE;
+export const CATALOG_KIND_TO_TABLE = REGISTRY_KIND_TO_TABLE; // from catalogSurfaceRegistry
 
 export interface CatalogCollectionDTO {
   id: string;
@@ -77,8 +77,8 @@ export interface SectionDataRequirement {
   supportedIntents: string[];
 }
 
-// Derived from catalogSurfaceRegistry — do not declare a local map here.
-export const SECTION_DATA_REQUIREMENTS: Record<string, SectionDataRequirement> = (() => {
+export const SECTION_DATA_REQUIREMENTS: Record<string, SectionDataRequirement> = // from catalogSurfaceRegistry
+  (() => {
   const out: Record<string, SectionDataRequirement> = {};
   for (const surface of Object.values(CATALOG_SURFACES)) {
     out[surface.componentType] = {

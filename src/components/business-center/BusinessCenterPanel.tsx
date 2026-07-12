@@ -23,7 +23,10 @@ import {
   type BusinessProfilePatch,
 } from '@/services/businessProfileService';
 import { evaluateBusinessProfileGate } from '@/services/businessProfileReadinessGate';
+import { buildRepairActions } from '@/services/readiness/repairActions';
+import { ReadinessChecklist } from '@/components/business/ReadinessChecklist';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
+
 
 export interface BusinessCenterPanelProps {
   businessId: string;
@@ -117,7 +120,21 @@ export function BusinessCenterPanel({ businessId, onClose }: BusinessCenterPanel
         </div>
       </header>
 
+      <ReadinessChecklist
+        heading="What to fix before publishing"
+        actions={buildRepairActions({
+          businessId,
+          businessName: merged.name,
+          phone: (merged as any).phone,
+          email: (merged as any).email,
+          address: (merged as any).address,
+          notificationEmail: (merged as any).notificationEmail ?? (merged as any).notification_email,
+          sectionsInUse: [],
+        })}
+      />
+
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
         <div className="space-y-2">
           <Label htmlFor="bc-name">Business name</Label>
           <Input

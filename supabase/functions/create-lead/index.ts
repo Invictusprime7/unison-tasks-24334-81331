@@ -223,9 +223,38 @@ serve(async (req) => {
         value: null,
         metadata: metadata || {},
       });
+
+      // CRM activity + owner follow-up task (Milestone 5)
+      try {
+        await supabase.from("crm_activities").insert({
+          business_id: businessId,
+          contact_id: contactId,
+          activity_type: "lead_captured",
+          title: `New lead: ${leadTitle}`,
+          description: message || null,
+          metadata: { source: source || "web_form", ...(metadata || {}) },
+        });
+      } catch (activityErr) {
+        console.warn("[create-lead] activity insert failed", activityErr);
+      }
+
+      try {
+        await supabase.from("tasks").insert({
+          business_id: businessId,
+          title: `Follow up with ${name?.trim() || email}`,
+          description: message ? `Lead message: ${message}` : `New lead from ${source || "web_form"}`,
+          status: "todo",
+          priority: "high",
+          due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          metadata: { type: "follow_up", lead_email: normalizedEmail, contact_id: contactId },
+        });
+      } catch (taskErr) {
+        console.warn("[create-lead] follow-up task insert failed", taskErr);
+      }
     } catch (e) {
       console.warn("[create-lead] CRM create/update failed", e);
     }
+
 
     // Notifications (best-effort)
     try {

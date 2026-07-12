@@ -4,6 +4,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody } from "../_shared/validate.ts";
+import { renderCatalogSurfaceSummaryForPrompt } from "../_shared/catalogSurfaceSummary.ts";
 
 const BlueprintSchema = z.object({
   identity: z.object({
@@ -149,6 +150,7 @@ Typography:
 - Body: ${blueprint.brand.typography?.body || "Inter"}
 
 ${buttonLabels}
+${renderCatalogSurfaceSummaryForPrompt(blueprint.identity.industry)}
 ${userPrompt ? `\nAdditional requirements: ${userPrompt}` : ""}`;
 
     // Call ai-code-assistant

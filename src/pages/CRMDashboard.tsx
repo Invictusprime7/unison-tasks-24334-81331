@@ -14,6 +14,7 @@ import {
   Kanban,
   Zap,
   Sparkles,
+  Calendar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,13 +26,15 @@ import { CRMOverview } from "@/components/crm/CRMOverview";
 import { CRMPipeline } from "@/components/crm/CRMPipeline";
 import { CRMAutomations } from "@/components/crm/CRMAutomations";
 import { PrebuiltWorkflows } from "@/components/crm/PrebuiltWorkflows";
+import { CRMBookings } from "@/components/crm/CRMBookings";
 
-type CRMView = "overview" | "contacts" | "leads" | "pipeline" | "workflows" | "recipes" | "automations" | "forms";
+type CRMView = "overview" | "contacts" | "leads" | "bookings" | "pipeline" | "workflows" | "recipes" | "automations" | "forms";
 
 const navItems = [
   { id: "overview" as CRMView, label: "Overview", icon: BarChart3 },
   { id: "contacts" as CRMView, label: "Contacts", icon: Users },
   { id: "leads" as CRMView, label: "Leads", icon: Target },
+  { id: "bookings" as CRMView, label: "Bookings", icon: Calendar },
   { id: "pipeline" as CRMView, label: "Pipeline", icon: Kanban },
   { id: "workflows" as CRMView, label: "Workflows", icon: Workflow },
   { id: "recipes" as CRMView, label: "Prebuilt", icon: Sparkles },
@@ -53,6 +56,8 @@ export default function CRMDashboard({ initialView = "overview" }: CRMDashboardP
         return <CRMContacts />;
       case "leads":
         return <CRMLeads />;
+      case "bookings":
+        return <CRMBookings />;
       case "pipeline":
         return <CRMPipeline />;
       case "workflows":

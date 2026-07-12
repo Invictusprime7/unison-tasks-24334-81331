@@ -1142,6 +1142,27 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       if (vfsContext) contextLines.push(`\nCurrent VFS project files:\n${vfsContext.slice(0, 2400)}`);
       if (siteAnalysisContext && !isSurgicalEdit) contextLines.push(`\nSite component structure:\n${siteAnalysisContext.slice(0, 1500)}`);
       if (themeContextBlock) contextLines.push(`\n${themeContextBlock}`);
+
+      // ── M6/M7: Catalog Context Injection (Lane B) ──
+      // Give the AI structured awareness of the canonical catalog registry,
+      // live row counts, active bindings, and the currently selected section
+      // so it prefers catalog operations over hand-editing TSX for content.
+      try {
+        const industryForCatalog =
+          systemsBuildContext?.identity?.industry ??
+          (userDesignProfile?.industryHints?.[0] ?? null);
+        const catalogCtx = await buildCatalogContext({
+          businessId: businessId ?? null,
+          projectId: projectId ?? null,
+          industry: industryForCatalog,
+          selectedSection: null,
+        });
+        const rendered = renderCatalogContextForPrompt(catalogCtx);
+        if (rendered) contextLines.push(`\n${rendered}`);
+      } catch (err) {
+        console.warn('[AIBuilderPanel] buildCatalogContext failed; continuing without it', err);
+      }
+
       const richContext = contextLines.length ? `\n\n[Context]\n${contextLines.join('\n')}` : '';
 
       // For surgical edits, inject a strict prompt guard so the AI makes ONLY the targeted change

@@ -24,6 +24,7 @@ const AIPageGenerator = lazy(() =>
 );
 const CRMDashboard = lazy(() => import("@/pages/CRMDashboard"));
 const BusinessSettings = lazy(() => import("@/pages/BusinessSettings"));
+const BusinessCatalog = lazy(() => import("@/pages/BusinessCatalog"));
 const CloudDashboard = lazy(() => import("@/pages/CloudDashboard"));
 const DocsPage = lazy(() => import("@/pages/DocsPage"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -292,6 +293,20 @@ export const appRoutes: AppRouteConfig[] = [
       requiresWorkspace: true,
     },
   },
+  {
+    path: "/business/:catalogKey",
+    element: withAsyncBoundary(<BusinessCatalog />),
+    meta: {
+      id: "business-catalog",
+      title: "Manage business data",
+      section: "workspace",
+      shell: "workspace",
+      chrome: "legacy",
+      requiresAuth: true,
+      requiresWorkspace: true,
+    },
+  },
+
   {
     path: "/dashboard/leads",
     element: withAsyncBoundary(<CRMDashboard initialView="leads" />),

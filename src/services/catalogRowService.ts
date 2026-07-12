@@ -1,67 +1,67 @@
 /**
- * catalogRowService — Track B Pass 5 (two-way) + Pass 6 (row CRUD).
+ * catalogRowService — canonical CRUD over every catalog table.
  *
- * Thin CRUD over the underlying catalog tables (services, products, menu_items,
- * pricing_plans) so the Builder's Connected Data panel can create, edit and
- * delete rows inline without the caller knowing each table's exact column set.
- * All writes are scoped by business_id at the RLS layer.
+ * Milestone 4: the allowed-table set + payload shape now derive from the
+ * `catalogSurfaceRegistry` instead of a hand-maintained list. Every table
+ * declared as a `CatalogSourceTable` (services, products, menu_items,
+ * pricing_plans, featured_offers, testimonials, portfolio_projects,
+ * availability_slots) is supported automatically.
+ *
+ * Callers may still pass the generic `{ name, description, price, image_url }`
+ * shape used by the classic inspector — we normalize that per-surface using
+ * the registry's `fields` mapping so services/pricing_plans/menu_items land
+ * in `price_cents` and products lands in `price`.
  */
 import { supabase } from '@/integrations/supabase/client';
 import { hydrateBinding, type CatalogRenderResult } from '@/services/catalogRuntime';
+import {
+  getCatalogSurface,
+  getCatalogSurfaceByTable,
+  type CatalogSourceTable,
+  type CatalogSurface,
+} from '@/platform/core/catalogSurfaceRegistry';
 import type { SectionDataBindingDTO } from '@/types/catalog';
 
-/** Fields the inspector edits in place. Not every table has every column. */
+/** Legacy "inspector" patch shape. */
 export interface EditableRowPatch {
   name?: string | null;
   description?: string | null;
+  /** Dollars (numeric). Written into the surface's price column, converting
+   *  to cents when the surface uses a `priceCents` column. */
   price?: number | null;
   image_url?: string | null;
 }
 
-const KNOWN_TABLES = new Set([
-  'services',
-  'products',
-  'menu_items',
-  'pricing_plans',
-]);
-
-/**
- * Normalize the inspector's generic patch shape into the actual columns each
- * table exposes. Menu items and pricing plans store money as `price_cents`
- * and don't have `image_url` on pricing_plans.
- */
 function normalizePatch(
-  table: string,
+  surface: CatalogSurface,
   patch: EditableRowPatch,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const hasName = patch.name !== undefined;
-  const hasDesc = patch.description !== undefined;
-  const hasPrice = patch.price !== undefined;
-  const hasImage = patch.image_url !== undefined;
+  const f = surface.fields;
 
-  if (hasName) out.name = patch.name ?? '';
-  if (hasDesc) out.description = patch.description ?? null;
-
-  if (table === 'menu_items' || table === 'pricing_plans') {
-    if (hasPrice) {
-      const cents =
-        patch.price == null || !Number.isFinite(patch.price)
-          ? 0
-          : Math.round(patch.price * 100);
-      out.price_cents = cents;
+  if (patch.name !== undefined && f.title) {
+    out[f.title] = patch.name ?? '';
+  }
+  if (patch.description !== undefined && f.description) {
+    out[f.description] = patch.description ?? null;
+  }
+  if (patch.image_url !== undefined && f.image) {
+    out[f.image] = patch.image_url ?? null;
+  }
+  if (patch.price !== undefined) {
+    const dollars =
+      patch.price == null || !Number.isFinite(patch.price) ? 0 : patch.price;
+    if (f.priceCents) {
+      out[f.priceCents] = Math.round(dollars * 100);
+    } else if (f.price) {
+      out[f.price] = dollars;
     }
-    if (table === 'menu_items' && hasImage) {
-      out.image_url = patch.image_url ?? null;
-    }
-  } else {
-    // services / products use `price` numeric and `image_url` text.
-    if (hasPrice) {
-      out.price = patch.price == null || !Number.isFinite(patch.price) ? 0 : patch.price;
-    }
-    if (hasImage) out.image_url = patch.image_url ?? null;
   }
   return out;
+}
+
+function resolveTable(input: string): CatalogSurface | null {
+  return getCatalogSurfaceByTable(input as CatalogSourceTable) ?? getCatalogSurface(input);
 }
 
 export async function loadRowsForBinding(
@@ -75,18 +75,19 @@ export async function updateCatalogRow(
   id: string,
   patch: EditableRowPatch,
 ): Promise<boolean> {
-  if (!KNOWN_TABLES.has(table)) {
+  const surface = resolveTable(table);
+  if (!surface) {
     console.warn('[catalogRowService] refusing unknown table', table);
     return false;
   }
-  const payload = normalizePatch(table, patch);
+  const payload = normalizePatch(surface, patch);
   if (Object.keys(payload).length === 0) return true;
   const { error } = await supabase
-    .from(table as never)
+    .from(surface.sourceTable as never)
     .update(payload as never)
     .eq('id', id);
   if (error) {
-    console.warn('[catalogRowService] update failed', table, id, error);
+    console.warn('[catalogRowService] update failed', surface.sourceTable, id, error);
     return false;
   }
   return true;
@@ -97,7 +98,8 @@ export async function createCatalogRow(
   businessId: string,
   patch: EditableRowPatch,
 ): Promise<{ id: string } | null> {
-  if (!KNOWN_TABLES.has(table)) {
+  const surface = resolveTable(table);
+  if (!surface) {
     console.warn('[catalogRowService] refusing unknown table', table);
     return null;
   }
@@ -105,20 +107,24 @@ export async function createCatalogRow(
     console.warn('[catalogRowService] create requires businessId');
     return null;
   }
-  const base = normalizePatch(table, {
+  const base = normalizePatch(surface, {
     name: patch.name ?? 'New item',
     description: patch.description ?? null,
     price: patch.price ?? 0,
     image_url: patch.image_url ?? null,
   });
-  const row: Record<string, unknown> = { ...base, business_id: businessId };
+  const row: Record<string, unknown> = {
+    ...surface.newRowDefaults,
+    ...base,
+    business_id: businessId,
+  };
   const { data, error } = await supabase
-    .from(table as never)
+    .from(surface.sourceTable as never)
     .insert(row as never)
     .select('id')
     .single();
   if (error || !data) {
-    console.warn('[catalogRowService] create failed', table, error);
+    console.warn('[catalogRowService] create failed', surface.sourceTable, error);
     return null;
   }
   return { id: String((data as { id: string }).id) };
@@ -128,16 +134,17 @@ export async function deleteCatalogRow(
   table: string,
   id: string,
 ): Promise<boolean> {
-  if (!KNOWN_TABLES.has(table)) {
+  const surface = resolveTable(table);
+  if (!surface) {
     console.warn('[catalogRowService] refusing unknown table', table);
     return false;
   }
   const { error } = await supabase
-    .from(table as never)
+    .from(surface.sourceTable as never)
     .delete()
     .eq('id', id);
   if (error) {
-    console.warn('[catalogRowService] delete failed', table, id, error);
+    console.warn('[catalogRowService] delete failed', surface.sourceTable, id, error);
     return false;
   }
   return true;

@@ -85,11 +85,12 @@ const KIND_DEFAULTS: Partial<Record<import('@/types/catalog').CatalogKind, KindD
     displayMapping: { title: 'name', description: 'description', price: 'price', image: 'image_url', badge: 'badge' },
   },
   menu_item: {
-    filters: { is_available: true },
+    filters: { available: true },
     sort: { field: 'sort_order', direction: 'asc' },
     limit: 24,
-    displayMapping: { title: 'name', description: 'description', price: 'price', image: 'image_url' },
+    displayMapping: { title: 'name', description: 'description', price: 'price_cents', image: 'image_url' },
   },
+
   pricing_plan: {
     filters: { is_active: true },
     sort: { field: 'sort_order', direction: 'asc' },

@@ -1485,6 +1485,50 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // The edge function returns { content, generatedImage?, imagePlacement? }
       const aiContent = response.data?.content || 'I processed your request but have no specific output to show.';
 
+      // ── M5/M7: Execute catalog tool calls returned by the model ──
+      // The edge function may forward chat-completions `tool_calls` (or
+      // catalogToolCalls) invoking canonical catalog operations. Execute
+      // them against Supabase before we render the assistant message so
+      // downstream hydration reflects the mutations immediately.
+      try {
+        const rawToolCalls: unknown =
+          (response.data as any)?.tool_calls ??
+          (response.data as any)?.catalogToolCalls ??
+          null;
+        if (Array.isArray(rawToolCalls) && rawToolCalls.length > 0) {
+          const normalized: RawToolCall[] = rawToolCalls
+            .map((tc: any) => {
+              const fn = tc?.function ?? tc;
+              const name: string | undefined = fn?.name;
+              if (!name) return null;
+              return {
+                id: tc?.id,
+                name,
+                arguments: fn?.arguments ?? tc?.arguments ?? tc?.input ?? {},
+              } as RawToolCall;
+            })
+            .filter((v): v is RawToolCall => v !== null);
+          if (normalized.length > 0) {
+            const results = await executeCatalogToolCalls(normalized);
+            const applied = results.filter((r) => r.ok && r.isCatalogTool);
+            const failed = results.filter((r) => !r.ok && r.isCatalogTool);
+            if (applied.length > 0) {
+              toast.success(`Applied ${applied.length} catalog change${applied.length === 1 ? '' : 's'}`, {
+                description: applied.map((r) => r.op).join(', '),
+              });
+            }
+            if (failed.length > 0) {
+              toast.error(`Catalog operation failed (${failed.length})`, {
+                description: failed[0]?.message ?? 'See console for details.',
+              });
+              console.warn('[AIBuilderPanel] Catalog tool failures:', failed);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[AIBuilderPanel] catalog tool execution failed', err);
+      }
+
       if (isLaunchPlanningResponse) {
         liveStep('planning', 'Formatting launch plan for in-builder view...');
         const launchPlanContent = formatLaunchPlanForBuilder(response.data?.plan, aiContent);

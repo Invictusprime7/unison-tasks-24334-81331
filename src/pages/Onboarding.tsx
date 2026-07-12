@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
 import { BusinessProfileGate } from "@/components/onboarding/BusinessProfileGate";
+import type { BusinessProfileDTO } from "@/types/businessProfile";
 import { Button } from "@/components/ui/button";
 import { Zap, ArrowRight, CheckSquare } from "lucide-react";
 

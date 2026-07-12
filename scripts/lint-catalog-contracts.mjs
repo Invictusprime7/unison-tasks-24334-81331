@@ -43,6 +43,7 @@ const ALLOWED_RE_EXPORT_FILES = new Set([
   'src/services/catalogRowService.ts',
   'src/sections/catalogHydrationModule.ts',
   'src/services/autoEmitSectionBindings.ts',
+  'src/types/catalog.ts',
 ]);
 
 const EXTS = new Set(['.ts', '.tsx', '.mjs', '.js', '.jsx']);

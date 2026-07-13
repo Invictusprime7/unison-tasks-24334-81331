@@ -579,16 +579,30 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
     slotId: string | null;
     blockId: string | null;
     sectionId: string | null;
+    sectionType: string | null;
+    surfaceId: string | null;
+    componentType: string | null;
+    bindingId: string | null;
+    bindingKey: string | null;
     pageId: string | null;
+    pagePath: string | null;
     intents: string[];
+    primaryIntent: string | null;
     clickedTag: string;
   } {
     let elementId: string | null = el.getAttribute('data-ut-element') || null;
     let slotId: string | null = null;
     let blockId: string | null = null;
     let sectionId: string | null = null;
+    let sectionType: string | null = null;
+    let surfaceId: string | null = null;
+    let componentType: string | null = null;
+    let bindingId: string | null = null;
+    let bindingKey: string | null = null;
     let pageId: string | null = null;
+    let pagePath: string | null = null;
     const intents: string[] = [];
+    const primaryIntent: string | null = el.getAttribute('data-ut-intent') || null;
     let cur: Element | null = el;
     let depth = 0;
     while (cur && cur !== document.body && depth < 24) {
@@ -600,7 +614,13 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
           || cur.getAttribute('data-ut-section')
           || (cur.tagName === 'SECTION' ? (cur.getAttribute('id') || null) : null);
       }
+      if (!sectionType) sectionType = cur.getAttribute('data-ut-section-type');
+      if (!surfaceId) surfaceId = cur.getAttribute('data-ut-surface');
+      if (!componentType) componentType = cur.getAttribute('data-ut-component-type') || cur.getAttribute('data-component');
+      if (!bindingId) bindingId = cur.getAttribute('data-ut-binding-id');
+      if (!bindingKey) bindingKey = cur.getAttribute('data-ut-binding-key') || cur.getAttribute('data-element-key');
       if (!pageId) pageId = cur.getAttribute('data-ut-page');
+      if (!pagePath) pagePath = cur.getAttribute('data-ut-page-path') || cur.getAttribute('data-page-path');
       const intent = cur.getAttribute('data-ut-intent');
       if (intent && !intents.includes(intent)) intents.push(intent);
       cur = cur.parentElement;
@@ -611,8 +631,15 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
       slotId,
       blockId,
       sectionId,
+      sectionType,
+      surfaceId,
+      componentType,
+      bindingId,
+      bindingKey,
       pageId,
+      pagePath,
       intents,
+      primaryIntent,
       clickedTag: el.tagName.toLowerCase(),
     };
   }

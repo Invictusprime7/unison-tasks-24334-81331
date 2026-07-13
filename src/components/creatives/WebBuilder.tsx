@@ -7010,6 +7010,15 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               }}
               systemType={activeSystemType}
               systemsBuildContext={systemsBuildContextFromState}
+              businessId={businessId ?? null}
+              projectId={projectId ?? null}
+              industry={
+                (effectiveRouteState?.siteBundleSnapshot as { industry?: string } | undefined)?.industry ||
+                (typeof activeSystemType === 'string' ? activeSystemType : null)
+              }
+              templateName={currentTemplateName ?? null}
+              activePagePath={activePagePath ?? null}
+              getVFSFiles={() => virtualFS.getSandpackFiles()}
               readiness={selectedElementReadiness}
               onAIEditComplete={async (selector, newHtml) => {
                 // 1. Try the active page first.

@@ -324,7 +324,7 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
           pagePath: ancestors.pagePath ?? activePagePath ?? undefined,
         },
       } as any);
-      });
+
 
       if (fnError) {
         // Supabase JS v2 wraps non-2xx responses in FunctionsHttpError; the parsed body

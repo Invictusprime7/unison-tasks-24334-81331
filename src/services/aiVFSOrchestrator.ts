@@ -433,9 +433,16 @@ export interface ComponentBehaviorMap {
   effectsByFile: Record<string, number>;
   /** Custom hooks used: { file -> [hookName, ...] } */
   hooksByFile: Record<string, string[]>;
+  /** useContext consumers: { file -> [ContextName, ...] } (unique per file) */
+  contextsByFile: Record<string, string[]>;
+  /** useReducer dispatchers + dispatch call sites: { file -> [{ dispatcher, actions }] } */
+  reducersByFile: Record<string, Array<{ dispatcher: string; actions: string[] }>>;
+  /** Event handler declarations per file (e.g. `handleClick`, `onSubmit`). */
+  handlersByFile: Record<string, string[]>;
   /** Timestamp of snapshot */
   snapshotAt: number;
 }
+
 
 /**
  * Build a deep behavioral snapshot combining DOM inspection and VFS source parsing.

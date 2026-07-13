@@ -526,6 +526,12 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
   className,
   systemType,
   systemsBuildContext,
+  businessId,
+  projectId,
+  industry,
+  templateName,
+  activePagePath,
+  getVFSFiles,
   readiness,
 }) => {
   const [isEditingText, setIsEditingText] = useState(false);

@@ -133,6 +133,12 @@ interface InlineAIPanelProps {
   onRequestAI?: (selector: string) => void;
   systemType?: BusinessSystemType | null;
   systemsBuildContext?: SystemsBuildContext | null;
+  businessId?: string | null;
+  projectId?: string | null;
+  industry?: string | null;
+  templateName?: string | null;
+  activePagePath?: string | null;
+  getVFSFiles?: () => Record<string, string>;
 }
 
 const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
@@ -142,6 +148,12 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
   onRequestAI,
   systemType,
   systemsBuildContext,
+  businessId,
+  projectId,
+  industry,
+  templateName,
+  activePagePath,
+  getVFSFiles,
 }) => {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);

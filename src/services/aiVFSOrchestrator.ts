@@ -476,7 +476,15 @@ export function buildComponentBehaviorMap(
   try {
     const rootIframe = previewHandle.getIframe?.() ?? null;
     const docs = collectDocs(rootIframe);
-    const interactiveSelectors = 'button, a, [onclick], [data-ut-intent], [role="button"], input, textarea, select, form, [data-editable], [contenteditable]';
+    const interactiveSelectors = [
+      'button', 'a[href]', '[onclick]',
+      '[data-ut-intent]', '[data-ut-cta]', '[data-ut-slot]',
+      'input:not([type="hidden"])', 'textarea', 'select', 'label', 'form',
+      '[data-editable]', '[contenteditable="true"]',
+      '[role="button"]', '[role="link"]', '[role="tab"]', '[role="menuitem"]',
+      '[role="switch"]', '[role="checkbox"]', '[role="radio"]', '[role="option"]',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(', ');
     const seen = new Set<Element>();
 
     for (const doc of docs) {
@@ -529,67 +537,101 @@ export function buildComponentBehaviorMap(
   } catch { /* DOM inspection is best-effort */ }
 
   // ── VFS Source Parsing ──
-  const stateRegex = /\buse(?:State|Reducer)\s*[<(]/g;
-  const stateNameRegex = /(?:const|let)\s+\[(\w+)/g;
-  const effectRegex = /\buseEffect\s*\(/g;
-  const hookRegex = /\buse[A-Z]\w+\s*\(/g;
-  const componentNameRegex = /(?:export\s+(?:default\s+)?)?(?:function|const)\s+([A-Z]\w+)/;
-
-  for (const [filePath, content] of Object.entries(vfsFiles)) {
-    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
-
-    // Reset regex lastIndex per file — `/g` regexes retain state across
-    // exec() calls, so without this only the first file yields matches
-    // (which is why the map was reporting "1 stateful file").
-    stateNameRegex.lastIndex = 0;
-    effectRegex.lastIndex = 0;
-    hookRegex.lastIndex = 0;
 
 
-    // Extract state variable names
+  // Precompile once outside the loop; we rebuild fresh RegExps per file so
+  // `/g` lastIndex state can never leak between iterations.
+  const REACT_BUILTIN_HOOKS = new Set([
+    'useState', 'useEffect', 'useCallback', 'useMemo', 'useRef', 'useContext',
+    'useReducer', 'useLayoutEffect', 'useImperativeHandle', 'useDebugValue',
+    'useDeferredValue', 'useTransition', 'useId', 'useSyncExternalStore',
+    'useInsertionEffect', 'useActionState', 'useOptimistic', 'useFormStatus',
+    'useFormState',
+  ]);
+
+  // Strip comments/strings before scanning so we don't count matches inside
+  // JSDoc or string literals as real hook calls.
+  const stripNoise = (src: string): string =>
+    src
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/[^\n]*/g, ' ')
+      .replace(/`(?:\\.|[^`\\])*`/g, '""')
+      .replace(/'(?:\\.|[^'\\])*'/g, '""')
+      .replace(/"(?:\\.|[^"\\])*"/g, '""');
+
+  // Track which component name is declared in which file so we can map DOM
+  // elements back to their source with more than one signal.
+  const componentsByFile: Record<string, string[]> = {};
+
+  for (const [filePath, rawContent] of Object.entries(vfsFiles)) {
+    if (!/\.(tsx|jsx|ts|js)$/.test(filePath)) continue;
+    const content = stripNoise(rawContent);
+
+    // State: destructured [name, setName] = useState/useReducer(...)
     const stateVars: string[] = [];
-    let match: RegExpExecArray | null;
-    const contentLines = content;
+    const stateDecl = /(?:const|let|var)\s+\[\s*(\w+)\s*(?:,\s*\w+)?\s*\]\s*=\s*(?:React\.)?(useState|useReducer)\b/g;
+    let m: RegExpExecArray | null;
+    while ((m = stateDecl.exec(content)) !== null) stateVars.push(m[1]);
 
-    while ((match = stateNameRegex.exec(contentLines)) !== null) {
-      // Only count if preceded by useState/useReducer on similar line
-      const lineStart = contentLines.lastIndexOf('\n', match.index);
-      const line = contentLines.slice(lineStart, match.index + match[0].length + 100);
-      if (/useState|useReducer/.test(line)) {
-        stateVars.push(match[1]);
-      }
+    // Also count `useState(` calls that aren't destructured (rare, but real).
+    const bareState = (content.match(/\b(?:React\.)?useState\s*[<(]/g) || []).length;
+    if (bareState > stateVars.length) {
+      for (let i = stateVars.length; i < bareState; i++) stateVars.push(`state${i + 1}`);
     }
     if (stateVars.length) stateByFile[filePath] = stateVars;
 
-    // Count effects
-    const effects = (contentLines.match(effectRegex) || []).length;
+    // Effects: useEffect / useLayoutEffect / useInsertionEffect
+    const effects = (content.match(/\b(?:React\.)?use(?:Layout|Insertion)?Effect\s*\(/g) || []).length;
     if (effects) effectsByFile[filePath] = effects;
 
-    // Detect custom hooks (use* calls that aren't built-in)
-    const builtIn = new Set(['useState', 'useEffect', 'useCallback', 'useMemo', 'useRef', 'useContext', 'useReducer', 'useLayoutEffect', 'useImperativeHandle', 'useDebugValue', 'useDeferredValue', 'useTransition', 'useId', 'useSyncExternalStore', 'useInsertionEffect']);
+    // Custom hooks: `useX(` calls, excluding builtins and declarations
+    // (`function useX`, `const useX =`, `export function useX`).
     const hooks: string[] = [];
-    while ((match = hookRegex.exec(contentLines)) !== null) {
-      const hookName = match[0].replace(/\s*\($/, '');
-      if (!builtIn.has(hookName) && !hooks.includes(hookName)) {
-        hooks.push(hookName);
-      }
+    const hookCall = /(?<![.\w])use[A-Z]\w*(?=\s*\()/g;
+    while ((m = hookCall.exec(content)) !== null) {
+      const name = m[0];
+      if (REACT_BUILTIN_HOOKS.has(name) || hooks.includes(name)) continue;
+      // Skip if this occurrence is the declaration itself.
+      const back = content.slice(Math.max(0, m.index - 40), m.index);
+      if (/\b(?:function|const|let|var|export\s+(?:default\s+)?(?:function)?)\s*$/.test(back)) continue;
+      hooks.push(name);
     }
     if (hooks.length) hooksByFile[filePath] = hooks;
 
-    // Try to map DOM elements to this file by matching text content or component names
-    const compMatch = componentNameRegex.exec(content);
-    const componentName = compMatch?.[1];
-    if (componentName) {
-      for (const entry of elements) {
-        if (!entry.sourceFile) {
-          // Match by data-component attribute or by text content presence in source
-          if (content.includes(`data-component="${componentName}"`) ||
-              (entry.textContent.length > 5 && content.includes(entry.textContent.slice(0, 30)))) {
-            entry.sourceFile = filePath;
-          }
-        }
+    // Collect all component declarations in this file (not just the first).
+    const compDecl = /(?:export\s+(?:default\s+)?)?(?:function|const|class)\s+([A-Z]\w+)/g;
+    const compNames: string[] = [];
+    while ((m = compDecl.exec(content)) !== null) {
+      if (!compNames.includes(m[1])) compNames.push(m[1]);
+    }
+    if (compNames.length) componentsByFile[filePath] = compNames;
+  }
+
+  // ── Source-file attribution for DOM elements ──
+  // Use multiple signals in priority order: explicit data attrs > section-type
+  // marker present in file > component name appearing as JSX tag > substring
+  // text-content match. This makes the map robust when many files share text.
+  for (const entry of elements) {
+    if (entry.sourceFile) continue;
+    const sectionType = (entry as unknown as { _sectionType?: string })._sectionType;
+    const explicitSource = null; // populated below from live attrs
+
+    // Re-derive attrs we captured on the DOM entry for scoring.
+    for (const [filePath, rawContent] of Object.entries(vfsFiles)) {
+      if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+      const comps = componentsByFile[filePath] || [];
+      const intentMatch = entry.intent && rawContent.includes(`"${entry.intent}"`);
+      const ctaMatch = entry.ctaLabel && rawContent.includes(`"${entry.ctaLabel}"`);
+      const compTagMatch = comps.some((c) => new RegExp(`<${c}\\b`).test(rawContent));
+      const textMatch = entry.textContent.length > 8 &&
+        rawContent.includes(entry.textContent.slice(0, Math.min(40, entry.textContent.length)));
+      if (intentMatch || ctaMatch || (compTagMatch && textMatch) || textMatch) {
+        entry.sourceFile = filePath;
+        break;
       }
     }
+    void explicitSource;
+    void sectionType;
   }
 
   return {

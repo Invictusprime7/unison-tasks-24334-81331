@@ -25,7 +25,7 @@ const INDUSTRIES = ['salon', 'local-service', 'ecommerce', 'coaching', 'agency',
 
 describe('selected-pages wizard mode — no blank routes', () => {
   it('registered industries cover smoke set', () => {
-    const known = new Set(getAllIndustries().map(p => p.industryKey ?? ''));
+    const known = new Set(getAllIndustries().map(p => p.industry ?? ''));
     // Sanity: at least a few of our smoke industries resolve
     const resolvable = INDUSTRIES.filter(i => {
       try { return !!planSiteTopology(i, 'Acme', { additionalPages: [], restrictToAdditionalPages: true }); }
@@ -39,7 +39,7 @@ describe('selected-pages wizard mode — no blank routes', () => {
       let plan;
       try {
         plan = planSiteTopology(industry, 'Acme Co', {
-          additionalPages: [SELECTIONS.about[0], SELECTIONS.contact[0]],
+          additionalPages: [SELECTIONS.about, SELECTIONS.contact],
           restrictToAdditionalPages: true,
         });
       } catch {
@@ -72,7 +72,7 @@ describe('selected-pages wizard mode — no blank routes', () => {
 
   it('adding services to the selection wires exactly 4 routes', () => {
     const plan = planSiteTopology('salon', 'Acme', {
-      additionalPages: [SELECTIONS.about[0], SELECTIONS.services[0], SELECTIONS.contact[0]],
+      additionalPages: [SELECTIONS.about, SELECTIONS.services, SELECTIONS.contact],
       restrictToAdditionalPages: true,
     });
     const routes = plan.pages.map(p => p.route).sort();

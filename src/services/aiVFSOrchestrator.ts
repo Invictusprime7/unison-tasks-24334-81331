@@ -456,6 +456,12 @@ export function buildComponentBehaviorMap(
   const stateByFile: Record<string, string[]> = {};
   const effectsByFile: Record<string, number> = {};
   const hooksByFile: Record<string, string[]> = {};
+  const contextsByFile: Record<string, string[]> = {};
+  const reducersByFile: Record<string, Array<{ dispatcher: string; actions: string[] }>> = {};
+  const handlersByFile: Record<string, string[]> = {};
+  /** Reverse index: handler name -> file(s) that declare or bind it. */
+  const handlerToFiles: Record<string, Set<string>> = {};
+
 
   // ── DOM Inspection ──
   // Sandpack wraps the running app in one or more nested iframes. Walk them so

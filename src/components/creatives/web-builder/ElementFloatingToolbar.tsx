@@ -277,14 +277,59 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         .filter(Boolean)
         .join('\n');
 
-      const vfsFiles = getVFSFiles ? getVFSFiles() : undefined;
+      let vfsFiles: Record<string, string> | undefined;
+      try {
+        vfsFiles = getVFSFiles ? getVFSFiles() : undefined;
+      } catch (err) {
+        console.warn('[ElementFloatingToolbar] getVFSFiles threw; continuing without VFS snapshot', err);
+        vfsFiles = undefined;
+      }
+      const vfsFileCount = vfsFiles ? Object.keys(vfsFiles).length : 0;
+      if (!vfsFiles || vfsFileCount === 0) {
+        console.warn('[ElementFloatingToolbar] VFS snapshot unavailable — Lane B will run without file context', {
+          hasGetter: Boolean(getVFSFiles),
+          activePagePath,
+        });
+        vfsFiles = undefined;
+      }
 
-      const { data, error: fnError } = await runBuilderTurn<any>({
-        messages: [{ role: 'user', content: surgicalPrompt }],
-        mode: 'code',
+      // Build selectedSlot only from resolved ancestor identity; drop the whole
+      // block if we have nothing meaningful so Lane B doesn't receive an empty
+      // shell that looks like a real selection.
+      const rawSlot: Record<string, unknown> = {
+        sectionId: ancestors.sectionId ?? undefined,
+        sectionType: ancestors.sectionType ?? undefined,
+        surfaceId: ancestors.surfaceId ?? undefined,
+        componentType: ancestors.componentType ?? undefined,
+        slotId: ancestors.slotId ?? undefined,
+        bindingId: ancestors.bindingId ?? undefined,
+        bindingKey: ancestors.bindingKey ?? undefined,
+        intent: ancestors.primaryIntent ?? undefined,
+        intents: ancestors.intents && ancestors.intents.length ? ancestors.intents : undefined,
+        selector,
+        pagePath: ancestors.pagePath ?? activePagePath ?? undefined,
+      };
+      const slotEntries = Object.entries(rawSlot).filter(([k, v]) => {
+        if (v === undefined || v === null) return false;
+        if (k === 'selector' || k === 'pagePath') return false; // don't count as "identity"
+        return true;
+      });
+      const selectedSlot = slotEntries.length > 0
+        ? Object.fromEntries(Object.entries(rawSlot).filter(([, v]) => v !== undefined && v !== null))
+        : undefined;
+      if (!selectedSlot) {
+        console.warn('[ElementFloatingToolbar] selectedSlot unresolved — sending selector-only hint to Lane B', {
+          selector,
+          activePagePath,
+        });
+      }
+
+      const builderTurnPayload = {
+        messages: [{ role: 'user' as const, content: surgicalPrompt }],
+        mode: 'code' as const,
         editMode: true,
         surgicalEdit: true,
-        templateAction: 'modify',
+        templateAction: 'modify' as const,
         templateName: templateName ?? undefined,
         systemType: systemType ?? undefined,
         systemsBuildContext: (systemsBuildContext as unknown) ?? undefined,
@@ -292,10 +337,9 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         targetFile: activePagePath ?? undefined,
         recentChangedFiles: activePagePath ? [activePagePath] : undefined,
         gatewayOptions: {
-          reasoningEffort: 'low',
+          reasoningEffort: 'low' as const,
           timeoutMs: 55000,
         },
-        // Preview floating toolbar — explicit edit scope for reviewPass.
         editScope: Object.fromEntries(
           Object.entries({
             scopeType: editScope.scopeType,
@@ -308,22 +352,25 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
             riskLevel: editScope.riskLevel,
           }).filter(([, v]) => v !== null && v !== undefined),
         ),
-        // Structured slot/binding hints so Lane B can resolve the exact artifact
-        // and, when appropriate, dispatch catalog operations instead of HTML edits.
-        selectedSlot: {
-          sectionId: ancestors.sectionId ?? undefined,
-          sectionType: ancestors.sectionType ?? undefined,
-          surfaceId: ancestors.surfaceId ?? undefined,
-          componentType: ancestors.componentType ?? undefined,
-          slotId: ancestors.slotId ?? undefined,
-          bindingId: ancestors.bindingId ?? undefined,
-          bindingKey: ancestors.bindingKey ?? undefined,
-          intent: ancestors.primaryIntent ?? undefined,
-          intents: ancestors.intents,
-          selector,
-          pagePath: ancestors.pagePath ?? activePagePath ?? undefined,
-        },
-      } as any);
+        selectedSlot,
+      };
+
+      // Log the exact builder-brain payload dispatched from InlineAIPanel so
+      // regressions in context wiring are visible without a debugger.
+      console.debug('[ElementFloatingToolbar] builder-brain payload', {
+        promptChars: surgicalPrompt.length,
+        vfsFileCount,
+        targetFile: builderTurnPayload.targetFile,
+        editScope: builderTurnPayload.editScope,
+        selectedSlot: builderTurnPayload.selectedSlot ?? null,
+        hasCatalogContext: Boolean(catalogContextStr),
+        hasSystemsBuildContext: Boolean(systemsBuildContext),
+        templateName: builderTurnPayload.templateName ?? null,
+        systemType: builderTurnPayload.systemType ?? null,
+      });
+
+      const { data, error: fnError } = await runBuilderTurn<any>(builderTurnPayload as any);
+
 
 
       if (fnError) {

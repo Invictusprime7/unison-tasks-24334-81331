@@ -433,9 +433,16 @@ export interface ComponentBehaviorMap {
   effectsByFile: Record<string, number>;
   /** Custom hooks used: { file -> [hookName, ...] } */
   hooksByFile: Record<string, string[]>;
+  /** useContext consumers: { file -> [ContextName, ...] } (unique per file) */
+  contextsByFile: Record<string, string[]>;
+  /** useReducer dispatchers + dispatch call sites: { file -> [{ dispatcher, actions }] } */
+  reducersByFile: Record<string, Array<{ dispatcher: string; actions: string[] }>>;
+  /** Event handler declarations per file (e.g. `handleClick`, `onSubmit`). */
+  handlersByFile: Record<string, string[]>;
   /** Timestamp of snapshot */
   snapshotAt: number;
 }
+
 
 /**
  * Build a deep behavioral snapshot combining DOM inspection and VFS source parsing.
@@ -449,6 +456,12 @@ export function buildComponentBehaviorMap(
   const stateByFile: Record<string, string[]> = {};
   const effectsByFile: Record<string, number> = {};
   const hooksByFile: Record<string, string[]> = {};
+  const contextsByFile: Record<string, string[]> = {};
+  const reducersByFile: Record<string, Array<{ dispatcher: string; actions: string[] }>> = {};
+  const handlersByFile: Record<string, string[]> = {};
+  /** Reverse index: handler name -> file(s) that declare or bind it. */
+  const handlerToFiles: Record<string, Set<string>> = {};
+
 
   // ── DOM Inspection ──
   // Sandpack wraps the running app in one or more nested iframes. Walk them so
@@ -598,6 +611,48 @@ export function buildComponentBehaviorMap(
     }
     if (hooks.length) hooksByFile[filePath] = hooks;
 
+    // useContext consumers — capture the Context identifier passed in.
+    const ctxNames: string[] = [];
+    const ctxCall = /(?<![.\w])(?:React\.)?useContext\s*\(\s*([A-Za-z_$][\w$]*)/g;
+    while ((m = ctxCall.exec(content)) !== null) {
+      if (!ctxNames.includes(m[1])) ctxNames.push(m[1]);
+    }
+    if (ctxNames.length) contextsByFile[filePath] = ctxNames;
+
+    // useReducer dispatchers + emitted action types.
+    const reducers: Array<{ dispatcher: string; actions: string[] }> = [];
+    const reducerDecl =
+      /(?:const|let|var)\s+\[\s*\w+\s*,\s*(\w+)\s*\]\s*=\s*(?:React\.)?useReducer\b/g;
+    while ((m = reducerDecl.exec(content)) !== null) {
+      const dispatcher = m[1];
+      const actions: string[] = [];
+      const actionRe = new RegExp(
+        `\\b${dispatcher}\\s*\\(\\s*(?:\\{[^}]*?type\\s*:\\s*['"\`]([\\w.:-]+)['"\`]|['"\`]([\\w.:-]+)['"\`])`,
+        'g',
+      );
+      let a: RegExpExecArray | null;
+      while ((a = actionRe.exec(content)) !== null) {
+        const action = a[1] || a[2];
+        if (action && !actions.includes(action)) actions.push(action);
+      }
+      reducers.push({ dispatcher, actions });
+    }
+    if (reducers.length) reducersByFile[filePath] = reducers;
+
+    // Event handler declarations + inline JSX handler bindings.
+    const handlers = new Set<string>();
+    const declRe = /(?:function|const|let|var)\s+((?:handle|on)[A-Z]\w*)\b/g;
+    while ((m = declRe.exec(content)) !== null) handlers.add(m[1]);
+    const bindRe = /\bon[A-Z]\w*\s*=\s*\{\s*([A-Za-z_$][\w$]*)\s*\}/g;
+    while ((m = bindRe.exec(content)) !== null) handlers.add(m[1]);
+    if (handlers.size) {
+      const arr = Array.from(handlers);
+      handlersByFile[filePath] = arr;
+      for (const name of arr) {
+        (handlerToFiles[name] ??= new Set()).add(filePath);
+      }
+    }
+
     // Collect all component declarations in this file (not just the first).
     const compDecl = /(?:export\s+(?:default\s+)?)?(?:function|const|class)\s+([A-Z]\w+)/g;
     const compNames: string[] = [];
@@ -608,30 +663,53 @@ export function buildComponentBehaviorMap(
   }
 
   // ── Source-file attribution for DOM elements ──
-  // Use multiple signals in priority order: explicit data attrs > section-type
-  // marker present in file > component name appearing as JSX tag > substring
-  // text-content match. This makes the map robust when many files share text.
+  // Priority: explicit data-ut-intent/cta > handler-name from React fiber >
+  // component tag + text > text-content substring.
   for (const entry of elements) {
     if (entry.sourceFile) continue;
-    const sectionType = (entry as unknown as { _sectionType?: string })._sectionType;
-    const explicitSource = null; // populated below from live attrs
 
-    // Re-derive attrs we captured on the DOM entry for scoring.
+    // (1) Intent / CTA string match.
+    if (entry.intent || entry.ctaLabel) {
+      for (const [filePath, rawContent] of Object.entries(vfsFiles)) {
+        if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+        const intentHit = entry.intent && rawContent.includes(`"${entry.intent}"`);
+        const ctaHit = entry.ctaLabel && rawContent.includes(`"${entry.ctaLabel}"`);
+        if (intentHit || ctaHit) { entry.sourceFile = filePath; break; }
+      }
+      if (entry.sourceFile) continue;
+    }
+
+    // (2) Attribute event handlers to their source. React fiber gives us the
+    // prop key ("onClick"); if exactly one file declares/binds a handler whose
+    // name ends in the same suffix ("handleClick" / "onClick"), pick it.
+    const uniqueHandlerFile = (() => {
+      for (const propKey of entry.handlers) {
+        if (!/^on[A-Z]/.test(propKey)) continue;
+        const suffix = propKey.slice(2).toLowerCase();
+        const candidates = new Set<string>();
+        for (const [name, files] of Object.entries(handlerToFiles)) {
+          if (name.toLowerCase().endsWith(suffix)) {
+            for (const f of files) candidates.add(f);
+          }
+        }
+        if (candidates.size === 1) return Array.from(candidates)[0];
+      }
+      return null;
+    })();
+    if (uniqueHandlerFile) { entry.sourceFile = uniqueHandlerFile; continue; }
+
+    // (3-4) Component-tag + text fallback.
     for (const [filePath, rawContent] of Object.entries(vfsFiles)) {
       if (!/\.(tsx|jsx)$/.test(filePath)) continue;
       const comps = componentsByFile[filePath] || [];
-      const intentMatch = entry.intent && rawContent.includes(`"${entry.intent}"`);
-      const ctaMatch = entry.ctaLabel && rawContent.includes(`"${entry.ctaLabel}"`);
       const compTagMatch = comps.some((c) => new RegExp(`<${c}\\b`).test(rawContent));
       const textMatch = entry.textContent.length > 8 &&
         rawContent.includes(entry.textContent.slice(0, Math.min(40, entry.textContent.length)));
-      if (intentMatch || ctaMatch || (compTagMatch && textMatch) || textMatch) {
+      if ((compTagMatch && textMatch) || textMatch) {
         entry.sourceFile = filePath;
         break;
       }
     }
-    void explicitSource;
-    void sectionType;
   }
 
   return {
@@ -639,6 +717,9 @@ export function buildComponentBehaviorMap(
     stateByFile,
     effectsByFile,
     hooksByFile,
+    contextsByFile,
+    reducersByFile,
+    handlersByFile,
     snapshotAt: Date.now(),
   };
 }
@@ -672,6 +753,33 @@ export function formatBehaviorMapForPrompt(map: ComponentBehaviorMap): string {
     lines.push('State hooks:');
     for (const [file, vars] of Object.entries(map.stateByFile)) {
       lines.push(`  ${file}: ${vars.join(', ')}`);
+    }
+  }
+
+  // Context consumers
+  if (Object.keys(map.contextsByFile).length) {
+    lines.push('Context consumers:');
+    for (const [file, ctxs] of Object.entries(map.contextsByFile)) {
+      lines.push(`  ${file}: ${ctxs.join(', ')}`);
+    }
+  }
+
+  // Reducers + emitted actions
+  if (Object.keys(map.reducersByFile).length) {
+    lines.push('Reducers:');
+    for (const [file, reducers] of Object.entries(map.reducersByFile)) {
+      for (const r of reducers) {
+        const actions = r.actions.length ? ` [${r.actions.join(', ')}]` : ' (no dispatched actions detected)';
+        lines.push(`  ${file}: ${r.dispatcher}${actions}`);
+      }
+    }
+  }
+
+  // Event handlers per file
+  if (Object.keys(map.handlersByFile).length) {
+    lines.push('Event handlers:');
+    for (const [file, hs] of Object.entries(map.handlersByFile)) {
+      lines.push(`  ${file}: ${hs.slice(0, 12).join(', ')}${hs.length > 12 ? ', …' : ''}`);
     }
   }
 

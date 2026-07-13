@@ -756,6 +756,33 @@ export function formatBehaviorMapForPrompt(map: ComponentBehaviorMap): string {
     }
   }
 
+  // Context consumers
+  if (Object.keys(map.contextsByFile).length) {
+    lines.push('Context consumers:');
+    for (const [file, ctxs] of Object.entries(map.contextsByFile)) {
+      lines.push(`  ${file}: ${ctxs.join(', ')}`);
+    }
+  }
+
+  // Reducers + emitted actions
+  if (Object.keys(map.reducersByFile).length) {
+    lines.push('Reducers:');
+    for (const [file, reducers] of Object.entries(map.reducersByFile)) {
+      for (const r of reducers) {
+        const actions = r.actions.length ? ` [${r.actions.join(', ')}]` : ' (no dispatched actions detected)';
+        lines.push(`  ${file}: ${r.dispatcher}${actions}`);
+      }
+    }
+  }
+
+  // Event handlers per file
+  if (Object.keys(map.handlersByFile).length) {
+    lines.push('Event handlers:');
+    for (const [file, hs] of Object.entries(map.handlersByFile)) {
+      lines.push(`  ${file}: ${hs.slice(0, 12).join(', ')}${hs.length > 12 ? ', …' : ''}`);
+    }
+  }
+
   // Custom hooks
   if (Object.keys(map.hooksByFile).length) {
     lines.push('Custom hooks:');

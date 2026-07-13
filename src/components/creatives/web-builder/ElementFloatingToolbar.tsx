@@ -392,7 +392,7 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [prompt, loading, element, onAIEditComplete, onRequestAI, onClose, editScope, systemType, systemsBuildContext]);
+  }, [prompt, loading, element, onAIEditComplete, onRequestAI, onClose, editScope, systemType, systemsBuildContext, businessId, projectId, industry, templateName, activePagePath, getVFSFiles, ancestors]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }

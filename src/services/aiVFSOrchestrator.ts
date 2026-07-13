@@ -537,11 +537,7 @@ export function buildComponentBehaviorMap(
   } catch { /* DOM inspection is best-effort */ }
 
   // ── VFS Source Parsing ──
-  const stateRegex = /\buse(?:State|Reducer)\s*[<(]/g;
-  const stateNameRegex = /(?:const|let)\s+\[(\w+)/g;
-  const effectRegex = /\buseEffect\s*\(/g;
-  const hookRegex = /\buse[A-Z]\w+\s*\(/g;
-  const componentNameRegex = /(?:export\s+(?:default\s+)?)?(?:function|const)\s+([A-Z]\w+)/;
+
 
   // Precompile once outside the loop; we rebuild fresh RegExps per file so
   // `/g` lastIndex state can never leak between iterations.

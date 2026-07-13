@@ -34,6 +34,9 @@ import {
   type EditScopeType,
   type ScopeAncestors,
 } from '@/services/editScopeResolver';
+import { buildWebBuilderAIContext } from '@/utils/aiAssistantContext';
+import { buildCatalogContext, renderCatalogContextForPrompt, type SelectedSectionRef } from '@/utils/catalogContext';
+import runBuilderTurn from '@/services/builderBrainClient';
 
 interface SelectedElement {
   tagName?: string;

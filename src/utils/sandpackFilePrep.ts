@@ -487,6 +487,17 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
       ? (window as any).CSS.escape(s)
       : s.replace(/([^\\\\w-])/g, '\\\\$1');
   }
+  function findAncestorAttr(el: Element, attr: string): string | null {
+    let cur: Element | null = el.parentElement;
+    let depth = 0;
+    while (cur && cur !== document.body && depth < 24) {
+      const v = cur.getAttribute(attr);
+      if (v) return v;
+      cur = cur.parentElement;
+      depth++;
+    }
+    return null;
+  }
   function computeSelector(el: Element): string {
     if (!el || el === document.body || el === document.documentElement) return 'body';
     if ((el as HTMLElement).id) return '#' + cssEscape((el as HTMLElement).id);
@@ -494,8 +505,36 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
     if (dataKey) return '[data-ut-key="' + cssEscape(dataKey) + '"]';
     const dataBinding = el.getAttribute('data-ut-binding-id');
     if (dataBinding) return '[data-ut-binding-id="' + cssEscape(dataBinding) + '"]';
+    // Slot identity — scope by nearest section so duplicate slot names across
+    // sections (e.g. two "primary-cta" slots) still resolve uniquely.
+    const slotId = el.getAttribute('data-ut-slot');
+    if (slotId) {
+      const secId =
+        findAncestorAttr(el, 'data-ut-section-id') ||
+        findAncestorAttr(el, 'data-ut-section');
+      if (secId) {
+        return '[data-ut-section-id="' + cssEscape(secId) + '"] [data-ut-slot="' + cssEscape(slotId) + '"], '
+          + '[data-ut-section="' + cssEscape(secId) + '"] [data-ut-slot="' + cssEscape(slotId) + '"]';
+      }
+      return '[data-ut-slot="' + cssEscape(slotId) + '"]';
+    }
+    // Intent identity — canonical action-carrying elements (buttons/links) are
+    // rarely duplicated within a section and give the AI a durable target.
+    const intent = el.getAttribute('data-ut-intent');
+    if (intent) {
+      const secId =
+        findAncestorAttr(el, 'data-ut-section-id') ||
+        findAncestorAttr(el, 'data-ut-section');
+      if (secId) {
+        return '[data-ut-section-id="' + cssEscape(secId) + '"] [data-ut-intent="' + cssEscape(intent) + '"], '
+          + '[data-ut-section="' + cssEscape(secId) + '"] [data-ut-intent="' + cssEscape(intent) + '"]';
+      }
+      return '[data-ut-intent="' + cssEscape(intent) + '"]';
+    }
     const bindingKey = el.getAttribute('data-ut-binding-key') || el.getAttribute('data-element-key');
     if (bindingKey) return '[data-ut-binding-key="' + cssEscape(bindingKey) + '"], [data-element-key="' + cssEscape(bindingKey) + '"]';
+    const elementIdAttr = el.getAttribute('data-ut-element');
+    if (elementIdAttr) return '[data-ut-element="' + cssEscape(elementIdAttr) + '"]';
     const componentInstanceId = el.getAttribute('data-ut-component-instance-id');
     if (componentInstanceId) return '[data-ut-component-instance-id="' + cssEscape(componentInstanceId) + '"]';
     const componentSlug = el.getAttribute('data-component');

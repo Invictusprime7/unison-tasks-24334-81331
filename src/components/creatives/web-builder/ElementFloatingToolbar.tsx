@@ -1001,6 +1001,12 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
           onRequestAI={onRequestAI}
           systemType={systemType}
           systemsBuildContext={systemsBuildContext}
+          businessId={businessId}
+          projectId={projectId}
+          industry={industry}
+          templateName={templateName}
+          activePagePath={activePagePath}
+          getVFSFiles={getVFSFiles}
         />
       )}
     </div>

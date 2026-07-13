@@ -13,12 +13,12 @@ import { planSiteTopology } from '@/platform/core/siteTopologyPlanner';
 import { generateCanonicalRouterFromPlan } from '@/utils/topologyRouterGenerator';
 import { getAllIndustries } from '@/platform/core/industryMatrix';
 
-type PageSpec = { path: string; title: string; purpose: string };
+import type { PageSpec } from '@/platform/core/industryMatrix';
 
-const SELECTIONS: Record<string, PageSpec[]> = {
-  about: [{ path: '/about', title: 'About', purpose: 'about' }],
-  contact: [{ path: '/contact', title: 'Contact', purpose: 'contact' }],
-  services: [{ path: '/services', title: 'Services', purpose: 'services' }],
+const SELECTIONS: Record<string, PageSpec> = {
+  about: { path: '/about', title: 'About', purpose: 'about', expectedSections: [] },
+  contact: { path: '/contact', title: 'Contact', purpose: 'contact', expectedSections: [] },
+  services: { path: '/services', title: 'Services', purpose: 'services', expectedSections: [] },
 };
 
 const INDUSTRIES = ['salon', 'local-service', 'ecommerce', 'coaching', 'agency', 'nonprofit', 'restaurant'];

@@ -1529,6 +1529,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         additionalPages: resolvedScaffoldMode === 'selected-pages'
           ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
           : undefined,
+        // Selected-pages mode: only Home + user-selected pages get scaffolded.
+        // Capability-full mode: keep full industry defaults for hardened launches.
+        restrictToAdditionalPages: resolvedScaffoldMode === 'selected-pages',
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──

@@ -200,6 +200,13 @@ export function planSiteTopology(
     selectedTemplateId?: string;
     /** Resolved ThemePreset id selected by the wizard Style card. */
     selectedThemePresetId?: string;
+    /**
+     * When true, only the Home page from the industry profile plus the
+     * caller-supplied `additionalPages` are scaffolded. Industry default
+     * pages the user did NOT select in the 4-step wizard are excluded so
+     * the preview never renders blank/irrelevant routes.
+     */
+    restrictToAdditionalPages?: boolean;
   }
 ): GeneratedSitePlan {
   const profile = getIndustryProfile(industryKey);
@@ -221,6 +228,7 @@ function planFromProfile(
     primaryIntent?: string;
     selectedTemplateId?: string;
     selectedThemePresetId?: string;
+    restrictToAdditionalPages?: boolean;
   }
 ): GeneratedSitePlan {
   const siteId = generateUUID();
@@ -230,10 +238,24 @@ function planFromProfile(
   let homePageId = '';
 
   // 1. Build pages from industry defaultPages
-  const allPageSpecs = [
-    ...profile.defaultPages,
-    ...(options?.additionalPages || []),
-  ];
+  // In "selected-pages" mode (restrictToAdditionalPages=true) only Home is
+  // retained from the industry defaults; every other route MUST come from
+  // the user's explicit wizard selection to avoid blank scaffolded pages.
+  const homeSpec =
+    profile.defaultPages.find((p) => p.path === '/') || profile.defaultPages[0];
+  const baseSpecs = options?.restrictToAdditionalPages
+    ? (homeSpec ? [homeSpec] : [])
+    : profile.defaultPages;
+
+  // Deduplicate by path so a user selection matching a default doesn't double-emit.
+  const seenPaths = new Set<string>();
+  const allPageSpecs: PageSpec[] = [];
+  for (const spec of [...baseSpecs, ...(options?.additionalPages || [])]) {
+    const key = (spec.path || '').toLowerCase();
+    if (seenPaths.has(key)) continue;
+    seenPaths.add(key);
+    allPageSpecs.push(spec);
+  }
 
   for (const spec of allPageSpecs) {
     const pageId = generateUUID();

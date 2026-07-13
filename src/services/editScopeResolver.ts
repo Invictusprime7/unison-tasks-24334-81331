@@ -26,9 +26,23 @@ export interface ScopeAncestors {
   slotId?: string | null;
   blockId?: string | null;
   sectionId?: string | null;
+  /** Canonical section-type from the section registry (`data-ut-section-type`). */
+  sectionType?: string | null;
+  /** Catalog surface id (`data-ut-surface`) — drives catalog-registry lookups. */
+  surfaceId?: string | null;
+  /** Canonical component name (`data-ut-component-type`). */
+  componentType?: string | null;
+  /** Persistent site_data_binding row id, when the section is data-bound. */
+  bindingId?: string | null;
+  /** Stable element key used for VFS/JSX mutation lookup. */
+  bindingKey?: string | null;
   pageId?: string | null;
+  /** Route path of the containing page (`data-ut-page-path`). */
+  pagePath?: string | null;
   /** Intent bindings (`data-ut-intent`) found on the click target or its ancestors. */
   intents?: string[];
+  /** Intent declared directly on the clicked element. */
+  primaryIntent?: string | null;
   /** Tag of the clicked element (e.g. `button`, `h1`, `img`). */
   clickedTag?: string | null;
 }

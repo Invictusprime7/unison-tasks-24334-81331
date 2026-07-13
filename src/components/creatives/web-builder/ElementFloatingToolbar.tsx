@@ -80,6 +80,15 @@ interface ElementFloatingToolbarProps {
   systemType?: BusinessSystemType | null;
   /** Full business blueprint from systems-build for richer AI context */
   systemsBuildContext?: SystemsBuildContext | null;
+  /** Builder identity — enables Lane B catalog/backend context injection. */
+  businessId?: string | null;
+  projectId?: string | null;
+  industry?: string | null;
+  templateName?: string | null;
+  /** Active page path in the VFS (e.g. `/src/pages/Home.tsx`). */
+  activePagePath?: string | null;
+  /** Snapshot of the current VFS — sent to Lane B so the AI can reason across files. */
+  getVFSFiles?: () => Record<string, string>;
   readiness?: {
     surfaceLabel?: string;
     previewStatus?: 'ready' | 'partial' | 'blocked' | 'draft' | 'stubbed';

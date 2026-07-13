@@ -476,7 +476,15 @@ export function buildComponentBehaviorMap(
   try {
     const rootIframe = previewHandle.getIframe?.() ?? null;
     const docs = collectDocs(rootIframe);
-    const interactiveSelectors = 'button, a, [onclick], [data-ut-intent], [role="button"], input, textarea, select, form, [data-editable], [contenteditable]';
+    const interactiveSelectors = [
+      'button', 'a[href]', '[onclick]',
+      '[data-ut-intent]', '[data-ut-cta]', '[data-ut-slot]',
+      'input:not([type="hidden"])', 'textarea', 'select', 'label', 'form',
+      '[data-editable]', '[contenteditable="true"]',
+      '[role="button"]', '[role="link"]', '[role="tab"]', '[role="menuitem"]',
+      '[role="switch"]', '[role="checkbox"]', '[role="radio"]', '[role="option"]',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(', ');
     const seen = new Set<Element>();
 
     for (const doc of docs) {

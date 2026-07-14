@@ -115,8 +115,9 @@ const NULL_CONTRACT: VerticalLaunchContract = {
 
 /**
  * Per-vertical contract table. Today every preselected vertical promises the
- * same hardened preview-ready + native-publish-capable surface. Differentiation
- * (e.g. booking forces booking capability) lives in `forcedNeeds`.
+ * same hardened preview-ready + native-publish-capable surface while still
+ * honoring the wizard page checklist. Differentiation (e.g. booking forces
+ * booking capability) lives in `forcedNeeds`, not route expansion.
  */
 const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
   booking: {

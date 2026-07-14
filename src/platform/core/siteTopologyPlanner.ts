@@ -441,9 +441,31 @@ function planFromProfile(
   // 4. Validate the plan
   plan.validationErrors = validateSitePlan(plan);
 
+  // 5. STRICT SELECTED-PAGES GUARD ─────────────────────────────────────────
+  // When the wizard restricted scaffolding to explicit user selections, we
+  // must never allow an industry-default page to leak into the plan. Doing
+  // so is exactly what caused "default template preset" bodies to render
+  // for pages the user did not select.
+  if (options?.restrictToAdditionalPages) {
+    const allowedPaths = new Set<string>(['/']);
+    for (const spec of options.additionalPages || []) {
+      allowedPaths.add((spec.path || '').toLowerCase());
+    }
+    const stray = plan.pages
+      .map((p) => p.route)
+      .filter((route) => !allowedPaths.has((route || '').toLowerCase()));
+    if (stray.length > 0) {
+      throw new Error(
+        `[SiteTopologyPlanner] Selected-pages guard violated for industry "${profile.industry}": ` +
+        `unselected industry-default routes leaked into the plan: ${stray.join(', ')}. ` +
+        `Only Home + wizard-selected pages are permitted.`,
+      );
+    }
+  }
 
   return plan;
 }
+
 
 // ============================================================================
 // Registry Population

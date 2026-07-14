@@ -103,7 +103,9 @@ export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, t
                 {col.links.map((l, j) => (
                   <li key={j}>
                     <a
-                      href={l.href}
+                      href={resolveHref(l.href, l.label)}
+                      data-ut-intent="nav.goto"
+                      data-ut-nav-target={resolveHref(l.href, l.label)}
                       className="text-sm hover:opacity-80 transition-opacity"
                       style={{ color: hsl(theme.colors.mutedForeground), textDecoration: 'none' }}
                     >
@@ -111,6 +113,7 @@ export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, t
                     </a>
                   </li>
                 ))}
+
               </ul>
             </div>
           ))}

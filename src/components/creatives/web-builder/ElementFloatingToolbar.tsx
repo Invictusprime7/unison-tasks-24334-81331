@@ -21,6 +21,7 @@ import {
   Send, X, Loader2, AlertCircle, CheckCircle2, Link2, Eye, EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { sanitizeVfsForAI } from '@/utils/sanitizeVfsForAI';
 import { supabase as supabaseClient } from '@/integrations/supabase/client';
 const supabase = supabaseClient as any;
 import { toast } from 'sonner';

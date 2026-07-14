@@ -2231,7 +2231,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         launchReliabilityMode = 'lane-b-blocked';
         throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
       }
-      const scaffoldFiles: Record<string, string> = (siteBundleSnapshot?.vfsFiles as Record<string, string>) || {};
       const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .filter((path): path is string => Boolean(path))
@@ -2240,33 +2239,118 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           return !aiSourcedFiles[normalized] && !aiSourcedFiles[path];
         });
 
-      // Backfill from the canonical SiteBundleSnapshot scaffold (Stage 4b merge).
-      // The snapshot is NOT a minimal template — it is the industry-selected
-      // sitebundle composition. Lane B may miss individual page files under load;
-      // filling them from the canonical scaffold preserves the wizard contract.
-      const backfilledFromScaffold: string[] = [];
-      const stillMissing: string[] = [];
-      for (const path of missingWizardPageFiles) {
-        const normalized = path.startsWith('/') ? path : `/${path}`;
-        const candidate = scaffoldFiles[normalized] || scaffoldFiles[path];
-        if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
-          aiSourcedFiles[normalized] = candidate;
-          backfilledFromScaffold.push(normalized);
-        } else {
-          stillMissing.push(normalized);
+      // ── Targeted Lane B retry for missing pages ──────────────────────────
+      // If Lane B skipped any selected wizard pages, re-invoke Lane B with a
+      // focused prompt listing ONLY the missing page paths. This keeps every
+      // page authored by the AI (Stage 4b lane-b pipeline) and forbids
+      // falling back to industry-scaffold "default template preset" bodies.
+      const laneBRepairedPaths: string[] = [];
+      if (missingWizardPageFiles.length > 0) {
+        setLaunchStatus(`Generating ${missingWizardPageFiles.length} remaining page(s)…`);
+        const normalizedMissing = missingWizardPageFiles.map((p) => (p.startsWith('/') ? p : `/${p}`));
+        const missingPageDetails = Object.values(siteBundleSnapshot.pageRegistry.pages)
+          .filter((page) => {
+            const fp = (page as { filePath?: string }).filePath;
+            if (!fp) return false;
+            const n = fp.startsWith('/') ? fp : `/${fp}`;
+            return normalizedMissing.includes(n);
+          })
+          .map((page) => {
+            const p = page as { filePath?: string; title?: string; path?: string; pageType?: string };
+            const fp = (p.filePath || '').startsWith('/') ? p.filePath! : `/${p.filePath}`;
+            return `  • ${p.title || fp} → ${fp}  [route ${p.path || '/'}${p.pageType ? `, type ${p.pageType}` : ''}]`;
+          })
+          .join('\n');
+        const retryPrompt = [
+          `${aiUserPrompt}`,
+          '',
+          '── LANE B REPAIR TURN — REGENERATE MISSING WIZARD PAGES ──',
+          'Your previous response omitted the following selected wizard pages.',
+          'Re-emit ONLY these files in the same multi-file JSON contract.',
+          'Do NOT touch shared chrome (SiteNavbar/SiteFooter), Home, or App.tsx.',
+          'Each page must be a complete, production-quality, industry-faithful',
+          'React page (5+ sections, real copy, working data-ut-intent CTAs).',
+          '',
+          missingPageDetails,
+        ].join('\n');
+        try {
+          const retry = await withTimeout(
+            runBuilderTurn<any>({
+              messages: [{ role: 'user', content: retryPrompt }],
+              mode: 'wizard-seed',
+              currentCode: wizardCurrentCode,
+              editMode: false,
+              templateName: effectiveTemplate?.label || system.name,
+              aesthetic: resolvedPreset.id,
+              source: resolvedIndustry,
+              systemType: selectedSystem,
+              systemsBuildContext: {
+                version: blueprint.version,
+                launcherPolicy: blueprint.launcherPolicy,
+                identity: blueprint.identity,
+                brand: blueprint.brand,
+                design: blueprint.design,
+                theme_tokens: blueprint.theme_tokens,
+                intents: blueprint.intents,
+                template_sections: blueprint.template_sections,
+                template_intents: blueprint.template_intents,
+              },
+              userDesignProfile: laneBDesignProfile,
+              siteElementsLibraryContext,
+              vfsFiles: wizardVfsPayload,
+              previewSnapshot: wizardPreviewSnapshot,
+              recentChangedFiles: normalizedMissing,
+              gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
+              wizardSeed,
+            }),
+            WIZARD_AI_TIMEOUT_MS,
+            `Lane B repair turn timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+          );
+          if (!retry.error) {
+            const { structured: retryStructured } = extractLaneBLauncherPayload(
+              retry.data as Record<string, unknown> | null,
+              `${brand} ${system.name}`,
+            );
+            if (retryStructured?.files) {
+              const retrySanitized = sanitizeGeneratedFiles(retryStructured.files);
+              for (const missing of normalizedMissing) {
+                const candidate = retrySanitized.files[missing] || retrySanitized.files[missing.replace(/^\//, '')];
+                if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+                  aiSourcedFiles[missing] = candidate;
+                  laneBRepairedPaths.push(missing);
+                }
+              }
+              console.info('[SystemLauncher] Lane B repair pass filled pages:', laneBRepairedPaths);
+            } else {
+              console.warn('[SystemLauncher] Lane B repair pass returned no structured files');
+            }
+          } else {
+            console.warn('[SystemLauncher] Lane B repair pass failed:', await getFunctionErrorMessage(retry.error));
+          }
+        } catch (retryErr) {
+          console.warn('[SystemLauncher] Lane B repair pass threw:', retryErr);
         }
       }
-      if (backfilledFromScaffold.length > 0) {
-        wizardGenerationGaps.completedFromScaffold = true;
-        wizardGenerationGaps.scaffoldFilledPaths = backfilledFromScaffold;
-        console.warn(
-          `[SystemLauncher] Lane B missed ${backfilledFromScaffold.length} page(s); backfilled from canonical SiteBundleSnapshot: ${backfilledFromScaffold.join(', ')}`,
-        );
+
+      // Recompute missing after the repair pass — Lane B is the sole author.
+      // We deliberately do NOT backfill from siteBundleSnapshot.vfsFiles: that
+      // scaffold is the industry sitebundle preset and shipping it as a page
+      // body produces the "default template preset" bodies across industries
+      // that the user reported. Hard-fail so the pipeline gets fixed instead
+      // of masked.
+      const stillMissing = Object.values(siteBundleSnapshot.pageRegistry.pages)
+        .map((page) => (page as { filePath?: string }).filePath)
+        .filter((path): path is string => Boolean(path))
+        .map((path) => (path.startsWith('/') ? path : `/${path}`))
+        .filter((path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')]);
+
+      if (laneBRepairedPaths.length > 0) {
+        wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
       if (stillMissing.length > 0) {
         launchReliabilityMode = 'lane-b-blocked';
         throw new Error(
-          `Wizard Lane B missed ${stillMissing.length} selected page file(s) and the canonical SiteBundleSnapshot did not provide them: ${stillMissing.join(', ')}`,
+          `Wizard Lane B (Stage 4b) missed ${stillMissing.length} selected page file(s) after repair pass; scaffold fallback is disabled to prevent default template presets: ${stillMissing.join(', ')}`,
         );
       }
 

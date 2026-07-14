@@ -285,6 +285,9 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         console.warn('[ElementFloatingToolbar] getVFSFiles threw; continuing without VFS snapshot', err);
         vfsFiles = undefined;
       }
+      // Strip oversized/metadata files (e.g. /.unison/site-bundle-snapshot.json)
+      // that violate the edge schema's per-file 100k limit.
+      vfsFiles = sanitizeVfsForAI(vfsFiles, { targetFile: activePagePath ?? null });
       const vfsFileCount = vfsFiles ? Object.keys(vfsFiles).length : 0;
       if (!vfsFiles || vfsFileCount === 0) {
         console.warn('[ElementFloatingToolbar] VFS snapshot unavailable — Lane B will run without file context', {

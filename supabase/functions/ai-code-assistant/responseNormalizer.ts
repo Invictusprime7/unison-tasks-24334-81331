@@ -224,6 +224,7 @@ export function buildResponseBody(opts: {
   removedFiles?: string[];
   reviewSummary?: string;
   applyState?: Record<string, unknown>;
+  toolCalls?: unknown[];
 }): Record<string, unknown> {
   const fileInfo = detectFileStatuses(opts.content);
 
@@ -244,12 +245,17 @@ export function buildResponseBody(opts: {
     applyState: opts.applyState,
   };
 
+  const hasToolCalls = Array.isArray(opts.toolCalls) && opts.toolCalls.length > 0;
+
   return {
     // Core contract (backward-compatible)
     content: opts.content,
     thinking: opts.reasoning ? opts.reasoning.substring(0, 12000) : undefined,
     generatedImage: opts.generatedImageUrl || undefined,
     imagePlacement: opts.generatedImageUrl ? (opts.imagePlacement || "top-left") : undefined,
+    // Tool-calls (catalog dispatcher on the client executes these)
+    tool_calls: hasToolCalls ? opts.toolCalls : undefined,
+    catalogToolCalls: hasToolCalls ? opts.toolCalls : undefined,
     // Rich metadata (new, optional — ignored by old callers)
     ...meta,
   };

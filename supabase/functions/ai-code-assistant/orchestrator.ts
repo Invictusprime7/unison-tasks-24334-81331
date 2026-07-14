@@ -540,6 +540,7 @@ async function runBuilderLane(
     removedFiles: reviewResult?.removedFiles,
     reviewSummary: reviewResult?.reviewSummary,
     applyState: applyState as Record<string, unknown> | undefined,
+    toolCalls: providerResult.toolCalls as unknown[] | undefined,
   });
 
   return new Response(

@@ -8,7 +8,7 @@
  *
  * Why this exists:
  * - SystemLauncher previously branched off a single bool for every per-vertical
- *   decision (booking on/off, lead capture on/off, capability-full scaffold,
+ *   decision (booking on/off, lead capture on/off, selected-page scaffold,
  *   native-publish guarantee, etc). That conflated "is preselected?" with
  *   "what does this vertical promise?".
  * - The Readiness Center, deployment service, and downstream readiness manifest
@@ -26,8 +26,8 @@ export interface VerticalLaunchContract {
 
   /**
    * Deterministic preview path: when true, the launcher must produce a
-   * preview-ready site (Lane B AI required, capability-full scaffold). When
-   * false, the launcher falls back to selected-pages mode without guarantees.
+   * preview-ready site (Lane B AI required) while still honoring only the
+   * pages the user checked in the wizard.
    */
   previewReady: boolean;
 
@@ -39,8 +39,8 @@ export interface VerticalLaunchContract {
   nativePublishCapable: boolean;
 
   /**
-   * Force capability-full scaffold (all canonical pages) instead of honoring
-   * only the user's wizard page selections.
+   * @deprecated Must remain false. Wizard launches may only scaffold Home +
+   * explicitly selected pages; capability objects cannot add routes.
    */
   capabilityFullScaffold: boolean;
 
@@ -123,7 +123,7 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     systemType: 'booking',
     previewReady: true,
     nativePublishCapable: true,
-    capabilityFullScaffold: true,
+    capabilityFullScaffold: false,
     forcedNeeds: { booking: true, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
@@ -141,7 +141,7 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     systemType: 'saas',
     previewReady: true,
     nativePublishCapable: true,
-    capabilityFullScaffold: true,
+    capabilityFullScaffold: false,
     forcedNeeds: { booking: false, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
@@ -156,7 +156,7 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     systemType: 'agency',
     previewReady: true,
     nativePublishCapable: true,
-    capabilityFullScaffold: true,
+    capabilityFullScaffold: false,
     forcedNeeds: { booking: false, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
@@ -171,7 +171,7 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     systemType: 'portfolio',
     previewReady: true,
     nativePublishCapable: true,
-    capabilityFullScaffold: true,
+    capabilityFullScaffold: false,
     forcedNeeds: { booking: false, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
@@ -186,7 +186,7 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     systemType: 'store',
     previewReady: true,
     nativePublishCapable: true,
-    capabilityFullScaffold: true,
+    capabilityFullScaffold: false,
     forcedNeeds: { booking: false, leadCapture: true, products: true },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',
@@ -203,7 +203,7 @@ const VERTICAL_CONTRACTS: Record<BusinessSystemType, VerticalLaunchContract> = {
     systemType: 'content',
     previewReady: true,
     nativePublishCapable: true,
-    capabilityFullScaffold: true,
+    capabilityFullScaffold: false,
     forcedNeeds: { booking: false, leadCapture: true, products: false },
     previewGuaranteeTag: 'lane-b-ai-required',
     publishGuaranteeTag: 'native-first-party-publish-ready',

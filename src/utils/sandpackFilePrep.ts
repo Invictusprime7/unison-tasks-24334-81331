@@ -5488,10 +5488,14 @@ export function prepareSandpackFiles(
     }
   }
 
+  // ── REWRITE self-referencing relative imports ──
+  // AI often writes `import Services from './Services'` inside
+  // `/src/pages/Services.tsx`, which self-imports and evaluates to undefined
+  // at render time (React: "Element type is invalid ... Check the render
+  // method of Services"). Redirect to /components/<Name> when available.
+  rewriteSelfReferencingImports(sandpackFiles);
+
   // ── AUTO-INJECT imports for JSX-used but un-imported components ──
-  // AI often generates <Gallery /> in App.tsx without a corresponding import.
-  // Detect PascalCase JSX usage and inject missing import statements before
-  // the generateMissingComponents pass (which only scans import statements).
   autoInjectMissingJsxImports(sandpackFiles);
 
   // Missing relative imports must surface as preview diagnostics. Do not

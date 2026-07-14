@@ -1155,6 +1155,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // avoids a temporal dead zone (TDZ) ReferenceError at render time. The closure body
   // captures it correctly because it is only invoked asynchronously (inside async IIFEs)
   // by which point importBuilderFiles is fully initialized.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creatorPlayground, launchEntryPoint]);
   
   // Load saved project from URL parameter on mount.
@@ -1176,6 +1177,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     })();
 
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
   // Get full cloud context from location state (from CloudProjects or System Launcher)
@@ -3524,6 +3526,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     } catch (error) {
       console.error('[AutoSave] Error restoring draft:', error);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
    
   const refreshPreviewCart = useCallback(() => {

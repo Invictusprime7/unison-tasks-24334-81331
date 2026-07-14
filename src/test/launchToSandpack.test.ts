@@ -72,7 +72,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(previewFiles["/App.tsx"] || "").toContain("return <div>clean</div>");
   });
 
-  it("injects a safe fallback when a TSX module is prose-only", () => {
+  it("blocks prose-only TSX modules instead of rendering fallback content", () => {
     const proseOnly = "I will now create a polished landing page with a modern hero and strong CTA.";
 
     const launchState = createLaunchState({
@@ -87,14 +87,10 @@ describe("launchStateToSandpackFiles", () => {
       preloadedIntents: [],
     });
 
-    const previewFiles = launchStateToSandpackFiles({
+    expect(() => launchStateToSandpackFiles({
       launchState,
       vfsFiles: launchState.vfsFiles,
-    });
-
-    const recoveredPage = previewFiles["/pages/Home.tsx"] || "";
-    expect(recoveredPage).toContain("Preview recovered");
-    expect(recoveredPage).toContain("safe fallback was injected");
+    })).toThrow(/Prose-only module/);
   });
 
   it("repairs parenthesized and concise-arrow {children} object returns", () => {
@@ -219,7 +215,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(indexCode).not.toContain("Safe_Route");
   });
 
-  it("scaffolds registered wizard pages before Builder readiness", () => {
+  it("scaffolds only explicitly selected wizard pages before Builder readiness", () => {
     const templateId = getCompositionsBySystemType("booking")[0]?.id;
     expect(templateId).toBeTruthy();
 
@@ -233,6 +229,8 @@ describe("launchStateToSandpackFiles", () => {
       wantsLeadCapture: true,
       templateId,
       themeId: "modern",
+      requestedPages: ["services"],
+      scaffoldMode: "selected-pages" as const,
     };
 
     const pipeline = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
@@ -257,5 +255,7 @@ describe("launchStateToSandpackFiles", () => {
 
     expect(artifacts.files["/src/pages/Services.tsx"]).toBeTruthy();
     expect(artifacts.files["/src/App.tsx"]).toContain('path="/services"');
+    expect(artifacts.files["/src/pages/Booking.tsx"]).toBeFalsy();
+    expect(artifacts.files["/src/App.tsx"]).not.toContain('path="/booking"');
   });
 });

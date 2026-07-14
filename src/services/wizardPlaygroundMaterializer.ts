@@ -427,11 +427,11 @@ export function materializePlayground(
     );
   }
 
-  // Resolve scaffold mode. Legacy home-only/minimal is intentionally ignored:
-  // every wizard route must be backed by the selected SiteBundle/template.
-  const scaffoldMode = selections.scaffoldMode === 'capability-full'
-    ? 'capability-full'
-    : 'selected-pages';
+  // Wizard-selected pages are authoritative. `capability-full` is deprecated
+  // for runtime wizard launches because it reintroduces unselected industry
+  // defaults into PageRegistry/router/VFS. Keep the variable only so older
+  // payloads normalize to selected-pages instead of expanding routes.
+  const scaffoldMode = 'selected-pages';
 
   // Map visitor-selected page roles → PageSpec entries for the topology planner.
   const PAGE_ROLE_TO_SPEC: Record<string, { title: string; path: string; purpose: 'landing' | 'services' | 'portfolio' | 'contact' | 'about' | 'blog' | 'shop' | 'checkout' | 'booking' | 'pricing' | 'faq' }> = {
@@ -446,12 +446,11 @@ export function materializePlayground(
     blog:     { title: 'Blog',     path: '/blog',     purpose: 'blog' },
     shop:     { title: 'Shop',     path: '/shop',     purpose: 'shop' },
   };
-  const additionalPages = scaffoldMode === 'selected-pages'
-    ? (selections.requestedPages ?? [])
-        .map((role) => PAGE_ROLE_TO_SPEC[role])
-        .filter((spec): spec is NonNullable<typeof spec> => Boolean(spec))
-        .map((spec) => ({ ...spec, expectedSections: [] }))
-    : [];
+  const selectedPageRoles = new Set<string>(selections.requestedPages ?? []);
+  const additionalPages = (selections.requestedPages ?? [])
+    .map((role) => PAGE_ROLE_TO_SPEC[role])
+    .filter((spec): spec is NonNullable<typeof spec> => Boolean(spec))
+    .map((spec) => ({ ...spec, expectedSections: [] }));
 
   // 1. Generate site topology plan → PageRegistry
   const sitePlan = planSiteTopology(industryKey, selections.businessName, {
@@ -459,13 +458,20 @@ export function materializePlayground(
     primaryIntent: selections.primaryIntent,
     selectedTemplateId: selections.templateId,
     selectedThemePresetId: selections.themePresetId || selections.themeId,
+    restrictToAdditionalPages: true,
   });
   const pageRegistry = populateRegistryFromTopology(sitePlan);
 
-  // 2. Ensure ALL capability-required pages exist in the registry. Minimal/home-only
-  //    topology is intentionally removed from wizard launches; every page must
-  //    flow through the selected SiteBundle/template path.
-  ensureRequiredPages(pageRegistry, sitePlan, capabilities.requiredPages, selections.businessName);
+  // 2. Never back-add capability/model pages the user did not select. Only
+  //    selected pages may enter the registry/router/VFS; capability objects can
+  //    still exist, but their bindings degrade to overlays or warnings unless
+  //    their target page was explicitly checked in the wizard.
+  ensureRequiredPages(
+    pageRegistry,
+    sitePlan,
+    capabilities.requiredPages.filter((role) => selectedPageRoles.has(role)),
+    selections.businessName,
+  );
 
   // 3. Create empty creator data
   const creatorData = createEmptyCreatorData(selections.businessName);

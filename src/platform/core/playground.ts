@@ -104,9 +104,9 @@ export interface WizardSelections {
   /**
    * Scaffold strategy:
    *  - 'selected-pages' → Home + visitor-selected pages (default).
-   *  - 'capability-full'→ Home + all capability-implied pages.
-   * Home-only/minimal scaffold modes are intentionally unsupported; every
-   * wizard page must be materialized through the selected SiteBundle/template.
+   *  - 'capability-full'→ deprecated/normalized to selected-pages for wizard launches.
+   * Home-only/minimal/capability-expanded scaffold modes are intentionally
+   * unsupported; every rendered wizard page must be explicitly selected.
    */
   scaffoldMode?: WizardScaffoldMode;
   /**

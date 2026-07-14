@@ -1461,13 +1461,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ...((preselect?.customerNeeds as CustomerNeed[]) || []),
         ...customerNeeds,
       ]);
-      const resolvedRequestedPages = uniqueValues([
-        ...((preselect?.pages as PageChoice[]) || []),
-        ...selectedPages,
-      ]);
-      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = launchContract.capabilityFullScaffold
-        ? 'capability-full'
-        : 'selected-pages';
+      // Selected pages are authoritative at launch time. Preselects initialize
+      // the UI only; if the user toggles a preselected page off, it must stay
+      // off and never re-enter through the launch contract.
+      const resolvedRequestedPages = uniqueValues(selectedPages);
+      const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = 'selected-pages';
 
 
       // ── Provision backend in background (non-blocking) ──
@@ -1520,8 +1518,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       // ── Plan topology ──
       // All industry launches must honor the 4-step wizard's selected pages,
-      // template, and style tokens. Capability-full remains a hardened mode for
-      // deterministic preview launches; no industry may fall back to home-only.
+      // template, and style tokens. Capability-full/default page expansion is
+      // prohibited for wizard output: only Home + selected pages may render.
       const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
         primaryIntent: industryProfile?.primaryIntent,
         selectedTemplateId: effectiveTemplate?.id,
@@ -1529,9 +1527,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         additionalPages: resolvedScaffoldMode === 'selected-pages'
           ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
           : undefined,
-        // Selected-pages mode: only Home + user-selected pages get scaffolded.
-        // Capability-full mode: keep full industry defaults for hardened launches.
-        restrictToAdditionalPages: resolvedScaffoldMode === 'selected-pages',
+        // Selected-pages mode is mandatory: only Home + user-selected pages get scaffolded.
+        restrictToAdditionalPages: true,
       });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
@@ -2360,8 +2357,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       // ── Merge AI output (if any) with LOCKED themed CSS + DETERMINISTIC ROUTER ──
       // /src/App.tsx is OWNED by the deterministic router from the page registry.
-      // Lane B owns every registered page body/component; the canonical scaffold
-      // (industry sitebundle) fills any page Lane B missed under load.
+      // Lane B owns every registered page body/component; missing pages hard-fail
+      // above, and unselected pages are never routed or scaffold-filled.
       const generatedFiles: Record<string, string> = {
         ...aiSourcedFiles,
         '/src/index.css': themedIndexCss,

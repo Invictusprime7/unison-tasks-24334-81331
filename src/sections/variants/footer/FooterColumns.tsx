@@ -11,6 +11,29 @@ import { SocialIcon, socialAriaLabel } from '../../components/SocialIcon';
 export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, theme }) => {
   const { brand, columns = [], socials = [], copyright, newsletter } = section.props;
 
+  // Normalize footer link hrefs so they always resolve to a real hash-route
+  // page. Rules:
+  //  • absolute/external URLs (http/https/mailto/tel) pass through
+  //  • existing "#/..." hash routes pass through
+  //  • "/foo" or "foo"  → "#/foo"
+  //  • bare labels ("Contact Us") slugified → "#/contact-us"
+  const resolveHref = (rawHref: string | undefined, label: string): string => {
+    const href = (rawHref || '').trim();
+    if (/^(https?:|mailto:|tel:|#\/)/i.test(href)) return href;
+    if (href === '#' || href === '') {
+      const slug = (label || '')
+        .toLowerCase()
+        .replace(/&/g, 'and')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+      return slug ? `#/${slug}` : '#/';
+    }
+    if (href.startsWith('/')) return `#${href}`;
+    if (href.startsWith('#')) return `#/${href.replace(/^#+/, '')}`;
+    return `#/${href.replace(/^\/+/, '')}`;
+  };
+
+
   return (
     <footer
       className="px-6"
@@ -80,7 +103,9 @@ export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, t
                 {col.links.map((l, j) => (
                   <li key={j}>
                     <a
-                      href={l.href}
+                      href={resolveHref(l.href, l.label)}
+                      data-ut-intent="nav.goto"
+                      data-ut-nav-target={resolveHref(l.href, l.label)}
                       className="text-sm hover:opacity-80 transition-opacity"
                       style={{ color: hsl(theme.colors.mutedForeground), textDecoration: 'none' }}
                     >
@@ -88,6 +113,7 @@ export const FooterColumns: React.FC<BaseSectionProps<'footer'>> = ({ section, t
                     </a>
                   </li>
                 ))}
+
               </ul>
             </div>
           ))}

@@ -72,7 +72,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(previewFiles["/App.tsx"] || "").toContain("return <div>clean</div>");
   });
 
-  it("injects a safe fallback when a TSX module is prose-only", () => {
+  it("blocks prose-only TSX modules instead of rendering fallback content", () => {
     const proseOnly = "I will now create a polished landing page with a modern hero and strong CTA.";
 
     const launchState = createLaunchState({
@@ -87,14 +87,10 @@ describe("launchStateToSandpackFiles", () => {
       preloadedIntents: [],
     });
 
-    const previewFiles = launchStateToSandpackFiles({
+    expect(() => launchStateToSandpackFiles({
       launchState,
       vfsFiles: launchState.vfsFiles,
-    });
-
-    const recoveredPage = previewFiles["/pages/Home.tsx"] || "";
-    expect(recoveredPage).toContain("Preview recovered");
-    expect(recoveredPage).toContain("safe fallback was injected");
+    })).toThrow(/Prose-only module/);
   });
 
   it("repairs parenthesized and concise-arrow {children} object returns", () => {

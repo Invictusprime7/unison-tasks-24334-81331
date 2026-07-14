@@ -3592,6 +3592,72 @@ function escapeRegExp(s: string): string {
 }
 
 /**
+ * Detect and rewrite self-referencing relative imports.
+ *
+ * A common failure mode: AI generates `/src/pages/Services.tsx` that does
+ * `import Services from './Services'` (or `import { Services } from './Services'`)
+ * intending to pull the section component from `/src/components/Services.tsx`.
+ * The relative path actually resolves to the page file itself, producing a
+ * self-referential module whose named export is undefined at eval time and
+ * React throws "Element type is invalid ... Check the render method of Services".
+ *
+ * Fix: for any relative import whose resolved target equals the current file,
+ * rewrite the specifier to point at `/components/<Name>` when that file exists.
+ * Otherwise drop the offending import so downstream synthesis inserts a
+ * placeholder rather than crashing render.
+ */
+function rewriteSelfReferencingImports(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+  const importRegex = /^(\s*import\s+[\s\S]+?\s+from\s+['"])(\.\.?\/[^'"]+)(['"];?)/gm;
+
+  for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+    let changed = false;
+    const next = content.replace(importRegex, (stmt, prefix: string, rawPath: string, suffix: string) => {
+      const resolved = resolveRelativeModuleTarget(filePath, rawPath, existingPaths);
+      if (!resolved || resolved !== filePath) return stmt;
+
+      const baseName = (rawPath.split('/').pop() || '').replace(/\.\w+$/, '');
+      const componentCandidates = [
+        `/src/components/${baseName}.tsx`,
+        `/src/components/${baseName}.jsx`,
+        `/components/${baseName}.tsx`,
+        `/components/${baseName}.jsx`,
+      ];
+      const redirectTarget = componentCandidates.find((p) => existingPaths.has(p));
+      if (redirectTarget) {
+        const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
+        const targetNoExt = redirectTarget.replace(/\.\w+$/, '');
+        const rel = toRelativeFromDir(dir, targetNoExt);
+        console.warn(
+          `[sandpackFilePrep] Rewriting self-import in ${filePath}: '${rawPath}' → '${rel}' (was pointing at ${resolved})`,
+        );
+        changed = true;
+        return `${prefix}${rel}${suffix}`;
+      }
+
+      console.warn(
+        `[sandpackFilePrep] Dropping self-referencing import in ${filePath}: '${rawPath}'`,
+      );
+      changed = true;
+      return `// [sandpackFilePrep] dropped self-import: ${stmt.trim()}`;
+    });
+    if (changed) sandpackFiles[filePath] = next;
+  }
+}
+
+function toRelativeFromDir(fromDir: string, toPath: string): string {
+  const fromParts = fromDir.replace(/\/+$/, '').split('/').filter(Boolean);
+  const toParts = toPath.split('/').filter(Boolean);
+  let i = 0;
+  while (i < fromParts.length && i < toParts.length && fromParts[i] === toParts[i]) i++;
+  const up = fromParts.slice(i).map(() => '..');
+  const down = toParts.slice(i);
+  const rel = [...up, ...down].join('/');
+  return rel.startsWith('.') ? rel : `./${rel}`;
+}
+
+/**
  * Scan JSX in all files for PascalCase component usage (e.g. `<Gallery />`)
  * that has NO corresponding import statement. For each missing component,
  * inject a relative import pointing to `./components/ComponentName`.

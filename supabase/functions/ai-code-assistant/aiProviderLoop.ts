@@ -11,11 +11,21 @@ export interface ProviderEarlyError {
   error: string;
 }
 
+export interface RawToolCall {
+  id?: string;
+  type?: string;
+  function?: { name?: string; arguments?: string };
+  name?: string;
+  arguments?: unknown;
+}
+
 export interface ProviderCallResult {
   content: string;
   reasoning: string;
   /** Which model produced the successful response */
   modelUsed?: string;
+  /** OpenAI-shaped tool_calls returned by the model (chat completions style). */
+  toolCalls?: RawToolCall[];
   /** Non-null when we should return an early HTTP error (rate limit, payment required) */
   earlyError?: ProviderEarlyError;
 }
@@ -28,12 +38,19 @@ export async function runProviderLoop(opts: {
   reasoningEffort?: "none" | "low" | "medium" | "high";
   /** Disable direct provider fallbacks for flows that must only use the managed gateway. */
   allowDirectFallbacks?: boolean;
+  /** OpenAI-compatible chat-completions `tools` array (function tools). */
+  tools?: unknown[];
+  /** `tool_choice` forwarded to the provider. Defaults to `"auto"` when tools are present. */
+  toolChoice?: "auto" | "none" | "required";
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort, allowDirectFallbacks = true } = opts;
+  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort, allowDirectFallbacks = true, tools, toolChoice } = opts;
+  const hasTools = Array.isArray(tools) && tools.length > 0;
+  const effectiveToolChoice = hasTools ? (toolChoice ?? "auto") : undefined;
   let content = '';
   let lastError = '';
   let reasoning = '';
   let modelUsed: string | undefined;
+  let toolCalls: RawToolCall[] | undefined;
 
   // Global wall-clock budget so we don't exceed the client's timeout window.
   // Client global abort fires at 150s; reserve ~15s for response packaging/network.
@@ -97,6 +114,10 @@ export async function runProviderLoop(opts: {
           messages: aiMessages,
           max_completion_tokens: model.maxTokens,
         };
+        if (hasTools) {
+          requestBody.tools = tools;
+          requestBody.tool_choice = effectiveToolChoice;
+        }
         
         const resp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -150,8 +171,10 @@ export async function runProviderLoop(opts: {
           continue;
         }
 
-        const parsedContent = data.choices?.[0]?.message?.content || '';
-        if (!parsedContent) {
+        const message = data.choices?.[0]?.message ?? {};
+        const parsedContent = message.content || '';
+        const parsedToolCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as RawToolCall[]) : undefined;
+        if (!parsedContent && (!parsedToolCalls || parsedToolCalls.length === 0)) {
           console.warn(`[AI-Hybrid] ${model.label} returned no content, trying next...`);
           recordProviderError(model.label, 'no content');
           continue;
@@ -164,6 +187,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with fallback ${model.label}`);
         break;
       } catch (err) {
@@ -219,6 +243,7 @@ export async function runProviderLoop(opts: {
             model: model.id,
             messages: aiMessages,
             max_tokens: model.maxTokens,
+            ...(hasTools ? { tools, tool_choice: effectiveToolChoice } : {}),
           }),
           signal: controller.signal,
         });
@@ -254,8 +279,10 @@ export async function runProviderLoop(opts: {
           continue;
         }
 
-        const parsedContent = data.choices?.[0]?.message?.content || '';
-        if (!parsedContent) {
+        const message = data.choices?.[0]?.message ?? {};
+        const parsedContent = message.content || '';
+        const parsedToolCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as RawToolCall[]) : undefined;
+        if (!parsedContent && (!parsedToolCalls || parsedToolCalls.length === 0)) {
           recordProviderError(model.label, 'no content');
           continue;
         }
@@ -267,6 +294,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with ${role} ${model.label}`);
         break;
       } catch (err) {
@@ -326,6 +354,10 @@ export async function runProviderLoop(opts: {
         if (reasoningEffort && reasoningEffort !== "none" && model.id.startsWith('openai/')) {
           reqBody.reasoning = { effort: reasoningEffort };
         }
+        if (hasTools) {
+          reqBody.tools = tools;
+          reqBody.tool_choice = effectiveToolChoice;
+        }
 
         const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
@@ -383,8 +415,10 @@ export async function runProviderLoop(opts: {
           continue;
         }
 
-        const parsedContent = data.choices?.[0]?.message?.content || '';
-        if (!parsedContent) {
+        const message = data.choices?.[0]?.message ?? {};
+        const parsedContent = message.content || '';
+        const parsedToolCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as RawToolCall[]) : undefined;
+        if (!parsedContent && (!parsedToolCalls || parsedToolCalls.length === 0)) {
           console.warn(`[AI-Hybrid] ${model.label} returned no content, trying next...`);
           recordProviderError(model.label, 'no content');
           continue;
@@ -397,6 +431,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with PRIMARY gateway ${model.label}`);
         break;
       } catch (err) {
@@ -491,5 +526,5 @@ export async function runProviderLoop(opts: {
     throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure the managed AI gateway secret is valid and available to backend functions.`);
   }
 
-  return { content, reasoning, modelUsed };
+  return { content, reasoning, modelUsed, toolCalls };
 }

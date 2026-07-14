@@ -48,6 +48,11 @@ import { checkEditScope } from "./reviewScope.ts";
 import { buildApplyState, type ApplyState } from "./applyState.ts";
 import { preprocessPrompt } from "./promptPreprocessor.ts";
 import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
+import { CATALOG_CHAT_TOOLS, renderCatalogToolDirective } from "../_shared/catalogTools.ts";
+
+const BUILDER_EDIT_TASKS = new Set<string>([
+  'surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit',
+]);
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -443,13 +448,22 @@ async function runBuilderLane(
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────
   console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
   const providerPlan = buildProviderPlan(task, hasConfiguredProvider, gatewayOptions, preprocessed.complexity.tier);
+  const enableCatalogTools = BUILDER_EDIT_TASKS.has(task.type);
+  if (enableCatalogTools) {
+    finalSystemPrompt += renderCatalogToolDirective();
+  }
+  const aiMessagesForCall = enableCatalogTools
+    ? [{ role: 'system', content: finalSystemPrompt }, ...processedMessages]
+    : aiMessages;
   const providerResult = await runProviderLoop({
-    aiMessages,
+    aiMessages: aiMessagesForCall,
     providerPlan,
     navPageGen,
     lovableApiKey: LOVABLE_API_KEY ?? undefined,
     reasoningEffort: gatewayOptions?.reasoningEffort,
     allowDirectFallbacks: true,
+    tools: enableCatalogTools ? CATALOG_CHAT_TOOLS : undefined,
+    toolChoice: enableCatalogTools ? 'auto' : undefined,
   });
 
   if (providerResult.earlyError) {

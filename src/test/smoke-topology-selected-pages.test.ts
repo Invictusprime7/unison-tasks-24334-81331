@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { planSiteTopology } from '@/platform/core/siteTopologyPlanner';
 import { generateCanonicalRouterFromPlan } from '@/utils/topologyRouterGenerator';
 import { getAllIndustries } from '@/platform/core/industryMatrix';
+import { resolveVerticalLaunchContract } from '@/services/verticalLaunchContract';
 
 import type { PageSpec } from '@/platform/core/industryMatrix';
 
@@ -82,5 +83,11 @@ describe('selected-pages wizard mode — no blank routes', () => {
   it('capability-full mode (restrictToAdditionalPages=false) preserves industry defaults', () => {
     const plan = planSiteTopology('salon', 'Acme', { restrictToAdditionalPages: false });
     expect(plan.pages.length).toBeGreaterThan(1);
+  });
+
+  it('vertical launch contracts cannot force capability-full wizard routes', () => {
+    for (const systemType of ['booking', 'saas', 'agency', 'portfolio', 'store', 'content'] as const) {
+      expect(resolveVerticalLaunchContract(systemType).capabilityFullScaffold).toBe(false);
+    }
   });
 });

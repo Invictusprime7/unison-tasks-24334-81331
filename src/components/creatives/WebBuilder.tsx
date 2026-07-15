@@ -5510,6 +5510,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             />
           )}
 
+          {/* Business Profile pill — admins can move the project between businesses */}
+          {projectId && (
+            <div className="hidden md:block">
+              <BusinessPill />
+            </div>
+          )}
+
+
           <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Device + Mode + Tools — hidden on small screens (use bottom nav on mobile) */}

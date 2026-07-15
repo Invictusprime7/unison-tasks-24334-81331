@@ -242,7 +242,7 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
       )}
       aria-label="Live template preview"
     >
-      <div className="max-h-[420px] overflow-y-auto scrollbar-hide">
+      <div>
         {bookended.map((type, idx) => (
           <SectionBlock
             key={`${type}-${idx}`}
@@ -253,8 +253,6 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
           />
         ))}
       </div>
-      {/* Fade edge to hint scrollability */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[#0A0B14] to-transparent" />
     </div>
   );
 };

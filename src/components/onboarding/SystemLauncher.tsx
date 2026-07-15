@@ -2763,16 +2763,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <p className="text-[11px] text-white/30">AI-powered site generation</p>
               </div>
             </div>
-            <WizardTopAction
-              step={step}
-              isLaunching={isLaunching}
-              launchStatus={launchStatus}
-              canContinueQuestions={!!primaryGoal}
-              canGenerate={!!businessName.trim()}
-              onQuestionsNext={handleQuestionsNext}
-              onTemplatesNext={handleTemplateNext}
-              onLaunch={handleLaunch}
-            />
           </div>
 
           {/* Step pills */}

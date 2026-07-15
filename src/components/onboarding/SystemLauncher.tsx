@@ -3213,9 +3213,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   />
                 </div>
 
-                {/* Theme Grid + Live Preview */}
-                <div className="mb-4 grid grid-cols-1 lg:grid-cols-[1fr_minmax(260px,300px)] gap-4">
+                {/* Theme Grid + Live Preview (stacked) */}
+                <div className="mb-4 flex flex-col gap-5">
                   <div>
+
                     <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                       Visual Style <span className="text-white/20">(optional)</span>
                     </label>

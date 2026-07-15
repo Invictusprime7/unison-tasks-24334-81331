@@ -3072,8 +3072,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 </div>
               </div>
 
-              <div className="flex-1 max-h-[55vh] overflow-hidden px-6 pb-4 grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,320px)] gap-4">
-                <div className="overflow-y-auto scrollbar-hide pr-1">
+              <div className="flex-1 max-h-[55vh] overflow-y-auto scrollbar-hide px-6 pb-4 flex flex-col gap-5">
+                <div>
+
                   {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
                     const display = INDUSTRY_DISPLAY[industryKey as IndustryTag];
                     return (
@@ -3114,8 +3115,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   )}
                 </div>
 
-                {/* Live template preview */}
-                <div className="hidden lg:flex flex-col min-h-0">
+                {/* Live template preview — below the cards */}
+                <div className="flex flex-col min-h-0">
+
                   <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                     Live Preview
                   </label>
@@ -3211,9 +3213,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   />
                 </div>
 
-                {/* Theme Grid + Live Preview */}
-                <div className="mb-4 grid grid-cols-1 lg:grid-cols-[1fr_minmax(260px,300px)] gap-4">
+                {/* Theme Grid + Live Preview (stacked) */}
+                <div className="mb-4 flex flex-col gap-5">
                   <div>
+
                     <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                       Visual Style <span className="text-white/20">(optional)</span>
                     </label>
@@ -3269,7 +3272,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   </div>
 
                   {/* Live preview */}
-                  <div className="lg:sticky lg:top-0">
+                  {/* Live preview — below the theme cards */}
+                  <div>
+
                     <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                       Live Preview
                     </label>

@@ -2943,7 +2943,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     </p>
                   </div>
                 </div>
-                <WizardTopAction
+                <div className="flex items-center gap-2">
+                  <BusinessSelector
+                    value={selectedBusinessId}
+                    onChange={(id) => setSelectedBusinessId(id)}
+                    mode="member"
+                    allowCreate
+                    size="sm"
+                    placeholder="New business"
+                  />
+                  <WizardTopAction
+
                   step={step}
                   isLaunching={isLaunching}
                   launchStatus={launchStatus}

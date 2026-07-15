@@ -2753,7 +2753,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[250px] bg-cyan-500/[0.04] rounded-full blur-[100px]" />
           </div>
 
-          <div className="relative flex items-center justify-between mb-4">
+          <div className="relative flex items-start justify-between mb-4 gap-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 flex items-center justify-center text-sm">
                 ⚡
@@ -2763,6 +2763,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <p className="text-[11px] text-white/30">AI-powered site generation</p>
               </div>
             </div>
+            <WizardTopAction
+              step={step}
+              isLaunching={isLaunching}
+              launchStatus={launchStatus}
+              canContinueQuestions={!!primaryGoal}
+              canGenerate={!!businessName.trim()}
+              onQuestionsNext={handleQuestionsNext}
+              onTemplatesNext={handleTemplateNext}
+              onLaunch={handleLaunch}
+            />
           </div>
 
           {/* Step pills */}

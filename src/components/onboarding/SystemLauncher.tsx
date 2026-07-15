@@ -29,6 +29,8 @@ import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { ThemeLivePreview } from "./ThemeLivePreview";
 import { TemplateLivePreview } from "./TemplateLivePreview";
 import { WizardTopAction } from "./WizardTopAction";
+import { BusinessSelector } from "@/components/business/BusinessSelector";
+
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { resolveThemePreset } from "./industryThemePresetMap";
@@ -1250,6 +1252,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchStatus, setLaunchStatus] = useState("");
+  // Business Profile selected in the wizard header. When set, the project
+  // is stamped into this business; when null we fall back to
+  // install-system provisioning (creates a fresh business).
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('unison:lastBusinessId');
+    } catch {
+      return null;
+    }
+  });
+
   const [validationAttempts, setValidationAttempts] = useState<Array<{
     attempt: number;
     kind: 'empty' | 'app' | 'section' | 'quality';
@@ -1564,7 +1577,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ownerEmail: ownerEmail || undefined,
         publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native-first-party' : 'manual-setup',
         wizardSeedId,
+        businessId: selectedBusinessId || undefined,
       };
+
 
       // ── ASSERTION: themePresetId must be threaded into WizardSelections. ──
       if (!wizardSelections.themePresetId) {
@@ -2375,7 +2390,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }
 
 
-      const provisionedBusinessId = await installPromise;
+      const installedBusinessId = await installPromise;
+      // Wizard selection wins: if the creator picked a Business Profile in
+      // the header, save the project under that business instead of the
+      // freshly provisioned one from install-system.
+      const provisionedBusinessId = selectedBusinessId || installedBusinessId;
+      try {
+        if (provisionedBusinessId) {
+          localStorage.setItem('unison:lastBusinessId', provisionedBusinessId);
+        }
+      } catch { /* ignore */ }
+
       const nativeSetupSnapshot = buildNativePublishSetupSnapshot({
         enabled: launchContract.nativePublishCapable,
         ownerEmail,
@@ -2918,17 +2943,28 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     </p>
                   </div>
                 </div>
-                <WizardTopAction
-                  step={step}
-                  isLaunching={isLaunching}
-                  launchStatus={launchStatus}
-                  canContinueQuestions={!!primaryGoal}
-                  canGenerate={!!businessName.trim()}
-                  onQuestionsNext={handleQuestionsNext}
-                  onTemplatesNext={handleTemplateNext}
-                  onLaunch={handleLaunch}
-                />
+                <div className="flex items-center gap-2">
+                  <BusinessSelector
+                    value={selectedBusinessId}
+                    onChange={(id) => setSelectedBusinessId(id)}
+                    mode="member"
+                    allowCreate
+                    size="sm"
+                    placeholder="New business"
+                  />
+                  <WizardTopAction
+                    step={step}
+                    isLaunching={isLaunching}
+                    launchStatus={launchStatus}
+                    canContinueQuestions={!!primaryGoal}
+                    canGenerate={!!businessName.trim()}
+                    onQuestionsNext={handleQuestionsNext}
+                    onTemplatesNext={handleTemplateNext}
+                    onLaunch={handleLaunch}
+                  />
+                </div>
               </div>
+
 
               <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide space-y-6">
                 {/* Q1: Primary Goal */}

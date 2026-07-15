@@ -286,6 +286,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BuilderSessionProvider } from "@/builder/controllers/BuilderSessionProvider";
+import { BusinessPill } from "@/components/webbuilder/BusinessPill";
+
 
 // CodeViewErrorBoundary extracted to web-builder/CodeViewErrorBoundary.tsx
 
@@ -5509,6 +5511,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               className="hidden md:block bg-transparent border border-transparent hover:border-cyan-500/30 focus:border-cyan-500/60 focus:bg-[#0d0d18] outline-none text-sm text-cyan-100 px-2 py-1 rounded-md max-w-[220px] truncate"
             />
           )}
+
+          {/* Business Profile pill — admins can move the project between businesses */}
+          {projectId && (
+            <div className="hidden md:block">
+              <BusinessPill />
+            </div>
+          )}
+
 
           <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           

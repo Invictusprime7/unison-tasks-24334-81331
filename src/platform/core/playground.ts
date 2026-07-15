@@ -128,7 +128,15 @@ export interface WizardSelections {
    * chain-of-custody between the wizard payload and the live snapshot.
    */
   wizardSeedId?: string;
+  /**
+   * Target Business Profile the generated project should be saved under.
+   * Chosen by the creator in the wizard (BusinessSelector) and threaded
+   * into LaunchState + builder_drafts so `sync_draft_to_project` stamps
+   * the correct `projects.business_id` on first persist.
+   */
+  businessId?: string;
 }
+
 
 // ============================================================================
 // Slot-Bound Section & Slot Types

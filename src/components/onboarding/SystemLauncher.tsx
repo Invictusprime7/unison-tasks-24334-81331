@@ -3272,7 +3272,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   </div>
 
                   {/* Live preview */}
-                  <div className="lg:sticky lg:top-0">
+                  {/* Live preview — below the theme cards */}
+                  <div>
+
                     <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                       Live Preview
                     </label>

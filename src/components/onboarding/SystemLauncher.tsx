@@ -3237,6 +3237,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   </div>
                 </div>
 
+                {/* Live semantic-token preview — mirrors what /src/index.css will inject */}
+                <WizardThemePreview
+                  preset={hoveredTheme ?? selectedTheme}
+                  businessName={businessName}
+                />
+
+
                 {/* Custom prompt */}
                 <div>
                   <label className="text-xs font-medium text-white/40 mb-2 block">

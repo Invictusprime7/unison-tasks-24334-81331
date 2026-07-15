@@ -295,14 +295,18 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     }
 
     // App.tsx is always a deterministic registry router and index.css must stay
-    // on the launcher-resolved theme token chain. Generated page/component files
-    // may win; generated routers may not.
+    // on the launcher-resolved theme token chain (Stage 4b writes themed
+    // /src/index.css from the wizard's ThemePreset). Generated page/component
+    // files may win; generated routers and generated CSS may NOT — otherwise
+    // AI-emitted default Tailwind CSS silently overrides the wizard theme
+    // tokens and every industry renders un-themed.
     if (normalizedPath === '/src/App.tsx' || normalizedPath === '/App.tsx') {
       continue;
     }
 
     if (normalizedPath === '/src/index.css') {
-      merged['/src/index.css'] = content;
+      // Preserve canonical themed CSS. Never let Lane B output clobber the
+      // wizard-locked theme tokens from Stage 4b.
       continue;
     }
 

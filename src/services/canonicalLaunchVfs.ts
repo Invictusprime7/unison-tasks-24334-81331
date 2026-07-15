@@ -11,7 +11,6 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair } from './aiSitePreflightRepair';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
-import { normalizeSemanticThemeTokens } from '@/utils/enforceSemanticThemeTokens';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',
@@ -279,9 +278,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       generatedAppCanSeedHome;
 
     if (shouldMoveLegacyAppIntoHome) {
-      merged[normalizePath(homeFilePath)] = normalizeSemanticThemeTokens(
-        rebaseAppModuleForHomePage(content),
-      );
+      merged[normalizePath(homeFilePath)] = rebaseAppModuleForHomePage(content);
       continue;
     }
 
@@ -293,10 +290,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
           { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
         );
       }
-      // Rewrite raw palette utilities (bg-white, text-black, bg-[#hex], inline
-      // hex styles) to semantic tokens so every registered page — Home
-      // included — inherits the wizard-injected /src/index.css theme.
-      merged[normalizedPath] = normalizeSemanticThemeTokens(content);
+      merged[normalizedPath] = content;
       continue;
     }
 
@@ -328,19 +322,19 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     if (existingMergedPage && !looksLikeMinimalPreviewFallback(existingMergedPage)) {
       removePathVariants(merged, page.filePath);
-      merged[normalizedPagePath] = normalizeSemanticThemeTokens(existingMergedPage);
+      merged[normalizedPagePath] = existingMergedPage;
       continue;
     }
 
     if (generatedPage && !looksLikeMinimalPreviewFallback(generatedPage)) {
       removePathVariants(merged, page.filePath);
-      merged[normalizedPagePath] = normalizeSemanticThemeTokens(generatedPage);
+      merged[normalizedPagePath] = generatedPage;
       continue;
     }
 
     if (options.allowCanonicalPageFallback !== false && canonicalPage && !looksLikeMinimalPreviewFallback(canonicalPage)) {
       removePathVariants(merged, page.filePath);
-      merged[normalizedPagePath] = normalizeSemanticThemeTokens(canonicalPage);
+      merged[normalizedPagePath] = canonicalPage;
       continue;
     }
 

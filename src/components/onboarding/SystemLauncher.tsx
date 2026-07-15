@@ -28,7 +28,6 @@ import {
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
-import { WizardThemePreview } from "./WizardThemePreview";
 import { resolveThemePreset } from "./industryThemePresetMap";
 import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract";
 
@@ -1237,7 +1236,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [selectedSystem, setSelectedSystem] = useState<BusinessSystemType | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateCardData | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<ThemePreset | null>(null);
-  const [hoveredTheme, setHoveredTheme] = useState<ThemePreset | null>(null);
   const [themeDebug, setThemeDebug] = useState<{
     resolvedPresetId: string;
     industryCategory: string;
@@ -3193,10 +3191,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                         <button
                           key={theme.id}
                           onClick={() => setSelectedTheme(isSelected ? null : theme)}
-                          onMouseEnter={() => setHoveredTheme(theme)}
-                          onMouseLeave={() => setHoveredTheme(null)}
-                          onFocus={() => setHoveredTheme(theme)}
-                          onBlur={() => setHoveredTheme(null)}
                           className={cn(
                             "relative p-3.5 rounded-xl text-left transition-all duration-300",
                             "border focus:outline-none overflow-hidden",
@@ -3236,13 +3230,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     })}
                   </div>
                 </div>
-
-                {/* Live semantic-token preview — mirrors what /src/index.css will inject */}
-                <WizardThemePreview
-                  preset={hoveredTheme ?? selectedTheme}
-                  businessName={businessName}
-                />
-
 
                 {/* Custom prompt */}
                 <div>

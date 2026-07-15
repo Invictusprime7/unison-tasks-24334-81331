@@ -138,21 +138,7 @@ ${blueprint.brand.tagline ? `Tagline: "${blueprint.brand.tagline}"` : ""}
 ${blueprint.identity.primary_goal ? `Goal: ${blueprint.identity.primary_goal}` : ""}
 ${blueprint.brand.tone ? `Tone: ${blueprint.brand.tone}` : ""}
 
-🎨 THEME TOKEN CONTRACT (CRITICAL — Home.tsx and every /src/pages/*.tsx MUST comply):
-The runtime injects /src/index.css with HSL design tokens from the wizard's selected theme preset. ALL pages — Home included — must consume those tokens so the theme applies uniformly across every route.
-
-REQUIRED usage in every page file:
-- Surfaces: bg-background, bg-card, bg-muted, bg-popover, bg-accent, bg-primary, bg-secondary
-- Text:     text-foreground, text-muted-foreground, text-primary, text-primary-foreground, text-card-foreground, text-accent-foreground
-- Borders:  border-border, border-input, border-primary
-
-FORBIDDEN in /src/pages/*.tsx (these bypass the theme and break Home/nav parity):
-- bg-white / bg-black / text-white / text-black / border-white / border-black
-- bg-slate-*, bg-zinc-*, bg-gray-*, bg-neutral-*, bg-stone-* for page/section surfaces
-- Arbitrary hex utilities: bg-[#…], text-[#…], border-[#…]
-- Inline style={{ backgroundColor: '#…', color: '#…' }} for palette colors
-
-Brand palette (reference only — DO NOT hardcode these hex values in JSX/CSS; they are already emitted into /src/index.css as HSL tokens):
+Brand Colors:
 - Primary: ${blueprint.brand.palette?.primary || "#0EA5E9"}
 - Secondary: ${blueprint.brand.palette?.secondary || "#22D3EE"}
 - Accent: ${blueprint.brand.palette?.accent || "#F59E0B"}

@@ -328,19 +328,19 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     if (existingMergedPage && !looksLikeMinimalPreviewFallback(existingMergedPage)) {
       removePathVariants(merged, page.filePath);
-      merged[normalizedPagePath] = existingMergedPage;
+      merged[normalizedPagePath] = normalizeSemanticThemeTokens(existingMergedPage);
       continue;
     }
 
     if (generatedPage && !looksLikeMinimalPreviewFallback(generatedPage)) {
       removePathVariants(merged, page.filePath);
-      merged[normalizedPagePath] = generatedPage;
+      merged[normalizedPagePath] = normalizeSemanticThemeTokens(generatedPage);
       continue;
     }
 
     if (options.allowCanonicalPageFallback !== false && canonicalPage && !looksLikeMinimalPreviewFallback(canonicalPage)) {
       removePathVariants(merged, page.filePath);
-      merged[normalizedPagePath] = canonicalPage;
+      merged[normalizedPagePath] = normalizeSemanticThemeTokens(canonicalPage);
       continue;
     }
 

@@ -1250,6 +1250,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchStatus, setLaunchStatus] = useState("");
+  // Business Profile selected in the wizard header. When set, the project
+  // is stamped into this business; when null we fall back to
+  // install-system provisioning (creates a fresh business).
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('unison:lastBusinessId');
+    } catch {
+      return null;
+    }
+  });
+
   const [validationAttempts, setValidationAttempts] = useState<Array<{
     attempt: number;
     kind: 'empty' | 'app' | 'section' | 'quality';

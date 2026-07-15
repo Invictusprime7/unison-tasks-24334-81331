@@ -3374,32 +3374,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   </div>
                 </div>
 
-                <Button
-                  onClick={handleLaunch}
-                  disabled={isLaunching || !businessName.trim()}
-                  className={cn(
-                    "h-10 px-6 text-sm font-semibold",
-                    "bg-gradient-to-r from-cyan-500/20 to-fuchsia-500/15 text-cyan-400",
-                    "border border-cyan-500/30",
-                    "hover:from-cyan-500/30 hover:to-fuchsia-500/20",
-                    "hover:shadow-[0_0_24px_rgba(0,200,255,0.15)]",
-                    "transition-all duration-300",
-                    "disabled:opacity-30"
-                  )}
-                >
-                  {isLaunching ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {launchStatus || "Generating…"}
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Generate Site
-                      <ArrowRight className="ml-2 h-3.5 w-3.5" />
-                    </>
-                  )}
-                </Button>
               </div>
 
               {validationAttempts.length > 0 && (

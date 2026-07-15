@@ -3164,23 +3164,35 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleBack}
-                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <div>
-                  <h2 className="text-lg font-bold text-white tracking-tight">
-                    Name & style
-                  </h2>
-                  <p className="text-xs text-white/30">
-                    Final details before we generate your site
-                  </p>
+              <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleBack}
+                    className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-white tracking-tight truncate">
+                      Name & style
+                    </h2>
+                    <p className="text-xs text-white/30 truncate">
+                      Final details before we generate your site
+                    </p>
+                  </div>
                 </div>
+                <WizardTopAction
+                  step={step}
+                  isLaunching={isLaunching}
+                  launchStatus={launchStatus}
+                  canContinueQuestions={!!primaryGoal}
+                  canGenerate={!!businessName.trim()}
+                  onQuestionsNext={handleQuestionsNext}
+                  onTemplatesNext={handleTemplateNext}
+                  onLaunch={handleLaunch}
+                />
               </div>
 
               <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">

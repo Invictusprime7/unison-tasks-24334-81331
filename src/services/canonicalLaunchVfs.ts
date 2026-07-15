@@ -11,6 +11,7 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair } from './aiSitePreflightRepair';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
+import { normalizeSemanticThemeTokens } from '@/utils/enforceSemanticThemeTokens';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',

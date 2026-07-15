@@ -2953,17 +2953,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     placeholder="New business"
                   />
                   <WizardTopAction
-
-                  step={step}
-                  isLaunching={isLaunching}
-                  launchStatus={launchStatus}
-                  canContinueQuestions={!!primaryGoal}
-                  canGenerate={!!businessName.trim()}
-                  onQuestionsNext={handleQuestionsNext}
-                  onTemplatesNext={handleTemplateNext}
-                  onLaunch={handleLaunch}
-                />
+                    step={step}
+                    isLaunching={isLaunching}
+                    launchStatus={launchStatus}
+                    canContinueQuestions={!!primaryGoal}
+                    canGenerate={!!businessName.trim()}
+                    onQuestionsNext={handleQuestionsNext}
+                    onTemplatesNext={handleTemplateNext}
+                    onLaunch={handleLaunch}
+                  />
+                </div>
               </div>
+
 
               <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide space-y-6">
                 {/* Q1: Primary Goal */}

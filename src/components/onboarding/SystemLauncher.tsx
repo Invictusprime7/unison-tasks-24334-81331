@@ -2386,7 +2386,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }
 
 
-      const provisionedBusinessId = await installPromise;
+      const installedBusinessId = await installPromise;
+      // Wizard selection wins: if the creator picked a Business Profile in
+      // the header, save the project under that business instead of the
+      // freshly provisioned one from install-system.
+      const provisionedBusinessId = selectedBusinessId || installedBusinessId;
+      try {
+        if (provisionedBusinessId) {
+          localStorage.setItem('unison:lastBusinessId', provisionedBusinessId);
+        }
+      } catch { /* ignore */ }
+
       const nativeSetupSnapshot = buildNativePublishSetupSnapshot({
         enabled: launchContract.nativePublishCapable,
         ownerEmail,

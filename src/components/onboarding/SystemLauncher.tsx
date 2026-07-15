@@ -1575,7 +1575,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ownerEmail: ownerEmail || undefined,
         publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native-first-party' : 'manual-setup',
         wizardSeedId,
+        businessId: selectedBusinessId || undefined,
       };
+
 
       // ── ASSERTION: themePresetId must be threaded into WizardSelections. ──
       if (!wizardSelections.themePresetId) {

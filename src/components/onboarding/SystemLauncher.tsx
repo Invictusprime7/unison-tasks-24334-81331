@@ -3072,8 +3072,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 </div>
               </div>
 
-              <div className="flex-1 max-h-[55vh] overflow-hidden px-6 pb-4 grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,320px)] gap-4">
-                <div className="overflow-y-auto scrollbar-hide pr-1">
+              <div className="flex-1 max-h-[55vh] overflow-y-auto scrollbar-hide px-6 pb-4 flex flex-col gap-5">
+                <div>
+
                   {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
                     const display = INDUSTRY_DISPLAY[industryKey as IndustryTag];
                     return (

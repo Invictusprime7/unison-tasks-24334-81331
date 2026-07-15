@@ -251,11 +251,6 @@ export const ThemeLivePreview: React.FC<ThemeLivePreviewProps> = ({
         </div>
       </div>
 
-      {/* Fade edge to hint scrollability */}
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-8"
-        style={{ background: `linear-gradient(to top, ${palette.bg}, transparent)` }}
-      />
     </div>
   );
 };

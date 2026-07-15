@@ -1236,6 +1236,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [selectedSystem, setSelectedSystem] = useState<BusinessSystemType | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateCardData | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<ThemePreset | null>(null);
+  const [hoveredTheme, setHoveredTheme] = useState<ThemePreset | null>(null);
   const [themeDebug, setThemeDebug] = useState<{
     resolvedPresetId: string;
     industryCategory: string;

@@ -62,13 +62,17 @@ export const ThemeLivePreview: React.FC<ThemeLivePreviewProps> = ({
         "relative rounded-xl overflow-hidden border border-white/10 shadow-[0_8px_40px_rgba(0,0,0,0.35)]",
         className
       )}
-      style={{
-        backgroundColor: palette.bg,
-        color: palette.fg,
-        fontFamily: `'${typography.bodyFont}', ui-sans-serif, system-ui, sans-serif`,
-      }}
       aria-label="Live theme preview"
     >
+      <div
+        className="max-h-[420px] overflow-y-auto scrollbar-hide"
+        style={{
+          backgroundColor: palette.bg,
+          color: palette.fg,
+          fontFamily: `'${typography.bodyFont}', ui-sans-serif, system-ui, sans-serif`,
+        }}
+      >
+
       {/* Accent gradient wash */}
       <div
         className="absolute inset-x-0 top-0 h-32 opacity-40 pointer-events-none"

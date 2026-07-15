@@ -66,7 +66,7 @@ export function runFullPreflight(
   // 3) Forbidden-intent stripping (industry-aware)
   const resolvedIndustry = industry || siteBundleSnapshot?.industry;
   const forbidden = resolvedIndustry
-    ? getIndustryIntentProfile(resolvedIndustry).forbidden ?? []
+    ? (getIndustryIntentProfile(resolvedIndustry)?.forbidden ?? [])
     : [];
   let stripped = 0;
   if (forbidden.length > 0) {

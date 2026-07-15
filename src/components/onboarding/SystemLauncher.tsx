@@ -3235,7 +3235,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                       Visual Style <span className="text-white/20">(optional)</span>
                     </label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                    <div className="grid grid-cols-3 md:grid-cols-4 gap-2 max-h-[26vh] overflow-y-auto scrollbar-hide pr-1">
                       {THEME_PRESETS.map((theme) => {
                         const isSelected = selectedTheme?.id === theme.id;
                         return (
@@ -3247,7 +3247,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                             onFocus={() => setHoveredTheme(theme)}
                             onBlur={() => setHoveredTheme(null)}
                             className={cn(
-                              "relative p-3.5 rounded-xl text-left transition-all duration-300",
+                              "relative p-2 rounded-lg text-left transition-all duration-300",
                               "border focus:outline-none overflow-hidden",
                               isSelected
                                 ? "bg-cyan-500/[0.06] border-cyan-500/35"
@@ -3255,31 +3255,30 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                             )}
                           >
                             {/* Color swatches */}
-                            <div className="flex gap-1.5 mb-3">
+                            <div className="flex gap-1 mb-1.5">
                               {[theme.palette.bg, theme.palette.accent, theme.palette.accent2 || theme.palette.fg].map(
                                 (color, ci) => (
                                   <div
                                     key={ci}
-                                    className="w-6 h-6 rounded-md ring-1 ring-white/5"
+                                    className="w-4 h-4 rounded ring-1 ring-white/5"
                                     style={{ backgroundColor: color }}
                                   />
                                 )
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <span className="text-sm opacity-60">{theme.icon}</span>
-                              <h3 className="font-semibold text-xs text-white/90">{theme.label}</h3>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] opacity-60">{theme.icon}</span>
+                              <h3 className="font-semibold text-[11px] text-white/90 truncate">{theme.label}</h3>
                               {isSelected && (
                                 <motion.div
                                   initial={{ scale: 0 }}
                                   animate={{ scale: 1 }}
-                                  className="ml-auto w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center"
+                                  className="ml-auto w-3 h-3 rounded-full bg-cyan-500 flex items-center justify-center flex-shrink-0"
                                 >
-                                  <Check className="h-2.5 w-2.5 text-[#07080F]" />
+                                  <Check className="h-2 w-2 text-[#07080F]" />
                                 </motion.div>
                               )}
                             </div>
-                            <p className="text-[10px] text-white/25 leading-relaxed">{theme.description}</p>
                           </button>
                         );
                       })}

@@ -279,7 +279,9 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       generatedAppCanSeedHome;
 
     if (shouldMoveLegacyAppIntoHome) {
-      merged[normalizePath(homeFilePath)] = rebaseAppModuleForHomePage(content);
+      merged[normalizePath(homeFilePath)] = normalizeSemanticThemeTokens(
+        rebaseAppModuleForHomePage(content),
+      );
       continue;
     }
 
@@ -291,7 +293,10 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
           { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
         );
       }
-      merged[normalizedPath] = content;
+      // Rewrite raw palette utilities (bg-white, text-black, bg-[#hex], inline
+      // hex styles) to semantic tokens so every registered page — Home
+      // included — inherits the wizard-injected /src/index.css theme.
+      merged[normalizedPath] = normalizeSemanticThemeTokens(content);
       continue;
     }
 

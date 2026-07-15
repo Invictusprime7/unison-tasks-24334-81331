@@ -62,13 +62,17 @@ export const ThemeLivePreview: React.FC<ThemeLivePreviewProps> = ({
         "relative rounded-xl overflow-hidden border border-white/10 shadow-[0_8px_40px_rgba(0,0,0,0.35)]",
         className
       )}
-      style={{
-        backgroundColor: palette.bg,
-        color: palette.fg,
-        fontFamily: `'${typography.bodyFont}', ui-sans-serif, system-ui, sans-serif`,
-      }}
       aria-label="Live theme preview"
     >
+      <div
+        className="max-h-[420px] overflow-y-auto scrollbar-hide"
+        style={{
+          backgroundColor: palette.bg,
+          color: palette.fg,
+          fontFamily: `'${typography.bodyFont}', ui-sans-serif, system-ui, sans-serif`,
+        }}
+      >
+
       {/* Accent gradient wash */}
       <div
         className="absolute inset-x-0 top-0 h-32 opacity-40 pointer-events-none"
@@ -201,9 +205,60 @@ export const ThemeLivePreview: React.FC<ThemeLivePreviewProps> = ({
             </div>
           </div>
         ))}
+        </div>
+
+        {/* Testimonial strip — adds scroll depth */}
+        <div
+          className="px-5 py-5"
+          style={{ borderTop: `1px solid ${borderCol}`, backgroundColor: cardBg }}
+        >
+          <div
+            className="text-[10px] uppercase tracking-widest mb-2"
+            style={{ color: palette.accent }}
+          >
+            What clients say
+          </div>
+          <p
+            className="text-[11px] leading-relaxed italic"
+            style={{ color: palette.fg }}
+          >
+            “Cleanest onboarding I've had in years — the aesthetic and flow felt custom-built for us.”
+          </p>
+          <div className="mt-2 text-[10px]" style={{ color: subtleFg }}>
+            — Alex M., founder
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          className="px-5 py-4"
+          style={{ borderTop: `1px solid ${borderCol}` }}
+        >
+          <div className="grid grid-cols-3 gap-2 text-[9px]" style={{ color: subtleFg }}>
+            <div className="space-y-1">
+              <div style={{ color: palette.fg }} className="font-semibold text-[10px]">Company</div>
+              <div>About</div><div>Team</div>
+            </div>
+            <div className="space-y-1">
+              <div style={{ color: palette.fg }} className="font-semibold text-[10px]">Product</div>
+              <div>Features</div><div>Pricing</div>
+            </div>
+            <div className="space-y-1">
+              <div style={{ color: palette.fg }} className="font-semibold text-[10px]">Contact</div>
+              <div>Book a call</div><div>Support</div>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Fade edge to hint scrollability */}
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-8"
+        style={{ background: `linear-gradient(to top, ${palette.bg}, transparent)` }}
+      />
     </div>
   );
 };
+
 
 export default ThemeLivePreview;

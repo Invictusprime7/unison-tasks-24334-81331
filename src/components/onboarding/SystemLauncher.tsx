@@ -27,6 +27,7 @@ import {
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { ThemeLivePreview } from "./ThemeLivePreview";
+import { TemplateLivePreview } from "./TemplateLivePreview";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { resolveThemePreset } from "./industryThemePresetMap";
@@ -1236,6 +1237,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [step, setStep] = useState<WizardStep>("industry");
   const [selectedSystem, setSelectedSystem] = useState<BusinessSystemType | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateCardData | null>(null);
+  const [hoveredTemplate, setHoveredTemplate] = useState<TemplateCardData | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<ThemePreset | null>(null);
   const [hoveredTheme, setHoveredTheme] = useState<ThemePreset | null>(null);
   const [themeDebug, setThemeDebug] = useState<{
@@ -3070,39 +3072,67 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 </div>
               </div>
 
-              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
-                {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
-                  const display = INDUSTRY_DISPLAY[industryKey as IndustryTag];
-                  return (
-                    <div key={industryKey} className="mb-5 last:mb-0">
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-sm">{display?.icon}</span>
-                        <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider">
-                          {display?.label || industryKey}
-                        </h3>
-                        <div className="flex-1 h-px bg-white/[0.04]" />
+              <div className="flex-1 max-h-[55vh] overflow-hidden px-6 pb-4 grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,320px)] gap-4">
+                <div className="overflow-y-auto scrollbar-hide pr-1">
+                  {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
+                    const display = INDUSTRY_DISPLAY[industryKey as IndustryTag];
+                    return (
+                      <div key={industryKey} className="mb-5 last:mb-0">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-sm">{display?.icon}</span>
+                          <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                            {display?.label || industryKey}
+                          </h3>
+                          <div className="flex-1 h-px bg-white/[0.04]" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {cards.map((card) => (
+                            <div
+                              key={card.id}
+                              onMouseEnter={() => setHoveredTemplate(card)}
+                              onMouseLeave={() => setHoveredTemplate(null)}
+                              onFocus={() => setHoveredTemplate(card)}
+                              onBlur={() => setHoveredTemplate(null)}
+                            >
+                              <TemplatePreview
+                                card={card}
+                                isSelected={selectedTemplate?.id === card.id}
+                                onClick={() => handleTemplateSelect(card)}
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {cards.map((card) => (
-                          <TemplatePreview
-                            key={card.id}
-                            card={card}
-                            isSelected={selectedTemplate?.id === card.id}
-                            onClick={() => handleTemplateSelect(card)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
 
-                {templateCards.length === 0 && (
-                  <div className="text-center py-12">
-                    <p className="text-white/30 text-sm">No premium templates available for this category yet.</p>
-                    <p className="text-white/15 text-xs mt-1">AI will generate a custom layout.</p>
-                  </div>
-                )}
+                  {templateCards.length === 0 && (
+                    <div className="text-center py-12">
+                      <p className="text-white/30 text-sm">No premium templates available for this category yet.</p>
+                      <p className="text-white/15 text-xs mt-1">AI will generate a custom layout.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Live template preview */}
+                <div className="hidden lg:flex flex-col min-h-0">
+                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                    Live Preview
+                  </label>
+                  <TemplateLivePreview
+                    template={hoveredTemplate ?? selectedTemplate ?? templateCards[0] ?? null}
+                    businessName={businessName}
+                  />
+                  <p className="mt-2 text-[10px] text-white/30 leading-relaxed">
+                    {hoveredTemplate
+                      ? `Previewing “${hoveredTemplate.label}” — click to select.`
+                      : selectedTemplate
+                      ? `Selected: ${selectedTemplate.label}. Hover any template to compare.`
+                      : "Hover a template to see its full section flow."}
+                  </p>
+                </div>
               </div>
+
 
               {/* Footer */}
               <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">

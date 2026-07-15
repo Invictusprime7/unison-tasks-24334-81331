@@ -65,7 +65,7 @@ export const ThemeLivePreview: React.FC<ThemeLivePreviewProps> = ({
       aria-label="Live theme preview"
     >
       <div
-        className="max-h-[420px] overflow-y-auto scrollbar-hide"
+        className=""
         style={{
           backgroundColor: palette.bg,
           color: palette.fg,
@@ -251,11 +251,6 @@ export const ThemeLivePreview: React.FC<ThemeLivePreviewProps> = ({
         </div>
       </div>
 
-      {/* Fade edge to hint scrollability */}
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-8"
-        style={{ background: `linear-gradient(to top, ${palette.bg}, transparent)` }}
-      />
     </div>
   );
 };

@@ -2763,16 +2763,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <p className="text-[11px] text-white/30">AI-powered site generation</p>
               </div>
             </div>
-            <WizardTopAction
-              step={step}
-              isLaunching={isLaunching}
-              launchStatus={launchStatus}
-              canContinueQuestions={!!primaryGoal}
-              canGenerate={!!businessName.trim()}
-              onQuestionsNext={handleQuestionsNext}
-              onTemplatesNext={handleTemplateNext}
-              onLaunch={handleLaunch}
-            />
           </div>
 
           {/* Step pills */}
@@ -2911,21 +2901,33 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleBack}
-                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <div>
-                  <h2 className="text-lg font-bold text-white tracking-tight">Tell us about your goals</h2>
-                  <p className="text-xs text-white/30">
-                    This helps us auto-configure your site structure
-                  </p>
+              <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleBack}
+                    className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-white tracking-tight truncate">Tell us about your goals</h2>
+                    <p className="text-xs text-white/30 truncate">
+                      This helps us auto-configure your site structure
+                    </p>
+                  </div>
                 </div>
+                <WizardTopAction
+                  step={step}
+                  isLaunching={isLaunching}
+                  launchStatus={launchStatus}
+                  canContinueQuestions={!!primaryGoal}
+                  canGenerate={!!businessName.trim()}
+                  onQuestionsNext={handleQuestionsNext}
+                  onTemplatesNext={handleTemplateNext}
+                  onLaunch={handleLaunch}
+                />
               </div>
 
               <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide space-y-6">
@@ -3051,28 +3053,40 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleBack}
-                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <div>
-                  <h2 className="text-lg font-bold text-white tracking-tight">Choose a template</h2>
-                  <p className="text-xs text-white/30">
-                    Premium layouts for{" "}
-                    <span className="text-cyan-400/70 font-medium">
-                      {INDUSTRY_CARDS.find((c) => c.systemId === selectedSystem)?.label}
-                    </span>
-                  </p>
+              <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleBack}
+                    className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-white tracking-tight truncate">Choose a template</h2>
+                    <p className="text-xs text-white/30 truncate">
+                      Premium layouts for{" "}
+                      <span className="text-cyan-400/70 font-medium">
+                        {INDUSTRY_CARDS.find((c) => c.systemId === selectedSystem)?.label}
+                      </span>
+                    </p>
+                  </div>
                 </div>
+                <WizardTopAction
+                  step={step}
+                  isLaunching={isLaunching}
+                  launchStatus={launchStatus}
+                  canContinueQuestions={!!primaryGoal}
+                  canGenerate={!!businessName.trim()}
+                  onQuestionsNext={handleQuestionsNext}
+                  onTemplatesNext={handleTemplateNext}
+                  onLaunch={handleLaunch}
+                />
               </div>
 
               <div className="flex-1 min-h-0 px-6 pb-4 flex flex-col gap-4">
-                <div className="max-h-[38vh] overflow-y-auto scrollbar-hide pr-1">
+                <div className="max-h-[22vh] overflow-y-auto scrollbar-hide pr-1">
 
 
                   {Object.entries(templatesByIndustry).map(([industryKey, cards]) => {
@@ -3162,23 +3176,35 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-4 pb-3 flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleBack}
-                  className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <div>
-                  <h2 className="text-lg font-bold text-white tracking-tight">
-                    Name & style
-                  </h2>
-                  <p className="text-xs text-white/30">
-                    Final details before we generate your site
-                  </p>
+              <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleBack}
+                    className="h-8 w-8 text-white/35 hover:text-white hover:bg-white/[0.06]"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-white tracking-tight truncate">
+                      Name & style
+                    </h2>
+                    <p className="text-xs text-white/30 truncate">
+                      Final details before we generate your site
+                    </p>
+                  </div>
                 </div>
+                <WizardTopAction
+                  step={step}
+                  isLaunching={isLaunching}
+                  launchStatus={launchStatus}
+                  canContinueQuestions={!!primaryGoal}
+                  canGenerate={!!businessName.trim()}
+                  onQuestionsNext={handleQuestionsNext}
+                  onTemplatesNext={handleTemplateNext}
+                  onLaunch={handleLaunch}
+                />
               </div>
 
               <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
@@ -3209,7 +3235,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                       Visual Style <span className="text-white/20">(optional)</span>
                     </label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                    <div className="grid grid-cols-3 md:grid-cols-4 gap-2 max-h-[26vh] overflow-y-auto scrollbar-hide pr-1">
                       {THEME_PRESETS.map((theme) => {
                         const isSelected = selectedTheme?.id === theme.id;
                         return (
@@ -3221,7 +3247,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                             onFocus={() => setHoveredTheme(theme)}
                             onBlur={() => setHoveredTheme(null)}
                             className={cn(
-                              "relative p-3.5 rounded-xl text-left transition-all duration-300",
+                              "relative p-2 rounded-lg text-left transition-all duration-300",
                               "border focus:outline-none overflow-hidden",
                               isSelected
                                 ? "bg-cyan-500/[0.06] border-cyan-500/35"
@@ -3229,31 +3255,30 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                             )}
                           >
                             {/* Color swatches */}
-                            <div className="flex gap-1.5 mb-3">
+                            <div className="flex gap-1 mb-1.5">
                               {[theme.palette.bg, theme.palette.accent, theme.palette.accent2 || theme.palette.fg].map(
                                 (color, ci) => (
                                   <div
                                     key={ci}
-                                    className="w-6 h-6 rounded-md ring-1 ring-white/5"
+                                    className="w-4 h-4 rounded ring-1 ring-white/5"
                                     style={{ backgroundColor: color }}
                                   />
                                 )
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <span className="text-sm opacity-60">{theme.icon}</span>
-                              <h3 className="font-semibold text-xs text-white/90">{theme.label}</h3>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] opacity-60">{theme.icon}</span>
+                              <h3 className="font-semibold text-[11px] text-white/90 truncate">{theme.label}</h3>
                               {isSelected && (
                                 <motion.div
                                   initial={{ scale: 0 }}
                                   animate={{ scale: 1 }}
-                                  className="ml-auto w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center"
+                                  className="ml-auto w-3 h-3 rounded-full bg-cyan-500 flex items-center justify-center flex-shrink-0"
                                 >
-                                  <Check className="h-2.5 w-2.5 text-[#07080F]" />
+                                  <Check className="h-2 w-2 text-[#07080F]" />
                                 </motion.div>
                               )}
                             </div>
-                            <p className="text-[10px] text-white/25 leading-relaxed">{theme.description}</p>
                           </button>
                         );
                       })}

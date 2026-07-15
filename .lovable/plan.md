@@ -1,129 +1,65 @@
-# Milestones 3-5 — Catalog Wiring, Friendly Gates, Real Outcomes
 
-Three tightly-coupled milestones executed as one continuous pass so the Business OS stops feeling like a launcher and starts feeling like an operating system. Each milestone builds on the previous — do not split them across sessions.
+## Goal
+Let creators explicitly choose which Business Profile a wizard-generated project is saved under, then move it later — from the Web Builder topbar and from Cloud Settings. Enforce that only business admins/owners can move projects.
 
----
+## 1. Backend (single migration)
 
-## Milestone 3 — Section ↔ Catalog Backend Wiring
+**`user_business_role(user_id, business_id)`** — SECURITY DEFINER, returns text (`owner` | `admin` | `member` | null). Derived from `businesses.owner_id` (=`owner`) or `business_members.role`.
 
-### Goal
-Every generated section declares what data it needs, where it comes from, and how the owner edits it. Preview + published site both hydrate from Supabase.
+**`is_business_admin(user_id, business_id)`** — SECURITY DEFINER boolean = role in (`owner`,`admin`).
 
-### Data model (already partially exists)
-Reuse existing tables where possible:
-- `services`, `products`, `menu_items`, `pricing_plans`, `availability_slots`, `catalog_collections`, `site_intent_bindings`
-- Add missing: `featured_offers`, `testimonials`, `portfolio_projects`
-- All new tables: business_id FK, RLS via `is_business_member`, GRANT to authenticated + service_role, updated_at trigger
+**`reassign_project_business(_project_id uuid, _target_business_id uuid)`** — SECURITY DEFINER. Verifies caller is admin on both source (current `projects.business_id`, if any) and target, then:
+- updates `public.projects.business_id`
+- updates `public.builder_drafts.business_id` where `project_id = _project_id`
+Raises exception with clear message on failure.
 
-### Section contract (`SectionDataContract`)
-New file `src/services/catalog/sectionDataContracts.ts` — one record per section type:
-```ts
-{
-  sectionType: 'ServicesGrid',
-  requiredDataType: 'service',
-  sourceTable: 'services',
-  minRows: 3,
-  emptyState: 'placeholder-cards',
-  editPath: '/business/services',
-  bindingIdPrefix: 'services',
-}
-```
+No new tables. RLS on projects/builder_drafts already covers reads through business membership.
 
-### Runtime wiring
-- Extend `catalogHydrationModule.ts` to read section binding IDs from VFS metadata and fetch from the declared `sourceTable` scoped by `businessId`.
-- `autoEmitSectionBindings.ts` writes `sectionBindingId` + `sourceTable` + `businessId` into each rendered section's `data-*` attributes so runtime can rehydrate deterministically.
-- Empty state renders a "Add your first X" CTA linking to `editPath` (owner view only; anonymous visitors see graceful placeholder copy).
+## 2. Shared UI primitive
 
-### Business Center CRUD
-- `src/pages/business/` routes for services / products / menu / pricing / offers / testimonials / portfolio / availability.
-- Reuse existing `CatalogInspectorPanel` pattern; one page per catalog table with list + drawer editor.
-- All routes gated by `useBusinessProfile()` + `has_role` where relevant.
+`src/components/business/BusinessSelector.tsx`
+- Props: `value`, `onChange`, `mode: 'admin' | 'member'`, `allowCreate?: boolean`, `size?: 'sm'|'md'`.
+- Lists businesses where the current user is admin/owner (from `business_members` + `businesses.owner_id`). In `mode='member'` (wizard/create), includes plain members too.
+- `allowCreate` renders an inline "+ New business" row that opens a small modal creating a `businesses` row (name, industry) and auto-selects it.
+- Dark-themed, shadcn `Popover + Command` pattern.
 
----
+## 3. Wizard integration (SystemLauncher)
 
-## Milestone 4 — Friendly Readiness Gates
+- Add `businessId?: string` to `WizardSelections` and thread through `createLaunchState` (spread already preserves it).
+- In `src/components/onboarding/SystemLauncher.tsx` step 1 header row (next to `WizardTopAction`), mount `<BusinessSelector mode="member" allowCreate />`. Default = last-used business from localStorage, else first membership.
+- On Generate: write `businessId` into `LaunchState.businessId` and pass to draft persistence — `sync_draft_to_project` trigger already uses `NEW.business_id` to stamp the project.
 
-### Goal
-Convert `businessProfileReadinessGate` + publish gate errors into actionable, human-readable checklists with one-click repair paths.
+## 4. Web Builder topbar pill
 
-### Repair registry
-New `src/services/readiness/repairActions.ts`:
-```ts
-{
-  id: 'add-business-phone',
-  label: 'Add business phone',
-  reason: 'Contact section needs a phone number visitors can call.',
-  fix: { type: 'route', path: '/business/profile#phone' },
-}
-```
-Actions cover: phone, email, address, service (min 3), product image, booking connect, payment connect (Stripe/Paddle), notification email domain, publish destination verify.
+`src/components/webbuilder/BusinessPill.tsx`
+- Reads `BuilderSessionContext.businessId + projectId`.
+- Shows business name + small chevron. Click → popover with `<BusinessSelector mode="admin" />`. Selecting a different business calls `reassign_project_business` RPC, toasts result, updates local session context via `updateLaunch({ businessId })`.
+- Non-admins see a locked pill (tooltip: "Business admins can move this project").
+- Mounted next to the project-name in `WebBuilder`'s topbar (single line insertion).
 
-### UI component
-`src/components/business/ReadinessChecklist.tsx` mounted in:
-- Web Builder topbar popover (replaces raw "catalog rows missing" toast)
-- Business OS shell dashboard
-- Publish modal (blocks publish until green or explicitly overridden)
+## 5. Cloud Settings — Projects section
 
-Each row: status dot, plain-language sentence, single primary action button. On click → navigate to repair path, open relevant drawer, or launch connector flow.
+Extend `src/pages/Settings.tsx` with a new "Projects & businesses" card:
+- Table: Project name · Current business · Updated · Action.
+- Each row's business cell renders `<BusinessSelector mode="admin" allowCreate />` bound to that project — calls the RPC on change.
+- Empty state guides user to launch a project or create a business.
 
-### Backend
-Extend `businessProfileReadinessGate.ts` to return `{ blockers: RepairAction[], warnings: RepairAction[] }` instead of raw error strings. Preview readiness stays permissive; publish readiness stays strict.
+## 6. Files touched (net-new + edits)
 
----
+New:
+- `supabase/migrations/<ts>_business_reassignment.sql`
+- `src/components/business/BusinessSelector.tsx`
+- `src/components/business/CreateBusinessInline.tsx`
+- `src/components/webbuilder/BusinessPill.tsx`
+- `src/services/businessMembership.ts` (single fetcher + RPC wrapper)
 
-## Milestone 5 — Real Outcome Workflows
+Edited:
+- `src/types/playground.ts` — add `businessId?` to `WizardSelections`
+- `src/components/onboarding/SystemLauncher.tsx` — mount selector in step 1 header + pass into launch
+- `src/components/WebBuilder.tsx` (or its extracted topbar) — mount `BusinessPill`
+- `src/pages/Settings.tsx` — add Projects & Businesses card
 
-### Goal
-Wire the canonical intents that today only log to actually persist + notify + follow up.
+## 7. Verification
+- Type check + a quick Playwright pass hitting `/web-builder` and `/settings` to confirm pill + settings card render with the current user's businesses.
 
-### Intent → outcome map
-| Intent | Persist | Notify Owner | Notify Visitor | CRM effect |
-|---|---|---|---|---|
-| `lead.capture` | `crm_leads` | email + optional SMS | confirmation email | new lead row + activity |
-| `booking.create` | `bookings` | email + SMS | confirmation email | lead + deal + follow-up task |
-| `quote.request` | `crm_leads` (type=quote) | email | confirmation email | deal in "quote" stage + task |
-| `contact.submit` | `crm_form_submissions` | email | confirmation email | activity log |
-| `newsletter.subscribe` | `crm_leads` (source=newsletter) | — | welcome email | tag only |
-| `cart.checkout` | `orders` | email | receipt | deal in "won" on success |
-| `donation.start` | `orders` (type=donation) | email | receipt | activity |
-
-### Backend edge functions
-Audit + finish (many already exist as stubs):
-- `create-booking` ✅ (already sends both emails per prior audit)
-- `create-lead` — extend to also insert `crm_activities` row + optional follow-up `tasks` row
-- `submit-contact-form` — verify template + owner notification
-- `request-quote` — new function, mirrors create-lead with deal insert
-- `notify-owner` shared helper — pulls owner email from `businesses.notification_email` with fallback to profile email
-
-### Templates
-Ensure app email templates exist in `supabase/functions/_shared/transactional-email-templates/`:
-- `lead-received-owner`, `lead-confirmation-visitor`
-- `quote-request-owner`, `quote-confirmation-visitor`
-- `contact-received-owner`, `contact-confirmation-visitor`
-Register in `registry.ts`, redeploy affected functions.
-
-### Frontend intent router
-`src/services/intentRouter.ts` — replace "log-only" default handlers with dispatchers that call the correct edge function via `supabase.functions.invoke`, then emit a UI toast confirming to visitor and dispatch `lovable:outcome-recorded` for the OS shell activity feed.
-
-### CRM surface
-`CRMDashboard` gains a live activity feed reading `crm_activities` (already exists) plus a "Follow-ups due" panel reading `tasks` filtered by `type=follow_up`.
-
----
-
-## Execution Order
-1. Schema migration for `featured_offers`, `testimonials`, `portfolio_projects` (+ any missing columns on `businesses` for `notification_email`, `notification_phone`).
-2. `sectionDataContracts.ts` + runtime hydration wiring.
-3. Business Center CRUD routes (one page per table).
-4. `repairActions.ts` + `ReadinessChecklist` + gate refactor.
-5. Edge functions + email templates for outcomes.
-6. Frontend intent router dispatch.
-7. CRM activity feed + follow-up panel.
-8. Smoke test: launch new site → checklist walks owner through fixes → submit lead form → confirm owner + visitor emails logged + CRM row appears.
-
-## Notes
-- No new theme preset fallbacks — respects existing "kill the fallback" rule.
-- All new tables get GRANT + RLS via `is_business_member` in the same migration.
-- No standalone custom hook files — inline `useState`/`useEffect` only per project memory.
-- Reuse existing `catalogHydrationModule` rather than a parallel pipeline.
-
-Approve to begin with the migration + section contracts, or tell me to reorder/trim scope.
+Nothing in the canonical wizard/Lane B pipeline changes. Only additive metadata on `LaunchState` + a targeted RPC for post-generation moves.

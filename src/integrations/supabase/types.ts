@@ -4119,6 +4119,10 @@ export type Database = {
         Args: { pattern_id: string }
         Returns: undefined
       }
+      is_business_admin: {
+        Args: { _business_id: string; _user_id: string }
+        Returns: boolean
+      }
       is_business_member: { Args: { _business_id: string }; Returns: boolean }
       is_project_member: {
         Args: { _project_id: string; _user_id: string }
@@ -4126,6 +4130,14 @@ export type Database = {
       }
       jsonb_is_object: { Args: { j: Json }; Returns: boolean }
       jsonb_is_string_array: { Args: { j: Json }; Returns: boolean }
+      reassign_project_business: {
+        Args: { _project_id: string; _target_business_id: string }
+        Returns: undefined
+      }
+      user_business_role: {
+        Args: { _business_id: string; _user_id: string }
+        Returns: string
+      }
       validate_file_share_token: {
         Args: { _file_id: string; _token: string }
         Returns: boolean

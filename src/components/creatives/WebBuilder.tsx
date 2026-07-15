@@ -286,6 +286,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BuilderSessionProvider } from "@/builder/controllers/BuilderSessionProvider";
+import { BusinessPill } from "@/components/webbuilder/BusinessPill";
+
 
 // CodeViewErrorBoundary extracted to web-builder/CodeViewErrorBoundary.tsx
 

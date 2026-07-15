@@ -3115,8 +3115,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   )}
                 </div>
 
-                {/* Live template preview */}
-                <div className="hidden lg:flex flex-col min-h-0">
+                {/* Live template preview — below the cards */}
+                <div className="flex flex-col min-h-0">
+
                   <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                     Live Preview
                   </label>

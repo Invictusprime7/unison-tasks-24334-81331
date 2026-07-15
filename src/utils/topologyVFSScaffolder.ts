@@ -22,6 +22,8 @@ import { compositionToReactCode } from '@/sections/PageRenderer';
 import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
+import { INDUSTRY_TO_THEME_PRESET_ID } from '@/components/onboarding/industryThemePresetMap';
+import type { LayoutCategory } from '@/data/templates/types';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
 
 /**

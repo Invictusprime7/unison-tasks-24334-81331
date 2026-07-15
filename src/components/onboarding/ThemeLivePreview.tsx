@@ -205,9 +205,60 @@ export const ThemeLivePreview: React.FC<ThemeLivePreviewProps> = ({
             </div>
           </div>
         ))}
+        </div>
+
+        {/* Testimonial strip — adds scroll depth */}
+        <div
+          className="px-5 py-5"
+          style={{ borderTop: `1px solid ${borderCol}`, backgroundColor: cardBg }}
+        >
+          <div
+            className="text-[10px] uppercase tracking-widest mb-2"
+            style={{ color: palette.accent }}
+          >
+            What clients say
+          </div>
+          <p
+            className="text-[11px] leading-relaxed italic"
+            style={{ color: palette.fg }}
+          >
+            “Cleanest onboarding I've had in years — the aesthetic and flow felt custom-built for us.”
+          </p>
+          <div className="mt-2 text-[10px]" style={{ color: subtleFg }}>
+            — Alex M., founder
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          className="px-5 py-4"
+          style={{ borderTop: `1px solid ${borderCol}` }}
+        >
+          <div className="grid grid-cols-3 gap-2 text-[9px]" style={{ color: subtleFg }}>
+            <div className="space-y-1">
+              <div style={{ color: palette.fg }} className="font-semibold text-[10px]">Company</div>
+              <div>About</div><div>Team</div>
+            </div>
+            <div className="space-y-1">
+              <div style={{ color: palette.fg }} className="font-semibold text-[10px]">Product</div>
+              <div>Features</div><div>Pricing</div>
+            </div>
+            <div className="space-y-1">
+              <div style={{ color: palette.fg }} className="font-semibold text-[10px]">Contact</div>
+              <div>Book a call</div><div>Support</div>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Fade edge to hint scrollability */}
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-8"
+        style={{ background: `linear-gradient(to top, ${palette.bg}, transparent)` }}
+      />
     </div>
   );
 };
+
 
 export default ThemeLivePreview;

@@ -65,7 +65,7 @@ export const ThemeLivePreview: React.FC<ThemeLivePreviewProps> = ({
       aria-label="Live theme preview"
     >
       <div
-        className="max-h-[420px] overflow-y-auto scrollbar-hide"
+        className=""
         style={{
           backgroundColor: palette.bg,
           color: palette.fg,

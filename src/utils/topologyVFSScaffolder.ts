@@ -98,7 +98,19 @@ function applyPlanThemeToTemplate(
   plan: GeneratedSitePlan,
 ): TemplateComposition | null {
   if (!template) return null;
-  const presetId = (plan as GeneratedSitePlan & { selectedThemePresetId?: string }).selectedThemePresetId;
+  // Preferred: presetId threaded on the plan from the wizard/canonical pipeline.
+  let presetId = (plan as GeneratedSitePlan & { selectedThemePresetId?: string }).selectedThemePresetId;
+  // Industry fallback: derive from INDUSTRY_TO_THEME_PRESET_ID so composition
+  // Home/nav pages never render with the LAUNCHER_BASE_THEME (blue/purple
+  // "minimal default preset" look) when presetId drifts across a remount
+  // or non-wizard entry point. The wizard preset is the single source of
+  // truth for aesthetics — this guarantees theme parity across every page.
+  if (!presetId) {
+    const industry = (plan.industry ?? '') as LayoutCategory | string;
+    if (industry && industry in INDUSTRY_TO_THEME_PRESET_ID) {
+      presetId = INDUSTRY_TO_THEME_PRESET_ID[industry as LayoutCategory];
+    }
+  }
   if (!presetId) return template;
   const preset = THEME_PRESETS.find((p) => p.id === presetId);
   if (!preset) return template;

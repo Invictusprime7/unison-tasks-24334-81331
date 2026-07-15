@@ -11,19 +11,22 @@
  */
 
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, User, Shield, Bell, CreditCard } from 'lucide-react';
+import { ArrowLeft, User, Shield, Bell, CreditCard, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProfileSettings, SecuritySettings, NotificationSettings } from '@/components/settings';
 import { SubscriptionSettings } from '@/components/settings/SubscriptionSettings';
+import { ProjectBusinessSettings } from '@/components/settings/ProjectBusinessSettings';
 import { cn } from '@/lib/utils';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
+  { id: 'businesses', label: 'Businesses', icon: Building2 },
   { id: 'security', label: 'Security', icon: Shield },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'billing', label: 'Billing', icon: CreditCard },
 ] as const;
+
 
 type TabId = typeof TABS[number]['id'];
 
@@ -67,7 +70,7 @@ export default function Settings() {
       {/* Content */}
       <div className="container max-w-5xl py-8">
         <Tabs value={currentTab} onValueChange={handleTabChange} className="space-y-8">
-          <TabsList className="grid w-full grid-cols-4 bg-[#12121e] border border-cyan-500/20">
+          <TabsList className="grid w-full grid-cols-5 bg-[#12121e] border border-cyan-500/20">
             {TABS.map((tab) => (
               <TabsTrigger
                 key={tab.id}
@@ -87,9 +90,14 @@ export default function Settings() {
             <ProfileSettings />
           </TabsContent>
 
+          <TabsContent value="businesses" className="space-y-6">
+            <ProjectBusinessSettings />
+          </TabsContent>
+
           <TabsContent value="security" className="space-y-6">
             <SecuritySettings />
           </TabsContent>
+
 
           <TabsContent value="notifications" className="space-y-6">
             <NotificationSettings />

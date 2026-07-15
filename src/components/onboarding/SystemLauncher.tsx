@@ -26,6 +26,7 @@ import {
   type LayoutCategory,
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
+import { ThemeLivePreview } from "./ThemeLivePreview";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { resolveThemePreset } from "./industryThemePresetMap";
@@ -1236,6 +1237,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [selectedSystem, setSelectedSystem] = useState<BusinessSystemType | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateCardData | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<ThemePreset | null>(null);
+  const [hoveredTheme, setHoveredTheme] = useState<ThemePreset | null>(null);
   const [themeDebug, setThemeDebug] = useState<{
     resolvedPresetId: string;
     industryCategory: string;
@@ -3179,57 +3181,82 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   />
                 </div>
 
-                {/* Theme Grid */}
-                <div className="mb-4">
-                  <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
-                    Visual Style <span className="text-white/20">(optional)</span>
-                  </label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-                    {THEME_PRESETS.map((theme) => {
-                      const isSelected = selectedTheme?.id === theme.id;
-                      return (
-                        <button
-                          key={theme.id}
-                          onClick={() => setSelectedTheme(isSelected ? null : theme)}
-                          className={cn(
-                            "relative p-3.5 rounded-xl text-left transition-all duration-300",
-                            "border focus:outline-none overflow-hidden",
-                            isSelected
-                              ? "bg-cyan-500/[0.06] border-cyan-500/35"
-                              : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.12]"
-                          )}
-                        >
-                          {/* Color swatches */}
-                          <div className="flex gap-1.5 mb-3">
-                            {[theme.palette.bg, theme.palette.accent, theme.palette.accent2 || theme.palette.fg].map(
-                              (color, ci) => (
-                                <div
-                                  key={ci}
-                                  className="w-6 h-6 rounded-md ring-1 ring-white/5"
-                                  style={{ backgroundColor: color }}
-                                />
-                              )
+                {/* Theme Grid + Live Preview */}
+                <div className="mb-4 grid grid-cols-1 lg:grid-cols-[1fr_minmax(260px,300px)] gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                      Visual Style <span className="text-white/20">(optional)</span>
+                    </label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                      {THEME_PRESETS.map((theme) => {
+                        const isSelected = selectedTheme?.id === theme.id;
+                        return (
+                          <button
+                            key={theme.id}
+                            onClick={() => setSelectedTheme(isSelected ? null : theme)}
+                            onMouseEnter={() => setHoveredTheme(theme)}
+                            onMouseLeave={() => setHoveredTheme(null)}
+                            onFocus={() => setHoveredTheme(theme)}
+                            onBlur={() => setHoveredTheme(null)}
+                            className={cn(
+                              "relative p-3.5 rounded-xl text-left transition-all duration-300",
+                              "border focus:outline-none overflow-hidden",
+                              isSelected
+                                ? "bg-cyan-500/[0.06] border-cyan-500/35"
+                                : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.12]"
                             )}
-                          </div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-sm opacity-60">{theme.icon}</span>
-                            <h3 className="font-semibold text-xs text-white/90">{theme.label}</h3>
-                            {isSelected && (
-                              <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                className="ml-auto w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center"
-                              >
-                                <Check className="h-2.5 w-2.5 text-[#07080F]" />
-                              </motion.div>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-white/25 leading-relaxed">{theme.description}</p>
-                        </button>
-                      );
-                    })}
+                          >
+                            {/* Color swatches */}
+                            <div className="flex gap-1.5 mb-3">
+                              {[theme.palette.bg, theme.palette.accent, theme.palette.accent2 || theme.palette.fg].map(
+                                (color, ci) => (
+                                  <div
+                                    key={ci}
+                                    className="w-6 h-6 rounded-md ring-1 ring-white/5"
+                                    style={{ backgroundColor: color }}
+                                  />
+                                )
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-sm opacity-60">{theme.icon}</span>
+                              <h3 className="font-semibold text-xs text-white/90">{theme.label}</h3>
+                              {isSelected && (
+                                <motion.div
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: 1 }}
+                                  className="ml-auto w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center"
+                                >
+                                  <Check className="h-2.5 w-2.5 text-[#07080F]" />
+                                </motion.div>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-white/25 leading-relaxed">{theme.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Live preview */}
+                  <div className="lg:sticky lg:top-0">
+                    <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
+                      Live Preview
+                    </label>
+                    <ThemeLivePreview
+                      theme={hoveredTheme ?? selectedTheme ?? THEME_PRESETS[0]}
+                      businessName={businessName}
+                    />
+                    <p className="mt-2 text-[10px] text-white/30 leading-relaxed">
+                      {hoveredTheme
+                        ? `Previewing “${hoveredTheme.label}” — click to lock it in.`
+                        : selectedTheme
+                        ? `Selected: ${selectedTheme.label}. Hover any style to compare.`
+                        : "Hover a style to preview, or continue with the industry default."}
+                    </p>
                   </div>
                 </div>
+
 
                 {/* Custom prompt */}
                 <div>

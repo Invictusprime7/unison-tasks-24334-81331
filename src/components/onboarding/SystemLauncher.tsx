@@ -28,6 +28,7 @@ import {
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
+import { WizardThemePreview } from "./WizardThemePreview";
 import { resolveThemePreset } from "./industryThemePresetMap";
 import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract";
 

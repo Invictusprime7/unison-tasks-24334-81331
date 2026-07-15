@@ -5337,13 +5337,30 @@ export function prepareSandpackFiles(
     const existingIndexCSS = sandpackFiles['/index.css'] || '';
     if (existingIndexCSS && !existingIndexCSS.includes('--primary:')) {
       if (cssResolution.isWizardDraft) {
-        // Wizard draft must produce its tokens through the projector chain.
-        // We don't silently prepend SEMANTIC_CSS_VARS — that masks token drift.
-        throw new PreviewPipelineError(
-          'prep',
-          'Wizard draft /src/index.css is missing semantic tokens (--primary). Re-run the System Launcher.',
-          { recoverableByRelaunch: true },
-        );
+        // RESILIENCY: if the caller knows the themePresetId (Lane B recompile,
+        // AI patch flow, cloud rehydrate), re-emit the themed stylesheet in
+        // place of the untokenized CSS instead of hard-failing. Only throw
+        // when we truly cannot recover the wizard's preset.
+        if (resolvedPresetId) {
+          try {
+            sandpackFiles['/index.css'] = buildBaseCssForPreset(resolvedPresetId);
+            console.warn(
+              `[prepareSandpackFiles] Wizard draft /src/index.css lacked --primary tokens; rebuilt from themePresetId="${resolvedPresetId}".`,
+            );
+          } catch (rebuildErr) {
+            throw new PreviewPipelineError(
+              'prep',
+              `Wizard draft /src/index.css is missing semantic tokens and rebuild from themePresetId "${resolvedPresetId}" failed: ${(rebuildErr as Error).message}`,
+              { recoverableByRelaunch: true },
+            );
+          }
+        } else {
+          throw new PreviewPipelineError(
+            'prep',
+            'Wizard draft /src/index.css is missing semantic tokens (--primary). Re-run the System Launcher.',
+            { recoverableByRelaunch: true },
+          );
+        }
       }
       // Blank draft: leave AI-authored CSS as-is, no token injection.
     }

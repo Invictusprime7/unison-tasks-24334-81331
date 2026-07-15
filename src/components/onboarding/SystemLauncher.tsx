@@ -28,6 +28,7 @@ import {
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { ThemeLivePreview } from "./ThemeLivePreview";
 import { TemplateLivePreview } from "./TemplateLivePreview";
+import { WizardTopAction } from "./WizardTopAction";
 import { themePresetToThemeTokens } from "./themePresetToTokens";
 import { buildThemedIndexCss } from "./themePresetToIndexCss";
 import { resolveThemePreset } from "./industryThemePresetMap";
@@ -2752,7 +2753,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[250px] bg-cyan-500/[0.04] rounded-full blur-[100px]" />
           </div>
 
-          <div className="relative flex items-center justify-between mb-4">
+          <div className="relative flex items-start justify-between mb-4 gap-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 flex items-center justify-center text-sm">
                 ⚡
@@ -2762,6 +2763,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <p className="text-[11px] text-white/30">AI-powered site generation</p>
               </div>
             </div>
+            <WizardTopAction
+              step={step}
+              isLaunching={isLaunching}
+              launchStatus={launchStatus}
+              canContinueQuestions={!!primaryGoal}
+              canGenerate={!!businessName.trim()}
+              onQuestionsNext={handleQuestionsNext}
+              onTemplatesNext={handleTemplateNext}
+              onLaunch={handleLaunch}
+            />
           </div>
 
           {/* Step pills */}
@@ -3026,18 +3037,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     </span>
                   )}
                 </div>
-                <Button
-                  onClick={handleQuestionsNext}
-                  disabled={!primaryGoal}
-                  className={cn(
-                    "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
-                    "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
-                    "transition-all disabled:opacity-30"
-                  )}
-                >
-                  Continue
-                  <ArrowRight className="ml-2 h-3.5 w-3.5" />
-                </Button>
               </div>
             </motion.div>
           )}
@@ -3149,17 +3148,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     <span className="text-white/20 text-xs">Select a template or continue for AI layout</span>
                   )}
                 </div>
-                <Button
-                  onClick={handleTemplateNext}
-                  className={cn(
-                    "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
-                    "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
-                    "transition-all"
-                  )}
-                >
-                  Continue
-                  <ArrowRight className="ml-2 h-3.5 w-3.5" />
-                </Button>
               </div>
             </motion.div>
           )}
@@ -3386,32 +3374,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   </div>
                 </div>
 
-                <Button
-                  onClick={handleLaunch}
-                  disabled={isLaunching || !businessName.trim()}
-                  className={cn(
-                    "h-10 px-6 text-sm font-semibold",
-                    "bg-gradient-to-r from-cyan-500/20 to-fuchsia-500/15 text-cyan-400",
-                    "border border-cyan-500/30",
-                    "hover:from-cyan-500/30 hover:to-fuchsia-500/20",
-                    "hover:shadow-[0_0_24px_rgba(0,200,255,0.15)]",
-                    "transition-all duration-300",
-                    "disabled:opacity-30"
-                  )}
-                >
-                  {isLaunching ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {launchStatus || "Generating…"}
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Generate Site
-                      <ArrowRight className="ml-2 h-3.5 w-3.5" />
-                    </>
-                  )}
-                </Button>
               </div>
 
               {validationAttempts.length > 0 && (

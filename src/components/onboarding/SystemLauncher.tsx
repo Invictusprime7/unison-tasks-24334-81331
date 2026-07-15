@@ -3193,6 +3193,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                         <button
                           key={theme.id}
                           onClick={() => setSelectedTheme(isSelected ? null : theme)}
+                          onMouseEnter={() => setHoveredTheme(theme)}
+                          onMouseLeave={() => setHoveredTheme(null)}
+                          onFocus={() => setHoveredTheme(theme)}
+                          onBlur={() => setHoveredTheme(null)}
                           className={cn(
                             "relative p-3.5 rounded-xl text-left transition-all duration-300",
                             "border focus:outline-none overflow-hidden",

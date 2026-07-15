@@ -302,14 +302,43 @@ export function recompileFromPlayground(
   // VFS, then fall back to preserving the existing themed /src/index.css.
   let presetId = options?.themePresetId || options?.selectedThemeId;
   if (!presetId) {
-    try {
-      const snapRaw = existingVfsFiles['/.unison/site-bundle-snapshot.json'];
-      if (snapRaw) {
-        const snap = JSON.parse(snapRaw) as { meta?: { themePresetId?: string }; appContext?: { themePresetId?: string } };
-        presetId = snap?.meta?.themePresetId || snap?.appContext?.themePresetId || undefined;
+    // RESILIENCY: try every persisted artifact the wizard writes into the VFS
+    // before falling back to CSS-preserve. Any single-file corruption used to
+    // silently drop the theme and ship default Tailwind tokens.
+    const recoverySources: Array<[string, (raw: string) => string | undefined]> = [
+      ['/.unison/site-bundle-snapshot.json', (raw) => {
+        const snap = JSON.parse(raw) as { meta?: { themePresetId?: string }; appContext?: { themePresetId?: string } };
+        return snap?.meta?.themePresetId || snap?.appContext?.themePresetId;
+      }],
+      ['/.unison/runtime-manifest.json', (raw) => {
+        const rm = JSON.parse(raw) as { appContext?: { themePresetId?: string } };
+        return rm?.appContext?.themePresetId;
+      }],
+      ['/.unison/app-context.json', (raw) => {
+        const ctx = JSON.parse(raw) as { themePresetId?: string };
+        return ctx?.themePresetId;
+      }],
+      ['/.unison/wizard-seed.json', (raw) => {
+        const seed = JSON.parse(raw) as { themePresetId?: string; selections?: { themePresetId?: string; themeId?: string } };
+        return seed?.themePresetId || seed?.selections?.themePresetId || seed?.selections?.themeId;
+      }],
+    ];
+    for (const [path, extract] of recoverySources) {
+      if (presetId) break;
+      const raw = existingVfsFiles[path];
+      if (!raw) continue;
+      try { presetId = extract(raw) || undefined; } catch { /* try next */ }
+    }
+    // Last-chance recovery: parse the AESTHETIC marker written by
+    // buildThemedIndexCss into the existing themed CSS.
+    if (!presetId) {
+      const existingCss = existingVfsFiles['/src/index.css'] || '';
+      const marker = existingCss.match(/AESTHETIC:\s*([^(]+?)\s*\(wizard token injection/);
+      if (marker) {
+        const label = marker[1].trim().toLowerCase();
+        const matched = THEME_PRESETS.find((p: { id: string; label: string }) => p.label.toLowerCase() === label);
+        if (matched) presetId = matched.id;
       }
-    } catch {
-      /* ignore — fall through to CSS-preserve path */
     }
   }
   if (presetId) {
@@ -326,13 +355,21 @@ export function recompileFromPlayground(
       );
     }
     compileResult.vfsFiles['/src/index.css'] = themedCss;
-  } else if (existingVfsFiles['/src/index.css']) {
-    // Preserve previously themed CSS so AI/Playground edits persist without
-    // re-emission. The wizard already locked tokens at first launch.
-    compileResult.vfsFiles['/src/index.css'] = existingVfsFiles['/src/index.css'];
-    warnings.push('[canonicalPipeline] Recompile Stage 4b: themePresetId missing; preserved existing /src/index.css.');
   } else {
-    warnings.push('[canonicalPipeline] Recompile Stage 4b: themePresetId missing and no existing /src/index.css to preserve.');
+    const existingCss = existingVfsFiles['/src/index.css'];
+    const existingHasTokens = Boolean(existingCss && existingCss.includes('--primary:'));
+    if (existingHasTokens) {
+      // Preserve previously themed CSS so AI/Playground edits persist without
+      // re-emission. The wizard already locked tokens at first launch.
+      compileResult.vfsFiles['/src/index.css'] = existingCss!;
+      warnings.push('[canonicalPipeline] Recompile Stage 4b: themePresetId missing; preserved existing themed /src/index.css.');
+    } else {
+      // Never silently ship un-themed default Tailwind CSS — this is the exact
+      // regression where HSL theme injection "randomly breaks" for a draft.
+      throw new Error(
+        '[canonicalPipeline] Recompile Stage 4b assertion failed: themePresetId could not be recovered from options, snapshot, runtime-manifest, app-context, wizard-seed, or existing CSS marker. Refusing to emit un-themed CSS.',
+      );
+    }
   }
 
   // Recover wizardSeedId from the existing snapshot so recompiles preserve

@@ -3148,17 +3148,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     <span className="text-white/20 text-xs">Select a template or continue for AI layout</span>
                   )}
                 </div>
-                <Button
-                  onClick={handleTemplateNext}
-                  className={cn(
-                    "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
-                    "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
-                    "transition-all"
-                  )}
-                >
-                  Continue
-                  <ArrowRight className="ml-2 h-3.5 w-3.5" />
-                </Button>
               </div>
             </motion.div>
           )}

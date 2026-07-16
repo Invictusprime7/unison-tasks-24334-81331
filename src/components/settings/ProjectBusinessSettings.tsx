@@ -11,6 +11,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { BusinessSelector } from '@/components/business/BusinessSelector';
 import { reassignProjectToBusiness } from '@/services/businessMembership';
+import { ProjectExportButton } from './ProjectExportButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 
@@ -105,13 +106,20 @@ export function ProjectBusinessSettings() {
                     {row.business_name ? ` · ${row.business_name}` : ' · unassigned'}
                   </div>
                 </div>
-                <BusinessSelector
-                  value={row.business_id}
-                  onChange={(id) => handleReassign(row.id, id)}
-                  mode="admin"
-                  allowCreate
-                  size="sm"
-                />
+                <div className="flex items-center gap-2">
+                  <BusinessSelector
+                    value={row.business_id}
+                    onChange={(id) => handleReassign(row.id, id)}
+                    mode="admin"
+                    allowCreate
+                    size="sm"
+                  />
+                  <ProjectExportButton
+                    projectId={row.id}
+                    projectName={row.name}
+                    businessId={row.business_id}
+                  />
+                </div>
               </div>
             ))}
           </div>

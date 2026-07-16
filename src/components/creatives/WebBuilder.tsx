@@ -271,7 +271,7 @@ import { useCanvasHistory } from "@/hooks/useCanvasHistory";
 import { useCodeHistory } from "@/hooks/useCodeHistory";
 import { useWebBuilderState } from "@/hooks/useWebBuilderState";
 import { useLaunch } from "@/contexts/useLaunchHooks";
-import { ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, ArrowLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, ArrowLeft, Download } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SystemLauncher } from "@/components/onboarding/SystemLauncher";
 import {
@@ -5518,6 +5518,19 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               <BusinessPill />
             </div>
           )}
+
+
+          {/* Export project — opens ExportDialog (Vite source .zip, HTML/CSS/React) */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleExport('react')}
+            className="hidden md:inline-flex h-7 items-center gap-1.5 rounded-md border border-cyan-500/30 bg-[#0d0d18] px-2.5 text-xs text-cyan-200 hover:border-cyan-400/60 hover:bg-cyan-500/10 hover:text-cyan-100"
+            title="Export project (.zip, HTML, React)"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </Button>
 
 
           <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />

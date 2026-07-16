@@ -39,19 +39,22 @@ const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
  * wizard pick or industry selection) MUST flow through to here.
  */
 function buildBaseCssForPreset(presetId?: string | null): string {
-  // Contract: the wizard Style-card selection MUST thread a registered
-  // themePresetId to every CSS-injection site. Silent fallback to a default
-  // preset re-introduces the "default template preset" output the launcher is
-  // meant to eliminate — refuse instead.
+  // Contract: the wizard Style-card selection SHOULD thread a registered
+  // themePresetId. When absent (imported project, blank draft, cold hydration
+  // before wizard state is threaded), synthesize a minimal Tailwind shell so
+  // the preview does not hard-crash. Wizard-draft paths remain guarded by
+  // resolveSnapshot() + PreviewPipelineError checks downstream — those still
+  // refuse to render an untokenized wizard draft.
   const preset = presetId ? THEME_PRESETS.find((p) => p.id === presetId) : null;
   if (!preset) {
-    throw new Error(
-      `[sandpackFilePrep] Refusing to synthesize /src/index.css: no registered themePresetId (received="${presetId ?? 'null'}"). ` +
-      'Wizard Lane B / Stage 4b must supply an explicit preset id — default preset fallback is disabled.',
+    console.warn(
+      `[sandpackFilePrep] No registered themePresetId (received="${presetId ?? 'null'}"); emitting minimal Tailwind shell for /src/index.css.`,
     );
+    return `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`;
   }
   return buildThemedIndexCss(preset);
 }
+
 
 // SEMANTIC_CSS_VARS removed — CSS authority now flows through snapshotProjector
 // (see src/services/snapshotProjector.ts). Wizard drafts get themed tokens from

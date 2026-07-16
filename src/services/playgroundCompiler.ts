@@ -30,6 +30,51 @@ export interface CompilePlaygroundOptions {
   industry?: LayoutCategory | string | null;
 }
 
+type WizardSeedLike = Record<string, unknown> & {
+  templateId?: string;
+  themePresetId?: string;
+  themeId?: string;
+  industry?: string;
+  business?: { industry?: string };
+  template?: { id?: string };
+  theme?: { presetId?: string; id?: string };
+  selections?: {
+    templateId?: string;
+    themePresetId?: string;
+    themeId?: string;
+    industryOverlay?: string;
+    industry?: string;
+  };
+};
+
+function parseWizardSeed(existingVfsFiles: Record<string, string>): WizardSeedLike | null {
+  const seedRaw = existingVfsFiles['/.unison/wizard-seed.json'];
+  if (!seedRaw) return null;
+  try {
+    return JSON.parse(seedRaw) as WizardSeedLike;
+  } catch (err) {
+    console.warn('[playgroundCompiler] Failed to parse /.unison/wizard-seed.json; subpages will use pipeline options only.', err);
+    return null;
+  }
+}
+
+function parseJsonFile<T>(existingVfsFiles: Record<string, string>, path: string): T | null {
+  const raw = existingVfsFiles[path];
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function firstText(...values: Array<unknown>): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 export function compilePlayground(
   state: PlaygroundState,
   existingVfsFiles: Record<string, string> = {},
@@ -39,13 +84,73 @@ export function compilePlayground(
   const registry = state.pageRegistry;
   const pages = Object.values(registry.pages);
 
+  const wizardSeed = parseWizardSeed(existingVfsFiles);
+  const snapshotMeta = parseJsonFile<{
+    meta?: { templateId?: string | null; themePresetId?: string | null; industry?: string | null };
+    appContext?: { templateId?: string | null; themePresetId?: string | null; industry?: string | null };
+    industry?: string | null;
+  }>(existingVfsFiles, '/.unison/site-bundle-snapshot.json');
+  const runtimeManifest = parseJsonFile<{
+    appContext?: { templateId?: string | null; themePresetId?: string | null; industry?: string | null };
+    aesthetic?: string | null;
+    industry?: string | null;
+  }>(existingVfsFiles, '/.unison/runtime-manifest.json');
+  const appContext = parseJsonFile<{
+    templateId?: string | null;
+    themePresetId?: string | null;
+    industry?: string | null;
+  }>(existingVfsFiles, '/.unison/app-context.json');
+  const resolvedTemplateId = firstText(
+    options?.selectedTemplateId,
+    snapshotMeta?.meta?.templateId,
+    snapshotMeta?.appContext?.templateId,
+    runtimeManifest?.appContext?.templateId,
+    appContext?.templateId,
+    wizardSeed?.templateId,
+    wizardSeed?.template?.id,
+    wizardSeed?.selections?.templateId,
+  );
+  const resolvedThemePresetId = firstText(
+    options?.themePresetId,
+    options?.selectedThemeId,
+    snapshotMeta?.meta?.themePresetId,
+    snapshotMeta?.appContext?.themePresetId,
+    runtimeManifest?.appContext?.themePresetId,
+    runtimeManifest?.aesthetic,
+    appContext?.themePresetId,
+    wizardSeed?.themePresetId,
+    wizardSeed?.theme?.presetId,
+    wizardSeed?.theme?.id,
+    wizardSeed?.selections?.themePresetId,
+    wizardSeed?.selections?.themeId,
+  );
+  const resolvedIndustry = firstText(
+    options?.industry,
+    snapshotMeta?.meta?.industry,
+    snapshotMeta?.appContext?.industry,
+    snapshotMeta?.industry,
+    runtimeManifest?.appContext?.industry,
+    runtimeManifest?.industry,
+    appContext?.industry,
+    wizardSeed?.business?.industry,
+    wizardSeed?.industry,
+    wizardSeed?.selections?.industry,
+    wizardSeed?.selections?.industryOverlay,
+  );
+
   for (const page of pages) {
     if (!page.filePath) {
       page.filePath = deriveFilePath(page);
     }
   }
 
-  const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, options);
+  const scaffoldPlan = buildScaffoldPlan(registry.homePageId, pages, businessName, {
+    ...options,
+    selectedTemplateId: resolvedTemplateId,
+    selectedThemeId: options?.selectedThemeId,
+    themePresetId: resolvedThemePresetId,
+    industry: resolvedIndustry,
+  });
 
   // ── Wizard-seed injection (page hash routes) ─────────────────────────────
   // Parse the durable WizardSeed from `/.unison/wizard-seed.json` if the
@@ -55,14 +160,8 @@ export function compilePlayground(
   // page module — so subpages reflect the wizard selections instead of the
   // template's neutral sample copy. Without this overlay, only Lane B's
   // AI-authored Home page would carry brand context.
-  const seedRaw = existingVfsFiles['/.unison/wizard-seed.json'];
-  if (seedRaw) {
-    try {
-      const parsed = JSON.parse(seedRaw) as Record<string, unknown>;
-      (scaffoldPlan as GeneratedSitePlan & { wizardSeed?: Record<string, unknown> }).wizardSeed = parsed;
-    } catch (err) {
-      console.warn('[playgroundCompiler] Failed to parse /.unison/wizard-seed.json; subpages will use template defaults.', err);
-    }
+  if (wizardSeed) {
+    (scaffoldPlan as GeneratedSitePlan & { wizardSeed?: Record<string, unknown> }).wizardSeed = wizardSeed;
   }
 
 
@@ -122,7 +221,7 @@ export function compilePlayground(
   // canonical launch and live preview expect. Idempotent — won't overwrite
   // existing user-authored config files.
   const hydratedVfsFiles = ensureViteRootFiles(vfsFiles, {
-    themePresetId: options?.themePresetId ?? null,
+    themePresetId: resolvedThemePresetId ?? null,
   });
 
   for (const [p, c] of Object.entries(hydratedVfsFiles)) {

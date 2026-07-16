@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, FileCode, Copy, Check, Package, Code2, FileJson, Globe, Smartphone } from "lucide-react";
+import { Download, FileCode, Copy, Check, Package, Code2, FileJson, Globe, Smartphone, FolderArchive } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +14,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import JSZip from "jszip";
+import { exportSourceProject, downloadBlob } from "@/services/export/exportSourceProject";
+import type { RuntimeManifest } from "@/types/runtimeManifest";
 
 interface ExportDialogProps {
   open: boolean;
@@ -22,6 +24,10 @@ interface ExportDialogProps {
   css: string;
   js?: string;
   projectName?: string;
+  /** Full canonical VFS — enables "Vite Source Project" (Mode B) export. */
+  vfsFiles?: Record<string, string>;
+  /** Runtime manifest used to synthesize package.json + env requirements. */
+  runtimeManifest?: RuntimeManifest;
 }
 
 export const ExportDialog = ({
@@ -31,6 +37,8 @@ export const ExportDialog = ({
   css,
   js = "",
   projectName = "my-project",
+  vfsFiles,
+  runtimeManifest,
 }: ExportDialogProps) => {
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -389,8 +397,49 @@ export default function RootLayout({
         </DialogHeader>
 
         <div className="grid gap-4">
+          {/* Portable Vite source project (Mode B) — top priority when VFS available */}
+          {vfsFiles && Object.keys(vfsFiles).length > 0 && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <FolderArchive className="h-4 w-4 text-primary" />
+                  Vite Source Project
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Full runnable project (React + Vite + Tailwind). Drop into
+                  Vercel, Netlify, Cloudflare Pages, or run <code>npm i &amp;&amp; npm run dev</code> locally.
+                </p>
+              </div>
+              <Button
+                onClick={async () => {
+                  setIsExporting(true);
+                  try {
+                    const result = await exportSourceProject(vfsFiles, {
+                      projectName,
+                      manifest: runtimeManifest,
+                      entryPoint: runtimeManifest?.entryPoint,
+                    });
+                    downloadBlob(result.blob, result.fileName);
+                    toast.success(`Exported ${result.fileCount} files → ${result.fileName}`);
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    toast.error(`Source export failed: ${msg}`);
+                  } finally {
+                    setIsExporting(false);
+                  }
+                }}
+                disabled={isExporting}
+                className="shrink-0"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download .zip
+              </Button>
+            </div>
+          )}
+
           {/* Quick Export Buttons */}
           <div className="flex flex-wrap gap-2">
+
             <Button onClick={() => downloadZip('html')} variant="default" disabled={isExporting}>
               <Globe className="mr-2 h-4 w-4" />
               HTML/CSS/JS

@@ -48,6 +48,22 @@ export const ImportProjectZipButton = ({
           console.warn('[ImportProjectZip] warnings', result.warnings);
         }
 
+        // Recover the wizard themePresetId from the exported runtime manifest
+        // or the site-bundle snapshot so themed CSS threads through Stage 4b
+        // on the very first preview render (no wizard re-run required).
+        let recoveredPresetId: string | undefined =
+          (result.runtimeManifest as unknown as { themePresetId?: string })?.themePresetId
+          || undefined;
+        if (!recoveredPresetId) {
+          const snapRaw = result.vfsFiles['/.unison/site-bundle-snapshot.json'];
+          if (typeof snapRaw === 'string') {
+            try {
+              const snap = JSON.parse(snapRaw) as { meta?: { themePresetId?: string } };
+              recoveredPresetId = snap?.meta?.themePresetId || undefined;
+            } catch { /* ignore */ }
+          }
+        }
+
         const launchState = createLaunchState({
           systemType: 'content',
           systemName: result.projectName,
@@ -59,6 +75,7 @@ export const ImportProjectZipButton = ({
           preloadedIntents: [],
           entryPoint: result.entryPoint,
           runtimeManifest: result.runtimeManifest,
+          themePresetId: recoveredPresetId,
           startInPreview: true,
         });
 
@@ -73,7 +90,9 @@ export const ImportProjectZipButton = ({
           vfsFiles: result.vfsFiles,
           runtimeManifest: result.runtimeManifest,
           entryPoint: result.entryPoint,
+          themePresetId: recoveredPresetId,
         };
+
 
         persistLauncherHandoff({ routeState, launchState });
         toast.success(`Imported ${result.fileCount} files • Opening builder…`);

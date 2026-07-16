@@ -80,6 +80,7 @@ import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/p
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 import { persistLauncherHandoff } from "@/services/launcherHandoffPersistence";
+import { ImportProjectZipButton } from "@/components/onboarding/ImportProjectZipButton";
 import {
   commitMutation,
   isCommitServiceEnabled,

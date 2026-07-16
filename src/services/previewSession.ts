@@ -372,18 +372,19 @@ export function ensureViteRootFiles(
         console.log(`[ensureViteRootFiles] Recovered themePresetId="${presetId}" from VFS metadata`);
       }
     }
-    // Contract: themePresetId MUST come from an explicit wizard Style-card
-    // selection (threaded through snapshot.meta / appContext / runtimeManifest).
-    // Silent fallback to a default preset is forbidden — it re-introduces the
-    // "default template preset" output the launcher is meant to eliminate.
+    // Contract: themePresetId SHOULD come from an explicit wizard Style-card
+    // selection. When missing (imported project, blank draft, cold hydration),
+    // emit a minimal Tailwind shell rather than crashing the preview.
     const preset = presetId ? THEME_PRESETS.find((p) => p.id === presetId) : null;
     if (!preset) {
-      throw new Error(
-        `[previewSession] Refusing to synthesize /src/index.css: no themePresetId found on snapshot/appContext/runtimeManifest (resolved="${presetId ?? 'null'}"). ` +
-        'Lane B / Stage 4b must thread a registered wizard preset id — default preset fallback is disabled.',
+      console.warn(
+        `[previewSession] No themePresetId resolved (received="${presetId ?? 'null'}"); emitting minimal Tailwind shell for /src/index.css.`,
       );
+      result['/src/index.css'] = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`;
+    } else {
+      result['/src/index.css'] = buildThemedIndexCss(preset);
     }
-    result['/src/index.css'] = buildThemedIndexCss(preset);
+
   }
 
 

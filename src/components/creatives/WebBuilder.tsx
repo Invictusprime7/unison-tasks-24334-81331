@@ -7260,6 +7260,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         css={exportCss}
         js={exportJs}
         projectName={exportProjectName}
+        vfsFiles={exportDialogOpen ? getSandpackFiles() : undefined}
+        runtimeManifest={effectiveRouteState?.runtimeManifest}
       />
 
       {/* Performance Panel as Sidebar */}

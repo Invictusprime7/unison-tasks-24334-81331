@@ -32,8 +32,8 @@ export interface SourceProjectExportResult {
   fileCount: number;
 }
 
+// Toolchain files we regenerate at export time — the scaffold synth owns them.
 const SKIP_PATH_PREFIXES = [
-  '/.unison/',       // internal snapshot/metadata
   '/.lovable/',
   '/node_modules/',
 ];
@@ -56,6 +56,7 @@ function shouldIncludeVfsFile(path: string): boolean {
   if (SKIP_FILE_NAMES.has(path)) return false;
   return !SKIP_PATH_PREFIXES.some((pref) => path.startsWith(pref));
 }
+
 
 function zipPath(vfsPath: string): string {
   // Strip leading slash for zip entries.

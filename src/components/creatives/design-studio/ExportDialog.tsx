@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, FileCode, Copy, Check, Package, Code2, FileJson, Globe, Smartphone } from "lucide-react";
+import { Download, FileCode, Copy, Check, Package, Code2, FileJson, Globe, Smartphone, FolderArchive } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +14,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import JSZip from "jszip";
+import { exportSourceProject, downloadBlob } from "@/services/export/exportSourceProject";
+import type { RuntimeManifest } from "@/types/runtimeManifest";
 
 interface ExportDialogProps {
   open: boolean;
@@ -22,6 +24,10 @@ interface ExportDialogProps {
   css: string;
   js?: string;
   projectName?: string;
+  /** Full canonical VFS — enables "Vite Source Project" (Mode B) export. */
+  vfsFiles?: Record<string, string>;
+  /** Runtime manifest used to synthesize package.json + env requirements. */
+  runtimeManifest?: RuntimeManifest;
 }
 
 export const ExportDialog = ({

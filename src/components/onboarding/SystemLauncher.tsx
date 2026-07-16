@@ -2788,6 +2788,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <p className="text-[11px] text-white/30">AI-powered site generation</p>
               </div>
             </div>
+            <ImportProjectZipButton
+              variant="pill"
+              onImported={() => onOpenChange(false)}
+            />
           </div>
 
           {/* Step pills */}

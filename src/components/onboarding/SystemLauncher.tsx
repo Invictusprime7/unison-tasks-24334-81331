@@ -80,6 +80,7 @@ import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/p
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 import { persistLauncherHandoff } from "@/services/launcherHandoffPersistence";
+import { ImportProjectZipButton } from "@/components/onboarding/ImportProjectZipButton";
 import {
   commitMutation,
   isCommitServiceEnabled,
@@ -2788,6 +2789,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <p className="text-[11px] text-white/30">AI-powered site generation</p>
               </div>
             </div>
+            <ImportProjectZipButton
+              variant="pill"
+              onImported={() => onOpenChange(false)}
+            />
           </div>
 
           {/* Step pills */}

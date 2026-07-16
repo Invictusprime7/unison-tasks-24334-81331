@@ -114,7 +114,29 @@ import { Instagram, Facebook, Twitter, Linkedin, Youtube, Github, Twitch, Dribbb
 // ============================================================================
 const THEME = ${themeJson};
 
-// ============================================================================  
+// ============================================================================
+// Wizard theme-injection bridge — rebind THEME.colors to CSS variables so the
+// wizard's Stage 4b /src/index.css (which sets --primary, --foreground, ...)
+// takes precedence across every industry/page, while the baked palette above
+// acts as a safe fallback for standalone previews without index.css.
+// ============================================================================
+const __CSS_VAR = {
+  primary: '--primary', primaryForeground: '--primary-foreground',
+  secondary: '--secondary', secondaryForeground: '--secondary-foreground',
+  accent: '--accent', accentForeground: '--accent-foreground',
+  background: '--background', foreground: '--foreground',
+  muted: '--muted', mutedForeground: '--muted-foreground',
+  card: '--card', cardForeground: '--card-foreground',
+  border: '--border',
+};
+for (const __k in __CSS_VAR) {
+  const __fallback = THEME.colors[__k];
+  if (typeof __fallback === 'string') {
+    THEME.colors[__k] = 'var(' + __CSS_VAR[__k] + ', ' + __fallback + ')';
+  }
+}
+
+// ============================================================================
 // Section Data
 // ============================================================================
 const SECTIONS = ${sectionsJson};
@@ -128,7 +150,15 @@ const GLOBAL_STYLES = ${globalStylesJson};
 // Theme Utilities
 // ============================================================================
 const hsl = (t) => \`hsl(\${t})\`;
-const hsla = (t, a) => \`hsla(\${t}, \${a})\`;
+const hsla = (t, a) => {
+  // If token is already a var(...) reference, CSS var() cannot carry an alpha
+  // through hsla() directly — fall back to color-mix so opacity still applies.
+  if (typeof t === 'string' && t.indexOf('var(') === 0) {
+    return \`color-mix(in hsl, hsl(\${t}) \${Math.round(a * 100)}%, transparent)\`;
+  }
+  return \`hsla(\${t}, \${a})\`;
+};
+
 
 const headingStyle = { fontFamily: THEME.typography.headingFont, fontWeight: THEME.typography.headingWeight, color: hsl(THEME.colors.foreground) };
 const bodyStyle = { fontFamily: THEME.typography.bodyFont, fontWeight: THEME.typography.bodyWeight, color: hsl(THEME.colors.mutedForeground) };

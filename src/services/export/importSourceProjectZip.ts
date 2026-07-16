@@ -177,6 +177,25 @@ export async function importSourceProjectZip(
   if (!hasMain) warnings.push('Missing /src/main.tsx — Builder will regenerate it.');
   if (!hasApp) warnings.push('Missing /src/App.tsx — Builder will regenerate it.');
 
+  // Ensure /src/index.css exists — Sandpack's synthesized /index.tsx entry
+  // does `import './index.css'`, and previews hard-crash without it. If the
+  // imported project used a different css filename, promote it. Otherwise
+  // fall back to a Tailwind directive shim.
+  if (!vfsFiles['/src/index.css']) {
+    const cssCandidates = [
+      '/src/styles.css', '/src/style.css', '/src/global.css', '/src/globals.css',
+      '/src/app.css', '/src/App.css', '/src/main.css', '/src/tailwind.css',
+    ];
+    const found = cssCandidates.find((p) => typeof vfsFiles[p] === 'string');
+    if (found) {
+      vfsFiles['/src/index.css'] = vfsFiles[found];
+      warnings.push(`Promoted ${found} → /src/index.css for preview entry compatibility.`);
+    } else {
+      vfsFiles['/src/index.css'] = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`;
+      warnings.push('Synthesized minimal /src/index.css (Tailwind directives) for preview entry.');
+    }
+  }
+
   if (Object.keys(vfsFiles).length === 0) {
     throw new Error('No importable source files found in the zip');
   }

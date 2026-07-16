@@ -272,7 +272,7 @@ function buildScaffoldPlan(
 
   return {
     siteId: 'playground-compile',
-    industry: String(resolvedIndustry || options?.industry || 'general'),
+    industry: String(options?.industry || 'general'),
     businessName: businessName || 'Company',
     homePageId: homePageId || pageNodes.find((p) => p.isHome)?.id || pageNodes[0]?.id || 'home',
     pages: pageNodes,
@@ -280,8 +280,8 @@ function buildScaffoldPlan(
     funnels: [],
     redirects: [],
     generatedAt: new Date().toISOString(),
-    selectedTemplateId: resolvedTemplateId,
-    selectedThemePresetId: resolvedThemePresetId,
+    selectedTemplateId: options?.selectedTemplateId,
+    selectedThemePresetId: options?.themePresetId || options?.selectedThemeId,
   };
 }
 

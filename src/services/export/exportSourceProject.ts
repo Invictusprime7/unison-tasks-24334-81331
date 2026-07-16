@@ -118,11 +118,29 @@ export async function exportSourceProject(
   if (!root) throw new Error('Failed to create zip root folder');
 
   // 4. Emit VFS files (includes /.unison/* metadata for round-trip imports).
+  //    Sandpack-prep flattens /src/* → /* for the preview runtime, but a Vite
+  //    source project needs the /src/ layout. Restore it here so the zip is
+  //    both `npm run dev`-able AND re-importable by the Builder.
+  const toSourceProjectPath = (flat: string): string => {
+    if (flat.startsWith('/.unison/') || flat.startsWith('/public/')) return flat;
+    if (flat.startsWith('/src/')) return flat;
+    if (flat === '/index.tsx' || flat === '/index.jsx' || flat === '/index.ts') {
+      // Sandpack entry — Vite expects src/main.tsx.
+      return flat.replace(/^\/index\./, '/src/main.');
+    }
+    if (/\.(tsx?|jsx?|css|scss)$/.test(flat)) return `/src${flat}`;
+    return flat;
+  };
+
   let fileCount = 0;
+  const emitted = new Set<string>();
   for (const [path, contents] of Object.entries(prepared)) {
     if (typeof contents !== 'string') continue;
     if (!shouldIncludeVfsFile(path)) continue;
-    root.file(zipPath(path), contents);
+    const outPath = toSourceProjectPath(path);
+    if (emitted.has(outPath)) continue;
+    emitted.add(outPath);
+    root.file(zipPath(outPath), contents);
     fileCount++;
   }
 

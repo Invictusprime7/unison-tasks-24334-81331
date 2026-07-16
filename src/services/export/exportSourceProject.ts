@@ -89,6 +89,25 @@ export async function exportSourceProject(
     manifest: options.manifest,
   });
 
+  // 3b. Guarantee Unison metadata is baked into the zip so re-import can
+  //     re-thread wizard theme + template state without re-running the wizard.
+  //     - /.unison/site-bundle-snapshot.json  (composition + meta.themePresetId)
+  //     - /.unison/runtime-manifest.json      (entryPoint + brand + presetId)
+  const themePresetId = resolution.themePresetId ?? null;
+  const manifestForZip = {
+    ...(options.manifest ?? {}),
+    entryPoint: options.entryPoint ?? options.manifest?.entryPoint ?? '/src/main.tsx',
+    brandName: options.manifest?.brandName ?? options.projectName,
+    themePresetId,
+  };
+  prepared['/.unison/runtime-manifest.json'] = JSON.stringify(manifestForZip, null, 2);
+
+  // Preserve the snapshot verbatim if already threaded through the projector.
+  if (typeof vfsFiles['/.unison/site-bundle-snapshot.json'] === 'string'
+      && !prepared['/.unison/site-bundle-snapshot.json']) {
+    prepared['/.unison/site-bundle-snapshot.json'] = vfsFiles['/.unison/site-bundle-snapshot.json'];
+  }
+
   const zip = new JSZip();
   const projectSlug =
     options.projectName
@@ -98,7 +117,7 @@ export async function exportSourceProject(
   const root = zip.folder(projectSlug);
   if (!root) throw new Error('Failed to create zip root folder');
 
-  // 4. Emit VFS files.
+  // 4. Emit VFS files (includes /.unison/* metadata for round-trip imports).
   let fileCount = 0;
   for (const [path, contents] of Object.entries(prepared)) {
     if (typeof contents !== 'string') continue;
@@ -129,6 +148,7 @@ export async function exportSourceProject(
   root.file('netlify.toml', netlifyToml());
 
   fileCount += 10;
+
 
   const blob = await zip.generateAsync({
     type: 'blob',

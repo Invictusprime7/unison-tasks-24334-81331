@@ -1,65 +1,105 @@
-
 ## Goal
-Let creators explicitly choose which Business Profile a wizard-generated project is saved under, then move it later — from the Web Builder topbar and from Cloud Settings. Enforce that only business admins/owners can move projects.
 
-## 1. Backend (single migration)
+Let creators export any generated site as a **self-contained .zip** that runs on any static host (Vercel, Netlify, Cloudflare Pages, S3, GitHub Pages) — or, when dropped into another Vite/React project, works as a portable module. Reuse today's canonical VFS state; no new generation pipeline.
 
-**`user_business_role(user_id, business_id)`** — SECURITY DEFINER, returns text (`owner` | `admin` | `member` | null). Derived from `businesses.owner_id` (=`owner`) or `business_members.role`.
+## Is this possible with current VFS state? — Yes
 
-**`is_business_admin(user_id, business_id)`** — SECURITY DEFINER boolean = role in (`owner`,`admin`).
+The pieces already exist:
+- `SiteBundleSnapshot` + `builder_drafts` hold the authoritative VFS (`/src/**`, themed `/src/index.css`, deterministic `/src/App.tsx`).
+- `src/utils/webBuilderArtifacts.ts` (`buildCanonicalArtifacts`) already emits `index.html`, `styles.css`, `script.js` for a legacy single-file deploy.
+- `src/utils/sandpackFilePrep.ts` normalizes `@/` aliases, injects deps, and produces a compile-ready `/src/` tree.
+- `runtimeManifest.ts` already knows dependencies, routes, and `backendRequired`.
 
-**`reassign_project_business(_project_id uuid, _target_business_id uuid)`** — SECURITY DEFINER. Verifies caller is admin on both source (current `projects.business_id`, if any) and target, then:
-- updates `public.projects.business_id`
-- updates `public.builder_drafts.business_id` where `project_id = _project_id`
-Raises exception with clear message on failure.
+What's missing is a **portable export packager** and a **drop-in adapter** — both are additive; no changes to generation, theme injection, or intent wiring.
 
-No new tables. RLS on projects/builder_drafts already covers reads through business membership.
+## Recommendation: ship two export modes
 
-## 2. Shared UI primitive
+### Mode A — Static Site .zip (default, 90% of users)
+Pre-built, deploy-anywhere bundle. Zero toolchain required on the receiving side.
 
-`src/components/business/BusinessSelector.tsx`
-- Props: `value`, `onChange`, `mode: 'admin' | 'member'`, `allowCreate?: boolean`, `size?: 'sm'|'md'`.
-- Lists businesses where the current user is admin/owner (from `business_members` + `businesses.owner_id`). In `mode='member'` (wizard/create), includes plain members too.
-- `allowCreate` renders an inline "+ New business" row that opens a small modal creating a `businesses` row (name, industry) and auto-selects it.
-- Dark-themed, shadcn `Popover + Command` pattern.
+Contents:
+```text
+site.zip
+├── index.html            # hydrated shell, hashed asset refs
+├── assets/
+│   ├── app-[hash].js     # bundled React app (esbuild)
+│   ├── app-[hash].css    # themed tokens from /src/index.css
+│   └── media/…           # copied public/ + inline data URIs extracted
+├── 404.html              # SPA fallback for HashRouter → BrowserRouter hosts
+├── _redirects            # Netlify SPA fallback
+├── vercel.json           # Vercel SPA rewrite
+├── robots.txt, sitemap.xml (from routeInventory)
+└── README.md             # "drop into any static host" instructions
+```
 
-## 3. Wizard integration (SystemLauncher)
+### Mode B — Source Project .zip (for devs / handoff)
+The raw VFS as a runnable Vite project. Drop into any folder → `npm i && npm run dev` works.
 
-- Add `businessId?: string` to `WizardSelections` and thread through `createLaunchState` (spread already preserves it).
-- In `src/components/onboarding/SystemLauncher.tsx` step 1 header row (next to `WizardTopAction`), mount `<BusinessSelector mode="member" allowCreate />`. Default = last-used business from localStorage, else first membership.
-- On Generate: write `businessId` into `LaunchState.businessId` and pass to draft persistence — `sync_draft_to_project` trigger already uses `NEW.business_id` to stamp the project.
+Contents:
+```text
+project.zip
+├── src/                  # verbatim from prepared VFS (already /src/ shaped)
+├── public/               # extracted assets
+├── package.json          # from runtimeManifest.dependencies + scripts
+├── vite.config.ts, tsconfig.json, tailwind.config.ts, postcss.config.js, index.html
+├── .env.example          # from runtimeManifest.envRequirements (no secrets)
+└── README.md
+```
 
-## 4. Web Builder topbar pill
+## Architecture
 
-`src/components/webbuilder/BusinessPill.tsx`
-- Reads `BuilderSessionContext.businessId + projectId`.
-- Shows business name + small chevron. Click → popover with `<BusinessSelector mode="admin" />`. Selecting a different business calls `reassign_project_business` RPC, toasts result, updates local session context via `updateLaunch({ businessId })`.
-- Non-admins see a locked pill (tooltip: "Business admins can move this project").
-- Mounted next to the project-name in `WebBuilder`'s topbar (single line insertion).
+```text
+WebBuilder "Export" dialog
+        │
+        ├─ Mode A (Static) ──► exportStaticBundle()
+        │                        1. resolveSnapshot() → canonical VFS
+        │                        2. prepareSandpackFiles()  (reuse)
+        │                        3. esbuild.build() in-browser (esbuild-wasm)
+        │                           - bundle /src/main.tsx
+        │                           - emit hashed js/css
+        │                        4. inline themed /src/index.css
+        │                        5. write host adapters (_redirects, vercel.json)
+        │                        6. JSZip → download
+        │
+        └─ Mode B (Source) ──►  exportSourceProject()
+                                 1. resolveSnapshot() → canonical VFS
+                                 2. add scaffold configs from runtimeManifest
+                                 3. synthesize package.json (deps + scripts)
+                                 4. JSZip → download
+```
 
-## 5. Cloud Settings — Projects section
+New files (small, additive):
+- `src/services/export/exportStaticBundle.ts` — Mode A
+- `src/services/export/exportSourceProject.ts` — Mode B
+- `src/services/export/packageJsonSynth.ts` — deps → package.json from `runtimeManifest`
+- `src/services/export/hostAdapters.ts` — `_redirects`, `vercel.json`, `netlify.toml`, `404.html`
+- `src/components/creatives/web-builder/ExportDialog.tsx` — mode picker + progress
+- Wire an "Export" button in the WebBuilder topbar next to Publish
 
-Extend `src/pages/Settings.tsx` with a new "Projects & businesses" card:
-- Table: Project name · Current business · Updated · Action.
-- Each row's business cell renders `<BusinessSelector mode="admin" allowCreate />` bound to that project — calls the RPC on change.
-- Empty state guides user to launch a project or create a business.
+Deps to add: `jszip`, `esbuild-wasm` (Mode A only; loaded on demand).
 
-## 6. Files touched (net-new + edits)
+## Drop-in reuse across platforms
 
-New:
-- `supabase/migrations/<ts>_business_reassignment.sql`
-- `src/components/business/BusinessSelector.tsx`
-- `src/components/business/CreateBusinessInline.tsx`
-- `src/components/webbuilder/BusinessPill.tsx`
-- `src/services/businessMembership.ts` (single fetcher + RPC wrapper)
+| Target | Mode | Notes |
+|---|---|---|
+| Vercel / Netlify / Cloudflare Pages | A | Adapters included; drag-drop upload works |
+| S3 + CloudFront / GitHub Pages | A | `HashRouter` avoids server rewrites; `404.html` for BrowserRouter fallback |
+| Another Vite/React repo | B | `src/` copies in cleanly (already `/src/` shaped) |
+| WordPress / Webflow embed | A | Ship `index.html` iframe or `<script src="assets/app-*.js">` snippet in README |
 
-Edited:
-- `src/types/playground.ts` — add `businessId?` to `WizardSelections`
-- `src/components/onboarding/SystemLauncher.tsx` — mount selector in step 1 header + pass into launch
-- `src/components/WebBuilder.tsx` (or its extracted topbar) — mount `BusinessPill`
-- `src/pages/Settings.tsx` — add Projects & Businesses card
+## Constraints and honest caveats
 
-## 7. Verification
-- Type check + a quick Playwright pass hitting `/web-builder` and `/settings` to confirm pill + settings card render with the current user's businesses.
+- **Backend-required sites** (`runtimeManifest.backendRequired === true`) export as **frontend-only** by default; the README lists the intents that need re-wiring (`data-ut-intent="cart.checkout"`, `booking.create`, etc.) and points to `envRequirements`. We do not export Supabase RLS/edge functions — that's not portable.
+- **Themed CSS is preserved** via the existing Stage 4b guard in `mergeGeneratedVfsWithCanonicalSnapshot` — export reads the same canonical `/src/index.css`, so themes travel with the zip.
+- **Intent handlers**: Mode A ships the runtime intent bridge stub so buttons don't throw; they emit `data-ut-intent` events the receiving platform can hook. Mode B keeps the full runtime.
+- **Assets**: `public/` + inline base64 assets get extracted into `assets/media/`.
 
-Nothing in the canonical wizard/Lane B pipeline changes. Only additive metadata on `LaunchState` + a targeted RPC for post-generation moves.
+## Rollout
+
+1. Ship Mode B first (10× simpler, no wasm) — unblocks dev handoff immediately.
+2. Add Mode A behind an "Export as static site (beta)" toggle.
+3. Add per-host presets (Vercel / Netlify / GitHub Pages) that pick the right adapter set.
+
+## Out of scope for v1
+
+- Multi-tenant SaaS export, custom-domain provisioning, server-rendered exports (SSR/SSG), and exporting Supabase schema. All can be later phases if needed.

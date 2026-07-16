@@ -11,6 +11,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { BusinessSelector } from '@/components/business/BusinessSelector';
 import { reassignProjectToBusiness } from '@/services/businessMembership';
+import { ProjectExportButton } from './ProjectExportButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 

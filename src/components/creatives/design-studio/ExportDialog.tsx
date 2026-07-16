@@ -37,6 +37,8 @@ export const ExportDialog = ({
   css,
   js = "",
   projectName = "my-project",
+  vfsFiles,
+  runtimeManifest,
 }: ExportDialogProps) => {
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);

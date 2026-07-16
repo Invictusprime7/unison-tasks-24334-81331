@@ -5520,6 +5520,19 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           )}
 
 
+          {/* Export project — opens ExportDialog (Vite source .zip, HTML/CSS/React) */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleExport('react')}
+            className="hidden md:inline-flex h-7 items-center gap-1.5 rounded-md border border-cyan-500/30 bg-[#0d0d18] px-2.5 text-xs text-cyan-200 hover:border-cyan-400/60 hover:bg-cyan-500/10 hover:text-cyan-100"
+            title="Export project (.zip, HTML, React)"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </Button>
+
+
           <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
           
           {/* Device + Mode + Tools — hidden on small screens (use bottom nav on mobile) */}

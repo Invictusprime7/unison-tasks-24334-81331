@@ -5231,15 +5231,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     }
   };
 
-  const canonicalBuildArtifacts = useMemo(() => {
+  const getCurrentCanonicalBuildArtifacts = useCallback(() => {
     const sourceFiles = getSandpackFiles();
     return buildCanonicalArtifacts(sourceFiles, {
       entryPoint: activePagePath,
       title: currentTemplateName || 'Unison Site',
     });
-  }, [getSandpackFiles, activePagePath, currentTemplateName, virtualFS.nodes]);
+  }, [getSandpackFiles, activePagePath, currentTemplateName]);
 
   const handleExport = (format: string) => {
+    const canonicalBuildArtifacts = getCurrentCanonicalBuildArtifacts();
     if (canonicalBuildArtifacts) {
       setExportHtml(canonicalBuildArtifacts.exportHtml);
       setExportCss(canonicalBuildArtifacts.exportCss);
@@ -5753,7 +5754,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               <span className="text-xs font-bold">{currentTemplateName ? 'Update' : 'Save'}</span>
             </Button>
             <DeployButton
-              files={canonicalBuildArtifacts?.deployFiles || {}}
+              getFiles={() => getCurrentCanonicalBuildArtifacts()?.deployFiles || {}}
               defaultSiteName={currentTemplateName || 'unison-site'}
               contract={compiledContract}
               snapshot={effectiveRouteState?.siteBundleSnapshot ?? null}

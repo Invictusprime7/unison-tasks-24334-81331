@@ -65,6 +65,14 @@ interface PreviewServiceFacade {
   patchFile: (path: string, content: string) => Promise<boolean>;
 }
 
+interface PreviewCompileState {
+  sandpackFiles: Record<string, string>;
+  dependencies: Record<string, string>;
+  pipelineError: PreviewPipelineError | null;
+  emptyDraft: boolean;
+  compiling: boolean;
+}
+
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
 
@@ -320,37 +328,88 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
 
-  const isWizardPreview = useMemo(() => resolveSnapshot(files, launch).isWizardDraft, [files, launch]);
-  
-  const { sandpackFiles, dependencies: sandpackDeps, pipelineError, emptyDraft } = useMemo(() => {
-    if (!isWizardPreview && !hasRenderablePreviewSource(files)) {
-      return {
-        sandpackFiles: {} as Record<string, string>,
-        dependencies: {} as Record<string, string>,
-        pipelineError: null as PreviewPipelineError | null,
-        emptyDraft: true,
-      };
-    }
+  const [previewCompile, setPreviewCompile] = useState<PreviewCompileState>({
+    sandpackFiles: {},
+    dependencies: {},
+    pipelineError: null,
+    emptyDraft: false,
+    compiling: true,
+  });
 
-    try {
-      const result = buildPreviewArtifacts({
-        sourceFiles: files,
-        launchState: launch,
-      });
-      return { ...result, pipelineError: null as PreviewPipelineError | null, emptyDraft: false };
-    } catch (err) {
-      if (isPreviewPipelineError(err)) {
-        console.error('[VFSPreview] Pipeline error:', err);
-        return {
-          sandpackFiles: {} as Record<string, string>,
-          dependencies: {} as Record<string, string>,
-          pipelineError: err,
-          emptyDraft: false,
-        };
+  useEffect(() => {
+    let cancelled = false;
+
+    setPreviewCompile((current) => ({
+      ...current,
+      pipelineError: null,
+      compiling: true,
+    }));
+
+    const timer = window.setTimeout(() => {
+      try {
+        const isWizardPreview = resolveSnapshot(files, launch).isWizardDraft;
+
+        if (!isWizardPreview && !hasRenderablePreviewSource(files)) {
+          if (!cancelled) {
+            setPreviewCompile({
+              sandpackFiles: {},
+              dependencies: {},
+              pipelineError: null,
+              emptyDraft: true,
+              compiling: false,
+            });
+          }
+          return;
+        }
+
+        const result = buildPreviewArtifacts({
+          sourceFiles: files,
+          launchState: launch,
+        });
+
+        if (!cancelled) {
+          setPreviewCompile({
+            sandpackFiles: result.sandpackFiles,
+            dependencies: result.dependencies,
+            pipelineError: null,
+            emptyDraft: false,
+            compiling: false,
+          });
+        }
+      } catch (err) {
+        const pipelineError = isPreviewPipelineError(err)
+          ? err
+          : new PreviewPipelineError('sandpack', `Preview artifact compile failed: ${err instanceof Error ? err.message : String(err)}`, {
+              cause: err,
+              recoverableByRelaunch: false,
+            });
+
+        console.error('[VFSPreview] Pipeline error:', pipelineError);
+        if (!cancelled) {
+          setPreviewCompile({
+            sandpackFiles: {},
+            dependencies: {},
+            pipelineError,
+            emptyDraft: false,
+            compiling: false,
+          });
+        }
       }
-      throw err;
-    }
-  }, [files, launch, isWizardPreview]);
+    }, 80);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [files, launch]);
+
+  const {
+    sandpackFiles,
+    dependencies: sandpackDeps,
+    pipelineError,
+    emptyDraft,
+    compiling: previewCompiling,
+  } = previewCompile;
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
   useEffect(() => {
@@ -708,8 +767,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     startAttemptedRef.current = true;
 
     setBackend('sandpack');
-    if (!pipelineError) onReady?.();
-  }, [onReady, pipelineError]);
+    if (!previewCompiling && !pipelineError) onReady?.();
+  }, [onReady, pipelineError, previewCompiling]);
   
   // Sync file changes to Docker when running
   useEffect(() => {
@@ -1019,7 +1078,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         )}
         
         {/* Snapshot-only gate: pipeline error surfaces instead of a stale/minimal preview */}
-        {backend === 'sandpack' && pipelineError && (
+        {backend === 'sandpack' && !previewCompiling && pipelineError && (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6 z-10">
             <div className="max-w-md text-center space-y-3">
               <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
@@ -1036,7 +1095,19 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         )}
 
         {/* Empty draft — no snapshot, no source. Render idle, never a minimal fallback. */}
-        {backend === 'sandpack' && !pipelineError && emptyDraft && (
+        {backend === 'sandpack' && previewCompiling && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background p-6 z-10">
+            <div className="max-w-sm text-center space-y-2">
+              <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Preparing preview</h3>
+              <p className="text-xs text-muted-foreground">
+                The builder shell is ready while the site runtime compiles in the background.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {backend === 'sandpack' && !previewCompiling && !pipelineError && emptyDraft && (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6 z-10">
             <div className="max-w-sm text-center space-y-2">
               <Zap className="h-8 w-8 mx-auto text-muted-foreground" />
@@ -1049,7 +1120,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         )}
 
         {/* Sandpack In-Browser React Preview — the primary rendering engine */}
-        {backend === 'sandpack' && !pipelineError && !emptyDraft && (
+        {backend === 'sandpack' && !previewCompiling && !pipelineError && !emptyDraft && (
           <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
             <SandpackProvider
               key={`sandpack-${sandpackKey}`}

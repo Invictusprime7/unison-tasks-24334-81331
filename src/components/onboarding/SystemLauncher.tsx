@@ -856,9 +856,17 @@ function assessWizardGenerationQuality(
   }
 
   for (const [path, content] of pageEntries) {
-    const pageSectionCount = (
-      content.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
+    const semanticPerPage = (
+      content.match(/<\s*(section|header|main|footer|nav|article|aside)\b/gi) || []
     ).length;
+    const classPerPage = (
+      content.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav|grid|list|showcase|highlight|banner|panel|card-grid|collection|portfolio)[^"']*["']/gi) || []
+    ).length;
+    // Accept either counter — Composition Authority: presence is proven by
+    // semantic tags OR by canonical section class tokens. A Gallery page
+    // legitimately renders <main> + N gallery/grid blocks; a Services page
+    // renders <main> + service cards. Do not double-penalize class-based layouts.
+    const pageSectionCount = Math.max(semanticPerPage, classPerPage);
     const isHomePage = /\/Home\.(tsx|jsx)$/i.test(path);
     const minimumSections = isHomePage ? expectedSections : 3;
     if (content.trim().length < 1200) {
@@ -2536,7 +2544,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           'Re-emit ONLY these files in the same multi-file JSON contract.',
           'Do NOT touch shared chrome (SiteNavbar/SiteFooter), Home, or App.tsx.',
           'Each page must be a complete, production-quality, industry-faithful',
-          'React page (5+ sections, real copy, working data-ut-intent CTAs).',
+          'React page with 3+ top-level layout blocks (semantic <section>/<header>/<footer>/<article>/<aside>/<nav>',
+          'OR <div> whose className contains hero/section/services/features/testimonials/pricing/gallery/contact/booking/cta/grid/showcase/highlight/banner/panel/card-grid/collection/portfolio),',
+          '1200+ characters of real copy, and working data-ut-intent CTAs. Preserve the selected template card',
+          'layout signature and the selected style card tokens exactly — do not invent a different composition.',
           '',
           missingPageDetails,
         ].join('\n');
@@ -2648,8 +2659,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             `Industry vocabulary/context: ${industryVocabulary || generationCategory}`,
             '',
             'Return ONLY this file in the WizardSeed multi-file JSON contract.',
-            'The page must contain at least 3 complete semantic sections and 1200+ characters of real copy.',
-            'Use only semantic theme classes backed by the supplied Stage 4b HSL tokens.',
+            'Structural contract (Composition Authority — wizard card selections):',
+            '  • The page MUST contain at least 3 top-level layout blocks.',
+            '  • Each block MUST be either a semantic tag (<section>, <header>, <footer>, <article>, <aside>, <nav>) OR a <div> whose className includes one of: hero, section, services, features, testimonials, pricing, gallery, contact, booking, cta, footer, nav, grid, showcase, highlight, banner, panel, card-grid, collection, portfolio.',
+            '  • Minimum 1200 characters of real industry-specific copy — no placeholders.',
+            'Use only semantic theme classes backed by the supplied Stage 4b HSL tokens (from the selected style card).',
+            'Preserve the layout signature of the selected template card; do not invent a different composition.',
             'Include working data-ut-intent behavior appropriate to this page role.',
             'Do not emit App.tsx, shared chrome, placeholder copy, quarantine UI, or a preset scaffold.',
           ].join('\n');

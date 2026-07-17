@@ -105,10 +105,7 @@ import {
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
 import {
-  buildWizardInteractionPlannerPrompt,
-  compileWizardInteractionManifest,
   createBaselineInteractionManifest,
-  parseWizardInteractionManifest,
 } from "@/services/wizardInteractionEnrichment";
 
 // ============================================================================
@@ -2747,85 +2744,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       (window as unknown as { __wizardGenerationGaps?: typeof wizardGenerationGaps }).__wizardGenerationGaps =
         wizardGenerationGaps;
 
-      // The interaction pass is deliberately advisory. Site topology, theme,
-      // template geometry, and intent closure have already passed their hard
-      // gates; this final plan can only add constrained runtime affordances.
-      const baselineInteractionManifest = createBaselineInteractionManifest(
+      // Interaction enrichment layer removed (2026-07-17 rebase). Last week's
+      // working pipeline shipped free-styled Lane A/B compositions without a
+      // baseline motion runtime; auto-injecting one was flattening layouts.
+      // Any motion the AI authored directly inside page bodies is preserved.
+      const interactionManifest = createBaselineInteractionManifest(
         aiSourcedFiles,
         templateLayoutContract,
       );
-      let interactionManifest = baselineInteractionManifest;
-      const interactionWarnings: string[] = [];
-      try {
-        setLaunchStatus('Adding accessible interactions…');
-        const interactionPlan = await withTimeout(
-          runBuilderTurn<Record<string, unknown>>({
-            messages: [{
-              role: 'user',
-              content: buildWizardInteractionPlannerPrompt({
-                contract: templateLayoutContract,
-                industry: resolvedIndustry,
-                intents: baselineInteractionManifest.interactions
-                  .filter((rule) => rule.target.kind === 'intent')
-                  .map((rule) => rule.target.value || ''),
-              }),
-            }],
-            mode: 'wizard-interactions',
-            editMode: false,
-            templateName: effectiveTemplate?.label || system.name,
-            aesthetic: resolvedPreset.id,
-            source: resolvedIndustry,
-            systemType: selectedSystem,
-            vfsFiles: aiSourcedFiles,
-            recentChangedFiles: Object.keys(aiSourcedFiles).filter((path) => /\/src\/pages\/.*\.(?:tsx|jsx)$/i.test(path)),
-            systemsBuildContext: {
-              templateLayout: templateLayoutContract,
-              themePresetId: wizardSelections.themePresetId,
-              industry: resolvedIndustry,
-              allowedInteractionTargets: ['template-root', 'interactive', 'intent'],
-            },
-            wizardSeed,
-            gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
-          }),
-          30_000,
-          'Wizard interaction plan timed out after 30 seconds.',
-        );
-        if (interactionPlan.error) {
-          interactionWarnings.push(await getFunctionErrorMessage(interactionPlan.error));
-        } else {
-          interactionManifest = parseWizardInteractionManifest(interactionPlan.data, baselineInteractionManifest);
-          if (interactionManifest.source === 'baseline') {
-            interactionWarnings.push('AI interaction plan was invalid; used the deterministic baseline.');
-          }
-        }
-      } catch (interactionError) {
-        interactionWarnings.push(interactionError instanceof Error ? interactionError.message : String(interactionError));
-      }
-      const interactionCompilation = compileWizardInteractionManifest(aiSourcedFiles, interactionManifest);
-      if (interactionCompilation.mountedPages.length === 0) {
-        interactionWarnings.push('No generated page accepted the interaction runtime mount.');
-      }
-      console.info('[SystemLauncher] Interaction enrichment complete', {
-        source: interactionManifest.source,
-        rules: interactionManifest.interactions.length,
-        mountedPages: interactionCompilation.mountedPages,
-        warnings: interactionWarnings,
-      });
 
       // ── Merge AI output (if any) with LOCKED themed CSS + DETERMINISTIC ROUTER ──
       // /src/App.tsx is OWNED by the deterministic router from the page registry.
       // Lane B owns every registered page body/component; missing pages hard-fail
       // above, and unselected pages are never routed or scaffold-filled.
       const generatedFiles: Record<string, string> = {
-        ...interactionCompilation.files,
+        ...aiSourcedFiles,
         '/src/index.css': themedIndexCss,
         '/.unison/template-layout-contract.json': JSON.stringify(templateLayoutContract, null, 2),
-        '/.unison/interaction-enrichment.json': JSON.stringify({
-          source: interactionManifest.source,
-          rules: interactionManifest.interactions.length,
-          mountedPages: interactionCompilation.mountedPages,
-          warnings: interactionWarnings,
-        }, null, 2),
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).
       if (!generatedFiles['/src/App.tsx'] && generatedFiles['src/App.tsx']) {

@@ -2,10 +2,10 @@ import type { LaunchState } from '@/types/launchState';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { launchStateToSandpackFiles } from '@/utils/launchToSandpack';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
-import { SANDPACK_DEPENDENCIES } from '@/utils/sandpackDependencies';
+import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
+import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
-import { runFullPreflight } from '@/services/runFullPreflight';
 import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
 
 export interface PreviewArtifactsOptions {
@@ -53,7 +53,7 @@ export function buildPreviewArtifacts(
   const {
     sourceFiles: rawSourceFiles,
     launchState = null,
-    baseDependencies = SANDPACK_DEPENDENCIES,
+    baseDependencies = SANDPACK_PREVIEW_CORE_DEPENDENCIES,
   } = options;
 
   const initialResolution = resolveSnapshot(rawSourceFiles, launchState);
@@ -97,21 +97,21 @@ export function buildPreviewArtifacts(
   const industry = launchStateWithRecoveredTheme?.siteBundleSnapshot?.industry;
   const brand = launchStateWithRecoveredTheme?.businessName;
   const wizardResolution = resolveSnapshot(stampedFiles, launchStateWithRecoveredTheme);
+  // Snapshot projection intentionally returns the runtime VFS, which may omit
+  // /.unison metadata files. Preserve the authoritative pre-projection
+  // classification so wizard previews still receive their runtime contract.
+  const isWizardPreview = initialResolution.isWizardDraft || wizardResolution.isWizardDraft;
   assertNoMinimalFallbackPreview(stampedFiles, wizardResolution, 'Preview artifact gate');
 
 
   let sandpackFiles: Record<string, string>;
   if (wizardResolution.isWizardDraft) {
-    const full = runFullPreflight(stampedFiles, {
-      siteBundleSnapshot: wizardResolution.snapshot,
-      industry: industry || wizardResolution.snapshot?.industry,
-      brand,
-    });
-    sandpackFiles = full.files;
-    assertNoMinimalFallbackPreview(sandpackFiles, wizardResolution, 'Preview artifact preflight');
-    if (full.stages.forbiddenStrip.stripped > 0) {
-      console.warn('[buildPreviewArtifacts] forbidden intents stripped at preview gate', full.stages.forbiddenStrip);
-    }
+    // Wizard artifacts already passed launch/commit preflight. Re-running the
+    // multi-stage compiler synchronously during React render freezes the main
+    // thread on generated multi-page sites. Preview only verifies integrity;
+    // repair and mutation stay at commit boundaries.
+    sandpackFiles = stampedFiles;
+    assertNoMinimalFallbackPreview(sandpackFiles, wizardResolution, 'Preview artifact integrity gate');
   } else {
     const gate = runPreflightRepair(stampedFiles, { context: { industry, brand } });
     sandpackFiles = gate.files;
@@ -134,7 +134,22 @@ export function buildPreviewArtifacts(
     }
   }
 
-  const { dependencies } = getDependenciesForSandpack(dependencySourceFiles, baseDependencies);
+  // Merge the small preview runtime baseline with dependencies discovered from
+  // both the canonical source VFS (including package.json omitted from the
+  // Sandpack overlay) and final prepared files. Theme identity remains a CSS
+  // concern owned by themePresetId; rich packages are installed only when the
+  // selected artifact actually imports them.
+  const dependencyContextFiles = {
+    ...dependencySourceFiles,
+    ...sandpackFiles,
+  };
+  const previewBaseDependencies = isWizardPreview
+    ? { ...baseDependencies, ...WIZARD_PREVIEW_RUNTIME_DEPENDENCIES }
+    : baseDependencies;
+  const { dependencies } = getDependenciesForSandpack(
+    dependencyContextFiles,
+    previewBaseDependencies,
+  );
 
   return {
     sandpackFiles,

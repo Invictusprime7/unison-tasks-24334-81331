@@ -32,11 +32,11 @@ import { WizardTopAction } from "./WizardTopAction";
 import { BusinessSelector } from "@/components/business/BusinessSelector";
 
 import { themePresetToThemeTokens } from "./themePresetToTokens";
-import { buildThemedIndexCss } from "./themePresetToIndexCss";
-import { resolveThemePreset } from "./industryThemePresetMap";
+import { buildThemedIndexCssFromTokens } from "./themePresetToIndexCss";
 import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract";
 
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { runBuilderTurn } from "@/services/builderBrainClient";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -44,11 +44,6 @@ import {
   getIndustryForCategory,
   getAllowedIntents,
 } from "@/platform/core";
-import {
-  planSiteTopology,
-  type GeneratedSitePlan,
-} from "@/platform/core/siteTopologyPlanner";
-import type { PageSpec } from "@/platform/core/industryMatrix";
 import {
   generateDesignVariation,
 } from "@/utils/designVariation";
@@ -79,8 +74,12 @@ import { extractLauncherPayload } from "@/utils/launcherPayload";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
-import { persistLauncherHandoff } from "@/services/launcherHandoffPersistence";
+import {
+  buildLauncherNavigationState,
+  persistLauncherHandoff,
+} from "@/services/launcherHandoffPersistence";
 import { ImportProjectZipButton } from "@/components/onboarding/ImportProjectZipButton";
+import { ImportUnisonSiteZipButton } from "@/components/onboarding/ImportUnisonSiteZipButton";
 import {
   commitMutation,
   isCommitServiceEnabled,
@@ -92,6 +91,25 @@ import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { analyzeReactSite } from "@/utils/reactSiteAnalysis";
 import { templateToVFSFiles } from "@/utils/templateToVFS";
+import { normalizeWizardThemeTokens } from "@/utils/wizardThemeTokenNormalizer";
+import { getCanonicalWizardSharedChrome } from "@/services/wizardSharedChrome";
+import {
+  buildWizardExperienceContract,
+  formatWizardExperienceContract,
+  type WizardExperienceContract,
+} from "@/services/wizardExperienceContract";
+import { closeRequiredIndustryIntents } from "@/services/requiredIntentClosure";
+import {
+  buildTemplateLayoutContract,
+  buildTemplateLayoutPrompt,
+  stampTemplateLayoutIdentity,
+} from "@/services/templateLayoutContract";
+import {
+  buildWizardInteractionPlannerPrompt,
+  compileWizardInteractionManifest,
+  createBaselineInteractionManifest,
+  parseWizardInteractionManifest,
+} from "@/services/wizardInteractionEnrichment";
 
 // ============================================================================
 // Types
@@ -239,18 +257,6 @@ const PAGE_CHOICES: { id: PageChoice; label: string; icon: string }[] = [
   { id: "checkout", label: "Checkout", icon: "🛍️" },
   { id: "blog", label: "Blog", icon: "📰" },
 ];
-
-const PAGE_CHOICE_TO_SPEC: Record<PageChoice, PageSpec> = {
-  about: { title: "About", path: "/about", purpose: "about", expectedSections: [] },
-  services: { title: "Services", path: "/services", purpose: "services", expectedSections: [] },
-  pricing: { title: "Pricing", path: "/pricing", purpose: "pricing", expectedSections: [] },
-  gallery: { title: "Gallery", path: "/gallery", purpose: "portfolio", expectedSections: [] },
-  faq: { title: "FAQ", path: "/faq", purpose: "faq", expectedSections: [] },
-  contact: { title: "Contact", path: "/contact", purpose: "contact", expectedSections: [] },
-  booking: { title: "Book", path: "/booking", purpose: "booking", expectedSections: [] },
-  checkout: { title: "Checkout", path: "/checkout", purpose: "checkout", expectedSections: [] },
-  blog: { title: "Blog", path: "/blog", purpose: "blog", expectedSections: [] },
-};
 
 // ============================================================================
 // Playground Pipeline Mappings
@@ -484,6 +490,16 @@ const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   maxTokens: 64_000,
 } as const;
 
+const HARDCODED_VISUAL_COLOR_PATTERN =
+  /#[0-9a-f]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\(\s*(?!var\()|(?:^|[\s"'`])(?:bg|text|border|from|via|to|ring|fill|stroke)-(?:white|black|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d{2,3})?(?:\/\d+)?\b/im;
+
+function findWizardThemeTokenViolations(files: Record<string, string>): string[] {
+  return Object.entries(files)
+    .filter(([path]) => /\.(?:tsx?|jsx?|css)$/i.test(path) && !/\/src\/index\.css$/i.test(path))
+    .filter(([, source]) => HARDCODED_VISUAL_COLOR_PATTERN.test(source))
+    .map(([path]) => path);
+}
+
 
 // ─── Deterministic per-system preselects ──────────────────────────────────
 // Every business system gets a complete, industry-faithful preselection so the
@@ -580,6 +596,7 @@ function buildWizardAiSeedPrompt(opts: {
   primaryGoal: string;
   templateLabel: string;
   sectionOrder: string[];
+  templateLayoutContract: string;
   businessName: string;
   visualStyleLabel: string;
   visualStyleDirective: string;
@@ -587,6 +604,7 @@ function buildWizardAiSeedPrompt(opts: {
   headingWeight: string;
   bodyFont: string;
   canonicalIntents: string[];
+  experienceContract: WizardExperienceContract;
   customInstructionsRaw: string;
 }): string {
   const customInstructionsPresent = opts.customInstructionsRaw.trim().length > 0;
@@ -599,6 +617,7 @@ function buildWizardAiSeedPrompt(opts: {
     `2. Primary Goal: ${opts.primaryGoal || 'collect_leads'}`,
     `3. Template (LOCKED layout): ${opts.templateLabel}`,
     `   Required section order — render in this exact sequence: ${opts.sectionOrder.join(' → ')}`,
+    opts.templateLayoutContract,
     `4. Business Name: ${opts.businessName}`,
     `5. Visual Style preset (LOCKED aesthetic): ${opts.visualStyleLabel} — ${opts.visualStyleDirective}`,
     `   Headings: ${opts.headingFont} (${opts.headingWeight}). Body: ${opts.bodyFont}.`,
@@ -611,6 +630,8 @@ function buildWizardAiSeedPrompt(opts: {
     ``,
     `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
     `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
+    `EXPERIENCE CONTRACT (apply across every page without copying another industry's content):`,
+    formatWizardExperienceContract(opts.experienceContract),
     `CONTENT CONTRACT: Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,
     `Wire interactive elements with data-ut-intent attributes from this set: ${opts.canonicalIntents.join(', ')}.`,
   ].filter(Boolean).join('\n');
@@ -795,6 +816,7 @@ function assessWizardGenerationQuality(
     /** Label for diagnostics (e.g. "salon"). */
     label?: string;
   },
+  options: { isolatedPage?: boolean } = {},
 ): { ok: boolean; reason?: string; totalChars: number; sectionCount: number; intentCount: number } {
   const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
   const combined = tsxEntries.map(([, content]) => content).join('\n');
@@ -814,7 +836,11 @@ function assessWizardGenerationQuality(
     }
     return /export\s+default|export\s+(function|const)/.test(content);
   });
-  const expectedSections = Math.max(3, Math.min(requiredSections.length || 3, 5));
+  const expectedSections = options.isolatedPage
+    ? 3
+    : Math.max(3, Math.min(requiredSections.length || 3, 5));
+  const minimumChars = options.isolatedPage ? 1200 : 2500;
+  const pageEntries = tsxEntries.filter(([path]) => /\/src\/pages\/.+\.(tsx|jsx)$/.test(path));
 
   if (!hasRenderablePage) {
     return { ok: false, reason: 'no renderable TSX page/component was generated', totalChars, sectionCount, intentCount };
@@ -822,14 +848,40 @@ function assessWizardGenerationQuality(
   if (placeholderPattern.test(combined)) {
     return { ok: false, reason: 'generated output contains placeholder/fallback copy', totalChars, sectionCount, intentCount };
   }
-  if (totalChars < 2500) {
-    return { ok: false, reason: `generated output is too small (${totalChars} chars)`, totalChars, sectionCount, intentCount };
+  if (totalChars < minimumChars) {
+    return { ok: false, reason: `generated output is too small (${totalChars} chars; minimum ${minimumChars})`, totalChars, sectionCount, intentCount };
   }
   if (sectionCount < expectedSections) {
     return { ok: false, reason: `generated output has too few sections (${sectionCount}/${expectedSections})`, totalChars, sectionCount, intentCount };
   }
   if (intentCount < 1) {
     return { ok: false, reason: 'generated output has no canonical data-ut-intent wiring', totalChars, sectionCount, intentCount };
+  }
+
+  for (const [path, content] of pageEntries) {
+    const pageSectionCount = (
+      content.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
+    ).length;
+    const isHomePage = /\/Home\.(tsx|jsx)$/i.test(path);
+    const minimumSections = isHomePage ? expectedSections : 3;
+    if (content.trim().length < 1200) {
+      return {
+        ok: false,
+        reason: `generated page ${path} is too small (${content.trim().length} chars; minimum 1200)`,
+        totalChars,
+        sectionCount,
+        intentCount,
+      };
+    }
+    if (pageSectionCount < minimumSections) {
+      return {
+        ok: false,
+        reason: `generated page ${path} has too few sections (${pageSectionCount}/${minimumSections})`,
+        totalChars,
+        sectionCount,
+        intentCount,
+      };
+    }
   }
 
   // Industry-specific hardening (Lane B wizard seed contract enforcement).
@@ -1317,7 +1369,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const mapped = industryToSystem[prefill.industry];
       if (mapped) setSelectedSystem(mapped);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefill]);
 
   // Build template cards from real compositions (falls back to references if none exist)
@@ -1519,36 +1570,24 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // Must run before commitToPipeline so the canonical pipeline can lock the
       // themed `/src/index.css` into siteBundleSnapshot.vfsFiles (preview, VFS,
       // playground, and AIBuilder continuity all read from the snapshot).
-      const earlyResolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
+      if (!selectedTheme) {
+        toast.error('Please select a visual style before launching.');
+        throw new Error('[SystemLauncher] A Style card selection is required for Lane B generation.');
+      }
+      const earlyResolvedPreset = selectedTheme;
+      const earlyThemeTokens = themePresetToThemeTokens(earlyResolvedPreset);
 
-      // ── ASSERTION: resolveThemePreset must NEVER return falsy/idless. ──
-      // It is exhaustive over LayoutCategory and falls back to 'modern'. A
-      // missing id here means the resolver was bypassed or its contract broke.
-      // See mem://architecture/styling/canonical-pipeline-theme-injection.
+      // The selected Style card is mandatory and its resolved token payload is
+      // passed directly into Stage 4b. No default preset may be substituted.
       if (!earlyResolvedPreset || !earlyResolvedPreset.id) {
         const msg =
-          '[SystemLauncher] Theme resolver assertion failed: resolveThemePreset returned no id. ' +
-          'Every industry path MUST resolve to a registered ThemePreset before commitToPipeline. ' +
+          '[SystemLauncher] Style card assertion failed: selected theme has no id. ' +
+          'Every launch must carry an explicit Style card selection. ' +
           'Aborting build to prevent shipping an un-themed scaffold.';
         console.error(msg, { selectedTheme, generationCategory });
         toast.error('Build aborted: theme preset could not be resolved.');
         throw new Error(msg);
       }
-
-      // ── Plan topology ──
-      // All industry launches must honor the 4-step wizard's selected pages,
-      // template, and style tokens. Capability-full/default page expansion is
-      // prohibited for wizard output: only Home + selected pages may render.
-      const sitePlan = planSiteTopology(resolvedIndustry, businessName.trim(), {
-        primaryIntent: industryProfile?.primaryIntent,
-        selectedTemplateId: effectiveTemplate?.id,
-        selectedThemePresetId: earlyResolvedPreset.id,
-        additionalPages: resolvedScaffoldMode === 'selected-pages'
-          ? resolvedRequestedPages.map((page) => PAGE_CHOICE_TO_SPEC[page]).filter(Boolean)
-          : undefined,
-        // Selected-pages mode is mandatory: only Home + user-selected pages get scaffolded.
-        restrictToAdditionalPages: true,
-      });
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};
@@ -1571,6 +1610,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         templateId: effectiveTemplate?.id,
         themeId: selectedTheme?.id,
         themePresetId: earlyResolvedPreset.id,
+        themeTokens: earlyThemeTokens,
         primaryIntent: industryProfile?.primaryIntent,
         requestedPages: resolvedRequestedPages,
         scaffoldMode: resolvedScaffoldMode,
@@ -1617,6 +1657,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         theme: {
           presetId: earlyResolvedPreset.id,
           presetLabel: earlyResolvedPreset.label,
+          tokens: earlyThemeTokens,
         },
         generation: {
           scaffoldMode: resolvedScaffoldMode,
@@ -1643,7 +1684,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         compileResult: compiledPlayground,
         siteBundleSnapshot,
         runtimeManifest: pipelineManifest,
+        sitePlan,
       } = pipelineResult;
+      if (!sitePlan) {
+        throw new Error('[SystemLauncher] Canonical pipeline did not return its authoritative topology plan.');
+      }
 
       if (pipelineResult.warnings.length > 0) {
         console.warn('[SystemLauncher] Pipeline warnings:', pipelineResult.warnings);
@@ -1656,7 +1701,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // exact themed stylesheet for the resolved preset. If this fails, some
       // path bypassed canonicalPipeline Stage 4b or a later writer clobbered
       // the themed file. Stop the build instead of shipping un-themed tokens.
-      const expectedThemedCss = buildThemedIndexCss(earlyResolvedPreset);
+      const expectedThemedCss = buildThemedIndexCssFromTokens(earlyThemeTokens, {
+        presetId: earlyResolvedPreset.id,
+        label: earlyResolvedPreset.id,
+      });
       const actualIndexCss =
         compiledPlayground?.vfsFiles?.['/src/index.css'] ??
         siteBundleSnapshot?.vfsFiles?.['/src/index.css'];
@@ -1690,9 +1738,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) ──
       // Explicit user selection > industry mapping. Never falls through.
-      const resolvedPreset = resolveThemePreset(selectedTheme, generationCategory);
-      const themedTokens = themePresetToThemeTokens(resolvedPreset);
+      const resolvedPreset = earlyResolvedPreset;
+      const themedTokens = earlyThemeTokens;
       composition = { ...composition, theme: themedTokens };
+      const templateLayoutContract = buildTemplateLayoutContract(composition);
+      const templateLayoutPrompt = buildTemplateLayoutPrompt(templateLayoutContract);
+      const experienceContract = buildWizardExperienceContract(resolvedPreset, templateLayoutContract);
 
       const themeTrace = {
         resolvedPresetId: resolvedPreset.id,
@@ -1748,7 +1799,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       };
 
       // Themed CSS — LOCKED by Style card; force-applied over any AI output
-      const themedIndexCss = buildThemedIndexCss(resolvedPreset);
+      const themedIndexCss = buildThemedIndexCssFromTokens(themedTokens, {
+        presetId: resolvedPreset.id,
+        label: resolvedPreset.id,
+      });
 
       // ── Blueprint enriched with Style card palette + custom instructions ──
       const blueprint = {
@@ -1809,6 +1863,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // The Template card's section order — passed to the AI as a hard contract
         template_sections: composition.sections.map((s) => s.type),
         template_intents: compositionMeta?.intents,
+        template_layout: templateLayoutContract,
       };
 
       toast("Generating your site with AI…", {
@@ -1822,6 +1877,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         primaryGoal: resolvedPrimaryGoal,
         templateLabel: effectiveTemplate?.label || system.name,
         sectionOrder: composition.sections.map((s) => s.type),
+        templateLayoutContract: templateLayoutPrompt,
         businessName: brand,
         visualStyleLabel: resolvedPreset.label,
         visualStyleDirective: resolvedPreset.styleDirective,
@@ -1829,14 +1885,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         headingWeight: resolvedPreset.typography.headingWeight,
         bodyFont: resolvedPreset.typography.bodyFont,
         canonicalIntents,
+        experienceContract,
         customInstructionsRaw: customPrompt,
       });
 
       // ── Build the Wizard Seed: structured 4-step snapshot the edge function
-      //    routes to Lane B (same brain as the in-Builder AIBuilderPanel). This
-      //    replaces the protected Lane A fast path so first-launch generations
-      //    benefit from memory, research, multi-page contract output, and the
-      //    same design intelligence that powers ongoing edits.
+      //    routes to Lane B (same brain as the in-Builder AIBuilderPanel), so
+      //    first-launch generations benefit from memory, research, multi-page
+      //    contract output, and the same design intelligence as ongoing edits.
       const bindingGuide = (() => {
         try {
           return buildWizardBindingGuide(siteBundleSnapshot, { industry: resolvedIndustry });
@@ -1901,6 +1957,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           id: effectiveTemplate?.id,
           label: effectiveTemplate?.label || system.name,
           sections: composition.sections.map((s) => s.type),
+          layoutContract: templateLayoutContract,
         },
         theme: {
           presetId: resolvedPreset.id,
@@ -1914,6 +1971,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             radius: themedTokens.radius,
           },
         },
+        experience: experienceContract,
         canonical: {
           pages: canonicalPages,
           capabilities: industryProfile?.defaultCapabilities || [],
@@ -1945,6 +2003,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         sanitized: SanitizedGeneratedFiles;
       } | null = null;
       let aiError: unknown = null;
+      const deferredPageCompletions = new Set<string>();
       let lastPayloadIssue: {
         kind: 'empty' | 'app' | 'section' | 'quality';
         aiContentPreview?: string;
@@ -2076,7 +2135,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 }
               })();
               if (earlySyntaxRepair) {
-                Object.assign(normalizedFiles, earlySyntaxRepair.files);
                 if (earlySyntaxRepair.repairedCount > 0 || earlySyntaxRepair.quarantinedCount > 0) {
                   console.warn('[SystemLauncher] Early syntax repair before binding:', {
                     clean: earlySyntaxRepair.cleanCount,
@@ -2086,6 +2144,73 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       path: r.path, status: r.status, passes: r.passes, error: r.finalError?.slice(0, 200),
                     })),
                   });
+                }
+                if (earlySyntaxRepair.quarantinedCount > 0) {
+                  const blockedFiles = earlySyntaxRepair.reports
+                    .filter((report) => report.status === 'quarantined')
+                    .map((report) => report.path);
+                  const registeredPagePaths = new Set(
+                    Object.values(siteBundleSnapshot.pageRegistry.pages)
+                      .map((page) => (page as { filePath?: string }).filePath)
+                      .filter((path): path is string => Boolean(path))
+                      .map((path) => (path.startsWith('/') ? path : `/${path}`)),
+                  );
+                  const blockedRuntimeFiles: string[] = [];
+                  const restoredSharedChrome: string[] = [];
+
+                  // Keep every successfully parsed/repaired file, but never
+                  // carry a generated quarantine component forward. The two
+                  // canonical shared chrome modules are deterministic runtime
+                  // infrastructure, so restore them rather than failing an
+                  // otherwise valid wizard launch when Lane B mangles one.
+                  for (const [path, source] of Object.entries(earlySyntaxRepair.files)) {
+                    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+                    if (blockedFiles.includes(path) || blockedFiles.includes(normalizedPath)) {
+                      delete normalizedFiles[path];
+                      delete normalizedFiles[normalizedPath];
+                      if (registeredPagePaths.has(normalizedPath)) {
+                        deferredPageCompletions.add(normalizedPath);
+                      } else {
+                        const canonicalSharedChrome = getCanonicalWizardSharedChrome(normalizedPath);
+                        if (canonicalSharedChrome) {
+                          normalizedFiles[normalizedPath] = canonicalSharedChrome;
+                          restoredSharedChrome.push(normalizedPath);
+                        } else {
+                          blockedRuntimeFiles.push(normalizedPath);
+                        }
+                      }
+                      continue;
+                    }
+                    normalizedFiles[path] = source;
+                  }
+
+                  sanitized.invalidFiles = sanitized.invalidFiles.filter((path) => {
+                    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+                    return !deferredPageCompletions.has(normalizedPath);
+                  });
+
+                  if (deferredPageCompletions.size > 0) {
+                    console.warn('[SystemLauncher] Deferring malformed registered pages to isolated Lane B completion', {
+                      pages: Array.from(deferredPageCompletions),
+                    });
+                  }
+                  if (restoredSharedChrome.length > 0) {
+                    console.warn('[SystemLauncher] Restored canonical shared wizard chrome after syntax quarantine', {
+                      files: restoredSharedChrome,
+                    });
+                  }
+                  if (blockedRuntimeFiles.length > 0) {
+                    lastPayloadIssue = {
+                      kind: 'quality',
+                      qualityReason:
+                        `Lane B emitted unparseable shared/runtime source for ${blockedRuntimeFiles.join(', ')}. ` +
+                        'Only registered pages can be regenerated by the page completion stage.',
+                      invalidFiles: blockedRuntimeFiles,
+                    };
+                    aiError = new Error(lastPayloadIssue.qualityReason);
+                  }
+                } else {
+                  Object.assign(normalizedFiles, earlySyntaxRepair.files);
                 }
               }
 
@@ -2107,7 +2232,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 }
               })();
               const wiredFiles = preflight?.files || boundFiles;
-              sanitized.files = wiredFiles;
+              const themeNormalized = normalizeWizardThemeTokens(wiredFiles);
+              sanitized.files = themeNormalized.files;
+              const intentClosure = closeRequiredIndustryIntents(sanitized.files, resolvedIndustry);
+              sanitized.files = stampTemplateLayoutIdentity(intentClosure.files, templateLayoutContract);
+              if (intentClosure.injected.length > 0 || intentClosure.missing.length > 0) {
+                console.info('[SystemLauncher] Required intent closure', intentClosure);
+              }
+              if (themeNormalized.changedFiles.length > 0) {
+                console.warn('[SystemLauncher] Normalized Lane B visual literals to Stage 4b tokens', {
+                  files: themeNormalized.changedFiles,
+                });
+              }
               if (preflight && (preflight.wired > 0 || preflight.skipped.length > 0)) {
                 console.info('[SystemLauncher] Preflight nav wiring:', {
                   wired: preflight.wired,
@@ -2117,6 +2253,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               }
               if (bindingApplication?.missingBindings?.length) {
                 console.warn('[SystemLauncher] Wizard binding pass left missing bindings before quality gate:', bindingApplication.missingBindings);
+              }
+
+              const themeTokenViolations = findWizardThemeTokenViolations(sanitized.files);
+              if (themeTokenViolations.length > 0) {
+                console.warn('[SystemLauncher] Lane B contains residual visual literals after token normalization', {
+                  files: themeTokenViolations,
+                });
               }
 
               const aiAppInvalidFlag =
@@ -2196,6 +2339,15 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       reason: quality.reason || 'Output failed wizard quality contract',
                     }]);
                     console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
+                    if (deferredPageCompletions.size > 0 && !aiError) {
+                      // The complete-site quality gate is expected to fail when
+                      // one or more registered pages were deliberately removed.
+                      // Preserve the valid partial Lane B output so the
+                      // registry-driven completion ledger can regenerate those
+                      // exact pages with full wizard/industry context.
+                      generationResult = { structured, sanitized };
+                      launchReliabilityMode = 'lane-b-degraded';
+                    }
                   } else {
                     console.warn('[SystemLauncher] AI output missed a repairable wizard quality check; continuing with stamped bindings', quality);
                     generationResult = { structured, sanitized };
@@ -2263,6 +2415,106 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // page authored by the AI (Stage 4b lane-b pipeline) and forbids
       // falling back to industry-scaffold "default template preset" bodies.
       const laneBRepairedPaths: string[] = [];
+      const laneBCompletionDiagnostics: Array<{
+        path: string;
+        attempt: number;
+        accepted: boolean;
+        reason: string;
+      }> = [];
+
+      const acceptCompletedWizardPage = (
+        path: string,
+        candidateFiles: Record<string, string>,
+        attempt: number,
+      ): boolean => {
+        const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+        const relativePath = normalizedPath.replace(/^\//, '');
+        const candidate = candidateFiles[normalizedPath] || candidateFiles[relativePath];
+        if (!candidate || !candidate.trim()) {
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: 'Lane B response omitted the requested page file',
+          });
+          return false;
+        }
+
+        const syntax = runPreflightRepair({ [normalizedPath]: candidate }, {
+          context: { industry: generationCategory, brand },
+        });
+        const syntaxReport = syntax.reports[0];
+        if (!syntaxReport || syntaxReport.status === 'quarantined') {
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: syntaxReport?.finalError || 'Page failed syntax preflight',
+          });
+          return false;
+        }
+
+        const repairedCandidate = syntax.files[normalizedPath];
+        const tokenNormalized = normalizeWizardThemeTokens({
+          [normalizedPath]: repairedCandidate,
+        });
+        const normalizedCandidate = tokenNormalized.files[normalizedPath];
+        const themeViolations = findWizardThemeTokenViolations({
+          [normalizedPath]: normalizedCandidate,
+        });
+        if (themeViolations.length > 0) {
+          console.warn('[SystemLauncher] Completed wizard page contains residual visual literals after token normalization', {
+            path: normalizedPath,
+            files: themeViolations,
+          });
+        }
+
+        const quality = assessWizardGenerationQuality(
+          { [normalizedPath]: normalizedCandidate },
+          composition.sections.map((section) => section.type),
+          undefined,
+          { isolatedPage: true },
+        );
+        if (!quality.ok) {
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: quality.reason || 'Page failed the wizard quality contract',
+          });
+          return false;
+        }
+
+        const industryRequirements = getIndustryQualityRequirements(resolvedIndustry);
+        const vocabulary = industryRequirements?.vocabulary || [];
+        if (
+          vocabulary.length > 0 &&
+          !vocabulary.some((term) => repairedCandidate.toLowerCase().includes(term.toLowerCase()))
+        ) {
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: `Page is disconnected from ${resolvedIndustry} vocabulary`,
+          });
+          return false;
+        }
+
+        aiSourcedFiles[normalizedPath] = normalizedCandidate;
+        if (!laneBRepairedPaths.includes(normalizedPath)) {
+          laneBRepairedPaths.push(normalizedPath);
+        }
+        laneBCompletionDiagnostics.push({
+          path: normalizedPath,
+          attempt,
+          accepted: true,
+          reason: syntaxReport.status === 'repaired'
+            ? `Accepted after syntax repair: ${(syntaxReport.passes || []).join(', ')}`
+            : 'Accepted',
+        });
+        return true;
+      };
+
       if (missingWizardPageFiles.length > 0) {
         setLaunchStatus(`Generating ${missingWizardPageFiles.length} remaining page(s)…`);
         const normalizedMissing = missingWizardPageFiles.map((p) => (p.startsWith('/') ? p : `/${p}`));
@@ -2332,11 +2584,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             if (retryStructured?.files) {
               const retrySanitized = sanitizeGeneratedFiles(retryStructured.files);
               for (const missing of normalizedMissing) {
-                const candidate = retrySanitized.files[missing] || retrySanitized.files[missing.replace(/^\//, '')];
-                if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
-                  aiSourcedFiles[missing] = candidate;
-                  laneBRepairedPaths.push(missing);
-                }
+                acceptCompletedWizardPage(missing, retrySanitized.files, 1);
               }
               console.info('[SystemLauncher] Lane B repair pass filled pages:', laneBRepairedPaths);
             } else {
@@ -2362,13 +2610,136 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         .map((path) => (path.startsWith('/') ? path : `/${path}`))
         .filter((path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')]);
 
+      // A batch repair must not make the whole launch depend on every requested
+      // page being returned correctly in one model response. Complete each
+      // unresolved registry page independently, carrying the exact wizard
+      // template/theme identity and the full industry behavior contract.
+      for (const missingPath of stillMissing) {
+        const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidatePage) => {
+          const filePath = (candidatePage as { filePath?: string }).filePath;
+          if (!filePath) return false;
+          return (filePath.startsWith('/') ? filePath : `/${filePath}`) === missingPath;
+        }) as {
+          title?: string;
+          path?: string;
+          pageType?: string;
+          filePath?: string;
+        } | undefined;
+
+        const industryRequirements = getIndustryQualityRequirements(resolvedIndustry);
+        const behaviorContract = INDUSTRY_INTENT_PROFILES[resolvedIndustry];
+        const requiredIntents = (industryRequirements?.requiredIntents || []).join(', ') || 'nav.goto';
+        const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
+
+        for (let attempt = 2; attempt <= 3 && !aiSourcedFiles[missingPath]; attempt++) {
+          setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/2)…`);
+          const pageCompletionPrompt = [
+            aiUserPrompt,
+            '',
+            '── LANE B PAGE COMPLETION TURN ──',
+            `Generate exactly one missing selected wizard page: ${missingPath}.`,
+            `Page title: ${page?.title || 'Page'}`,
+            `Route: ${page?.path || '/'}`,
+            `Page type/role: ${page?.pageType || 'generic'}`,
+            `Selected template ID: ${wizardSelections.templateId}`,
+            `Selected theme preset ID: ${wizardSelections.themePresetId}`,
+            `Wizard seed ID: ${wizardSelections.wizardSeedId}`,
+            `Industry: ${resolvedIndustry}`,
+            `Business: ${brand}`,
+            `Required industry behaviors/intents: ${requiredIntents}`,
+            `Forbidden industry intents: ${(behaviorContract?.forbidden || []).join(', ') || 'none'}`,
+            `Industry vocabulary/context: ${industryVocabulary || generationCategory}`,
+            '',
+            'Return ONLY this file in the WizardSeed multi-file JSON contract.',
+            'The page must contain at least 3 complete semantic sections and 1200+ characters of real copy.',
+            'Use only semantic theme classes backed by the supplied Stage 4b HSL tokens.',
+            'Include working data-ut-intent behavior appropriate to this page role.',
+            'Do not emit App.tsx, shared chrome, placeholder copy, quarantine UI, or a preset scaffold.',
+          ].join('\n');
+
+          try {
+            const completion = await withTimeout(
+              runBuilderTurn<any>({
+                messages: [{ role: 'user', content: pageCompletionPrompt }],
+                mode: 'wizard-seed',
+                currentCode: wizardCurrentCode,
+                editMode: false,
+                templateName: effectiveTemplate?.label || system.name,
+                aesthetic: resolvedPreset.id,
+                source: resolvedIndustry,
+                systemType: selectedSystem,
+                systemsBuildContext: {
+                  version: blueprint.version,
+                  launcherPolicy: blueprint.launcherPolicy,
+                  identity: blueprint.identity,
+                  brand: blueprint.brand,
+                  design: blueprint.design,
+                  theme_tokens: blueprint.theme_tokens,
+                  intents: blueprint.intents,
+                  template_sections: blueprint.template_sections,
+                  template_intents: blueprint.template_intents,
+                },
+                userDesignProfile: laneBDesignProfile,
+                siteElementsLibraryContext,
+                vfsFiles: wizardVfsPayload,
+                previewSnapshot: wizardPreviewSnapshot,
+                recentChangedFiles: [missingPath],
+                gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
+                wizardSeed,
+              }),
+              WIZARD_AI_TIMEOUT_MS,
+              `Lane B page completion timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+            );
+            if (completion.error) {
+              laneBCompletionDiagnostics.push({
+                path: missingPath,
+                attempt,
+                accepted: false,
+                reason: await getFunctionErrorMessage(completion.error),
+              });
+              continue;
+            }
+            const { structured: completionStructured } = extractLaneBLauncherPayload(
+              completion.data as Record<string, unknown> | null,
+              `${brand} ${page?.title || 'Page'}`,
+            );
+            if (!completionStructured?.files) {
+              laneBCompletionDiagnostics.push({
+                path: missingPath,
+                attempt,
+                accepted: false,
+                reason: 'Lane B page completion returned no structured files',
+              });
+              continue;
+            }
+            const completionSanitized = sanitizeGeneratedFiles(completionStructured.files);
+            acceptCompletedWizardPage(missingPath, completionSanitized.files, attempt);
+          } catch (completionError) {
+            laneBCompletionDiagnostics.push({
+              path: missingPath,
+              attempt,
+              accepted: false,
+              reason: completionError instanceof Error ? completionError.message : String(completionError),
+            });
+          }
+        }
+      }
+
+      const unresolvedAfterCompletion = stillMissing.filter(
+        (path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')],
+      );
+
       if (laneBRepairedPaths.length > 0) {
         wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
-      if (stillMissing.length > 0) {
+      if (unresolvedAfterCompletion.length > 0) {
         launchReliabilityMode = 'lane-b-blocked';
+        const completionReasons = laneBCompletionDiagnostics
+          .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
+          .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
+          .join(' | ');
         throw new Error(
-          `Wizard Lane B (Stage 4b) missed ${stillMissing.length} selected page file(s) after repair pass; scaffold fallback is disabled to prevent default template presets: ${stillMissing.join(', ')}`,
+          `Wizard Lane B could not complete ${unresolvedAfterCompletion.length} selected page file(s) after isolated industry-aware generation: ${unresolvedAfterCompletion.join(', ')}. ${completionReasons}`,
         );
       }
 
@@ -2376,13 +2747,85 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       (window as unknown as { __wizardGenerationGaps?: typeof wizardGenerationGaps }).__wizardGenerationGaps =
         wizardGenerationGaps;
 
+      // The interaction pass is deliberately advisory. Site topology, theme,
+      // template geometry, and intent closure have already passed their hard
+      // gates; this final plan can only add constrained runtime affordances.
+      const baselineInteractionManifest = createBaselineInteractionManifest(
+        aiSourcedFiles,
+        templateLayoutContract,
+      );
+      let interactionManifest = baselineInteractionManifest;
+      const interactionWarnings: string[] = [];
+      try {
+        setLaunchStatus('Adding accessible interactions…');
+        const interactionPlan = await withTimeout(
+          runBuilderTurn<Record<string, unknown>>({
+            messages: [{
+              role: 'user',
+              content: buildWizardInteractionPlannerPrompt({
+                contract: templateLayoutContract,
+                industry: resolvedIndustry,
+                intents: baselineInteractionManifest.interactions
+                  .filter((rule) => rule.target.kind === 'intent')
+                  .map((rule) => rule.target.value || ''),
+              }),
+            }],
+            mode: 'wizard-interactions',
+            editMode: false,
+            templateName: effectiveTemplate?.label || system.name,
+            aesthetic: resolvedPreset.id,
+            source: resolvedIndustry,
+            systemType: selectedSystem,
+            vfsFiles: aiSourcedFiles,
+            recentChangedFiles: Object.keys(aiSourcedFiles).filter((path) => /\/src\/pages\/.*\.(?:tsx|jsx)$/i.test(path)),
+            systemsBuildContext: {
+              templateLayout: templateLayoutContract,
+              themePresetId: wizardSelections.themePresetId,
+              industry: resolvedIndustry,
+              allowedInteractionTargets: ['template-root', 'interactive', 'intent'],
+            },
+            wizardSeed,
+            gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
+          }),
+          30_000,
+          'Wizard interaction plan timed out after 30 seconds.',
+        );
+        if (interactionPlan.error) {
+          interactionWarnings.push(await getFunctionErrorMessage(interactionPlan.error));
+        } else {
+          interactionManifest = parseWizardInteractionManifest(interactionPlan.data, baselineInteractionManifest);
+          if (interactionManifest.source === 'baseline') {
+            interactionWarnings.push('AI interaction plan was invalid; used the deterministic baseline.');
+          }
+        }
+      } catch (interactionError) {
+        interactionWarnings.push(interactionError instanceof Error ? interactionError.message : String(interactionError));
+      }
+      const interactionCompilation = compileWizardInteractionManifest(aiSourcedFiles, interactionManifest);
+      if (interactionCompilation.mountedPages.length === 0) {
+        interactionWarnings.push('No generated page accepted the interaction runtime mount.');
+      }
+      console.info('[SystemLauncher] Interaction enrichment complete', {
+        source: interactionManifest.source,
+        rules: interactionManifest.interactions.length,
+        mountedPages: interactionCompilation.mountedPages,
+        warnings: interactionWarnings,
+      });
+
       // ── Merge AI output (if any) with LOCKED themed CSS + DETERMINISTIC ROUTER ──
       // /src/App.tsx is OWNED by the deterministic router from the page registry.
       // Lane B owns every registered page body/component; missing pages hard-fail
       // above, and unselected pages are never routed or scaffold-filled.
       const generatedFiles: Record<string, string> = {
-        ...aiSourcedFiles,
+        ...interactionCompilation.files,
         '/src/index.css': themedIndexCss,
+        '/.unison/template-layout-contract.json': JSON.stringify(templateLayoutContract, null, 2),
+        '/.unison/interaction-enrichment.json': JSON.stringify({
+          source: interactionManifest.source,
+          rules: interactionManifest.interactions.length,
+          mountedPages: interactionCompilation.mountedPages,
+          warnings: interactionWarnings,
+        }, null, 2),
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).
       if (!generatedFiles['/src/App.tsx'] && generatedFiles['src/App.tsx']) {
@@ -2455,6 +2898,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         industry: generationCategory,
         aesthetic: resolvedPreset.id,
         themePresetId: resolvedPreset.id,
+        interactionManifest,
+        experienceContract,
         backendRequired: false,
         wizardSelections,
         allowCanonicalPageFallback: false,
@@ -2529,10 +2974,52 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
       }
 
+      // Persist the generated VFS before navigation. Route/session handoffs are
+      // deliberately treated as an optimization, never the only copy of a
+      // launcher project. The draft trigger creates and links its Cloud project.
+      if (!provisionedBusinessId) {
+        throw new Error('Choose or create a Business Profile before launching a site.');
+      }
+
+      const { data: { user: launcherUser } } = await supabase.auth.getUser();
+      if (!launcherUser) {
+        throw new Error('Sign in before launching a site.');
+      }
+
+      const durableCode = wiredVfsFiles['/src/App.tsx'] || wiredVfsFiles['/App.tsx'] || '';
+      const { data: persistedDraft, error: persistDraftError } = await supabase
+        .from('builder_drafts')
+        .insert({
+          user_id: launcherUser.id,
+          business_id: provisionedBusinessId,
+          name: `${brand} Site`,
+          code: durableCode,
+          editor_code: durableCode,
+          vfs_files: wiredVfsFiles as unknown as Json,
+          metadata: {
+            name: `${brand} Site`,
+            projectName: `${brand} Site`,
+            description: `${system.name} site launched from the System Launcher`,
+            industry: resolvedIndustry,
+            systemType: selectedSystem,
+            entryPoint: launchArtifacts.entryPoint,
+            themePresetId: resolvedPreset.id,
+            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+          } as unknown as Json,
+        })
+        .select('id, project_id')
+        .single();
+
+      if (persistDraftError) throw persistDraftError;
+      if (!persistedDraft?.project_id) {
+        throw new Error('The launcher draft was saved but could not be linked to a Cloud project.');
+      }
+
+      const launchProjectId = persistedDraft.project_id;
+      const launcherDraftId = persistedDraft.id;
+
       // Persist generated bindings → site_intent_bindings (launcher-native wiring).
       // Best-effort; failures never block launch.
-      const launchProjectId =
-        (launchArtifacts.siteBundleSnapshot as { projectId?: string } | undefined)?.projectId;
       if (provisionedBusinessId && launchProjectId) {
         try {
           const { persistGeneratedBindings } = await import('@/services/persistGeneratedBindings');
@@ -2561,7 +3048,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           // re-query without waiting for a manual refresh.
           if (typeof window !== 'undefined' && emitResult.emitted > 0) {
             window.dispatchEvent(
-              new CustomEvent('lovable:catalog-seeded', {
+              new CustomEvent('unison:catalog-seeded', {
                 detail: {
                   businessId: provisionedBusinessId,
                   projectId: launchProjectId,
@@ -2583,13 +3070,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       let launcherRevisionId: string | null = null;
       if (isCommitServiceEnabled() && provisionedBusinessId && launchProjectId) {
         try {
-          const { data: { user: authUser } } = await supabase.auth.getUser();
-          if (authUser?.id) {
+          if (launcherUser.id) {
             const identity: BuilderIdentity = {
-              userId: authUser.id,
+              userId: launcherUser.id,
               businessId: provisionedBusinessId,
               projectId: launchProjectId,
-              draftId: launchProjectId, // launcher-time alias; AI/Playground edits will use real draft id
+              draftId: launcherDraftId,
               revisionId: '',
               sessionId: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
                 ? crypto.randomUUID()
@@ -2658,6 +3144,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         startInPreview: true,
         sitePlan,
         businessId: provisionedBusinessId || undefined,
+        projectId: launchProjectId,
+        draftId: launcherDraftId,
         materializedPlayground,
         compiledPlayground,
         siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
@@ -2686,6 +3174,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         startInPreview: true,
         intentRuntime: true,
         businessId: provisionedBusinessId || undefined,
+        projectId: launchProjectId,
         industry: resolvedIndustry,
         runtimeManifest,
         entryPoint: launchArtifacts.entryPoint,
@@ -2703,6 +3192,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         fromLauncher: true,
         ...navState,
       };
+      const webBuilderNavigationState = buildLauncherNavigationState(webBuilderRouteState);
 
       setLaunch(launchState);
       persistLauncherHandoff({
@@ -2724,7 +3214,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 current_step: "launched",
                 industry: selectedSystem ?? null,
                 business_name: businessName || null,
-                project_id: provisionedBusinessId || null,
+                project_id: launchProjectId,
               },
               { onConflict: "user_id" }
             );
@@ -2738,7 +3228,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // dashboard. `replace: true` so back-nav doesn't re-enter the wizard.
       navigate("/web-builder", {
         replace: true,
-        state: webBuilderRouteState,
+        state: webBuilderNavigationState,
       });
 
       onOpenChange(false);
@@ -2789,10 +3279,24 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <p className="text-[11px] text-white/30">AI-powered site generation</p>
               </div>
             </div>
-            <ImportProjectZipButton
-              variant="pill"
-              onImported={() => onOpenChange(false)}
-            />
+            <div className="flex items-center justify-end gap-2 flex-wrap">
+              <BusinessSelector
+                value={selectedBusinessId}
+                onChange={setSelectedBusinessId}
+                mode="member"
+                allowCreate
+                size="sm"
+                placeholder="Restore into business"
+              />
+              <ImportUnisonSiteZipButton
+                businessId={selectedBusinessId}
+                onImported={() => onOpenChange(false)}
+              />
+              <ImportProjectZipButton
+                variant="pill"
+                onImported={() => onOpenChange(false)}
+              />
+            </div>
           </div>
 
           {/* Step pills */}
@@ -3119,7 +3623,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   isLaunching={isLaunching}
                   launchStatus={launchStatus}
                   canContinueQuestions={!!primaryGoal}
-                  canGenerate={!!businessName.trim()}
+                  canGenerate={!!businessName.trim() && !!selectedTheme}
                   onQuestionsNext={handleQuestionsNext}
                   onTemplatesNext={handleTemplateNext}
                   onLaunch={handleLaunch}
@@ -3274,7 +3778,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   <div>
 
                     <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
-                      Visual Style <span className="text-white/20">(optional)</span>
+                      Visual Style <span className="text-cyan-400/60">*</span>
                     </label>
                     <div className="grid grid-cols-3 md:grid-cols-4 gap-2 max-h-[26vh] overflow-y-auto scrollbar-hide pr-1">
                       {THEME_PRESETS.map((theme) => {
@@ -3282,7 +3786,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                         return (
                           <button
                             key={theme.id}
-                            onClick={() => setSelectedTheme(isSelected ? null : theme)}
+                            onClick={() => setSelectedTheme(theme)}
                             onMouseEnter={() => setHoveredTheme(theme)}
                             onMouseLeave={() => setHoveredTheme(null)}
                             onFocus={() => setHoveredTheme(theme)}

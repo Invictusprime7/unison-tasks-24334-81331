@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { X, Send, Sparkles, Loader2, Hammer, Image, Paperclip, AlertTriangle } from 'lucide-react';
-import { Canvas as FabricCanvas } from 'fabric';
+import type { Canvas as FabricCanvas } from 'fabric';
 import { useWebBuilderAI } from '@/hooks/useWebBuilderAI';
 import { useAIFileAnalysis } from '@/hooks/useAIFileAnalysis';
 import { useIntentFailureWatcher, type IntentDiagnosisRequest } from '@/hooks/useIntentFailureWatcher';
@@ -621,7 +621,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           </Button>
         </div>
         <p className="text-xs text-white/50 mt-2">
-          📎 Paste images or drop files • Powered by Lovable AI
+          📎 Paste images or drop files • Powered by your configured AI provider
         </p>
       </div>
     </div>

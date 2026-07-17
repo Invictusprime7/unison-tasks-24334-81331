@@ -5,6 +5,7 @@
  */
 import type { ThemePreset } from './themePresets';
 import type { ThemeTokens } from '@/sections/types';
+import { getThemeGeometryContract } from '@/services/themeGeometryContract';
 
 export function hexToHSL(hex: string): string {
   const h = hex.replace('#', '');
@@ -69,7 +70,7 @@ export function themePresetToThemeTokens(preset: ThemePreset): ThemeTokens {
       headingWeight: preset.typography.headingWeight,
       bodyWeight: '400',
     },
-    radius: '0.75rem',
+    radius: getThemeGeometryContract(preset.id).radius,
     sectionPadding: '5rem 1rem',
     containerWidth: '1200px',
   };

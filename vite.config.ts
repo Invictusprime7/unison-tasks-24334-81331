@@ -1,9 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "node:path";
-import { componentTagger } from "lovable-tagger";
 import { visualizer } from 'rollup-plugin-visualizer';
-import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/supabase/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -15,8 +13,6 @@ export default defineConfig(({ mode }) => ({
     react({
       jsxImportSource: undefined, // Use automatic JSX runtime
     }),
-    mcpPlugin(),
-    mode === "development" && componentTagger(),
     mode === "analyze" && visualizer({
       filename: "dist/bundle-analysis.html",
       open: true,
@@ -40,6 +36,17 @@ export default defineConfig(({ mode }) => ({
       output: {
         // Comprehensive manual chunk splitting for optimal loading
         manualChunks: (id: string) => {
+          // Builder-only runtime libraries are large enough to make the
+          // WebBuilder route appear permanently suspended when bundled into
+          // the shared vendor chunk. Keep them independently cacheable and
+          // loadable in parallel with the route shell.
+          if (id.includes('@babel/standalone')) {
+            return 'babel-standalone';
+          }
+          if (id.includes('@codesandbox/sandpack')) {
+            return 'sandpack-runtime';
+          }
+
           // React core, router, and React-dependent utilities (must stay together)
           if (id.includes('react') || id.includes('react-dom') || id.includes('react-router') ||
               id.includes('use-callback-ref') || id.includes('use-sidecar') || 

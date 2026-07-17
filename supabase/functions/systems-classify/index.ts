@@ -1,20 +1,20 @@
 // deno-lint-ignore-file no-import-prefix
-import { serve } from "serve";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
+import { createChatCompletion, isTextGenerationConfigured } from "../_shared/ai/providerClient.ts";
 
 /**
  * Systems AI - Classify Endpoint
  * POST /systems-classify
  * 
  * Takes a business prompt and returns industry classification + clarifying questions.
- * Uses AI for intelligent classification when LOVABLE_API_KEY is configured,
+ * Uses direct AI providers for intelligent classification when configured,
  * falls back to regex-based heuristics otherwise.
  */
 
-const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const AI_MODEL = "google/gemini-2.5-flash";
 
 interface ClassifyRequest {
@@ -288,7 +288,7 @@ function classifyPrompt(prompt: string): ClassifyResponse {
 /**
  * AI-powered classification using LLM
  */
-async function classifyWithAI(prompt: string, apiKey: string): Promise<ClassifyResponse | null> {
+async function classifyWithAI(prompt: string): Promise<ClassifyResponse | null> {
   const systemPrompt = `You are a business classification AI. Given a user's description of their business, you must:
 
 1. Identify the industry category (MUST be exactly one of):
@@ -336,28 +336,20 @@ Respond ONLY with valid JSON in this exact format:
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
 
-    const response = await fetch(AI_GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Classify this business: ${prompt}` },
-        ],
-        temperature: 0.3,
-        max_tokens: 1000,
-      }),
-      signal: controller.signal,
-    });
+    const response = await createChatCompletion({
+      model: AI_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Classify this business: ${prompt}` },
+      ],
+      temperature: 0.3,
+      max_tokens: 1000,
+    }, controller.signal);
 
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.error("[systems-classify] AI gateway error:", response.status);
+      console.error("[systems-classify] AI provider error:", response.status);
       return null;
     }
 
@@ -451,12 +443,11 @@ serve(async (req) => {
     }
     
     // Try AI classification first if API key is available
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
     let result: ClassifyResponse | null = null;
     let usedAI = false;
     
-    if (apiKey) {
-      result = await classifyWithAI(prompt, apiKey);
+    if (isTextGenerationConfigured()) {
+      result = await classifyWithAI(prompt);
       if (result) {
         usedAI = true;
         console.log("[systems-classify] Used AI classification, industry:", result.industry);

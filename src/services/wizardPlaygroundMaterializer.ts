@@ -755,7 +755,7 @@ export function materializePlayground(
 
   applyNativePublishDefaults(playground, selections);
 
-  return { playground, warnings };
+  return { playground, sitePlan, warnings };
 }
 
 // ============================================================================

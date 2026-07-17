@@ -14,7 +14,7 @@
  *   data-ut-element → data-ut-slot → data-ut-block → data-ut-section →
  *   data-ut-page    → file fallback.
  *
- * See `.lovable/plan.md` (Preview Floating Toolbar) and the architecture
+ * See the preview floating-toolbar architecture documentation
  * memory entry under mem://features/web-builder/preview-floating-toolbar.
  */
 

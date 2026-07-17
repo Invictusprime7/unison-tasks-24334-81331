@@ -79,8 +79,8 @@ export function CRMActivityFeed({ businessId, className }: Props) {
   React.useEffect(() => {
     refresh();
     const handler = () => refresh();
-    window.addEventListener('lovable:outcome-recorded', handler);
-    return () => window.removeEventListener('lovable:outcome-recorded', handler);
+    window.addEventListener('unison:outcome-recorded', handler);
+    return () => window.removeEventListener('unison:outcome-recorded', handler);
   }, [refresh]);
 
   const markDone = React.useCallback(

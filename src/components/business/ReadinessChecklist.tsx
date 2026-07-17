@@ -41,11 +41,11 @@ export function ReadinessChecklist({
         navigate(action.fix.path);
       } else if (action.fix.type === 'callback') {
         window.dispatchEvent(
-          new CustomEvent('lovable:readiness-action', { detail: { id: action.fix.id, action } }),
+          new CustomEvent('unison:readiness-action', { detail: { id: action.fix.id, action } }),
         );
       } else if (action.fix.type === 'connector') {
         window.dispatchEvent(
-          new CustomEvent('lovable:open-connector', { detail: { connectorId: action.fix.connectorId } }),
+          new CustomEvent('unison:open-connector', { detail: { connectorId: action.fix.connectorId } }),
         );
       }
     },

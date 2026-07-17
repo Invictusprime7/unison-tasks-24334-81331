@@ -39,8 +39,14 @@ import { createRuntimeManifest } from '@/types/runtimeManifest';
 import { validateComposition } from '@/services/componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
 import { assertWithinCommit } from './pipelineGuard';
-import { THEME_PRESETS } from '@/components/onboarding/themePresets';
-import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
+import { buildThemedIndexCssFromTokens } from '@/components/onboarding/themePresetToIndexCss';
+import type { ThemeTokens } from '@/sections/types';
+import type { GeneratedSitePlan } from './siteTopologyPlanner';
+import {
+  applyCanonicalInteractionEnrichment,
+  readWizardInteractionManifest,
+  type WizardInteractionManifest,
+} from '@/services/wizardInteractionEnrichment';
 
 // ============================================================================
 // Pipeline Result
@@ -57,6 +63,7 @@ export interface CanonicalPipelineResult {
   compileResult: PlaygroundCompileResult;
   siteBundleSnapshot: SiteBundleSnapshot;
   runtimeManifest: RuntimeManifest;
+  sitePlan: GeneratedSitePlan | null;
 
   /** Warnings from materialization + validation */
   warnings: string[];
@@ -109,6 +116,7 @@ export interface SiteBundleSnapshot {
 
   /** Shared app context propagated at launch/save time */
   appContext?: RuntimeAppContext;
+  themeTokens?: ThemeTokens;
 
   /**
    * Durable snapshot identity — the single source of truth for downstream
@@ -140,6 +148,15 @@ export interface SiteBundleSnapshotMeta {
   themePresetId?: string | null;
   /** Resolved template id from the wizard Template-card. */
   templateId?: string | null;
+  /** Durable constrained final interaction plan. */
+  interactionManifest?: WizardInteractionManifest;
+  /** Explicit chain-of-custody for the Stage 4b dynamic theme stylesheet. */
+  themeInjection?: {
+    version: '1.0';
+    stage: '4b';
+    presetId: string | null;
+    cssPath: '/src/index.css';
+  };
 }
 
 
@@ -166,6 +183,7 @@ export function executeCanonicalPipeline(
   const materialization = materializePlayground(selections, capabilities);
   warnings.push(...materialization.warnings);
   const playground = materialization.playground;
+  const sitePlan = materialization.sitePlan;
 
   // Stage 3: Validate structure
   const validations = validatePlayground(playground, existingVfsFiles);
@@ -207,40 +225,42 @@ export function executeCanonicalPipeline(
   // themed `/src/index.css` — not the un-themed default from the base scaffold.
   // Mirrors `recompileFromPlayground`'s themed CSS injection.
   //
-  // INVARIANT (industry-agnostic): `selections.themePresetId` MUST be present.
-  // `resolveThemePreset(...)` in SystemLauncher is exhaustive over every
-  // LayoutCategory and falls back to 'modern'. A missing presetId here means
-  // some upstream path bypassed the wizard resolver — fail loudly instead of
-  // silently shipping un-themed tokens. See mem://architecture/styling/canonical-pipeline-theme-injection.
-  const presetId = selections.themePresetId || selections.themeId;
-  if (!presetId) {
+  // INVARIANT: the selected Style card's resolved semantic HSL tokens must be
+  // present. Stage 4b consumes that payload directly; theme ids are retained
+  // only for traceability and downstream identity.
+  const themeTokens = selections.themeTokens;
+  if (!themeTokens) {
     throw new Error(
-      '[canonicalPipeline] Stage 4b assertion failed: selections.themePresetId is missing. ' +
-      'Every WizardSelections payload MUST thread a resolved ThemePreset id (see resolveThemePreset in SystemLauncher). ' +
-      'Refusing to compile an un-themed scaffold.',
+      '[canonicalPipeline] Stage 4b assertion failed: selections.themeTokens is missing. ' +
+      'Every wizard launch must inject the selected Style card HSL tokens.',
     );
   }
-  const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId);
-  if (!preset) {
-    throw new Error(
-      `[canonicalPipeline] Stage 4b assertion failed: ThemePreset id "${presetId}" is not registered in THEME_PRESETS. ` +
-      'Add the preset to themePresets.ts or fix resolveThemePreset to return a registered id.',
-    );
-  }
-  const themedCss = buildThemedIndexCss(preset);
+  const themedCss = buildThemedIndexCssFromTokens(themeTokens, {
+    presetId: selections.themePresetId || selections.themeId,
+    label: selections.themePresetId || selections.themeId || 'selected style card',
+  });
   if (!themedCss || typeof themedCss !== 'string' || !themedCss.includes('--primary')) {
     throw new Error(
-      `[canonicalPipeline] Stage 4b assertion failed: buildThemedIndexCss returned an invalid stylesheet for preset "${presetId}".`,
+      '[canonicalPipeline] Stage 4b assertion failed: injected theme tokens produced an invalid stylesheet.',
     );
   }
   compileResult.vfsFiles['/src/index.css'] = themedCss;
+
+  // Stage 4c: Final experience injection. The plan is constrained data, not
+  // a launcher-only TSX mutation, so it can be reapplied by every canonical
+  // compile after Lane B or a playground edit changes page source.
+  const interactionEnrichment = applyCanonicalInteractionEnrichment(
+    compileResult.vfsFiles,
+    selections.interactionManifest,
+  );
+  compileResult.vfsFiles = interactionEnrichment.files;
 
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
     compileResult,
-    selections,
+    { ...selections, interactionManifest: interactionEnrichment.manifest || undefined },
   );
 
   // Stage 6: Derive RuntimeManifest from snapshot
@@ -254,6 +274,7 @@ export function executeCanonicalPipeline(
     compileResult,
     siteBundleSnapshot,
     runtimeManifest,
+    sitePlan,
     warnings,
     errors,
   };
@@ -272,7 +293,7 @@ export function recompileFromPlayground(
   existingVfsFiles: Record<string, string> = {},
   businessName?: string,
   industry?: string,
-  options?: { selectedTemplateId?: string; selectedThemeId?: string; themePresetId?: string },
+  options?: { selectedTemplateId?: string; selectedThemeId?: string; themePresetId?: string; themeTokens?: ThemeTokens },
 ): Omit<CanonicalPipelineResult, 'capabilities'> & { capabilities: null } {
   assertWithinCommit('recompileFromPlayground');
   const warnings: string[] = [];
@@ -292,8 +313,7 @@ export function recompileFromPlayground(
     industry: industry || null,
   });
 
-  // Re-emit themed /src/index.css from the wizard's preset so any in-builder
-  // recompile keeps the Style-card tokens locked across all industries.
+  // Re-emit themed /src/index.css from the durable Style-card HSL payload.
   //
   // RESILIENCY: AI Builder / Playground autosaves must NEVER block on a missing
   // themePresetId — the wizard preset chain-of-custody can drift across
@@ -301,6 +321,31 @@ export function recompileFromPlayground(
   // doesn't have a presetId, try to recover it from the existing snapshot in
   // VFS, then fall back to preserving the existing themed /src/index.css.
   let presetId = options?.themePresetId || options?.selectedThemeId;
+  let recoveredThemeTokens = options?.themeTokens;
+  if (!recoveredThemeTokens) {
+    const tokenSources: Array<[string, (raw: string) => ThemeTokens | undefined]> = [
+      ['/.unison/site-bundle-snapshot.json', (raw) => {
+        const snap = JSON.parse(raw) as { themeTokens?: ThemeTokens; appContext?: { themeTokens?: ThemeTokens } };
+        return snap.themeTokens || snap.appContext?.themeTokens;
+      }],
+      ['/.unison/app-context.json', (raw) => {
+        const ctx = JSON.parse(raw) as { themeTokens?: ThemeTokens };
+        return ctx.themeTokens;
+      }],
+      ['/.unison/wizard-seed.json', (raw) => {
+        const seed = JSON.parse(raw) as { theme?: { tokens?: ThemeTokens } };
+        return seed.theme?.tokens;
+      }],
+    ];
+    for (const [path, extract] of tokenSources) {
+      const raw = existingVfsFiles[path];
+      if (!raw) continue;
+      try {
+        recoveredThemeTokens = extract(raw);
+        if (recoveredThemeTokens) break;
+      } catch { /* try next */ }
+    }
+  }
   if (!presetId) {
     // RESILIENCY: try every persisted artifact the wizard writes into the VFS
     // before falling back to CSS-preserve. Any single-file corruption used to
@@ -329,30 +374,14 @@ export function recompileFromPlayground(
       if (!raw) continue;
       try { presetId = extract(raw) || undefined; } catch { /* try next */ }
     }
-    // Last-chance recovery: parse the AESTHETIC marker written by
-    // buildThemedIndexCss into the existing themed CSS.
-    if (!presetId) {
-      const existingCss = existingVfsFiles['/src/index.css'] || '';
-      const marker = existingCss.match(/AESTHETIC:\s*([^(]+?)\s*\(wizard token injection/);
-      if (marker) {
-        const label = marker[1].trim().toLowerCase();
-        const matched = THEME_PRESETS.find((p: { id: string; label: string }) => p.label.toLowerCase() === label);
-        if (matched) presetId = matched.id;
-      }
-    }
   }
-  if (presetId) {
-    const preset = THEME_PRESETS.find((p: { id: string }) => p.id === presetId);
-    if (!preset) {
-      throw new Error(
-        `[canonicalPipeline] Recompile Stage 4b assertion failed: ThemePreset id "${presetId}" is not registered in THEME_PRESETS.`,
-      );
-    }
-    const themedCss = buildThemedIndexCss(preset);
-    if (!themedCss || typeof themedCss !== 'string' || !themedCss.includes('--primary')) {
-      throw new Error(
-        `[canonicalPipeline] Recompile Stage 4b assertion failed: buildThemedIndexCss returned invalid CSS for preset "${presetId}".`,
-      );
+  if (recoveredThemeTokens) {
+    const themedCss = buildThemedIndexCssFromTokens(recoveredThemeTokens, {
+      presetId,
+      label: presetId || 'persisted style card',
+    });
+    if (!themedCss.includes('--primary:')) {
+      throw new Error('[canonicalPipeline] Recompile Stage 4b received invalid persisted theme tokens.');
     }
     compileResult.vfsFiles['/src/index.css'] = themedCss;
   } else {
@@ -362,15 +391,24 @@ export function recompileFromPlayground(
       // Preserve previously themed CSS so AI/Playground edits persist without
       // re-emission. The wizard already locked tokens at first launch.
       compileResult.vfsFiles['/src/index.css'] = existingCss!;
-      warnings.push('[canonicalPipeline] Recompile Stage 4b: themePresetId missing; preserved existing themed /src/index.css.');
+      warnings.push('[canonicalPipeline] Recompile Stage 4b: durable theme tokens unavailable; preserved existing semantic-token CSS.');
     } else {
       // Never silently ship un-themed default Tailwind CSS — this is the exact
       // regression where HSL theme injection "randomly breaks" for a draft.
       throw new Error(
-        '[canonicalPipeline] Recompile Stage 4b assertion failed: themePresetId could not be recovered from options, snapshot, runtime-manifest, app-context, wizard-seed, or existing CSS marker. Refusing to emit un-themed CSS.',
+        '[canonicalPipeline] Recompile Stage 4b assertion failed: no durable theme token payload or existing semantic-token CSS is available.',
       );
     }
   }
+
+  // Preserve and reapply the final interaction plan from the previous VFS.
+  // This runs after Stage 4b so the runtime always observes the current token
+  // stylesheet and never owns visual colors itself.
+  const interactionEnrichment = applyCanonicalInteractionEnrichment(
+    compileResult.vfsFiles,
+    readWizardInteractionManifest(existingVfsFiles),
+  );
+  compileResult.vfsFiles = interactionEnrichment.files;
 
   // Recover wizardSeedId from the existing snapshot so recompiles preserve
   // chain-of-custody back to the original wizard payload.
@@ -393,6 +431,8 @@ export function recompileFromPlayground(
       themeId: options?.selectedThemeId,
       templateId: options?.selectedTemplateId,
       wizardSeedId: recoveredSeedId,
+      themeTokens: recoveredThemeTokens,
+      interactionManifest: interactionEnrichment.manifest || undefined,
     },
     'recompile',
   );
@@ -407,6 +447,7 @@ export function recompileFromPlayground(
     compileResult,
     siteBundleSnapshot,
     runtimeManifest,
+    sitePlan: null,
     warnings,
     errors,
   };
@@ -428,6 +469,8 @@ function projectToSiteBundleSnapshot(
     themeId?: string | null;
     templateId?: string | null;
     wizardSeedId?: string | null;
+    themeTokens?: ThemeTokens;
+    interactionManifest?: WizardInteractionManifest;
   },
   source: SiteBundleSnapshotMeta['source'] = 'wizard',
 ): SiteBundleSnapshot {
@@ -485,6 +528,7 @@ function projectToSiteBundleSnapshot(
     routes: compileResult.previewManifest.routes,
     homeRoute: compileResult.previewManifest.homeRoute,
     createdAt: new Date().toISOString(),
+    themeTokens: selections.themeTokens,
     meta: {
       source,
       systemId: resolvedSystemId,
@@ -493,6 +537,13 @@ function projectToSiteBundleSnapshot(
       themePresetId: resolvedThemePresetId,
       templateId: resolvedTemplateId,
       wizardSeedId: selections.wizardSeedId ?? undefined,
+      interactionManifest: selections.interactionManifest,
+      themeInjection: {
+        version: '1.0',
+        stage: '4b',
+        presetId: resolvedThemePresetId,
+        cssPath: '/src/index.css',
+      },
     },
   };
 }

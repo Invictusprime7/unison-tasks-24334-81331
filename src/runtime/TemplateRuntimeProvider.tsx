@@ -7,7 +7,7 @@
  * 3. Fully-wired intent managers
  * 4. Event bridge to Inngest automations
  * 
- * This enables "Lovable-level" zero-config behavior where:
+ * This enables zero-config behavior where:
  * - "Sign In" buttons work immediately with real auth
  * - "Subscribe" buttons open real Stripe Checkout
  * - Lead forms persist to CRM automatically

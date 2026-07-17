@@ -60,7 +60,7 @@ thin back-compat exports.
 | Layer | Reads | Writes |
 | ----- | ----- | ------ |
 | **Wizard Launcher** | blueprintSchema, industryMatrix, siteTopologyPlanner, capabilityRegistry | `commitToPipeline` only |
-| **AI Builder (Lane A & B)** | intentSurfaceRegistry, coreIntents, contractGuard, integrityReport | `commitToPipeline` only |
+| **System Launcher + AI Builder (Lane B)** | intentSurfaceRegistry, coreIntents, contractGuard, integrityReport | `commitToPipeline` only |
 | **Creator Playground** | playground, routePolicy, slotBindingPolicy, capabilityRegistry, gates | `commitToPipeline` only |
 | **Preview compiler** | runtimeManifest, routePolicy, iconIntentRegistry | — (read-only) |
 | **Runtime** | coreIntents, intentSurfaceRegistry, iconIntentRegistry, runtimeManifest | — (read-only) |

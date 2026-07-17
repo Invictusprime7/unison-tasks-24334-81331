@@ -93,7 +93,8 @@ export function resolveIntentTarget(
 // Topology Persistence
 // ============================================================================
 
-const TOPOLOGY_STORAGE_KEY = 'lovable_site_topology';
+const TOPOLOGY_STORAGE_KEY = 'unison_site_topology';
+const LEGACY_TOPOLOGY_STORAGE_KEY = 'lovable_site_topology';
 
 /**
  * Persist a site plan to sessionStorage so it survives page refreshes.
@@ -111,9 +112,12 @@ export function persistTopology(plan: GeneratedSitePlan): void {
  */
 export function recoverTopology(): GeneratedSitePlan | null {
   try {
-    const raw = sessionStorage.getItem(TOPOLOGY_STORAGE_KEY);
+    const raw = sessionStorage.getItem(TOPOLOGY_STORAGE_KEY) ?? sessionStorage.getItem(LEGACY_TOPOLOGY_STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as GeneratedSitePlan;
+    const plan = JSON.parse(raw) as GeneratedSitePlan;
+    sessionStorage.setItem(TOPOLOGY_STORAGE_KEY, JSON.stringify(plan));
+    sessionStorage.removeItem(LEGACY_TOPOLOGY_STORAGE_KEY);
+    return plan;
   } catch {
     return null;
   }
@@ -125,6 +129,7 @@ export function recoverTopology(): GeneratedSitePlan | null {
 export function clearTopology(): void {
   try {
     sessionStorage.removeItem(TOPOLOGY_STORAGE_KEY);
+    sessionStorage.removeItem(LEGACY_TOPOLOGY_STORAGE_KEY);
   } catch {
     // ignore
   }

@@ -409,10 +409,19 @@ export interface WizardSeedShape {
     presetId?: string;
     presetLabel?: string;
     styleDirective?: string;
+    geometryRule?: string;
     isDark?: boolean;
     headingFont?: string;
     bodyFont?: string;
     tokens?: Record<string, string | number | boolean | undefined>;
+    [k: string]: unknown;
+  };
+  experience?: {
+    version?: string;
+    stylePresetId?: string;
+    templateId?: string;
+    layoutSignature?: string;
+    directives?: string[];
     [k: string]: unknown;
   };
   canonical?: {
@@ -477,6 +486,7 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
     if (typeof th.isDark === 'boolean') lines.push(`Mode: ${th.isDark ? 'DARK' : 'LIGHT'}`);
     if (th.headingFont || th.bodyFont)  lines.push(`Typography: ${th.headingFont || 'auto'} / ${th.bodyFont || 'auto'}`);
     if (th.styleDirective) lines.push(`Directive: ${th.styleDirective}`);
+    if (th.geometryRule) lines.push(`Geometry rule (HARD): ${th.geometryRule}`);
     if (th.tokens) {
       const keys = ['primary','primaryForeground','secondary','accent','background','foreground','muted','mutedForeground','border','card','radius'];
       const rendered = keys
@@ -508,6 +518,15 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   if (c.capabilities?.length) lines.push(`Capabilities: ${c.capabilities.join(', ')}`);
   if (c.intents?.length)      lines.push(`Wired intents: ${c.intents.join(', ')}`);
   if (c.capabilities?.length || c.intents?.length) lines.push('');
+
+  const experience = seed.experience || {};
+  if (experience.directives?.length) {
+    lines.push('── EXPERIENCE QUALITY CONTRACT — HARD ──');
+    lines.push(`Selected style/template identity: ${experience.stylePresetId || 'style'} / ${experience.templateId || 'template'}${experience.layoutSignature ? ` (${experience.layoutSignature})` : ''}.`);
+    experience.directives.forEach((directive, index) => lines.push(`${index + 1}. ${directive}`));
+    lines.push('These directives define visual behavior only. Keep the business copy, images, proof, and CTAs specific to this launch industry.');
+    lines.push('');
+  }
 
   const g = seed.generation || {};
   if (g.customInstructions) {
@@ -542,13 +561,20 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   lines.push('2. Every page imports SiteNavbar + SiteFooter from "../sections/...".');
   lines.push('3. Use Tailwind semantic tokens (bg-primary, text-foreground, bg-card, border-border).');
   lines.push('   For raw colors use hsl(var(--token)). Never hardcode hex.');
+  if (seed?.theme?.geometryRule) {
+    lines.push('3a. The locked geometry rule above overrides generic design defaults. Do not introduce rounded-full classes, blur orbs, glass cards, or decorative bubbles when it forbids them.');
+  }
   lines.push('4. Every interactive CTA needs a data-ut-intent attribute mapped to the');
   lines.push('   wired intents above (contact.submit, booking.create, lead.capture,');
   lines.push('   newsletter.subscribe, quote.request, cart.checkout, nav.anchor, …).');
   lines.push('5. Use only react, lucide-react, framer-motion. No other imports.');
   lines.push('6. Lucide social brand casing: Github, Linkedin, Youtube, Twitter (NOT GitHub/LinkedIn/YouTube/X).');
   lines.push('7. Images: prefer https://images.unsplash.com/photo-... static strings.');
-  lines.push('8. Each page should be visually unique while sharing the navbar/footer/theme.');
+  lines.push('8. Home must implement the full template section order with a minimum of 3-5 substantial sections.');
+  lines.push('9. Every secondary page must have at least 3 purpose-specific sections and 1200+ characters of authored TSX.');
+  lines.push('   A title, nav, gallery grid, or footer alone is not a complete page.');
+  lines.push('10. Each page should be visually unique while sharing the navbar/footer/theme.');
+  lines.push('11. Use Framer Motion only for purposeful fade/reveal and staggered entrances; every generated page must remain fully usable with reduced motion.');
   lines.push('═══════════════════════════════════════════════════════════════');
   lines.push('');
 

@@ -68,7 +68,7 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
       if (typeof window !== 'undefined') {
         (window as unknown as Record<string, unknown>).__UNISON_BUSINESS__ = p ?? null;
         window.dispatchEvent(
-          new CustomEvent('lovable:business-profile-changed', { detail: { businessId, profile: p } }),
+          new CustomEvent('unison:business-profile-changed', { detail: { businessId, profile: p } }),
         );
       }
     } catch (e) {
@@ -87,7 +87,7 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
         if (typeof window !== 'undefined') {
           (window as unknown as Record<string, unknown>).__UNISON_BUSINESS__ = next;
           window.dispatchEvent(
-            new CustomEvent('lovable:business-profile-changed', { detail: { businessId, profile: next } }),
+            new CustomEvent('unison:business-profile-changed', { detail: { businessId, profile: next } }),
           );
         }
       }

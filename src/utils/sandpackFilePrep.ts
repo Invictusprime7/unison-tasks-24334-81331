@@ -25,8 +25,11 @@ import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
 import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
 import { resolveSnapshot } from '@/services/snapshotProjector';
+import { enforceThemeGeometryContract, hasThemeGeometryContract } from '@/services/themeGeometryContract';
+import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
 
 const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
 
@@ -135,10 +138,10 @@ const PREVIEW_INDEX_HTML = `<!DOCTYPE html>
 </html>`;
 
 
-const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
-  const bridgeWindow = window as Window & { __lovablePreviewNavBridgeInstalled?: boolean };
-  if (bridgeWindow.__lovablePreviewNavBridgeInstalled) return;
-  bridgeWindow.__lovablePreviewNavBridgeInstalled = true;
+const PREVIEW_NAV_BRIDGE = `function __initUnisonPreviewNavBridge() {
+  const bridgeWindow = window as Window & { __unisonPreviewNavBridgeInstalled?: boolean };
+  if (bridgeWindow.__unisonPreviewNavBridgeInstalled) return;
+  bridgeWindow.__unisonPreviewNavBridgeInstalled = true;
 
   const normalizePath = (rawPath: string) => rawPath.replace(/^\\//, '').replace(/\\.html(?:[?#].*)?$/, '').replace(/[?#].*$/, '') || 'index';
 
@@ -459,10 +462,10 @@ const PREVIEW_NAV_BRIDGE = `function __initLovablePreviewNavBridge() {
  * had ElementFloatingToolbar and onElementSelect plumbing, but no script in
  * the iframe ever produced the ELEMENT_SELECTED message.
  */
-const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge() {
-  const bridgeWindow = window as Window & { __lovablePreviewSelectionBridgeInstalled?: boolean };
-  if (bridgeWindow.__lovablePreviewSelectionBridgeInstalled) return;
-  bridgeWindow.__lovablePreviewSelectionBridgeInstalled = true;
+const PREVIEW_SELECTION_BRIDGE = `function __initUnisonPreviewSelectionBridge() {
+  const bridgeWindow = window as Window & { __unisonPreviewSelectionBridgeInstalled?: boolean };
+  if (bridgeWindow.__unisonPreviewSelectionBridgeInstalled) return;
+  bridgeWindow.__unisonPreviewSelectionBridgeInstalled = true;
 
   let active = false;
   let activationKey = 0;
@@ -661,7 +664,7 @@ const PREVIEW_SELECTION_BRIDGE = `function __initLovablePreviewSelectionBridge()
 
   function extractBackgroundImageUrl(value: string | null): string | null {
     if (!value || value === 'none') return null;
-    const match = value.match(/url\\((['\"]?)(.*?)\\1\\)/i);
+    const match = value.match(/url\\((['"]?)(.*?)\\1\\)/i);
     return match?.[2] || null;
   }
 
@@ -975,10 +978,10 @@ if (typeof window !== 'undefined' && (window as any).tailwind) {
 }
 
 ${PREVIEW_NAV_BRIDGE}
-__initLovablePreviewNavBridge();
+__initUnisonPreviewNavBridge();
 
 ${PREVIEW_SELECTION_BRIDGE}
-__initLovablePreviewSelectionBridge();
+__initUnisonPreviewSelectionBridge();
 
 // Error boundary as secondary safety net
 class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -1516,13 +1519,13 @@ function extractLightness(hslValue: string): number | null {
  */
 function enforceContrastInCSS(css: string): string {
   // SNAPSHOT CHAIN-OF-CUSTODY: CSS produced by buildThemedIndexCss(preset)
-  // carries the `AESTHETIC:` marker and is the canonical pipeline's
+  // carries the `WIZARD THEME:` marker and is the canonical pipeline's
   // authoritative output (Stage 4b). Wizard presets intentionally sit at
   // mid-lightness primaries (~55-65%) with white foregrounds (Δ≈35-40) — a
   // naive lightness-delta contrast check below mis-inverts those foregrounds
   // to near-black and collapses the entire generated site to a "default" look.
   // The snapshot is trusted; do not post-process it.
-  if (/AESTHETIC:.*wizard token injection/.test(css)) {
+  if (/(?:WIZARD THEME|AESTHETIC):.*(?:Stage 4b HSL token injection|wizard token injection)/i.test(css)) {
     return css;
   }
   const pairs = [
@@ -1590,9 +1593,9 @@ function isRawCss(content: string): boolean {
 function injectPreviewNavBridge(code: string, filePath: string): string {
   // Only inject into /index.tsx or /index.jsx (the canonical Sandpack entry)
   if (!/^\/index\.(?:tsx?|jsx?)$/.test(filePath)) return code;
-  if (code.includes('__initLovablePreviewNavBridge')) return code;
+  if (code.includes('__initUnisonPreviewNavBridge')) return code;
 
-  const bridges = `${PREVIEW_NAV_BRIDGE}\n__initLovablePreviewNavBridge();\n\n${PREVIEW_SELECTION_BRIDGE}\n__initLovablePreviewSelectionBridge();`;
+  const bridges = `${PREVIEW_NAV_BRIDGE}\n__initUnisonPreviewNavBridge();\n\n${PREVIEW_SELECTION_BRIDGE}\n__initUnisonPreviewSelectionBridge();`;
 
   const importBlock = code.match(/^(?:import[^\n]*\n)+/);
   if (importBlock) {
@@ -3555,6 +3558,13 @@ const BUILTIN_JSX_ELEMENTS = new Set([
   // Common variable names that look PascalCase but aren't components
   'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'Map', 'Set', 'Promise',
   'Error', 'JSON', 'Math', 'RegExp', 'Symbol', 'Proxy', 'Reflect',
+  // DOM and React type names can appear in TSX generics such as
+  // `querySelectorAll<HTMLElement>()`; they are never JSX components.
+  'HTMLElement', 'Element', 'Node', 'Event', 'MouseEvent', 'KeyboardEvent',
+  'PointerEvent', 'ChangeEvent', 'FormEvent', 'ReactNode', 'ReactElement',
+  'CSSProperties', 'SVGElement', 'SVGSVGElement', 'HTMLDivElement',
+  'HTMLButtonElement', 'HTMLInputElement', 'HTMLAnchorElement', 'HTMLFormElement',
+  'HTMLImageElement',
   // Component from error boundary / React internals
   'Component', 'PureComponent',
 ]);
@@ -3918,6 +3928,120 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
   }
 }
 
+function buildCanonicalThemeModule(themePresetId?: string | null): string | null {
+  const preset = themePresetId
+    ? THEME_PRESETS.find((candidate) => candidate.id === themePresetId)
+    : null;
+  if (!preset) return null;
+
+  const theme = JSON.stringify(themePresetToThemeTokens(preset), null, 2);
+  return `// Canonical wizard theme contract, restored during Sandpack preparation.
+import type React from 'react';
+
+export const THEME = ${theme} as const;
+export const theme = THEME;
+export const colors = THEME.colors;
+export const typography = THEME.typography;
+export const radius = THEME.radius;
+
+export const hsl = (token: string) => \`hsl(\${token})\`;
+export const hsla = (token: string, alpha: number) => \`hsla(\${token}, \${alpha})\`;
+
+export const headingStyle: React.CSSProperties = {
+  fontFamily: THEME.typography.headingFont,
+  fontWeight: THEME.typography.headingWeight as React.CSSProperties['fontWeight'],
+  color: hsl(THEME.colors.foreground),
+};
+
+export const bodyStyle: React.CSSProperties = {
+  fontFamily: THEME.typography.bodyFont,
+  fontWeight: THEME.typography.bodyWeight as React.CSSProperties['fontWeight'],
+  color: hsl(THEME.colors.mutedForeground),
+};
+
+export const containerStyle: React.CSSProperties = {
+  maxWidth: THEME.containerWidth,
+  margin: '0 auto',
+  padding: '0 clamp(1rem, 4vw, 2rem)',
+};
+
+export const sectionPad: React.CSSProperties = {
+  padding: 'clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem)',
+};
+
+export const primaryBtnStyle: React.CSSProperties = {
+  background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`,
+  color: hsl(THEME.colors.primaryForeground),
+  padding: '0.75rem 2rem',
+  borderRadius: THEME.radius,
+  fontWeight: 600,
+  border: 'none',
+  cursor: 'pointer',
+  fontFamily: THEME.typography.bodyFont,
+};
+
+export const outlineBtnStyle: React.CSSProperties = {
+  background: 'transparent',
+  color: hsl(THEME.colors.foreground),
+  padding: '0.75rem 2rem',
+  borderRadius: THEME.radius,
+  border: \`1px solid \${hsla(THEME.colors.border, 1)}\`,
+  cursor: 'pointer',
+  fontFamily: THEME.typography.bodyFont,
+};
+
+export const cardStyle: React.CSSProperties = {
+  background: hsl(THEME.colors.card),
+  color: hsl(THEME.colors.cardForeground),
+  borderRadius: THEME.radius,
+  border: \`1px solid \${hsla(THEME.colors.border, 1)}\`,
+  overflow: 'hidden',
+};
+
+export default THEME;
+`;
+}
+
+function buildCanonicalIconModule(): string {
+  return `// Canonical icon primitive, restored during Sandpack preparation.
+import * as React from 'react';
+import * as LucideIcons from 'lucide-react';
+
+export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'name'> {
+  name?: string;
+  icon?: string;
+  size?: number | string;
+  fallback?: React.ReactNode;
+}
+
+const iconLibrary = LucideIcons as unknown as Record<string, React.ComponentType<React.SVGProps<SVGSVGElement>>>;
+
+const toPascalCase = (value: string) => value
+  .trim()
+  .replace(/[^a-zA-Z0-9]+(.)/g, (_match, character: string) => character.toUpperCase())
+  .replace(/^./, (character) => character.toUpperCase());
+
+export function Icon({ name, icon, size = 20, fallback = null, ...props }: IconProps) {
+  const requestedName = icon || name || 'Circle';
+  const IconComponent = iconLibrary[requestedName] || iconLibrary[toPascalCase(requestedName)];
+  if (!IconComponent) return <>{fallback}</>;
+
+  return React.createElement(IconComponent, {
+    width: size,
+    height: size,
+    'aria-hidden': props['aria-label'] ? undefined : true,
+    ...props,
+  });
+}
+
+export default Icon;
+`;
+}
+
+function buildCanonicalWizardChromeModules(): Record<string, string> {
+  return getCanonicalWizardSharedChromeModules();
+}
+
 /**
  * Safety net for unresolved relative imports.
  *
@@ -3931,7 +4055,15 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
  * can find and replace it. This matches the no-op default-export safety net in
  * `repairLocalImportContracts`.
  */
-function synthesizeMissingLocalImports(sandpackFiles: Record<string, string>): void {
+function synthesizeMissingLocalImports(
+  sandpackFiles: Record<string, string>,
+  options: {
+    failOnMissingImport?: boolean;
+    themeModule?: string | null;
+    iconModule?: string | null;
+    sharedModules?: Record<string, string>;
+  } = {},
+): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
   const extensions = ['.tsx', '.jsx', '.ts', '.js'];
 
@@ -3965,6 +4097,44 @@ function synthesizeMissingLocalImports(sandpackFiles: Record<string, string>): v
       const writePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
       if (existingPaths.has(writePath)) continue;
       if (extensions.some((ext) => existingPaths.has(resolved + ext))) continue;
+
+      if (/(^|\/)theme$/i.test(resolved) && options.themeModule) {
+        const themePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.ts`;
+        sandpackFiles[themePath] = options.themeModule;
+        existingPaths.add(themePath);
+        console.warn(
+          `[sandpackFilePrep] Restored canonical theme module ${themePath} for unresolved import "${rawImportPath}" in ${filePath}`,
+        );
+        continue;
+      }
+
+      if (/(^|\/)components\/icon$/i.test(resolved) && options.iconModule) {
+        sandpackFiles[writePath] = options.iconModule;
+        existingPaths.add(writePath);
+        console.warn(
+          `[sandpackFilePrep] Restored canonical icon module ${writePath} for unresolved import "${rawImportPath}" in ${filePath}`,
+        );
+        continue;
+      }
+
+      const sharedModuleKey = resolved.replace(/\.(?:tsx|jsx|ts|js)$/i, '').toLowerCase();
+      const sharedModule = options.sharedModules?.[sharedModuleKey];
+      if (sharedModule) {
+        sandpackFiles[writePath] = sharedModule;
+        existingPaths.add(writePath);
+        console.warn(
+          `[sandpackFilePrep] Restored canonical wizard shared module ${writePath} for unresolved import "${rawImportPath}" in ${filePath}`,
+        );
+        continue;
+      }
+
+      if (options.failOnMissingImport) {
+        throw new PreviewPipelineError(
+          'prep',
+          `Wizard VFS is missing local module "${rawImportPath}" required by ${filePath}; refusing to synthesize an empty component.`,
+          { blockedFiles: [filePath], recoverableByRelaunch: true },
+        );
+      }
 
       // Derive a component name from the import statement (default OR first named).
       const stmt = match[0];
@@ -5525,7 +5695,15 @@ export function prepareSandpackFiles(
   // "Could not find module" crashes from killing the preview, we synthesize
   // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
   // empty slot and replace it on the next turn.
-  synthesizeMissingLocalImports(sandpackFiles);
+  synthesizeMissingLocalImports(
+    sandpackFiles,
+    {
+      failOnMissingImport: cssResolution.isWizardDraft,
+      themeModule: buildCanonicalThemeModule(resolvedPresetId || cssResolution.themePresetId),
+      iconModule: buildCanonicalIconModule(),
+      sharedModules: buildCanonicalWizardChromeModules(),
+    },
+  );
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {
@@ -5621,8 +5799,14 @@ export function prepareSandpackFiles(
     }
   }
 
-  console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));
-  return sandpackFiles;
+  // A registered themePresetId owns final geometry through its canonical CSS
+  // override. Normalize only legacy artifacts with no valid Style Card.
+  const themedPreviewFiles = hasThemeGeometryContract(resolvedPresetId)
+    ? sandpackFiles
+    : enforceThemeGeometryContract(sandpackFiles, resolvedPresetId);
+
+  console.log('[sandpackFilePrep] Prepared files:', Object.keys(themedPreviewFiles));
+  return themedPreviewFiles;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

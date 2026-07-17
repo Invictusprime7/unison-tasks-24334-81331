@@ -32,9 +32,10 @@ interface ProviderScore {
 }
 
 const PROVIDER_ENV_CHECKS: Record<ProviderType, boolean> = {
-  claude: Boolean(import.meta.env.VITE_CLAUDE_API_KEY || import.meta.env.VITE_LOVABLE_API_KEY),
-  openai: Boolean(import.meta.env.VITE_OPENAI_API_KEY),
-  gemini: Boolean(import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GOOGLE_API_KEY),
+  // Hosted providers are invoked by Edge Functions. Browser code only discovers local options.
+  claude: false,
+  openai: false,
+  gemini: false,
   local: true,
   ollama: Boolean(import.meta.env.VITE_OLLAMA_BASE_URL),
 };

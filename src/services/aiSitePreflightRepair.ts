@@ -212,6 +212,27 @@ function deriveQuarantineComponent(path: string, error: string, ctx: QuarantineC
   return renderQuarantineComponent(path, error.slice(0, 800), ctx);
 }
 
+/**
+ * Lane B occasionally completes a valid page and then emits a small suffix
+ * such as an extra JSX closing tag or parenthesis. Babel reports that at the
+ * first trailing line as "Unexpected token". Keep this deliberately narrow:
+ * only accept a parseable prefix that retains the default-exported page and
+ * at least 80% of the repaired model response.
+ */
+function trimParseableTrailingSuffix(source: string): string | null {
+  if (!/export\s+default\s+(?:function|class|[A-Za-z_$])/.test(source)) return null;
+
+  const lines = source.split('\n');
+  const minLength = Math.ceil(source.length * 0.8);
+  for (let removed = 1; removed <= 48 && removed < lines.length; removed++) {
+    const candidate = lines.slice(0, -removed).join('\n').trimEnd();
+    if (candidate.length < minLength) break;
+    if (!/export\s+default\s+(?:function|class|[A-Za-z_$])/.test(candidate)) continue;
+    if (tryParse(candidate).ok === true) return `${candidate}\n`;
+  }
+  return null;
+}
+
 // ────────────────────────────────────────────────────────────────── public
 
 export function runPreflightRepair(
@@ -260,6 +281,15 @@ export function runPreflightRepair(
       }
       if (res.ok === false) lastError = res.error;
       if (!changedThisRound) break;
+    }
+
+    if (!success) {
+      const trimmed = trimParseableTrailingSuffix(current);
+      if (trimmed) {
+        current = trimmed;
+        applied.push('trim-parseable-trailing-suffix');
+        success = true;
+      }
     }
 
     if (success) {

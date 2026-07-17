@@ -473,7 +473,7 @@ function DatabaseForm({ step, wizard }: { step: SetupStep; wizard: UseSetupWizar
               <CheckCircle2 className="h-5 w-5 text-emerald-400" />
             </div>
             <div>
-              <p className="text-sm font-medium text-emerald-400">Connected via Lovable Cloud</p>
+              <p className="text-sm font-medium text-emerald-400">Connected via Supabase</p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
                 Your database is automatically provisioned and managed. Form submissions, bookings, and leads are stored securely.
               </p>

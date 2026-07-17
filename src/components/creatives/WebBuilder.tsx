@@ -2,7 +2,7 @@
 import "./web-builder/obsidian-theme.css";
 import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense, Component, type ReactNode, type ErrorInfo } from "react";
 import TemplateFeedback from "./TemplateFeedback";
-import { Canvas as FabricCanvas } from "fabric";
+import type { Canvas as FabricCanvas } from "fabric";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -15,23 +15,16 @@ import {
   FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch, Shield
 } from "lucide-react";
 import { CloudPanel } from "./web-builder/CloudPanel";
-import { CreatorPlaygroundModal } from "./web-builder/CreatorPlaygroundModal";
 import { PageNavigationBar, type PageTab } from "./web-builder/PageNavigationBar";
 import { useCreatorPlayground } from "@/hooks/useCreatorPlayground";
 import { toast } from "sonner";
-import VFSMonacoEditor from './code-editor/VFSMonacoEditor';
-import { VFSCodeView } from './code-editor/VFSCodeView';
 import { VFSPreview, type VFSPreviewHandle } from '../VFSPreview';
 import { DeployButton } from '@/components/DeployButton';
 import { CollapsiblePropertiesPanel } from "./web-builder/CollapsiblePropertiesPanel";
 import { CanvasDragDropService } from "@/services/canvasDragDropService";
-import { CodePreviewDialog } from "./web-builder/CodePreviewDialog";
 import { AIBuilderPanel, type VFSEdit, type IframeError } from "./web-builder/AIBuilderPanel";
 import { AIEditHistoryMenu } from "./web-builder/AIEditHistoryMenu";
 import { pushSnapshot as pushAISnapshot, diffChangedPaths } from "@/services/aiHistoryStore";
-import { IntegrationsPanel } from "./design-studio/IntegrationsPanel";
-import { ExportDialog } from "./design-studio/ExportDialog";
-import { PerformancePanel } from "./web-builder/PerformancePanel";
 import { DirectEditToolbar } from "./web-builder/DirectEditToolbar";
 import { ArrangementTools } from "./web-builder/ArrangementTools";
 import { useTemplateState } from "@/hooks/useTemplateState";
@@ -124,7 +117,6 @@ import {
 } from "@/utils/jsxElementMutation";
 import { detectRouteConflicts } from "./web-builder/PageRouteBar";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
-import { BusinessSetupSuggestions } from "@/components/onboarding/BusinessSetupSuggestions";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilder";
 import { useAIVFS } from '@/hooks/useAIVFS';
@@ -159,6 +151,7 @@ import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegist
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
 import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
+import { isPreviewPipelineError } from '@/services/previewPipelineError';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
 import PreviewCartDrawer from '@/components/preview/PreviewCartDrawer';
 import {
@@ -166,6 +159,29 @@ import {
   createBrowserCartManager,
   readBrowserCart,
 } from '@/runtime/browserCartManager';
+
+const CreatorPlaygroundModal = lazy(() =>
+  import('./web-builder/CreatorPlaygroundModal').then((module) => ({ default: module.CreatorPlaygroundModal })),
+);
+const VFSMonacoEditor = lazy(() => import('./code-editor/VFSMonacoEditor'));
+const VFSCodeView = lazy(() =>
+  import('./code-editor/VFSCodeView').then((module) => ({ default: module.VFSCodeView })),
+);
+const CodePreviewDialog = lazy(() =>
+  import('./web-builder/CodePreviewDialog').then((module) => ({ default: module.CodePreviewDialog })),
+);
+const IntegrationsPanel = lazy(() =>
+  import('./design-studio/IntegrationsPanel').then((module) => ({ default: module.IntegrationsPanel })),
+);
+const ExportDialog = lazy(() =>
+  import('./design-studio/ExportDialog').then((module) => ({ default: module.ExportDialog })),
+);
+const PerformancePanel = lazy(() =>
+  import('./web-builder/PerformancePanel').then((module) => ({ default: module.PerformancePanel })),
+);
+const BusinessSetupSuggestions = lazy(() =>
+  import('@/components/onboarding/BusinessSetupSuggestions').then((module) => ({ default: module.BusinessSetupSuggestions })),
+);
 
 
 // JSX/CSS-selector source manipulation helpers extracted to web-builder/jsxSourceUtils.ts
@@ -316,6 +332,7 @@ interface WebBuilderRouteState {
   systemName?: string;
   businessId?: string;
   projectId?: string;
+  draftId?: string;
   manifestId?: string;
   projectSlug?: string;
   projectName?: string;
@@ -365,9 +382,21 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const isMobile = useIsMobile();
   const { launch } = useLaunch();
   const routeState = (location.state as WebBuilderRouteState | null) ?? null;
+  const urlResumeId = useMemo(
+    () => new URLSearchParams(location.search).get('id'),
+    [location.search],
+  );
+  const isExplicitProjectResume = !!(
+    urlResumeId ||
+    routeState?.draftId ||
+    routeState?.from === 'Workspace Settings' ||
+    routeState?.returnToCloudTab === 'projects'
+  );
   const pendingLauncherHandoff = useMemo(
-    () => readLauncherHandoff()?.routeState as WebBuilderRouteState | null,
-    []
+    () => isExplicitProjectResume
+      ? null
+      : readLauncherHandoff()?.routeState as WebBuilderRouteState | null,
+    [isExplicitProjectResume]
   );
   const launchRouteState = useMemo<WebBuilderRouteState | null>(() => {
     if (!launch) return null;
@@ -401,8 +430,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     };
   }, [launch]);
   const effectiveRouteState = useMemo<WebBuilderRouteState | null>(() => {
+    if (isExplicitProjectResume) return routeState;
     return mergeRouteStatePreservingFiles(pendingLauncherHandoff, launchRouteState, routeState);
-  }, [launchRouteState, pendingLauncherHandoff, routeState]);
+  }, [isExplicitProjectResume, launchRouteState, pendingLauncherHandoff, routeState]);
   const launchEntryPoint = useMemo(
     () =>
       normalizeLauncherEntryPoint(
@@ -465,7 +495,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     effectiveRouteState?.templateCategory || null
   );
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(
-    effectiveRouteState?.templateId
+    effectiveRouteState?.draftId
+      || effectiveRouteState?.templateId
       || (effectiveRouteState?.runtimeManifest?.appContext as { templateId?: string } | undefined)?.templateId
       || null
   );
@@ -513,6 +544,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     setViewMode,
     clearSelection,
   } = useWebBuilderState(fabricCanvas);
+  const clearSelectionRef = useRef(clearSelection);
+  clearSelectionRef.current = clearSelection;
 
   const selectedPlaygroundBinding = useMemo(() => {
     const attributes = (selectedHTMLElement?.attributes || {}) as Record<string, string>;
@@ -543,13 +576,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   const importedRouteStateRef = useRef<string | null>(null);
 
-  // Auto-open SystemLauncher when no pre-generated content is provided
-  const hasIncomingContent = !!(
-    effectiveRouteState?.vfsFiles ||
-    effectiveRouteState?.generatedCode ||
-    effectiveRouteState?.generatedTemplate
-  );
-  const [showLauncher, setShowLauncher] = useState(!hasIncomingContent);
+  // The builder is independently usable for blank and restored projects.
+  // Opening the launcher here creates a modal backdrop over every direct
+  // /web-builder visit and makes the shell appear frozen.
+  const [showLauncher, setShowLauncher] = useState(false);
   const routeStateHasStructuredProject = !!(
     effectiveRouteState?.vfsFiles ||
     effectiveRouteState?.generatedCode ||
@@ -1055,7 +1085,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     templateFiles.currentProjectId ||
     (effectiveRouteState?.projectId as string | undefined) ||
     (effectiveRouteState?.returnProjectId as string | undefined) ||
-    currentDraftId ||
     null;
 
   const hydrateSavedTemplate = useCallback((template: {
@@ -1112,6 +1141,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       importBuilderFiles(canvasData.vfsFiles, {
         preferredPath: preferred,
         entryPoint: entry,
+        replace: true,
       });
       if (canvasData.activePagePath) {
         setActivePagePath(canvasData.activePagePath);
@@ -1121,6 +1151,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       setProjectDisplayName(template.name);
       setSaveProjectDescription(template.description || '');
       setBuilderMode('preview');
+      setShowLauncher(false);
       return true;
     }
 
@@ -1152,12 +1183,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     setSaveProjectName(template.name);
     setProjectDisplayName(template.name);
     setSaveProjectDescription(template.description || '');
+    setShowLauncher(false);
     return true;
   // importBuilderFiles is declared after this hook in the file; removing it from deps
   // avoids a temporal dead zone (TDZ) ReferenceError at render time. The closure body
   // captures it correctly because it is only invoked asynchronously (inside async IIFEs)
   // by which point importBuilderFiles is fully initialized.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creatorPlayground, launchEntryPoint]);
   
   // Load saved project from URL parameter on mount.
@@ -1166,7 +1197,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const templateId = searchParams.get('id');
-    if (!templateId) return;
+    const hasStructuredRuntimeLaunch = Boolean(
+      effectiveRouteState?.vfsFiles ||
+      effectiveRouteState?.siteBundle ||
+      effectiveRouteState?.generatedCode ||
+      effectiveRouteState?.generatedTemplate,
+    );
+    // A wizard route can retain a stale ?id= value from a prior builder tab.
+    // Its VFS is already the authoritative project; querying drafts here can
+    // fail independently and incorrectly toast "Failed to load project".
+    if (!templateId || hasStructuredRuntimeLaunch) return;
 
     let cancelled = false;
     (async () => {
@@ -1179,8 +1219,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     })();
 
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search]);
+  }, [location.search, effectiveRouteState]);
 
   // Get full cloud context from location state (from CloudProjects or System Launcher)
   const projectId = effectiveRouteState?.projectId;
@@ -1394,6 +1433,15 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   ]);
 
   const loadedCanonicalGraphProjectRef = useRef<string | null>(null);
+  const hydrateCanonicalPlayground = creatorPlayground.hydrateCanonicalState;
+  const creatorPlaygroundStateRef = useRef({
+    pageRegistry: creatorPlayground.pageRegistry,
+    creatorData: creatorPlayground.creatorData,
+  });
+  creatorPlaygroundStateRef.current = {
+    pageRegistry: creatorPlayground.pageRegistry,
+    creatorData: creatorPlayground.creatorData,
+  };
 
   useEffect(() => {
     if (!projectId || loadedCanonicalGraphProjectRef.current === projectId) {
@@ -1411,12 +1459,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         return;
       }
 
-      creatorPlayground.hydrateCanonicalState({
-        pageRegistry: creatorPlayground.pageRegistry,
+      const currentPlayground = creatorPlaygroundStateRef.current;
+      hydrateCanonicalPlayground({
+        pageRegistry: currentPlayground.pageRegistry,
         creatorData: {
-          ...creatorPlayground.creatorData,
+          ...currentPlayground.creatorData,
           componentInstances: {
-            ...creatorPlayground.creatorData.componentInstances,
+            ...currentPlayground.creatorData.componentInstances,
             ...componentInstances,
           },
         },
@@ -1426,7 +1475,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     return () => {
       cancelled = true;
     };
-  }, [projectId, creatorPlayground]);
+  }, [projectId, hydrateCanonicalPlayground]);
   // Business blueprint context forwarded from SystemsAIPanel for context-aware in-builder AI
   const systemsBuildContextFromState = effectiveRouteState?.systemsBuildContext ?? null;
   // Durable WizardSeed forwarded into AIBuilderPanel so every Lane B turn shares
@@ -1449,6 +1498,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     nodes: vfsNodes,
     getSandpackFiles,
     importFiles: vfsImportFiles,
+    replaceFiles: vfsReplaceFiles,
     updateFileContent: vfsUpdateFileContent,
     resetToEmpty: vfsResetToEmpty,
     loadDefaultTemplate: vfsLoadDefaultTemplate,
@@ -2162,6 +2212,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     options?: {
       preferredPath?: string | null;
       entryPoint?: string | null;
+      replace?: boolean;
     },
   ) => {
     const normalizedEntryPoint = options?.entryPoint
@@ -2186,8 +2237,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       }
     }
 
+    const existingFiles = options?.replace ? {} : virtualFSRef.current.getSandpackFiles();
     let candidateFiles = {
-      ...virtualFSRef.current.getSandpackFiles(),
+      ...existingFiles,
       ...normalizedFiles,
     };
     let snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
@@ -2205,6 +2257,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     }).files;
     assertNoMinimalFallbackPreview({ ...candidateFiles, ...preflightedFiles }, snapshotResolution, 'Builder VFS import preflight');
 
+    if (options?.replace) vfsResetToEmpty();
     vfsImportFiles(preflightedFiles);
     const syncedEntry = syncBuilderFromFiles(
       preflightedFiles,
@@ -2215,7 +2268,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       files: preflightedFiles,
       syncedEntry,
     };
-  }, [syncBuilderFromFiles, vfsImportFiles, launchEntryPoint, resolvedThemePresetId, effectiveRouteState]);
+  }, [syncBuilderFromFiles, vfsImportFiles, vfsResetToEmpty, launchEntryPoint, resolvedThemePresetId, effectiveRouteState]);
 
   // ── Move 3: revisionId-first hydration ──
   // When the route state carries a `revisionId` (persisted by VFSCommitService at
@@ -3128,7 +3181,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       currentDesignPreset ||
       undefined;
     const effectiveTemplateId =
-      currentDraftId ||
       snapshotMeta?.templateId ||
       undefined;
     const effectiveSelectedThemeId =
@@ -3332,17 +3384,32 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         vfsSignature,
       };
       try { localStorage.setItem(saveKey, JSON.stringify(draft)); } catch { /* quota — ignore */ }
-      lastSavedCodeRef.current = previewCode;
-      lastSavedVfsSignatureRef.current = vfsSignature;
-      setLastSavedAt(new Date());
-
       const existingDraftId = currentDraftIdRef.current;
       const reason = 'interval_autosave' as const;
+      let persisted = false;
       if (existingDraftId) {
+        let payload;
+        try {
+          payload = buildSavePayload();
+        } catch (error) {
+          if (!isPreviewPipelineError(error)) throw error;
+
+          // Older recovered drafts can render from their saved VFS without
+          // carrying the newer wizard composition required for recompilation.
+          // Persist those source files as-is rather than rejecting an edit.
+          console.warn('[AutoSave] Canonical recompile deferred for recovered VFS:', error.summary);
+          payload = {
+            vfsFiles: currentVfsFiles,
+            entryPoint: launchEntryPoint,
+            activePagePath,
+            businessId: businessId ?? null,
+            projectId: projectId ?? null,
+          };
+        }
         // buildSavePayload() snapshots the FULL VFS file map into payload.vfsFiles,
         // which useTemplateFiles.autoSave persists into builder_drafts.vfs_files.
-        await templateFiles.autoSave(previewCode || '', {
-          ...buildSavePayload(),
+        persisted = await templateFiles.autoSave(previewCode || '', {
+          ...payload,
           metadata: {
             autoSaved: true,
             autoSaveReason: reason,
@@ -3350,18 +3417,34 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             vfsFileCount: Object.keys(currentVfsFiles).length,
           },
         });
-      } else if (routeStateHasStructuredProject || vfsChanged) {
+      } else {
         // Create a draft on first VFS write so subsequent saves can target it.
-        await ensureLauncherDraftSaved(reason);
+        persisted = Boolean(await ensureLauncherDraftSaved(reason));
       }
 
+      if (!persisted) throw new Error('Cloud autosave was not acknowledged by the draft store.');
+      lastSavedCodeRef.current = previewCode;
+      lastSavedVfsSignatureRef.current = vfsSignature;
+      setLastSavedAt(new Date());
       setAutoSaveStatus('saved');
       setTimeout(() => setAutoSaveStatus('idle'), 2000);
     } catch (error) {
       console.error('[AutoSave] Error saving draft:', error);
       setAutoSaveStatus('idle');
     }
-  }, [previewCode, editorCode, getAutoSaveKey, templateFiles, buildSavePayload, routeStateHasStructuredProject, ensureLauncherDraftSaved, computeVfsSignature]);
+  }, [
+    previewCode,
+    editorCode,
+    getAutoSaveKey,
+    templateFiles,
+    buildSavePayload,
+    ensureLauncherDraftSaved,
+    computeVfsSignature,
+    launchEntryPoint,
+    activePagePath,
+    businessId,
+    projectId,
+  ]);
 
   // Keep latest saveDraft in a ref so unload/visibility handlers always call the freshest version.
   const saveDraftRef = useRef(saveDraft);
@@ -3528,7 +3611,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     } catch (error) {
       console.error('[AutoSave] Error restoring draft:', error);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
    
   const refreshPreviewCart = useCallback(() => {
@@ -4081,11 +4163,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     options?: { activePath?: string; entryContent?: string }
   ) => {
     const activePath = options?.activePath || launchEntryPoint;
-    vfsResetToEmpty();
     const entryContent = options?.entryContent ?? files[activePath] ?? '';
     openBuilderFile(activePath, entryContent);
-    vfsImportFiles(files);
-  }, [launchEntryPoint, openBuilderFile, vfsImportFiles, vfsResetToEmpty]);
+    vfsReplaceFiles(files);
+  }, [launchEntryPoint, openBuilderFile, vfsReplaceFiles]);
 
   // Auto AI page generation on button click is REMOVED.
   // Missing routes are handled by the deterministic canonical router + scaffolded
@@ -4302,10 +4383,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
         // Prevent re-processing generatedCode when vfsFiles already represent source of truth
         importedRouteStateRef.current = navStateSignature;
-        if (navState.fromLauncher) {
-          clearLauncherHandoff();
-        }
-        window.history.replaceState({}, document.title);
+        // Keep both compact route state and the TTL-bound session handoff as
+        // recovery layers. `importedRouteStateRef` prevents this successful
+        // import from running repeatedly during the current mount.
         return;
       }
     }
@@ -4798,22 +4878,43 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     if (!canvasRef.current) return;
 
     const canvasElement = canvasRef.current;
-    
-    const canvas = new FabricCanvas(canvasElement, {
-      width: 1280,
-      height: canvasHeight,
-      backgroundColor: "#ffffff", // Keep canvas background white to avoid black flashes on zoom
-    });
+    let disposed = false;
+    let canvas: FabricCanvas | null = null;
 
-    setFabricCanvas(canvas);
+    // Fabric is a large optional runtime. Load it after the generated-site
+    // preview shell has mounted instead of blocking first interaction.
+    const start = () => {
+      void import('fabric').then(({ Canvas }) => {
+        if (disposed) return;
+        canvas = new Canvas(canvasElement, {
+          width: 1280,
+          height: canvasHeight,
+          backgroundColor: '#ffffff',
+        });
+        setFabricCanvas(canvas);
+      }).catch((error) => {
+        console.error('[WebBuilder] Fabric canvas failed to initialize:', error);
+      });
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback
+      ? idleWindow.requestIdleCallback(start, { timeout: 1500 })
+      : window.setTimeout(start, 250);
 
     return () => {
-      clearSelection();
-      canvas.clear();
-      canvas.dispose();
+      disposed = true;
+      if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(idleId);
+      else window.clearTimeout(idleId);
+      clearSelectionRef.current();
+      canvas?.clear();
+      canvas?.dispose();
       setFabricCanvas(null);
     };
-  }, [canvasHeight, clearSelection]);
+    // Canvas size updates are handled by the dedicated resize effect.
+  }, []);
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -5424,7 +5525,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       }}
     >
     <div ref={mainContainerRef} className={cn("wb-obsidian flex flex-col h-screen bg-[#09090b]", isMobile && "pb-14")}>
-      {/* SystemLauncher — auto-opens when no pre-generated content */}
+      {/* Launcher is opened only by an explicit user flow. */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
 
       {/* Interactive Element Highlighting Styles */}
@@ -5766,6 +5867,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       </div>
 
       {/* Creator's Playground Modal */}
+      {playgroundModalOpen && (
+      <Suspense fallback={null}>
       <CreatorPlaygroundModal
         open={playgroundModalOpen}
         onOpenChange={(open) => {
@@ -5867,6 +5970,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           toast.success(`Funnel scaffolded: ${stepPages.length} pages created in VFS`);
         }}
       />
+      </Suspense>
+      )}
 
       <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
         {/* AI Panel - static left side panel (desktop only; mobile uses bottom-nav overlay) */}
@@ -6558,7 +6663,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       activeFile={activePagePath}
                       className="w-full h-full min-h-0 flex-1"
                       showToolbar={false}
-                      autoStart={true}
+                      autoStart={false}
+                      forceBackend="sandpack"
                       showBackendIndicator={false}
                       device={device}
                       enableSelection={builderMode === 'select'}
@@ -6772,7 +6878,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         activeFile={activePagePath}
                         className="w-full h-full min-h-0 flex-1"
                         showToolbar={false}
-                        autoStart={true}
+                        autoStart={false}
+                        forceBackend="sandpack"
                         showBackendIndicator={false}
                         device={device}
                         enableSelection={builderMode === 'select'}
@@ -7259,13 +7366,19 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       />
 
       {/* Code Preview Dialog */}
+      {codePreviewOpen && (
+      <Suspense fallback={null}>
       <CodePreviewDialog
         isOpen={codePreviewOpen}
         onClose={() => setCodePreviewOpen(false)}
         fabricCanvas={fabricCanvas}
       />
+      </Suspense>
+      )}
 
       {/* Export Dialog */}
+      {exportDialogOpen && (
+      <Suspense fallback={null}>
       <ExportDialog
         open={exportDialogOpen}
         onOpenChange={setExportDialogOpen}
@@ -7276,6 +7389,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         vfsFiles={exportDialogOpen ? getSandpackFiles() : undefined}
         runtimeManifest={effectiveRouteState?.runtimeManifest}
       />
+      </Suspense>
+      )}
 
       {/* Performance Panel as Sidebar */}
       {performancePanelOpen && (
@@ -7291,12 +7406,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               ✕
             </Button>
           </div>
+          <Suspense fallback={null}>
           <PerformancePanel 
             fabricCanvas={fabricCanvas}
             onAutoFix={() => {
               console.log('[WebBuilder] Auto-fix applied');
             }}
           />
+          </Suspense>
         </div>
       )}
 
@@ -7313,12 +7430,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               ✕
             </Button>
           </div>
+          <Suspense fallback={null}>
           <IntegrationsPanel 
             onExport={handleExport}
             onIntegrationConnect={(integration, config) => {
               console.log('Integration connected:', integration, config);
             }}
           />
+          </Suspense>
         </div>
       )}
 
@@ -7513,6 +7632,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       />
 
       {/* Business Setup Suggestions - shown after AI generates a site */}
+      {showBusinessSetup && (
+      <Suspense fallback={null}>
       <BusinessSetupSuggestions
         open={showBusinessSetup}
         onOpenChange={setShowBusinessSetup}
@@ -7528,6 +7649,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           console.log('[WebBuilder] User skipped business setup suggestions');
         }}
       />
+      </Suspense>
+      )}
     </div>
     </BuilderSessionProvider>
   );

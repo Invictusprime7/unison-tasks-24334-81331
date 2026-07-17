@@ -1,7 +1,7 @@
 # Builder Controllers
 
 Headless controllers extracted from the monolithic `WebBuilder.tsx` and
-`AIBuilderPanel.tsx` shells. See `.lovable/plan.md` for the full sequencing.
+`AIBuilderPanel.tsx` shells. See the builder architecture documentation for the full sequencing.
 
 ## Phase A status
 

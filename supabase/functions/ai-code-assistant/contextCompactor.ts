@@ -1,6 +1,6 @@
 /**
  * Context Compactor — builder-aware truncation for messages and VFS context.
- * Lane A uses generic compaction; Lane B uses builder-priority compaction.
+ * Lane B uses builder-priority compaction for wizard launches and builder edits.
  */
 
 /**

@@ -1,6 +1,6 @@
 /**
  * AIConversationMessage — Modern chat message bubble
- * Inspired by Copilot / Lovable conversational UI patterns.
+ * Inspired by modern conversational UI patterns.
  */
 
 import React, { useState } from 'react';

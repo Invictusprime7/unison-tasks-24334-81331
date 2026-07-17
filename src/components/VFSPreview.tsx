@@ -29,7 +29,7 @@ import {
   Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack } from '@codesandbox/sandpack-react';
+import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack, useSandpackPreviewProgress } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
@@ -171,7 +171,8 @@ class SandpackErrorBoundary extends Component<
 
 const SandpackErrorListener: React.FC<{
   onError?: (error: string) => void;
-}> = ({ onError }) => {
+  onTimeout?: () => void;
+}> = ({ onError, onTimeout }) => {
   const { sandpack } = useSandpack();
   const lastReportedRef = useRef<string>('');
 
@@ -189,6 +190,9 @@ const SandpackErrorListener: React.FC<{
       if (msg !== lastReportedRef.current) {
         lastReportedRef.current = msg;
         onError?.(msg);
+        if (/\bTIME_OUT\b|couldn't connect to server/i.test(msg)) {
+          onTimeout?.();
+        }
       }
     } else if (status === 'idle' || status === 'running') {
       lastReportedRef.current = '';
@@ -196,6 +200,20 @@ const SandpackErrorListener: React.FC<{
   }, [sandpack.status, sandpack.error, onError]);
 
   return null;
+};
+
+const SandpackDependencyProgress: React.FC<{ dependencyCount: number }> = ({ dependencyCount }) => {
+  const progressMessage = useSandpackPreviewProgress({ timeout: 3000 });
+
+  if (!progressMessage) return null;
+
+  return (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex items-center gap-2 rounded-md border border-border/70 bg-background/95 px-3 py-2 text-xs text-foreground shadow-sm backdrop-blur">
+      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+      <span>{progressMessage}</span>
+      <span className="text-muted-foreground">({dependencyCount} modules)</span>
+    </div>
+  );
 };
 
 // ============================================================================
@@ -263,6 +281,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const [sandpackKey, setSandpackKey] = useState(0);
   const startAttemptedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const timeoutRecoveryCountRef = useRef(0);
+  const timeoutRecoveryTimerRef = useRef<number | null>(null);
   
   const localPreviewService = usePreviewService();
   const canUseContextPreview =
@@ -289,11 +309,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   // AI execution and terminal bridge
   const previewAI = usePreviewAI();
   
-  // Check if Docker gateway is explicitly configured (local dev only)
-  const dockerGatewayConfigured = !!import.meta.env.VITE_PREVIEW_GATEWAY_URL;
-  
-  // Check if local Vite server is configured
-  const localViteConfigured = !!LOCAL_PREVIEW_URL;
+  // React/Sandpack is the sole preview runtime. Legacy Docker/local preview
+  // environment variables must never replace the canonical in-browser VFS.
+  const dockerGatewayConfigured = false;
+  const localViteConfigured = false;
   
   // Convert nodes to files - ALWAYS recompute to ensure we have latest
   const files = useMemo(() => {
@@ -688,38 +707,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     if (startAttemptedRef.current) return;
     startAttemptedRef.current = true;
 
-    if (pipelineError || isWizardPreview || forceBackend === 'sandpack') {
-      setBackend('sandpack');
-      if (!pipelineError) onReady?.();
-      return;
-    }
-
-    if (localViteConfigured) {
-      setBackend('local');
-      onReady?.();
-      return;
-    }
-
-    if (dockerGatewayConfigured && autoStart) {
-      setBackend('loading');
-      dockerService.startSession(nodes).then((session) => {
-        if (session) {
-          setBackend('docker');
-        } else {
-          setBackend('sandpack');
-        }
-        onReady?.();
-      }).catch(() => {
-        setBackend('sandpack');
-        onReady?.();
-      });
-      return;
-    }
-
-    // Default: always Sandpack
     setBackend('sandpack');
-    onReady?.();
-  }, [autoStart, dockerGatewayConfigured, dockerService, forceBackend, isWizardPreview, localViteConfigured, nodes, onReady, pipelineError]);
+    if (!pipelineError) onReady?.();
+  }, [onReady, pipelineError]);
   
   // Sync file changes to Docker when running
   useEffect(() => {
@@ -732,25 +722,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   
   // Handlers
   const handleStartDocker = useCallback(async () => {
-    if (isWizardPreview) {
-      onError?.('Wizard previews render through the SiteBundleSnapshot artifact pipeline; Docker/local preview is blocked to prevent fallback routes.');
-      return;
-    }
-    if (!dockerGatewayConfigured) {
-      onError?.('Docker gateway not configured');
-      return;
-    }
-    setBackend('loading');
-    try {
-      await dockerService.startSession(nodes);
-      setBackend('docker');
-      onReady?.();
-    } catch (err) {
-      console.error('[VFSPreview] Failed to start Docker:', err);
-      setBackend('sandpack');
-      onError?.('Failed to start Docker preview, using Sandpack');
-    }
-  }, [dockerGatewayConfigured, dockerService, isWizardPreview, nodes, onReady, onError]);
+    setBackend('sandpack');
+    onError?.('Docker preview is disabled. React preview is the only supported runtime.');
+  }, [onError]);
   
   const handleStopDocker = useCallback(async () => {
     await dockerService.stopSession();
@@ -769,6 +743,25 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       setSandpackKey(k => k + 1);
     }
   }, [backend, dockerService, files, launch]);
+
+  const handleSandpackTimeout = useCallback(() => {
+    // Sandpack's hosted runner occasionally drops its initial connection. Retry
+    // the identical, fully provisioned VFS once per mount; do not retry compile
+    // errors or loop indefinitely when the remote service is unavailable.
+    if (timeoutRecoveryCountRef.current >= 1 || timeoutRecoveryTimerRef.current !== null) return;
+
+    timeoutRecoveryCountRef.current += 1;
+    timeoutRecoveryTimerRef.current = window.setTimeout(() => {
+      timeoutRecoveryTimerRef.current = null;
+      setSandpackKey((key) => key + 1);
+    }, 750);
+  }, []);
+
+  useEffect(() => () => {
+    if (timeoutRecoveryTimerRef.current !== null) {
+      window.clearTimeout(timeoutRecoveryTimerRef.current);
+    }
+  }, []);
   
   const handleOpenInNewTab = useCallback(() => {
     if (backend === 'docker' && dockerService.session?.iframeUrl) {
@@ -981,7 +974,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       )}
       
       {/* Error display */}
-      {dockerService.error && (
+      {dockerGatewayConfigured && dockerService.error && (
         <div className="px-3 py-2 bg-destructive/10 text-destructive text-sm flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           {dockerService.error}
@@ -1086,7 +1079,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   style={{ height: '100%', minHeight: 0 }}
                 />
               </SandpackLayout>
-              <SandpackErrorListener onError={onError} />
+              <SandpackErrorListener onError={onError} onTimeout={handleSandpackTimeout} />
+              <SandpackDependencyProgress dependencyCount={Object.keys(sandpackDeps).length} />
             </SandpackProvider>
           </SandpackErrorBoundary>
         )}

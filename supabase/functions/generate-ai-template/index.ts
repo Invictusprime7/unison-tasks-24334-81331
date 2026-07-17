@@ -1,9 +1,10 @@
-import { serve } from "serve";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { generateVariation, variationToPromptContext, type TemplateVariation } from "../_shared/industryVariations.ts";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
+import { createChatCompletion, isTextGenerationConfigured } from "../_shared/ai/providerClient.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -34,13 +35,11 @@ serve(async (req) => {
       return errorResponse("prompt is required", 400, corsHeaders);
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-
-    if (!LOVABLE_API_KEY) {
-      console.warn("LOVABLE_API_KEY not configured - AI features unavailable in local development");
+    if (!isTextGenerationConfigured()) {
+      console.warn("No direct AI provider configured");
       return secureJsonResponse(
         { 
-          error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
+          error: "AI features are not configured. Set OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY.",
           isLocalDevelopment: true
         },
         503,
@@ -202,22 +201,14 @@ OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explan
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        response_format: { type: "json_object" }
-      }),
-      signal: controller.signal,
-    });
+    const response = await createChatCompletion({
+      model: "google/gemini-2.5-pro",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt }
+      ],
+      response_format: { type: "json_object" },
+    }, controller.signal);
 
     clearTimeout(timeoutId);
 
@@ -225,16 +216,13 @@ OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explan
       if (response.status === 429) {
         return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
       }
-      if (response.status === 402) {
-        return errorResponse("Payment required. Please add credits to your Lovable workspace.", 402, corsHeaders);
-      }
       if (response.status === 401) {
         console.error("AI gateway authentication failed");
         return errorResponse("AI service authentication failed. Please check API configuration.", 401, corsHeaders);
       }
       const errorText = await response.text();
-      console.error("AI Gateway error:", response.status, errorText);
-      return errorResponse(`AI Gateway error: ${response.status}`, 503, corsHeaders);
+      console.error("AI provider error:", response.status, errorText);
+      return errorResponse(`AI provider error: ${response.status}`, 503, corsHeaders);
     }
 
     const data = await response.json();

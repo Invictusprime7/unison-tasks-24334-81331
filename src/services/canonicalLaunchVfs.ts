@@ -11,12 +11,20 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair } from './aiSitePreflightRepair';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
+import { enforceThemeGeometryContract, hasThemeGeometryContract } from './themeGeometryContract';
+import {
+  applyCanonicalInteractionEnrichment,
+  type WizardInteractionManifest,
+} from './wizardInteractionEnrichment';
+import type { WizardExperienceContract } from './wizardExperienceContract';
+import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',
   runtimeManifest: '/.unison/runtime-manifest.json',
   siteBundleSnapshot: '/.unison/site-bundle-snapshot.json',
   canonicalPlayground: '/.unison/canonical-playground.json',
+  wizardRuntime: '/.unison/wizard-runtime.json',
 } as const;
 
 export interface CanonicalLaunchArtifacts {
@@ -50,6 +58,10 @@ export interface BuildCanonicalLaunchArtifactsInput {
   aesthetic?: string | null;
   /** Resolved wizard Style-card preset id (drives /src/index.css). */
   themePresetId?: string | null;
+  /** Validated Lane B interaction plan, persisted as canonical runtime data. */
+  interactionManifest?: WizardInteractionManifest | null;
+  /** Visual-behavior contract derived from the selected style/template cards. */
+  experienceContract?: WizardExperienceContract | null;
   backendRequired?: boolean;
   wizardSelections?: WizardSelections | null;
   /**
@@ -85,6 +97,7 @@ function cloneSnapshotWithRuntimeVfs(
   siteBundleSnapshot: SiteBundleSnapshot,
   appContext: RuntimeAppContext,
   files: Record<string, string>,
+  interactionManifest?: WizardInteractionManifest | null,
 ): SiteBundleSnapshot {
   const runtimeVfsFiles = Object.fromEntries(
     Object.entries(files).filter(([path]) => !path.startsWith('/.unison/')),
@@ -102,6 +115,13 @@ function cloneSnapshotWithRuntimeVfs(
       templateId: appContext.templateId || siteBundleSnapshot.meta?.templateId,
       industry: appContext.industry || siteBundleSnapshot.meta?.industry || siteBundleSnapshot.industry,
       verticalContractId: siteBundleSnapshot.meta?.verticalContractId || appContext.systemType || null,
+      interactionManifest: interactionManifest || siteBundleSnapshot.meta?.interactionManifest,
+      themeInjection: {
+        version: '1.0',
+        stage: '4b',
+        presetId: appContext.themePresetId || siteBundleSnapshot.meta?.themePresetId || null,
+        cssPath: '/src/index.css',
+      },
     },
   };
 }
@@ -158,6 +178,13 @@ function buildRuntimeAppContext(
       ? (JSON.parse(JSON.stringify(input.wizardSelections)) as Record<string, unknown>)
       : undefined,
     themePresetId: input.themePresetId || siteBundleSnapshot?.meta?.themePresetId || (input.aesthetic as string | undefined) || undefined,
+    themeTokens: input.wizardSelections?.themeTokens || siteBundleSnapshot?.themeTokens,
+    experienceContract: input.experienceContract || undefined,
+    previewRuntime: {
+      version: '1.0',
+      foundation: 'token-glass',
+      optionalLibraries: Object.keys(WIZARD_PREVIEW_RUNTIME_DEPENDENCIES),
+    },
     generatedAt: new Date().toISOString(),
   };
 }
@@ -182,6 +209,7 @@ function serializeSiteBundleSnapshot(siteBundleSnapshot?: SiteBundleSnapshot) {
     homeRoute: siteBundleSnapshot.homeRoute,
     createdAt: siteBundleSnapshot.createdAt,
     appContext: siteBundleSnapshot.appContext,
+    themeTokens: siteBundleSnapshot.themeTokens,
     // CRITICAL: persist `meta` (themePresetId, templateId, systemId,
     // verticalContractId, wizardSeedId). Downstream recompile + readiness
     // surfaces read `snap.meta.themePresetId` to recover the wizard preset
@@ -200,7 +228,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
-  options: { allowCanonicalPageFallback?: boolean; lockRegisteredPagesToCanonical?: boolean } = {},
+  options: { allowCanonicalPageFallback?: boolean } = {},
 ): Record<string, string> {
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
@@ -386,6 +414,10 @@ export function upsertCanonicalMetadataFiles(
 
   nextFiles[CANONICAL_METADATA_FILE_PATHS.appContext] = JSON.stringify(input.appContext, null, 2);
   nextFiles[CANONICAL_METADATA_FILE_PATHS.runtimeManifest] = JSON.stringify(input.runtimeManifest, null, 2);
+  nextFiles[CANONICAL_METADATA_FILE_PATHS.wizardRuntime] = JSON.stringify({
+    experienceContract: input.appContext.experienceContract,
+    previewRuntime: input.appContext.previewRuntime,
+  }, null, 2);
 
   if (input.siteBundleSnapshot) {
     nextFiles[CANONICAL_METADATA_FILE_PATHS.siteBundleSnapshot] = JSON.stringify(
@@ -451,18 +483,21 @@ export function buildCanonicalLaunchArtifacts(
       })),
     });
     if (input.strictPreflight && earlyRepair.quarantinedCount > 0) {
-      // Strict preflight used to hard-throw when any file was quarantined.
-      // But the quarantine step already replaces the broken file with a
-      // deterministic, on-brand, parse-clean industry scaffold — so the
-      // preview is guaranteed to render. Blocking the launch here caused
-      // wizard failures across every industry whenever the AI emitted a
-      // single malformed shared-chrome file (e.g. /src/sections/SiteNavbar.tsx).
-      // Downgrade to a warning so the wizard always ships a working site.
-      console.warn(
-        `[canonicalLaunchVfs] strictPreflight: ${earlyRepair.quarantinedCount} file(s) quarantined and replaced with industry scaffold — continuing`,
-        earlyRepair.reports
-          .filter((report) => report.status === 'quarantined')
-          .map((report) => report.path),
+      const blockedReports = earlyRepair.reports
+        .filter((report) => report.status === 'quarantined');
+      const blockedFiles = blockedReports.map((report) => report.path);
+      const diagnostics = blockedReports.map((report) => ({
+        path: report.path,
+        error: report.finalError || 'Unknown syntax error',
+        repairPasses: report.passes || [],
+      }));
+      const diagnosticSummary = diagnostics
+        .map(({ path, error }) => `${path}: ${error}`)
+        .join(' | ');
+      throw new PreviewPipelineError(
+        'vfs',
+        `Wizard source failed syntax preflight for ${blockedFiles.join(', ')}; refusing to persist quarantine scaffolds. ${diagnosticSummary}`,
+        { blockedFiles, diagnostics, recoverableByRelaunch: true },
       );
     }
   }
@@ -540,13 +575,21 @@ export function buildCanonicalLaunchArtifacts(
       quarantined: finalRepair.quarantinedCount,
     });
     if (input.strictPreflight && finalRepair.quarantinedCount > 0) {
-      // See note above the early-repair strict block: quarantine already
-      // substitutes a working industry scaffold, so we log instead of throw.
-      console.warn(
-        `[canonicalLaunchVfs] strictPreflight (final): ${finalRepair.quarantinedCount} file(s) quarantined and replaced with industry scaffold — continuing`,
-        finalRepair.reports
-          .filter((report) => report.status === 'quarantined')
-          .map((report) => report.path),
+      const blockedReports = finalRepair.reports
+        .filter((report) => report.status === 'quarantined');
+      const blockedFiles = blockedReports.map((report) => report.path);
+      const diagnostics = blockedReports.map((report) => ({
+        path: report.path,
+        error: report.finalError || 'Unknown syntax error',
+        repairPasses: report.passes || [],
+      }));
+      const diagnosticSummary = diagnostics
+        .map(({ path, error }) => `${path}: ${error}`)
+        .join(' | ');
+      throw new PreviewPipelineError(
+        'vfs',
+        `Wizard source failed final syntax preflight for ${blockedFiles.join(', ')}; refusing to persist quarantine scaffolds. ${diagnosticSummary}`,
+        { blockedFiles, diagnostics, recoverableByRelaunch: true },
       );
     }
   }
@@ -554,22 +597,38 @@ export function buildCanonicalLaunchArtifacts(
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
-        // SiteBundleSnapshot/WizardSeed is the authority for all registered
-        // routes and shared section components. Lane-B files may add extras but
-        // cannot replace snapshot-owned UI artifacts.
-        lockRegisteredPagesToCanonical: true,
+        // Lane B owns registered page bodies. Snapshot topology owns the
+        // registry/router/bindings and Stage 4b owns /src/index.css.
       })
     : { ...safeFiles };
 
-  const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
+  // A selected Style Card owns final geometry through its canonical CSS
+  // override. Source normalization is only for legacy artifacts without one.
+  const themedFiles = hasThemeGeometryContract(resolvedThemePresetId)
+    ? mergedFiles
+    : enforceThemeGeometryContract(mergedFiles, resolvedThemePresetId);
+  const interactionEnrichment = applyCanonicalInteractionEnrichment(
+    themedFiles,
+    input.interactionManifest,
+  );
+  const experiencedFiles = interactionEnrichment.files;
+  const entryPoint = resolveLauncherEntryPoint(experiencedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(input, entryPoint, input.siteBundleSnapshot);
+  appContext.interactionManifest = interactionEnrichment.manifest || input.siteBundleSnapshot?.meta?.interactionManifest;
+  appContext.experienceContract = input.experienceContract || undefined;
+  appContext.themeInjection = {
+    version: '1.0',
+    stage: '4b',
+    presetId: appContext.themePresetId || resolvedThemePresetId,
+    cssPath: '/src/index.css',
+  };
   const runtimeSnapshotSeed = input.siteBundleSnapshot
     ? { ...input.siteBundleSnapshot, appContext }
     : undefined;
   const canonicalPlayground = buildCanonicalPlayground(runtimeSnapshotSeed, input.canonicalPlayground);
   const metadataFiles = Object.values(CANONICAL_METADATA_FILE_PATHS);
   const sessionKey = buildSessionKey(appContext, entryPoint);
-  const runtimeManifest = createRuntimeManifest(mergedFiles, {
+  const runtimeManifest = createRuntimeManifest(experiencedFiles, {
     entryPoint,
     industry: input.industry || runtimeSnapshotSeed?.industry,
     brandName: input.businessName || runtimeSnapshotSeed?.businessName,
@@ -579,12 +638,12 @@ export function buildCanonicalLaunchArtifacts(
     metadataFiles,
     sessionKey,
   });
-  const viteReadyFiles = ensureViteRootFiles(mergedFiles, {
+  const viteReadyFiles = ensureViteRootFiles(experiencedFiles, {
     extraDependencies: runtimeManifest.dependencies,
     themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
   const siteBundleSnapshot = runtimeSnapshotSeed
-    ? cloneSnapshotWithRuntimeVfs(runtimeSnapshotSeed, appContext, viteReadyFiles)
+    ? cloneSnapshotWithRuntimeVfs(runtimeSnapshotSeed, appContext, viteReadyFiles, interactionEnrichment.manifest)
     : undefined;
   const files = upsertCanonicalMetadataFiles(viteReadyFiles, {
     appContext,

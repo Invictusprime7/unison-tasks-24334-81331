@@ -1,8 +1,9 @@
-import { serve } from "serve";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString, isValidUrl } from "../_shared/validate.ts";
+import { createChatCompletion } from "../_shared/ai/providerClient.ts";
 
 type ResearchPayload = {
   query: string;
@@ -54,7 +55,7 @@ async function fetchText(url: string, timeoutMs = 8000): Promise<string> {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; LovableResearch/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; UnisonResearch/1.0)",
         "Accept": "text/html,application/xhtml+xml",
       },
     });
@@ -142,16 +143,13 @@ function extractSiteName(pageHtml: string): string | null {
   return m?.[1] ? normalizeText(decodeHtmlEntities(m[1])) : null;
 }
 
-async function callLovableAI(opts: {
+async function callResearchAI(opts: {
   query: string;
   articles: Article[];
   videos: Video[];
   href?: string;
   pageTitle?: string;
 }): Promise<{ summary?: string; keyPoints?: string[]; relevanceByUrl?: Record<string, string> }> {
-  const key = Deno.env.get("LOVABLE_API_KEY");
-  if (!key) throw new Error("LOVABLE_API_KEY is not configured");
-
   const sources = opts.articles.map((a, i) => ({
     n: i + 1,
     title: a.title,
@@ -178,32 +176,22 @@ async function callLovableAI(opts: {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout
 
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      // User asked for "ChatGPT intelligence" → use an OpenAI-family model through the gateway.
-      model: "openai/gpt-5-mini",
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: JSON.stringify(user) },
-      ],
-      temperature: 0.3,
-    }),
-    signal: controller.signal,
-  });
+  const resp = await createChatCompletion({
+    model: "openai/gpt-5-mini",
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: JSON.stringify(user) },
+    ],
+    temperature: 0.3,
+  }, controller.signal);
 
   clearTimeout(timeoutId);
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => "");
     if (resp.status === 429) throw new Error("Rate limited. Please try again in a moment.");
-    if (resp.status === 402) throw new Error("AI credits depleted. Please add credits to continue.");
-    console.error("[research] AI gateway error", resp.status, t);
-    throw new Error("AI gateway error");
+    console.error("[research] AI provider error", resp.status, t);
+    throw new Error("AI provider error");
   }
 
   const json = await resp.json();
@@ -286,7 +274,7 @@ serve(async (req) => {
     // 4) AI brief (ChatGPT-like model through gateway), grounded in sources
     let ai: { summary?: string; keyPoints?: string[]; relevanceByUrl?: Record<string, string> } = {};
     try {
-      ai = await callLovableAI({
+      ai = await callResearchAI({
         query,
         href,
         pageTitle,

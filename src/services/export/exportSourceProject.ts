@@ -34,7 +34,7 @@ export interface SourceProjectExportResult {
 
 // Toolchain files we regenerate at export time — the scaffold synth owns them.
 const SKIP_PATH_PREFIXES = [
-  '/.lovable/',
+  '/.unison/',
   '/node_modules/',
 ];
 

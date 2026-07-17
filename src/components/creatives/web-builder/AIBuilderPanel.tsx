@@ -2026,7 +2026,7 @@ export default function App() {
           errorMessage = 'AI credits needed. Please check your subscription or API billing.';
         } else if (errorMessage.includes('401') || errorMessage.includes('authentication')) {
           errorMessage = 'AI API key is invalid or expired. Please update your API key.';
-        } else if (errorMessage.includes('not available') || errorMessage.includes('LOVABLE_API_KEY')) {
+        } else if (errorMessage.includes('not available') || errorMessage.includes('No AI provider is configured')) {
           errorMessage = 'AI service not configured. Please set your API key in project secrets.';
         } else if (errorMessage.includes('Invalid request body')) {
           errorMessage = 'Request was too large or malformed. Try a shorter prompt or fewer attached files.';
@@ -2043,7 +2043,9 @@ export default function App() {
         }
       }
       
-      const finalErrorContent = `Sorry, I encountered an error: ${errorMessage}. Please try again or simplify your request.`;
+      const finalErrorContent = /^Too many requests\./i.test(errorMessage)
+        ? `Sorry, I encountered an error: ${errorMessage}`
+        : `Sorry, I encountered an error: ${errorMessage}. Please try again or simplify your request.`;
 
       setMessages(prev => {
         if (streamingId && prev.some(m => m.id === streamingId)) {

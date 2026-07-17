@@ -1,10 +1,11 @@
 /**
- * AI provider call loop — gateway + direct API fallbacks.
+ * AI provider call loop using direct provider APIs.
  * Returns content, reasoning, and the model that succeeded.
  */
 
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
+import { createChatCompletion } from "../_shared/ai/providerClient.ts";
 
 export interface ProviderEarlyError {
   status: number;
@@ -34,16 +35,15 @@ export async function runProviderLoop(opts: {
   aiMessages: Array<{ role: string; content: unknown }>;
   providerPlan: ProviderPlan;
   navPageGen: boolean;
-  lovableApiKey?: string;
   reasoningEffort?: "none" | "low" | "medium" | "high";
-  /** Disable direct provider fallbacks for flows that must only use the managed gateway. */
+  /** Disable direct provider attempts for flows that do not need AI generation. */
   allowDirectFallbacks?: boolean;
   /** OpenAI-compatible chat-completions `tools` array (function tools). */
   tools?: unknown[];
   /** `tool_choice` forwarded to the provider. Defaults to `"auto"` when tools are present. */
   toolChoice?: "auto" | "none" | "required";
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, lovableApiKey, reasoningEffort, allowDirectFallbacks = true, tools, toolChoice } = opts;
+  const { aiMessages, providerPlan, reasoningEffort, allowDirectFallbacks = true, tools, toolChoice } = opts;
   const hasTools = Array.isArray(tools) && tools.length > 0;
   const effectiveToolChoice = hasTools ? (toolChoice ?? "auto") : undefined;
   let content = '';
@@ -72,11 +72,10 @@ export async function runProviderLoop(opts: {
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     if (!OPENAI_API_KEY || content) return;
 
-    // When no Lovable gateway key is configured, OpenAI is the PRIMARY provider.
+    // OpenAI is a direct provider in the local and deployed runtime.
     // Use the plan's per-model timeout so wizard/builder tasks get their full budget
     // (e.g. 110 s for wizard_seed_generation) instead of a hardcoded 25 s cap.
-    const isGatewayAbsent = !lovableApiKey;
-    const role = isGatewayAbsent ? 'primary' : 'fallback';
+    const role = 'direct';
     console.log(`[AI-Hybrid] Direct OpenAI configured as ${role} provider`);
     
     const configuredOpenAIModel = Deno.env.get('OPENAI_MODEL');
@@ -136,10 +135,6 @@ export async function runProviderLoop(opts: {
             ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
             : { status: 402, error: 'Payment required. Please add credits to your OpenAI account.' };
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
-          if (!lovableApiKey) {
-            deferredEarlyError ??= earlyError;
-            return;
-          }
           deferredEarlyError ??= earlyError;
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; continuing fallback chain...`);
           break;
@@ -210,8 +205,7 @@ export async function runProviderLoop(opts: {
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
     if (!GEMINI_API_KEY || content) return;
 
-    const isGatewayAbsent = !lovableApiKey;
-    const role = isGatewayAbsent ? 'primary' : 'gemini-direct';
+    const role = 'direct';
     console.log(`[AI-Hybrid] Direct Gemini API configured as ${role} provider`);
 
     const geminiModels = [
@@ -310,9 +304,8 @@ export async function runProviderLoop(opts: {
     }
   };
 
-  // ── Phase 1: Lovable AI Gateway (PRIMARY) ─────────────────────────────
-  // Prefer the managed gateway so workspace OpenAI rate limits do not block generation.
-  if (lovableApiKey) {
+  // ── Phase 1: Planned direct-provider attempts ──────────────────────────
+  if (allowDirectFallbacks) {
     // Log total prompt size for debugging
     const totalChars = aiMessages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
     console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
@@ -337,7 +330,7 @@ export async function runProviderLoop(opts: {
         : Math.min(cap, Math.max(12000, headroom));
 
       try {
-        console.log(`[AI-Hybrid] Trying PRIMARY gateway model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
+        console.log(`[AI-Hybrid] Trying planned direct model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
@@ -349,8 +342,7 @@ export async function runProviderLoop(opts: {
             : { max_tokens: model.maxTokens }),
           messages: aiMessages,
         };
-        // Only send reasoning parameter for supported models and only via the correct API format
-        // The Lovable AI Gateway passes `reasoning` through for OpenAI models only
+        // Only send reasoning parameters for supported OpenAI-compatible models.
         if (reasoningEffort && reasoningEffort !== "none" && model.id.startsWith('openai/')) {
           reqBody.reasoning = { effort: reasoningEffort };
         }
@@ -359,16 +351,7 @@ export async function runProviderLoop(opts: {
           reqBody.tool_choice = effectiveToolChoice;
         }
 
-        const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Lovable-API-Key': lovableApiKey,
-            'X-Lovable-AIG-SDK': 'vercel-ai-sdk',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(reqBody),
-          signal: controller.signal,
-        });
+        const resp = await createChatCompletion(reqBody as Parameters<typeof createChatCompletion>[0], controller.signal);
         clearTimeout(timeoutId);
 
         if (resp.status === 429 || resp.status === 402) {
@@ -388,7 +371,7 @@ export async function runProviderLoop(opts: {
           if (resp.status === 401 || resp.status === 403) {
             deferredEarlyError ??= {
               status: 503,
-              error: 'Managed AI gateway authentication failed. The backend key is unavailable or stale; rotate the managed gateway key and redeploy the AI functions.',
+              error: 'AI provider authentication failed. Check the configured direct provider secrets.',
             };
           }
           // For 400 errors, log full detail to help diagnose parameter issues
@@ -432,7 +415,7 @@ export async function runProviderLoop(opts: {
         content = extracted.content;
         modelUsed = model.id;
         if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
-        console.log(`[AI-Hybrid] Success with PRIMARY gateway ${model.label}`);
+        console.log(`[AI-Hybrid] Success with planned direct model ${model.label}`);
         break;
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -518,7 +501,6 @@ export async function runProviderLoop(opts: {
       return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
     }
     const configuredProviders = [
-      lovableApiKey ? 'lovable-gateway' : '',
       hasDirectGemini ? 'gemini' : '',
       hasDirectOpenAI ? 'openai' : '',
     ].filter(Boolean);

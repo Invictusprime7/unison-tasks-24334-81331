@@ -15,6 +15,7 @@ import { generateTopologyPlaceholderFiles } from '@/utils/topologyVFSScaffolder'
 import { PreviewPipelineError } from './previewPipelineError';
 import { deriveFilePath } from './routeNavigationService';
 import { ensureViteRootFiles } from './previewSession';
+import { getCompositionById } from '@/sections/templates';
 import type { LayoutCategory } from '@/data/templates/types';
 import type { BuilderPage } from '@/types/pageRegistry';
 import type { GeneratedSitePlan, PageRole, PageRouteNode } from '@/platform/core/siteTopologyPlanner';
@@ -73,6 +74,50 @@ function firstText(...values: Array<unknown>): string | undefined {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return undefined;
+}
+
+function assertWizardTopologyClosure(
+  pages: BuilderPage[],
+  vfsFiles: Record<string, string>,
+  routerContent: string,
+  selectedTemplateId?: string,
+): void {
+  if (!selectedTemplateId) return;
+
+  const blockedFiles: string[] = [];
+  const problems: string[] = [];
+
+  for (const page of pages) {
+    const filePath = page.filePath || deriveFilePath(page);
+    const source = vfsFiles[filePath];
+    const role = page.pageRole;
+    const isClassified = Boolean(role && role !== 'custom' && page.pageType !== 'custom');
+    const isRenderable = Boolean(source?.trim() && /export\s+default\b/.test(source));
+
+    if (!isClassified || !page.path || !filePath || !isRenderable) {
+      blockedFiles.push(filePath);
+      problems.push(
+        `${filePath}: ${[
+          !isClassified ? 'unclassified page role' : null,
+          !page.path ? 'missing route' : null,
+          !isRenderable ? 'missing renderable module' : null,
+        ].filter(Boolean).join(', ')}`,
+      );
+    }
+  }
+
+  if (!routerContent.trim()) {
+    problems.push('/src/App.tsx: missing canonical router');
+    blockedFiles.push('/src/App.tsx');
+  }
+
+  if (problems.length > 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `Wizard template "${selectedTemplateId}" did not produce a closed renderable topology: ${problems.join(' | ')}`,
+      { blockedFiles, recoverableByRelaunch: true },
+    );
+  }
 }
 
 export function compilePlayground(
@@ -137,6 +182,14 @@ export function compilePlayground(
     wizardSeed?.selections?.industry,
     wizardSeed?.selections?.industryOverlay,
   );
+
+  if (options?.selectedTemplateId && !getCompositionById(options.selectedTemplateId)) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `Wizard selected template "${options.selectedTemplateId}" is not registered; refusing to substitute an unrelated industry composition.`,
+      { recoverableByRelaunch: true },
+    );
+  }
 
   for (const page of pages) {
     if (!page.filePath) {
@@ -215,6 +268,8 @@ export function compilePlayground(
   if (routerContent) {
     vfsFiles['/src/App.tsx'] = routerContent;
   }
+
+  assertWizardTopologyClosure(pages, vfsFiles, routerContent, options?.selectedTemplateId);
 
   // Inject canonical root config files (.json + tooling) so the wizard runtime
   // VFS always has package.json/tsconfig/vite/tailwind/postcss, matching what

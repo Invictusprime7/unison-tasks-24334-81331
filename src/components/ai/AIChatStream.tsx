@@ -75,7 +75,7 @@ export function AIChatStream() {
         } else if (resp.status === 402) {
           toast({
             title: "Credits required",
-            description: "Add funds to your Lovable AI workspace to continue.",
+            description: "Check your configured AI provider billing to continue.",
             variant: "destructive",
           });
         } else {
@@ -272,7 +272,7 @@ export function AIChatStream() {
           </div>
           {messages.length > 0 && (
             <p className="text-[10px] text-muted-foreground mt-1.5 text-center">
-              Powered by Lovable AI Gateway
+              Powered by your configured AI provider
             </p>
           )}
         </div>

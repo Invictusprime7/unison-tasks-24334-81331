@@ -5,7 +5,7 @@
  * All logic lives in orchestrator.ts and its dependencies.
  */
 
-import { serve } from "serve";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 import { AIRequestSchema } from "./requestSchema.ts";
 import { classifyTask } from "./taskClassifier.ts";

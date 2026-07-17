@@ -403,42 +403,42 @@ export default ${componentName};`;
 
   // Import files from external source (e.g., AI-generated code)
   const importFiles = useCallback((files: Record<string, string>) => {
-    console.log('[VFS] importFiles called with:', Object.keys(files));
     setNodes(prev => {
       let changed = false;
       const newNodes = [...prev];
-      
-      Object.entries(files).forEach(([path, content]) => {
-        // Normalize path
+      const fileIndexes = new Map<string, number>();
+      const folderIds = new Map<string, string>();
+
+      newNodes.forEach((node, index) => {
+        if (node.type === 'file' && node.path) {
+          fileIndexes.set(node.path, index);
+        }
+        if (node.type === 'folder' && node.path) {
+          folderIds.set(node.path, node.id);
+        }
+      });
+
+      for (const [path, content] of Object.entries(files)) {
         const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-        console.log('[VFS] Processing file:', normalizedPath, 'content length:', content.length);
-        
-        // Check if file already exists
-        const existingFile = newNodes.find(n => n.type === 'file' && n.path === normalizedPath);
-        if (existingFile) {
-          // Skip update if content is identical
-          if ((existingFile as VirtualFile).content === content) {
-            return;
+        const existingFileIndex = fileIndexes.get(normalizedPath);
+        if (existingFileIndex !== undefined) {
+          const existingFile = newNodes[existingFileIndex] as VirtualFile;
+          if (existingFile.content === content) {
+            continue;
           }
-          // Update existing file
           changed = true;
-          const idx = newNodes.indexOf(existingFile);
-          newNodes[idx] = { ...existingFile, content } as VirtualFile;
+          newNodes[existingFileIndex] = { ...existingFile, content };
         } else {
-          // Create new file and any missing parent folders
           changed = true;
           const pathParts = normalizedPath.split('/').filter(Boolean);
           const fileName = pathParts.pop()!;
-          
           let currentParentId: string | null = null;
           let currentPath = '';
-          
-          // Create parent folders if they don't exist
-          pathParts.forEach((folderName) => {
+
+          for (const folderName of pathParts) {
             currentPath += `/${folderName}`;
-            const existingFolder = newNodes.find(n => n.type === 'folder' && n.path === currentPath);
-            
-            if (!existingFolder) {
+            const existingFolderId = folderIds.get(currentPath);
+            if (!existingFolderId) {
               const folderId = `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
               newNodes.push({
                 id: folderId,
@@ -449,12 +449,12 @@ export default ${componentName};`;
                 path: currentPath,
               });
               currentParentId = folderId;
+              folderIds.set(currentPath, folderId);
             } else {
-              currentParentId = existingFolder.id;
+              currentParentId = existingFolderId;
             }
-          });
-          
-          // Create the file
+          }
+
           const fileId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
           newNodes.push({
             id: fileId,
@@ -465,15 +465,63 @@ export default ${componentName};`;
             parentId: currentParentId,
             path: normalizedPath,
           });
+          fileIndexes.set(normalizedPath, newNodes.length - 1);
         }
-      });
-      
-      // Return previous array if nothing actually changed (prevents unnecessary re-renders)
+      }
+
       if (!changed) return prev;
-      
-      console.log('[VFS] After import, total nodes:', newNodes.length, 'files:', newNodes.filter(n => n.type === 'file').length);
       return newNodes;
     });
+  }, []);
+
+  // Replace the full project in one state transition. This prevents preview
+  // consumers from compiling an empty or partially imported wizard VFS.
+  const replaceFiles = useCallback((files: Record<string, string>) => {
+    const nextNodes: VirtualNode[] = [
+      { id: 'src', name: 'src', type: 'folder', parentId: null, isOpen: true, path: '/src' },
+    ];
+    const folderIds = new Map<string, string>([['/src', 'src']]);
+
+    for (const [path, content] of Object.entries(files)) {
+      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+      const pathParts = normalizedPath.split('/').filter(Boolean);
+      const fileName = pathParts.pop();
+      if (!fileName) continue;
+
+      let currentParentId: string | null = null;
+      let currentPath = '';
+      for (const folderName of pathParts) {
+        currentPath += `/${folderName}`;
+        let folderId = folderIds.get(currentPath);
+        if (!folderId) {
+          folderId = `folder-${currentPath}`;
+          nextNodes.push({
+            id: folderId,
+            name: folderName,
+            type: 'folder',
+            parentId: currentParentId,
+            isOpen: true,
+            path: currentPath,
+          });
+          folderIds.set(currentPath, folderId);
+        }
+        currentParentId = folderId;
+      }
+
+      nextNodes.push({
+        id: `file-${normalizedPath}`,
+        name: fileName,
+        content,
+        type: 'file',
+        language: getLanguageFromFileName(fileName),
+        parentId: currentParentId,
+        path: normalizedPath,
+      });
+    }
+
+    setNodes(nextNodes);
+    setActiveFileId('');
+    setOpenTabs([]);
   }, []);
 
   // Sort nodes: folders first, then files, alphabetically
@@ -546,6 +594,7 @@ export default ${componentName};`;
     getNodePath,
     getSandpackFiles,
     importFiles,
+    replaceFiles,
     resetToEmpty,
     loadDefaultTemplate,
   }), [
@@ -572,6 +621,7 @@ export default ${componentName};`;
     getNodePath,
     getSandpackFiles,
     importFiles,
+    replaceFiles,
     resetToEmpty,
     loadDefaultTemplate,
   ]);

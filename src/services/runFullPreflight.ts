@@ -15,6 +15,7 @@ import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { runPreflightRepair } from './aiSitePreflightRepair';
 import { preflightNavWiring } from './preflightNavWiring';
+import { closeRequiredIndustryIntents } from './requiredIntentClosure';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
@@ -28,6 +29,7 @@ export interface RunFullPreflightResult {
     earlyRepair: 'ok' | 'skipped' | 'failed';
     navWiring: 'ok' | 'skipped' | 'failed';
     forbiddenStrip: { stripped: number; forbidden: string[] };
+    requiredIntentClosure: { injected: string[]; missing: string[] };
     finalRepair: 'ok' | 'skipped' | 'failed';
   };
 }
@@ -91,7 +93,15 @@ export function runFullPreflight(
     }
   }
 
-  // 4) Final syntax repair (catches damage from steps 2-3)
+  // 4) Required-intent closure. This is deterministic and profile-driven so
+  // required CTA surfaces never depend solely on AI prompt compliance.
+  const requiredIntentClosure = closeRequiredIndustryIntents(files, resolvedIndustry);
+  files = requiredIntentClosure.files;
+  if (requiredIntentClosure.injected.length > 0 || requiredIntentClosure.missing.length > 0) {
+    console.info('[runFullPreflight] required intent closure', requiredIntentClosure);
+  }
+
+  // 5) Final syntax repair (catches damage from steps 2-4)
   let finalRepair: 'ok' | 'skipped' | 'failed' = 'skipped';
   try {
     const r = runPreflightRepair(files, { context: ctx });
@@ -108,6 +118,10 @@ export function runFullPreflight(
       earlyRepair,
       navWiring,
       forbiddenStrip: { stripped, forbidden },
+      requiredIntentClosure: {
+        injected: requiredIntentClosure.injected,
+        missing: requiredIntentClosure.missing,
+      },
       finalRepair,
     },
   };

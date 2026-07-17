@@ -1,9 +1,10 @@
-import { serve } from "serve";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "@supabase/supabase-js";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
+import { createChatCompletion, isTextGenerationConfigured } from "../_shared/ai/providerClient.ts";
 
 serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -62,12 +63,10 @@ serve(async (req: Request) => {
       return errorResponse("prompt and type are required", 400, corsHeaders);
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-
-    if (!LOVABLE_API_KEY) {
+    if (!isTextGenerationConfigured()) {
       return secureJsonResponse(
         { 
-          error: "AI features are not available. Please deploy to Lovable Cloud.",
+          error: "AI features are not configured. Set OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY.",
           isLocalDevelopment: true
         },
         503,
@@ -373,23 +372,15 @@ Generate a COMPLETE, PRODUCTION-READY application now. Include ALL components, p
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.7,
-      }),
-      signal: controller.signal,
-    });
+    const response = await createChatCompletion({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+    }, controller.signal);
 
     clearTimeout(timeoutId);
 
@@ -397,10 +388,7 @@ Generate a COMPLETE, PRODUCTION-READY application now. Include ALL components, p
       if (response.status === 429) {
         return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
       }
-      if (response.status === 402) {
-        return errorResponse("Payment required. Please add credits to your workspace.", 402, corsHeaders);
-      }
-      return errorResponse(`AI Gateway error: ${response.status}`, 503, corsHeaders);
+      return errorResponse(`AI provider error: ${response.status}`, 503, corsHeaders);
     }
 
     const data = await response.json();

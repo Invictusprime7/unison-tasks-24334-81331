@@ -3,6 +3,7 @@
 
 export type AssistantTaskType =
   | "wizard_seed_generation"
+  | "wizard_interaction_enrichment"
   | "nav_page_generation"
   | "template_json_generation"
   | "template_html_generation"
@@ -66,8 +67,8 @@ export function classifyTask(opts: {
 
   // ── Wizard seed — sole launch lane. Routes to Lane B so wizard launches
   //    share the builder brain (memory, research, VFS, transactional patches).
-  //    The legacy `wizard_template_react` fast path has been removed; wizard
-  //    launches MUST send `mode: "wizard-seed"` with a structured `wizardSeed`.
+  //    Wizard launches MUST send `mode: "wizard-seed"` with a structured
+  //    `wizardSeed`; no alternate launcher generation route is supported.
   if (mode === "wizard-seed") {
     return {
       type: "wizard_seed_generation",
@@ -77,6 +78,18 @@ export function classifyTask(opts: {
       prefersJsonOutput: true,
       skipResearch: false,
       skipThinking: false,
+    };
+  }
+
+  if (mode === "wizard-interactions") {
+    return {
+      type: "wizard_interaction_enrichment",
+      fastPath: false,
+      shouldUseMemory: false,
+      shouldUseCompactContext: true,
+      prefersJsonOutput: true,
+      skipResearch: true,
+      skipThinking: true,
     };
   }
 

@@ -9,7 +9,7 @@
  *   - Host writes the profile to `window.top.__UNISON_BUSINESS__`
  *     (BusinessProfileProvider does this).
  *   - Iframe reads via `useBusinessProfile()` below and re-renders on the
- *     `lovable:business-profile-changed` event bubbled from the parent
+ *     `unison:business-profile-changed` event bubbled from the parent
  *     via postMessage (`BUSINESS_PROFILE_CHANGED`).
  *   - When there is no parent (published/standalone), the hook returns
  *     `null` and callers preserve their seed props.

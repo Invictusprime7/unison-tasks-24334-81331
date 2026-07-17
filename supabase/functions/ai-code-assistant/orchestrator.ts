@@ -29,7 +29,6 @@ import {
   analyzeTemplateStructure,
   buildElementsLibraryBlock,
   buildVfsFilesContext,
-  // buildFastPathSystemPrompt removed with Lane A
   buildUserDBContext,
   buildWizardSeedContext,
   type UserDBContext,
@@ -81,6 +80,13 @@ OUTPUT RULES:
 - Preserve the canonical routes and data-ut-intent contract from the WizardSeed.`;
 }
 
+function buildWizardInteractionBasePrompt(): string {
+  return `You are the final interaction planner for a validated System Launcher website.
+Return ONLY raw JSON with this exact shape: {"templateId":"provided template id","layoutSignature":"provided template layout signature","interactions":[{"target":{"kind":"template-root|interactive|intent","value":"only for intent"},"effect":"hover-lift|hover-glow|reveal|stagger-reveal|click-feedback"}]}.
+Do not return TSX, CSS, imports, files, routes, handlers, selectors outside the target vocabulary, or prose.
+You may choose at most 12 interactions. Preserve all template layout, semantic HSL tokens, data-ut-intent attributes, routes, and page topology.`;
+}
+
 // ── Main Orchestrator Entry ─────────────────────────────────────────────────
 
 export function runAssistantOrchestrator(
@@ -100,10 +106,8 @@ export function runAssistantOrchestrator(
 // LANE B — Builder Orchestration (memory, compaction, research, rich response)
 // ============================================================================
 //
-// The legacy Lane A "wizard fast path" (runWizardLane / mode: template-react
-// without currentCode) has been REMOVED. Wizard launches now send
-// `mode: "wizard-seed"` with a structured WizardSeed and share the same
-// builder brain as in-Builder AIBuilderPanel edits.
+// Wizard launches send `mode: "wizard-seed"` with a structured WizardSeed and
+// share the same Lane B builder brain as in-Builder AIBuilderPanel edits.
 
 
 // ============================================================================
@@ -117,7 +121,6 @@ async function runLaunchDeskLane(
 ): Promise<Response> {
   console.log('[orchestrator] LANE C: launch_desk');
 
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   const { messages, launchBrief } = parsed;
 
   const systemPrompt = buildLaunchDeskSystemPrompt();
@@ -137,12 +140,13 @@ async function runLaunchDeskLane(
     { role: 'user', content: userContent },
   ];
 
-  const providerPlan = buildProviderPlan(task, Boolean(LOVABLE_API_KEY));
+  const providerPlan = buildProviderPlan(task, Boolean(
+    Deno.env.get('OPENAI_API_KEY') || Deno.env.get('GEMINI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY'),
+  ));
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
     navPageGen: false,
-    lovableApiKey: LOVABLE_API_KEY ?? undefined,
   });
 
   if (providerResult.earlyError) {
@@ -185,15 +189,14 @@ async function runBuilderLane(
     'builder_generate'
   })`);
 
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   // Gemini or OpenAI direct API both count as configured text providers so
   // wizard/builder tasks get their full per-task model plan (e.g. 110 s for
   // wizard_seed_generation) instead of the degraded no-provider fallback plan.
   const hasConfiguredProvider = Boolean(
-    LOVABLE_API_KEY ||
     Deno.env.get('GEMINI_API_KEY') ||
     Deno.env.get('GOOGLE_API_KEY') ||
-    Deno.env.get('OPENAI_API_KEY')
+    Deno.env.get('OPENAI_API_KEY') ||
+    Deno.env.get('ANTHROPIC_API_KEY')
   );
   const {
     messages, mode, savePattern = true, generateImage = false, imagePlacement,
@@ -257,6 +260,8 @@ async function runBuilderLane(
   let basePrompt: string;
   if (task.type === 'wizard_seed_generation') {
     basePrompt = buildWizardSeedBasePrompt();
+  } else if (task.type === 'wizard_interaction_enrichment') {
+    basePrompt = buildWizardInteractionBasePrompt();
   } else if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
     const templatePromptText = templateName
       ? `${templateName} ${aesthetic || ''} ${source || ''}`
@@ -292,7 +297,6 @@ async function runBuilderLane(
     generateImage,
     imagePlacement: imagePlacement ?? undefined,
     fastTemplateReact: false,
-    lovableApiKey: Deno.env.get('OPENAI_API_KEY') ?? undefined,
   });
 
   const [research, industryPageContext, imageResult] = await Promise.all([
@@ -318,7 +322,7 @@ async function runBuilderLane(
     : { compactedFiles: '', fileCount: 0, excludedFiles: [] };
 
   // ── 7. Assemble final prompt by task type ──────────────────────────────
-  const thinkingInstruction = task.type === 'wizard_seed_generation'
+  const thinkingInstruction = task.type === 'wizard_seed_generation' || task.type === 'wizard_interaction_enrichment'
     ? ''
     : buildThinkingInstruction(task.skipThinking);
   const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, surgicalEdit);
@@ -403,6 +407,10 @@ async function runBuilderLane(
     finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, or root files.\nThe Home page must be a complete production landing page with at least 5 semantic sections, real industry-specific copy, and working data-ut-intent attributes.\nIf shared components are needed, include them under /src/sections/*.tsx and import them from the page.\n`;
   }
 
+  if (task.type === 'wizard_interaction_enrichment') {
+    finalSystemPrompt += '\n\n[WIZARD INTERACTION ENRICHMENT — PLAN ONLY]\nReturn the interaction JSON object only. The client compiler owns all implementation and will reject any unsupported value.';
+  }
+
   // Inject parsed intent summary into system prompt for better understanding
   if (preprocessed.intentSummary) {
     finalSystemPrompt += preprocessed.intentSummary;
@@ -459,7 +467,6 @@ async function runBuilderLane(
     aiMessages: aiMessagesForCall,
     providerPlan,
     navPageGen,
-    lovableApiKey: LOVABLE_API_KEY ?? undefined,
     reasoningEffort: gatewayOptions?.reasoningEffort,
     allowDirectFallbacks: true,
     tools: enableCatalogTools ? CATALOG_CHAT_TOOLS : undefined,

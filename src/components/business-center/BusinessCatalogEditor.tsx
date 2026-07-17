@@ -8,7 +8,7 @@
  * Field schemas are declared per table below so we can support every catalog
  * source in `sectionDataContracts.ts` without hand-rolling seven pages.
  * When a row is added/edited/deleted we dispatch:
- *   - `lovable:catalog-seeded` so CatalogInspectorPanel refreshes
+ *   - `unison:catalog-seeded` so CatalogInspectorPanel refreshes
  *   - `postMessage({ type: 'CATALOG_BINDINGS_CHANGED' })` so live previews re-hydrate
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -204,14 +204,14 @@ export function BusinessCatalogEditor({ sectionType }: Props) {
         '*',
       );
       window.dispatchEvent(
-        new CustomEvent('lovable:catalog-seeded', {
+        new CustomEvent('unison:catalog-seeded', {
           detail: { businessId, table: schema?.table },
         }),
       );
     } catch {
       /* noop */
     }
-  }, [businessId, schema?.table]);
+  }, [businessId, schema]);
 
   const startNew = () => {
     if (!schema) return;

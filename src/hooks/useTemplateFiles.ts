@@ -7,7 +7,7 @@
  * Backward compat: API surface preserved. Legacy `design_templates` rows still
  * load via fallback path (read-only). New saves always go to `builder_drafts`.
  */
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Json } from "@/integrations/supabase/types";
@@ -96,6 +96,15 @@ const saveLocalTemplates = (templates: SavedTemplate[]) => {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(templates));
 };
 
+function emitCloudDraftSaved(detail: {
+  draftId: string;
+  projectId?: string | null;
+  businessId?: string | null;
+}) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('unison:project-draft-saved', { detail }));
+}
+
 /** Build the v2 canvas_data envelope. Always includes the legacy fields for fallback rendering. */
 const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateData => ({
   version: 2,
@@ -108,51 +117,15 @@ const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateDa
   ...(payload?.siteBundleSnapshot ? { siteBundleSnapshot: payload.siteBundleSnapshot as Record<string, unknown> } : {}),
 });
 
-function isSupabaseTableOrColumnMissing(error: unknown): boolean {
-  const candidate = error as {
-    code?: string;
-    status?: number;
-    message?: string;
-    details?: string;
-  } | null;
-  const text = [candidate?.message, candidate?.details]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  return (
-    candidate?.status === 404 ||
-    candidate?.code === '42P01' ||
-    candidate?.code === '42703' ||
-    candidate?.code === 'PGRST204' ||
-    candidate?.code === 'PGRST205' ||
-    text.includes('could not find the table') ||
-    text.includes('column') ||
-    text.includes('relation') ||
-    text.includes('schema cache')
-  );
-}
-
-function isRecoverableBuilderDraftWriteError(error: unknown): boolean {
-  const candidate = error as { status?: number; message?: string } | null;
-  const message = (candidate?.message || '').toLowerCase();
-
-  if (isSupabaseTableOrColumnMissing(error)) return true;
-  if (candidate?.status === 400 && (
-    message.includes('bad request') ||
-    message.includes('json') ||
-    message.includes('invalid input')
-  )) {
-    return true;
-  }
-
-  return false;
-}
-
 /** Convert a builder_drafts row to a SavedTemplate envelope. */
 const draftRowToTemplate = (row: any): SavedTemplate => {
   const meta = (row.metadata || {}) as Record<string, any>;
-  const vfsFiles = (row.vfs_files || meta.vfsFiles || undefined) as Record<string, string> | undefined;
+  const vfsFiles = (
+    row.vfs_files ||
+    meta.vfsFiles ||
+    (meta.siteBundleSnapshot as { vfsFiles?: Record<string, string> } | undefined)?.vfsFiles ||
+    undefined
+  ) as Record<string, string> | undefined;
   return {
     id: row.id,
     name: meta.name || "Untitled Project",
@@ -182,18 +155,6 @@ export function useTemplateFiles() {
   // purge the long-standing `projectId === templateId === draftId` aliasing
   // that fed BuilderIdentity at commit/deploy/AI-apply boundaries.
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const cloudDraftWritesDisabledRef = useRef(false);
-  const cloudDraftWarningShownRef = useRef(false);
-
-  const disableCloudDraftWrites = useCallback((reason: unknown) => {
-    cloudDraftWritesDisabledRef.current = true;
-    if (!cloudDraftWarningShownRef.current) {
-      cloudDraftWarningShownRef.current = true;
-      console.warn('[useTemplateFiles] Disabling cloud builder_drafts writes due to schema/API mismatch:', reason);
-      toast.warning('Cloud draft persistence unavailable in this environment. Continuing in local runtime mode.');
-    }
-  }, []);
-
   const saveTemplate = useCallback(async (
     name: string,
     description: string,
@@ -272,19 +233,22 @@ export function useTemplateFiles() {
       let data: { id: string; project_id?: string | null } | null = null;
 
       if (existingDraftId) {
+        const updatePayload: Record<string, unknown> = {
+          name: trimmedName,
+          code,
+          editor_code: code,
+          vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+          metadata,
+          updated_at: new Date().toISOString(),
+        };
+        if (payload?.businessId !== undefined) updatePayload.business_id = payload.businessId;
+        if (payload?.projectId !== undefined) updatePayload.project_id = payload.projectId;
         const { data: updated, error: updateError } = await supabase
           .from("builder_drafts")
-          .update({
-            name: trimmedName,
-            business_id: payload?.businessId ?? null,
-            code,
-            editor_code: code,
-            vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
-            metadata,
-            updated_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq("id", existingDraftId)
-          .select("id, project_id")
+          .eq("user_id", user.id)
+          .select("id, project_id, business_id")
           .single();
         if (updateError) throw updateError;
         data = updated as { id: string; project_id?: string | null };
@@ -295,12 +259,13 @@ export function useTemplateFiles() {
             name: trimmedName,
             user_id: user.id,
             business_id: payload?.businessId ?? null,
+            project_id: payload?.projectId ?? null,
             code,
             editor_code: code,
             vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
             metadata,
           })
-          .select("id, project_id")
+          .select("id, project_id, business_id")
           .single();
         if (insertError) throw insertError;
         data = inserted as { id: string; project_id?: string | null };
@@ -309,17 +274,22 @@ export function useTemplateFiles() {
       if (!data) throw new Error("Failed to persist draft");
 
       await syncCanonicalComponentGraph({
-        projectId: payload?.projectId ?? (data as { project_id?: string | null }).project_id ?? null,
+        projectId: (data as { project_id?: string | null }).project_id ?? payload?.projectId ?? null,
         draftId: data.id,
         canonicalPlayground: payload?.canonicalPlayground,
       });
 
       setCurrentDraftId(data.id);
       const resolvedProjectId =
-        payload?.projectId ??
         (data as { project_id?: string | null }).project_id ??
+        payload?.projectId ??
         null;
       setCurrentProjectId(resolvedProjectId);
+      emitCloudDraftSaved({
+        draftId: data.id,
+        projectId: resolvedProjectId,
+        businessId: payload?.businessId ?? null,
+      });
       toast.success("Project saved!", {
         description: `"${name}" has been saved successfully`,
       });
@@ -340,10 +310,6 @@ export function useTemplateFiles() {
   ): Promise<boolean> => {
     setLoading(true);
     try {
-      if (cloudDraftWritesDisabledRef.current) {
-        return true;
-      }
-
       if (id.startsWith("local-")) {
         const localTemplates = getLocalTemplates();
         const index = localTemplates.findIndex(t => t.id === id);
@@ -402,23 +368,30 @@ export function useTemplateFiles() {
       if (payload?.vfsFiles !== undefined) {
         updatePatch.vfs_files = payload.vfsFiles as unknown as Json;
       }
+      if (payload?.businessId !== undefined) updatePatch.business_id = payload.businessId;
+      if (payload?.projectId !== undefined) updatePatch.project_id = payload.projectId;
 
-      const { error } = await supabase
+      const { data: updatedDraft, error } = await supabase
         .from("builder_drafts")
         .update(updatePatch)
-        .eq("id", id);
+        .eq("id", id)
+        .select("id, project_id, business_id")
+        .maybeSingle();
 
       if (error) {
-        if (isRecoverableBuilderDraftWriteError(error)) {
-          disableCloudDraftWrites(error);
-          return true;
-        }
         throw error;
       }
+      if (!updatedDraft) throw new Error(`Draft ${id} was not updated; access or linkage is invalid.`);
+      setCurrentProjectId(updatedDraft.project_id ?? payload?.projectId ?? null);
       await syncCanonicalComponentGraph({
-        projectId: payload?.projectId ?? null,
+        projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
         draftId: id,
         canonicalPlayground: payload?.canonicalPlayground,
+      });
+      emitCloudDraftSaved({
+        draftId: id,
+        projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
+        businessId: updatedDraft.business_id ?? payload?.businessId ?? null,
       });
       toast.success("Project updated!");
       return true;
@@ -429,7 +402,7 @@ export function useTemplateFiles() {
     } finally {
       setLoading(false);
     }
-  }, [disableCloudDraftWrites]);
+  }, []);
 
   const ensureDraft = useCallback(async (
     name: string,
@@ -474,7 +447,7 @@ export function useTemplateFiles() {
       }
 
       // Try builder_drafts first (canonical store)
-      const { data: draft, error: draftErr } = await supabase
+      const { data: draftById, error: draftErr } = await supabase
         .from("builder_drafts")
         .select("*")
         .eq("id", id)
@@ -483,6 +456,21 @@ export function useTemplateFiles() {
       if (draftErr && draftErr.code !== "PGRST116") {
         // PGRST116 = no rows; anything else is a real error
         console.warn("[useTemplateFiles] builder_drafts lookup error:", draftErr);
+      }
+
+      let draft = draftById;
+      if (!draft && !draftErr) {
+        const { data: draftByProject, error: projectLookupError } = await supabase
+          .from("builder_drafts")
+          .select("*")
+          .eq("project_id", id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (projectLookupError && projectLookupError.code !== 'PGRST116') {
+          console.warn('[useTemplateFiles] project-to-draft lookup error:', projectLookupError);
+        }
+        draft = draftByProject;
       }
 
       if (draft) {
@@ -548,10 +536,6 @@ export function useTemplateFiles() {
   const autoSave = useCallback(async (code: string, payload?: SaveProjectPayload): Promise<boolean> => {
     if (!currentDraftId) return false;
     try {
-      if (cloudDraftWritesDisabledRef.current) {
-        return true;
-      }
-
       if (currentDraftId.startsWith("local-")) {
         const localTemplates = getLocalTemplates();
         const index = localTemplates.findIndex(t => t.id === currentDraftId);
@@ -618,6 +602,8 @@ export function useTemplateFiles() {
       if (vfsFilesForSave !== undefined) {
         updatePatch.vfs_files = vfsFilesForSave as unknown as Json;
       }
+      if (payload?.businessId !== undefined) updatePatch.business_id = payload.businessId;
+      if (payload?.projectId !== undefined) updatePatch.project_id = payload.projectId;
       if (
         payload?.entryPoint !== undefined ||
         payload?.activePagePath !== undefined ||
@@ -644,28 +630,35 @@ export function useTemplateFiles() {
         } as Json;
       }
 
-      const { error } = await supabase
+      const { data: updatedDraft, error } = await supabase
         .from("builder_drafts")
         .update(updatePatch)
-        .eq("id", currentDraftId);
+        .eq("id", currentDraftId)
+        .select("id, project_id, business_id")
+        .maybeSingle();
       if (error) {
-        if (isRecoverableBuilderDraftWriteError(error)) {
-          disableCloudDraftWrites(error);
-          return true;
-        }
         throw error;
       }
+      if (!updatedDraft) {
+        throw new Error(`Autosave did not update draft ${currentDraftId}; access or linkage is invalid.`);
+      }
+      setCurrentProjectId(updatedDraft.project_id ?? payload?.projectId ?? null);
       await syncCanonicalComponentGraph({
-        projectId: payload?.projectId ?? null,
+        projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
         draftId: currentDraftId,
         canonicalPlayground: payload?.canonicalPlayground,
+      });
+      emitCloudDraftSaved({
+        draftId: currentDraftId,
+        projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
+        businessId: updatedDraft.business_id ?? payload?.businessId ?? null,
       });
       return true;
     } catch (error) {
       console.error("Auto-save failed:", error);
       return false;
     }
-  }, [currentDraftId, disableCloudDraftWrites]);
+  }, [currentDraftId]);
 
   const clearCurrentTemplate = useCallback(() => {
     setCurrentDraftId(null);

@@ -1,10 +1,10 @@
 /**
  * Builder Lane Prompt Builders
- * Specialized prompt assembly for Lane B (in-builder editing).
+ * Specialized prompt assembly for Lane B wizard generation and in-builder editing.
  * Each function returns a complete system prompt for a specific task type.
  * 
- * Key difference from Lane A: these prompts include session memory,
- * diagnostics context, and task-specific preambles for smarter edits.
+ * These prompts include session memory, diagnostics context, and task-specific
+ * preambles for consistent first-build generation and subsequent edits.
  */
 
 /**

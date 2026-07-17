@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # AI API Keys Setup Script
-# This script helps you configure OpenAI and Lovable API keys for AI features
+# This script helps you configure direct provider keys for AI features
 
 set -e
 
@@ -25,12 +25,14 @@ fi
 
 echo -e "${YELLOW}This script will help you configure API keys for AI features:${NC}"
 echo -e "  • OpenAI API Key - Required for DALL-E image generation"
-echo -e "  • Lovable API Key - Required for AI code generation"
+echo -e "  • Gemini API Key - Optional text generation fallback"
+echo -e "  • Anthropic API Key - Optional text generation fallback"
 echo ""
 
 # Read current values from .env
 CURRENT_OPENAI=$(grep "^OPENAI_API_KEY=" .env | cut -d'=' -f2 || echo "")
-CURRENT_LOVABLE=$(grep "^LOVABLE_API_KEY=" .env | cut -d'=' -f2 || echo "")
+CURRENT_GEMINI=$(grep "^GEMINI_API_KEY=" .env | cut -d'=' -f2 || echo "")
+CURRENT_ANTHROPIC=$(grep "^ANTHROPIC_API_KEY=" .env | cut -d'=' -f2 || echo "")
 
 # OpenAI API Key
 echo -e "${BLUE}1. OpenAI API Key Setup${NC}"
@@ -50,23 +52,42 @@ else
     read -r -s NEW_OPENAI_KEY
 fi
 
-# Lovable API Key  
+# Gemini API Key
 echo ""
-echo -e "${BLUE}2. Lovable API Key Setup${NC}"
-if [ -n "$CURRENT_LOVABLE" ] && [ "$CURRENT_LOVABLE" != "your_lovable_api_key_here" ]; then
-    echo -e "${GREEN}✓ Lovable API key is already configured${NC}"
-    echo -e "${YELLOW}Current value: ${CURRENT_LOVABLE:0:10}...${NC}"
-    read -p "Do you want to update it? (y/N): " update_lovable
-    if [[ $update_lovable =~ ^[Yy]$ ]]; then
-        echo -e "Enter your new Lovable API key:"
-        read -r -s NEW_LOVABLE_KEY
+echo -e "${BLUE}2. Gemini API Key Setup${NC}"
+if [ -n "$CURRENT_GEMINI" ] && [ "$CURRENT_GEMINI" != "your_gemini_api_key_here" ]; then
+    echo -e "${GREEN}✓ Gemini API key is already configured${NC}"
+    echo -e "${YELLOW}Current value: ${CURRENT_GEMINI:0:10}...${NC}"
+    read -p "Do you want to update it? (y/N): " update_gemini
+    if [[ $update_gemini =~ ^[Yy]$ ]]; then
+        echo -e "Enter your new Gemini API key:"
+        read -r -s NEW_GEMINI_KEY
     else
-        NEW_LOVABLE_KEY="$CURRENT_LOVABLE"
+        NEW_GEMINI_KEY="$CURRENT_GEMINI"
     fi
 else
-    echo -e "${YELLOW}⚠️  Lovable API key not configured${NC}"
-    echo -e "Enter your Lovable API key (or press Enter to skip):"
-    read -r -s NEW_LOVABLE_KEY
+    echo -e "${YELLOW}⚠️  Gemini API key not configured${NC}"
+    echo -e "Enter your Gemini API key (or press Enter to skip):"
+    read -r -s NEW_GEMINI_KEY
+fi
+
+# Anthropic API Key
+echo ""
+echo -e "${BLUE}3. Anthropic API Key Setup${NC}"
+if [ -n "$CURRENT_ANTHROPIC" ] && [ "$CURRENT_ANTHROPIC" != "your_anthropic_api_key_here" ]; then
+    echo -e "${GREEN}✓ Anthropic API key is already configured${NC}"
+    echo -e "${YELLOW}Current value: ${CURRENT_ANTHROPIC:0:10}...${NC}"
+    read -p "Do you want to update it? (y/N): " update_anthropic
+    if [[ $update_anthropic =~ ^[Yy]$ ]]; then
+        echo -e "Enter your new Anthropic API key:"
+        read -r -s NEW_ANTHROPIC_KEY
+    else
+        NEW_ANTHROPIC_KEY="$CURRENT_ANTHROPIC"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Anthropic API key not configured${NC}"
+    echo -e "Enter your Anthropic API key (or press Enter to skip):"
+    read -r -s NEW_ANTHROPIC_KEY
 fi
 
 # Update .env file
@@ -89,16 +110,28 @@ else
     echo -e "${YELLOW}⚠️  OpenAI API key skipped${NC}"
 fi
 
-# Update Lovable key
-if [ -n "$NEW_LOVABLE_KEY" ]; then
-    if grep -q "^LOVABLE_API_KEY=" .env; then
-        sed -i "s/^LOVABLE_API_KEY=.*/LOVABLE_API_KEY=$NEW_LOVABLE_KEY/" .env
+# Update Gemini key
+if [ -n "$NEW_GEMINI_KEY" ]; then
+    if grep -q "^GEMINI_API_KEY=" .env; then
+        sed -i "s/^GEMINI_API_KEY=.*/GEMINI_API_KEY=$NEW_GEMINI_KEY/" .env
     else
-        echo "LOVABLE_API_KEY=$NEW_LOVABLE_KEY" >> .env
+        echo "GEMINI_API_KEY=$NEW_GEMINI_KEY" >> .env
     fi
-    echo -e "${GREEN}✓ Lovable API key updated${NC}"
+    echo -e "${GREEN}✓ Gemini API key updated${NC}"
 else
-    echo -e "${YELLOW}⚠️  Lovable API key skipped${NC}"
+    echo -e "${YELLOW}⚠️  Gemini API key skipped${NC}"
+fi
+
+# Update Anthropic key
+if [ -n "$NEW_ANTHROPIC_KEY" ]; then
+    if grep -q "^ANTHROPIC_API_KEY=" .env; then
+        sed -i "s/^ANTHROPIC_API_KEY=.*/ANTHROPIC_API_KEY=$NEW_ANTHROPIC_KEY/" .env
+    else
+        echo "ANTHROPIC_API_KEY=$NEW_ANTHROPIC_KEY" >> .env
+    fi
+    echo -e "${GREEN}✓ Anthropic API key updated${NC}"
+else
+    echo -e "${YELLOW}⚠️  Anthropic API key skipped${NC}"
 fi
 
 # Supabase secrets setup
@@ -117,25 +150,25 @@ if [[ $setup_secrets =~ ^[Yy]$ ]]; then
         fi
     fi
     
-    if [ -n "$NEW_LOVABLE_KEY" ]; then
-        if supabase secrets set LOVABLE_API_KEY="$NEW_LOVABLE_KEY"; then
-            echo -e "${GREEN}✓ Lovable API key set in Supabase${NC}"
+    if [ -n "$NEW_GEMINI_KEY" ]; then
+        if supabase secrets set GEMINI_API_KEY="$NEW_GEMINI_KEY"; then
+            echo -e "${GREEN}✓ Gemini API key set in Supabase${NC}"
         else
-            echo -e "${RED}❌ Failed to set Lovable API key in Supabase${NC}"
+            echo -e "${RED}❌ Failed to set Gemini API key in Supabase${NC}"
+        fi
+    fi
+
+    if [ -n "$NEW_ANTHROPIC_KEY" ]; then
+        if supabase secrets set ANTHROPIC_API_KEY="$NEW_ANTHROPIC_KEY"; then
+            echo -e "${GREEN}✓ Anthropic API key set in Supabase${NC}"
+        else
+            echo -e "${RED}❌ Failed to set Anthropic API key in Supabase${NC}"
         fi
     fi
 fi
 
 # Vercel environment setup
 echo ""
-echo -e "${BLUE}4. Vercel Environment Setup${NC}"
-read -p "Do you want to update these keys in Vercel? (y/N): " setup_vercel
-
-if [[ $setup_vercel =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Updating Vercel environment variables...${NC}"
-    ./scripts/update-vercel-env.sh
-fi
-
 echo ""
 echo -e "${GREEN}🎉 Setup Complete!${NC}"
 echo ""
@@ -147,5 +180,4 @@ echo ""
 echo -e "${YELLOW}Note: If you're using local Supabase, restart your local instance:${NC}"
 echo -e "  supabase stop && supabase start"
 echo ""
-echo -e "${YELLOW}For production deployment, make sure to run:${NC}"
-echo -e "  npm run build && vercel --prod"
+echo -e "${YELLOW}For production, configure these keys as Supabase Edge Function secrets before deploying.${NC}"

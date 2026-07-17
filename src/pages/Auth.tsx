@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ const Auth = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const signInFormRef = useRef<HTMLFormElement>(null);
 
   // Resolve destination after sign-in/up: /onboarding for new users, /dashboard for returning.
   // If the user was mid-checkout before authenticating, send them back to /pricing.
@@ -125,6 +126,39 @@ const Auth = () => {
     }
   };
 
+  const handlePasswordRecovery = async () => {
+    const email = new FormData(signInFormRef.current ?? undefined).get("signin-email") as string | null;
+
+    if (!email) {
+      toast({
+        title: "Enter your email",
+        description: "Enter the email address for the account you want to recover.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    setLoading(false);
+
+    if (error) {
+      toast({
+        title: "Password reset failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Check your email",
+      description: "If an account exists for that address, you will receive a password reset link.",
+    });
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a0a12] p-4 relative overflow-hidden">
       {/* Animated background glow */}
@@ -200,7 +234,7 @@ const Auth = () => {
           </TabsList>
           
           <TabsContent value="signin" className="mt-6">
-            <form onSubmit={handleSignIn} className="space-y-4">
+            <form ref={signInFormRef} onSubmit={handleSignIn} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="signin-email" className="text-cyan-400 font-medium">Email</Label>
                 <Input
@@ -232,6 +266,17 @@ const Auth = () => {
                     "transition-all duration-200"
                   )}
                 />
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto p-0 text-cyan-400 hover:text-cyan-300"
+                  onClick={handlePasswordRecovery}
+                  disabled={loading}
+                >
+                  Forgot password?
+                </Button>
               </div>
               <Button 
                 type="submit" 

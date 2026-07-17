@@ -4,8 +4,78 @@ import { commitToPipeline } from "@/platform/core";
 import { getCompositionsBySystemType } from "@/sections/templates";
 import { createLaunchState } from "@/types/launchState";
 import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";
+import { buildPreviewArtifacts } from "@/utils/previewArtifacts";
+import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from "@/utils/sandpackDependencies";
+import { THEME_PRESETS } from "@/components/onboarding/themePresets";
+import { themePresetToThemeTokens } from "@/components/onboarding/themePresetToTokens";
+import { buildThemedIndexCss } from "@/components/onboarding/themePresetToIndexCss";
 
 describe("launchStateToSandpackFiles", () => {
+  it("merges the lightweight preview runtime with final artifact imports while preserving themePresetId CSS", () => {
+    const organic = THEME_PRESETS.find((preset) => preset.id === "organic");
+    expect(organic).toBeDefined();
+
+    const result = buildPreviewArtifacts({
+      sourceFiles: {
+        "/src/App.tsx": [
+          "import * as Dialog from '@radix-ui/react-dialog';",
+          "import { kebabCase } from 'lodash-es';",
+          "export default function App() { return <Dialog.Root><Dialog.Trigger>{kebabCase('Open dialog')}</Dialog.Trigger></Dialog.Root>; }",
+        ].join("\n"),
+        "/src/index.css": buildThemedIndexCss(organic!),
+        "/.unison/app-context.json": JSON.stringify({ themePresetId: "organic" }),
+      },
+    });
+
+    expect(result.dependencies).toMatchObject(SANDPACK_PREVIEW_CORE_DEPENDENCIES);
+    expect(result.dependencies["@radix-ui/react-dialog"]).toBeDefined();
+    expect(result.dependencies["@swc/helpers"]).toBeDefined();
+    expect(result.dependencies["lodash-es"]).toBe("latest");
+    expect(result.dependencies.recharts).toBeUndefined();
+    expect(result.dependencies.tailwindcss).toBeUndefined();
+    expect(result.sandpackFiles["/index.css"]).toContain("WIZARD THEME: Organic");
+    expect(result.sandpackFiles["/index.css"]).not.toContain("WIZARD FINAL THEME OVERRIDE: organic");
+  });
+
+  it("adds a curated dependency when generated source actually imports it", () => {
+    const result = buildPreviewArtifacts({
+      sourceFiles: {
+        "/src/App.tsx": [
+          "import * as Dialog from '@radix-ui/react-dialog';",
+          "export default function App() { return <Dialog.Root><Dialog.Trigger>Open</Dialog.Trigger></Dialog.Root>; }",
+        ].join("\n"),
+        "/src/index.css": ":root { --primary: 221 83% 53%; }",
+      },
+    });
+
+    expect(result.dependencies["@radix-ui/react-dialog"]).toBeDefined();
+    expect(result.dependencies.recharts).toBeUndefined();
+  });
+
+  it('gives every wizard snapshot the motion, icon, and core Radix preview baseline', () => {
+    const result = buildPreviewArtifacts({
+      sourceFiles: {
+        '/src/App.tsx': 'export default function App(){ return <main>Wizard preview</main>; }',
+        '/src/index.css': ':root { --primary: 221 83% 53%; }',
+        '/.unison/site-bundle-snapshot.json': JSON.stringify({
+          snapshotId: 'snap_runtime_foundation',
+          pageRegistry: { pages: {} },
+          vfsFiles: {
+            '/src/App.tsx': 'export default function App(){ return <main>Wizard preview</main>; }',
+            '/src/index.css': ':root { --primary: 221 83% 53%; }',
+          },
+          meta: { source: 'wizard', themePresetId: 'modern' },
+        }),
+      },
+    });
+
+    expect(result.dependencies['framer-motion']).toBeDefined();
+    expect(result.dependencies['lucide-react']).toBeDefined();
+    expect(result.dependencies['@radix-ui/react-dialog']).toBeDefined();
+    expect(result.dependencies.bootstrap).toBeUndefined();
+    expect(result.dependencies.bulma).toBeUndefined();
+  });
+
   it("does not reintroduce embedded JSON launcher wrappers after normalization", () => {
     const leakedJsonWrapper = [
       "/** @jsx React.createElement */",
@@ -229,11 +299,25 @@ describe("launchStateToSandpackFiles", () => {
       wantsLeadCapture: true,
       templateId,
       themeId: "modern",
+      themePresetId: "modern",
+      themeTokens: themePresetToThemeTokens(
+        THEME_PRESETS.find((preset) => preset.id === "modern")!,
+      ),
       requestedPages: ["services"],
       scaffoldMode: "selected-pages" as const,
     };
 
     const pipeline = commitToPipeline({ selections: wizardSelections }, 'wizard-launch');
+    for (const page of Object.values(pipeline.siteBundleSnapshot.pageRegistry.pages)) {
+      expect(page.pageRole).toBeTruthy();
+      expect(page.pageRole).not.toBe('custom');
+      expect(page.pageType).not.toBe('custom');
+      expect(page.path).toMatch(/^\//);
+      expect(page.filePath).toBeTruthy();
+      expect(pipeline.compileResult.vfsFiles[page.filePath!]).toMatch(/export\s+default\b/);
+    }
+    expect(pipeline.compileResult.vfsFiles['/src/App.tsx']).toContain('<Routes>');
+
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/App.tsx": "export default function App(){ return <main>Generated Home</main>; }",
@@ -257,5 +341,25 @@ describe("launchStateToSandpackFiles", () => {
     expect(artifacts.files["/src/App.tsx"]).toContain('path="/services"');
     expect(artifacts.files["/src/pages/Booking.tsx"]).toBeFalsy();
     expect(artifacts.files["/src/App.tsx"]).not.toContain('path="/booking"');
+  });
+
+  it('rejects an unknown wizard template instead of substituting an industry scaffold', () => {
+    const modern = THEME_PRESETS.find((preset) => preset.id === 'modern');
+    expect(modern).toBeTruthy();
+
+    expect(() => commitToPipeline({
+      selections: {
+        businessName: 'Broken Card Co',
+        businessModel: 'appointment_service',
+        industryOverlay: 'salon',
+        primaryGoal: 'book_appointments',
+        secondaryGoals: [],
+        templateId: 'missing-template-card',
+        themePresetId: 'modern',
+        themeTokens: themePresetToThemeTokens(modern!),
+        requestedPages: ['services'],
+        scaffoldMode: 'selected-pages',
+      },
+    }, 'wizard-launch')).toThrow('Wizard selected template "missing-template-card" is not registered');
   });
 });

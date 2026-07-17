@@ -6,7 +6,7 @@
  * what the platform can do *right now*. These probes never mutate state —
  * they only execute lightweight HEAD/OPTIONS-style checks against:
  *
- *   - Lovable Cloud database reachability (RLS-protected count query)
+ *   - Supabase database reachability (RLS-protected count query)
  *   - Notification path reachability (intent_execution_log existence)
  *   - publish-site edge function reachability + attestation enforcement flag
  *

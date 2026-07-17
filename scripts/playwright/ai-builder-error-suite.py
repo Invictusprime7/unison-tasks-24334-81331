@@ -120,8 +120,8 @@ class ConsoleCapture:
 
 
 async def restore_session(page: Page):
-    storage_key = os.environ.get("LOVABLE_BROWSER_SUPABASE_STORAGE_KEY")
-    session_json = os.environ.get("LOVABLE_BROWSER_SUPABASE_SESSION_JSON")
+    storage_key = os.environ.get("UNISON_BROWSER_SUPABASE_STORAGE_KEY")
+    session_json = os.environ.get("UNISON_BROWSER_SUPABASE_SESSION_JSON")
     if not (storage_key and session_json):
         return
     await page.goto(ORIGIN, wait_until="domcontentloaded")
@@ -266,7 +266,7 @@ async def main():
         ready = await ensure_builder_ready(page)
         await page.screenshot(path=str(SHOTS / "00_builder_mounted.png"))
         if not ready:
-            REPORT.write_text(json.dumps({"error": "builder did not mount", "auth": os.environ.get("LOVABLE_BROWSER_AUTH_STATUS")}, indent=2))
+            REPORT.write_text(json.dumps({"error": "builder did not mount", "auth": os.environ.get("UNISON_BROWSER_AUTH_STATUS")}, indent=2))
             print("BUILDER NOT READY — check 00_builder_mounted.png")
             await browser.close()
             return

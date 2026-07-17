@@ -13,7 +13,7 @@ export interface ModelSpec {
 }
 
 export interface ProviderPlan {
-  /** Ordered list of gateway models to try (via Lovable AI Gateway) */
+  /** Ordered list of direct-provider models to try. */
   gatewayModels: ModelSpec[];
   /** Per-model timeout in ms */
   perModelTimeoutMs: number;
@@ -32,7 +32,7 @@ export interface GatewayOverrides {
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // Lovable AI Gateway models. Gemini Flash is much faster than GPT-5
+  // Direct provider model choices. Gemini Flash is much faster than GPT-5
   // (which uses heavy reasoning + frequently times out at 50s).
   geminiFlash: { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
   gemini25Flash: { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },

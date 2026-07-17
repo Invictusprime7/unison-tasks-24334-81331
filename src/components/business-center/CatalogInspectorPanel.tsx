@@ -126,8 +126,8 @@ export function CatalogInspectorPanel({
         setReloadKey((k) => k + 1);
       }
     };
-    window.addEventListener('lovable:catalog-seeded', handler as EventListener);
-    return () => window.removeEventListener('lovable:catalog-seeded', handler as EventListener);
+    window.addEventListener('unison:catalog-seeded', handler as EventListener);
+    return () => window.removeEventListener('unison:catalog-seeded', handler as EventListener);
   }, [projectId]);
 
   const loadRows = useCallback(async (binding: SectionDataBindingDTO) => {

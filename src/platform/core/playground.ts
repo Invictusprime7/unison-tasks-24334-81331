@@ -8,6 +8,7 @@
 import type { BuilderPageType, FunnelRole } from '@/types/pageRegistry';
 import type { CreatorData } from '@/types/creatorData';
 import type { PageRegistry } from '@/types/pageRegistry';
+import type { GeneratedSitePlan } from './siteTopologyPlanner';
 import type {
   BuilderPageRole,
   BuilderPublishedStatus,
@@ -88,6 +89,18 @@ export interface WizardSelections {
    * to the un-themed default that ships with the base scaffold).
    */
   themePresetId?: string;
+  /**
+   * Fully resolved semantic HSL tokens captured from the selected Style card.
+   * Stage 4b consumes these directly instead of reconstructing colors from a
+   * hardcoded preset registry.
+   */
+  themeTokens?: import('@/sections/types').ThemeTokens;
+  /**
+   * Constrained final interaction plan. Lane B may supply this after page
+   * generation; the platform compiler persists and reapplies it on later
+   * saves/restores without asking the model to regenerate the plan.
+   */
+  interactionManifest?: import('@/services/wizardInteractionEnrichment').WizardInteractionManifest;
   /**
    * Primary intent from the industry profile (e.g. 'booking.create', 'contact.submit').
    * Forwarded to the topology planner so the materializer's internal planSiteTopology
@@ -393,6 +406,7 @@ export interface PlaygroundState {
 
 export interface PlaygroundMaterializationResult {
   playground: PlaygroundState;
+  sitePlan: GeneratedSitePlan;
   warnings: string[];
 }
 

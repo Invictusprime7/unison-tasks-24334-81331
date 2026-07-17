@@ -2,7 +2,7 @@
  * AI Integration Service
  * 
  * Unified integration layer that connects:
- * - Asset Registry (Lane A)
+ * - Asset Registry
  * - TSX Transform Pipeline (Lane B)
  * - Placement Engine (Lane C)
  * - Scene Model (Lane D)

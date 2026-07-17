@@ -122,7 +122,7 @@ function getResolvedBusinessField(
           : null)
       );
     case 'crmDestination':
-      return businessInfo.crmDestination || (setupSteps.get('database') ? 'lovable_cloud' : null);
+      return businessInfo.crmDestination || (setupSteps.get('database') ? 'supabase' : null);
     case 'publishDomain':
       return businessInfo.publishDomain || setupSnapshot.customDomain || null;
     case 'followUpChannel':
@@ -564,7 +564,7 @@ function buildOperationalDependencies(
       typeof bookingStep.config.opensAt === 'string' &&
       typeof bookingStep.config.closesAt === 'string'
     );
-  const crmDestination = businessInfo.crmDestination || (setupSteps.get('database') ? 'lovable_cloud' : '');
+  const crmDestination = businessInfo.crmDestination || (setupSteps.get('database') ? 'supabase' : '');
 
   if (binding.intent === 'form.open') {
     if (!notificationEmail) {

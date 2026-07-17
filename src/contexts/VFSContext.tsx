@@ -60,6 +60,7 @@ export interface VFSContextValue {
   getNodePath: (nodeId: string, currentNodes?: VirtualNode[]) => string;
   getSandpackFiles: () => Record<string, string>;
   importFiles: (files: Record<string, string>) => void;
+  replaceFiles: (files: Record<string, string>) => void;
   resetToEmpty: () => void;
   loadDefaultTemplate: () => void;
   
@@ -125,7 +126,9 @@ export function VFSProvider({
   const lastSyncedContentRef = useRef<Map<string, string>>(new Map());
   
   // Check if preview service is available (Docker gateway OR Vercel API in production)
-  const dockerAvailable = !!import.meta.env.VITE_PREVIEW_GATEWAY_URL || import.meta.env.PROD;
+  // React/Sandpack owns preview rendering. Keep the legacy context capability
+  // false so no provider consumer can start a competing Docker session.
+  const dockerAvailable = false;
   
   // Sync file changes to preview with debounce
   const syncFileToPreview = useCallback(async (path: string, content: string) => {
@@ -330,6 +333,7 @@ export function VFSProvider({
     getNodePath: vfs.getNodePath,
     getSandpackFiles: vfs.getSandpackFiles,
     importFiles: vfs.importFiles,
+    replaceFiles: vfs.replaceFiles,
     resetToEmpty: vfs.resetToEmpty,
     loadDefaultTemplate: vfs.loadDefaultTemplate,
     

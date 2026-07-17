@@ -30,8 +30,10 @@ import {
   endCommitContext,
 } from './pipelineGuard';
 import type { PlaygroundState } from './playground';
+import type { ThemeTokens } from '@/sections/types';
 import type { CompiledContract } from './contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from './gates';
+import { readWizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 
 // ============================================================================
 // Commit Source — every legal caller MUST identify itself.
@@ -58,6 +60,7 @@ export interface CommitInput {
   selectedTemplateId?: string;
   selectedThemeId?: string;
   themePresetId?: string;
+  themeTokens?: ThemeTokens;
   /**
    * Optional pre-compiled contract. When provided we run PreviewGate +
    * PublishGate and surface their verdict on the result.
@@ -142,8 +145,17 @@ function runWizardLaunch(input: CommitInput): CanonicalPipelineResult {
       "[commitToPipeline] source 'wizard-launch' requires `selections`.",
     );
   }
+  // The launcher creates the constrained AI plan after its first structural
+  // compile. Revision commits receive that plan in the VFS, so recover it
+  // here and promote it into the next canonical snapshot instead of leaving
+  // it as an unowned launcher file.
+  const interactionManifest =
+    input.selections.interactionManifest ||
+    readWizardInteractionManifest(input.existingVfsFiles ?? {});
   return executeCanonicalPipeline(
-    input.selections,
+    interactionManifest
+      ? { ...input.selections, interactionManifest }
+      : input.selections,
     input.existingVfsFiles ?? {},
   );
 }
@@ -163,6 +175,7 @@ function runRecompile(input: CommitInput): CanonicalPipelineResult {
       selectedTemplateId: input.selectedTemplateId,
       selectedThemeId: input.selectedThemeId,
       themePresetId: input.themePresetId,
+      themeTokens: input.themeTokens,
     },
   );
   // Recompile path returns capabilities: null — normalize to the wider shape.

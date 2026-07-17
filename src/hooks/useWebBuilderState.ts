@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Canvas as FabricCanvas } from 'fabric';
+import type { Canvas as FabricCanvas } from 'fabric';
 import { toast } from 'sonner';
 
 export type BuilderMode = 'select' | 'edit' | 'preview' | 'pan' | 'code';

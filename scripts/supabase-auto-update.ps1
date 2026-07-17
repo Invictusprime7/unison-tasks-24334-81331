@@ -119,8 +119,8 @@ function Sync-SecretsToSupabase {
 # OpenAI
 OPENAI_API_KEY=
 
-# Lovable AI
-LOVABLE_API_KEY=
+# Gemini AI
+GEMINI_API_KEY=
 
 # Stripe
 STRIPE_SECRET_KEY=

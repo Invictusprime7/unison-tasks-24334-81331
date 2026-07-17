@@ -6,7 +6,7 @@
  * config changes) scoped to the active project or business and lets the user
  * approve / reject them. Approved SQL migrations return the SQL body so it
  * can be handed to the platform migration flow (raw SQL execution from
- * edge functions is intentionally not allowed on Lovable Cloud).
+ * edge functions is intentionally not allowed by the hosted runtime).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -77,7 +77,7 @@ export const MigrationProposalPanel: React.FC<Props> = ({ projectId, businessId,
           try {
             await navigator.clipboard.writeText(migrationSql);
             toast.success('Approved — SQL copied to clipboard', {
-              description: 'Paste it into the Lovable migration tool to apply.',
+              description: 'Paste it into the Supabase migration tool to apply.',
             });
           } catch {
             toast.success('Approved — copy the SQL from Apply Result below.');
@@ -240,7 +240,7 @@ const ProposalCard: React.FC<CardProps> = ({ proposal, busy, onReview, readOnly 
 
         {migrationSql && proposal.status === 'approved' && (
           <div className="flex items-center gap-2 rounded border border-blue-500/30 bg-blue-500/10 p-2 text-blue-600 dark:text-blue-400">
-            <span className="flex-1">Approved. Run this SQL through the Lovable migration tool.</span>
+            <span className="flex-1">Approved. Run this SQL through the Supabase migration tool.</span>
             <Button
               size="sm"
               variant="ghost"

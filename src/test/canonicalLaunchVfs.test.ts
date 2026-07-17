@@ -102,8 +102,11 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files["/src/pages/Home.tsx"]).toContain("motion.div");
     expect(artifacts.files["/package.json"]).toContain("\"framer-motion\"");
     expect(artifacts.runtimeManifest.appContext?.projectId).toBe("project_123");
+    expect(artifacts.runtimeManifest.appContext?.previewRuntime?.foundation).toBe('token-glass');
     expect(artifacts.runtimeManifest.metadataFiles).toContain(CANONICAL_METADATA_FILE_PATHS.appContext);
+    expect(artifacts.runtimeManifest.metadataFiles).toContain(CANONICAL_METADATA_FILE_PATHS.wizardRuntime);
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
+    expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.wizardRuntime]).toContain('token-glass');
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.siteBundleSnapshot]).toContain("\"vfsFilePaths\"");
   });
 
@@ -225,5 +228,20 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Wizard Home");
     expect(artifacts.files["/src/pages/About.tsx"]).toBeUndefined();
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
+  });
+
+  it("refuses to persist a quarantined wizard page when strict preflight is enabled", () => {
+    const snapshot = createSnapshot();
+
+    expect(() => buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        "/src/pages/Home.tsx": "export default function Home(){ return <main><section>Broken</section>; } }",
+      },
+      preferredEntryPoint: "/src/App.tsx",
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: "modern",
+      strictPreflight: true,
+    })).toThrow(/refusing to persist quarantine scaffolds.*Unterminated JSX contents/);
   });
 });

@@ -1,15 +1,14 @@
 /**
  * Supabase Edge Function: Generate Image
- * Generates AI images using Lovable AI Gateway (Gemini image model)
+ * Generates AI images through the configured direct image provider.
  */
 
-import { serve } from "serve";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
-
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+import { createImageGeneration, isImageGenerationConfigured } from "../_shared/ai/providerClient.ts";
 
 interface ImageGenerationRequest {
   prompt: string;
@@ -72,8 +71,8 @@ serve(async (req: Request) => {
       return errorResponse("Prompt is required", 400, corsHeaders);
     }
 
-    if (!LOVABLE_API_KEY) {
-      return errorResponse("Lovable API key not configured", 500, corsHeaders);
+    if (!isImageGenerationConfigured()) {
+      return errorResponse("Image generation is not configured. Set OPENAI_API_KEY.", 503, corsHeaders);
     }
 
     const stylePrompts: Record<string, string> = {
@@ -93,28 +92,19 @@ serve(async (req: Request) => {
     const enhancedPrompt = `${prompt}, ${stylePrompts[style] || stylePrompts["digital-art"]}, ${sizeContext}`;
     const fullPrompt = negativePrompt ? `${enhancedPrompt}. Avoid: ${negativePrompt}` : enhancedPrompt;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [{ role: "user", content: fullPrompt }],
-        modalities: ["image", "text"],
-      }),
+    const size = width > height ? "1536x1024" : height > width ? "1024x1536" : "1024x1024";
+    const response = await createImageGeneration({
+      prompt: fullPrompt,
+      size,
+      quality: quality === "ultra" ? "high" : quality === "high" ? "medium" : "low",
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[Generate-Image] Lovable AI Error:", response.status, errorText);
+      console.error("[Generate-Image] AI provider error:", response.status, errorText);
 
       if (response.status === 429) {
         return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
-      }
-      if (response.status === 402) {
-        return errorResponse("Credits required. Please add credits to continue.", 402, corsHeaders);
       }
       if (response.status === 401) {
         return errorResponse("AI service authentication failed. Please check API configuration.", 401, corsHeaders);
@@ -124,7 +114,8 @@ serve(async (req: Request) => {
     }
 
     const result = await response.json();
-    const imageData = result.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const generated = result.data?.[0];
+    const imageData = generated?.b64_json ? `data:image/png;base64,${generated.b64_json}` : generated?.url;
 
     if (!imageData) {
       throw new Error("No image generated");

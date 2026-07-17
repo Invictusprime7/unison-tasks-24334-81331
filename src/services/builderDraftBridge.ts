@@ -18,9 +18,28 @@ export async function findBuilderDraftIdForProject({
     return null;
   }
 
+  // The relational FK is authoritative. Query it first instead of depending
+  // on metadata that may be absent on older/autosaved drafts.
+  if (projectId) {
+    let exactQuery = supabase
+      .from('builder_drafts')
+      .select('id')
+      .eq('user_id', resolvedUserId)
+      .eq('project_id', projectId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    if (businessId) exactQuery = exactQuery.eq('business_id', businessId);
+
+    const { data: exactRows, error: exactError } = await exactQuery;
+    if (!exactError && exactRows?.[0]?.id) return exactRows[0].id;
+    if (exactError) {
+      console.warn('[builderDraftBridge] FK lookup failed; checking legacy metadata:', exactError);
+    }
+  }
+
   const { data, error } = await supabase
     .from('builder_drafts')
-    .select('id, business_id, metadata, updated_at')
+    .select('id, project_id, business_id, metadata, updated_at')
     .eq('user_id', resolvedUserId)
     .order('updated_at', { ascending: false })
     .limit(50);
@@ -43,7 +62,7 @@ export async function findBuilderDraftIdForProject({
         .map((value) => (typeof value === 'string' ? value : null))
         .filter((value): value is string => Boolean(value));
 
-      return linkedProjectIds.includes(projectId);
+      return row.project_id === projectId || linkedProjectIds.includes(projectId);
     });
 
     if (exactMatch) {

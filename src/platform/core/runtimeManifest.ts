@@ -42,6 +42,25 @@ export interface RuntimeAppContext {
   wizardSelections?: Record<string, unknown>;
   /** Resolved Style-card preset id (e.g. 'organic'); single source of truth for /src/index.css */
   themePresetId?: string;
+  /** Durable semantic HSL token payload selected by the wizard Style card. */
+  themeTokens?: import('@/sections/types').ThemeTokens;
+  /** Durable constrained plan for the final interaction runtime. */
+  interactionManifest?: import('@/services/wizardInteractionEnrichment').WizardInteractionManifest;
+  /** Durable visual-behavior contract derived from the selected wizard cards. */
+  experienceContract?: import('@/services/wizardExperienceContract').WizardExperienceContract;
+  /** Shared Preview capability contract for every canonical wizard launch. */
+  previewRuntime?: {
+    version: '1.0';
+    foundation: 'token-glass';
+    optionalLibraries: string[];
+  };
+  /** Records the canonical Stage 4b stylesheet injection. */
+  themeInjection?: {
+    version: '1.0';
+    stage: '4b';
+    presetId: string | null;
+    cssPath: '/src/index.css';
+  };
   generatedAt: string;
 }
 

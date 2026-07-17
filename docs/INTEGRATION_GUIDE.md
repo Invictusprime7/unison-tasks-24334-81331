@@ -30,7 +30,7 @@ Three new infrastructure pieces are live:
 
 ### Step 1: Wrap App Root with LaunchProvider
 
-Find: Root layout file (likely [App.tsx](src/App.tsx) or index entry)
+Find: Root layout file (likely [App.tsx](../src/App.tsx) or index entry)
 
 ```typescript
 import { LaunchProvider } from '@/contexts/LaunchContext';
@@ -76,13 +76,13 @@ export function App() {
 
 **Read to Understand:**
 1. [ARCHITECTURAL_CONSOLIDATION.md](ARCHITECTURAL_CONSOLIDATION.md) — Full technical writeup
-2. [src/types/launchState.ts](src/types/launchState.ts) — Type definitions
-3. [src/contexts/LaunchContext.tsx](src/contexts/LaunchContext.tsx) — Provider implementation
-4. [src/utils/launchToSandpack.ts](src/utils/launchToSandpack.ts) — Sandpack converter
+2. [src/types/launchState.ts](../src/types/launchState.ts) — Type definitions
+3. [src/contexts/LaunchContext.tsx](../src/contexts/LaunchContext.tsx) — Provider implementation
+4. [src/utils/launchToSandpack.ts](../src/utils/launchToSandpack.ts) — Sandpack converter
 
 **Review Changes:**
-1. [src/components/onboarding/SystemLauncher.tsx](src/components/onboarding/SystemLauncher.tsx#L619-L650) — LaunchState wrapping
-2. [src/components/VFSPreview.tsx](src/components/VFSPreview.tsx#L35-40) — Context-aware preview
+1. [src/components/onboarding/SystemLauncher.tsx](../src/components/onboarding/SystemLauncher.tsx#L619-L650) — LaunchState wrapping
+2. [src/components/VFSPreview.tsx](../src/components/VFSPreview.tsx#L35-40) — Context-aware preview
 
 ---
 

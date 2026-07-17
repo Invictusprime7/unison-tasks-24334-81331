@@ -31,13 +31,34 @@ function toSerializableRecord(value: Record<string, unknown>) {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
+function stripEmbeddedVfs(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const copy = { ...(value as Record<string, unknown>) };
+  delete copy.vfsFiles;
+  return copy;
+}
+
+function compactCanonicalMetadata(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    const compact = stripEmbeddedVfs(parsed);
+    return compact ? JSON.stringify(compact) : content;
+  } catch {
+    return content;
+  }
+}
+
 function compactVfsFiles(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const out: Record<string, string> = {};
   for (const [path, content] of Object.entries(value as Record<string, unknown>)) {
     if (typeof content !== 'string') continue;
     if (path.startsWith('/.unison/')) {
-      if (COMPACT_UNISON_METADATA_PATHS.has(path)) out[path] = content;
+      if (COMPACT_UNISON_METADATA_PATHS.has(path)) {
+        out[path] = path === '/.unison/site-bundle-snapshot.json'
+          ? compactCanonicalMetadata(content)
+          : content;
+      }
       continue;
     }
     if (/^\/(src|public)\//.test(path) || /^\/(index\.html|package\.json|tsconfig\.json|vite\.config\.ts|tailwind\.config\.ts|postcss\.config\.js)$/.test(path)) {
@@ -76,14 +97,10 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   upsertJsonFile(compactFiles, '/.unison/native-publish-setup.json', routeState.setupSnapshot);
   upsertJsonFile(compactFiles, '/.unison/setup-snapshot.json', routeState.setupSnapshot);
 
-  const snapshot = routeState.siteBundleSnapshot && typeof routeState.siteBundleSnapshot === 'object'
-    ? { ...(routeState.siteBundleSnapshot as Record<string, unknown>), vfsFiles: compactFiles }
-    : routeState.siteBundleSnapshot;
+  const snapshot = stripEmbeddedVfs(routeState.siteBundleSnapshot);
   upsertJsonFile(compactFiles, '/.unison/site-bundle-snapshot.json', snapshot);
   const hasDurableWizardFiles = Object.keys(compactFiles).length > 0;
-  const compiledPlayground = routeState.compiledPlayground && typeof routeState.compiledPlayground === 'object'
-    ? { ...(routeState.compiledPlayground as Record<string, unknown>), vfsFiles: compactFiles }
-    : routeState.compiledPlayground;
+  const compiledPlayground = stripEmbeddedVfs(routeState.compiledPlayground);
 
   return {
     fromLauncher: true,
@@ -124,28 +141,40 @@ export function persistLauncherHandoff(args: {
   if (!storageAvailable()) return;
 
   const createdAt = new Date().toISOString();
+  // A handoff used to stringify routeState plus launchState, while each one
+  // held VFS, snapshot VFS, and compiled VFS copies. Large Lane B sites then
+  // blocked the main thread immediately after navigate('/web-builder'). Keep
+  // exactly one compact VFS copy for refresh recovery; LaunchContext owns the
+  // live in-memory copy during the same SPA navigation.
+  const compactRouteState = buildFallbackRouteState(args.routeState);
   const baseSnapshot: LauncherHandoffSnapshot = {
     targetPath: '/web-builder',
     createdAt,
     expiresAt: Date.now() + HANDOFF_TTL_MS,
-    routeState: toSerializableRecord(args.routeState),
-    launchState: args.launchState ? JSON.parse(JSON.stringify(args.launchState)) : undefined,
+    routeState: toSerializableRecord(compactRouteState),
   };
 
   try {
     window.sessionStorage.setItem(LAUNCHER_HANDOFF_KEY, JSON.stringify(baseSnapshot));
   } catch {
     try {
-      const fallback: LauncherHandoffSnapshot = {
-        ...baseSnapshot,
-        routeState: buildFallbackRouteState(args.routeState),
-        launchState: undefined,
-      };
-      window.sessionStorage.setItem(LAUNCHER_HANDOFF_KEY, JSON.stringify(fallback));
+      window.sessionStorage.setItem(LAUNCHER_HANDOFF_KEY, JSON.stringify(baseSnapshot));
     } catch {
       // Non-fatal: normal in-memory route state still carries the handoff.
     }
   }
+}
+
+/**
+ * Browser history is a recovery layer alongside session storage. Keep the
+ * same bounded VFS payload in both places so a back/forward transition can
+ * restore a launch without depending on React context, but never put nested
+ * snapshot/compiled VFS copies into either payload.
+ */
+export function buildLauncherNavigationState(
+  routeState: Record<string, unknown>,
+): Record<string, unknown> {
+  return buildFallbackRouteState(routeState);
 }
 
 export function readLauncherHandoff(): LauncherHandoffSnapshot | null {

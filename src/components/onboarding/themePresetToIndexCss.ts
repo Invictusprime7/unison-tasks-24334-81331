@@ -11,22 +11,38 @@
  * and Tailwind's shadcn token convention.
  */
 import type { ThemePreset } from './themePresets';
+import type { ThemeTokens } from '@/sections/types';
 import { themePresetToThemeTokens } from './themePresetToTokens';
+import { buildThemePresetFinalCssOverride } from '@/services/themeGeometryContract';
 
 export function buildThemedIndexCss(preset: ThemePreset): string {
-  const tokens = themePresetToThemeTokens(preset);
+  return buildThemedIndexCssFromTokens(themePresetToThemeTokens(preset), {
+    presetId: preset.id,
+    label: preset.label,
+    headingFont: preset.typography.headingFont,
+    bodyFont: preset.typography.bodyFont,
+  });
+}
+
+export function buildThemedIndexCssFromTokens(
+  tokens: ThemeTokens,
+  metadata: { presetId?: string; label?: string; headingFont?: string; bodyFont?: string } = {},
+): string {
   const c = tokens.colors;
 
-  // Web-font import (Google Fonts) for the preset typography
+  // Web-font import for the exact typography injected by the selected card.
   const fontFamilies = Array.from(
-    new Set([preset.typography.headingFont, preset.typography.bodyFont]),
+    new Set([
+      metadata.headingFont || tokens.typography.headingFont.split(',')[0].replace(/['"]/g, '').trim(),
+      metadata.bodyFont || tokens.typography.bodyFont.split(',')[0].replace(/['"]/g, '').trim(),
+    ].filter(Boolean)),
   )
     .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400;500;600;700;800`)
     .join('&');
   const fontsImport = `@import url('https://fonts.googleapis.com/css2?${fontFamilies}&display=swap');`;
 
   return `${fontsImport}
-/* AESTHETIC: ${preset.label} (wizard token injection — single source of truth) */
+/* WIZARD THEME: ${metadata.label || 'selected style card'} (Stage 4b HSL token injection) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -52,9 +68,12 @@ export function buildThemedIndexCss(preset: ThemePreset): string {
   --input: ${c.border};
   --ring: ${c.primary};
   --radius: ${tokens.radius};
+  --ut-glass-surface: hsl(var(--card) / 0.68);
+  --ut-glass-border: hsl(var(--border) / 0.58);
+  --ut-glass-shadow: hsl(var(--foreground) / 0.12);
   /* Tailwind CDN reads these via theme.fontFamily.heading / body */
-  --font-heading: ${tokens.typography.headingFont}, ui-sans-serif, system-ui, sans-serif;
-  --font-body: ${tokens.typography.bodyFont}, ui-sans-serif, system-ui, sans-serif;
+  --font-heading: ${tokens.typography.headingFont};
+  --font-body: ${tokens.typography.bodyFont};
 }
 
 * { border-color: hsl(var(--border)); }
@@ -107,7 +126,7 @@ h1, h2, h3, h4, h5, h6 {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
   color: hsl(var(--primary-foreground));
-  font-weight: 600; padding: 0.75rem 1.5rem; border-radius: 9999px;
+  font-weight: 600; padding: 0.75rem 1.5rem; border-radius: var(--radius);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
   box-shadow: 0 4px 14px hsl(var(--primary) / 0.25);
   border: none; cursor: pointer;
@@ -117,7 +136,7 @@ h1, h2, h3, h4, h5, h6 {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   background: transparent; border: 1.5px solid hsl(var(--border));
   color: hsl(var(--foreground));
-  font-weight: 600; padding: 0.75rem 1.5rem; border-radius: 9999px;
+  font-weight: 600; padding: 0.75rem 1.5rem; border-radius: var(--radius);
   transition: all 0.25s ease; cursor: pointer;
 }
 .btn-secondary:hover { background: hsl(var(--accent) / 0.1); border-color: hsl(var(--primary) / 0.5); }
@@ -127,7 +146,7 @@ h1, h2, h3, h4, h5, h6 {
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
-  border-radius: 1.25rem;
+  border-radius: var(--radius);
   padding: 2rem;
   transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
 }
@@ -145,8 +164,28 @@ h1, h2, h3, h4, h5, h6 {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid hsl(var(--border) / 0.6);
-  border-radius: 1.5rem;
+  border-radius: var(--radius);
   box-shadow: 0 8px 32px hsl(var(--foreground) / 0.06);
+}
+.unison-runtime-glass {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 8% 0%, hsl(var(--primary) / 0.12), transparent 32rem),
+    radial-gradient(circle at 92% 12%, hsl(var(--accent) / 0.10), transparent 30rem),
+    hsl(var(--background));
+}
+.ut-glass,
+.ut-glass-card,
+.unison-runtime-glass > header {
+  background: var(--ut-glass-surface);
+  border-color: var(--ut-glass-border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.ut-glass-card {
+  border: 1px solid var(--ut-glass-border);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 36px var(--ut-glass-shadow);
 }
 .nav-blur {
   background: hsl(var(--background) / 0.8);
@@ -156,7 +195,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Badges */
-.badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.9rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; border-radius: 9999px; }
+.badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.9rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; border-radius: var(--radius); }
 .badge-primary { background: hsl(var(--primary) / 0.12); color: hsl(var(--primary)); border: 1px solid hsl(var(--primary) / 0.25); }
 
 /* Gradient text */
@@ -171,6 +210,10 @@ h1, h2, h3, h4, h5, h6 {
 .hover-lift:hover { transform: translateY(-6px); box-shadow: 0 20px 40px hsl(var(--foreground) / 0.12); }
 .button-press { transition: transform 0.1s ease; }
 .button-press:active { transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+}
 
 /* Animations */
 @keyframes fade-in-up { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
@@ -192,5 +235,6 @@ p { margin: 0 0 1rem; line-height: 1.65; }
 img { max-width: 100%; height: auto; display: block; }
 a { color: inherit; text-decoration: none; }
 ul, ol { padding-left: 1.25rem; }
+${buildThemePresetFinalCssOverride(metadata.presetId)}
 `;
 }

@@ -59,23 +59,31 @@ fi
 
 # Set secrets
 echo -e "\n${YELLOW}Setting up secrets...${NC}"
-echo -e "Enter LOVABLE_API_KEY (or press Enter to skip):"
-read -r -s LOVABLE_KEY
-
 echo -e "Enter OPENAI_API_KEY (or press Enter to skip):"
 read -r -s OPENAI_KEY
 
-if [ -n "$LOVABLE_KEY" ]; then
-    supabase secrets set LOVABLE_API_KEY="$LOVABLE_KEY"
-    echo -e "${GREEN}✓ Lovable API key configured${NC}"
-fi
+echo -e "Enter GEMINI_API_KEY (or press Enter to skip):"
+read -r -s GEMINI_KEY
+
+echo -e "Enter ANTHROPIC_API_KEY (or press Enter to skip):"
+read -r -s ANTHROPIC_KEY
 
 if [ -n "$OPENAI_KEY" ]; then
     supabase secrets set OPENAI_API_KEY="$OPENAI_KEY"
     echo -e "${GREEN}✓ OpenAI API key configured${NC}"
 fi
 
-if [ -n "$LOVABLE_KEY" ] || [ -n "$OPENAI_KEY" ]; then
+if [ -n "$GEMINI_KEY" ]; then
+    supabase secrets set GEMINI_API_KEY="$GEMINI_KEY"
+    echo -e "${GREEN}✓ Gemini API key configured${NC}"
+fi
+
+if [ -n "$ANTHROPIC_KEY" ]; then
+    supabase secrets set ANTHROPIC_API_KEY="$ANTHROPIC_KEY"
+    echo -e "${GREEN}✓ Anthropic API key configured${NC}"
+fi
+
+if [ -n "$OPENAI_KEY" ] || [ -n "$GEMINI_KEY" ] || [ -n "$ANTHROPIC_KEY" ]; then
     echo -e "${GREEN}✓ Secrets configured${NC}"
 else
     echo -e "${YELLOW}⚠️  No secrets configured - AI features will be limited${NC}"

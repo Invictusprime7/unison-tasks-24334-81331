@@ -83,12 +83,12 @@ const result = streamText({
 
 ## System Launcher Wizard Configuration
 
-The wizard is now configured as **PROTECTED LANE**:
-- **Lane Type**: Fast path (no research, no memory, no complexity upgrades)
-- **Provider Plan**: Uses `buildProviderPlan()` which respects OpenAI availability
-- **Task Type**: `wizard_template_react`
-- **Timeout**: 45 seconds total (conservative for wizard UX)
-- **Max Tokens**: 16,000 (appropriate for structured template generation)
+The wizard now uses the shared **Lane B builder-brain pipeline**:
+- **Lane Type**: Lane B wizard-seed generation with memory, research, and VFS context
+- **Provider Plan**: Uses `buildProviderPlan()` and respects provider availability
+- **Task Type**: `wizard_seed_generation`
+- **Request Mode**: `wizard-seed` with a structured `wizardSeed`
+- **Fallback Policy**: Missing or invalid generated pages fail the launch instead of using minimal scaffold pages
 
 ## Testing the Configuration
 
@@ -117,9 +117,9 @@ curl -X POST https://nfrdomdvyrbwuokathtw.supabase.co/functions/v1/ai-code-assis
 ```
 [AI-Hybrid] Trying PRIMARY OpenAI gpt-4o (timeout: 25s, budget left: 135s)...
 [AI-Hybrid] Success with PRIMARY gpt-4o
-[orchestrator] LANE A: wizard fast path
-[ai-code-assistant] task=wizard_template_react fastPath=true elapsed-classify=5ms
-[ai-code-assistant] completed task=wizard_template_react total=8523ms
+[orchestrator] LANE B: wizard_seed_generation
+[ai-code-assistant] task=wizard_seed_generation
+[ai-code-assistant] completed task=wizard_seed_generation
 ```
 
 ## Known Issues & Remaining Work

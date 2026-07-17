@@ -3,6 +3,7 @@ import { getCorsHeaders, handleCorsPreflightRequest } from '../_shared/cors.ts'
 import { secureJsonResponse, errorResponse } from '../_shared/response.ts'
 import { verifyAuth, verifyBusinessAccess, authError } from '../_shared/auth.ts'
 import { safeParseBody, isValidUUID, sanitizeString } from '../_shared/validate.ts'
+import { createChatCompletion } from '../_shared/ai/providerClient.ts'
 
 // =============================================================================
 // Types
@@ -410,33 +411,19 @@ async function callLLM(
   // deno-lint-ignore no-explicit-any
   [key: string]: any 
 }> {
-  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')
-  
-  if (!lovableApiKey) {
-    console.error('[agent-runner] LOVABLE_API_KEY not configured')
-    throw new Error('LLM service not configured')
-  }
-
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${lovableApiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(userPayload, null, 2) },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.7,
-    }),
+  const response = await createChatCompletion({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: JSON.stringify(userPayload, null, 2) },
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.7,
   })
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error('[agent-runner] LLM call failed:', response.status, errorText)
+    console.error('[agent-runner] AI provider call failed:', response.status, errorText)
     throw new Error(`LLM call failed: ${response.status}`)
   }
 

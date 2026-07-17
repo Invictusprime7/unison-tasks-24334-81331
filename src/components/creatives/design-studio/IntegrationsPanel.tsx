@@ -262,7 +262,7 @@ export const IntegrationsPanel = ({ onExport, onIntegrationConnect }: Integratio
                   AI Features
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Powered by Lovable AI - No API key needed!
+                  Powered by your configured AI provider
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">

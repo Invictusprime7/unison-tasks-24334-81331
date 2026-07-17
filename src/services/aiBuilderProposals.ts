@@ -5,7 +5,7 @@
  *   - `ai-builder-propose`  → drafts a proposal (SQL/edge/config), runs a
  *     dry-run report, persists as status='pending'.
  *   - `ai-builder-apply`    → owner/project-member approves, rejects, or
- *     marks-applied. Never executes raw SQL (Lovable Cloud constraint) —
+ *     marks-applied. Never executes raw SQL (hosted runtime constraint) —
  *     approved SQL migrations are handed back to the client to route through
  *     the platform migration flow.
  *

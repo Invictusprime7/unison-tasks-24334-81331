@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 
 import {
+  buildLauncherNavigationState,
   clearLauncherHandoff,
   persistLauncherHandoff,
   readLauncherHandoff,
@@ -32,5 +33,41 @@ describe("launcher handoff persistence", () => {
     expect(handoff?.routeState.vfsFiles).toEqual({
       "/src/App.tsx": "export default function App(){return <main />}",
     });
+  });
+
+  it('keeps a compact VFS recovery copy in both session storage and browser history', () => {
+    const routeState = {
+      fromLauncher: true,
+      startInPreview: true,
+      vfsFiles: {
+        '/src/App.tsx': 'export default function App(){ return <main />; }',
+        '/.unison/site-bundle-snapshot.json': JSON.stringify({
+          snapshotId: 'snap_1',
+          vfsFiles: { '/src/App.tsx': 'duplicate source' },
+        }),
+      },
+      siteBundleSnapshot: {
+        snapshotId: 'snap_1',
+        vfsFiles: { '/src/App.tsx': 'duplicate source' },
+      },
+      compiledPlayground: {
+        vfsFiles: { '/src/App.tsx': 'duplicate source' },
+      },
+    };
+
+    persistLauncherHandoff({ routeState });
+    const handoff = readLauncherHandoff();
+    const navigationState = buildLauncherNavigationState(routeState);
+
+    expect(handoff?.routeState.vfsFiles).toMatchObject({
+      '/src/App.tsx': 'export default function App(){ return <main />; }',
+    });
+    expect((handoff?.routeState.siteBundleSnapshot as { vfsFiles?: unknown }).vfsFiles).toBeUndefined();
+    expect((handoff?.routeState.compiledPlayground as { vfsFiles?: unknown }).vfsFiles).toBeUndefined();
+    expect((navigationState as { vfsFiles?: unknown }).vfsFiles).toMatchObject({
+      '/src/App.tsx': 'export default function App(){ return <main />; }',
+    });
+    expect((navigationState.siteBundleSnapshot as { vfsFiles?: unknown }).vfsFiles).toBeUndefined();
+    expect((navigationState.compiledPlayground as { vfsFiles?: unknown }).vfsFiles).toBeUndefined();
   });
 });

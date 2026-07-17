@@ -1,7 +1,7 @@
 /**
  * Unison Tasks Runtime Module
  * 
- * Universal Intent System - "Lovable-level" no-config click handling
+ * Universal Intent System - no-config click handling
  * 
  * Architecture:
  * 1. CORE_INTENTS - Canonical intent namespace (single source of truth)

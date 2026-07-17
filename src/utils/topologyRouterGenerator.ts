@@ -184,9 +184,11 @@ ${imports}
 export default function App() {
   return (
     <HashRouter>
-      <Routes>
+      <div className="unison-runtime-glass">
+        <Routes>
 ${routeElements.join('\n')}
-      </Routes>
+        </Routes>
+      </div>
     </HashRouter>
   );
 }

@@ -24,11 +24,20 @@ const KNOWN_VERSIONS: Record<string, string> = {
   'react': '^18.2.0',
   'react-dom': '^18.2.0',
   'react-router-dom': '^6.20.0',
+  '@swc/helpers': '^0.5.23',
   'lucide-react': 'latest',
   'framer-motion': 'latest',
   'clsx': 'latest',
   'tailwind-merge': 'latest',
   'class-variance-authority': 'latest',
+  'tailwindcss': '^3.4.18',
+  'postcss': '^8.4.49',
+  'autoprefixer': '^10.4.20',
+  'tailwindcss-animate': '^1.0.7',
+  '@tailwindcss/typography': '^0.5.19',
+  '@stylexjs/stylex': '^0.8.0',
+  'bootstrap': '^5.3.3',
+  'bulma': '^1.0.2',
   '@radix-ui/react-slot': 'latest',
   '@radix-ui/react-dialog': 'latest',
   '@radix-ui/react-dropdown-menu': 'latest',
@@ -259,6 +268,11 @@ export function getDependenciesForSandpack(
   extractionInfo: ExtractedDependencies;
 } {
   const extractionInfo = extractDependencies(files);
+  // The curated baseline is part of the generated-site runtime contract, not
+  // an optimization hint. It keeps Radix primitives and Tailwind plugin paths
+  // available for rich components even before a particular variant imports
+  // every package. Extracted dependencies are merged in for site-specific
+  // imports; the curated baseline owns versions where the two overlap.
   const dependencies = mergeDependencies(extractionInfo.dependencies, baseDependencies);
   
   // Log for debugging

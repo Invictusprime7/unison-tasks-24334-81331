@@ -13,6 +13,12 @@ export type PreviewPipelineStage = 'vfs' | 'prep' | 'sandpack';
 export interface PreviewPipelineErrorDetails {
   /** Files implicated in the failure (paths only). */
   blockedFiles?: string[];
+  /** Parser diagnostics for generated files rejected by syntax preflight. */
+  diagnostics?: Array<{
+    path: string;
+    error: string;
+    repairPasses: string[];
+  }>;
   /** Optional structured cause for debugging. */
   cause?: unknown;
   /** Whether the failure is recoverable by re-running the System Launcher. */

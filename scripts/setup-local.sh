@@ -35,15 +35,7 @@ $PACKAGE_MANAGER install
 # Check if .env exists
 if [ ! -f .env ]; then
     echo -e "\n${YELLOW}⚙️  Creating .env file...${NC}"
-    cat > .env << 'EOF'
-# Supabase Configuration (Lovable Cloud)
-VITE_SUPABASE_URL=https://rwmbfwjsdwchqiqnqcjo.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3bWJmd2pzZHdjaHFpcW5xY2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkxNzAzOTksImV4cCI6MjA3NDc0NjM5OX0.vYAPveA9NtvlwecrKRNUAsYPzyA4ywkYEIs2xeC57dE
-VITE_SUPABASE_PROJECT_ID=rwmbfwjsdwchqiqnqcjo
-
-# Optional: Add your custom environment variables below
-# VITE_CUSTOM_API_URL=
-EOF
+    cp .env.example .env
     echo -e "${GREEN}✓ .env file created${NC}"
 else
     echo -e "${GREEN}✓ .env file already exists${NC}"

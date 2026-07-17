@@ -1,8 +1,9 @@
-import { serve } from "serve";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { verifyAuth, authError } from "../_shared/auth.ts";
 import { errorResponse, secureJsonResponse } from "../_shared/response.ts";
 import { safeParseBody, sanitizeString } from "../_shared/validate.ts";
+import { createImageGeneration, isImageGenerationConfigured } from "../_shared/ai/providerClient.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -33,13 +34,11 @@ serve(async (req) => {
       return errorResponse("Prompt is required", 400, corsHeaders);
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-
-    if (!LOVABLE_API_KEY) {
-      console.warn("LOVABLE_API_KEY not configured - AI features unavailable in local development");
+    if (!isImageGenerationConfigured()) {
+      console.warn("OPENAI_API_KEY not configured - image generation unavailable");
       return secureJsonResponse(
         {
-          error: "AI features are not available in local development. Deploy to Lovable Cloud to enable AI capabilities.",
+          error: "Image generation is not configured. Set OPENAI_API_KEY.",
           isLocalDevelopment: true,
         },
         503,
@@ -49,31 +48,18 @@ serve(async (req) => {
 
     const enhancedPrompt = `${prompt}. Style: ${style || "professional and modern"}. High quality, detailed, suitable for web design.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [{ role: "user", content: enhancedPrompt }],
-        modalities: ["image", "text"],
-      }),
-    });
+    const response = await createImageGeneration({ prompt: enhancedPrompt });
 
     if (!response.ok) {
       if (response.status === 429) {
         return errorResponse("Rate limit exceeded. Please try again later.", 429, corsHeaders);
       }
-      if (response.status === 402) {
-        return errorResponse("Payment required. Please add credits to your Lovable workspace.", 402, corsHeaders);
-      }
       return errorResponse(`AI Gateway error: ${response.status}`, 503, corsHeaders);
     }
 
     const data = await response.json();
-    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const generated = data.data?.[0];
+    const imageUrl = generated?.b64_json ? `data:image/png;base64,${generated.b64_json}` : generated?.url;
 
     if (!imageUrl) {
       throw new Error("No image generated");

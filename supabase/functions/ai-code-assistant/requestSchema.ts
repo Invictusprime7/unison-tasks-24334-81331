@@ -139,7 +139,7 @@ export const AIRequestSchema = z.object({
    * Structured Wizard-launch seed. When present (typically with `mode === "wizard-seed"`)
    * the classifier routes to Lane B `wizard_seed_generation` so wizard launches share
    * the same intelligence (memory, research, VFS context, transactional patches) as
-   * the AIBuilderPanel — instead of the protected Lane A fast path.
+   * the AIBuilderPanel through the single supported launcher generation route.
    */
   wizardSeed: z.object({
     version: z.string().max(40).optional(),

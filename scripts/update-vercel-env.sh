@@ -64,19 +64,6 @@ for env in "${environments[@]}"; do
         update_env_var "VITE_SUPABASE_PROJECT_ID" "$VITE_SUPABASE_PROJECT_ID" "$env"
     fi
     
-    if [ ! -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-        update_env_var "SUPABASE_SERVICE_ROLE_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$env"
-    fi
-    
-    # AI Service API Keys
-    if [ ! -z "$OPENAI_API_KEY" ] && [ "$OPENAI_API_KEY" != "your_openai_api_key_here" ]; then
-        update_env_var "OPENAI_API_KEY" "$OPENAI_API_KEY" "$env"
-    fi
-    
-    if [ ! -z "$LOVABLE_API_KEY" ] && [ "$LOVABLE_API_KEY" != "your_lovable_api_key_here" ]; then
-        update_env_var "LOVABLE_API_KEY" "$LOVABLE_API_KEY" "$env"
-    fi
-    
     # Additional application variables for all environments
     if [ ! -z "$NODE_ENV" ]; then
         update_env_var "NODE_ENV" "$NODE_ENV" "$env"

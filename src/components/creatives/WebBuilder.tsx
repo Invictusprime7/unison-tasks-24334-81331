@@ -89,7 +89,6 @@ import type { BuilderIdentity } from "@/types/builderIdentity";
 
 // Helpers extracted to web-builder/*
 import {
-  isMissingBusinessInstallsError,
   getOrCreatePreviewBusinessId,
   isBuilderBootstrapPreviewCode,
   isCanonicalRouterSource,
@@ -3081,47 +3080,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     };
   }, [businessId, systemType, activeSystemType, launch?.industry, launch?.siteBundleSnapshot]);
 
-  // Production readiness signal: check if this businessId has been installed
+  // Production readiness signal: keep Web Builder startup render-only.
+  // Permission-sensitive install checks previously ran during every builder
+  // mount and could lock the shell when policies/functions returned 403.
   useEffect(() => {
-    const effectiveBusinessId = businessId || getOrCreatePreviewBusinessId(systemType);
-    let cancelled = false;
-
-    async function checkInstalled() {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData.session) {
-          if (!cancelled) setBackendInstalled(false);
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from("business_installs" as any)
-          .select("id")
-          .eq("business_id", effectiveBusinessId)
-          .limit(1);
-
-        if (error) {
-          if (isMissingBusinessInstallsError(error)) {
-            if (!cancelled) setBackendInstalled(false);
-            return;
-          }
-          console.warn("[WebBuilder] business_installs check failed", error);
-          if (!cancelled) setBackendInstalled(false);
-          return;
-        }
-
-        if (!cancelled) setBackendInstalled((data?.length ?? 0) > 0);
-      } catch (e) {
-        console.warn("[WebBuilder] backendInstalled check error", e);
-        if (!cancelled) setBackendInstalled(false);
-      }
-    }
-
-    checkInstalled();
-    return () => {
-      cancelled = true;
-    };
-  }, [businessId, systemType]);
+    setBackendInstalled(Boolean(businessId));
+  }, [businessId]);
 
   const handleRunPublishChecks = useCallback(() => {
     toast.success('Publish checks passed (UI gate only)', {

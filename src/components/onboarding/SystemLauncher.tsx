@@ -818,13 +818,16 @@ function assessWizardGenerationQuality(
   const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
   const combined = tsxEntries.map(([, content]) => content).join('\n');
   const totalChars = combined.trim().length;
-  const semanticSectionCount = (
-    combined.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
-  ).length;
-  const classSectionCount = (
-    combined.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav|grid|list|showcase|highlight|banner|panel|card-grid|collection|portfolio|about|story|team|mission|values|history|timeline|stats|bio|process|approach|faq|blog|news|resources|press|awards|clients|partners|logos|quote|intro|overview|why|how|what|benefits|steps|roadmap|hours|location|map)[^"']*["']/gi) || []
-  ).length;
-  const sectionCount = Math.max(semanticSectionCount, classSectionCount);
+  const SECTION_CLASS_TOKENS = 'hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav|grid|list|showcase|highlight|banner|panel|card-grid|collection|portfolio|about|story|team|mission|values|history|timeline|stats|bio|process|approach|faq|blog|news|resources|press|awards|clients|partners|logos|quote|intro|overview|why|how|what|benefits|steps|roadmap|hours|location|map|works|projects|case|case-study|studies|expertise|skills|experience|education|contact-form|newsletter|social';
+  const countSectionsIn = (src: string): number => {
+    const semantic = (src.match(/<\s*(section|header|main|footer|nav|article|aside)\b/gi) || []).length;
+    const motionSemantic = (src.match(/<\s*motion\.(section|header|footer|nav|article|aside|div|main)\b/gi) || []).length;
+    const classHits = (src.match(new RegExp(`className=["'][^"']*(${SECTION_CLASS_TOKENS})[^"']*["']`, 'gi')) || []).length;
+    const paddingHits = (src.match(/className=["'][^"']*\b(py-1[0-9]|py-2[0-9]|py-3[0-9]|pt-2[0-9]|pb-2[0-9]|min-h-screen|min-h-\[[^\]]+\])\b[^"']*["']/gi) || []).length;
+    const slotHits = (src.match(/data-ut-(?:slot|section|section-id)=/gi) || []).length;
+    return Math.max(semantic + motionSemantic, classHits, paddingHits, slotHits);
+  };
+  const sectionCount = countSectionsIn(combined);
   const intentCount = (combined.match(/data-ut-intent=/g) || []).length;
   const placeholderPattern = /AI-generated code will appear here|This page is ready to be edited|Generating page content|Welcome to AI Web Builder|Lorem ipsum|Coming soon|New site preview|refined launch page ready for your next edit|fallback keeps the experience polished|generated content, bindings, and business data continue to hydrate/i;
   const hasRenderablePage = tsxEntries.some(([path, content]) => {
@@ -856,17 +859,10 @@ function assessWizardGenerationQuality(
   }
 
   for (const [path, content] of pageEntries) {
-    const semanticPerPage = (
-      content.match(/<\s*(section|header|main|footer|nav|article|aside)\b/gi) || []
-    ).length;
-    const classPerPage = (
-      content.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav|grid|list|showcase|highlight|banner|panel|card-grid|collection|portfolio|about|story|team|mission|values|history|timeline|stats|bio|process|approach|faq|blog|news|resources|press|awards|clients|partners|logos|quote|intro|overview|why|how|what|benefits|steps|roadmap|hours|location|map)[^"']*["']/gi) || []
-    ).length;
-    // Accept either counter — Composition Authority: presence is proven by
-    // semantic tags OR by canonical section class tokens. A Gallery page
-    // legitimately renders <main> + N gallery/grid blocks; a Services page
-    // renders <main> + service cards. Do not double-penalize class-based layouts.
-    const pageSectionCount = Math.max(semanticPerPage, classPerPage);
+    // Accept semantic tags, motion.* elements, canonical class tokens,
+    // sectioning padding utilities, or data-ut-slot/section attrs — the
+    // Composition Authority: presence proven by ANY of these signals.
+    const pageSectionCount = countSectionsIn(content);
     const isHomePage = /\/Home\.(tsx|jsx)$/i.test(path);
     const minimumSections = isHomePage ? expectedSections : 3;
     if (content.trim().length < 1200) {

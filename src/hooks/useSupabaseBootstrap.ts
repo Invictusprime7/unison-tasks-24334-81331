@@ -21,9 +21,13 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-// Bump this key if the bootstrap logic changes so existing sessions
-// re-run the new checks automatically.
-const BOOTSTRAP_CACHE_KEY = 'supabase_bootstrap_v2';
+// Bump these keys if the bootstrap logic changes so existing sessions
+// re-run the new checks automatically. Persistent cache prevents refresh loops.
+const BOOTSTRAP_CACHE_KEY = 'supabase_bootstrap_v3';
+const BOOTSTRAP_PERSIST_PREFIX = 'supabase_bootstrap_v3:last_run:';
+const BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_BOOTSTRAP_PROVISION_ATTEMPTS = 3;
+const WEB_BUILDER_PATH = '/web-builder';
 
 interface BootstrapBusiness {
   id: string;
@@ -53,7 +57,13 @@ async function hasPluginInstance(businessId: string): Promise<boolean> {
     .limit(1)
     .maybeSingle();
 
-  if (error) return false; // treat error as "unknown, skip"
+  if (error) {
+    // Permission-sensitive checks must never trigger install retries from the
+    // root shell. Treat unknown/forbidden as already provisioned; explicit user
+    // actions can still run install-system later.
+    console.warn('[SupabaseBootstrap] Plugin check skipped:', error.message);
+    return true;
+  }
   return !!data;
 }
 
@@ -79,6 +89,28 @@ async function ensureRlsPolicies(): Promise<void> {
   }
 }
 
+function isWebBuilderRoute(): boolean {
+  return typeof window !== 'undefined' && window.location.pathname === WEB_BUILDER_PATH;
+}
+
+function hasFreshPersistentRun(userId: string): boolean {
+  try {
+    const value = localStorage.getItem(`${BOOTSTRAP_PERSIST_PREFIX}${userId}`);
+    const timestamp = value ? Number(value) : 0;
+    return Number.isFinite(timestamp) && Date.now() - timestamp < BOOTSTRAP_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+function markPersistentRun(userId: string): void {
+  try {
+    localStorage.setItem(`${BOOTSTRAP_PERSIST_PREFIX}${userId}`, String(Date.now()));
+  } catch {
+    // Storage can be unavailable in private mode; session cache still applies.
+  }
+}
+
 export function useSupabaseBootstrap(): void {
   const ran = useRef(false);
 
@@ -86,6 +118,7 @@ export function useSupabaseBootstrap(): void {
     // Only run once per React mount lifetime and once per browser session.
     if (ran.current) return;
     if (sessionStorage.getItem(BOOTSTRAP_CACHE_KEY)) return;
+    if (isWebBuilderRoute()) return;
     ran.current = true;
 
     const run = async () => {
@@ -97,13 +130,22 @@ export function useSupabaseBootstrap(): void {
         if (!session?.user) return; // unauthenticated — nothing to do
 
         const userId = session.user.id;
+        if (hasFreshPersistentRun(userId)) {
+          sessionStorage.setItem(BOOTSTRAP_CACHE_KEY, '1');
+          return;
+        }
+
+        // Mark before network work so failures cannot create re-entrant loops
+        // or a frozen shell on refresh/navigation.
+        sessionStorage.setItem(BOOTSTRAP_CACHE_KEY, '1');
+        markPersistentRun(userId);
 
         // Step 1: ensure RLS policies are in place (idempotent, fast)
         await ensureRlsPolicies().catch(() => {});
 
         // Step 2: auto-provision plugin instances for unprovisioned businesses
         const businesses = await resolveUserBusinesses(userId);
-        for (const biz of businesses) {
+        for (const biz of businesses.slice(0, MAX_BOOTSTRAP_PROVISION_ATTEMPTS)) {
           const alreadyProvisioned = await hasPluginInstance(biz.id);
           if (!alreadyProvisioned) {
             await provisionBusiness(biz).catch((err) =>
@@ -112,9 +154,6 @@ export function useSupabaseBootstrap(): void {
           }
         }
 
-        // Mark complete for this browser session so we don't re-run on
-        // every page navigation within the same tab.
-        sessionStorage.setItem(BOOTSTRAP_CACHE_KEY, '1');
         console.log('[SupabaseBootstrap] Bootstrap complete for user:', userId);
       } catch (err) {
         // Bootstrap failures are always non-fatal.
@@ -122,7 +161,8 @@ export function useSupabaseBootstrap(): void {
       }
     };
 
-    run();
+    const timer = window.setTimeout(run, 1500);
+    return () => window.clearTimeout(timer);
   }, []);
 }
 

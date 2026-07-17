@@ -822,7 +822,7 @@ function assessWizardGenerationQuality(
     combined.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
   ).length;
   const classSectionCount = (
-    combined.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav)[^"']*["']/gi) || []
+    combined.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav|grid|list|showcase|highlight|banner|panel|card-grid|collection|portfolio|about|story|team|mission|values|history|timeline|stats|bio|process|approach|faq|blog|news|resources|press|awards|clients|partners|logos|quote|intro|overview|why|how|what|benefits|steps|roadmap|hours|location|map)[^"']*["']/gi) || []
   ).length;
   const sectionCount = Math.max(semanticSectionCount, classSectionCount);
   const intentCount = (combined.match(/data-ut-intent=/g) || []).length;
@@ -860,7 +860,7 @@ function assessWizardGenerationQuality(
       content.match(/<\s*(section|header|main|footer|nav|article|aside)\b/gi) || []
     ).length;
     const classPerPage = (
-      content.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav|grid|list|showcase|highlight|banner|panel|card-grid|collection|portfolio)[^"']*["']/gi) || []
+      content.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav|grid|list|showcase|highlight|banner|panel|card-grid|collection|portfolio|about|story|team|mission|values|history|timeline|stats|bio|process|approach|faq|blog|news|resources|press|awards|clients|partners|logos|quote|intro|overview|why|how|what|benefits|steps|roadmap|hours|location|map)[^"']*["']/gi) || []
     ).length;
     // Accept either counter — Composition Authority: presence is proven by
     // semantic tags OR by canonical section class tokens. A Gallery page

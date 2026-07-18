@@ -606,8 +606,11 @@ export function useTemplateFiles() {
       if (vfsFilesForSave !== undefined) {
         updatePatch.vfs_files = vfsFilesForSave as unknown as Json;
       }
-      if (payload?.businessId !== undefined) updatePatch.business_id = payload.businessId;
-      if (payload?.projectId !== undefined) updatePatch.project_id = payload.projectId;
+      // Never null out linkage columns during autosave — that flips the row
+      // into the "orphan draft" partition and previously collided with the
+      // (now-dropped) partial unique indexes. Only propagate real values.
+      if (payload?.businessId) updatePatch.business_id = payload.businessId;
+      if (payload?.projectId) updatePatch.project_id = payload.projectId;
       if (
         payload?.entryPoint !== undefined ||
         payload?.activePagePath !== undefined ||

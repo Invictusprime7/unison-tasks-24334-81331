@@ -79,6 +79,12 @@ export interface SaveProjectPayload {
   canonicalPlayground?: Record<string, unknown>;
   siteBundleSnapshot?: unknown;
   metadata?: Record<string, unknown>;
+  /**
+   * When true, `saveTemplate` skips the existing-draft lookup and always
+   * INSERTs a fresh row. Used by the "Save as New" action so cloning a
+   * project doesn't silently overwrite the currently-open draft.
+   */
+  forceNew?: boolean;
 }
 
 const LOCAL_STORAGE_KEY = "webbuilder_templates";
@@ -192,7 +198,16 @@ export function useTemplateFiles() {
       // argument always wins over any stale metadata fallback (e.g. a wizard
       // "My Business" placeholder). Never fall back to a business name here.
       const trimmedName = (name || '').trim() || 'Untitled project';
-      const incomingMeta = (payload?.metadata || {}) as Record<string, unknown>;
+      const forceNew = payload?.forceNew === true;
+      // "Save as new" MUST NOT inherit the source project's id — otherwise the
+      // DB trigger updates the same projects row instead of creating a copy.
+      const effectiveProjectId = forceNew ? null : (payload?.projectId ?? null);
+      const incomingMeta = { ...(payload?.metadata || {}) } as Record<string, unknown>;
+      if (forceNew) {
+        delete incomingMeta.projectId;
+        delete (incomingMeta as Record<string, unknown>).project_id;
+        delete (incomingMeta as Record<string, unknown>).linkedProjectId;
+      }
       const baseMeta: Record<string, unknown> = {
         ...incomingMeta,
         name: trimmedName,
@@ -200,17 +215,24 @@ export function useTemplateFiles() {
         description: description || null,
         entryPoint: payload?.entryPoint,
         activePagePath: payload?.activePagePath,
-        projectId: payload?.projectId ?? null,
+        projectId: effectiveProjectId,
         canonicalPlayground: payload?.canonicalPlayground ?? null,
         siteBundleSnapshot: payload?.siteBundleSnapshot ?? null,
       };
+      if (forceNew) {
+        baseMeta.clonedFromDraftId = payload?.metadata && typeof payload.metadata === 'object'
+          ? ((payload.metadata as Record<string, unknown>).sourceDraftId ?? null)
+          : null;
+        baseMeta.clonedAt = new Date().toISOString();
+      }
       const metadata = bootstrapSnapshotIfMissing(baseMeta, payload, trimmedName) as unknown as Json;
 
       // If a draft already exists for this (user, business, project), update it instead of inserting.
       // This prevents `uq_builder_drafts_user_business*` collisions when users save multiple times
       // or rename a project — saving must always succeed and never lose state.
+      // EXCEPTION: `forceNew` (Save as New) always inserts a fresh row.
       let existingDraftId: string | null = null;
-      {
+      if (!forceNew) {
         let lookup = supabase
           .from("builder_drafts")
           .select("id")
@@ -259,7 +281,7 @@ export function useTemplateFiles() {
             name: trimmedName,
             user_id: user.id,
             business_id: payload?.businessId ?? null,
-            project_id: payload?.projectId ?? null,
+            project_id: effectiveProjectId,
             code,
             editor_code: code,
             vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,

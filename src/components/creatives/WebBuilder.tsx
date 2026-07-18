@@ -4716,16 +4716,42 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     try {
       const isUpdating = templateFiles.currentDraftId && !saveAsNew;
       const finalCode = getFinalCodeWithOverrides();
-      const payload = buildSavePayload();
+      const basePayload = buildSavePayload();
       
       if (isUpdating) {
         // Update existing project
-        await templateFiles.updateTemplate(templateFiles.currentDraftId, finalCode, payload);
+        await templateFiles.updateTemplate(templateFiles.currentDraftId, finalCode, basePayload);
         toast.success(`Updated "${saveProjectName}"`);
       } else {
-        // Save as new project
-        await templateFiles.saveTemplate(saveProjectName, saveProjectDescription, false, finalCode, payload);
-        toast.success(`Saved "${saveProjectName}" to Projects`);
+        // Save as new project — strip source projectId + flag forceNew so a
+        // brand-new builder_draft (and projects row via trigger) is created
+        // instead of silently overwriting the currently-open project.
+        const sourceDraftId = templateFiles.currentDraftId || null;
+        const newPayload = {
+          ...basePayload,
+          projectId: null,
+          forceNew: true,
+          metadata: {
+            ...(basePayload.metadata || {}),
+            sourceDraftId,
+            savedAs: 'new',
+          },
+        };
+        const newDraftId = await templateFiles.saveTemplate(
+          saveProjectName,
+          saveProjectDescription,
+          false,
+          finalCode,
+          newPayload,
+        );
+        if (newDraftId) {
+          // Point the shell at the newly-created draft so subsequent autosaves
+          // and history entries target the copy, not the original.
+          templateFiles.setCurrentDraftId(newDraftId);
+          setCurrentDraftId(newDraftId);
+          setCurrentTemplateName(saveProjectName);
+        }
+        toast.success(saveAsNew ? `Saved "${saveProjectName}" as a new project` : `Saved "${saveProjectName}" to Projects`);
       }
       
       setSaveProjectDialogOpen(false);

@@ -256,6 +256,30 @@ function hasRenderablePreviewSource(files: Record<string, string>): boolean {
   });
 }
 
+function stablePreviewFileSignature(files: Record<string, string>): string {
+  let hash = 2166136261;
+  const update = (value: string) => {
+    for (let i = 0; i < value.length; i += 1) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+  };
+
+  for (const path of Object.keys(files).sort()) {
+    const content = files[path] ?? '';
+    update(path);
+    update(String(content.length));
+    if (content.length > 12000) {
+      update(content.slice(0, 4096));
+      update(content.slice(-4096));
+    } else {
+      update(content);
+    }
+  }
+
+  return `${Object.keys(files).length}:${(hash >>> 0).toString(36)}`;
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -327,6 +351,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     const nodeFiles = nodesToFileMap(nodes);
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
+  const filesSignature = useMemo(() => stablePreviewFileSignature(files), [files]);
 
   const [previewCompile, setPreviewCompile] = useState<PreviewCompileState>({
     sandpackFiles: {},
@@ -401,7 +426,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [files, launch]);
+  }, [filesSignature, launch]);
 
   const {
     sandpackFiles,

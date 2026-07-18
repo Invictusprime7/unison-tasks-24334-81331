@@ -796,7 +796,7 @@ const PREVIEW_SELECTION_BRIDGE = `function __initUnisonPreviewSelectionBridge() 
  * fallback, raw-CSS wrapping) should be the canonical fix. Flip to true only
  * as a temporary mitigation while a regression is being root-caused.
  */
-const ENABLE_REACT_RUNTIME_PATCH = false;
+const ENABLE_REACT_RUNTIME_PATCH = true;
 
 const REACT_RUNTIME_PATCH_BLOCK = `
 // ── Runtime guard: intercept undefined components BEFORE they crash React ──

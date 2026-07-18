@@ -454,12 +454,12 @@ export function useTemplateFiles() {
         .maybeSingle();
 
       if (draftErr && draftErr.code !== "PGRST116") {
-        // PGRST116 = no rows; anything else is a real error
+        // PGRST116 = no rows; anything else is a real error, but legacy/project lookup can still recover.
         console.warn("[useTemplateFiles] builder_drafts lookup error:", draftErr);
       }
 
       let draft = draftById;
-      if (!draft && !draftErr) {
+      if (!draft) {
         const { data: draftByProject, error: projectLookupError } = await supabase
           .from("builder_drafts")
           .select("*")
@@ -490,8 +490,12 @@ export function useTemplateFiles() {
         .from("design_templates")
         .select("*")
         .eq("id", id)
-        .single();
-      if (legacyErr) throw legacyErr;
+        .maybeSingle();
+      if (legacyErr && legacyErr.code !== "PGRST116") throw legacyErr;
+      if (!legacy) {
+        console.warn("[useTemplateFiles] project not found in canonical or legacy stores:", id);
+        return null;
+      }
 
       const template: SavedTemplate = {
         ...legacy,

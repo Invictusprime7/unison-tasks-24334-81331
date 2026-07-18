@@ -2214,59 +2214,68 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       replace?: boolean;
     },
   ) => {
-    const normalizedEntryPoint = options?.entryPoint
-      ? (options.entryPoint.startsWith('/') ? options.entryPoint : `/${options.entryPoint}`)
-      : undefined;
-    const normalizedFiles = normalizeLauncherFiles({ ...incomingFiles }, {
-      entryPoint: normalizedEntryPoint,
-      themePresetId: resolvedThemePresetId,
-      injectCssIfMissing: !effectiveRouteState?.siteBundleSnapshot,
-    });
+    try {
+      const normalizedEntryPoint = options?.entryPoint
+        ? (options.entryPoint.startsWith('/') ? options.entryPoint : `/${options.entryPoint}`)
+        : undefined;
+      const normalizedFiles = normalizeLauncherFiles({ ...incomingFiles }, {
+        entryPoint: normalizedEntryPoint,
+        themePresetId: resolvedThemePresetId,
+        injectCssIfMissing: !effectiveRouteState?.siteBundleSnapshot,
+      });
 
-    const appKey = resolveLauncherEntryPoint(
-      normalizedFiles,
-      normalizedEntryPoint || launchEntryPoint,
-    );
+      const appKey = resolveLauncherEntryPoint(
+        normalizedFiles,
+        normalizedEntryPoint || launchEntryPoint,
+      );
 
-    if (appKey && normalizedFiles[appKey] && !normalizedFiles['/src/template.css']) {
-      const { cleanCode, css } = extractEmbeddedCSS(normalizedFiles[appKey]);
-      if (css) {
-        normalizedFiles[appKey] = cleanCode;
-        normalizedFiles['/src/template.css'] = css;
+      if (appKey && normalizedFiles[appKey] && !normalizedFiles['/src/template.css']) {
+        const { cleanCode, css } = extractEmbeddedCSS(normalizedFiles[appKey]);
+        if (css) {
+          normalizedFiles[appKey] = cleanCode;
+          normalizedFiles['/src/template.css'] = css;
+        }
       }
+
+      const existingFiles = options?.replace ? {} : virtualFSRef.current.getSandpackFiles();
+      let candidateFiles = {
+        ...existingFiles,
+        ...normalizedFiles,
+      };
+      let snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
+      candidateFiles = projectSnapshotVfsFiles(candidateFiles, snapshotResolution);
+      snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
+      Object.assign(normalizedFiles, candidateFiles);
+      assertNoMinimalFallbackPreview(candidateFiles, snapshotResolution, 'Builder VFS import');
+
+      // End-to-end preflight before any template/page import lands in the VFS.
+      // Mirrors the launcher + AI-apply paths so every entry point is guarded.
+      const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
+      const preflightedFiles = runFullPreflight(normalizedFiles, {
+        siteBundleSnapshot: snapshotForPreflight,
+        industry: snapshotForPreflight?.industry,
+      }).files;
+      assertNoMinimalFallbackPreview({ ...candidateFiles, ...preflightedFiles }, snapshotResolution, 'Builder VFS import preflight');
+
+      if (options?.replace) vfsResetToEmpty();
+      vfsImportFiles(preflightedFiles);
+      const syncedEntry = syncBuilderFromFiles(
+        preflightedFiles,
+        options?.preferredPath || normalizedEntryPoint || null,
+      );
+
+      return {
+        files: preflightedFiles,
+        syncedEntry,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? 'Unknown import failure');
+      console.error('[WebBuilder] Builder VFS import blocked:', error);
+      toast.error(isPreviewPipelineError(error) ? 'Preview contract blocked import' : 'Builder import failed', {
+        description: message.slice(0, 180),
+      });
+      return null;
     }
-
-    const existingFiles = options?.replace ? {} : virtualFSRef.current.getSandpackFiles();
-    let candidateFiles = {
-      ...existingFiles,
-      ...normalizedFiles,
-    };
-    let snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
-    candidateFiles = projectSnapshotVfsFiles(candidateFiles, snapshotResolution);
-    snapshotResolution = resolveSnapshot(candidateFiles, effectiveRouteState as any);
-    Object.assign(normalizedFiles, candidateFiles);
-    assertNoMinimalFallbackPreview(candidateFiles, snapshotResolution, 'Builder VFS import');
-
-    // End-to-end preflight before any template/page import lands in the VFS.
-    // Mirrors the launcher + AI-apply paths so every entry point is guarded.
-    const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
-    const preflightedFiles = runFullPreflight(normalizedFiles, {
-      siteBundleSnapshot: snapshotForPreflight,
-      industry: snapshotForPreflight?.industry,
-    }).files;
-    assertNoMinimalFallbackPreview({ ...candidateFiles, ...preflightedFiles }, snapshotResolution, 'Builder VFS import preflight');
-
-    if (options?.replace) vfsResetToEmpty();
-    vfsImportFiles(preflightedFiles);
-    const syncedEntry = syncBuilderFromFiles(
-      preflightedFiles,
-      options?.preferredPath || normalizedEntryPoint || null,
-    );
-
-    return {
-      files: preflightedFiles,
-      syncedEntry,
-    };
   }, [syncBuilderFromFiles, vfsImportFiles, vfsResetToEmpty, launchEntryPoint, resolvedThemePresetId, effectiveRouteState]);
 
   // ── Move 3: revisionId-first hydration ──

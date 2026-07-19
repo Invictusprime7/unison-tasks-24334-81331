@@ -2768,7 +2768,7 @@ const interactionManifest = undefined;
         industry: generationCategory,
         templateLayoutContract,
         experienceContract,
-        selectedPageIds: selectedAdditionalPages ?? [],
+        selectedPageIds: (selectedPages as unknown as string[]) ?? [],
       });
       void wizardMergeContext;
 

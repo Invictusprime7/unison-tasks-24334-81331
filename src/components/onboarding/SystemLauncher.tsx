@@ -2759,10 +2759,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // working pipeline shipped free-styled Lane A/B compositions without a
       // baseline motion runtime; auto-injecting one was flattening layouts.
       // Any motion the AI authored directly inside page bodies is preserved.
-      const interactionManifest = createBaselineInteractionManifest(
-        aiSourcedFiles,
+const interactionManifest = undefined;
+      // Single typed carrier for the 3-stage merge (Lane A → Lane B → Stage 4b).
+      // Downstream callers should read from this instead of re-deriving IDs.
+      const wizardMergeContext = buildWizardMergeContext({
+        themePresetId: resolvedPreset.id,
+        templateId: effectiveTemplate?.id ?? templateLayoutContract.templateId,
+        industry: generationCategory,
         templateLayoutContract,
-      );
+        experienceContract,
+        selectedPageIds: selectedAdditionalPages ?? [],
+      });
+      void wizardMergeContext;
 
       // ── Merge AI output (if any) with LOCKED themed CSS + DETERMINISTIC ROUTER ──
       // /src/App.tsx is OWNED by the deterministic router from the page registry.

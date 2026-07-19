@@ -104,9 +104,9 @@ import {
   buildTemplateLayoutPrompt,
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
-import {
-  createBaselineInteractionManifest,
-} from "@/services/wizardInteractionEnrichment";
+// Interaction enrichment layer removed (2026-07-17 rebase). Lane A/B author
+// motion directly into page bodies; no baseline manifest is threaded.
+import { buildWizardMergeContext } from "@/services/wizardMergeContext";
 
 // ============================================================================
 // Types

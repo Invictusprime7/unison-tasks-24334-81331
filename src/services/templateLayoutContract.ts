@@ -89,19 +89,24 @@ export function buildTemplateLayoutPrompt(contract: TemplateLayoutContract): str
   return lines.join('\n');
 }
 
-/** Adds a durable runtime identity without rewriting the AI-authored geometry. */
+/** Adds a durable runtime identity without rewriting the AI-authored geometry.
+ *  Stamps EVERY page in /src/pages/*.tsx (not only Home) so Lane B pages carry
+ *  the template identity for the theme bridge + downstream diagnostics. */
 export function stampTemplateLayoutIdentity(
   files: Record<string, string>,
   contract: TemplateLayoutContract,
 ): Record<string, string> {
   const next = { ...files };
-  const homePath = Object.keys(next).find((path) => /\/src\/pages\/(?:Home|Index)\.(?:tsx|jsx)$/i.test(path));
-  if (!homePath || next[homePath].includes('data-ut-template-id=')) return next;
-
-  const source = next[homePath];
-  const tagged = source.replace(/<(main|section)\b([^>]*)>/i, (match, tag: string, attrs: string) => (
-    `<${tag}${attrs} data-ut-template-id="${contract.templateId}" data-ut-layout-signature="${contract.signature}">`
-  ));
-  if (tagged !== source) next[homePath] = tagged;
+  const pagePaths = Object.keys(next).filter((path) =>
+    /\/src\/pages\/[^/]+\.(?:tsx|jsx)$/i.test(path),
+  );
+  for (const pagePath of pagePaths) {
+    const source = next[pagePath];
+    if (typeof source !== 'string' || source.includes('data-ut-template-id=')) continue;
+    const tagged = source.replace(/<(main|section)\b([^>]*)>/i, (match, tag: string, attrs: string) => (
+      `<${tag}${attrs} data-ut-template-id="${contract.templateId}" data-ut-layout-signature="${contract.signature}">`
+    ));
+    if (tagged !== source) next[pagePath] = tagged;
+  }
   return next;
 }

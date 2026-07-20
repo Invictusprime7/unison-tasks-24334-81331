@@ -8,11 +8,6 @@
  *   - the same memory / research / VFS context behavior (Lane B)
  *   - the same transactional patch lifecycle
  *
- * This file is intentionally thin: it does NOT compose prompts, parse
- * responses, or apply patches. Those concerns stay in the callers
- * (AIBuilderPanel for the builder, compileWizardSeed/SystemLauncher for
- * the wizard) until a later refactor splits AIBuilderPanel further.
- *
  *   Wizard UI ─┐
  *              ├─→ builderBrainClient ─→ ai-code-assistant ─→ runBuilderLane
  *   AIBuilderPanel UI ─┘
@@ -21,12 +16,6 @@
 import { supabase } from "@/integrations/supabase/client";
 export type BuilderTurnResponse<T = unknown> = { data: T | null; error: unknown };
 
-/**
- * Loose body shape — mirrors the edge function's `AIRequestSchema`.
- * Kept open so callers don't have to import the Zod schema from
- * supabase/functions (Deno-only) and so we can add fields without
- * touching every call site. The edge function validates strictly.
- */
 export interface BuilderTurnInput {
   messages: Array<{ role: string; content: unknown }>;
   mode?: string;
@@ -56,7 +45,6 @@ export interface BuilderTurnInput {
   userDesignProfile?: unknown;
   attachments?: unknown[];
   gatewayOptions?: unknown;
-  /** Structured wizard-launch seed; presence routes to Lane B. */
   wizardSeed?: unknown;
   [extra: string]: unknown;
 }
@@ -66,19 +54,110 @@ export interface BuilderTurnOptions {
   signal?: AbortSignal;
 }
 
+const TRANSPORT_ERROR_PATTERN =
+  /failed to send|failed to fetch|network(?:\s|error)|networkerror|econnreset|econnrefused|socket hang up|load failed|502|503|504|gateway timeout|bad gateway|service unavailable/i;
+
+/**
+ * Classify an invoke error as transport-class (retry-worthy) vs. an
+ * HTTP/schema/AI error the caller must see immediately.
+ *
+ * Transport-class = the fetch itself failed before any HTTP response body
+ * reached us (network hiccup, CORS preflight failure, cold-start crash,
+ * 5xx from the edge runtime). We only retry these.
+ */
+export function isTransportError(err: unknown): boolean {
+  if (!err) return false;
+  const anyErr = err as { name?: string; message?: string; context?: { status?: number } };
+
+  // supabase-js FunctionsFetchError has name === "FunctionsFetchError"
+  if (anyErr?.name === "FunctionsFetchError") return true;
+  // Native fetch failure surfaces as TypeError
+  if (anyErr?.name === "TypeError" && TRANSPORT_ERROR_PATTERN.test(anyErr?.message || "")) return true;
+
+  const status = anyErr?.context?.status;
+  if (typeof status === "number" && status >= 502 && status <= 504) return true;
+
+  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
+  if (msg && TRANSPORT_ERROR_PATTERN.test(msg)) return true;
+
+  return false;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * Invoke the shared builder brain. Returns the raw Supabase functions
  * response so callers can keep their existing error-handling / parsing
  * logic unchanged during incremental migration.
+ *
+ * Adds transport-only retry: up to 2 retries (3 attempts total) with
+ * 750ms → 1500ms backoff + jitter. Non-transport errors (structured 4xx,
+ * schema failures, `{ error }` payloads) are returned immediately so the
+ * launcher's Lane B contract enforcement runs unchanged.
  */
 export async function runBuilderTurn<TResponse = any>(
   input: BuilderTurnInput,
-  _options: BuilderTurnOptions = {},
+  options: BuilderTurnOptions = {},
 ): Promise<{ data: TResponse; error: any }> {
-  const { data, error } = await supabase.functions.invoke<TResponse>("ai-code-assistant", {
-    body: input as unknown as Record<string, unknown>,
-  });
-  return { data: data as TResponse, error };
+  const maxAttempts = 3;
+  const baseDelays = [750, 1500];
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (options.signal?.aborted) {
+      return { data: null as TResponse, error: new DOMException("Aborted", "AbortError") };
+    }
+    try {
+      const { data, error } = await supabase.functions.invoke<TResponse>("ai-code-assistant", {
+        body: input as unknown as Record<string, unknown>,
+      });
+
+      if (error && isTransportError(error) && attempt < maxAttempts) {
+        lastError = error;
+        const jitter = Math.floor(Math.random() * 250);
+        const delay = baseDelays[attempt - 1] + jitter;
+        console.warn(
+          `[builderBrainClient] transport error on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
+          (error as { message?: string })?.message,
+        );
+        await sleep(delay, options.signal);
+        continue;
+      }
+
+      return { data: data as TResponse, error };
+    } catch (thrown) {
+      if (isTransportError(thrown) && attempt < maxAttempts) {
+        lastError = thrown;
+        const jitter = Math.floor(Math.random() * 250);
+        const delay = baseDelays[attempt - 1] + jitter;
+        console.warn(
+          `[builderBrainClient] transport throw on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
+          (thrown as { message?: string })?.message,
+        );
+        await sleep(delay, options.signal);
+        continue;
+      }
+      return { data: null as TResponse, error: thrown };
+    }
+  }
+
+  return { data: null as TResponse, error: lastError ?? new Error("Unknown transport failure") };
 }
 
 export default runBuilderTurn;

@@ -37,7 +37,7 @@ import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { runBuilderTurn } from "@/services/builderBrainClient";
+import { runBuilderTurn, isTransportError } from "@/services/builderBrainClient";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -2369,6 +2369,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (aiError) {
         launchReliabilityMode = 'lane-b-blocked';
         const details = await getFunctionErrorMessage(aiError);
+        if (isTransportError(aiError)) {
+          throw new Error(
+            `Couldn't reach the AI generator (network/edge function transport error after retries). Retry generation — no fallback will be substituted. ${details}`,
+          );
+        }
         throw new Error(
           `Wizard Lane B generation failed; minimal fallback is blocked. ${details}`,
         );

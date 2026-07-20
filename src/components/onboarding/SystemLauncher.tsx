@@ -37,7 +37,7 @@ import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { runBuilderTurn } from "@/services/builderBrainClient";
+import { runBuilderTurn, isTransportError } from "@/services/builderBrainClient";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {

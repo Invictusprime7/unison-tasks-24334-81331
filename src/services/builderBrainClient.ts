@@ -115,8 +115,8 @@ export async function runBuilderTurn<TResponse = any>(
   input: BuilderTurnInput,
   options: BuilderTurnOptions = {},
 ): Promise<{ data: TResponse; error: any }> {
-  const maxAttempts = 3;
-  const baseDelays = [750, 1500];
+  const maxAttempts = 4;
+  const baseDelays = [600, 1400, 2800];
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -155,6 +155,45 @@ export async function runBuilderTurn<TResponse = any>(
       }
       return { data: null as TResponse, error: thrown };
     }
+  }
+
+  // Last-ditch: bypass the wrapped supabase-js fetch and hit the edge
+  // function directly via native fetch. This recovers from cases where the
+  // SDK's fetch wrapper (interceptors, session-recovery) throws before it
+  // ever touches the network, while the edge itself is healthy.
+  try {
+    const url = (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_URL;
+    const anon =
+      (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
+      (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_ANON_KEY;
+    if (url && anon) {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token || anon;
+      console.warn("[builderBrainClient] SDK invoke failed; attempting raw fetch fallback");
+      const res = await fetch(`${url}/functions/v1/ai-code-assistant`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: anon,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(input),
+        signal: options.signal,
+      });
+      const text = await res.text();
+      let parsed: unknown = null;
+      try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
+      if (!res.ok) {
+        return {
+          data: null as TResponse,
+          error: Object.assign(new Error(`Edge function ${res.status}: ${typeof parsed === "string" ? parsed : (parsed as { error?: string })?.error || res.statusText}`), { context: { status: res.status, body: text } }),
+        };
+      }
+      return { data: parsed as TResponse, error: null };
+    }
+  } catch (rawErr) {
+    console.warn("[builderBrainClient] raw fetch fallback failed", (rawErr as { message?: string })?.message);
+    lastError = rawErr;
   }
 
   return { data: null as TResponse, error: lastError ?? new Error("Unknown transport failure") };

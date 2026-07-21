@@ -1221,7 +1221,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
         <ScrollArea className="flex-1 -mx-2">
           <div className="px-2 space-y-1">
             {businesses.map((business) => (
-              <button
+              <div
                 key={business.id}
                 onClick={() => {
                   if (businessSelectionMode && business.owner_id === userId) {
@@ -1232,6 +1232,21 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                   setSelectedBusiness(business);
                   setActiveSection('projects');
                 }}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  if (businessSelectionMode && business.owner_id === userId) {
+                    toggleBusinessSelection(business.id);
+                    return;
+                  }
+                  window.localStorage.setItem(selectedBusinessKey, business.id);
+                  setSelectedBusiness(business);
+                  setActiveSection('projects');
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open ${business.name}`}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all group",
                   selectedBusiness?.id === business.id
@@ -1274,7 +1289,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         </ScrollArea>

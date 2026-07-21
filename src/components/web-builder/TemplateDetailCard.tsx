@@ -61,6 +61,8 @@ export const TemplateDetailCard: React.FC<TemplateDetailCardProps> = ({
           <TemplatePreviewThumbnail 
             html={template.code}
             device={previewDevice}
+            title={template.name}
+            category={template.category}
             className="shadow-sm"
           />
         </div>

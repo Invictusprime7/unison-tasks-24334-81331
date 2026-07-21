@@ -25,6 +25,8 @@ export interface ProviderCallResult {
   reasoning: string;
   /** Which model produced the successful response */
   modelUsed?: string;
+  /** Direct provider that served the successful response. */
+  providerUsed?: string;
   /** OpenAI-shaped tool_calls returned by the model (chat completions style). */
   toolCalls?: RawToolCall[];
   /** Non-null when we should return an early HTTP error (rate limit, payment required) */
@@ -50,6 +52,7 @@ export async function runProviderLoop(opts: {
   let lastError = '';
   let reasoning = '';
   let modelUsed: string | undefined;
+  let providerUsed: string | undefined;
   let toolCalls: RawToolCall[] | undefined;
 
   // Global wall-clock budget so we don't exceed the client's timeout window.
@@ -182,6 +185,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        providerUsed = 'openai';
         if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with fallback ${model.label}`);
         break;
@@ -288,6 +292,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        providerUsed = 'gemini';
         if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with ${role} ${model.label}`);
         break;
@@ -414,6 +419,7 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        providerUsed = resp.headers.get('X-Unison-AI-Provider') ?? providerUsed;
         if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with planned direct model ${model.label}`);
         break;
@@ -430,14 +436,16 @@ export async function runProviderLoop(opts: {
     }
   }
 
-  // ── Phase 2: Direct Gemini API (65k output tokens, fast) ──────────────
+  // ── Phase 2–3: Provider-native fallback models ───────────────────────
+  // Preserve the weighted preference after the planned models are exhausted.
   if (!content && allowDirectFallbacks) {
-    await runDirectGemini();
-  }
-
-  // ── Phase 3: Direct OpenAI API ────────────────────────────────────────
-  if (!content && allowDirectFallbacks) {
-    await runDirectOpenAI();
+    if (providerPlan.primaryProvider === 'openai') {
+      await runDirectOpenAI();
+      if (!content) await runDirectGemini();
+    } else {
+      await runDirectGemini();
+      if (!content) await runDirectOpenAI();
+    }
   }
 
   // ── Phase 4: Direct Anthropic API ─────────────────────────────────────
@@ -484,6 +492,7 @@ export async function runProviderLoop(opts: {
               if (extracted.reasoning) reasoning = extracted.reasoning;
               content = extracted.content;
               modelUsed = 'claude-sonnet-4-5';
+              providerUsed = 'anthropic';
               console.log('[AI-Hybrid] Success with direct Anthropic claude-sonnet-4-5');
             } else {
               recordProviderError('Anthropic claude-sonnet-4-5', 'no content');
@@ -508,5 +517,5 @@ export async function runProviderLoop(opts: {
     throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure the managed AI gateway secret is valid and available to backend functions.`);
   }
 
-  return { content, reasoning, modelUsed, toolCalls };
+  return { content, reasoning, modelUsed, providerUsed, toolCalls };
 }

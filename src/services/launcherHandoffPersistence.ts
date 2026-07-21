@@ -68,6 +68,16 @@ function compactVfsFiles(value: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+function readSnapshotVfs(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const files = (value as { vfsFiles?: unknown }).vfsFiles;
+  if (!files || typeof files !== 'object' || Array.isArray(files)) return undefined;
+  const record = files as Record<string, unknown>;
+  return Object.values(record).every((content) => typeof content === 'string')
+    ? record as Record<string, string>
+    : undefined;
+}
+
 function upsertJsonFile(files: Record<string, string>, path: string, value: unknown) {
   if (files[path] || value === undefined || value === null) return;
   try {
@@ -89,7 +99,13 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // recompile + readiness surfaces don't see "dead" tokens/seeds when the
   // primary sessionStorage write hit quota and we fell through to this trimmed
   // fallback payload.
-  const compactFiles = compactVfsFiles(routeState.vfsFiles) || {};
+  // The snapshot VFS is the canonical post-Lane-B artifact. Persist exactly
+  // one compact VFS copy, sourced from it whenever it is available. Using the
+  // outer route VFS here allowed a template preset to outlive the snapshot
+  // after session-storage recovery.
+  const snapshotVfs = readSnapshotVfs(routeState.siteBundleSnapshot);
+  const hasSnapshotVfs = !!snapshotVfs && Object.keys(snapshotVfs).length > 0;
+  const compactFiles = compactVfsFiles(hasSnapshotVfs ? snapshotVfs : routeState.vfsFiles) || {};
   upsertJsonFile(compactFiles, '/.unison/runtime-manifest.json', routeState.runtimeManifest);
   upsertJsonFile(compactFiles, '/.unison/canonical-playground.json', routeState.canonicalPlayground || routeState.materializedPlayground);
   upsertJsonFile(compactFiles, '/.unison/wizard-seed.json', routeState.wizardSeed);
@@ -119,6 +135,7 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
     runtimeManifest: routeState.runtimeManifest,
     vfsFiles: compactFiles,
     siteBundleSnapshot: snapshot,
+    snapshotVfsCompacted: hasSnapshotVfs,
     canonicalPlayground: routeState.canonicalPlayground,
     materializedPlayground: hasDurableWizardFiles ? routeState.materializedPlayground : undefined,
     compiledPlayground,

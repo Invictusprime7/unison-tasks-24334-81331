@@ -9,6 +9,7 @@ import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from "@/utils/sandpackDependencies
 import { THEME_PRESETS } from "@/components/onboarding/themePresets";
 import { themePresetToThemeTokens } from "@/components/onboarding/themePresetToTokens";
 import { buildThemedIndexCss } from "@/components/onboarding/themePresetToIndexCss";
+import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 
 describe("launchStateToSandpackFiles", () => {
   it("merges the lightweight preview runtime with final artifact imports while preserving themePresetId CSS", () => {
@@ -52,7 +53,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(result.dependencies.recharts).toBeUndefined();
   });
 
-  it('gives every wizard snapshot the motion, icon, and core Radix preview baseline', () => {
+  it('keeps a wizard preview on the core runtime when no optional facade is imported', () => {
     const result = buildPreviewArtifacts({
       sourceFiles: {
         '/src/App.tsx': 'export default function App(){ return <main>Wizard preview</main>; }',
@@ -64,16 +65,83 @@ describe("launchStateToSandpackFiles", () => {
             '/src/App.tsx': 'export default function App(){ return <main>Wizard preview</main>; }',
             '/src/index.css': ':root { --primary: 221 83% 53%; }',
           },
-          meta: { source: 'wizard', themePresetId: 'modern' },
+          meta: {
+            source: 'wizard',
+            themePresetId: 'modern',
+            themeInjection: { version: '1.0', stage: '4b', presetId: 'modern', cssPath: '/src/index.css' },
+          },
         }),
       },
     });
 
-    expect(result.dependencies['framer-motion']).toBeDefined();
-    expect(result.dependencies['lucide-react']).toBeDefined();
-    expect(result.dependencies['@radix-ui/react-dialog']).toBeDefined();
+    expect(result.dependencies.react).toBeDefined();
+    expect(result.dependencies['react-dom']).toBeDefined();
+    expect(result.dependencies['@swc/helpers']).toBeDefined();
+    expect(result.dependencies['framer-motion']).toBeUndefined();
+    expect(result.dependencies['lucide-react']).toBeUndefined();
+    expect(result.dependencies['@radix-ui/react-dialog']).toBeUndefined();
+    expect(result.dependencies['@babel/standalone']).toBeUndefined();
     expect(result.dependencies.bootstrap).toBeUndefined();
+    expect(result.dependencies['@stylexjs/stylex']).toBeUndefined();
+    expect(result.dependencies.tailwindcss).toBeUndefined();
     expect(result.dependencies.bulma).toBeUndefined();
+  });
+
+  it('keeps the Wizard runtime path after canonical projection has consumed VFS metadata', () => {
+    const result = buildPreviewArtifacts({
+      sourceFiles: {
+        '/src/App.tsx': 'export default function App(){ return <main>Projected wizard preview</main>; }',
+        '/src/index.css': ':root { --primary: 221 83% 53%; }',
+        '/.unison/site-bundle-snapshot.json': JSON.stringify({
+          snapshotId: 'snap_projection_runtime',
+          pageRegistry: { pages: {} },
+          vfsFiles: {
+            '/src/App.tsx': 'export default function App(){ return <main>Projected wizard preview</main>; }',
+            '/src/index.css': ':root { --primary: 221 83% 53%; }',
+          },
+          meta: {
+            source: 'wizard',
+            themePresetId: 'modern',
+            themeInjection: { version: '1.0', stage: '4b', presetId: 'modern', cssPath: '/src/index.css' },
+          },
+        }),
+      },
+    });
+
+    expect(result.dependencies['@radix-ui/react-dialog']).toBeUndefined();
+    expect(result.dependencies['@babel/standalone']).toBeUndefined();
+    expect(result.dependencies['@stylexjs/stylex']).toBeUndefined();
+  });
+
+  it('installs only dependencies reached through a wizard UI foundation import', () => {
+    const foundation = buildGeneratedUiFoundation({
+      industry: 'salon',
+      themePresetId: 'organic',
+      needsBooking: true,
+    });
+    const result = buildPreviewArtifacts({
+      sourceFiles: {
+        ...foundation.files,
+        '/src/App.tsx': "import { Button } from '@/unison/ui/button'; export default function App(){ return <Button>Book</Button>; }",
+        '/src/index.css': buildThemedIndexCss(THEME_PRESETS.find((preset) => preset.id === 'organic')!),
+        '/.unison/site-bundle-snapshot.json': JSON.stringify({
+          snapshotId: 'snap_reachable_foundation',
+          pageRegistry: { pages: {} },
+          vfsFiles: {},
+          meta: {
+            source: 'wizard',
+            themePresetId: 'organic',
+            themeInjection: { version: '1.0', stage: '4b', presetId: 'organic', cssPath: '/src/index.css' },
+          },
+        }),
+      },
+    });
+
+    expect(result.dependencies['@radix-ui/react-slot']).toBeDefined();
+    expect(result.dependencies['class-variance-authority']).toBeDefined();
+    expect(result.dependencies['@radix-ui/react-dialog']).toBeUndefined();
+    expect(result.dependencies['framer-motion']).toBeUndefined();
+    expect(result.dependencies['lucide-react']).toBeUndefined();
   });
 
   it("does not reintroduce embedded JSON launcher wrappers after normalization", () => {

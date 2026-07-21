@@ -1,6 +1,7 @@
 {
   "version": "5",
   "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.76.1",
     "https://esm.sh/@types/react@~19.0.7/index.d.ts": "https://esm.sh/@types/react@19.0.14/index.d.ts"
   },
   "remote": {
@@ -29,6 +30,7 @@
     "https://deno.land/x/zod@v3.22.4/mod.ts": "64e55237cb4410e17d968cd08975566059f27638ebb0b86048031b987ba251c4",
     "https://deno.land/x/zod@v3.22.4/types.ts": "724185522fafe43ee56a52333958764c8c8cd6ad4effa27b42651df873fc151e",
     "https://esm.sh/@supabase/supabase-js@2.39.7": "5361671c958daa350e504d9975da64b2d6dc9e81390b985ccdafb2e3572e24e7",
+    "https://esm.sh/@supabase/supabase-js@2.76.1": "99f07a2597a0be25436c7520104699b5570de0c91d8e42b1679359dba7716324",
     "https://esm.sh/resend@2.0.0?target=deno": "84d41eb0649a3e5de4550e3505f8389d27ba9f464d1d3232faf34f607b65d064"
   }
 }

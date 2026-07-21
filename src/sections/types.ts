@@ -169,6 +169,7 @@ export interface SectionPropsMap {
     cta?: CTAButton;
     sticky?: boolean;
     transparent?: boolean;
+    layout?: 'standard' | 'centered-logo' | 'minimal-dark';
   };
   hero: {
     headline: string;
@@ -236,6 +237,7 @@ export interface SectionPropsMap {
   contact: {
     headline?: string;
     description?: string;
+    layout?: 'centered' | 'split-card' | 'minimal-inline';
     fields?: { name: string; type: string; placeholder?: string; required?: boolean }[];
     submitLabel?: string;
     submitIntent?: string;
@@ -247,6 +249,7 @@ export interface SectionPropsMap {
   footer: {
     brand: string;
     logo?: string;
+    layout?: 'columns' | 'centered-minimal' | 'dark-band';
     columns?: { title: string; links: NavLink[] }[];
     socials?: { platform: string; url: string; icon?: string }[];
     copyright?: string;

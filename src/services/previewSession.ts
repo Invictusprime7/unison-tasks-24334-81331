@@ -13,8 +13,6 @@
  */
 
 import { extractDependencies } from '@/utils/dependencyExtractor';
-import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
-import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
 import { PreviewPipelineError } from './previewPipelineError';
 
@@ -249,6 +247,7 @@ export function ensureViteRootFiles(
   options?: {
     extraDependencies?: Record<string, string>;
     themePresetId?: string | null;
+    stage4bCss?: string;
   },
 ): FileMap {
   const result = { ...fileMap };
@@ -340,51 +339,15 @@ export function ensureViteRootFiles(
   });
 
   if (!result['/src/index.css']) {
-    // Per checkpoint invariant 5 (Theme injection unconditional): when the
-    // caller doesn't pass themePresetId explicitly, recover it from the
-    // persisted wizard metadata files in the VFS. This mirrors the recovery
-    // already implemented in canonicalPipeline.recompileFromPlayground and
-    // snapshotProjector.resolveSnapshot — the chain of custody is:
-    //   snapshot.meta.themePresetId
-    //     → app-context.themePresetId
-    //     → runtime-manifest.appContext.themePresetId
-    let presetId: string | null | undefined = options?.themePresetId ?? null;
-    if (!presetId) {
-      const tryRead = (path: string): Record<string, unknown> | null => {
-        const raw = result[path];
-        if (!raw || typeof raw !== 'string') return null;
-        try { return JSON.parse(raw) as Record<string, unknown>; } catch { return null; }
-      };
-      const snap = tryRead('/.unison/site-bundle-snapshot.json') as
-        | { meta?: { themePresetId?: string }; appContext?: { themePresetId?: string } }
-        | null;
-      const appCtx = tryRead('/.unison/app-context.json') as { themePresetId?: string } | null;
-      const runtime = tryRead('/.unison/runtime-manifest.json') as
-        | { appContext?: { themePresetId?: string } }
-        | null;
-      presetId =
-        snap?.meta?.themePresetId ||
-        snap?.appContext?.themePresetId ||
-        appCtx?.themePresetId ||
-        runtime?.appContext?.themePresetId ||
-        null;
-      if (presetId) {
-        console.log(`[ensureViteRootFiles] Recovered themePresetId="${presetId}" from VFS metadata`);
-      }
+    if (options?.stage4bCss?.includes('--primary:')) {
+      result['/src/index.css'] = options.stage4bCss;
+      return result;
     }
-    // Contract: themePresetId SHOULD come from an explicit wizard Style-card
-    // selection. When missing (imported project, blank draft, cold hydration),
-    // emit a minimal Tailwind shell rather than crashing the preview.
-    const preset = presetId ? THEME_PRESETS.find((p) => p.id === presetId) : null;
-    if (!preset) {
-      console.warn(
-        `[previewSession] No themePresetId resolved (received="${presetId ?? 'null'}"); emitting minimal Tailwind shell for /src/index.css.`,
-      );
-      result['/src/index.css'] = `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`;
-    } else {
-      result['/src/index.css'] = buildThemedIndexCss(preset);
-    }
-
+    throw new PreviewPipelineError(
+      'vfs',
+      'Missing /src/index.css. Stage 4b must inject the authoritative themed stylesheet before preview root files are prepared.',
+      { recoverableByRelaunch: true },
+    );
   }
 
 

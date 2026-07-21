@@ -82,6 +82,13 @@ import { detectSections } from '@/utils/sectionSwapper';
 import { runBuilderTurn } from '@/services/builderBrainClient';
 import { buildCatalogContext, renderCatalogContextForPrompt } from '@/utils/catalogContext';
 import { executeCatalogToolCalls, type RawToolCall } from '@/services/catalogToolExecutor';
+import type { GeneratedUiManifest } from '@/platform/core/generatedUiFoundation';
+import type { WizardDesignIntervention } from '@/services/wizardDesignIntervention';
+import { sanitizeGeneratedFiles, sanitizeTsxFile } from '@/utils/tsxSanitizer';
+import {
+  applyAIBuilderFiles,
+  type AIBuilderApplyCallback,
+} from '@/services/aiBuilderApply';
 
 // ============================================================================
 /**
@@ -424,23 +431,16 @@ interface AIBuilderPanelProps {
   systemsBuildContext?: SystemsBuildContext | null;
   /** Durable WizardSeed from launcher — forwarded with every Lane B turn for memory/route/theme/intent continuity. */
   wizardSeed?: Record<string, unknown> | null;
+  /** Snapshot-owned UI imports and rules available to every Builder turn. */
+  uiFoundation?: GeneratedUiManifest | null;
+  /** Snapshot-owned deterministic layout, interaction, and motion choices. */
+  designIntervention?: WizardDesignIntervention | null;
   /** Current VFS file list + dependency summary for AI awareness */
   vfsContext?: string | null;
   /** Full VFS file map for component-level site analysis */
   vfsFiles?: Record<string, string> | null;
   /** Direct VFS apply callback — bypasses legacy onCodeGenerated pipeline, uses AI→VFS orchestrator */
-  onApplyToVFS?: (
-    files: Record<string, string>,
-    meta?: {
-      prompt?: string;
-      model?: string;
-      summary?: string;
-      actionType?: string;
-      origin?: string;
-      requiresApproval?: boolean;
-      warnings?: Array<{ severity?: string; message?: string }>;
-    },
-  ) => void;
+  onApplyToVFS?: AIBuilderApplyCallback;
   /** Preview handle ref for building component behavior maps (DOM inspection) */
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   /** Active project id — used to scope persisted prompt + edit history. */
@@ -523,6 +523,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   businessDataContext,
   systemsBuildContext,
   wizardSeed,
+  uiFoundation,
+  designIntervention,
   vfsContext,
   vfsFiles,
   onApplyToVFS,
@@ -1142,6 +1144,28 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       if (vfsContext) contextLines.push(`\nCurrent VFS project files:\n${vfsContext.slice(0, 2400)}`);
       if (siteAnalysisContext && !isSurgicalEdit) contextLines.push(`\nSite component structure:\n${siteAnalysisContext.slice(0, 1500)}`);
       if (themeContextBlock) contextLines.push(`\n${themeContextBlock}`);
+      if (uiFoundation) {
+        const facades = uiFoundation.runtimeFacades;
+        contextLines.push([
+          '\n[Snapshot-owned UI foundation — hard contract]',
+          `Snapshot UI imports: ${uiFoundation.primitiveImports.join(', ')}`,
+          facades
+            ? `VFS UI runtime: Lucide ${facades.icons}; Framer Motion ${facades.animation}; Zod ${facades.schemas}; React Hook Form + zodResolver ${facades.forms}; styles ${facades.styles}; Radix namespace ${facades.radix}; Radix primitive modules ${facades.radixPrimitives.map((primitive) => `@/unison/ui/radix/${primitive}`).join(', ')}.`
+            : 'Prefer VFS imports: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for typography, colors, component styles, and Tailwind class composition.',
+          'Use semantic Stage 4b Tailwind tokens. Never write /src/index.css or /src/unison/ui/*.',
+          'Preserve accessible labels and data-ut-intent attributes.',
+        ].join('\n'));
+      }
+      if (designIntervention) {
+        contextLines.push([
+          '\n[Snapshot-owned deterministic design intervention — hard contract]',
+          `Layout: ${designIntervention.layoutRecipe}`,
+          `Section variants: ${designIntervention.sectionVariants.join(', ')}`,
+          `Motion recipes: ${designIntervention.motionRecipes.join(', ')} (${designIntervention.motionBudget} budget)`,
+          `Interaction recipes: ${designIntervention.interactionRecipes.join(', ')}`,
+          `${designIntervention.aiDirective} Do not write /.unison/design-intervention.json.`,
+        ].join('\n'));
+      }
 
       // ── M6/M7: Catalog Context Injection (Lane B) ──
       // Give the AI structured awareness of the canonical catalog registry,
@@ -1388,7 +1412,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             userDesignProfile: userDesignProfile ?? undefined,
             systemsBuildContext: systemsBuildContext ?? undefined,
             // Durable WizardSeed → Lane B continuity: same seed/memory/intents/routes.
-            wizardSeed: wizardSeed ?? undefined,
+            wizardSeed: uiFoundation || designIntervention
+              ? { ...(wizardSeed ?? {}), ...(uiFoundation ? { uiFoundation } : {}), ...(designIntervention ? { designIntervention } : {}) }
+              : wizardSeed ?? undefined,
             siteElementsLibraryContext,
             attachments: _attachments.length > 0 ? _attachments : undefined,
             // Send VFS files for edit context (all edit types, not just surgical)
@@ -1756,7 +1782,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         
         // Normalize paths, filter config files, and strip module.exports from component content
         const BLOCKED_FILES = /\/(tailwind\.config|postcss\.config|vite\.config|tsconfig|package\.json|package-lock)/i;
-        const normalizedFiles: Record<string, string> = {};
+        let normalizedFiles: Record<string, string> = {};
         for (const [path, content] of Object.entries(multiFileOutput)) {
           const normalizedPath = path.startsWith('/') ? path : `/${path}`;
           if (BLOCKED_FILES.test(normalizedPath)) {
@@ -1769,6 +1795,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             fileContent = stripModuleExportsBlocks(content);
           }
           normalizedFiles[normalizedPath] = fileContent;
+        }
+        const sanitizedFiles = sanitizeGeneratedFiles(normalizedFiles);
+        normalizedFiles = sanitizedFiles.files;
+        if (sanitizedFiles.invalidFiles.length > 0) {
+          console.warn('[AIBuilderPanel] Sanitized structurally incomplete AI files:', sanitizedFiles.invalidFiles);
         }
 
         // Check if approval is recommended before auto-applying
@@ -1794,7 +1825,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
-            onApplyToVFS(normalizedFiles, {
+            const applyOutcome = await applyAIBuilderFiles(onApplyToVFS, normalizedFiles, {
               prompt: userContent,
               model: modelUsed,
               summary: responseMeta?.reviewSummary,
@@ -1803,10 +1834,17 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               requiresApproval: responseMeta?.requiresApproval,
               warnings: responseMeta?.warnings,
             });
-            liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
-            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
-            const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
-            toast.success(`✅ Multi-file project applied${approvalNote}`);
+            if (applyOutcome.success) {
+              liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
+              vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
+              const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
+              toast.success(`✅ Multi-file project applied${approvalNote}`);
+            } else {
+              const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the generated files.';
+              liveStep('error', 'AI edit was not applied', applyError);
+              vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'multi-file' });
+              toast.error('AI edit was not applied', { description: applyError, duration: 8000 });
+            }
           } else if (onFilesPatch) {
             onFilesPatch(normalizedFiles);
             toast.success('✅ Multi-file project applied to VFS');
@@ -1823,7 +1861,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       }
 
       // SAFETY NET 2: If generatedCode is raw CSS (:root, body {, @import, etc.), wrap in React component
-      if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{\/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
+      if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
         console.warn('[AIBuilderPanel] Safety net: detected raw CSS being applied as TSX — wrapping in React component');
         const cssJsonStr = JSON.stringify(generatedCode);
         generatedCode = `import React from 'react';
@@ -1916,6 +1954,7 @@ export default function App() {
       if (generatedCode) {
         // Strip any module.exports / tailwind.config blocks that AI embedded in component code
         generatedCode = stripModuleExportsBlocks(generatedCode);
+        generatedCode = sanitizeTsxFile(singleFilePath, generatedCode).code || generatedCode;
         
         // FINAL VALIDATION: Reject code that looks like AI reasoning/prose, not actual code
         const looksLikeCode = generatedCode.includes('import ') || 
@@ -1945,7 +1984,7 @@ export default function App() {
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
-            onApplyToVFS({ [singleFilePath]: generatedCode }, {
+            const applyOutcome = await applyAIBuilderFiles(onApplyToVFS, { [singleFilePath]: generatedCode }, {
               prompt: userContent,
               model: modelUsed,
               summary: responseMeta?.reviewSummary,
@@ -1954,13 +1993,21 @@ export default function App() {
               requiresApproval: responseMeta?.requiresApproval,
               warnings: responseMeta?.warnings,
             });
-            advancePlanStep(taskPlan, 'refresh_preview', 'done');
-            advancePlanStep(taskPlan, 'validate', 'done');
-            advancePlanStep(taskPlan, 'report', 'done');
-            liveStep('complete', `✅ Applied to ${singleFilePath}`);
-            vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
-            const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
-            toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
+            if (applyOutcome.success) {
+              advancePlanStep(taskPlan, 'refresh_preview', 'done');
+              advancePlanStep(taskPlan, 'validate', 'done');
+              advancePlanStep(taskPlan, 'report', 'done');
+              liveStep('complete', `✅ Applied to ${singleFilePath}`);
+              vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
+              const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
+              toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
+            } else {
+              const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the generated file.';
+              advancePlanStep(taskPlan, 'refresh_preview', 'failed');
+              liveStep('error', 'AI edit was not applied', applyError);
+              vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'single-file' });
+              toast.error('AI edit was not applied', { description: applyError, duration: 8000 });
+            }
           } else if (onCodeGenerated) {
             onCodeGenerated(generatedCode);
             toast.success(isSurgicalEdit ? '✅ Edit applied to preview' : '✅ Code applied to preview');
@@ -2137,7 +2184,9 @@ export default function App() {
         systemType,
         templateName,
         systemsBuildContext: systemsBuildContext ?? undefined,
-        wizardSeed: wizardSeed ?? undefined,
+        wizardSeed: uiFoundation || designIntervention
+          ? { ...(wizardSeed ?? {}), ...(uiFoundation ? { uiFoundation } : {}), ...(designIntervention ? { designIntervention } : {}) }
+          : wizardSeed ?? undefined,
         previewDiagnostics: diagnostics,
         vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
         gatewayOptions: gatewayConfig ? {
@@ -2235,26 +2284,40 @@ export default function App() {
           for (const [p, c] of Object.entries(fixFiles)) {
             normalized[p.startsWith('/') ? p : `/${p}`] = c;
           }
+          const sanitized = sanitizeGeneratedFiles(normalized);
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
-          onApplyToVFS(normalized, {
+          const applyOutcome = await applyAIBuilderFiles(onApplyToVFS, sanitized.files, {
             prompt: `Auto-fix: ${error.message || 'runtime error'}`,
             origin: 'debug-fix',
             summary: fixExplanation,
           });
-          vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
-          toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
+          if (applyOutcome.success) {
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(sanitized.files), source: 'debug-fix' });
+            toast.success(`✅ Debug fix applied (${Object.keys(sanitized.files).length} files)`);
+          } else {
+            const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the debug fix.';
+            vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'debug-fix' });
+            toast.error('Debug fix was not applied', { description: applyError, duration: 8000 });
+          }
         } else if (fixCode) {
           const targetPath = error.file
             ? (error.file.startsWith('/') ? error.file : `/${error.file}`)
             : (defaultTargetFile || '/src/App.tsx');
+          fixCode = sanitizeTsxFile(targetPath, fixCode).code || fixCode;
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
-          onApplyToVFS({ [targetPath]: fixCode }, {
+          const applyOutcome = await applyAIBuilderFiles(onApplyToVFS, { [targetPath]: fixCode }, {
             prompt: `Auto-fix: ${error.message || 'runtime error'}`,
             origin: 'debug-fix',
             summary: fixExplanation,
           });
-          vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
-          toast.success('✅ Debug fix applied');
+          if (applyOutcome.success) {
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
+            toast.success('✅ Debug fix applied');
+          } else {
+            const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the debug fix.';
+            vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'debug-fix' });
+            toast.error('Debug fix was not applied', { description: applyError, duration: 8000 });
+          }
         }
       }
 

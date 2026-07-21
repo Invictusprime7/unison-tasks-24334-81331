@@ -3,7 +3,6 @@ import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { launchStateToSandpackFiles } from '@/utils/launchToSandpack';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
-import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
 import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
@@ -68,10 +67,6 @@ export function buildPreviewArtifacts(
   const launchStateWithRecoveredTheme = launchState && themePresetId && !launchState.themePresetId
     ? { ...launchState, themePresetId }
     : launchState;
-  const dependencySourceFiles = Object.keys(sourceFiles).length > 0
-    ? sourceFiles
-    : launchStateWithRecoveredTheme?.vfsFiles || sourceFiles;
-
   const rawSandpackFiles = launchStateWithRecoveredTheme
     ? launchStateToSandpackFiles({
         launchState: launchStateWithRecoveredTheme,
@@ -105,7 +100,7 @@ export function buildPreviewArtifacts(
 
 
   let sandpackFiles: Record<string, string>;
-  if (wizardResolution.isWizardDraft) {
+  if (isWizardPreview) {
     // Wizard artifacts already passed launch/commit preflight. Re-running the
     // multi-stage compiler synchronously during React render freezes the main
     // thread on generated multi-page sites. Preview only verifies integrity;
@@ -134,21 +129,13 @@ export function buildPreviewArtifacts(
     }
   }
 
-  // Merge the small preview runtime baseline with dependencies discovered from
-  // both the canonical source VFS (including package.json omitted from the
-  // Sandpack overlay) and final prepared files. Theme identity remains a CSS
-  // concern owned by themePresetId; rich packages are installed only when the
-  // selected artifact actually imports them.
-  const dependencyContextFiles = {
-    ...dependencySourceFiles,
-    ...sandpackFiles,
-  };
-  const previewBaseDependencies = isWizardPreview
-    ? { ...baseDependencies, ...WIZARD_PREVIEW_RUNTIME_DEPENDENCIES }
-    : baseDependencies;
+  // Resolve dependencies from Sandpack's actual entry graph. Snapshot-owned
+  // VFS facades may expose many optional libraries, but an unreferenced
+  // facade must never force Sandpack to fetch its package.
   const { dependencies } = getDependenciesForSandpack(
-    dependencyContextFiles,
-    previewBaseDependencies,
+    sandpackFiles,
+    baseDependencies,
+    { entryPoints: ['/index.tsx', '/index.jsx', '/index.ts', '/index.js'] },
   );
 
   return {

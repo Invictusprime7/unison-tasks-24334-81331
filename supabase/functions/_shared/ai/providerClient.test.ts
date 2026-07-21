@@ -1,7 +1,56 @@
 import {
   fetchWithShortRateLimitRetry,
   getShortRateLimitRetryMs,
+  resolveConfiguredProviders,
 } from "./providerClient.ts";
+
+function env(values: Record<string, string>): (name: string) => string | undefined {
+  return (name) => values[name];
+}
+
+function assertEquals(actual: unknown, expected: unknown): void {
+  const actualJson = JSON.stringify(actual);
+  const expectedJson = JSON.stringify(expected);
+  if (actualJson !== expectedJson) {
+    throw new Error(`Expected ${expectedJson}, received ${actualJson}`);
+  }
+}
+
+Deno.test("defaults to Gemini when multiple text providers are configured", () => {
+  const providers = resolveConfiguredProviders(undefined, env({
+    GEMINI_API_KEY: "gemini-test-key",
+    OPENAI_API_KEY: "openai-test-key",
+    ANTHROPIC_API_KEY: "anthropic-test-key",
+  }));
+
+  assertEquals(providers, ["gemini", "openai", "anthropic"]);
+});
+
+Deno.test("routes explicit OpenAI models to OpenAI first", () => {
+  const providers = resolveConfiguredProviders("openai/gpt-5", env({
+    GEMINI_API_KEY: "gemini-test-key",
+    OPENAI_API_KEY: "openai-test-key",
+  }));
+
+  assertEquals(providers, ["openai", "gemini"]);
+});
+
+Deno.test("routes explicit Gemini models to Gemini first", () => {
+  const providers = resolveConfiguredProviders("google/gemini-2.5-flash", env({
+    GEMINI_API_KEY: "gemini-test-key",
+    OPENAI_API_KEY: "openai-test-key",
+  }));
+
+  assertEquals(providers, ["gemini", "openai"]);
+});
+
+Deno.test("accepts GOOGLE_API_KEY as the server-side Gemini alias", () => {
+  const providers = resolveConfiguredProviders("gemini-2.5-flash", env({
+    GOOGLE_API_KEY: "google-test-key",
+  }));
+
+  assertEquals(providers, ["gemini"]);
+});
 
 Deno.test("retries a short rate limit response once", async () => {
   let calls = 0;
@@ -9,11 +58,11 @@ Deno.test("retries a short rate limit response once", async () => {
     "https://provider.example.test/chat",
     undefined,
     undefined,
-    async () => {
+    () => {
       calls += 1;
-      return calls === 1
+      return Promise.resolve(calls === 1
         ? new Response("busy", { status: 429, headers: { "retry-after": "0" } })
-        : new Response("ok", { status: 200 });
+        : new Response("ok", { status: 200 }));
     },
   );
 
@@ -27,9 +76,11 @@ Deno.test("does not retry a long provider cooldown", async () => {
     "https://provider.example.test/chat",
     undefined,
     undefined,
-    async () => {
+    () => {
       calls += 1;
-      return new Response("busy", { status: 429, headers: { "retry-after": "5" } });
+      return Promise.resolve(
+        new Response("busy", { status: 429, headers: { "retry-after": "5" } }),
+      );
     },
   );
 

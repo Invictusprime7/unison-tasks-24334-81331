@@ -20,6 +20,7 @@ import {
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { PreviewPipelineError } from './previewPipelineError';
 import { CanonicalRuntimeError } from '@/platform/core/canonicalRuntimeError';
+import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 
 const SNAPSHOT_VFS_PATH = '/.unison/site-bundle-snapshot.json';
 const WIZARD_SEED_VFS_PATH = '/.unison/wizard-seed.json';
@@ -50,6 +51,10 @@ function tryParseSnapshot(raw: string | undefined): SiteBundleSnapshot | null {
   }
 }
 
+function hasSnapshotVfs(snapshot: SiteBundleSnapshot | null): snapshot is SiteBundleSnapshot {
+  return !!snapshot && Object.keys(snapshot.vfsFiles || {}).length > 0;
+}
+
 /**
  * Resolve the authoritative SiteBundleSnapshot from either the live LaunchState
  * or the persisted /.unison/site-bundle-snapshot.json. Wizard classification is
@@ -63,11 +68,18 @@ export function resolveSnapshot(
 ): SnapshotResolution {
   const snapshotFromVfs = tryParseSnapshot(sourceFiles[SNAPSHOT_VFS_PATH]);
   const snapshotFromState = launchState?.siteBundleSnapshot ?? null;
-  // Prefer the snapshot embedded in the live VFS. During launcher handoff the
-  // navigation state can still carry the pre-Lane-B canonical snapshot, while
-  // `/.unison/site-bundle-snapshot.json` is rewritten after merge with the final
-  // Lane B page bodies. Using navState first resurrects stale minimal stubs.
-  const snapshot = snapshotFromVfs || snapshotFromState;
+  // Prefer a full snapshot VFS from the live VFS, then from navigation state.
+  // Compact launcher handoffs intentionally store the snapshot VFS once at the
+  // route VFS level; hydrate only when that explicit marker is present. An old
+  // metadata-only snapshot must fail closed, not let a template preset render.
+  const compactSnapshot = snapshotFromVfs || snapshotFromState;
+  const snapshot = hasSnapshotVfs(snapshotFromVfs)
+    ? snapshotFromVfs
+    : hasSnapshotVfs(snapshotFromState)
+      ? snapshotFromState
+      : (compactSnapshot && (launchState as { snapshotVfsCompacted?: unknown } | null)?.snapshotVfsCompacted === true
+        ? { ...compactSnapshot, vfsFiles: { ...sourceFiles } }
+        : null);
 
   const appContext = tryParseRecord(sourceFiles['/.unison/app-context.json']);
   const runtimeManifest = tryParseRecord(sourceFiles['/.unison/runtime-manifest.json']);
@@ -85,17 +97,36 @@ export function resolveSnapshot(
 
   const isWizardDraft = Boolean(
     snapshot ||
+    compactSnapshot ||
     hasWizardSeed ||
     hasExplicitWizardMetadata,
   );
 
-  const themePresetId =
-    snapshot?.meta?.themePresetId ||
-    launchState?.themePresetId ||
-    launchState?.runtimeManifest?.appContext?.themePresetId ||
-    (typeof appContext?.themePresetId === 'string' ? appContext.themePresetId : null) ||
-    (typeof runtimeAppContext?.themePresetId === 'string' ? runtimeAppContext.themePresetId : null) ||
-    null;
+  const snapshotThemePresetId = snapshot
+    ? assertSnapshotThemeSeed(
+        snapshot,
+        assertThemeSeed(snapshot.meta?.themePresetId, 'SiteBundleSnapshot -> snapshotProjector'),
+        'SiteBundleSnapshot -> snapshotProjector',
+      )
+    : null;
+  const candidateSeeds: Array<[string, unknown]> = [
+    ['LaunchState', launchState?.themePresetId],
+    ['RuntimeManifest', launchState?.runtimeManifest?.appContext?.themePresetId],
+    ['app-context', appContext?.themePresetId],
+    ['persisted runtime manifest', runtimeAppContext?.themePresetId],
+  ];
+  if (snapshotThemePresetId) {
+    for (const [boundary, candidate] of candidateSeeds) {
+      if (candidate !== undefined && candidate !== null) {
+        assertThemeSeed(
+          typeof candidate === 'string' ? candidate : null,
+          `${boundary} -> snapshotProjector`,
+          snapshotThemePresetId,
+        );
+      }
+    }
+  }
+  const themePresetId = snapshotThemePresetId;
 
   return { snapshot, isWizardDraft, themePresetId: themePresetId ?? null };
 }
@@ -218,11 +249,12 @@ export function assertNoMinimalFallbackPreview(
 }
 
 /**
- * Snapshot-as-primary projection bridge. If a registered wizard route was
- * polluted by a legacy placeholder/minimal shell, restore the route from the
- * snapshot VFS before any preview compiler sees it. If the snapshot itself is
- * missing the route, the downstream assert still hard-fails instead of falling
- * back.
+ * Snapshot-as-primary projection bridge. A wizard SiteBundleSnapshot owns the
+ * entire executable VFS, not only files that resemble a minimal placeholder.
+ * A legacy template preset is valid React and therefore cannot be detected by
+ * a fallback-content heuristic; preserving it lets a template silently render
+ * over the deterministic snapshot manifest. Snapshot files must win every
+ * overlapping path before any preview compiler sees them.
  */
 export function projectSnapshotVfsFiles(
   files: Record<string, string>,
@@ -233,41 +265,12 @@ export function projectSnapshotVfsFiles(
   const snapshotFiles = (resolution.snapshot as { vfsFiles?: Record<string, string> }).vfsFiles || {};
   if (Object.keys(snapshotFiles).length === 0) return files;
 
-  const next = { ...files };
-  const pages = Object.values(resolution.snapshot.pageRegistry?.pages || {});
-
-  const assignFromSnapshot = (path: string) => {
-    const normalized = path.startsWith('/') ? path : `/${path}`;
-    const flattened = normalized.replace(/^\/src\//, '/');
-    const snapshotSource = snapshotFiles[normalized] || snapshotFiles[normalized.slice(1)] || snapshotFiles[flattened] || snapshotFiles[flattened.slice(1)];
-    if (!snapshotSource) return;
-
-    const current = next[normalized] || next[normalized.slice(1)] || next[flattened] || next[flattened.slice(1)];
-    if (!current || isMinimalPreviewFallbackSource(current)) {
-      next[normalized] = snapshotSource;
-      if (flattened !== normalized && next[flattened] !== undefined) {
-        next[flattened] = snapshotSource;
-      }
-    }
-  };
-
-  for (const page of pages) {
-    const filePath = (page as { filePath?: string }).filePath;
-    if (filePath) assignFromSnapshot(filePath);
-  }
-
-  for (const canonicalPath of ['/src/App.tsx', '/src/main.tsx', '/src/index.css']) {
-    const snapshotSource = snapshotFiles[canonicalPath] || snapshotFiles[canonicalPath.slice(1)];
-    if (!snapshotSource) continue;
-    const current = next[canonicalPath] || next[canonicalPath.slice(1)];
-    if (!current || isMinimalPreviewFallbackSource(current) || (canonicalPath.endsWith('.css') && !TOKEN_PROBE_RE.test(current))) {
-      next[canonicalPath] = snapshotSource;
-    }
-  }
-
-  if (!next[SNAPSHOT_VFS_PATH]) {
-    next[SNAPSHOT_VFS_PATH] = JSON.stringify(resolution.snapshot, null, 2);
-  }
+  // Keep non-overlapping host/editor metadata, but the snapshot always wins
+  // every executable path it declares. The snapshot is emitted after Lane B,
+  // so this does not discard AI work; it prevents stale preset files from
+  // becoming a second rendering authority.
+  const next = { ...files, ...snapshotFiles };
+  next[SNAPSHOT_VFS_PATH] = JSON.stringify(resolution.snapshot, null, 2);
 
   return next;
 }

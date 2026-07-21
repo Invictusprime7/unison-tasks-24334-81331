@@ -270,6 +270,44 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
   });
 });
 
+describe('VFS commit Stage 4b handoff', () => {
+  it('forwards the original snapshot tokens for a non-wizard recompile', async () => {
+    const themeTokens = {
+      colors: {
+        primary: '120 50% 40%', primaryForeground: '0 0% 100%', secondary: '180 40% 40%', secondaryForeground: '0 0% 100%',
+        accent: '45 80% 50%', accentForeground: '0 0% 10%', background: '0 0% 100%', foreground: '0 0% 10%',
+        muted: '0 0% 95%', mutedForeground: '0 0% 40%', card: '0 0% 100%', cardForeground: '0 0% 10%', border: '0 0% 90%',
+      },
+      typography: { headingFont: 'serif', bodyFont: 'sans-serif', headingWeight: '700', bodyWeight: '400' },
+      radius: '0.5rem', sectionPadding: '5rem 1rem', containerWidth: '1200px',
+    };
+    const files = { '/src/App.tsx': 'export default function App(){ return null; }' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents();
+
+    await commitMutation({
+      source: 'ai-builder',
+      identity: IDENTITY,
+      current: {
+        vfsFiles: files,
+        playground: {} as never,
+        siteBundleSnapshot: {
+          meta: { themePresetId: 'organic', templateId: 'salon-minimal' },
+          themeTokens,
+        } as never,
+      },
+      patch: legacyFilesToPatchPlan({ '/src/pages/Home.tsx': 'export default function Home(){ return null; }' }),
+    });
+
+    expect(commitToPipeline).toHaveBeenCalledWith(expect.objectContaining({
+      themePresetId: 'organic',
+      selectedTemplateId: 'salon-minimal',
+      themeTokens,
+    }), 'ai-builder');
+  });
+});
+
 describe('Move D — publish-ready ledger', () => {
   it('persists publish_ready=false when publish blockers exist and loadLatestPublishReadyRevisionForProject returns null', async () => {
     const files = { '/src/App.tsx': 'x', '/src/pages/Booking.tsx': '<Booking/>' };

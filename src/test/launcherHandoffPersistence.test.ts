@@ -60,14 +60,36 @@ describe("launcher handoff persistence", () => {
     const navigationState = buildLauncherNavigationState(routeState);
 
     expect(handoff?.routeState.vfsFiles).toMatchObject({
-      '/src/App.tsx': 'export default function App(){ return <main />; }',
+      '/src/App.tsx': 'duplicate source',
     });
     expect((handoff?.routeState.siteBundleSnapshot as { vfsFiles?: unknown }).vfsFiles).toBeUndefined();
+    expect(handoff?.routeState.snapshotVfsCompacted).toBe(true);
     expect((handoff?.routeState.compiledPlayground as { vfsFiles?: unknown }).vfsFiles).toBeUndefined();
     expect((navigationState as { vfsFiles?: unknown }).vfsFiles).toMatchObject({
-      '/src/App.tsx': 'export default function App(){ return <main />; }',
+      '/src/App.tsx': 'duplicate source',
     });
     expect((navigationState.siteBundleSnapshot as { vfsFiles?: unknown }).vfsFiles).toBeUndefined();
+    expect(navigationState.snapshotVfsCompacted).toBe(true);
     expect((navigationState.compiledPlayground as { vfsFiles?: unknown }).vfsFiles).toBeUndefined();
+  });
+
+  it('uses snapshot VFS, not divergent outer VFS, as the compact recovery source', () => {
+    const routeState = {
+      vfsFiles: {
+        '/src/App.tsx': 'export default function App(){ return <main>Template preset</main>; }',
+      },
+      siteBundleSnapshot: {
+        snapshotId: 'snap_manifest',
+        vfsFiles: {
+          '/src/App.tsx': 'export default function App(){ return <main>Deterministic manifest</main>; }',
+          '/src/index.css': ':root { --primary: 25 80% 45%; }',
+        },
+      },
+    };
+
+    const navigationState = buildLauncherNavigationState(routeState);
+
+    expect((navigationState.vfsFiles as Record<string, string>)['/src/App.tsx']).toContain('Deterministic manifest');
+    expect(navigationState.snapshotVfsCompacted).toBe(true);
   });
 });

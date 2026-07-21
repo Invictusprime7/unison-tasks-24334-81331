@@ -14,6 +14,7 @@ export const SANDPACK_DEPENDENCIES: Record<string, string> = {
   'react-dom': '^18.3.1',
   'react-router-dom': '^6.20.0',
   '@swc/helpers': '^0.5.23',
+  '@babel/standalone': '^7.28.4',
 
   // Styling utilities
   'clsx': 'latest',
@@ -107,21 +108,61 @@ export const SANDPACK_PREVIEW_CORE_DEPENDENCIES: Record<string, string> = {
   '@swc/helpers': SANDPACK_DEPENDENCIES['@swc/helpers'],
 };
 
+const dependencyGroup = (...names: string[]): Record<string, string> =>
+  Object.fromEntries(names.map((name) => [name, SANDPACK_DEPENDENCIES[name]]));
+
 /**
- * Wizard previews always support motion, icons, and the Radix primitives used
- * by the canonical interaction layer. Broader CSS frameworks remain opt-in:
- * generated source must import Bootstrap, Bulma, or StyleX before Sandpack
- * installs them, avoiding a conflicting global CSS reset and startup bloat.
+ * Named groups shown by the existing bottom-left Sandpack installation
+ * surface. These are also exported for diagnostics; keeping the export and
+ * runtime map together prevents UI/runtime version drift.
  */
-export const WIZARD_PREVIEW_RUNTIME_DEPENDENCIES: Record<string, string> = {
-  'framer-motion': SANDPACK_DEPENDENCIES['framer-motion'],
-  'lucide-react': SANDPACK_DEPENDENCIES['lucide-react'],
-  '@radix-ui/react-dialog': SANDPACK_DEPENDENCIES['@radix-ui/react-dialog'],
-  '@radix-ui/react-dropdown-menu': SANDPACK_DEPENDENCIES['@radix-ui/react-dropdown-menu'],
-  '@radix-ui/react-popover': SANDPACK_DEPENDENCIES['@radix-ui/react-popover'],
-  '@radix-ui/react-tabs': SANDPACK_DEPENDENCIES['@radix-ui/react-tabs'],
-  '@radix-ui/react-tooltip': SANDPACK_DEPENDENCIES['@radix-ui/react-tooltip'],
-};
+export const WIZARD_RUNTIME_DEPENDENCY_GROUPS = {
+  react: dependencyGroup('react', 'react-dom', 'react-router-dom', '@swc/helpers'),
+  babel: dependencyGroup('@babel/standalone'),
+  radix: dependencyGroup(
+    '@radix-ui/react-slot',
+    '@radix-ui/react-dialog',
+    '@radix-ui/react-dropdown-menu',
+    '@radix-ui/react-tabs',
+    '@radix-ui/react-toast',
+    '@radix-ui/react-tooltip',
+    '@radix-ui/react-select',
+    '@radix-ui/react-checkbox',
+    '@radix-ui/react-switch',
+    '@radix-ui/react-label',
+    '@radix-ui/react-avatar',
+    '@radix-ui/react-popover',
+    '@radix-ui/react-separator',
+    '@radix-ui/react-scroll-area',
+    '@radix-ui/react-accordion',
+    '@radix-ui/react-collapsible',
+    '@radix-ui/react-progress',
+    '@radix-ui/react-radio-group',
+    '@radix-ui/react-slider',
+    '@radix-ui/react-toggle',
+    '@radix-ui/react-toggle-group',
+    '@radix-ui/react-alert-dialog',
+    '@radix-ui/react-aspect-ratio',
+    '@radix-ui/react-context-menu',
+    '@radix-ui/react-hover-card',
+    '@radix-ui/react-menubar',
+    '@radix-ui/react-navigation-menu',
+  ),
+  styling: dependencyGroup(
+    'tailwindcss',
+    'postcss',
+    'autoprefixer',
+    'tailwindcss-animate',
+    '@tailwindcss/typography',
+    '@stylexjs/stylex',
+    'bootstrap',
+  ),
+  experience: dependencyGroup('framer-motion', 'lucide-react'),
+} as const;
+
+/** Full Wizard runtime installed by the sole Sandpack preview instance. */
+export const WIZARD_PREVIEW_RUNTIME_DEPENDENCIES: Record<string, string> =
+  Object.assign({}, ...Object.values(WIZARD_RUNTIME_DEPENDENCY_GROUPS));
 
 /**
  * Set of all npm import specifiers that Sandpack can resolve.
@@ -145,3 +186,38 @@ export const SANDPACK_ALLOWED_IMPORTS: Set<string> = new Set([
   'framer-motion/dom',
   'react-router-dom/dist',
 ]);
+
+/** Returns whether a package import can be installed by the Sandpack runtime. */
+export function isSandpackAllowedImport(modulePath: string): boolean {
+  if (SANDPACK_ALLOWED_IMPORTS.has(modulePath)) return true;
+
+  const segments = modulePath.split('/');
+  const packageName = modulePath.startsWith('@')
+    ? segments.slice(0, 2).join('/')
+    : segments[0];
+
+  return SANDPACK_ALLOWED_IMPORTS.has(packageName);
+}
+
+const UNISON_VFS_RUNTIME_IMPORTS: Record<string, string> = {
+  'lucide-react': '@/unison/ui/icons',
+  'zod': '@/unison/ui/zod',
+  'zod/v4': '@/unison/ui/zod',
+  'react-hook-form': '@/unison/ui/forms',
+  '@hookform/resolvers/zod': '@/unison/ui/forms',
+  'framer-motion': '@/unison/ui/animation',
+  'tailwindcss/tailwind.css': '@/unison/ui/tailwind.css',
+};
+
+/** Returns the generated VFS facade for a supported UI runtime import. */
+export function getUnisonVfsFacadeImport(modulePath: string): string | null {
+  const directFacade = UNISON_VFS_RUNTIME_IMPORTS[modulePath];
+  if (directFacade) return directFacade;
+
+  const radixMatch = modulePath.match(/^@radix-ui\/react-([a-z-]+)$/);
+  if (radixMatch && Object.prototype.hasOwnProperty.call(SANDPACK_DEPENDENCIES, modulePath)) {
+    return `@/unison/ui/radix/${radixMatch[1]}`;
+  }
+
+  return null;
+}

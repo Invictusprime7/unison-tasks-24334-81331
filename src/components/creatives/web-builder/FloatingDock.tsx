@@ -7,7 +7,7 @@ import { LayoutTemplatesPanel } from "./LayoutTemplatesPanel";
 import { SectionLayoutPicker } from "./SectionLayoutPicker";
 import { ProjectsPanel } from "./ProjectsPanel";
 import { CloudPanel } from "./CloudPanel";
-import type { BusinessSystemType } from "@/data/templates/types";
+import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types";
 
 interface SavedTemplate {
   id: string;
@@ -28,8 +28,8 @@ interface SavedTemplate {
 type PreviewDevice = 'desktop' | 'tablet' | 'mobile';
 
 interface FloatingDockProps {
-  onSelectTemplate: (code: string, name: string, systemType?: BusinessSystemType, templateId?: string) => void;
-  onDemoTemplate?: (code: string, name: string, systemType?: BusinessSystemType, templateId?: string) => void;
+  onSelectTemplate: (code: string, name: string, systemType?: BusinessSystemType, templateId?: string, templateCategory?: LayoutCategory) => void;
+  onDemoTemplate?: (code: string, name: string, systemType?: BusinessSystemType, templateId?: string, templateCategory?: LayoutCategory) => void;
   onLoadTemplate: (template: SavedTemplate) => void;
   onSaveTemplate: (name: string, description: string, isPublic?: boolean) => Promise<void>;
   currentCode: string;

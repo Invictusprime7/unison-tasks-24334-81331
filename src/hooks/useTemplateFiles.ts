@@ -16,6 +16,11 @@ import { findBuilderDraftIdForProject } from "@/services/builderDraftBridge";
 import { generateCanonicalRouterForFiles } from "@/utils/topologyRouterGenerator";
 import type { PageRegistry } from "@/types/pageRegistry";
 import { createMinimalValidSnapshot } from "@/platform/core/canonicalRuntimeContract";
+import {
+  buildCanonicalWizardSharedChromeModules,
+  WIZARD_FOOTER_PATH,
+  WIZARD_NAVBAR_PATH,
+} from "@/services/wizardSharedChrome";
 
 /**
  * Pass 1 (Canonical Preview Enforcement): if a draft is being created without
@@ -601,6 +606,17 @@ export function useTemplateFiles() {
             (((cp.creatorData || {}) as Record<string, unknown>).businessInfo as
               | Record<string, unknown>
               | undefined)?.businessName as string | undefined;
+          const hasCanonicalChrome = Boolean(
+            vfsFilesForSave[WIZARD_NAVBAR_PATH]
+            || vfsFilesForSave[WIZARD_FOOTER_PATH]
+            || vfsFilesForSave['/src/App.tsx']?.includes("./sections/SiteNavbar"),
+          );
+          if (hasCanonicalChrome) {
+            vfsFilesForSave = {
+              ...vfsFilesForSave,
+              ...buildCanonicalWizardSharedChromeModules(registry, businessName || ''),
+            };
+          }
           const fresh = generateCanonicalRouterForFiles(
             registry,
             vfsFilesForSave,

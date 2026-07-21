@@ -54,6 +54,18 @@ export interface BuilderTurnOptions {
   signal?: AbortSignal;
 }
 
+const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
+const MAX_RATE_LIMIT_RETRY_MS = 2_500;
+
+export function getShortRateLimitRetryMs(retryAfter: string | null, now = Date.now()): number | null {
+  if (!retryAfter) return DEFAULT_RATE_LIMIT_RETRY_MS;
+  const seconds = Number(retryAfter);
+  const delay = Number.isFinite(seconds)
+    ? Math.max(0, Math.round(seconds * 1_000))
+    : Math.max(0, Date.parse(retryAfter) - now);
+  return Number.isFinite(delay) && delay <= MAX_RATE_LIMIT_RETRY_MS ? delay : null;
+}
+
 const TRANSPORT_ERROR_PATTERN =
   /failed to send|failed to fetch|network(?:\s|error)|networkerror|econnreset|econnrefused|socket hang up|load failed|502|503|504|gateway timeout|bad gateway|service unavailable/i;
 

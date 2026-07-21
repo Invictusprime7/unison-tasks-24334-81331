@@ -25,6 +25,7 @@ const KNOWN_VERSIONS: Record<string, string> = {
   'react-dom': '^18.2.0',
   'react-router-dom': '^6.20.0',
   '@swc/helpers': '^0.5.23',
+  '@babel/standalone': '^7.28.4',
   'lucide-react': 'latest',
   'framer-motion': 'latest',
   'clsx': 'latest',
@@ -112,6 +113,11 @@ export interface ExtractedDependencies {
   extractionTime: number;
 }
 
+export interface DependencyExtractionOptions {
+  /** Restrict extraction to modules reachable from these VFS entry points. */
+  entryPoints?: string[];
+}
+
 /**
  * Extract npm package name from an import path
  * Handles scoped packages (@org/package) and subpaths (package/subpath)
@@ -146,16 +152,86 @@ function extractPackageName(importPath: string): string | null {
   return importPath.split('/')[0];
 }
 
+function normalizeVfsPath(path: string): string {
+  const segments = path.replace(/\\/g, '/').split('/');
+  const normalized: string[] = [];
+  for (const segment of segments) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      normalized.pop();
+    } else {
+      normalized.push(segment);
+    }
+  }
+  return `/${normalized.join('/')}`;
+}
+
+function resolveLocalModule(
+  fromPath: string,
+  importPath: string,
+  filePaths: Set<string>,
+): string | null {
+  const root = importPath.startsWith('@/')
+    ? `/${importPath.slice(2)}`
+    : normalizeVfsPath(`${fromPath.slice(0, fromPath.lastIndexOf('/'))}/${importPath}`);
+  const candidates = [
+    root,
+    ...['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.css'].map((extension) => `${root}${extension}`),
+    ...['.ts', '.tsx', '.js', '.jsx'].map((extension) => `${root}/index${extension}`),
+  ];
+
+  return candidates.find((candidate) => filePaths.has(candidate)) ?? null;
+}
+
+function collectReachableFiles(
+  files: Record<string, string>,
+  entryPoints: string[],
+): Record<string, string> {
+  const normalizedFiles = new Map(
+    Object.entries(files).map(([path, content]) => [normalizeVfsPath(path), content]),
+  );
+  const filePaths = new Set(normalizedFiles.keys());
+  const pending = entryPoints
+    .map(normalizeVfsPath)
+    .filter((path) => filePaths.has(path));
+  const visited = new Set<string>();
+
+  while (pending.length > 0) {
+    const path = pending.pop();
+    if (!path || visited.has(path)) continue;
+    visited.add(path);
+    const content = normalizedFiles.get(path) || '';
+
+    for (const pattern of IMPORT_PATTERNS) {
+      pattern.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(content)) !== null) {
+        const importPath = match[1];
+        if (!importPath.startsWith('.') && !importPath.startsWith('@/')) continue;
+        const dependencyPath = resolveLocalModule(path, importPath, filePaths);
+        if (dependencyPath && !visited.has(dependencyPath)) pending.push(dependencyPath);
+      }
+    }
+  }
+
+  const reachable = Object.fromEntries(
+    Array.from(visited, (path) => [path, normalizedFiles.get(path) || '']),
+  );
+  const packageJson = files['/package.json'] || files['package.json'];
+  if (packageJson) reachable['/package.json'] = packageJson;
+  return reachable;
+}
+
 /**
  * Parse package.json from VFS and extract dependencies
  */
 function parsePackageJson(content: string): Record<string, string> {
   try {
     const pkg = JSON.parse(content);
-    return {
-      ...(pkg.dependencies || {}),
-      ...(pkg.devDependencies || {}),
-    };
+    // Sandpack's browser runtime needs installed application dependencies.
+    // Vite/TypeScript devDependencies belong to export/build tooling and would
+    // needlessly inflate the hosted preview install.
+    return { ...(pkg.dependencies || {}) };
   } catch {
     return {};
   }
@@ -167,15 +243,22 @@ function parsePackageJson(content: string): Record<string, string> {
  * @param files - VFS file map (path -> content)
  * @returns Extracted dependencies info
  */
-export function extractDependencies(files: Record<string, string>): ExtractedDependencies {
+export function extractDependencies(
+  files: Record<string, string>,
+  options: DependencyExtractionOptions = {},
+): ExtractedDependencies {
   const startTime = performance.now();
   const detected = new Set<string>();
   const fromPackageJson = new Set<string>();
   const unresolved: string[] = [];
 
+  const filesToScan = options.entryPoints?.length
+    ? collectReachableFiles(files, options.entryPoints)
+    : files;
+
   // First, check for package.json in VFS
   let packageJsonDeps: Record<string, string> = {};
-  const packageJsonContent = files['/package.json'] || files['package.json'];
+  const packageJsonContent = filesToScan['/package.json'] || filesToScan['package.json'];
   if (packageJsonContent) {
     packageJsonDeps = parsePackageJson(packageJsonContent);
     Object.keys(packageJsonDeps).forEach(pkg => fromPackageJson.add(pkg));
@@ -184,9 +267,18 @@ export function extractDependencies(files: Record<string, string>): ExtractedDep
   // Scan all code files for imports
   const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
   
-  for (const [filePath, content] of Object.entries(files)) {
+  for (const [filePath, content] of Object.entries(filesToScan)) {
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    // Exported projects keep build configuration in the VFS, but Sandpack
+    // should install only packages imported by the browser application.
+    if (
+      /(?:^|\/)(?:vite|tailwind|postcss|eslint|prettier)\.config\.[cm]?[jt]s$/i.test(normalizedPath)
+      || normalizedPath.endsWith('.d.ts')
+    ) {
+      continue;
+    }
     // Only scan code files
-    const ext = filePath.substring(filePath.lastIndexOf('.'));
+    const ext = normalizedPath.substring(normalizedPath.lastIndexOf('.'));
     if (!codeExtensions.includes(ext)) continue;
     
     // Apply all import patterns
@@ -207,7 +299,10 @@ export function extractDependencies(files: Record<string, string>): ExtractedDep
   }
 
   // Build final dependencies map
-  const dependencies: Record<string, string> = {};
+  // Explicit `install` commands persist into VFS package.json. Include those
+  // packages even before the user adds an import so the install is real and a
+  // later HMR edit can resolve immediately.
+  const dependencies: Record<string, string> = { ...packageJsonDeps };
   
   for (const pkg of detected) {
     // Priority: package.json > known versions > 'latest'
@@ -262,12 +357,13 @@ export function mergeDependencies(
  */
 export function getDependenciesForSandpack(
   files: Record<string, string>,
-  baseDependencies: Record<string, string> = {}
+  baseDependencies: Record<string, string> = {},
+  options: DependencyExtractionOptions = {},
 ): {
   dependencies: Record<string, string>;
   extractionInfo: ExtractedDependencies;
 } {
-  const extractionInfo = extractDependencies(files);
+  const extractionInfo = extractDependencies(files, options);
   // The curated baseline is part of the generated-site runtime contract, not
   // an optimization hint. It keeps Radix primitives and Tailwind plugin paths
   // available for rich components even before a particular variant imports

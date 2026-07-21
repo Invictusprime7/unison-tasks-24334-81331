@@ -38,6 +38,7 @@ import {
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import type { PlaygroundState } from '@/platform/core/playground';
 import type { CompiledContract } from '@/platform/core/contractCompiler';
+import type { ThemeTokens } from '@/sections/types';
 import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gates';
 import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
@@ -84,6 +85,8 @@ export interface CommitMutationInput {
     selectedTemplateId?: string;
     selectedThemeId?: string;
     themePresetId?: string;
+    /** Exact Stage 4b token payload from the original wizard selection. */
+    themeTokens?: ThemeTokens;
     /** For wizard-launch source. */
     selections?: CanonicalCommitInput['selections'];
   };
@@ -482,15 +485,17 @@ function buildCanonicalInput(
   input: CommitMutationInput,
   workingFiles: Record<string, string>,
 ): CanonicalCommitInput {
+  const snapshot = input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined;
   return {
     selections: input.options?.selections,
     playground: input.current.playground,
     existingVfsFiles: workingFiles,
     businessName: input.options?.businessName,
     industry: input.options?.industry,
-    selectedTemplateId: input.options?.selectedTemplateId,
-    selectedThemeId: input.options?.selectedThemeId,
-    themePresetId: input.options?.themePresetId,
+    selectedTemplateId: input.options?.selectedTemplateId ?? snapshot?.meta?.templateId ?? undefined,
+    selectedThemeId: input.options?.selectedThemeId ?? snapshot?.meta?.themePresetId ?? undefined,
+    themePresetId: input.options?.themePresetId ?? snapshot?.meta?.themePresetId ?? undefined,
+    themeTokens: input.options?.themeTokens ?? snapshot?.themeTokens,
     compiledContract: input.options?.compiledContract,
   };
 }

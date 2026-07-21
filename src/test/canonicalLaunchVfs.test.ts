@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildCanonicalLaunchArtifacts, CANONICAL_METADATA_FILE_PATHS } from "@/services/canonicalLaunchVfs";
+import {
+  buildCanonicalLaunchArtifacts,
+  CANONICAL_METADATA_FILE_PATHS,
+  mergeGeneratedVfsWithCanonicalSnapshot,
+} from "@/services/canonicalLaunchVfs";
 import type { SiteBundleSnapshot } from "@/platform/core/canonicalPipeline";
 import { createEmptyCreatorData } from "@/types/creatorData";
 import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry";
@@ -48,11 +52,87 @@ function createSnapshot(): SiteBundleSnapshot {
       systemId: "agency",
       industry: "agency",
       verticalContractId: "agency",
+      themePresetId: "modern",
+      themeInjection: {
+        version: "1.0",
+        stage: "4b",
+        presetId: "modern",
+        cssPath: "/src/index.css",
+      },
     },
   };
 }
 
 describe("buildCanonicalLaunchArtifacts", () => {
+  it("replaces Lane B shared chrome with registry-derived modules at canonical merge", () => {
+    const snapshot = createSnapshot();
+    const aboutPage = createBuilderPage("page_about", "About", "/about", "about", {
+      filePath: "/src/pages/About.tsx",
+      showInNav: true,
+      navOrder: 1,
+    });
+    snapshot.pageRegistry.pages[aboutPage.pageId] = aboutPage;
+    snapshot.vfsFiles[aboutPage.filePath!] =
+      "export default function About(){ return <main>Canonical About</main>; }";
+
+    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+      {
+        "/src/pages/Home.tsx": "export default function Home(){ return <main>Lane B Home</main>; }",
+        "/src/pages/About.tsx": "export default function About(){ return <main>Lane B About</main>; }",
+        "/src/sections/SiteNavbar.tsx": "export default function SiteNavbar(){ return <nav>Stale menu</nav>; }",
+      },
+      snapshot.vfsFiles,
+      snapshot,
+    );
+
+    expect(merged["/src/sections/SiteNavbar.tsx"]).toContain('"path": "/about"');
+    expect(merged["/src/sections/SiteNavbar.tsx"]).not.toContain("Stale menu");
+    expect(merged["/src/sections/SiteFooter.tsx"]).toContain('"path": "/about"');
+    expect(merged["/src/App.tsx"]).toContain("<SiteNavbar />");
+    expect(merged["/src/App.tsx"]).toContain("<SiteFooter />");
+  });
+
+  it("uses the snapshot fallback policy when accepting generated wizard pages", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/pages/Home.tsx"] =
+      "export default function Home(){ return <main>Canonical home</main>; }";
+
+    expect(() => mergeGeneratedVfsWithCanonicalSnapshot(
+      {
+        "/src/pages/Home.tsx":
+          "export default function Home(){ return <main>New site preview</main>; }",
+      },
+      snapshot.vfsFiles,
+      snapshot,
+    )).toThrow("minimal/fallback scaffold");
+  });
+
+  it("preserves snapshot-owned UI foundation files when merging Lane B output", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/unison/ui/button.tsx"] =
+      "// canonical UI foundation\nexport const Button = () => null;";
+    snapshot.vfsFiles["/.unison/ui-manifest.json"] =
+      '{"importRoot":"@/unison/ui"}';
+    snapshot.vfsFiles['/.unison/design-intervention.json'] =
+      '{"layoutRecipe":"collage-hero"}';
+
+    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+      {
+        "/src/pages/Home.tsx": "export default function Home(){ return <main>Lane B page</main>; }",
+        "/src/unison/ui/button.tsx": "export const Button = () => <button>unsafe override</button>;",
+        "/.unison/ui-manifest.json": '{"importRoot":"@/other-ui"}',
+        '/.unison/design-intervention.json': '{"layoutRecipe":"conversion-form"}',
+      },
+      snapshot.vfsFiles,
+      snapshot,
+    );
+
+    expect(merged["/src/pages/Home.tsx"]).toContain("Lane B page");
+    expect(merged["/src/unison/ui/button.tsx"]).toContain("canonical UI foundation");
+    expect(merged["/.unison/ui-manifest.json"]).toContain("@/unison/ui");
+    expect(merged['/.unison/design-intervention.json']).toContain('collage-hero');
+  });
+
   it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
     const launchState = createLaunchState({
       systemType: "agency",
@@ -103,6 +183,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files["/package.json"]).toContain("\"framer-motion\"");
     expect(artifacts.runtimeManifest.appContext?.projectId).toBe("project_123");
     expect(artifacts.runtimeManifest.appContext?.previewRuntime?.foundation).toBe('token-glass');
+    expect(artifacts.appContext).not.toHaveProperty('experienceContract');
     expect(artifacts.runtimeManifest.metadataFiles).toContain(CANONICAL_METADATA_FILE_PATHS.appContext);
     expect(artifacts.runtimeManifest.metadataFiles).toContain(CANONICAL_METADATA_FILE_PATHS.wizardRuntime);
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
@@ -110,11 +191,37 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.siteBundleSnapshot]).toContain("\"vfsFilePaths\"");
   });
 
+  it("uses SiteBundleSnapshot VFS instead of a stale compile result at launch", () => {
+    const snapshot = createSnapshot();
+    snapshot.meta = { ...snapshot.meta, themePresetId: 'modern' };
+    snapshot.vfsFiles['/src/components/SharedRuntime.tsx'] = 'export const source = "snapshot";';
+
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: {
+        vfsFiles: {
+          ...snapshot.vfsFiles,
+          '/src/components/SharedRuntime.tsx': 'export const source = "stale-compile";',
+        },
+      },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    });
+
+    expect(artifacts.files['/src/components/SharedRuntime.tsx']).toContain('snapshot');
+    expect(artifacts.siteBundleSnapshot?.vfsFiles['/src/components/SharedRuntime.tsx']).toContain('snapshot');
+  });
+
   it("can preserve generated wizard output without merging canonical snapshot files", () => {
     const snapshot = createSnapshot();
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/App.tsx": "export default function App(){ return <main>Wizard First</main>; }",
+        "/src/index.css": snapshot.vfsFiles["/src/index.css"],
       },
       preferredEntryPoint: "/src/App.tsx",
       siteBundleSnapshot: snapshot,

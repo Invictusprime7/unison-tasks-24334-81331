@@ -23,6 +23,7 @@ import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
+import type { WizardDesignIntervention } from '@/services/wizardDesignIntervention';
 
 /**
  * Options shared by the scaffolding entry points.
@@ -40,6 +41,10 @@ import { PreviewPipelineError } from '@/services/previewPipelineError';
 export interface ScaffoldOptions {
   /** @deprecated Strict composition is now the only supported mode. */
   strictWizardComposition?: boolean;
+  /** Canonical, opt-in visual recipes projected into generated page modules. */
+  designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants'>;
+  /** App.tsx owns the site-wide navbar/footer; page compositions emit body sections only. */
+  globalSharedChrome?: boolean;
 }
 
 
@@ -291,7 +296,8 @@ function applyWizardSeedToComposition(
 function buildRoleComposition(
   template: TemplateComposition,
   role: PageRole,
-  page: PageRouteNode
+  page: PageRouteNode,
+  globalSharedChrome = false,
 ): TemplateComposition | null {
   const poolList: SectionType[] =
     template.sectionPool?.[role as TemplatePageRole] ??
@@ -307,6 +313,7 @@ function buildRoleComposition(
   const typeCounters = new Map<SectionType, number>();
   for (const source of template.sections) {
     if (!allowedTypes.has(source.type)) continue;
+    if (globalSharedChrome && (source.type === 'navbar' || source.type === 'footer')) continue;
     const idx = typeCounters.get(source.type) ?? 0;
     typeCounters.set(source.type, idx + 1);
     filtered.push({
@@ -353,7 +360,7 @@ export function scaffoldMissingTopologyPages(
 
   const blocked: string[] = [];
   for (const page of missing) {
-    const compositional = tryComposeTopologyPageFiles(page, plan, activeTemplate);
+    const compositional = tryComposeTopologyPageFiles(page, plan, activeTemplate, options);
     if (compositional) {
       Object.assign(out, compositional);
       continue;
@@ -441,8 +448,9 @@ export function generateTopologyPlaceholderFiles(
   page: PageRouteNode,
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null,
+  options?: ScaffoldOptions,
 ): Record<string, string> {
-  const composed = tryComposeTopologyPageFiles(page, plan, template);
+  const composed = tryComposeTopologyPageFiles(page, plan, template, options);
   if (composed) return composed;
   throw new PreviewPipelineError(
     'vfs',
@@ -481,14 +489,17 @@ export function tryComposeTopologyPageFiles(
   page: PageRouteNode,
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null,
+  options?: ScaffoldOptions,
 ): Record<string, string> | null {
   const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   if (!active) return null;
-  const sub = buildRoleComposition(active, page.role, page);
+  const sub = buildRoleComposition(active, page.role, page, options?.globalSharedChrome);
   if (!sub) return null;
   const seeded = applyWizardSeedToComposition(sub, plan);
   try {
-    return compositionToReactFileSet(seeded, page.filePath);
+    return compositionToReactFileSet(seeded, page.filePath, {
+      designIntervention: options?.designIntervention,
+    });
   } catch {
     return null;
   }

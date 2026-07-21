@@ -142,7 +142,7 @@ async function runLaunchDeskLane(
 
   const providerPlan = buildProviderPlan(task, Boolean(
     Deno.env.get('OPENAI_API_KEY') || Deno.env.get('GEMINI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY'),
-  ));
+  ), undefined, 'moderate', userContent);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
@@ -154,7 +154,11 @@ async function runLaunchDeskLane(
       JSON.stringify({ error: providerResult.earlyError.error }),
       {
         status: providerResult.earlyError.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          ...(providerResult.earlyError.status === 429 ? { 'Retry-After': '1' } : {}),
+        },
       },
     );
   }
@@ -171,8 +175,20 @@ async function runLaunchDeskLane(
   }
 
   return new Response(
-    JSON.stringify({ content: JSON.stringify(plan), plan, modelUsed: providerResult.modelUsed, mode: 'launch-desk' }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    JSON.stringify({
+      content: JSON.stringify(plan),
+      plan,
+      modelUsed: providerResult.modelUsed,
+      providerUsed: providerResult.providerUsed,
+      mode: 'launch-desk',
+    }),
+    {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        ...(providerResult.providerUsed ? { 'X-Unison-AI-Provider': providerResult.providerUsed } : {}),
+      },
+    },
   );
 }
 
@@ -404,7 +420,7 @@ async function runBuilderLane(
   }
 
   if (task.type === 'wizard_seed_generation') {
-    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, or root files.\nThe Home page must be a complete production landing page with at least 5 semantic sections, real industry-specific copy, and working data-ut-intent attributes.\nIf shared components are needed, include them under /src/sections/*.tsx and import them from the page.\n`;
+    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, root files, SiteNavbar, or SiteFooter.\nThe deterministic App router renders route-registry-derived shared chrome exactly once around every page. Emit body-only page files and never import or render shared chrome inside them.\nThe Home page must be a complete production landing page with at least 5 semantic sections, real industry-specific copy, and working data-ut-intent attributes.\n`;
   }
 
   if (task.type === 'wizard_interaction_enrichment') {
@@ -455,7 +471,15 @@ async function runBuilderLane(
 
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────
   console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
-  const providerPlan = buildProviderPlan(task, hasConfiguredProvider, gatewayOptions, preprocessed.complexity.tier);
+  const providerRoutingKey = `${userId || 'anonymous'}:${userPromptText}`;
+  const providerPlan = buildProviderPlan(
+    task,
+    hasConfiguredProvider,
+    gatewayOptions,
+    preprocessed.complexity.tier,
+    providerRoutingKey,
+  );
+  console.log(`[orchestrator] provider primary=${providerPlan.primaryProvider || 'unavailable'} models=${providerPlan.gatewayModels.map((model) => model.id).join(',')}`);
   const enableCatalogTools = BUILDER_EDIT_TASKS.has(task.type);
   if (enableCatalogTools) {
     finalSystemPrompt += renderCatalogToolDirective();
@@ -478,7 +502,11 @@ async function runBuilderLane(
       JSON.stringify({ error: providerResult.earlyError.error }),
       {
         status: providerResult.earlyError.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          ...(providerResult.earlyError.status === 429 ? { 'Retry-After': '1' } : {}),
+        },
       }
     );
   }
@@ -542,6 +570,7 @@ async function runBuilderLane(
     debugMode: _debugMode,
     mode: mode ?? undefined,
     modelUsed: providerResult.modelUsed,
+    providerUsed: providerResult.providerUsed,
     reviewWarnings: reviewResult?.warnings,
     requiresApproval: reviewResult?.requiresApproval,
     removedFiles: reviewResult?.removedFiles,
@@ -552,7 +581,13 @@ async function runBuilderLane(
 
   return new Response(
     JSON.stringify(responseBody),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        ...(providerResult.providerUsed ? { 'X-Unison-AI-Provider': providerResult.providerUsed } : {}),
+      },
+    },
   );
 }
 

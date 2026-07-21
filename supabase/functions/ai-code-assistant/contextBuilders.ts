@@ -292,7 +292,7 @@ These are the AUTHORITATIVE palette. Do NOT invent darker/lighter alternatives.
 RULES:
 1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
 2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
-3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
+3. Use ONLY react, lucide-react, framer-motion (optional), and any @/unison/ui/* modules explicitly listed in the Wizard UI Foundation manifest. Do not import other local modules.
 4. Use Tailwind semantic tokens whenever possible: bg-primary, text-foreground, bg-card, border-border, text-muted-foreground. NEVER hardcode hex colors or Tailwind palette colors (bg-slate-900, text-white, bg-zinc-800, etc.) — those will fight the wizard theme.
 5. For custom color expressions reference CSS vars: style={{ color: 'hsl(var(--primary))' }}, style={{ background: 'hsl(var(--card) / 0.8)' }}.
 6. Wire ALL interactive buttons with data-ut-intent attributes. EVERY button/CTA must have one:
@@ -416,14 +416,6 @@ export interface WizardSeedShape {
     tokens?: Record<string, string | number | boolean | undefined>;
     [k: string]: unknown;
   };
-  experience?: {
-    version?: string;
-    stylePresetId?: string;
-    templateId?: string;
-    layoutSignature?: string;
-    directives?: string[];
-    [k: string]: unknown;
-  };
   canonical?: {
     pages?: Array<{ slug?: string; role?: string; title?: string; path?: string }>;
     capabilities?: string[];
@@ -434,6 +426,26 @@ export interface WizardSeedShape {
     scaffoldMode?: string;
     customInstructions?: string;
     socials?: Array<{ platform: string; url: string }>;
+    [k: string]: unknown;
+  };
+  uiFoundation?: {
+    version?: string;
+    importRoot?: string;
+    primitiveImports?: string[];
+    iconLibrary?: string;
+    layoutRecipes?: string[];
+    interactions?: string[];
+    requirements?: string[];
+    [k: string]: unknown;
+  };
+  designIntervention?: {
+    version?: string;
+    layoutRecipe?: string;
+    sectionVariants?: string[];
+    motionRecipes?: string[];
+    interactionRecipes?: string[];
+    motionBudget?: string;
+    aiDirective?: string;
     [k: string]: unknown;
   };
   bindingGuide?: string;
@@ -506,8 +518,8 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   const pages = c.pages || [];
   if (pages.length) {
     lines.push('── CANONICAL TOPOLOGY (Step 4: Pages) — HARD CONTRACT ──');
-    lines.push('Emit ONE TSX file per page below. Shared chrome (navbar, footer)');
-    lines.push('lives under /src/sections/ and is imported by every page.');
+    lines.push('Emit ONE body-only TSX file per page below. The deterministic App router');
+    lines.push('owns SiteNavbar and SiteFooter globally; pages must not author or render shared chrome.');
     for (const p of pages) {
       const slug = p.slug || 'home';
       const path = p.path || (slug === 'home' ? '/src/pages/Home.tsx' : `/src/pages/${slug.replace(/(^|-)([a-z])/g, (_, _s, l) => l.toUpperCase())}.tsx`);
@@ -519,15 +531,6 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   if (c.intents?.length)      lines.push(`Wired intents: ${c.intents.join(', ')}`);
   if (c.capabilities?.length || c.intents?.length) lines.push('');
 
-  const experience = seed.experience || {};
-  if (experience.directives?.length) {
-    lines.push('── EXPERIENCE QUALITY CONTRACT — HARD ──');
-    lines.push(`Selected style/template identity: ${experience.stylePresetId || 'style'} / ${experience.templateId || 'template'}${experience.layoutSignature ? ` (${experience.layoutSignature})` : ''}.`);
-    experience.directives.forEach((directive, index) => lines.push(`${index + 1}. ${directive}`));
-    lines.push('These directives define visual behavior only. Keep the business copy, images, proof, and CTAs specific to this launch industry.');
-    lines.push('');
-  }
-
   const g = seed.generation || {};
   if (g.customInstructions) {
     lines.push('── VISITOR INSTRUCTIONS (verbatim) ──');
@@ -536,6 +539,32 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   }
   if (g.socials?.length) {
     lines.push(`Footer socials: ${g.socials.map((s) => `${s.platform}=${s.url}`).join(' | ')}`);
+    lines.push('');
+  }
+
+  const uiFoundation = seed.uiFoundation;
+  if (uiFoundation?.importRoot && uiFoundation.primitiveImports?.length) {
+    lines.push('── WIZARD UI FOUNDATION — SNAPSHOT OWNED ──');
+    lines.push(`Import root: ${uiFoundation.importRoot}`);
+    lines.push(`Allowed local modules: ${uiFoundation.primitiveImports.join(', ')}`);
+    if (uiFoundation.iconLibrary) lines.push(`Icons: ${uiFoundation.iconLibrary} only.`);
+    if (uiFoundation.layoutRecipes?.length) lines.push(`Available layout recipes: ${uiFoundation.layoutRecipes.join(', ')}`);
+    if (uiFoundation.interactions?.length) lines.push(`Available interactions: ${uiFoundation.interactions.join(', ')}`);
+    for (const requirement of uiFoundation.requirements || []) lines.push(`Requirement: ${requirement}`);
+    lines.push('Use these VFS modules for reusable UI. Do not author, replace, or delete their files or /src/index.css.');
+    lines.push('');
+  }
+
+  const designIntervention = seed.designIntervention;
+  if (designIntervention?.layoutRecipe) {
+    lines.push('── DETERMINISTIC DESIGN INTERVENTION — LOCKED ──');
+    lines.push(`Layout recipe: ${designIntervention.layoutRecipe}`);
+    if (designIntervention.sectionVariants?.length) lines.push(`Section variants: ${designIntervention.sectionVariants.join(', ')}`);
+    if (designIntervention.motionRecipes?.length) lines.push(`Motion recipes: ${designIntervention.motionRecipes.join(', ')}`);
+    if (designIntervention.interactionRecipes?.length) lines.push(`Interaction recipes: ${designIntervention.interactionRecipes.join(', ')}`);
+    if (designIntervention.motionBudget) lines.push(`Motion budget: ${designIntervention.motionBudget}`);
+    if (designIntervention.aiDirective) lines.push(`Constraint: ${designIntervention.aiDirective}`);
+    lines.push('Select and compose from these recipes. Do not invent a conflicting global style system or replace snapshot-owned files.');
     lines.push('');
   }
 
@@ -550,15 +579,13 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   lines.push('{');
   lines.push('  "files": {');
   lines.push('    "/src/pages/Home.tsx": "…",');
-  lines.push('    "/src/pages/<OtherPage>.tsx": "…",   // one per canonical page above');
-  lines.push('    "/src/sections/SiteNavbar.tsx": "…", // shared chrome');
-  lines.push('    "/src/sections/SiteFooter.tsx": "…"');
+  lines.push('    "/src/pages/<OtherPage>.tsx": "…"   // one per canonical page above');
   lines.push('  }');
   lines.push('}');
   lines.push('');
   lines.push('RULES:');
   lines.push('1. DO NOT author /src/App.tsx — the deterministic router owns it.');
-  lines.push('2. Every page imports SiteNavbar + SiteFooter from "../sections/...".');
+  lines.push('2. DO NOT author or import SiteNavbar/SiteFooter. App.tsx renders route-registry-derived shared chrome exactly once.');
   lines.push('3. Use Tailwind semantic tokens (bg-primary, text-foreground, bg-card, border-border).');
   lines.push('   For raw colors use hsl(var(--token)). Never hardcode hex.');
   if (seed?.theme?.geometryRule) {
@@ -567,7 +594,7 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   lines.push('4. Every interactive CTA needs a data-ut-intent attribute mapped to the');
   lines.push('   wired intents above (contact.submit, booking.create, lead.capture,');
   lines.push('   newsletter.subscribe, quote.request, cart.checkout, nav.anchor, …).');
-  lines.push('5. Use only react, lucide-react, framer-motion. No other imports.');
+  lines.push('5. Use react, lucide-react, framer-motion, and only the allowed @/unison/ui modules listed above. No other imports.');
   lines.push('6. Lucide social brand casing: Github, Linkedin, Youtube, Twitter (NOT GitHub/LinkedIn/YouTube/X).');
   lines.push('7. Images: prefer https://images.unsplash.com/photo-... static strings.');
   lines.push('8. Home must implement the full template section order with a minimum of 3-5 substantial sections.');

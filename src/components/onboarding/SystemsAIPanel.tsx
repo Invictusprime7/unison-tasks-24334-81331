@@ -55,6 +55,10 @@ import { commitToPipeline } from "@/platform/core";
 import { buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
 import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/playground";
+import { resolveThemePreset } from "./industryThemePresetMap";
+import { themePresetToThemeTokens } from "./themePresetToTokens";
+import { buildThemedIndexCss } from "./themePresetToIndexCss";
+import type { ThemePreset } from "./themePresets";
 import {
   createBlueprintFromIndustry,
   compileContract,
@@ -150,6 +154,7 @@ function inferPrimaryGoal(systemType: BusinessSystemType, prompt: string): strin
 
 function buildWizardSelectionsForChip(chipId: string, prompt: string, businessName: string): WizardSelections {
   const systemType = getSystemTypeForChip(chipId);
+  const themePreset = resolveThemePreset(null, getCategoryForChip(chipId));
   const normalizedPrompt = prompt.toLowerCase();
   const needsBooking = systemType === 'booking' || /book|booking|appointment|reservation/.test(normalizedPrompt);
   const sellsProducts = systemType === 'store' || /shop|product|checkout|cart|order/.test(normalizedPrompt);
@@ -173,7 +178,20 @@ function buildWizardSelectionsForChip(chipId: string, prompt: string, businessNa
     needsBooking,
     sellsProducts,
     wantsLeadCapture,
+    themeId: themePreset.id,
+    themePresetId: themePreset.id,
+    themeTokens: themePresetToThemeTokens(themePreset),
   };
+}
+
+function ensureThemeCssForFreeformLaunch(
+  files: Record<string, string>,
+  themePreset: ThemePreset,
+): Record<string, string> {
+  const hasIndexCss = Object.keys(files).some((path) => /(^|\/)index\.css$/i.test(path));
+  return hasIndexCss
+    ? files
+    : { ...files, '/src/index.css': buildThemedIndexCss(themePreset) };
 }
 
 // Industry/business prompt chips for quick actions
@@ -493,6 +511,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         const chipLabel = codePromptChips.find(c => c.id === selectedCodeChip)?.label || "website";
         const chipBusinessName = ref?.templateName || chipLabel;
         const chipWizardSelections = buildWizardSelectionsForChip(selectedCodeChip, codePrompt, chipBusinessName);
+        const chipThemePresetId = chipWizardSelections.themePresetId;
         const chipPipeline = commitToPipeline({ selections: chipWizardSelections }, 'wizard-launch');
         const {
           playground: materializedPlayground,
@@ -531,7 +550,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             templateCategory: getCategoryForChip(selectedCodeChip),
             businessName: ref.templateName,
             industry: getCanonicalIndustry(selectedCodeChip),
-            aesthetic: 'premium',
+            aesthetic: chipThemePresetId,
+            themePresetId: chipThemePresetId,
             backendRequired: false,
             wizardSelections: chipWizardSelections,
           });
@@ -547,7 +567,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           persistLaunchState({
             vfsFiles: wiredVfsFiles,
             templateName: ref.templateName,
-            aesthetic: "premium",
+            aesthetic: chipThemePresetId,
             systemType: ref.systemType,
             systemName: ref.templateName,
             templateCategory,
@@ -567,7 +587,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
               runtimeManifest,
               generatedCode: reactCode,
               templateName: ref.templateName,
-              aesthetic: "premium",
+              aesthetic: chipThemePresetId,
               startInPreview: true,
               systemType: ref.systemType,
               framework: "react",
@@ -661,7 +681,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             templateCategory: getCategoryForChip(selectedCodeChip),
             businessName: chipLabel,
             industry: getCanonicalIndustry(selectedCodeChip),
-            aesthetic: 'modern',
+            aesthetic: chipThemePresetId,
+            themePresetId: chipThemePresetId,
             backendRequired: false,
             wizardSelections: chipWizardSelections,
           });
@@ -682,7 +703,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           persistLaunchState({
             vfsFiles: wiredVfsFiles,
             templateName: `AI ${chipLabel}`,
-            aesthetic: "modern",
+            aesthetic: chipThemePresetId,
             systemType: ref?.systemType,
             systemName: chipLabel,
             templateCategory: getCategoryForChip(selectedCodeChip),
@@ -702,7 +723,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
               runtimeManifest,
               generatedCode,
               templateName: `AI ${chipLabel}`,
-              aesthetic: "modern",
+              aesthetic: chipThemePresetId,
               startInPreview: true,
               systemType: ref?.systemType,
               userDesignProfile: hasProfile ? { projectCount: savedProjectCount, dominantStyle: designProfile?.dominantStyle } : undefined,
@@ -738,7 +759,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             templateCategory: getCategoryForChip(selectedCodeChip),
             businessName: chipLabel,
             industry: getCanonicalIndustry(selectedCodeChip),
-            aesthetic: 'modern',
+            aesthetic: chipThemePresetId,
+            themePresetId: chipThemePresetId,
             backendRequired: false,
             wizardSelections: chipWizardSelections,
           });
@@ -753,7 +775,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           persistLaunchState({
             vfsFiles: wiredVfsFiles,
             templateName: `AI ${chipLabel}`,
-            aesthetic: "modern",
+            aesthetic: chipThemePresetId,
             systemType: ref?.systemType,
             systemName: chipLabel,
             templateCategory: getCategoryForChip(selectedCodeChip),
@@ -773,7 +795,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
               runtimeManifest,
               generatedCode: chipCode,
               templateName: `AI ${chipLabel}`,
-              aesthetic: "modern",
+              aesthetic: chipThemePresetId,
               startInPreview: true,
               systemType: ref?.systemType,
               userDesignProfile: hasProfile ? { projectCount: savedProjectCount, dominantStyle: designProfile?.dominantStyle } : undefined,
@@ -791,6 +813,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
       }
 
       // Free-form prompt: ai-code-assistant with retry logic (same engine as in-builder AI)
+      const freeformThemePreset = resolveThemePreset(null, 'landing');
+      const freeformThemePresetId = freeformThemePreset.id;
       const freeformDesignContext = hasProfile ? getDesignPromptContext() : null;
       const basePrompt = buildFreeformPrompt(codePrompt) + fileContext;
       const enhancedFreeformPrompt = freeformDesignContext
@@ -845,7 +869,10 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
 
       if (freeformStructuredPayload?.files && Object.keys(freeformStructuredPayload.files).length > 0) {
         const launchArtifacts = buildCanonicalLaunchArtifacts({
-          generatedFiles: freeformStructuredPayload.files,
+          generatedFiles: ensureThemeCssForFreeformLaunch(
+            freeformStructuredPayload.files,
+            freeformThemePreset,
+          ),
           preferredEntryPoint: freeformStructuredPayload.entryPoint || '/src/App.tsx',
           systemType: 'content',
           systemName: 'AI Generated',
@@ -853,7 +880,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           templateCategory: 'landing',
           businessName: 'AI Generated',
           industry: 'general',
-          aesthetic: 'modern',
+          aesthetic: freeformThemePresetId,
+          themePresetId: freeformThemePresetId,
           backendRequired: false,
         });
         const freeVfsFiles = launchArtifacts.files;
@@ -870,7 +898,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         persistLaunchState({
           vfsFiles: freeVfsFiles,
           templateName: "AI Generated",
-          aesthetic: "modern",
+          aesthetic: freeformThemePresetId,
           systemType: "content",
           systemName: "AI Generated",
           templateCategory: "landing",
@@ -884,7 +912,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             runtimeManifest,
             generatedCode,
             templateName: "AI Generated",
-            aesthetic: "modern",
+            aesthetic: freeformThemePresetId,
             startInPreview: true,
             systemType: "content",
             userDesignProfile: hasProfile ? { projectCount: savedProjectCount, dominantStyle: designProfile?.dominantStyle } : undefined,
@@ -903,7 +931,10 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
 
       if (generatedCode) {
         const launchArtifacts = buildCanonicalLaunchArtifacts({
-          generatedFiles: templateToVFSFiles(generatedCode, 'CustomWebsite'),
+          generatedFiles: ensureThemeCssForFreeformLaunch(
+            templateToVFSFiles(generatedCode, 'CustomWebsite'),
+            freeformThemePreset,
+          ),
           preferredEntryPoint: '/src/App.tsx',
           systemType: 'content',
           systemName: 'AI Generated',
@@ -911,7 +942,8 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           templateCategory: 'landing',
           businessName: 'AI Generated',
           industry: 'general',
-          aesthetic: 'modern',
+          aesthetic: freeformThemePresetId,
+          themePresetId: freeformThemePresetId,
           backendRequired: false,
         });
         const freeVfsFiles = launchArtifacts.files;
@@ -922,7 +954,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
         persistLaunchState({
           vfsFiles: freeVfsFiles,
           templateName: "AI Generated",
-          aesthetic: "modern",
+          aesthetic: freeformThemePresetId,
           systemType: "content",
           systemName: "AI Generated",
           templateCategory: "landing",
@@ -936,7 +968,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             runtimeManifest,
             generatedCode,
             templateName: "AI Generated",
-            aesthetic: "modern",
+            aesthetic: freeformThemePresetId,
             startInPreview: true,
             systemType: "content",
             userDesignProfile: hasProfile ? { projectCount: savedProjectCount, dominantStyle: designProfile?.dominantStyle } : undefined,

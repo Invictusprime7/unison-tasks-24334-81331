@@ -1,45 +1,61 @@
 # Unison Task — AI Provider Configuration
 
-## Provider hierarchy
+## Provider runtime
 
-Unison Task's AI is **OpenAI-first** with **Lovable AI Gateway as automatic fallback**.
+The Builder and Wizard use a **parallel Gemini/OpenAI runtime** through the `ai-code-assistant` Supabase Edge Function. Each automatic request is assigned to one provider by a stable hash of the authenticated user and request text, so repeated edits remain on the same provider while traffic is distributed predictably. The other configured provider remains the immediate fallback.
 
 | Order | Provider | Secret | Used for |
 | ----- | -------- | ------ | -------- |
-| 1 (primary) | OpenAI direct | `OPENAI_API_KEY` | All default Unison Task AI calls, default model `gpt-5-mini` |
-| 2 (fallback) | Lovable AI Gateway | `LOVABLE_API_KEY` | Auto-failover on 401/402/403/408/429/5xx, plus any `google/*`, `anthropic/*`, `meta/*`, `mistral/*`, or `lovable/*` model id |
+| 1 (weighted primary) | Gemini direct | `GEMINI_API_KEY` | Automatic Builder/Wizard requests according to `AI_PROVIDER_DISTRIBUTION` |
+| 1 (weighted primary) | OpenAI direct | `OPENAI_API_KEY` | Automatic Builder/Wizard requests according to `AI_PROVIDER_DISTRIBUTION` |
+| 2 (fallback) | Gemini or OpenAI direct | respective key | The other configured text provider when the selected provider fails |
+| 3 (fallback) | Anthropic direct | `ANTHROPIC_API_KEY` | Compatible non-streaming requests without tools |
 
-Routing lives in `supabase/functions/chat/index.ts`. The function attempts the primary provider, and on transient/auth/quota errors retries the secondary attempt before surfacing an error.
+The transport lives in `supabase/functions/_shared/ai/providerClient.ts`; weighted planning and fallback order for Builder/Wizard live in `supabase/functions/ai-code-assistant/providerRouter.ts` and `aiProviderLoop.ts`.
+
+## Traffic distribution
+
+Set `AI_PROVIDER_DISTRIBUTION` as comma-separated non-negative weights:
+
+```bash
+supabase secrets set AI_PROVIDER_DISTRIBUTION="gemini=50,openai=50"
+```
+
+- `gemini=50,openai=50` is the default when both providers are configured.
+- `gemini=70,openai=30` sends approximately 70% of stable routing keys to Gemini.
+- `gemini=100,openai=0` is a Gemini-only rollout; `gemini=0,openai=100` is an OpenAI-only rollout.
+- If only one key is configured, that provider serves all requests regardless of the weights.
+- An explicit `google/*`, `gemini-*`, `openai/*`, or `gpt-*` model selected by the caller takes priority over the weighted assignment.
+
+Responses include `providerUsed` in the JSON body and `X-Unison-AI-Provider` in the response headers. Edge Function logs record the selected primary provider and planned model order.
 
 ## Model id conventions
 
-- `openai/gpt-5-mini` → OpenAI direct (the `openai/` prefix is stripped)
-- bare model id (e.g. `gpt-5.2`) → OpenAI direct
-- `google/gemini-2.5-flash`, `anthropic/...`, etc. → Lovable Gateway first, OpenAI as fallback
+- `google/gemini-2.5-flash` or `gemini-2.5-flash` → Gemini direct
+- `openai/gpt-5-mini` or bare `gpt-*` ids → OpenAI direct
+- requests without a model namespace → Gemini direct
 
 ## Secret management
 
-Both keys are runtime secrets stored in Supabase Edge Function env. **Never** expose them via `VITE_*` variables or commit to the repo.
+Provider keys are runtime secrets stored in the Supabase Edge Function environment. **Never** expose them via `VITE_*` variables or commit them to the repository.
 
-### Rotating `OPENAI_API_KEY`
+### Configuring Gemini and OpenAI
 
-Use the secrets tool (`secrets--update_secret`) — the user enters the new value in a secure form. No code changes required; edge functions pick it up on next invocation.
+For local Edge Functions, place `GEMINI_API_KEY`, `OPENAI_API_KEY`, and optionally `AI_PROVIDER_DISTRIBUTION` in the root `.env` and serve with `supabase functions serve --env-file .env`. For hosted functions, set only server-side secrets:
 
-### Migrating from Lovable AI Gateway (LOVABLE_API_KEY)
+```bash
+supabase secrets set GEMINI_API_KEY="..." OPENAI_API_KEY="..." AI_PROVIDER_DISTRIBUTION="gemini=50,openai=50"
+supabase functions deploy ai-code-assistant --no-verify-jwt
+```
 
-Historically Unison Task ran fully on `LOVABLE_API_KEY` against `https://ai.gateway.lovable.dev/v1`. Today that key is **fallback only**. To migrate:
-
-1. Confirm `OPENAI_API_KEY` is set in Supabase secrets (see `secrets--fetch_secrets`).
-2. Leave `LOVABLE_API_KEY` in place — it transparently covers OpenAI outages, rate limits (429), payment-required (402), and any non-OpenAI model id the caller requests.
-3. Audit edge functions that bypass `chat/index.ts` and call the gateway directly (`ai-code-assistant`, `generate-page`, `generate-fullstack-app`, `web-builder-ai`, etc.). These are intentional Lovable-gateway consumers for multi-model access and remain on `LOVABLE_API_KEY`.
-4. To rotate `LOVABLE_API_KEY`, use the dedicated `ai_gateway--rotate_lovable_api_key` tool (not `update_secret`).
+Edge Functions read them with `Deno.env.get`; the browser never receives provider credentials.
 
 ### Failure surfacing
 
-- `429` from all providers → client receives 429 with retry-later copy.
-- `402` from all providers → client receives 402 with "add credits" copy.
-- Neither key configured → 500 with "No AI provider configured".
+- `429` from Gemini → the next configured provider is attempted before a retry-later error is returned.
+- `401` / `403` from Gemini → the next configured provider is attempted before an authentication error is returned.
+- No server-side provider key → the client receives a provider configuration error.
 
 ## Where to extend
 
-To make additional Unison Task surfaces honor the same primary/fallback chain, route them through the `chat` edge function (or replicate the `attempts[]` pattern from `chat/index.ts`). Do not add hard-coded calls to a single provider in new code.
+Route new AI surfaces through the shared provider client. Do not add browser-side keys or hard-coded provider credentials.

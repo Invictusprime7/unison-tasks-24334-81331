@@ -15,6 +15,8 @@ export interface ModelSpec {
 export interface ProviderPlan {
   /** Ordered list of direct-provider models to try. */
   gatewayModels: ModelSpec[];
+  /** Provider selected by the weighted runtime before fallbacks. */
+  primaryProvider?: ParallelTextProvider;
   /** Per-model timeout in ms */
   perModelTimeoutMs: number;
   /** Max tokens hint for direct fallback APIs */
@@ -27,6 +29,82 @@ export interface GatewayOverrides {
   timeoutMs?: number;
   autoModelSelection?: boolean;
   maxTokens?: number;
+}
+
+export type ParallelTextProvider = "gemini" | "openai";
+type EnvReader = (name: string) => string | undefined;
+
+export interface ProviderDistribution {
+  gemini: number;
+  openai: number;
+}
+
+const DEFAULT_PROVIDER_DISTRIBUTION: ProviderDistribution = { gemini: 50, openai: 50 };
+
+/** Parses `gemini=50,openai=50` or `gemini:50,openai:50`. */
+export function parseProviderDistribution(raw?: string): ProviderDistribution {
+  if (!raw?.trim()) return { ...DEFAULT_PROVIDER_DISTRIBUTION };
+
+  const parsed: Partial<ProviderDistribution> = {};
+  for (const entry of raw.split(',')) {
+    const [name, value] = entry.split(/[:=]/, 2).map((part) => part.trim().toLowerCase());
+    if ((name !== 'gemini' && name !== 'openai') || !value) continue;
+    const weight = Number(value);
+    if (Number.isFinite(weight) && weight >= 0) parsed[name] = weight;
+  }
+
+  const gemini = parsed.gemini ?? 0;
+  const openai = parsed.openai ?? 0;
+  return gemini + openai > 0 ? { gemini, openai } : { ...DEFAULT_PROVIDER_DISTRIBUTION };
+}
+
+function stableBucket(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 0x1_0000_0000;
+}
+
+export function selectParallelProvider(
+  routingKey: string,
+  distribution: ProviderDistribution,
+): ParallelTextProvider {
+  const total = distribution.gemini + distribution.openai;
+  if (total <= 0) return 'gemini';
+  return stableBucket(routingKey || 'unison-default') * total < distribution.gemini
+    ? 'gemini'
+    : 'openai';
+}
+
+function providerForModel(modelId: string): ParallelTextProvider | null {
+  if (modelId.startsWith('google/') || modelId.startsWith('gemini-')) return 'gemini';
+  if (modelId.startsWith('openai/') || modelId.startsWith('gpt-')) return 'openai';
+  return null;
+}
+
+function selectPrimaryProvider(
+  routingKey: string | undefined,
+  readEnv: EnvReader,
+): ParallelTextProvider | undefined {
+  const hasGemini = Boolean(readEnv('GEMINI_API_KEY') || readEnv('GOOGLE_API_KEY'));
+  const hasOpenAI = Boolean(readEnv('OPENAI_API_KEY'));
+  if (!hasGemini && !hasOpenAI) return undefined;
+  if (!hasGemini) return 'openai';
+  if (!hasOpenAI) return 'gemini';
+  return selectParallelProvider(
+    routingKey || 'unison-default',
+    parseProviderDistribution(readEnv('AI_PROVIDER_DISTRIBUTION')),
+  );
+}
+
+function prioritizeProviderModels(models: ModelSpec[], primaryProvider?: ParallelTextProvider): ModelSpec[] {
+  if (!primaryProvider) return models;
+  return [
+    ...models.filter((model) => providerForModel(model.id) === primaryProvider),
+    ...models.filter((model) => providerForModel(model.id) !== primaryProvider),
+  ];
 }
 
 // ── Model tiers ─────────────────────────────────────────────────────────────
@@ -100,6 +178,8 @@ export function buildProviderPlan(
   hasConfiguredTextProvider: boolean,
   overrides?: GatewayOverrides,
   complexity: PromptComplexity = "moderate",
+  routingKey?: string,
+  readEnv: EnvReader = (name) => Deno.env.get(name),
 ): ProviderPlan {
   if (!hasConfiguredTextProvider) {
     return {
@@ -218,6 +298,14 @@ export function buildProviderPlan(
     if (overrides.timeoutMs) {
       plan.perModelTimeoutMs = overrides.timeoutMs;
     }
+  }
+
+  // Explicit user model selections always win. Automatic selections use the
+  // stable weighted split and retain the other provider models as fallbacks.
+  const hasExplicitModel = overrides?.autoModelSelection === false && Boolean(overrides.selectedModelId);
+  if (!hasExplicitModel) {
+    plan.primaryProvider = selectPrimaryProvider(routingKey, readEnv);
+    plan.gatewayModels = prioritizeProviderModels(plan.gatewayModels, plan.primaryProvider);
   }
 
   return plan;

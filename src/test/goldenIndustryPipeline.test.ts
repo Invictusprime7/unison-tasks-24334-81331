@@ -32,6 +32,8 @@ import { compilePlayground } from '@/services/playgroundCompiler';
 import { INDUSTRY_INTENT_PROFILES } from '@/platform/core/industryIntentProfiles';
 import type { PlaygroundBinding, WizardSelections } from '@/platform/core/playground';
 import type { BuilderPage } from '@/types/pageRegistry';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
+import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 
 interface IndustryFixture {
   label: string;
@@ -231,15 +233,29 @@ describe('Golden industry pipeline — canonical round-trip', () => {
     const pack = resolveCapabilities(fx.selections);
     const materialization = materializePlayground(fx.selections, pack);
     const state = materialization.playground;
+    const themePreset = THEME_PRESETS.find((preset) => preset.id === fx.selections.themePresetId);
+    if (!themePreset) throw new Error(`Missing theme preset ${fx.selections.themePresetId}`);
+    const stage4bCss = buildThemedIndexCss(themePreset);
     const compileA = compilePlayground(state, {}, fx.selections.businessName, {
       selectedTemplateId: fx.selections.templateId,
       themePresetId: fx.selections.themePresetId,
+      stage4bCss,
       industry: fx.templateIndustry,
     });
     const compileB = compilePlayground(state, compileA.vfsFiles, fx.selections.businessName, {
       selectedTemplateId: fx.selections.templateId,
       themePresetId: fx.selections.themePresetId,
+      stage4bCss,
       industry: fx.templateIndustry,
+    });
+
+    it('preserves the exact Stage 4b theme seed and visual runtime', () => {
+      const css = compileA.vfsFiles['/src/index.css'];
+      expect(css).toBe(stage4bCss);
+      expect(css).toContain(`WIZARD THEME: ${themePreset.label}`);
+      expect(css).toContain('--primary:');
+      expect(css).toContain('.animate-fade-in-up');
+      expect(css).toContain('.button-press');
     });
 
     it('materializes a non-empty PageRegistry with a home page', () => {
@@ -299,6 +315,27 @@ describe('Golden industry pipeline — canonical round-trip', () => {
       }
     });
 
+    it('renders registry-derived shared chrome once around every route', () => {
+      const router = compileA.routerFile.content;
+      const navbar = compileA.vfsFiles['/src/sections/SiteNavbar.tsx'];
+      const footer = compileA.vfsFiles['/src/sections/SiteFooter.tsx'];
+
+      expect(router.match(/<SiteNavbar \/>/g)).toHaveLength(1);
+      expect(router.match(/<SiteFooter \/>/g)).toHaveLength(1);
+      expect(router).toContain("./sections/SiteNavbar.tsx");
+      expect(router).toContain("./sections/SiteFooter.tsx");
+
+      for (const page of Object.values(state.pageRegistry.pages) as BuilderPage[]) {
+        const pageSource = compileA.vfsFiles[page.filePath!];
+        expect(pageSource).not.toContain('<SiteNavbar');
+        expect(pageSource).not.toContain('<SiteFooter');
+        if (!page.showInNav) continue;
+        const route = page.isHome ? '/' : page.path;
+        expect(navbar, `navbar must include ${route}`).toContain(JSON.stringify(route));
+        expect(footer, `footer must include ${route}`).toContain(JSON.stringify(route));
+      }
+    });
+
     it('bindings carry canonical coreIntent + slot identity (V2 contract)', () => {
       const bindings = Object.values(state.bindings) as PlaygroundBinding[];
       expect(bindings.length, 'wizard should produce at least one binding').toBeGreaterThan(0);
@@ -325,7 +362,6 @@ describe('Golden industry pipeline — canonical round-trip', () => {
       const present = new Set<string>([...materialized, ...compiled]);
       const missing = profile.required.filter((r) => r !== 'nav.goto' && !present.has(r));
       if (missing.length > 0) {
-        // eslint-disable-next-line no-console
         console.warn(
           `[golden:${fx.label}] wizard did not stamp required intents:`,
           missing.join(', '),
@@ -334,7 +370,6 @@ describe('Golden industry pipeline — canonical round-trip', () => {
       // At minimum, the primary intent must be present — that is a hard contract.
       const primary = fx.selections.primaryIntent;
       if (primary && !present.has(primary)) {
-        // eslint-disable-next-line no-console
         console.warn(
           `[golden:${fx.label}] wizard did not stamp primary intent: ${primary}`,
         );

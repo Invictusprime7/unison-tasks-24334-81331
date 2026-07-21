@@ -13,7 +13,8 @@
 import type { ThemePreset } from './themePresets';
 import type { ThemeTokens } from '@/sections/types';
 import { themePresetToThemeTokens } from './themePresetToTokens';
-import { buildThemePresetFinalCssOverride } from '@/services/themeGeometryContract';
+
+export const SHADCN_LIBRARY_CSS_MARKER = 'SHADCN LIBRARY: canonical Stage 4b foundation';
 
 export function buildThemedIndexCss(preset: ThemePreset): string {
   return buildThemedIndexCssFromTokens(themePresetToThemeTokens(preset), {
@@ -42,6 +43,7 @@ export function buildThemedIndexCssFromTokens(
   const fontsImport = `@import url('https://fonts.googleapis.com/css2?${fontFamilies}&display=swap');`;
 
   return `${fontsImport}
+@import './unison/ui/tailwind.css';
 /* WIZARD THEME: ${metadata.label || 'selected style card'} (Stage 4b HSL token injection) */
 @tailwind base;
 @tailwind components;
@@ -74,6 +76,93 @@ export function buildThemedIndexCssFromTokens(
   /* Tailwind CDN reads these via theme.fontFamily.heading / body */
   --font-heading: ${tokens.typography.headingFont};
   --font-body: ${tokens.typography.bodyFont};
+}
+
+/* ${SHADCN_LIBRARY_CSS_MARKER}
+   The wizard's generated VFS may use local shadcn primitives or the preview
+   shim. Both consume these semantic tokens, never a separate preset. */
+@layer base {
+  ::selection {
+    background: hsl(var(--primary) / 0.22);
+    color: hsl(var(--foreground));
+  }
+
+  :where(button, a, input, textarea, select, [role="button"]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  :where(input, textarea, select) {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--input));
+  }
+
+  :where(input, textarea, select)::placeholder {
+    color: hsl(var(--muted-foreground));
+    opacity: 1;
+  }
+}
+
+@layer components {
+  .ut-shadcn-button {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid transparent;
+    border-radius: calc(var(--radius) - 0.125rem);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 0.5rem 1rem;
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  }
+  .ut-shadcn-button:hover { background: hsl(var(--primary) / 0.9); }
+  .ut-shadcn-button:disabled { cursor: not-allowed; opacity: 0.5; }
+  .ut-shadcn-button--outline { background: hsl(var(--background)); border-color: hsl(var(--input)); color: hsl(var(--foreground)); }
+  .ut-shadcn-button--outline:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+  .ut-shadcn-button--secondary { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); }
+  .ut-shadcn-button--ghost { background: transparent; color: hsl(var(--foreground)); }
+  .ut-shadcn-button--ghost:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+
+  .ut-shadcn-card,
+  .ut-shadcn-popover,
+  .ut-shadcn-dialog-content {
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    box-shadow: 0 10px 24px hsl(var(--foreground) / 0.12);
+  }
+  .ut-shadcn-card { padding: 1.5rem; }
+  .ut-shadcn-popover,
+  .ut-shadcn-dialog-content { background: hsl(var(--popover)); color: hsl(var(--popover-foreground)); }
+  .ut-shadcn-dialog-overlay { background: hsl(var(--foreground) / 0.42); }
+
+  .ut-shadcn-input,
+  .ut-shadcn-textarea,
+  .ut-shadcn-select {
+    display: flex;
+    width: 100%;
+    min-height: 2.5rem;
+    border: 1px solid hsl(var(--input));
+    border-radius: calc(var(--radius) - 0.125rem);
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+  .ut-shadcn-textarea { min-height: 6rem; resize: vertical; }
+  .ut-shadcn-tabs-list { display: inline-flex; gap: 0.25rem; border-radius: var(--radius); background: hsl(var(--muted)); padding: 0.25rem; }
+  .ut-shadcn-tabs-trigger { border-radius: calc(var(--radius) - 0.125rem); color: hsl(var(--muted-foreground)); padding: 0.5rem 0.75rem; font-size: 0.875rem; font-weight: 500; }
+  .ut-shadcn-tabs-trigger[data-state="active"] { background: hsl(var(--background)); color: hsl(var(--foreground)); box-shadow: 0 1px 3px hsl(var(--foreground) / 0.12); }
 }
 
 * { border-color: hsl(var(--border)); }
@@ -235,6 +324,5 @@ p { margin: 0 0 1rem; line-height: 1.65; }
 img { max-width: 100%; height: auto; display: block; }
 a { color: inherit; text-decoration: none; }
 ul, ol { padding-left: 1.25rem; }
-${buildThemePresetFinalCssOverride(metadata.presetId)}
 `;
 }

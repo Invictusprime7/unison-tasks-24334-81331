@@ -14,6 +14,7 @@ export type ChatCompletionRequest = {
 };
 
 type Provider = "openai" | "gemini" | "anthropic";
+type EnvReader = (name: string) => string | undefined;
 
 const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations";
@@ -64,16 +65,36 @@ export async function fetchWithShortRateLimitRetry(
   return fetcher(input, init);
 }
 
-function configuredProviders(): Provider[] {
+function readGeminiApiKey(readEnv: EnvReader = (name) => Deno.env.get(name)): string | undefined {
+  return readEnv("GEMINI_API_KEY") ?? readEnv("GOOGLE_API_KEY");
+}
+
+function requestedProvider(model?: string): Provider | undefined {
+  if (!model) return undefined;
+  if (model.startsWith("google/") || model.startsWith("gemini-")) return "gemini";
+  if (model.startsWith("openai/") || model.startsWith("gpt-")) return "openai";
+  if (model.startsWith("anthropic/") || model.startsWith("claude-")) return "anthropic";
+  return undefined;
+}
+
+export function resolveConfiguredProviders(
+  model?: string,
+  readEnv: EnvReader = (name) => Deno.env.get(name),
+): Provider[] {
+  // Gemini is the default text provider. Explicit model namespaces override
+  // the default while preserving the other configured providers as fallbacks.
   const providers: Provider[] = [];
-  if (Deno.env.get("OPENAI_API_KEY")) providers.push("openai");
-  if (Deno.env.get("GEMINI_API_KEY")) providers.push("gemini");
-  if (Deno.env.get("ANTHROPIC_API_KEY")) providers.push("anthropic");
-  return providers;
+  if (readGeminiApiKey(readEnv)) providers.push("gemini");
+  if (readEnv("OPENAI_API_KEY")) providers.push("openai");
+  if (readEnv("ANTHROPIC_API_KEY")) providers.push("anthropic");
+
+  const preferred = requestedProvider(model);
+  if (!preferred || !providers.includes(preferred)) return providers;
+  return [preferred, ...providers.filter((provider) => provider !== preferred)];
 }
 
 export function isTextGenerationConfigured(): boolean {
-  return configuredProviders().length > 0;
+  return resolveConfiguredProviders().length > 0;
 }
 
 export function isImageGenerationConfigured(): boolean {
@@ -139,7 +160,7 @@ async function callOpenAICompatible(
   request: ChatCompletionRequest,
   signal?: AbortSignal,
 ): Promise<Response> {
-  const apiKey = provider === "openai" ? Deno.env.get("OPENAI_API_KEY") : Deno.env.get("GEMINI_API_KEY");
+  const apiKey = provider === "openai" ? Deno.env.get("OPENAI_API_KEY") : readGeminiApiKey();
   if (!apiKey) throw new Error(`${provider} is not configured`);
 
   const body: Record<string, unknown> = { ...request, model: modelFor(provider, request.model) };
@@ -192,7 +213,7 @@ async function callAnthropic(request: ChatCompletionRequest, signal?: AbortSigna
 }
 
 export async function createChatCompletion(request: ChatCompletionRequest, signal?: AbortSignal): Promise<Response> {
-  const providers = configuredProviders().filter((provider) => (
+  const providers = resolveConfiguredProviders(request.model).filter((provider) => (
     provider !== "anthropic" || (!request.stream && !Array.isArray(request.tools))
   ));
   if (providers.length === 0) {

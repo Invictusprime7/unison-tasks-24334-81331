@@ -73,6 +73,25 @@ describe('preflightNavWiring', () => {
     expect(result.files['/src/pages/P.tsx']).toBe(src);
   });
 
+  it('completes an existing nav.goto binding that is missing its route payload', () => {
+    const result = preflightNavWiring(
+      {
+        '/src/sections/SiteNavbar.tsx':
+          'export default function Nav() { return <a href="#about" data-ut-intent="nav.goto">About</a>; }',
+      },
+      snapshot({
+        home: { title: 'Home', path: '/', isHome: true },
+        about: { title: 'About', path: '/about', pageRole: 'about' },
+      }),
+    );
+
+    expect(result.wired).toBe(1);
+    const out = result.files['/src/sections/SiteNavbar.tsx'];
+    expect(out.match(/data-ut-intent=/g)).toHaveLength(1);
+    expect(out).toContain('data-ut-path="/about"');
+    expect(out).toContain('data-ut-target-page-id="about"');
+  });
+
   it('is a no-op when registry has only one page', () => {
     const src = 'export default function P() { return <button>Anything</button>; }';
     const result = preflightNavWiring(

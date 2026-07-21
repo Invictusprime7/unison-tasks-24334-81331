@@ -11,13 +11,15 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair } from './aiSitePreflightRepair';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
-import { enforceThemeGeometryContract, hasThemeGeometryContract } from './themeGeometryContract';
-import {
-  applyCanonicalInteractionEnrichment,
-  type WizardInteractionManifest,
-} from './wizardInteractionEnrichment';
-import type { WizardExperienceContract } from './wizardExperienceContract';
+import type { WizardInteractionManifest } from './wizardInteractionEnrichment';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
+import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
+import { isMinimalPreviewFallbackSource } from './snapshotProjector';
+import {
+  buildCanonicalWizardSharedChromeModules,
+  getMissingCanonicalChromeRoutes,
+  isCanonicalWizardSharedChromePath,
+} from './wizardSharedChrome';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',
@@ -60,8 +62,6 @@ export interface BuildCanonicalLaunchArtifactsInput {
   themePresetId?: string | null;
   /** Validated Lane B interaction plan, persisted as canonical runtime data. */
   interactionManifest?: WizardInteractionManifest | null;
-  /** Visual-behavior contract derived from the selected style/template cards. */
-  experienceContract?: WizardExperienceContract | null;
   backendRequired?: boolean;
   wizardSelections?: WizardSelections | null;
   /**
@@ -86,11 +86,6 @@ function rebaseAppModuleForHomePage(content: string): string {
 
 function looksLikeCanonicalRouter(content: string): boolean {
   return /react-router-dom|<Routes\b|<Route\b|BrowserRouter|HashRouter|createBrowserRouter/.test(content);
-}
-
-function looksLikeMinimalPreviewFallback(content: string): boolean {
-  const normalized = content.replace(/\s+/g, ' ').trim();
-  return /return\s+<div>\s*Placeholder|return\s+<main>\s*Placeholder|Canonical\s+\w+\s+Stub|Canonical\s+\w+\s+Fallback|Generated\s+Home|Preview recovered|safe fallback was injected|AI-generated code will appear here|Welcome to AI Web Builder|fallback keeps the experience polished/i.test(normalized);
 }
 
 function cloneSnapshotWithRuntimeVfs(
@@ -159,6 +154,7 @@ function buildRuntimeAppContext(
   input: BuildCanonicalLaunchArtifactsInput,
   entryPoint: string,
   siteBundleSnapshot?: SiteBundleSnapshot,
+  themePresetId?: string,
 ): RuntimeAppContext {
   return {
     businessId: input.businessId || undefined,
@@ -177,9 +173,8 @@ function buildRuntimeAppContext(
     wizardSelections: input.wizardSelections
       ? (JSON.parse(JSON.stringify(input.wizardSelections)) as Record<string, unknown>)
       : undefined,
-    themePresetId: input.themePresetId || siteBundleSnapshot?.meta?.themePresetId || (input.aesthetic as string | undefined) || undefined,
+    themePresetId,
     themeTokens: input.wizardSelections?.themeTokens || siteBundleSnapshot?.themeTokens,
-    experienceContract: input.experienceContract || undefined,
     previewRuntime: {
       version: '1.0',
       foundation: 'token-glass',
@@ -283,12 +278,12 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   // whenever the canonical snapshot already provides a real, non-fallback home.
   const canonicalHome = readCanonical(homeFilePath);
   const canonicalHomeIsAuthoritative = Boolean(
-    canonicalHome && canonicalHome.trim() && !looksLikeMinimalPreviewFallback(canonicalHome),
+    canonicalHome && canonicalHome.trim() && !isMinimalPreviewFallbackSource(canonicalHome),
   );
   const generatedAppCanSeedHome = Boolean(
     generatedAppModule &&
     !looksLikeCanonicalRouter(generatedAppModule) &&
-    !looksLikeMinimalPreviewFallback(generatedAppModule) &&
+    !isMinimalPreviewFallbackSource(generatedAppModule) &&
     !readGenerated(homeFilePath) &&
     !canonicalHomeIsAuthoritative
   );
@@ -301,6 +296,15 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
   for (const [path, content] of Object.entries(generatedFiles)) {
     const normalizedPath = normalizePath(path);
+    // The generated UI foundation is compiled from wizard selections and is
+    // snapshot-owned. Lane B may import these modules, never replace them.
+    if (
+      normalizedPath.startsWith('/src/unison/ui/') ||
+      normalizedPath === '/.unison/ui-manifest.json' ||
+      normalizedPath === '/.unison/design-intervention.json'
+    ) {
+      continue;
+    }
     const shouldMoveLegacyAppIntoHome =
       (normalizedPath === '/src/App.tsx' || normalizedPath === '/App.tsx') &&
       generatedAppCanSeedHome;
@@ -311,7 +315,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     }
 
     if (registeredPagePaths.has(path) || registeredPagePaths.has(normalizedPath)) {
-      if (looksLikeMinimalPreviewFallback(content)) {
+      if (isMinimalPreviewFallbackSource(content)) {
         throw new PreviewPipelineError(
           'vfs',
           `Lane B generated minimal/fallback scaffold copy for registered page ${normalizedPath}; refusing to persist it into SiteBundleSnapshot.`,
@@ -338,7 +342,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       continue;
     }
 
-    if (looksLikeMinimalPreviewFallback(content)) {
+    if (isMinimalPreviewFallbackSource(content)) {
       continue;
     }
 
@@ -352,19 +356,19 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     const canonicalPage = readCanonical(page.filePath);
     const existingMergedPage = merged[normalizedPagePath];
 
-    if (existingMergedPage && !looksLikeMinimalPreviewFallback(existingMergedPage)) {
+    if (existingMergedPage && !isMinimalPreviewFallbackSource(existingMergedPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = existingMergedPage;
       continue;
     }
 
-    if (generatedPage && !looksLikeMinimalPreviewFallback(generatedPage)) {
+    if (generatedPage && !isMinimalPreviewFallbackSource(generatedPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = generatedPage;
       continue;
     }
 
-    if (options.allowCanonicalPageFallback !== false && canonicalPage && !looksLikeMinimalPreviewFallback(canonicalPage)) {
+    if (options.allowCanonicalPageFallback !== false && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = canonicalPage;
       continue;
@@ -373,13 +377,24 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     removePathVariants(merged, page.filePath);
   }
 
+  // Shared chrome is snapshot-owned and derived from the same PageRegistry as
+  // the router. Lane B may never replace it with stale anchors or partial menus.
+  Object.assign(
+    merged,
+    buildCanonicalWizardSharedChromeModules(snapshot.pageRegistry, snapshot.businessName),
+  );
+
   // Ensure a canonical router exists at /src/App.tsx. Without this the
   // preview's Sandpack bundle has no entry composition and renders blank.
   // We regenerate from the page registry whenever:
   //   • no App.tsx survived the merge, or
   //   • the surviving App.tsx is not a recognizable router (e.g. an AI
   //     composition that slipped through outside the rebase branch).
-  const generatedRouter = generateCanonicalRouter(snapshot.pageRegistry, snapshot.businessName);
+  const generatedRouter = generateCanonicalRouter(
+    snapshot.pageRegistry,
+    snapshot.businessName,
+    { withSharedChrome: true },
+  );
   if (generatedRouter) {
     merged['/src/App.tsx'] = generatedRouter;
   } else if (!looksLikeCanonicalRouter(merged['/src/App.tsx'] || '')) {
@@ -395,6 +410,15 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       'vfs',
       'SiteBundleSnapshot is missing injected /src/index.css; refusing to inject default/minimal preview CSS.',
       { recoverableByRelaunch: true },
+    );
+  }
+
+  const missingChromeRoutes = getMissingCanonicalChromeRoutes(merged, snapshot.pageRegistry);
+  if (missingChromeRoutes.length > 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `Canonical shared chrome is missing visible routes: ${missingChromeRoutes.join(', ')}.`,
+      { blockedFiles: ['/src/sections/SiteNavbar.tsx', '/src/sections/SiteFooter.tsx'], recoverableByRelaunch: true },
     );
   }
 
@@ -415,7 +439,6 @@ export function upsertCanonicalMetadataFiles(
   nextFiles[CANONICAL_METADATA_FILE_PATHS.appContext] = JSON.stringify(input.appContext, null, 2);
   nextFiles[CANONICAL_METADATA_FILE_PATHS.runtimeManifest] = JSON.stringify(input.runtimeManifest, null, 2);
   nextFiles[CANONICAL_METADATA_FILE_PATHS.wizardRuntime] = JSON.stringify({
-    experienceContract: input.appContext.experienceContract,
     previewRuntime: input.appContext.previewRuntime,
   }, null, 2);
 
@@ -442,9 +465,29 @@ export function buildCanonicalLaunchArtifacts(
   input: BuildCanonicalLaunchArtifactsInput,
 ): CanonicalLaunchArtifacts {
   const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
-  const resolvedThemePresetId =
-    input.themePresetId || (input.aesthetic as string | undefined) || null;
-  const normalizedFiles = normalizeLauncherFiles(input.generatedFiles, {
+  const snapshotThemePresetId = input.siteBundleSnapshot
+    ? assertSnapshotThemeSeed(
+        input.siteBundleSnapshot,
+        assertThemeSeed(
+          input.themePresetId ?? input.siteBundleSnapshot.meta.themePresetId,
+          'SiteBundleSnapshot -> canonical launch',
+        ),
+        'SiteBundleSnapshot -> canonical launch',
+      )
+    : null;
+  if (input.siteBundleSnapshot && input.themePresetId) {
+    assertThemeSeed(input.themePresetId, 'WizardMergeContext -> canonical launch', snapshotThemePresetId);
+  }
+  const resolvedThemePresetId = snapshotThemePresetId || assertThemeSeed(
+    input.themePresetId,
+    'WizardMergeContext -> canonical launch',
+  );
+  const generatedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
+    ? Object.fromEntries(
+        Object.entries(input.generatedFiles).filter(([path]) => !isCanonicalWizardSharedChromePath(path)),
+      )
+    : input.generatedFiles;
+  const normalizedFiles = normalizeLauncherFiles(generatedFiles, {
     entryPoint: input.preferredEntryPoint,
     themePresetId: resolvedThemePresetId,
     // Checkpoint invariant: wizard/sitebundle launches must arrive with the
@@ -506,7 +549,9 @@ export function buildCanonicalLaunchArtifacts(
     ? applyWizardBindingsToVfs(repairedFiles, input.siteBundleSnapshot)
     : null;
 
-  const canonicalFiles = input.compiledPlayground?.vfsFiles || input.siteBundleSnapshot?.vfsFiles || {};
+  // The snapshot is the only canonical VFS source once it exists. A compile
+  // result is an intermediate stage and may be stale when Lane B is merged.
+  const canonicalFiles = input.siteBundleSnapshot?.vfsFiles || input.compiledPlayground?.vfsFiles || {};
   const boundFiles = bindingApplication?.files || repairedFiles;
   const preflight = input.siteBundleSnapshot
     ? (() => {
@@ -602,20 +647,16 @@ export function buildCanonicalLaunchArtifacts(
       })
     : { ...safeFiles };
 
-  // A selected Style Card owns final geometry through its canonical CSS
-  // override. Source normalization is only for legacy artifacts without one.
-  const themedFiles = hasThemeGeometryContract(resolvedThemePresetId)
-    ? mergedFiles
-    : enforceThemeGeometryContract(mergedFiles, resolvedThemePresetId);
-  const interactionEnrichment = applyCanonicalInteractionEnrichment(
-    themedFiles,
-    input.interactionManifest,
+  const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
+  const appContext = buildRuntimeAppContext(
+    input,
+    entryPoint,
+    input.siteBundleSnapshot,
+    resolvedThemePresetId || undefined,
   );
-  const experiencedFiles = interactionEnrichment.files;
-  const entryPoint = resolveLauncherEntryPoint(experiencedFiles, input.preferredEntryPoint);
-  const appContext = buildRuntimeAppContext(input, entryPoint, input.siteBundleSnapshot);
-  appContext.interactionManifest = interactionEnrichment.manifest || input.siteBundleSnapshot?.meta?.interactionManifest;
-  appContext.experienceContract = input.experienceContract || undefined;
+  // Interaction artifacts are snapshot-owned. The launch adapter must not
+  // synthesize or replace them after the canonical projection.
+  appContext.interactionManifest = input.siteBundleSnapshot?.meta?.interactionManifest;
   appContext.themeInjection = {
     version: '1.0',
     stage: '4b',
@@ -628,7 +669,7 @@ export function buildCanonicalLaunchArtifacts(
   const canonicalPlayground = buildCanonicalPlayground(runtimeSnapshotSeed, input.canonicalPlayground);
   const metadataFiles = Object.values(CANONICAL_METADATA_FILE_PATHS);
   const sessionKey = buildSessionKey(appContext, entryPoint);
-  const runtimeManifest = createRuntimeManifest(experiencedFiles, {
+  const runtimeManifest = createRuntimeManifest(mergedFiles, {
     entryPoint,
     industry: input.industry || runtimeSnapshotSeed?.industry,
     brandName: input.businessName || runtimeSnapshotSeed?.businessName,
@@ -638,14 +679,33 @@ export function buildCanonicalLaunchArtifacts(
     metadataFiles,
     sessionKey,
   });
-  const viteReadyFiles = ensureViteRootFiles(experiencedFiles, {
+  const viteReadyFiles = ensureViteRootFiles(mergedFiles, {
     extraDependencies: runtimeManifest.dependencies,
     themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
+  const snapshotRepair = runPreflightRepair(viteReadyFiles, {
+    context: { industry: input.industry, brand: input.businessName },
+  });
+  if (input.strictPreflight && snapshotRepair.quarantinedCount > 0) {
+    const blockedReports = snapshotRepair.reports.filter((report) => report.status === 'quarantined');
+    const blockedFiles = blockedReports.map((report) => report.path);
+    const diagnosticSummary = blockedReports
+      .map((report) => `${report.path}: ${report.finalError || 'Unknown syntax error'}`)
+      .join(' | ');
+    throw new PreviewPipelineError(
+      'vfs',
+      `Canonical SiteBundleSnapshot failed final syntax preflight for ${blockedFiles.join(', ')}; refusing to persist quarantine scaffolds. ${diagnosticSummary}`,
+      { blockedFiles, recoverableByRelaunch: true },
+    );
+  }
+  const verifiedViteFiles = snapshotRepair.files;
   const siteBundleSnapshot = runtimeSnapshotSeed
-    ? cloneSnapshotWithRuntimeVfs(runtimeSnapshotSeed, appContext, viteReadyFiles, interactionEnrichment.manifest)
+    ? cloneSnapshotWithRuntimeVfs(runtimeSnapshotSeed, appContext, verifiedViteFiles)
     : undefined;
-  const files = upsertCanonicalMetadataFiles(viteReadyFiles, {
+  if (siteBundleSnapshot && resolvedThemePresetId) {
+    assertSnapshotThemeSeed(siteBundleSnapshot, resolvedThemePresetId, 'canonical launch -> SiteBundleSnapshot');
+  }
+  const files = upsertCanonicalMetadataFiles(verifiedViteFiles, {
     appContext,
     runtimeManifest,
     siteBundleSnapshot,

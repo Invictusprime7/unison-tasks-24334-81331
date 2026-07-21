@@ -21,17 +21,16 @@
 
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
 import { LAUNCHER_BASE_THEME } from '@/sections/themes';
-import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
+import { isSandpackAllowedImport } from '@/utils/sandpackDependencies';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
 import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
 import { resolveSnapshot } from '@/services/snapshotProjector';
-import { enforceThemeGeometryContract, hasThemeGeometryContract } from '@/services/themeGeometryContract';
 import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
-
-const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
+import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
+import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 
 const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 
@@ -3564,7 +3563,8 @@ const BUILTIN_JSX_ELEMENTS = new Set([
   'PointerEvent', 'ChangeEvent', 'FormEvent', 'ReactNode', 'ReactElement',
   'CSSProperties', 'SVGElement', 'SVGSVGElement', 'HTMLDivElement',
   'HTMLButtonElement', 'HTMLInputElement', 'HTMLAnchorElement', 'HTMLFormElement',
-  'HTMLImageElement',
+  'HTMLImageElement', 'HTMLTextAreaElement', 'HTMLSelectElement',
+  'HTMLLabelElement', 'HTMLSpanElement', 'HTMLParagraphElement', 'HTMLHeadingElement',
   // Component from error boundary / React internals
   'Component', 'PureComponent',
 ]);
@@ -3689,7 +3689,10 @@ function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): voi
     let m;
     while ((m = jsxPattern.exec(content)) !== null) {
       const name = m[1];
-      if (!BUILTIN_JSX_ELEMENTS.has(name)) {
+      // TypeScript generics such as React.TextareaHTMLAttributes<HTMLTextAreaElement>
+      // contain the same `<PascalCase>` token shape as JSX. DOM element types are
+      // never renderable components and must not produce synthesized imports.
+      if (!BUILTIN_JSX_ELEMENTS.has(name) && !/^HTML[A-Z][A-Za-z0-9]*Element$/.test(name)) {
         jsxUsages.add(name);
       }
     }
@@ -3715,6 +3718,15 @@ function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): voi
     let ld;
     while ((ld = localDeclPattern.exec(content)) !== null) {
       importedNames.add(ld[1]);
+    }
+
+    // Dynamic components are often received through a destructured prop alias,
+    // for example `function Icon({ icon: Glyph }) { return <Glyph />; }`.
+    // `Glyph` is a local binding, not a module that needs an inferred import.
+    const destructuredAliasPattern = /\b[A-Za-z_$][\w$]*\s*:\s*([A-Z]\w*)\s*(?=[,}])/g;
+    let alias;
+    while ((alias = destructuredAliasPattern.exec(content)) !== null) {
+      importedNames.add(alias[1]);
     }
 
     // Find missing components
@@ -3781,7 +3793,11 @@ function resolveRelativeModuleTarget(
   resolved = '/' + stack.join('/');
   const candidates = /\.\w+$/.test(resolved)
     ? [resolved]
-    : [resolved, ...extensions.map((ext) => `${resolved}${ext}`)];
+    : [
+        resolved,
+        ...extensions.map((ext) => `${resolved}${ext}`),
+        ...extensions.map((ext) => `${resolved}/index${ext}`),
+      ];
 
   return candidates.find((candidate) => existingPaths.has(candidate)) || null;
 }
@@ -3790,6 +3806,7 @@ function inspectModuleExports(content: string): {
   hasDefault: boolean;
   named: Set<string>;
   primaryName: string | null;
+  hasStarReExport: boolean;
 } {
   const named = new Set<string>();
   const exportPatterns = [
@@ -3805,7 +3822,7 @@ function inspectModuleExports(content: string): {
     }
   }
 
-  const reExportPattern = /export\s*\{([^}]+)\}/g;
+  const reExportPattern = /export\s*\{([^}]+)\}(?:\s+from\s+['"][^'"]+['"])?/g;
   let reExportMatch: RegExpExecArray | null;
   while ((reExportMatch = reExportPattern.exec(content)) !== null) {
     reExportMatch[1]
@@ -3822,6 +3839,7 @@ function inspectModuleExports(content: string): {
   }
 
   const hasDefault = /export\s+default\b/.test(content);
+  const hasStarReExport = /export\s*\*\s*(?:as\s+\w+\s*)?from\s+['"][^'"]+['"]/.test(content);
   const primaryName =
     content.match(/export\s+default\s+function\s+([A-Z]\w*)/)?.[1] ||
     content.match(/export\s+default\s+class\s+([A-Z]\w*)/)?.[1] ||
@@ -3829,7 +3847,7 @@ function inspectModuleExports(content: string): {
     [...named][0] ||
     null;
 
-  return { hasDefault, named, primaryName };
+  return { hasDefault, named, primaryName, hasStarReExport };
 }
 
 function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
@@ -3838,93 +3856,134 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
   for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
 
-    // Allow multi-line braces; no line anchors so multi-line `import { A,\n B }` matches too.
     const namedImportRegex = /import\s+\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    // Default imports — matches both `import Foo from './bar'` and `import Foo, { X } from './bar'`.
-    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{([^}]*)\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let content = originalContent;
 
     content = content.replace(namedImportRegex, (statement, specifierBlock: string, rawImportPath: string) => {
       const targetPath = resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths);
       if (!targetPath) return statement;
-
       const targetContent = sandpackFiles[targetPath];
       if (!targetContent) return statement;
 
       const moduleExports = inspectModuleExports(targetContent);
-      const specifiers = specifierBlock
-        .split(',')
-        .map((part) => part.trim())
-        .filter(Boolean)
-        .map((part) => {
-          const [imported, local] = part.split(/\s+as\s+/).map((value) => value.trim());
-          return { imported, local: local || imported };
-        });
+      const specifiers = specifierBlock.split(',').map((part) => part.trim()).filter(Boolean).map((part) => {
+        const [imported, local] = part.split(/\s+as\s+/).map((value) => value.trim());
+        return { imported, local: local || imported };
+      });
+      const missingPascalExports = specifiers.filter(({ imported, local }) => (
+        /^[A-Z]/.test(imported) &&
+        !moduleExports.named.has(imported) &&
+        new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)
+      ));
 
-      const missingPascalExports = specifiers.filter(
-        ({ imported }) => /^[A-Z]/.test(imported) && !moduleExports.named.has(imported),
-      );
+      if (missingPascalExports.length === 0 || moduleExports.hasStarReExport) return statement;
 
-      if (missingPascalExports.length === 0) return statement;
-
-      if (moduleExports.primaryName) {
-        let patchedTarget = targetContent;
-        let changed = false;
-
-        for (const { imported } of missingPascalExports) {
-          if (patchedTarget.includes(`export const ${imported} = ${moduleExports.primaryName};`)) continue;
-          patchedTarget += `\nexport const ${imported} = ${moduleExports.primaryName};\n`;
-          changed = true;
-        }
-
-        if (changed) {
-          sandpackFiles[targetPath] = patchedTarget;
-          console.warn(`[sandpackFilePrep] Repaired named exports for ${targetPath}: ${missingPascalExports.map((item) => item.imported).join(', ')}`);
-        }
-
-        return statement;
+      if (moduleExports.hasDefault && missingPascalExports.length === 1) {
+        const missing = missingPascalExports[0];
+        const remaining = specifiers.filter((item) => item !== missing);
+        const namedLine = remaining.length > 0
+          ? `\nimport { ${remaining.map(({ imported, local }) => imported === local ? imported : `${imported} as ${local}`).join(', ')} } from '${rawImportPath}';`
+          : '';
+        console.warn(`[sandpackFilePrep] Rewriting named import to default import in ${filePath}: ${missing.imported} -> ${missing.local}`);
+        return `import ${missing.local} from '${rawImportPath}';${namedLine}`;
       }
 
-      if (moduleExports.hasDefault && specifiers.length === 1) {
-        const localName = specifiers[0].local;
-        console.warn(`[sandpackFilePrep] Rewriting named import to default import in ${filePath}: ${specifiers[0].imported} -> ${localName}`);
-        return `import ${localName} from '${rawImportPath}';`;
+      if (!moduleExports.hasDefault && moduleExports.named.size === 1 && missingPascalExports.length === 1) {
+        const [actual] = [...moduleExports.named];
+        const missing = missingPascalExports[0];
+        const rewritten = specifiers.map(({ imported, local }) => {
+          if (imported !== missing.imported) return imported === local ? imported : `${imported} as ${local}`;
+          return actual === local ? actual : `${actual} as ${local}`;
+        });
+        console.warn(`[sandpackFilePrep] Rewriting incompatible named import in ${filePath}: ${missing.imported} -> ${actual} as ${missing.local}`);
+        return `import { ${rewritten.join(', ')} } from '${rawImportPath}';`;
       }
 
       return statement;
     });
 
-    // Default imports against files that don't actually have a default export.
-    // Patch the TARGET file with `export default <primary>` so the import resolves
-    // instead of evaluating to `undefined` and crashing React with
-    // "Element type is invalid".
-    content.replace(defaultImportRegex, (statement, localName: string, rawImportPath: string) => {
+    content = content.replace(defaultImportRegex, (statement, localName: string, namedBlock: string | undefined, rawImportPath: string) => {
       const targetPath = resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths);
       if (!targetPath) return statement;
       const targetContent = sandpackFiles[targetPath];
       if (!targetContent) return statement;
       const moduleExports = inspectModuleExports(targetContent);
-      if (moduleExports.hasDefault) return statement;
-      // Prefer a named export matching the local import name, else primary.
-      const fallback = moduleExports.named.has(localName) ? localName : moduleExports.primaryName;
-      if (fallback) {
-        sandpackFiles[targetPath] = targetContent + `\nexport default ${fallback};\n`;
-        console.warn(`[sandpackFilePrep] Added missing default export to ${targetPath} (default → ${fallback}) for ${filePath}`);
-        return statement;
-      }
-      // Last-resort: synthesize a no-op default so the import doesn't evaluate to undefined
-      // and crash React with "Element type is invalid". Better an empty section than a white screen.
-      const safeName = /^[A-Z]\w*$/.test(localName) ? localName : 'MissingComponent';
-      sandpackFiles[targetPath] =
-        targetContent +
-        `\nexport default function ${safeName}() { return null; }\n`;
-      console.warn(`[sandpackFilePrep] Synthesized placeholder default export for ${targetPath} (imported as ${localName} by ${filePath})`);
-      return statement;
+      if (moduleExports.hasDefault || moduleExports.hasStarReExport) return statement;
+
+      const fallback = moduleExports.named.has(localName)
+        ? localName
+        : moduleExports.named.size === 1
+          ? [...moduleExports.named][0]
+          : null;
+      if (!fallback) return statement;
+
+      const existingNamed = (namedBlock || '').split(',').map((part) => part.trim()).filter(Boolean);
+      const defaultAsNamed = fallback === localName ? fallback : `${fallback} as ${localName}`;
+      console.warn(`[sandpackFilePrep] Rewriting default import to named import in ${filePath}: ${localName} -> ${fallback}`);
+      return `import { ${[defaultAsNamed, ...existingNamed].join(', ')} } from '${rawImportPath}';`;
     });
 
-    if (content !== originalContent) {
-      sandpackFiles[filePath] = content;
+    if (content !== originalContent) sandpackFiles[filePath] = content;
+  }
+}
+
+function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+  const violations: Array<{ filePath: string; message: string }> = [];
+
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+
+    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    let namedMatch: RegExpExecArray | null;
+    while ((namedMatch = namedImportRegex.exec(content)) !== null) {
+      const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);
+      if (!targetPath) continue;
+      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
+      if (moduleExports.hasStarReExport) continue;
+
+      for (const part of namedMatch[1].split(',').map((item) => item.trim()).filter(Boolean)) {
+        const [imported, localAlias] = part.split(/\s+as\s+/).map((item) => item.trim());
+        const local = localAlias || imported;
+        if (
+          /^[A-Z]/.test(imported) &&
+          new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content) &&
+          !moduleExports.named.has(imported)
+        ) {
+          const available = [...moduleExports.named].join(', ') || (moduleExports.hasDefault ? 'default' : 'none');
+          violations.push({
+            filePath,
+            message: `${filePath} imports JSX component "${imported}" from "${namedMatch[2]}", but ${targetPath} does not export it (available: ${available}).`,
+          });
+        }
+      }
     }
+
+    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    let defaultMatch: RegExpExecArray | null;
+    while ((defaultMatch = defaultImportRegex.exec(content)) !== null) {
+      const local = defaultMatch[1];
+      if (!new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)) continue;
+      const targetPath = resolveRelativeModuleTarget(filePath, defaultMatch[2], existingPaths);
+      if (!targetPath) continue;
+      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
+      if (!moduleExports.hasDefault && !moduleExports.hasStarReExport) {
+        const available = [...moduleExports.named].join(', ') || 'none';
+        violations.push({
+          filePath,
+          message: `${filePath} default-imports JSX component "${local}" from "${defaultMatch[2]}", but ${targetPath} has no default export (named exports: ${available}).`,
+        });
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    throw new PreviewPipelineError(
+      'prep',
+      `VFS JSX import/export incompatibility: ${violations.map(({ message }) => message).join(' ')}`,
+      { blockedFiles: [...new Set(violations.map(({ filePath }) => filePath))] },
+    );
   }
 }
 
@@ -4842,12 +4901,21 @@ export function processCode(code: string, filePath: string): string {
     }
   );
 
+  processed = processed.replace(
+    /^(\s*import\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
+    (_match, importPrefix, modulePath, importSuffix) => (
+      `${importPrefix}${aliasModuleToRelativeImport(filePath, `@/${modulePath}`)}${importSuffix}`
+    ),
+  );
+
   // Process remaining imports — strip unresolvable npm packages to prevent Sandpack crashes
   processed = processed.replace(
     /^import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"]([^'"]+)['"];?\s*$/gm,
     (match, modulePath) => {
-      const baseModule = modulePath.split('/')[0];
-      if (ALLOWED_IMPORTS.has(modulePath) || ALLOWED_IMPORTS.has(baseModule)) return match;
+      if (isSandpackAllowedImport(modulePath)) return match;
+      if (modulePath.startsWith('@/')) {
+        return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
+      }
       if (/\.(css|scss|less)$/.test(modulePath)) return match;
 
       if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
@@ -4889,10 +4957,6 @@ export function processCode(code: string, filePath: string): string {
           return `import hooks from '${hooksShimImport}'; // [Preview] Shimmed: ${modulePath}`;
         }
         return match;
-      }
-
-      if (modulePath.startsWith('@/')) {
-        return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
       }
 
       // Unknown npm package — pass through to Sandpack for real resolution.
@@ -5070,6 +5134,34 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   // fails later if a wizard draft is missing it.
   if (!out['/src/index.css'] && options?.injectCssIfMissing !== false) {
     out['/src/index.css'] = buildBaseCssForPreset(options?.themePresetId);
+  }
+
+  // Existing wizard snapshots can carry an earlier UI manifest while missing
+  // newer facade files (Radix, icon, form, schema, and motion bridges). Fill
+  // only absent foundation paths so old artifacts gain the current VFS API
+  // without replacing their canonical CSS or authored components.
+  if (out['/.unison/ui-manifest.json']) {
+    const foundation = buildGeneratedUiFoundation({
+      themePresetId: options?.themePresetId || 'snapshot-recovery',
+    });
+    for (const [path, content] of Object.entries(foundation.files)) {
+      if (path === '/.unison/ui-manifest.json') continue;
+      if (out[path]) {
+        if (path === '/src/unison/ui/index.ts' && out[path].includes('UNISON GENERATED UI FOUNDATION')) {
+          out[path] = content;
+        }
+        continue;
+      }
+      out[path] = content;
+    }
+  }
+
+  if (
+    /@import\s+(?:url\(\s*)?['"](?:\.\/)?unison\/ui\/tailwind\.css['"]/.test(out['/src/index.css'] || '') &&
+    !out['/src/unison/ui/tailwind.css']
+  ) {
+    out['/src/unison/ui/tailwind.css'] = UNISON_VFS_STYLE_BRIDGE;
+    console.info('[sandpackFilePrep] Restored the token-consuming VFS CSS bridge.');
   }
 
   // ── Inject conventional IDE JSON / config files ──────────────────────────
@@ -5380,6 +5472,22 @@ export function prepareSandpackFiles(
     finalFiles[path] = content;
   }
 
+  if (finalFiles['/.unison/ui-manifest.json']) {
+    const foundation = buildGeneratedUiFoundation({
+      themePresetId: options?.themePresetId || 'snapshot-recovery',
+    });
+    for (const [path, content] of Object.entries(foundation.files)) {
+      if (path === '/.unison/ui-manifest.json') continue;
+      if (finalFiles[path]) {
+        if (path === '/src/unison/ui/index.ts' && finalFiles[path].includes('UNISON GENERATED UI FOUNDATION')) {
+          finalFiles[path] = content;
+        }
+        continue;
+      }
+      finalFiles[path] = content;
+    }
+  }
+
   const sandpackFiles: Record<string, string> = {};
   let hasApp = false;
   let hasIndex = false;
@@ -5466,6 +5574,22 @@ export function prepareSandpackFiles(
       .replace(/from\s+['"]src\//g, "from './")
       .replace(/from\s+['"]\.\/styles\//g, "from './")
       .replace(/import\s+['"]\.\/styles\//g, "import './");
+
+    processedContent = processedContent.replace(
+      /(\bfrom\s+['"])@\/unison\/([^'"]+)(['"])/g,
+      (_match, importPrefix, modulePath, importSuffix) => (
+        `${importPrefix}${aliasModuleToRelativeImport(normalizedPath, `@/unison/${modulePath}`)}${importSuffix}`
+      ),
+    );
+
+    if (/\.css$/i.test(normalizedPath)) {
+      processedContent = processedContent.replace(
+        /(@import\s+(?:url\(\s*)?['"])@\/([^'"]+)(['"]\s*\)?\s*;)/g,
+        (_match, importPrefix, modulePath, importSuffix) => (
+          `${importPrefix}${aliasModuleToRelativeImport(normalizedPath, `@/${modulePath}`)}${importSuffix}`
+        ),
+      );
+    }
 
     processedContent = processCode(processedContent, normalizedPath);
     processedContent = repairBrokenImageUrls(processedContent);
@@ -5673,7 +5797,6 @@ export function prepareSandpackFiles(
         .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
       if (fixed !== content) {
         sandpackFiles[filePath] = fixed;
-        console.warn(`[sandpackFilePrep] Stripped Router wrapper from ${filePath} (RouterGuard provides one)`);
       }
     }
   }
@@ -5712,6 +5835,7 @@ export function prepareSandpackFiles(
   }
 
   repairLocalImportContracts(sandpackFiles);
+  assertLocalJsxImportContracts(sandpackFiles);
 
 
   // ── SAFETY: Validate App.tsx has a default export ──
@@ -5744,6 +5868,12 @@ export function prepareSandpackFiles(
 
     sandpackFiles[filePath] = ensureDefaultExportForReactModule(content, filePath);
   }
+
+  // The default-export completion pass above can make one more import rewrite
+  // possible. Reconcile again, then fail with the exact file/symbol pair before
+  // React receives an undefined JSX element type.
+  repairLocalImportContracts(sandpackFiles);
+  assertLocalJsxImportContracts(sandpackFiles);
 
   // ── CLEANUP: Remove unused imports from VFS files ──
   // AI often imports components/icons it doesn't actually use in the template,
@@ -5799,14 +5929,8 @@ export function prepareSandpackFiles(
     }
   }
 
-  // A registered themePresetId owns final geometry through its canonical CSS
-  // override. Normalize only legacy artifacts with no valid Style Card.
-  const themedPreviewFiles = hasThemeGeometryContract(resolvedPresetId)
-    ? sandpackFiles
-    : enforceThemeGeometryContract(sandpackFiles, resolvedPresetId);
-
-  console.log('[sandpackFilePrep] Prepared files:', Object.keys(themedPreviewFiles));
-  return themedPreviewFiles;
+  console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));
+  return sandpackFiles;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -16,6 +16,13 @@ const tokenForUtility = (utility: string): string => {
   }
 };
 
+function isCompositionThemeModule(source: string): boolean {
+  return (
+    /from\s+['"](?:\.\/|@\/components\/)theme['"]/.test(source) ||
+    /export\s+const\s+THEME\s*=/.test(source)
+  );
+}
+
 /**
  * Rewrites visual literals emitted by Lane B into the semantic token system
  * owned by the selected wizard Style Card. This is intentionally limited to
@@ -29,6 +36,10 @@ export function normalizeWizardThemeTokens(
 
   for (const [path, source] of Object.entries(files)) {
     if (!/\.(?:tsx?|jsx?|css)$/i.test(path) || /\/src\/index\.css$/i.test(path)) continue;
+    // Composition runtime modules already consume the immutable wizard theme
+    // through THEME/hsl helpers. Replacing those JS expressions with raw CSS
+    // `hsl(var(--...))` syntax produces invalid TypeScript.
+    if (isCompositionThemeModule(source)) continue;
 
     let next = source
       .replace(ARBITRARY_COLOR_UTILITY, (_match, utility: string) => `${utility}-${tokenForUtility(utility)}`)

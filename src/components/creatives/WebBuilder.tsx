@@ -2212,6 +2212,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       preferredPath?: string | null;
       entryPoint?: string | null;
       replace?: boolean;
+      themePresetId?: string | null;
     },
   ) => {
     try {
@@ -2220,7 +2221,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         : undefined;
       const normalizedFiles = normalizeLauncherFiles({ ...incomingFiles }, {
         entryPoint: normalizedEntryPoint,
-        themePresetId: resolvedThemePresetId,
+        themePresetId: options?.themePresetId ?? resolvedThemePresetId,
         injectCssIfMissing: !effectiveRouteState?.siteBundleSnapshot,
       });
 
@@ -6037,7 +6038,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         description: dry.rejectMessage ?? 'Canonical preview gate blocked this patch.',
                         duration: 8000,
                       });
-                      return;
+                      return { success: false, errors: dry.blockers.map((blocker) => blocker.message) };
                     }
                   }
 
@@ -6075,6 +6076,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   } else {
                     console.error('[WebBuilder] aiVFS.applyCode failed:', result.errors);
                   }
+                  return { success: result.success, errors: result.errors };
                 }}
                 onViewEdits={(edits) => {
                   // Switch to code view and highlight the edited files
@@ -6471,7 +6473,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       description: dry.rejectMessage ?? 'Canonical preview gate blocked this patch.',
                       duration: 8000,
                     });
-                    return;
+                    return { success: false, errors: dry.blockers.map((blocker) => blocker.message) };
                   }
                 }
 
@@ -6501,6 +6503,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                     });
                   }
                 }
+                return { success: result.success, errors: result.errors };
               }}
               onViewEdits={() => { setViewMode('split'); setAiPanelOpen(false); }}
               onCodeGenerated={(code) => {

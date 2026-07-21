@@ -250,20 +250,23 @@ function inferCurrentPageId(filePath: string, snapshot: SiteBundleSnapshot): Pag
   return null;
 }
 
-function buildAttrInjection(page: BuilderPage, label: string): string {
+function buildAttrInjection(page: BuilderPage, label: string, attrs: ts.JsxAttributes): string {
   const route = normalizeRoute(page.path);
-  const attrs = [
-    `data-ut-intent="nav.goto"`,
-    `data-intent="nav.goto"`,
-    `data-ut-target-page-id="${escapeAttr(page.pageId)}"`,
-    `data-ut-path="${escapeAttr(route)}"`,
-    `data-ut-target-id="${escapeAttr(page.pageId)}"`,
-    `data-ut-target-type="page"`,
-    `data-ut-ui-action="navigate"`,
-    `data-ut-preflight="1"`,
+  const candidates: Array<[string, string]> = [
+    ['data-ut-intent', 'nav.goto'],
+    ['data-intent', 'nav.goto'],
+    ['data-ut-target-page-id', page.pageId],
+    ['data-ut-path', route],
+    ['data-ut-target-id', page.pageId],
+    ['data-ut-target-type', 'page'],
+    ['data-ut-ui-action', 'navigate'],
+    ['data-ut-preflight', '1'],
   ];
-  if (label) attrs.push(`data-ut-label="${escapeAttr(label.slice(0, 80))}"`);
-  return attrs.join(' ');
+  if (label) candidates.push(['data-ut-label', label.slice(0, 80)]);
+  return candidates
+    .filter(([name]) => !hasAttr(attrs, name))
+    .map(([name, value]) => `${name}="${escapeAttr(value)}"`)
+    .join(' ');
 }
 
 interface Edit {
@@ -299,7 +302,15 @@ function processFile(
     text: string,
   ) => {
     if (!isInteractiveTag(tagName, attrs)) return;
-    if (hasAttr(attrs, 'data-ut-intent') || hasAttr(attrs, 'data-intent')) return;
+    const existingIntent = getAttrValue(attrs, 'data-ut-intent') || getAttrValue(attrs, 'data-intent');
+    // Preserve explicit non-navigation bindings. Existing nav.goto bindings are
+    // enriched below when their required route/page payload is incomplete.
+    if (existingIntent && existingIntent !== 'nav.goto' && existingIntent !== 'nav.goto_page') return;
+    if (
+      existingIntent
+      && hasAttr(attrs, 'data-ut-path')
+      && hasAttr(attrs, 'data-ut-target-page-id')
+    ) return;
 
     const info: OpeningTagInfo = { tagName, openTagStart, openTagEnd, attrs, text };
     const page = resolvePageForElement(info, index, currentPageId);
@@ -316,7 +327,9 @@ function processFile(
     // Inject before the closing `>` of the opening tag.
     // openTagEnd points at the position just after `>`.
     const insertionPoint = openTagEnd - (content[openTagEnd - 2] === '/' ? 2 : 1);
-    const injection = ` ${buildAttrInjection(page, text.trim())}`;
+    const attrsToInject = buildAttrInjection(page, text.trim(), attrs);
+    if (!attrsToInject) return;
+    const injection = ` ${attrsToInject}`;
     edits.push({ start: insertionPoint, end: insertionPoint, replacement: injection });
     result.wired += 1;
   };
@@ -363,7 +376,6 @@ export function preflightNavWiring(
       result.files[filePath] = processFile(filePath, content, index, snapshot, result);
     } catch (err) {
       // Never let a single bad file break the pass.
-      // eslint-disable-next-line no-console
       console.warn('[preflightNavWiring] skip file due to parse error', filePath, err);
     }
   }

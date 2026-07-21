@@ -81,6 +81,8 @@ export interface VFSPreviewProps {
   nodes: VirtualNode[];
   /** Files map (alternative to nodes) */
   files?: Record<string, string>;
+  /** Import terminal/AI mutations back into the VFS that owns this preview. */
+  onImportFiles?: (files: Record<string, string>) => void;
   /** Active file path */
   activeFile?: string;
   /** Additional CSS classes */
@@ -180,7 +182,8 @@ class SandpackErrorBoundary extends Component<
 const SandpackErrorListener: React.FC<{
   onError?: (error: string) => void;
   onTimeout?: () => void;
-}> = ({ onError, onTimeout }) => {
+  dependencies: Record<string, string>;
+}> = ({ onError, onTimeout, dependencies }) => {
   const { sandpack } = useSandpack();
   const lastReportedRef = useRef<string>('');
 
@@ -197,19 +200,32 @@ const SandpackErrorListener: React.FC<{
 
       if (msg !== lastReportedRef.current) {
         lastReportedRef.current = msg;
-        onError?.(msg);
-        if (/\bTIME_OUT\b|couldn't connect to server/i.test(msg)) {
+        const dependencyFetchFailure = /could not fetch dependencies/i.test(msg);
+        const requestedDependencies = Object.entries(dependencies)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([name, version]) => `${name}@${version}`);
+        const dependencySummary = requestedDependencies.length > 0
+          ? requestedDependencies.slice(0, 12).join(', ') + (requestedDependencies.length > 12 ? `, +${requestedDependencies.length - 12} more` : '')
+          : 'the core preview runtime';
+        const report = dependencyFetchFailure
+          ? `Sandpack could not fetch preview dependencies (${dependencySummary}). Retrying once automatically.`
+          : msg;
+        onError?.(report);
+        if (dependencyFetchFailure || /\bTIME_OUT\b|couldn't connect to server/i.test(msg)) {
           onTimeout?.();
         }
       }
     } else if (status === 'idle' || status === 'running') {
       lastReportedRef.current = '';
     }
-  }, [sandpack.status, sandpack.error, onError]);
+  }, [sandpack.status, sandpack.error, onError, onTimeout, dependencies]);
 
   return null;
 };
 
+// Restored from the deployed Vercel preview surface. Sandpack owns the
+// installation lifecycle; this component only renders its native progress
+// signal in the existing bottom-left preview position.
 const SandpackDependencyProgress: React.FC<{ dependencyCount: number }> = ({ dependencyCount }) => {
   const progressMessage = useSandpackPreviewProgress({ timeout: 3000 });
 
@@ -287,6 +303,7 @@ function stablePreviewFileSignature(files: Record<string, string>): string {
 export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   nodes,
   files: propFiles,
+  onImportFiles,
   activeFile,
   className,
   showConsole = false,
@@ -311,6 +328,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [sandpackKey, setSandpackKey] = useState(0);
+  const dependencySignatureRef = useRef<string | null>(null);
   const startAttemptedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const timeoutRecoveryCountRef = useRef(0);
@@ -436,6 +454,28 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     compiling: previewCompiling,
   } = previewCompile;
 
+  // Sandpack HMR handles source-file updates without destroying iframe state.
+  // Dependency graph changes are different: customSetup is read at provider
+  // startup, so remount only when package names/versions actually change.
+  const dependencySignature = useMemo(
+    () => Object.entries(sandpackDeps)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, version]) => `${name}@${version}`)
+      .join('|'),
+    [sandpackDeps],
+  );
+
+  useEffect(() => {
+    if (dependencySignatureRef.current === null) {
+      dependencySignatureRef.current = dependencySignature;
+      return;
+    }
+    if (dependencySignatureRef.current !== dependencySignature) {
+      dependencySignatureRef.current = dependencySignature;
+      setSandpackKey((key) => key + 1);
+    }
+  }, [dependencySignature]);
+
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
   useEffect(() => {
     const bridge = getGlobalAITerminalBridge(nodes, sandpackDeps);
@@ -444,7 +484,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [nodes, sandpackDeps]);
 
   useEffect(() => {
-    if (!canUseContextPreview || !vfsContext) return;
+    const importIntoOwner = onImportFiles
+      || (canUseContextPreview && vfsContext ? vfsContext.importFiles : null);
+    if (!importIntoOwner) return;
 
     const bridge = getGlobalAITerminalBridge();
     return bridge.watchVFS((changes) => {
@@ -459,10 +501,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       });
 
       if (Object.keys(changedFiles).length > 0) {
-        vfsContext.importFiles(changedFiles);
+        importIntoOwner(changedFiles);
       }
     });
-  }, [canUseContextPreview, vfsContext]);
+  }, [canUseContextPreview, onImportFiles, vfsContext]);
 
   const normalizedActiveFile = useMemo(() => {
     if (!activeFile) return null;
@@ -932,7 +974,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     const goLauncher = () => {
       try {
         sessionStorage.removeItem('unison.launcher.handoff');
-      } catch {}
+      } catch {
+        // Session storage can be unavailable in privacy-restricted contexts.
+      }
       window.location.assign('/system-launcher');
     };
 
@@ -1175,7 +1219,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   style={{ height: '100%', minHeight: 0 }}
                 />
               </SandpackLayout>
-              <SandpackErrorListener onError={onError} onTimeout={handleSandpackTimeout} />
+              <SandpackErrorListener
+                onError={onError}
+                onTimeout={handleSandpackTimeout}
+                dependencies={sandpackDeps}
+              />
               <SandpackDependencyProgress dependencyCount={Object.keys(sandpackDeps).length} />
             </SandpackProvider>
           </SandpackErrorBoundary>

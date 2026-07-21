@@ -113,6 +113,8 @@ export interface RichResponseMeta {
   requiresApproval?: boolean;
   /** Model that produced this response (for transparency) */
   modelUsed?: string;
+  /** Provider that served this response (for routing observability) */
+  providerUsed?: string;
   /** Files that were removed during review */
   removedFiles?: string[];
   /** Review pass summary */
@@ -219,6 +221,7 @@ export function buildResponseBody(opts: {
   debugMode?: boolean;
   mode?: string;
   modelUsed?: string;
+  providerUsed?: string;
   reviewWarnings?: Array<{ severity: WarningSeverity; message: string }>;
   requiresApproval?: boolean;
   removedFiles?: string[];
@@ -240,6 +243,7 @@ export function buildResponseBody(opts: {
     mode: opts.mode,
     requiresApproval: opts.requiresApproval,
     modelUsed: opts.modelUsed,
+    providerUsed: opts.providerUsed,
     removedFiles: opts.removedFiles,
     reviewSummary: opts.reviewSummary,
     applyState: opts.applyState,

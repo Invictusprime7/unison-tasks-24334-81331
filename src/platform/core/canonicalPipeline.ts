@@ -39,14 +39,24 @@ import { createRuntimeManifest } from '@/types/runtimeManifest';
 import { validateComposition } from '@/services/componentIntelligenceRegistry';
 import { nanoid } from 'nanoid';
 import { assertWithinCommit } from './pipelineGuard';
-import { buildThemedIndexCssFromTokens } from '@/components/onboarding/themePresetToIndexCss';
+import {
+  buildThemedIndexCssFromTokens,
+  SHADCN_LIBRARY_CSS_MARKER,
+} from '@/components/onboarding/themePresetToIndexCss';
 import type { ThemeTokens } from '@/sections/types';
 import type { GeneratedSitePlan } from './siteTopologyPlanner';
+import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
+import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
+import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import {
-  applyCanonicalInteractionEnrichment,
-  readWizardInteractionManifest,
-  type WizardInteractionManifest,
-} from '@/services/wizardInteractionEnrichment';
+  buildGeneratedUiFoundation,
+  type GeneratedUiManifest,
+} from './generatedUiFoundation';
+import {
+  buildWizardDesignIntervention,
+  readWizardDesignIntervention,
+  type WizardDesignIntervention,
+} from '@/services/wizardDesignIntervention';
 
 // ============================================================================
 // Pipeline Result
@@ -157,6 +167,14 @@ export interface SiteBundleSnapshotMeta {
     presetId: string | null;
     cssPath: '/src/index.css';
   };
+  /** Snapshot-owned VFS primitive library available to Lane B-generated pages. */
+  uiFoundation?: {
+    version: '1.0';
+    manifestPath: '/.unison/ui-manifest.json';
+    importRoot: '@/unison/ui';
+  };
+  /** Deterministic composition, interaction, and motion recipes for this launch. */
+  designIntervention?: WizardDesignIntervention;
 }
 
 
@@ -173,6 +191,10 @@ export function executeCanonicalPipeline(
   existingVfsFiles: Record<string, string> = {},
 ): CanonicalPipelineResult {
   assertWithinCommit('executeCanonicalPipeline');
+  const themePresetId = assertThemeSeed(
+    selections.themePresetId,
+    'WizardSelections -> Lane A',
+  );
   const warnings: string[] = [];
   const errors: string[] = [];
 
@@ -212,12 +234,49 @@ export function executeCanonicalPipeline(
   // Stage 4: Compile playground → VFS + router + bindings
   // Pass the wizard's Template + Style card selections so subpage scaffolds are
   // real role-filtered themed compositions instead of generic placeholders.
+  const themeTokens = selections.themeTokens;
+  if (!themeTokens) {
+    throw new Error(
+      '[canonicalPipeline] Stage 4b assertion failed: selections.themeTokens is missing. ' +
+      'Every wizard launch must inject the selected Style card HSL tokens.',
+    );
+  }
+  const themedCss = buildThemedIndexCssFromTokens(themeTokens, {
+    presetId: themePresetId,
+    label: themePresetId,
+  });
+  if (
+    !themedCss ||
+    typeof themedCss !== 'string' ||
+    !themedCss.includes('--primary') ||
+    !themedCss.includes(SHADCN_LIBRARY_CSS_MARKER)
+  ) {
+    throw new Error(
+      '[canonicalPipeline] Stage 4b assertion failed: theme tokens did not produce the canonical shadcn stylesheet.',
+    );
+  }
+  const designIntervention = buildWizardDesignIntervention({
+    businessName: selections.businessName,
+    businessModel: selections.businessModel,
+    industryOverlay: selections.industryOverlay || (selections as { industry?: string }).industry,
+    templateId: selections.templateId,
+    themePresetId,
+    wizardSeedId: selections.wizardSeedId,
+    needsBooking: selections.needsBooking,
+    sellsProducts: selections.sellsProducts,
+    wantsLeadCapture: selections.wantsLeadCapture,
+  });
   const compileResult = compilePlayground(playground, existingVfsFiles, selections.businessName, {
     selectedTemplateId: selections.templateId,
     selectedThemeId: selections.themeId,
-    themePresetId: selections.themePresetId || selections.themeId,
+    themePresetId,
+    stage4bCss: themedCss,
     industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
+    designIntervention,
   });
+
+  const normalizedThemeFiles = normalizeWizardThemeTokens(compileResult.vfsFiles);
+  compileResult.vfsFiles = normalizedThemeFiles.files;
 
   // Stage 4b: Lock in the wizard's Style-card tokens at the compile layer so
   // every downstream artifact (siteBundleSnapshot.vfsFiles, builder_drafts
@@ -228,40 +287,28 @@ export function executeCanonicalPipeline(
   // INVARIANT: the selected Style card's resolved semantic HSL tokens must be
   // present. Stage 4b consumes that payload directly; theme ids are retained
   // only for traceability and downstream identity.
-  const themeTokens = selections.themeTokens;
-  if (!themeTokens) {
-    throw new Error(
-      '[canonicalPipeline] Stage 4b assertion failed: selections.themeTokens is missing. ' +
-      'Every wizard launch must inject the selected Style card HSL tokens.',
-    );
-  }
-  const themedCss = buildThemedIndexCssFromTokens(themeTokens, {
-    presetId: selections.themePresetId || selections.themeId,
-    label: selections.themePresetId || selections.themeId || 'selected style card',
-  });
-  if (!themedCss || typeof themedCss !== 'string' || !themedCss.includes('--primary')) {
-    throw new Error(
-      '[canonicalPipeline] Stage 4b assertion failed: injected theme tokens produced an invalid stylesheet.',
-    );
-  }
   compileResult.vfsFiles['/src/index.css'] = themedCss;
-
-  // Stage 4c: Final experience injection. The plan is constrained data, not
-  // a launcher-only TSX mutation, so it can be reapplied by every canonical
-  // compile after Lane B or a playground edit changes page source.
-  const interactionEnrichment = applyCanonicalInteractionEnrichment(
-    compileResult.vfsFiles,
-    selections.interactionManifest,
-  );
-  compileResult.vfsFiles = interactionEnrichment.files;
-
+  const uiFoundation = buildGeneratedUiFoundation({
+    industry: selections.industryOverlay || (selections as { industry?: string }).industry,
+    templateId: selections.templateId,
+    themePresetId,
+    needsBooking: selections.needsBooking,
+    wantsLeadCapture: selections.wantsLeadCapture,
+    sellsProducts: selections.sellsProducts,
+  });
+  Object.assign(compileResult.vfsFiles, uiFoundation.files);
+  compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
     compileResult,
-    { ...selections, interactionManifest: interactionEnrichment.manifest || undefined },
+    selections,
+    'wizard',
+    uiFoundation.manifest,
+    designIntervention,
   );
+  assertSnapshotThemeSeed(siteBundleSnapshot, themePresetId, 'Stage 4b -> SiteBundleSnapshot.meta');
 
   // Stage 6: Derive RuntimeManifest from snapshot
   const runtimeManifest = deriveRuntimeManifest(siteBundleSnapshot);
@@ -296,6 +343,22 @@ export function recompileFromPlayground(
   options?: { selectedTemplateId?: string; selectedThemeId?: string; themePresetId?: string; themeTokens?: ThemeTokens },
 ): Omit<CanonicalPipelineResult, 'capabilities'> & { capabilities: null } {
   assertWithinCommit('recompileFromPlayground');
+  const themePresetId = assertThemeSeed(
+    options?.themePresetId,
+    'Recompile input -> Stage 4b',
+  );
+  if (!options?.themeTokens) {
+    throw new Error(
+      '[canonicalPipeline] Recompile Stage 4b requires the original wizard themeTokens; CSS recovery is not allowed.',
+    );
+  }
+  const themedCss = buildThemedIndexCssFromTokens(options.themeTokens, {
+    presetId: themePresetId,
+    label: themePresetId,
+  });
+  if (!themedCss.includes('--primary:') || !themedCss.includes(SHADCN_LIBRARY_CSS_MARKER)) {
+    throw new Error('[canonicalPipeline] Recompile Stage 4b did not produce the canonical shadcn stylesheet.');
+  }
   const warnings: string[] = [];
   const errors: string[] = [];
 
@@ -305,110 +368,6 @@ export function recompileFromPlayground(
     for (const v of validations.filter(v => v.severity === 'error')) errors.push(v.message);
     for (const v of validations.filter(v => v.severity === 'warning')) warnings.push(v.message);
   }
-
-  const compileResult = compilePlayground(playground, existingVfsFiles, businessName, {
-    selectedTemplateId: options?.selectedTemplateId,
-    selectedThemeId: options?.selectedThemeId,
-    themePresetId: options?.themePresetId || options?.selectedThemeId,
-    industry: industry || null,
-  });
-
-  // Re-emit themed /src/index.css from the durable Style-card HSL payload.
-  //
-  // RESILIENCY: AI Builder / Playground autosaves must NEVER block on a missing
-  // themePresetId — the wizard preset chain-of-custody can drift across
-  // remounts (cloud rehydrate, AI patch flow, draft restore). When the caller
-  // doesn't have a presetId, try to recover it from the existing snapshot in
-  // VFS, then fall back to preserving the existing themed /src/index.css.
-  let presetId = options?.themePresetId || options?.selectedThemeId;
-  let recoveredThemeTokens = options?.themeTokens;
-  if (!recoveredThemeTokens) {
-    const tokenSources: Array<[string, (raw: string) => ThemeTokens | undefined]> = [
-      ['/.unison/site-bundle-snapshot.json', (raw) => {
-        const snap = JSON.parse(raw) as { themeTokens?: ThemeTokens; appContext?: { themeTokens?: ThemeTokens } };
-        return snap.themeTokens || snap.appContext?.themeTokens;
-      }],
-      ['/.unison/app-context.json', (raw) => {
-        const ctx = JSON.parse(raw) as { themeTokens?: ThemeTokens };
-        return ctx.themeTokens;
-      }],
-      ['/.unison/wizard-seed.json', (raw) => {
-        const seed = JSON.parse(raw) as { theme?: { tokens?: ThemeTokens } };
-        return seed.theme?.tokens;
-      }],
-    ];
-    for (const [path, extract] of tokenSources) {
-      const raw = existingVfsFiles[path];
-      if (!raw) continue;
-      try {
-        recoveredThemeTokens = extract(raw);
-        if (recoveredThemeTokens) break;
-      } catch { /* try next */ }
-    }
-  }
-  if (!presetId) {
-    // RESILIENCY: try every persisted artifact the wizard writes into the VFS
-    // before falling back to CSS-preserve. Any single-file corruption used to
-    // silently drop the theme and ship default Tailwind tokens.
-    const recoverySources: Array<[string, (raw: string) => string | undefined]> = [
-      ['/.unison/site-bundle-snapshot.json', (raw) => {
-        const snap = JSON.parse(raw) as { meta?: { themePresetId?: string }; appContext?: { themePresetId?: string } };
-        return snap?.meta?.themePresetId || snap?.appContext?.themePresetId;
-      }],
-      ['/.unison/runtime-manifest.json', (raw) => {
-        const rm = JSON.parse(raw) as { appContext?: { themePresetId?: string } };
-        return rm?.appContext?.themePresetId;
-      }],
-      ['/.unison/app-context.json', (raw) => {
-        const ctx = JSON.parse(raw) as { themePresetId?: string };
-        return ctx?.themePresetId;
-      }],
-      ['/.unison/wizard-seed.json', (raw) => {
-        const seed = JSON.parse(raw) as { themePresetId?: string; selections?: { themePresetId?: string; themeId?: string } };
-        return seed?.themePresetId || seed?.selections?.themePresetId || seed?.selections?.themeId;
-      }],
-    ];
-    for (const [path, extract] of recoverySources) {
-      if (presetId) break;
-      const raw = existingVfsFiles[path];
-      if (!raw) continue;
-      try { presetId = extract(raw) || undefined; } catch { /* try next */ }
-    }
-  }
-  if (recoveredThemeTokens) {
-    const themedCss = buildThemedIndexCssFromTokens(recoveredThemeTokens, {
-      presetId,
-      label: presetId || 'persisted style card',
-    });
-    if (!themedCss.includes('--primary:')) {
-      throw new Error('[canonicalPipeline] Recompile Stage 4b received invalid persisted theme tokens.');
-    }
-    compileResult.vfsFiles['/src/index.css'] = themedCss;
-  } else {
-    const existingCss = existingVfsFiles['/src/index.css'];
-    const existingHasTokens = Boolean(existingCss && existingCss.includes('--primary:'));
-    if (existingHasTokens) {
-      // Preserve previously themed CSS so AI/Playground edits persist without
-      // re-emission. The wizard already locked tokens at first launch.
-      compileResult.vfsFiles['/src/index.css'] = existingCss!;
-      warnings.push('[canonicalPipeline] Recompile Stage 4b: durable theme tokens unavailable; preserved existing semantic-token CSS.');
-    } else {
-      // Never silently ship un-themed default Tailwind CSS — this is the exact
-      // regression where HSL theme injection "randomly breaks" for a draft.
-      throw new Error(
-        '[canonicalPipeline] Recompile Stage 4b assertion failed: no durable theme token payload or existing semantic-token CSS is available.',
-      );
-    }
-  }
-
-  // Preserve and reapply the final interaction plan from the previous VFS.
-  // This runs after Stage 4b so the runtime always observes the current token
-  // stylesheet and never owns visual colors itself.
-  const interactionEnrichment = applyCanonicalInteractionEnrichment(
-    compileResult.vfsFiles,
-    readWizardInteractionManifest(existingVfsFiles),
-  );
-  compileResult.vfsFiles = interactionEnrichment.files;
 
   // Recover wizardSeedId from the existing snapshot so recompiles preserve
   // chain-of-custody back to the original wizard payload.
@@ -421,21 +380,55 @@ export function recompileFromPlayground(
     }
   } catch { /* ignore */ }
 
+  const recoveredDesignIntervention = readWizardDesignIntervention(existingVfsFiles);
+  const designIntervention = recoveredDesignIntervention || buildWizardDesignIntervention({
+    businessName: businessName || '',
+    businessModel: 'general',
+    industryOverlay: industry,
+    templateId: options?.selectedTemplateId,
+    themePresetId,
+    wizardSeedId: recoveredSeedId,
+  });
+  const compileResult = compilePlayground(playground, existingVfsFiles, businessName, {
+    selectedTemplateId: options?.selectedTemplateId,
+    selectedThemeId: options?.selectedThemeId,
+    themePresetId,
+    stage4bCss: themedCss,
+    industry: industry || null,
+    designIntervention,
+  });
+
+  const normalizedThemeFiles = normalizeWizardThemeTokens(compileResult.vfsFiles);
+  compileResult.vfsFiles = normalizedThemeFiles.files;
+
+  // Stage 4b is mandatory and idempotent: only the token payload paired with
+  // the incoming wizard seed may author the final stylesheet.
+  compileResult.vfsFiles['/src/index.css'] = themedCss;
+  const uiFoundation = buildGeneratedUiFoundation({
+    industry,
+    templateId: options?.selectedTemplateId,
+    themePresetId,
+  });
+  Object.assign(compileResult.vfsFiles, uiFoundation.files);
+  compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
+
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
     compileResult,
     {
       businessName: businessName || '',
       industry: industry || 'general',
-      themePresetId: presetId,
+      themePresetId,
       themeId: options?.selectedThemeId,
       templateId: options?.selectedTemplateId,
       wizardSeedId: recoveredSeedId,
-      themeTokens: recoveredThemeTokens,
-      interactionManifest: interactionEnrichment.manifest || undefined,
+      themeTokens: options.themeTokens,
     },
     'recompile',
+    uiFoundation.manifest,
+    designIntervention,
   );
+  assertSnapshotThemeSeed(siteBundleSnapshot, themePresetId, 'Recompile Stage 4b -> SiteBundleSnapshot.meta');
 
   const runtimeManifest = deriveRuntimeManifest(siteBundleSnapshot);
 
@@ -471,8 +464,12 @@ function projectToSiteBundleSnapshot(
     wizardSeedId?: string | null;
     themeTokens?: ThemeTokens;
     interactionManifest?: WizardInteractionManifest;
+    uiFoundation?: GeneratedUiManifest;
+    designIntervention?: WizardDesignIntervention;
   },
   source: SiteBundleSnapshotMeta['source'] = 'wizard',
+  uiFoundation?: GeneratedUiManifest,
+  designIntervention?: WizardDesignIntervention,
 ): SiteBundleSnapshot {
   const registry = compileResult.pageRouteRegistry;
   const pages = Object.values(registry.pages);
@@ -494,11 +491,17 @@ function projectToSiteBundleSnapshot(
     }));
 
   const homePage = pages.find(p => p.isHome);
+  const homeSectionTypes = new Set(
+    ((homePage as { sectionTypes?: unknown } | undefined)?.sectionTypes || []) as string[],
+  );
 
   const manifest: SiteManifest = {
     routes,
     nav,
-    layout: { header: 'default', footer: 'default' },
+    layout: {
+      header: homeSectionTypes.has('navbar') ? 'minimal' : 'none',
+      footer: homeSectionTypes.has('footer') ? 'minimal' : 'none',
+    },
     metadata: {
       title: selections.businessName || 'My Site',
       description: `${selections.businessName} — Built with Unison Tasks`,
@@ -508,8 +511,10 @@ function projectToSiteBundleSnapshot(
   const resolvedIndustry =
     selections.industryOverlay || selections.industry || 'general';
   const resolvedSystemId = selections.systemType ?? null;
-  const resolvedThemePresetId =
-    selections.themePresetId || selections.themeId || null;
+  const resolvedThemePresetId = assertThemeSeed(
+    selections.themePresetId,
+    'Stage 4b -> SiteBundleSnapshot.meta',
+  );
   const resolvedTemplateId = selections.templateId || null;
 
   return {
@@ -544,6 +549,12 @@ function projectToSiteBundleSnapshot(
         presetId: resolvedThemePresetId,
         cssPath: '/src/index.css',
       },
+      uiFoundation: uiFoundation ? {
+        version: uiFoundation.version,
+        manifestPath: '/.unison/ui-manifest.json',
+        importRoot: uiFoundation.importRoot,
+      } : undefined,
+      designIntervention,
     },
   };
 }

@@ -20,6 +20,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { isUuid } from '@/types/builderIdentity';
 
 // ---------------------------------------------------------------------------
 // Types — kept loose so the panel can store its richer Message shape verbatim
@@ -211,6 +212,7 @@ export function subscribeAIHistory(
 const remoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 async function mirrorToSupabase(draftId: string, record: AIHistoryRecord): Promise<void> {
+  if (!isUuid(draftId)) return;
   try {
     const { data: row, error: selErr } = await supabase
       .from('builder_drafts')
@@ -251,7 +253,7 @@ async function mirrorToSupabase(draftId: string, record: AIHistoryRecord): Promi
 }
 
 function scheduleRemoteMirror(draftId: string | null | undefined, record: AIHistoryRecord) {
-  if (!draftId) return;
+  if (!isUuid(draftId)) return;
   const key = lsKey(draftId);
   const existing = remoteTimers.get(key);
   if (existing) clearTimeout(existing);
@@ -278,7 +280,7 @@ export async function hydrateAIHistoryFromSupabase(
   draftId: string | null | undefined,
 ): Promise<AIHistoryRecord> {
   const local = readLocal(draftId);
-  if (!draftId) {
+  if (!isUuid(draftId)) {
     return local;
   }
 

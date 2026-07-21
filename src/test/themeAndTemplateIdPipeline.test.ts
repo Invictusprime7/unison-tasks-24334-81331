@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
-import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
+import {
+  buildThemedIndexCss,
+  SHADCN_LIBRARY_CSS_MARKER,
+} from '@/components/onboarding/themePresetToIndexCss';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { enforceThemeGeometryContract } from '@/services/themeGeometryContract';
 import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 
 describe('Theme deprecation sweep — wizard preset is single source of truth', () => {
   it('buildThemedIndexCss emits the Stage 4b token marker for every registered style card', () => {
@@ -13,6 +17,10 @@ describe('Theme deprecation sweep — wizard preset is single source of truth', 
       expect(css).not.toContain(`WIZARD FINAL THEME OVERRIDE: ${preset.id}`);
       expect(css).toMatch(/--primary:/);
       expect(css).toMatch(/--background:/);
+      expect(css).toContain(SHADCN_LIBRARY_CSS_MARKER);
+      expect(css).toContain("@import './unison/ui/tailwind.css';");
+      expect(css).toContain('.ut-shadcn-button');
+      expect(css).toContain('.ut-shadcn-dialog-content');
       expect(css).toContain('.unison-runtime-glass');
       expect(css).toContain('.ut-glass-card');
     }
@@ -26,6 +34,7 @@ describe('Theme deprecation sweep — wizard preset is single source of truth', 
       { themePresetId: 'organic' },
     );
     expect(files['/src/index.css']).toContain(`WIZARD THEME: ${organic.label}`);
+    expect(files['/src/unison/ui/tailwind.css']).toBe(UNISON_VFS_STYLE_BRIDGE);
   });
 
   it('emits a neutral Tailwind shell when no themePresetId is available', () => {
@@ -52,7 +61,10 @@ describe('Theme deprecation sweep — wizard preset is single source of truth', 
 describe('templateId end-to-end persistence (Wizard → Launch artifacts)', () => {
   it('persists templateId + themePresetId in RuntimeAppContext', () => {
     const artifacts = buildCanonicalLaunchArtifacts({
-      generatedFiles: { '/src/App.tsx': 'export default () => null;' },
+      generatedFiles: {
+        '/src/App.tsx': 'export default () => null;',
+        '/src/index.css': buildThemedIndexCss(THEME_PRESETS.find((preset) => preset.id === 'organic')!),
+      },
       preferredEntryPoint: '/src/App.tsx',
       templateId: 'salon-modern-01',
       themePresetId: 'organic',
@@ -68,13 +80,15 @@ describe('templateId end-to-end persistence (Wizard → Launch artifacts)', () =
     }
   });
 
-  it('aesthetic alias seeds themePresetId when explicit field missing', () => {
-    const artifacts = buildCanonicalLaunchArtifacts({
-      generatedFiles: { '/src/App.tsx': 'export default () => null;' },
+  it('rejects an aesthetic alias when the explicit theme seed is missing', () => {
+    expect(() => buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        '/src/App.tsx': 'export default () => null;',
+        '/src/index.css': buildThemedIndexCss(THEME_PRESETS.find((preset) => preset.id === 'futuristic')!),
+      },
       preferredEntryPoint: '/src/App.tsx',
       aesthetic: 'futuristic',
-    });
-    expect(artifacts.appContext.themePresetId).toBe('futuristic');
+    })).toThrow('themePresetId');
   });
 
   it('preserves AI-authored geometry while theme geometry enforcement is deprecated', () => {
@@ -91,6 +105,7 @@ describe('templateId end-to-end persistence (Wizard → Launch artifacts)', () =
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         '/src/App.tsx': 'export default () => <button className="rounded-full">Start</button>;',
+        '/src/index.css': buildThemedIndexCss(THEME_PRESETS.find((preset) => preset.id === 'minimalist')!),
       },
       preferredEntryPoint: '/src/App.tsx',
       themePresetId: 'minimalist',

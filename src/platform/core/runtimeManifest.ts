@@ -46,8 +46,6 @@ export interface RuntimeAppContext {
   themeTokens?: import('@/sections/types').ThemeTokens;
   /** Durable constrained plan for the final interaction runtime. */
   interactionManifest?: import('@/services/wizardInteractionEnrichment').WizardInteractionManifest;
-  /** Durable visual-behavior contract derived from the selected wizard cards. */
-  experienceContract?: import('@/services/wizardExperienceContract').WizardExperienceContract;
   /** Shared Preview capability contract for every canonical wizard launch. */
   previewRuntime?: {
     version: '1.0';

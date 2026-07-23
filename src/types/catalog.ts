@@ -23,6 +23,36 @@ export type { CatalogKind, CatalogSourceTable };
 export type SectionDataFallback = CatalogFallbackMode;
 export type BindingType = 'section' | 'slot' | 'card';
 
+export interface CatalogBindingPresentation {
+  showImage: boolean;
+  showDescription: boolean;
+  showPrice: boolean;
+  showCTA: boolean;
+  imageAspectRatio?: string;
+  layout?: string;
+  typography?: string;
+  alignment?: string;
+  ctaStyle?: string;
+  featuredBadge?: boolean;
+  [key: string]: unknown;
+}
+
+export interface CatalogBindingActions {
+  primary?: 'cart.add' | 'booking.start' | 'quote.request';
+  secondary?: 'catalog.view_details';
+}
+
+/**
+ * Canonical binding for a single rendered catalog card. Content remains in
+ * the catalog row; this object only identifies that row and its local view.
+ */
+export interface CatalogBinding {
+  type: 'catalog.item';
+  itemId: string;
+  presentation: CatalogBindingPresentation;
+  actions: CatalogBindingActions;
+}
+
 /** kind → table map. Now sourced from catalogSurfaceRegistry. */
 export const CATALOG_KIND_TO_TABLE = REGISTRY_KIND_TO_TABLE; // from catalogSurfaceRegistry
 
@@ -58,7 +88,7 @@ export interface SectionDataBindingDTO {
   filters: Record<string, unknown>;
   sort: { field?: string; direction?: 'asc' | 'desc' };
   limitCount: number | null;
-  displayMapping: Record<string, string>;
+  displayMapping: Record<string, unknown>;
   fallbackMode: SectionDataFallback;
   createdAt: string;
   updatedAt: string;

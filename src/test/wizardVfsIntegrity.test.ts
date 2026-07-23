@@ -71,4 +71,35 @@ describe('wizard VFS integrity', () => {
 
     expect(() => prepareSandpackFiles(files)).toThrow(/missing local module.*MissingPortfolioGrid/i);
   });
+
+  it('rejects unbound JSX components before the runtime can render placeholder labels', () => {
+    const files = {
+      '/src/App.tsx': 'export default function App() { return <main><MissingPortfolioGrid /></main>; }',
+      '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
+      '/.unison/site-bundle-snapshot.json': JSON.stringify({
+        snapshotId: 'snap_unbound_jsx',
+        pageRegistry: { pages: {} },
+        vfsFiles: {},
+        meta: { source: 'wizard' },
+      }),
+    };
+
+    expect(() => prepareSandpackFiles(files)).toThrow(/missing local module.*MissingPortfolioGrid/i);
+
+    const valid = prepareSandpackFiles({
+      '/src/App.tsx': 'export default function App() { return <main>Complete component contract</main>; }',
+      '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
+      '/.unison/site-bundle-snapshot.json': JSON.stringify({
+        snapshotId: 'snap_valid_jsx',
+        pageRegistry: { pages: {} },
+        vfsFiles: {},
+        meta: { source: 'wizard' },
+      }),
+    });
+
+    expect(valid['/index.tsx']).toContain('React runtime patch disabled');
+    expect(valid['/index.tsx']).not.toContain('⚠ missing component');
+  });
 });

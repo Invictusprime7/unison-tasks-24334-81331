@@ -634,7 +634,7 @@ function buildWizardAiSeedPrompt(opts: {
     ``,
     `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
     `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
-    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
+    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
     opts.designIntervention
       ? `DESIGN INTERVENTION (LOCKED): Use ${opts.designIntervention.layoutRecipe}; prioritize ${opts.designIntervention.sectionVariants.join(', ')}; use ${opts.designIntervention.motionRecipes.join(', ')} within a ${opts.designIntervention.motionBudget} motion budget; and compose only these interactions: ${opts.designIntervention.interactionRecipes.join(', ')}. ${opts.designIntervention.aiDirective}`
       : '',
@@ -747,16 +747,23 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
     const body = typeof context === "object" && context !== null && "body" in context
       ? (context as { body?: string }).body
       : undefined;
+    const formatDetails = (details: unknown): string => {
+      if (typeof details === "string" && details.trim()) {
+        return ` — ${details.trim()}`;
+      }
+      if (Array.isArray(details)) {
+        return ` — ${(details as Array<{ path?: unknown; message?: string }>)
+          .slice(0, 5)
+          .map((d) => `${Array.isArray(d.path) ? d.path.join('.') : String(d.path ?? '')}: ${d.message ?? ''}`)
+          .join('; ')}`;
+      }
+      return '';
+    };
 
     if (typeof body === "string" && body) {
       try {
         const parsed = JSON.parse(body) as { error?: string; message?: string; details?: unknown };
-        const detailSummary = Array.isArray(parsed.details)
-          ? ` — ${(parsed.details as Array<{ path?: unknown; message?: string }>)
-              .slice(0, 5)
-              .map((d) => `${Array.isArray(d.path) ? d.path.join('.') : String(d.path ?? '')}: ${d.message ?? ''}`)
-              .join('; ')}`
-          : '';
+        const detailSummary = formatDetails(parsed.details);
         if (parsed.error) return `${parsed.error}${detailSummary}`;
         if (parsed.message) return `${parsed.message}${detailSummary}`;
       } catch {
@@ -780,12 +787,7 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
               message?: string;
               details?: unknown;
             };
-            const detailSummary = Array.isArray(parsed.details)
-              ? ` — ${(parsed.details as Array<{ path?: unknown; message?: string }>)
-                  .slice(0, 5)
-                  .map((d) => `${Array.isArray(d.path) ? d.path.join('.') : String(d.path ?? '')}: ${d.message ?? ''}`)
-                  .join('; ')}`
-              : '';
+            const detailSummary = formatDetails(parsed.details);
             if (parsed.error) return `${parsed.error}${detailSummary}`;
             if (parsed.message) return `${parsed.message}${detailSummary}`;
           } catch {

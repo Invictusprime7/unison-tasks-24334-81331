@@ -31,6 +31,7 @@ describe('BuilderSessionProvider', () => {
     renderToStaticMarkup(<Probe onValue={(v) => (captured = v)} />);
 
     expect(captured).toBeDefined();
+    expect(captured?.runtimeContext).toBeUndefined();
     expect(captured?.projectId).toBeUndefined();
     expect(captured?.businessId).toBeUndefined();
     expect(captured?.currentUserId).toBe('');
@@ -55,12 +56,40 @@ describe('BuilderSessionProvider', () => {
     );
 
     expect(captured).toEqual({
+      runtimeContext: undefined,
       projectId: 'proj-1',
       businessId: 'biz-1',
       currentUserId: 'user-1',
       draftId: 'draft-1',
       sessionId: 'builder-session:test-fixed',
     });
+  });
+
+  it('exposes a complete canonical runtime context unchanged', () => {
+    const runtimeContext = {
+      organizationId: 'org-1',
+      businessId: 'biz-1',
+      projectId: 'proj-1',
+      siteId: 'site-1',
+      snapshotId: 'snapshot-1',
+      environment: 'builder' as const,
+    };
+    let captured: BuilderSessionValue | undefined;
+    renderToStaticMarkup(
+      <BuilderSessionProvider
+        value={{
+          runtimeContext,
+          projectId: 'proj-1',
+          businessId: 'biz-1',
+          currentUserId: 'user-1',
+          draftId: 'draft-1',
+        }}
+      >
+        <Probe onValue={(v) => (captured = v)} />
+      </BuilderSessionProvider>,
+    );
+
+    expect(captured?.runtimeContext).toEqual(runtimeContext);
   });
 
   it('auto-generates a sessionId with the builder-session: prefix when omitted', () => {

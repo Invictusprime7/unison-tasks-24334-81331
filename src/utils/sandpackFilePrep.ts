@@ -795,7 +795,7 @@ const PREVIEW_SELECTION_BRIDGE = `function __initUnisonPreviewSelectionBridge() 
  * fallback, raw-CSS wrapping) should be the canonical fix. Flip to true only
  * as a temporary mitigation while a regression is being root-caused.
  */
-const ENABLE_REACT_RUNTIME_PATCH = true;
+const ENABLE_REACT_RUNTIME_PATCH = false;
 
 const REACT_RUNTIME_PATCH_BLOCK = `
 // ── Runtime guard: intercept undefined components BEFORE they crash React ──
@@ -4526,12 +4526,84 @@ function forceClassicReactJsxRuntime(content: string): string {
 }
 
 /**
+ * Find a safe position to insert a new top-level statement after the last
+ * *syntactically complete* import statement in `code`.
+ *
+ * A naive `code.lastIndexOf('\nimport ')` matches the literal text
+ * "\nimport " and can anchor on a truncated/unterminated import (e.g. the AI
+ * emitted `import { ` with no closing brace or `from` clause). Splicing
+ * injected code right after that dangling line corrupts the file — the
+ * injected statement lands in the middle of the broken import instead of
+ * after it, producing an "Unexpected keyword 'import'" parse error.
+ *
+ * This only anchors on imports that have an actual `from '...'` clause
+ * (single- or multi-line), and falls back to the very top of the file
+ * (after any leading directive prologue like `"use client";`) when no
+ * complete import can be found.
+ */
+function findSafeImportInsertionPoint(code: string): number {
+  const completeImportRe = /^import\s[\s\S]*?from\s*(['"])(?:(?!\1)[\s\S])*\1\s*;?[ \t]*$/gm;
+  let lastEnd = -1;
+  let match: RegExpExecArray | null;
+  while ((match = completeImportRe.exec(code)) !== null) {
+    lastEnd = match.index + match[0].length;
+    if (completeImportRe.lastIndex === match.index) {
+      completeImportRe.lastIndex += 1;
+    }
+  }
+
+  if (lastEnd === -1) {
+    const directiveMatch = code.match(/^(['"])use [a-z]+\1;?[ \t]*\n/);
+    return directiveMatch ? directiveMatch[0].length : 0;
+  }
+
+  const nextNewline = code.indexOf('\n', lastEnd);
+  return nextNewline === -1 ? code.length : nextNewline + 1;
+}
+
+/**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
  */
 export function processCode(code: string, filePath: string): string {
   if (!/\.(tsx?|jsx?|mjs)$/.test(filePath)) {
     return code;
+  }
+
+  // ── Repair: strip dangling/unterminated import openers ─────────────────
+  // AI generation (or an earlier repair pass) sometimes leaves a truncated
+  // `import { ` opener with no closing brace / `from` clause — e.g. the rest
+  // of the specifier list and the module source never got written. Left in
+  // place, this dangling line can be mistaken by later anchor-based repairs
+  // (or by Sandpack/Babel itself) for the start of a real statement,
+  // producing "Unexpected keyword" parse errors. Since there is nothing
+  // usable to recover (no specifiers, no module source), remove the opener
+  // line outright when it never resolves to a closing `} from '...'`.
+  {
+    const lines = code.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^\s*import\s*\{\s*$/.test(lines[i])) continue;
+      let closed = false;
+      for (let j = i + 1; j < lines.length; j++) {
+        const line = lines[j];
+        if (/^\s*\}\s*from\s*['"][^'"]+['"]\s*;?\s*$/.test(line)) {
+          closed = true;
+          break;
+        }
+        // Still looks like an import-specifier continuation line
+        // (`Name,`, `Name as Alias,`, or a blank line) — keep scanning.
+        if (line.trim() === '' || /^\s*[A-Za-z_$][\w$]*(\s+as\s+[A-Za-z_$][\w$]*)?,?\s*$/.test(line)) {
+          continue;
+        }
+        // Anything else (a new statement, JSX, etc.) means this import
+        // was never closed.
+        break;
+      }
+      if (!closed) {
+        lines[i] = '';
+      }
+    }
+    code = lines.join('\n');
   }
 
   // ── Safe lucide-react imports ──────────────────────────────────────────
@@ -4760,13 +4832,8 @@ export function processCode(code: string, filePath: string): string {
       const insertAt = fallbackLineEnd === -1 ? code.length : fallbackLineEnd + 1;
       code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
     } else {
-      const lastImportIdx = code.lastIndexOf('\nimport ');
-      if (lastImportIdx !== -1) {
-        const lineEnd = code.indexOf('\n', lastImportIdx + 1);
-        code = code.slice(0, lineEnd + 1) + injections.join('\n') + '\n' + code.slice(lineEnd + 1);
-      } else {
-        code = injections.join('\n') + '\n' + code;
-      }
+      const insertAt = findSafeImportInsertionPoint(code);
+      code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
     }
   }
 
@@ -5136,10 +5203,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     out['/src/index.css'] = buildBaseCssForPreset(options?.themePresetId);
   }
 
-  // Existing wizard snapshots can carry an earlier UI manifest while missing
-  // newer facade files (Radix, icon, form, schema, and motion bridges). Fill
-  // only absent foundation paths so old artifacts gain the current VFS API
-  // without replacing their canonical CSS or authored components.
+  // Existing wizard snapshots can carry an earlier marker-owned UI facade.
+  // Refresh those runtime modules before routing or preview compilation so
+  // generated pages never import an API absent from their own foundation.
   if (out['/.unison/ui-manifest.json']) {
     const foundation = buildGeneratedUiFoundation({
       themePresetId: options?.themePresetId || 'snapshot-recovery',
@@ -5147,7 +5213,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     for (const [path, content] of Object.entries(foundation.files)) {
       if (path === '/.unison/ui-manifest.json') continue;
       if (out[path]) {
-        if (path === '/src/unison/ui/index.ts' && out[path].includes('UNISON GENERATED UI FOUNDATION')) {
+        if (out[path].includes('UNISON GENERATED UI FOUNDATION')) {
           out[path] = content;
         }
         continue;
@@ -5472,14 +5538,18 @@ export function prepareSandpackFiles(
     finalFiles[path] = content;
   }
 
-  if (finalFiles['/.unison/ui-manifest.json']) {
+  const referencesGeneratedUiFoundation = Object.entries(finalFiles).some(([path, content]) => (
+    path.startsWith('/src/unison/ui/') || /@\/unison\/ui(?:\/[^'"\s]+)?/.test(content)
+  ));
+
+  if (finalFiles['/.unison/ui-manifest.json'] || referencesGeneratedUiFoundation) {
     const foundation = buildGeneratedUiFoundation({
       themePresetId: options?.themePresetId || 'snapshot-recovery',
     });
     for (const [path, content] of Object.entries(foundation.files)) {
       if (path === '/.unison/ui-manifest.json') continue;
       if (finalFiles[path]) {
-        if (path === '/src/unison/ui/index.ts' && finalFiles[path].includes('UNISON GENERATED UI FOUNDATION')) {
+        if (finalFiles[path].includes('UNISON GENERATED UI FOUNDATION')) {
           finalFiles[path] = content;
         }
         continue;

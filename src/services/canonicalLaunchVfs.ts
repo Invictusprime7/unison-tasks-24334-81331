@@ -2,9 +2,14 @@ import type { LayoutCategory } from '@/data/templates/types';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import { ensureViteRootFiles } from '@/services/previewSession';
 import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from '@/types/playground';
-import { createRuntimeManifest, type RuntimeAppContext, type RuntimeManifest } from '@/types/runtimeManifest';
+import {
+  createRuntimeManifest,
+  type RuntimeAppContext,
+  type RuntimeManifest,
+  type UnisonRuntimeEnvironment,
+} from '@/types/runtimeManifest';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
-import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
+import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';
@@ -48,6 +53,9 @@ export interface BuildCanonicalLaunchArtifactsInput {
   mergeWithCanonicalSnapshot?: boolean;
   businessId?: string | null;
   projectId?: string | null;
+  organizationId?: string | null;
+  siteId?: string | null;
+  environment?: UnisonRuntimeEnvironment;
   manifestId?: string | null;
   systemType?: string | null;
   systemName?: string | null;
@@ -156,11 +164,26 @@ function buildRuntimeAppContext(
   siteBundleSnapshot?: SiteBundleSnapshot,
   themePresetId?: string,
 ): RuntimeAppContext {
+  const businessId = input.businessId || undefined;
+  const projectId = input.projectId || undefined;
+  const snapshotId = siteBundleSnapshot?.snapshotId;
+  const organizationId = input.organizationId || undefined;
+  const siteId = input.siteId || projectId;
   return {
-    businessId: input.businessId || undefined,
-    projectId: input.projectId || undefined,
+    runtimeContext: organizationId && businessId && projectId && siteId && snapshotId
+      ? {
+          organizationId,
+          businessId,
+          projectId,
+          siteId,
+          snapshotId,
+          environment: input.environment ?? 'builder',
+        }
+      : undefined,
+    businessId,
+    projectId,
     manifestId: input.manifestId || undefined,
-    snapshotId: siteBundleSnapshot?.snapshotId,
+    snapshotId,
     businessName: input.businessName || siteBundleSnapshot?.businessName || undefined,
     templateName: input.templateName || undefined,
     templateCategory: input.templateCategory || undefined,
@@ -711,6 +734,39 @@ export function buildCanonicalLaunchArtifacts(
     siteBundleSnapshot,
     canonicalPlayground,
   });
+
+  // Run the exact strict VFS compiler that Preview uses before this Wizard
+  // artifact is persisted or opened in Playground. Syntax repair protects
+  // source shape above; this final pass catches unresolved JSX named/default
+  // imports after every canonical merge and generated-runtime transformation.
+  if (input.strictPreflight) {
+    try {
+      prepareSandpackFiles(files, {
+        entryPoint,
+        themePresetId: appContext.themePresetId || resolvedThemePresetId,
+        strict: true,
+      });
+    } catch (error) {
+      if (error instanceof PreviewPipelineError) {
+        throw new PreviewPipelineError(
+          'vfs',
+          `Wizard runtime preflight failed before persistence: ${error.summary}`,
+          {
+            ...error.details,
+            cause: error,
+            recoverableByRelaunch: true,
+          },
+        );
+      }
+      throw new PreviewPipelineError(
+        'vfs',
+        `Wizard runtime preflight failed before persistence: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error, recoverableByRelaunch: true },
+      );
+    }
+  }
 
   return {
     files,

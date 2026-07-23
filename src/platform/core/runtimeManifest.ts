@@ -24,7 +24,23 @@ export type LauncherEngine = 'sandpack' | 'docker';
 /** @deprecated Use LauncherEngine — kept for backward compat */
 export type PreviewEngine = LauncherEngine;
 
+export type UnisonRuntimeEnvironment = 'builder' | 'preview' | 'published';
+
+/**
+ * The tenant identity carried by every builder, preview, and published
+ * runtime. Domain data is always resolved through this context, not UI props.
+ */
+export interface UnisonRuntimeContext {
+  organizationId: string;
+  businessId: string;
+  projectId: string;
+  siteId: string;
+  snapshotId: string;
+  environment: UnisonRuntimeEnvironment;
+}
+
 export interface RuntimeAppContext {
+  runtimeContext?: UnisonRuntimeContext;
   businessId?: string;
   projectId?: string;
   manifestId?: string;

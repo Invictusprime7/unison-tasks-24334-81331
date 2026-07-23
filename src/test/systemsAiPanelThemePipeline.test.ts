@@ -35,4 +35,12 @@ describe('SystemsAIPanel chip theme ownership', () => {
     expect(freeformBranch).toContain('aesthetic: freeformThemePresetId,');
     expect(freeformBranch).not.toMatch(/aesthetic:\s*['"]modern['"]/);
   });
+
+  it('requires strict runtime preflight for every generated WebBuilder handoff', () => {
+    const launchCallCount = (source.match(/buildCanonicalLaunchArtifacts\(\{/g) || []).length;
+    const strictPreflightCount = (source.match(/strictPreflight:\s*true/g) || []).length;
+
+    expect(launchCallCount).toBeGreaterThan(0);
+    expect(strictPreflightCount).toBe(launchCallCount);
+  });
 });

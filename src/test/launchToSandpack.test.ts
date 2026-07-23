@@ -144,6 +144,18 @@ describe("launchStateToSandpackFiles", () => {
     expect(result.dependencies['lucide-react']).toBeUndefined();
   });
 
+  it('recovers a legacy manifestless animation facade and installs Framer Motion', () => {
+    const result = buildPreviewArtifacts({
+      sourceFiles: {
+        '/src/App.tsx': "import { motion } from '@/unison/ui/animation'; export default function App(){ return <motion.main>Ready</motion.main>; }",
+        '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      },
+    });
+
+    expect(result.sandpackFiles['/unison/ui/animation.ts']).toContain("export * from 'framer-motion'");
+    expect(result.dependencies['framer-motion']).toBeDefined();
+  });
+
   it("does not reintroduce embedded JSON launcher wrappers after normalization", () => {
     const leakedJsonWrapper = [
       "/** @jsx React.createElement */",

@@ -45,6 +45,7 @@ import { getSelectedElementData, highlightElement, removeHighlight } from '@/uti
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 import { useLaunch } from '@/contexts/useLaunchHooks';
 import { useVFSSafe } from '@/hooks/useVFSContext';
+import { BuilderSessionContext } from '@/builder/controllers/BuilderSessionProvider';
 
 // ============================================================================
 // Types
@@ -321,6 +322,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   enableSelection = false,
   onElementSelect,
 }, ref) => {
+  const builderSession = React.useContext(BuilderSessionContext);
   const { launch } = useLaunch();
   const vfsContext = useVFSSafe();
   // State - default to 'sandpack' — no HTML fallback
@@ -756,7 +758,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       // ── Catalog hydration bridge (Track B, Pass 3) ────────────────────────
       // Generated sections post CATALOG_HYDRATE_REQUEST asking the host to
       // resolve their live rows against site_data_bindings. We look up the
-      // binding, project rows through its displayMapping, and echo back.
+      // binding, project rows plus card metadata, and echo back.
       if (data.type === 'CATALOG_HYDRATE_REQUEST') {
         const source = event.source as Window | null;
         const requestId = data.requestId;
@@ -765,11 +767,14 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         const sectionType: string | null = data.sectionType ?? null;
         const occurrenceIndex: number | null =
           typeof data.occurrenceIndex === 'number' ? data.occurrenceIndex : null;
-        // Derive projectId from the current builder URL (?id=...).
-        let projectId = '';
-        try {
-          projectId = new URLSearchParams(window.location.search).get('id') || '';
-        } catch { /* ignore */ }
+        // The canonical runtime context is authoritative. URL parsing remains
+        // only as a compatibility fallback for legacy/non-builder previews.
+        let projectId = builderSession.runtimeContext?.projectId || builderSession.projectId || '';
+        if (!projectId) {
+          try {
+            projectId = new URLSearchParams(window.location.search).get('id') || '';
+          } catch { /* ignore */ }
+        }
         if (!projectId || !source) {
           try {
             source?.postMessage(
@@ -788,6 +793,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   type: 'CATALOG_HYDRATE_RESPONSE',
                   requestId,
                   rows,
+                  cardBinding: result.cardBinding,
                   fallback: result.fallback,
                 },
                 '*',
@@ -824,7 +830,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
-  }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
+  }, [builderSession.projectId, builderSession.runtimeContext?.projectId, onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
 
 
   

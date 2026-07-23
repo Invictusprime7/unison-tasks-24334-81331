@@ -26,8 +26,11 @@
  */
 
 import { createContext, useMemo, type ReactNode } from 'react';
+import type { UnisonRuntimeContext } from '@/platform/core/runtimeManifest';
 
 export interface BuilderSessionValue {
+  /** Complete tenant identity when the canonical launch context is available. */
+  runtimeContext: UnisonRuntimeContext | undefined;
   /** Canonical project id, or undefined while in unsaved preview mode. */
   projectId: string | undefined;
   /** Owning business id (may be a synthesized preview id). */
@@ -41,6 +44,7 @@ export interface BuilderSessionValue {
 }
 
 const DEFAULT_VALUE: BuilderSessionValue = {
+  runtimeContext: undefined,
   projectId: undefined,
   businessId: undefined,
   currentUserId: '',
@@ -52,7 +56,10 @@ export const BuilderSessionContext = createContext<BuilderSessionValue>(DEFAULT_
 BuilderSessionContext.displayName = 'BuilderSessionContext';
 
 export interface BuilderSessionProviderProps {
-  value: Omit<BuilderSessionValue, 'sessionId'> & { sessionId?: string };
+  value: Omit<BuilderSessionValue, 'sessionId' | 'runtimeContext'> & {
+    runtimeContext?: UnisonRuntimeContext;
+    sessionId?: string;
+  };
   children: ReactNode;
 }
 
@@ -74,13 +81,21 @@ export function BuilderSessionProvider({ value, children }: BuilderSessionProvid
   // dependency without re-rendering on every parent render.
   const resolved = useMemo<BuilderSessionValue>(
     () => ({
+      runtimeContext: value.runtimeContext,
       projectId: value.projectId,
       businessId: value.businessId,
       currentUserId: value.currentUserId,
       draftId: value.draftId,
       sessionId: value.sessionId ?? makeSessionId(),
     }),
-    [value.projectId, value.businessId, value.currentUserId, value.draftId, value.sessionId],
+    [
+      value.runtimeContext,
+      value.projectId,
+      value.businessId,
+      value.currentUserId,
+      value.draftId,
+      value.sessionId,
+    ],
   );
 
   return (

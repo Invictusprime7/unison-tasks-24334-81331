@@ -351,4 +351,23 @@ describe("buildCanonicalLaunchArtifacts", () => {
       strictPreflight: true,
     })).toThrow(/refusing to persist quarantine scaffolds.*Unterminated JSX contents/);
   });
+
+  it('refuses to persist a Wizard VFS with an unresolved JSX import contract', () => {
+    const snapshot = createSnapshot();
+
+    expect(() => buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        '/src/pages/Home.tsx': [
+          "import { MissingHero, MissingCaption } from '../components/HeroParts';",
+          'export default function Home(){ return <main><MissingHero /><MissingCaption /></main>; }',
+        ].join('\n'),
+        '/src/components/HeroParts.tsx': 'export function HeroTitle(){ return <h1>Ready</h1>; } export function HeroCopy(){ return <p>Ready</p>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    })).toThrow(/Wizard runtime preflight failed before persistence:.*Home\.tsx imports JSX component "MissingHero".*HeroTitle, HeroCopy/i);
+  });
 });

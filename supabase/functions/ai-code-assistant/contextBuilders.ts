@@ -595,6 +595,7 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   lines.push('   wired intents above (contact.submit, booking.create, lead.capture,');
   lines.push('   newsletter.subscribe, quote.request, cart.checkout, nav.anchor, …).');
   lines.push('5. Use react, lucide-react, framer-motion, and only the allowed @/unison/ui modules listed above. No other imports.');
+  lines.push('5a. From @/unison/ui/motion, import only Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe.');
   lines.push('6. Lucide social brand casing: Github, Linkedin, Youtube, Twitter (NOT GitHub/LinkedIn/YouTube/X).');
   lines.push('7. Images: prefer https://images.unsplash.com/photo-... static strings.');
   lines.push('8. Home must implement the full template section order with a minimum of 3-5 substantial sections.');

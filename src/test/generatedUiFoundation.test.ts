@@ -4,7 +4,7 @@ import {
   readGeneratedUiManifest,
   validateGeneratedUiContract,
 } from '@/platform/core/generatedUiFoundation';
-import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { sanitizeTsxFile } from '@/utils/tsxSanitizer';
 
 describe('generated UI foundation', () => {
@@ -17,11 +17,18 @@ describe('generated UI foundation', () => {
   it('emits portable, token-driven VFS primitives and a manifest', () => {
     expect(foundation.files['/.unison/ui-manifest.json']).toContain('@/unison/ui/button');
     expect(foundation.files['/src/unison/ui/button.tsx']).toContain('bg-primary');
+    expect(foundation.files['/src/unison/ui/card.tsx']).toContain('export function CardHeader');
+    expect(foundation.files['/src/unison/ui/card.tsx']).toContain('export function CardTitle');
+    expect(foundation.files['/src/unison/ui/card.tsx']).toContain('export function CardDescription');
+    expect(foundation.files['/src/unison/ui/card.tsx']).toContain('export function CardFooter');
     expect(foundation.files['/src/unison/ui/navigation.tsx']).toContain("from './radix/dialog'");
     expect(foundation.files['/src/unison/ui/radix/dialog.ts']).toContain("@radix-ui/react-dialog");
     expect(foundation.files['/src/unison/ui/icon.tsx']).toContain('LucideIcon');
     expect(foundation.files['/src/unison/ui/motion.tsx']).toContain('useReducedMotion');
-    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Button } from './button';");
+    expect(foundation.files['/src/unison/ui/motion.tsx']).toContain('export function RevealGroup');
+    expect(foundation.files['/src/unison/ui/animation.ts']).toContain('export function StaggerContainer');
+    expect(foundation.files['/src/unison/ui/animation.ts']).toContain('export function StaggerChild');
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Reveal, RevealGroup, Stagger, StaggerItem } from './motion';");
     expect(foundation.files['/src/unison/ui/icons.ts']).toContain("export * from 'lucide-react';");
     expect(foundation.files['/src/unison/ui/zod.ts']).toContain("export * from 'zod';");
     expect(foundation.files['/src/unison/ui/forms.ts']).toContain("zodResolver");
@@ -65,6 +72,80 @@ describe('generated UI foundation', () => {
     expect(prepared['/App.tsx']).toContain("from './unison/ui/animation'");
   });
 
+  it('restores compatible stagger exports for existing generated pages', () => {
+    const legacyAnimationFacade = foundation.files['/src/unison/ui/animation.ts']
+      .replace(/import \* as React[\s\S]*?export const StaggerItem = StaggerChild;\n/, "export * from 'framer-motion';\n");
+    const prepared = prepareSandpackFiles({
+      ...foundation.files,
+      '/src/unison/ui/animation.ts': legacyAnimationFacade,
+      '/src/App.tsx': "import { StaggerChild, StaggerContainer } from '@/unison/ui/animation'; export default function App(){ return <StaggerContainer><StaggerChild>Ready</StaggerChild></StaggerContainer>; }",
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    expect(prepared['/unison/ui/animation.ts']).toContain('export function StaggerContainer');
+    expect(prepared['/unison/ui/animation.ts']).toContain('export function StaggerChild');
+    expect(prepared['/App.tsx']).toContain("from './unison/ui/animation'");
+    expect(prepared['/index.tsx']).not.toContain('⚠ missing component');
+  });
+
+  it('restores the RevealGroup motion compatibility export for existing generated pages', () => {
+    const legacyMotionFacade = foundation.files['/src/unison/ui/motion.tsx']
+      .replace(/\nexport function RevealGroup[\s\S]*?\n}\n(?=\nexport function StaggerItem)/, '');
+    const prepared = prepareSandpackFiles({
+      ...foundation.files,
+      '/src/unison/ui/motion.tsx': legacyMotionFacade,
+      '/src/pages/Home.tsx': "import { RevealGroup } from '@/unison/ui/motion'; export default function Home(){ return <RevealGroup>Ready</RevealGroup>; }",
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/pages/Home.tsx' });
+
+    expect(prepared['/unison/ui/motion.tsx']).toContain('export function RevealGroup');
+    expect(prepared['/pages/Home.tsx']).toContain("from '../unison/ui/motion'");
+    expect(prepared['/index.tsx']).not.toContain('⚠ missing component');
+  });
+
+  it('refreshes marker-owned motion facades before the preview compiler runs', () => {
+    const legacyMotionFacade = foundation.files['/src/unison/ui/motion.tsx']
+      .replace(/\nexport function RevealGroup[\s\S]*?\n}\n(?=\nexport function StaggerItem)/, '');
+    const normalized = normalizeLauncherFiles({
+      ...foundation.files,
+      '/src/unison/ui/motion.tsx': legacyMotionFacade,
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    });
+
+    expect(normalized['/src/unison/ui/motion.tsx']).toContain('export function RevealGroup');
+  });
+
+  it('restores the complete card facade before rendering Pricing and Services pages', () => {
+    const legacyCardFacade = `${foundation.files['/src/unison/ui/card.tsx'].split('export function CardHeader')[0]}export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('p-5 sm:p-6', className)} {...props} />;
+}
+`;
+    const prepared = prepareSandpackFiles({
+      ...foundation.files,
+      '/src/unison/ui/card.tsx': legacyCardFacade,
+      '/src/App.tsx': "import Pricing from './pages/Pricing'; import Services from './pages/Services'; export default function App(){ return <><Pricing /><Services /></>; }",
+      '/src/pages/Pricing.tsx': "import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../unison/ui/card'; export default function Pricing(){ return <Card><CardHeader><CardTitle>Plans</CardTitle><CardDescription>Choose a plan</CardDescription></CardHeader><CardContent>Details</CardContent></Card>; }",
+      '/src/pages/Services.tsx': "import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../unison/ui/card'; export default function Services(){ return <Card><CardHeader><CardTitle>Services</CardTitle><CardDescription>Explore our services</CardDescription></CardHeader><CardContent>Details</CardContent></Card>; }",
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    expect(prepared['/unison/ui/card.tsx']).toContain('export function CardHeader');
+    expect(prepared['/unison/ui/card.tsx']).toContain('export function CardTitle');
+    expect(prepared['/unison/ui/card.tsx']).toContain('export function CardDescription');
+    expect(prepared['/pages/Pricing.tsx']).toContain("from '../unison/ui/card'");
+    expect(prepared['/pages/Services.tsx']).toContain("from '../unison/ui/card'");
+  });
+
+  it('recovers the UI foundation when a legacy VFS imports its facade without a manifest', () => {
+    const prepared = prepareSandpackFiles({
+      '/src/App.tsx': "import { motion } from '@/unison/ui/animation'; export default function App(){ return <motion.main>Ready</motion.main>; }",
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    expect(prepared['/unison/ui/animation.ts']).toContain("export * from 'framer-motion'");
+    expect(prepared['/App.tsx']).toContain("from './unison/ui/animation'");
+  });
+
   it('accepts foundation imports and rejects alternate UI writers', () => {
     const accepted = validateGeneratedUiContract({
       '/src/pages/Home.tsx': `import { Button } from '@/unison/ui/button'; export default function Home(){ return <Button data-ut-intent="booking.create">Book</Button>; }`,
@@ -93,6 +174,12 @@ describe('generated UI foundation', () => {
     expect(rejected.violations.join(' ')).toContain('snapshot-owned');
     expect(rejected.violations.join(' ')).toContain('Stage 4b-owned');
     expect(rejected.violations.join(' ')).toContain('design-intervention.json');
+
+    const unsupportedMotion = validateGeneratedUiContract({
+      '/src/pages/Home.tsx': "import { MotionGroup } from '@/unison/ui/motion'; export default function Home(){ return <MotionGroup />; }",
+    }, foundation.manifest);
+    expect(unsupportedMotion.valid).toBe(false);
+    expect(unsupportedMotion.violations.join(' ')).toContain('unsupported motion facade export(s): MotionGroup');
   });
 
   it('does not misread DOM TypeScript types as missing JSX components during preview prep', () => {
@@ -197,5 +284,45 @@ export default function Experience(){ const form = useForm({ resolver: zodResolv
     }, { strict: true, entryPoint: '/src/App.tsx' })).toThrow(
       /Contact\.tsx imports JSX component "ContactCard".*does not export it.*Address, Hours/i,
     );
+  });
+
+  it('never splices the Lucide icon fallback shim into a dangling incomplete import statement', async () => {
+    // Reproduces a real generated Contact.tsx: a truncated `import { ` left
+    // over from an earlier repair pass, followed by raw Lucide icon usage
+    // (MapPin, Phone) that never got a completed import. The auto-inject
+    // pass used to anchor on `code.lastIndexOf('\nimport ')`, which matched
+    // this dangling line and spliced `import * as __LucideIcons ...` into
+    // the middle of it, producing `Unexpected keyword 'import'.`.
+    const brokenContact = [
+      "import { Label } from '../unison/ui/radix/label';",
+      "import { ",
+      'export default function Contact(){',
+      '  return <main><MapPin /><Phone /></main>;',
+      '}',
+    ].join('\n');
+
+    const prepared = prepareSandpackFiles({
+      ...foundation.files,
+      '/src/App.tsx': "import Contact from './pages/Contact'; export default function App(){ return <Contact />; }",
+      '/src/pages/Contact.tsx': brokenContact,
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    const contactSource = prepared['/pages/Contact.tsx'];
+    expect(contactSource).toBeTruthy();
+    expect(contactSource).not.toMatch(/import\s*\{\s*\n\s*import \* as __LucideIcons/);
+
+    const Babel = (await import('@babel/standalone')) as unknown as {
+      transform: (code: string, opts: Record<string, unknown>) => { code: string | null };
+    };
+    expect(() => Babel.transform(contactSource, {
+      presets: [
+        ['react', { runtime: 'classic' }],
+        ['typescript', { isTSX: true, allExtensions: true }],
+      ],
+      filename: 'Contact.tsx',
+      ast: false,
+      code: false,
+    })).not.toThrow();
   });
 });

@@ -16,6 +16,11 @@ import {
 import { listCollections } from '@/services/catalogCollectionService';
 import { upsertBinding } from '@/services/sectionDataBindingService';
 import {
+  catalogCardBindingFor,
+  updateCatalogCardBinding,
+  updateCatalogCardPresentation,
+} from '@/services/catalogCardBindingService';
+import {
   loadRowsForBinding,
   updateCatalogRow,
   createCatalogRow,
@@ -23,6 +28,8 @@ import {
 } from '@/services/catalogRowService';
 import type {
   CatalogCollectionDTO,
+  CatalogBindingPresentation,
+  CatalogBindingActions,
   SectionDataBindingDTO,
 } from '@/types/catalog';
 
@@ -55,6 +62,9 @@ interface DraftState {
   rows: RowRec[];
   loadedRows: boolean;
   rowDrafts: Record<string, RowDraft>;
+  presentation: CatalogBindingPresentation | null;
+  actions: CatalogBindingActions | null;
+  presentationSaving: boolean;
 }
 
 function draftFromBinding(b: SectionDataBindingDTO): DraftState {
@@ -69,6 +79,9 @@ function draftFromBinding(b: SectionDataBindingDTO): DraftState {
     rows: [],
     loadedRows: false,
     rowDrafts: {},
+    presentation: catalogCardBindingFor(b)?.presentation ?? null,
+    actions: catalogCardBindingFor(b)?.actions ?? null,
+    presentationSaving: false,
   };
 }
 
@@ -207,6 +220,40 @@ export function CatalogInspectorPanel({
     });
   };
 
+  const updatePresentationDraft = (
+    bindingId: string,
+    patch: Partial<CatalogBindingPresentation>,
+  ) => {
+    setDrafts((prev) => {
+      const draft = prev[bindingId];
+      if (!draft?.presentation) return prev;
+      return {
+        ...prev,
+        [bindingId]: {
+          ...draft,
+          presentation: { ...draft.presentation, ...patch },
+        },
+      };
+    });
+  };
+
+  const updateActionsDraft = (
+    bindingId: string,
+    patch: Partial<CatalogBindingActions>,
+  ) => {
+    setDrafts((prev) => {
+      const draft = prev[bindingId];
+      if (!draft?.actions) return prev;
+      return {
+        ...prev,
+        [bindingId]: {
+          ...draft,
+          actions: { ...draft.actions, ...patch },
+        },
+      };
+    });
+  };
+
   const bumpPreview = () => {
     try {
       window.postMessage({ type: 'CATALOG_BINDINGS_CHANGED', projectId }, '*');
@@ -289,6 +336,30 @@ export function CatalogInspectorPanel({
     bumpPreview();
   };
 
+  const savePresentation = async (binding: SectionDataBindingDTO) => {
+    const draft = drafts[binding.id];
+    if (!draft?.presentation) return;
+    updateDraft(binding.id, { presentationSaving: true });
+    const saved = await updateCatalogCardPresentation(binding.id, draft.presentation);
+    updateDraft(binding.id, { presentationSaving: false });
+    if (saved) {
+      setReloadKey((key) => key + 1);
+      bumpPreview();
+    }
+  };
+
+  const saveCardActions = async (binding: SectionDataBindingDTO) => {
+    const draft = drafts[binding.id];
+    if (!draft?.actions) return;
+    updateDraft(binding.id, { presentationSaving: true });
+    const saved = await updateCatalogCardBinding(binding.id, { actions: draft.actions });
+    updateDraft(binding.id, { presentationSaving: false });
+    if (saved) {
+      setReloadKey((key) => key + 1);
+      bumpPreview();
+    }
+  };
+
 
   return (
     <div
@@ -348,6 +419,7 @@ export function CatalogInspectorPanel({
           );
           const isOpen = expanded === binding.id;
           const draft = drafts[binding.id];
+          const cardBinding = catalogCardBindingFor(binding);
           return (
             <div
               key={binding.id}
@@ -392,14 +464,146 @@ export function CatalogInspectorPanel({
                   )}
                   <span>·</span>
                   <span>fallback: {binding.fallbackMode}</span>
+                  {cardBinding && (
+                    <>
+                      <span>·</span>
+                      <span>card</span>
+                    </>
+                  )}
                   <span className="ml-auto text-indigo-400">{isOpen ? '▾' : '▸'}</span>
                 </div>
               </button>
 
               {isOpen && draft && (
                 <div className="px-3 pb-3 pt-1 border-t border-zinc-800/70 space-y-2">
+                  {cardBinding && draft.presentation && (
+                    <div className="space-y-2 rounded border border-indigo-500/20 bg-indigo-500/5 p-2">
+                      <div>
+                        <div className="text-[10px] font-medium uppercase tracking-wider text-indigo-200">
+                          Presentation and actions
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-zinc-500">
+                          Changes only this card instance.
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-zinc-300">
+                        {([
+                          ['showImage', 'Image'],
+                          ['showDescription', 'Description'],
+                          ['showPrice', 'Price'],
+                          ['showCTA', 'CTA'],
+                        ] as const).map(([key, label]) => (
+                          <label key={key} className="flex items-center gap-1.5">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(draft.presentation?.[key])}
+                              onChange={(event) =>
+                                updatePresentationDraft(binding.id, { [key]: event.target.checked })
+                              }
+                              className="accent-indigo-400"
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                            Image ratio
+                          </label>
+                          <input
+                            type="text"
+                            value={String(draft.presentation.imageAspectRatio ?? '')}
+                            onChange={(event) =>
+                              updatePresentationDraft(binding.id, { imageAspectRatio: event.target.value })
+                            }
+                            placeholder="e.g. 4:3"
+                            className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                            Alignment
+                          </label>
+                          <select
+                            value={String(draft.presentation.alignment ?? '')}
+                            onChange={(event) =>
+                              updatePresentationDraft(binding.id, { alignment: event.target.value })
+                            }
+                            className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                          >
+                            <option value="">Default</option>
+                            <option value="left">Left</option>
+                            <option value="center">Center</option>
+                            <option value="right">Right</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                            Primary action
+                          </label>
+                          <select
+                            value={draft.actions?.primary ?? ''}
+                            onChange={(event) =>
+                              updateActionsDraft(binding.id, {
+                                primary: event.target.value
+                                  ? event.target.value as CatalogBindingActions['primary']
+                                  : undefined,
+                              })
+                            }
+                            className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                          >
+                            <option value="">No primary action</option>
+                            <option value="cart.add">Add to cart</option>
+                            <option value="booking.start">Start booking</option>
+                            <option value="quote.request">Request quote</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
+                            Secondary action
+                          </label>
+                          <select
+                            value={draft.actions?.secondary ?? ''}
+                            onChange={(event) =>
+                              updateActionsDraft(binding.id, {
+                                secondary: event.target.value
+                                  ? 'catalog.view_details'
+                                  : undefined,
+                              })
+                            }
+                            className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200"
+                          >
+                            <option value="">No secondary action</option>
+                            <option value="catalog.view_details">View details</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          disabled={draft.presentationSaving}
+                          onClick={() => savePresentation(binding)}
+                          className="text-xs px-2.5 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 disabled:opacity-50"
+                        >
+                          {draft.presentationSaving ? 'Saving…' : 'Save presentation'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={draft.presentationSaving}
+                          onClick={() => saveCardActions(binding)}
+                          className="ml-2 text-xs px-2.5 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 disabled:opacity-50"
+                        >
+                          {draft.presentationSaving ? 'Saving…' : 'Save actions'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <label className="block text-[10px] uppercase tracking-wider text-zinc-500">
-                    Collection
+                    {cardBinding ? 'Data source' : 'Collection'}
                   </label>
                   <select
                     value={draft.collectionId ?? ''}
@@ -484,7 +688,7 @@ export function CatalogInspectorPanel({
                   <div className="mt-3 pt-2 border-t border-zinc-800/70">
                     <div className="flex items-center justify-between mb-1">
                       <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-                        Rows ({draft.rows.length})
+                        {cardBinding ? 'Content (shared catalog item)' : `Rows (${draft.rows.length})`}
                       </div>
                       <div className="flex items-center gap-2">
                         <button

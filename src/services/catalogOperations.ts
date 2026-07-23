@@ -32,11 +32,18 @@ import {
 } from '@/services/catalogRowService';
 import {
   getBinding,
+  getBindingById,
   patchBindingById,
   upsertBinding,
   type BindingPatch,
   type UpsertBindingInput,
 } from '@/services/sectionDataBindingService';
+import {
+  updateCatalogCardBinding,
+  updateCatalogCardPresentation,
+  upsertCatalogCardBinding,
+} from '@/services/catalogCardBindingService';
+import type { CatalogBindingActions, CatalogBindingPresentation } from '@/types/catalog';
 import type { CatalogFallbackMode } from '@/platform/core/catalogSurfaceRegistry';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,7 +53,11 @@ import type { CatalogFallbackMode } from '@/platform/core/catalogSurfaceRegistry
 export type CatalogOperationName =
   | 'createCatalogRow'
   | 'updateCatalogRow'
+  | 'updateCatalogItem'
   | 'deleteCatalogRow'
+  | 'bindCatalogItemToComponent'
+  | 'updateComponentPresentation'
+  | 'updateComponentActions'
   | 'updateSectionBinding'
   | 'switchSectionCollection'
   | 'changeSectionLimit'
@@ -299,6 +310,98 @@ export async function deleteCatalogRow(args: {
   };
 }
 
+/** Semantic alias for content edits triggered from a bound catalog card. */
+export async function updateCatalogItem(args: {
+  surfaceId: string;
+  itemId: string;
+  patch: CatalogRowFieldPatch;
+}): Promise<CatalogOperationResult> {
+  const result = await updateCatalogRow({
+    surfaceId: args.surfaceId,
+    rowId: args.itemId,
+    patch: args.patch,
+  });
+  return { ...result, op: 'updateCatalogItem' as CatalogOperationName };
+}
+
+export async function bindCatalogItemToComponent(args: {
+  businessId: string;
+  projectId: string;
+  snapshotId?: string | null;
+  pagePath: string;
+  componentId: string;
+  slotKey?: string | null;
+  surfaceId: string;
+  itemId: string;
+  presentation?: Partial<CatalogBindingPresentation>;
+  actions?: CatalogBindingActions;
+}): Promise<CatalogOperationResult> {
+  const surface = resolveSurfaceOrFail(args.surfaceId);
+  const [projectDenied, businessDenied, itemBusinessId] = await Promise.all([
+    assertProjectAccess(args.projectId),
+    assertBusinessAccess(args.businessId),
+    fetchRowBusinessId(surface.sourceTable, args.itemId),
+  ]);
+  const denied = projectDenied ?? businessDenied;
+  if (denied) return { ok: false, op: 'bindCatalogItemToComponent', message: denied };
+  if (itemBusinessId !== args.businessId) {
+    return {
+      ok: false,
+      op: 'bindCatalogItemToComponent',
+      message: 'The catalog item does not belong to the selected business.',
+    };
+  }
+  const binding = await upsertCatalogCardBinding(args);
+  return {
+    ok: !!binding,
+    op: 'bindCatalogItemToComponent',
+    message: binding ? `Bound catalog item ${args.itemId} to component ${args.componentId}` : 'binding upsert failed',
+    data: binding,
+  };
+}
+
+export async function updateComponentPresentation(args: {
+  bindingId: string;
+  patch: Partial<CatalogBindingPresentation>;
+}): Promise<CatalogOperationResult> {
+  const current = await getBindingById(args.bindingId);
+  if (!current) {
+    return { ok: false, op: 'updateComponentPresentation', message: 'Card binding not found.' };
+  }
+  const denied = current.projectId
+    ? await assertProjectAccess(current.projectId)
+    : await assertBusinessAccess(current.businessId);
+  if (denied) return { ok: false, op: 'updateComponentPresentation', message: denied };
+  const binding = await updateCatalogCardPresentation(args.bindingId, args.patch);
+  return {
+    ok: !!binding,
+    op: 'updateComponentPresentation',
+    message: binding ? `Updated presentation for component ${binding.sectionId}` : 'presentation update failed',
+    data: binding,
+  };
+}
+
+export async function updateComponentActions(args: {
+  bindingId: string;
+  actions: CatalogBindingActions;
+}): Promise<CatalogOperationResult> {
+  const current = await getBindingById(args.bindingId);
+  if (!current) {
+    return { ok: false, op: 'updateComponentActions', message: 'Card binding not found.' };
+  }
+  const denied = current.projectId
+    ? await assertProjectAccess(current.projectId)
+    : await assertBusinessAccess(current.businessId);
+  if (denied) return { ok: false, op: 'updateComponentActions', message: denied };
+  const binding = await updateCatalogCardBinding(args.bindingId, { actions: args.actions });
+  return {
+    ok: !!binding,
+    op: 'updateComponentActions',
+    message: binding ? `Updated actions for component ${binding.sectionId}` : 'action update failed',
+    data: binding,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Binding operations (M5)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -424,8 +527,16 @@ export async function applyCatalogOperation(
         return await createCatalogRow(args as never);
       case 'updateCatalogRow':
         return await updateCatalogRow(args as never);
+      case 'updateCatalogItem':
+        return await updateCatalogItem(args as never);
       case 'deleteCatalogRow':
         return await deleteCatalogRow(args as never);
+      case 'bindCatalogItemToComponent':
+        return await bindCatalogItemToComponent(args as never);
+      case 'updateComponentPresentation':
+        return await updateComponentPresentation(args as never);
+      case 'updateComponentActions':
+        return await updateComponentActions(args as never);
       case 'updateSectionBinding':
         return await updateSectionBinding(args as never);
       case 'switchSectionCollection':
@@ -483,6 +594,23 @@ const ROW_PATCH_SCHEMA = {
   },
 } as const;
 
+const CARD_PRESENTATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    showImage: { type: 'boolean' },
+    showDescription: { type: 'boolean' },
+    showPrice: { type: 'boolean' },
+    showCTA: { type: 'boolean' },
+    imageAspectRatio: { type: 'string' },
+    layout: { type: 'string' },
+    typography: { type: 'string' },
+    alignment: { type: 'string' },
+    ctaStyle: { type: 'string' },
+    featuredBadge: { type: 'boolean' },
+  },
+} as const;
+
 export const CATALOG_OPERATION_TOOLS = [
   {
     name: 'createCatalogRow',
@@ -509,6 +637,79 @@ export const CATALOG_OPERATION_TOOLS = [
         surfaceId: { type: 'string', enum: SURFACE_IDS },
         rowId: { type: 'string' },
         patch: ROW_PATCH_SCHEMA,
+      },
+    },
+  },
+  {
+    name: 'updateCatalogItem',
+    description:
+      'Update the real catalog record referenced by a rendered card. Use this for content changes, never a TSX text rewrite.',
+    parameters: {
+      type: 'object',
+      required: ['surfaceId', 'itemId', 'patch'],
+      properties: {
+        surfaceId: { type: 'string', enum: SURFACE_IDS },
+        itemId: { type: 'string' },
+        patch: ROW_PATCH_SCHEMA,
+      },
+    },
+  },
+  {
+    name: 'bindCatalogItemToComponent',
+    description:
+      'Bind one generated card component to a real catalog item. The binding is tenant-scoped and is hydrated by preview and published runtime.',
+    parameters: {
+      type: 'object',
+      required: ['businessId', 'projectId', 'pagePath', 'componentId', 'surfaceId', 'itemId'],
+      properties: {
+        businessId: { type: 'string' },
+        projectId: { type: 'string' },
+        snapshotId: { type: ['string', 'null'] },
+        pagePath: { type: 'string' },
+        componentId: { type: 'string' },
+        slotKey: { type: ['string', 'null'] },
+        surfaceId: { type: 'string', enum: SURFACE_IDS },
+        itemId: { type: 'string' },
+        presentation: CARD_PRESENTATION_SCHEMA,
+        actions: {
+          type: 'object',
+          properties: {
+            primary: { type: 'string', enum: ['cart.add', 'booking.start', 'quote.request'] },
+            secondary: { type: 'string', enum: ['catalog.view_details'] },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: 'updateComponentPresentation',
+    description:
+      'Change only how a bound catalog card renders. It never mutates the catalog record.',
+    parameters: {
+      type: 'object',
+      required: ['bindingId', 'patch'],
+      properties: {
+        bindingId: { type: 'string' },
+        patch: CARD_PRESENTATION_SCHEMA,
+      },
+    },
+  },
+  {
+    name: 'updateComponentActions',
+    description:
+      'Change the approved CTA actions for a bound catalog card without mutating catalog content or TSX.',
+    parameters: {
+      type: 'object',
+      required: ['bindingId', 'actions'],
+      properties: {
+        bindingId: { type: 'string' },
+        actions: {
+          type: 'object',
+          properties: {
+            primary: { type: 'string', enum: ['cart.add', 'booking.start', 'quote.request'] },
+            secondary: { type: 'string', enum: ['catalog.view_details'] },
+          },
+        },
       },
     },
   },

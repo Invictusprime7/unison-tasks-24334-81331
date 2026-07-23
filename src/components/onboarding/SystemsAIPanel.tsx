@@ -554,6 +554,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             themePresetId: chipThemePresetId,
             backendRequired: false,
             wizardSelections: chipWizardSelections,
+            strictPreflight: true,
           });
           const wiredVfsFiles = launchArtifacts.files;
           const runtimeManifest = launchArtifacts.runtimeManifest;
@@ -685,6 +686,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             themePresetId: chipThemePresetId,
             backendRequired: false,
             wizardSelections: chipWizardSelections,
+            strictPreflight: true,
           });
           const wiredVfsFiles = launchArtifacts.files;
           const runtimeManifest = launchArtifacts.runtimeManifest;
@@ -763,6 +765,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
             themePresetId: chipThemePresetId,
             backendRequired: false,
             wizardSelections: chipWizardSelections,
+            strictPreflight: true,
           });
           const wiredVfsFiles = launchArtifacts.files;
           const runtimeManifest = launchArtifacts.runtimeManifest;
@@ -883,6 +886,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           aesthetic: freeformThemePresetId,
           themePresetId: freeformThemePresetId,
           backendRequired: false,
+          strictPreflight: true,
         });
         const freeVfsFiles = launchArtifacts.files;
         const runtimeManifest = launchArtifacts.runtimeManifest;
@@ -945,6 +949,7 @@ export function SystemsAIPanel({ user, onAuthRequired }: SystemsAIPanelProps) {
           aesthetic: freeformThemePresetId,
           themePresetId: freeformThemePresetId,
           backendRequired: false,
+          strictPreflight: true,
         });
         const freeVfsFiles = launchArtifacts.files;
         const runtimeManifest = launchArtifacts.runtimeManifest;

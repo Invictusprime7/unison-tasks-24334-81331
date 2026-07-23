@@ -7,6 +7,36 @@ import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLi
 
 const RATE_LIMIT_CONFIG = { maxRequests: 20, windowSeconds: 300 };
 
+const FORM_INTENTS = [
+  "contact.submit",
+  "quote.request",
+  "booking.request",
+  "newsletter.subscribe",
+  "application.submit",
+] as const;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
+async function validateTenantContext(
+  supabase: any,
+  context: { businessId: string; projectId: string; siteId: string },
+): Promise<boolean> {
+  const [projectResult, siteResult] = await Promise.all([
+    supabase.from("projects").select("id,business_id").eq("id", context.projectId).maybeSingle(),
+    supabase.from("sites").select("id,business_id").eq("id", context.siteId).maybeSingle(),
+  ]);
+  return (
+    !projectResult.error &&
+    !siteResult.error &&
+    projectResult.data?.business_id === context.businessId &&
+    siteResult.data?.business_id === context.businessId
+  );
+}
+
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflightRequest(req, publicCorsHeaders);
   if (preflight) {
@@ -35,10 +65,24 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const bodySchema = z.object({
+      businessId: z.string().trim(),
+      projectId: z.string().trim(),
+      siteId: z.string().trim(),
+      snapshotId: z.string().trim().max(200).optional(),
       formId: z.string().trim().min(1).max(200),
       formName: z.string().trim().max(200).optional(),
+      intent: z.enum(FORM_INTENTS),
+      pageId: z.string().trim().max(200).optional(),
+      componentId: z.string().trim().max(200).optional(),
       sourceUrl: z.string().trim().max(2048).optional(),
-      data: z.record(z.unknown()).default({}),
+      referrer: z.string().trim().max(2048).optional(),
+      utmSource: z.string().trim().max(200).optional(),
+      utmMedium: z.string().trim().max(200).optional(),
+      utmCampaign: z.string().trim().max(200).optional(),
+      consentMetadata: z.record(z.string(), z.unknown()).default({}),
+      idempotencyKey: z.string().trim().min(16).max(200),
+      honeypot: z.string().max(200).optional(),
+      data: z.record(z.string(), z.unknown()).default({}),
     });
 
     const { data: rawBody } = await safeParseBody<Record<string, unknown>>(req, 65_536);
@@ -47,7 +91,58 @@ Deno.serve(async (req) => {
       return errorResponse("Invalid request body", 400, publicCorsHeaders);
     }
 
-    const { formId, formName, data: rawData, sourceUrl } = parsed.data;
+    const {
+      businessId,
+      projectId,
+      siteId,
+      snapshotId,
+      formId,
+      formName,
+      intent,
+      pageId,
+      componentId,
+      sourceUrl,
+      referrer,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      consentMetadata,
+      idempotencyKey,
+      honeypot,
+      data: rawData,
+    } = parsed.data;
+
+    if (![businessId, projectId, siteId].every(isUuid)) {
+      return errorResponse("Invalid form runtime context", 400, publicCorsHeaders);
+    }
+    if (!(await validateTenantContext(supabase, { businessId, projectId, siteId }))) {
+      return errorResponse("Form runtime context does not match an active tenant", 403, publicCorsHeaders);
+    }
+    if (honeypot?.trim()) {
+      return secureJsonResponse({ success: true, message: "Form submitted successfully" }, 200, publicCorsHeaders);
+    }
+
+    const { data: existingSubmission } = await supabase
+      .from("crm_form_submissions")
+      .select("id,contact_id,lead_id")
+      .eq("business_id", businessId)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+    if (existingSubmission) {
+      return secureJsonResponse(
+        {
+          success: true,
+          duplicate: true,
+          submissionId: existingSubmission.id,
+          contactId: existingSubmission.contact_id,
+          leadId: existingSubmission.lead_id,
+          message: "Form submitted successfully",
+        },
+        200,
+        publicCorsHeaders,
+        rateHeaders,
+      );
+    }
 
     const sanitizeString = (v: string) =>
       v
@@ -70,7 +165,34 @@ Deno.serve(async (req) => {
 
     const data = sanitizeRecord(rawData);
 
-    console.log("Form submission received:", { formId, formName, keys: Object.keys(data).length });
+    const { data: definition, error: definitionError } = await supabase
+      .from("form_definitions")
+      .select("intent,fields")
+      .eq("business_id", businessId)
+      .eq("project_id", projectId)
+      .eq("site_id", siteId)
+      .eq("external_id", formId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (definitionError) {
+      throw new Error("Could not resolve the approved form definition");
+    }
+    if (definition?.intent && definition.intent !== intent) {
+      return errorResponse("Form intent does not match its approved definition", 400, publicCorsHeaders);
+    }
+    if (Array.isArray(definition?.fields)) {
+      const missingRequired = definition.fields.some((field: unknown) => {
+        if (!field || typeof field !== "object") return false;
+        const record = field as { name?: unknown; required?: unknown };
+        return record.required === true &&
+          (typeof record.name !== "string" || !String(data[record.name] ?? "").trim());
+      });
+      if (missingRequired) {
+        return errorResponse("Missing required form fields", 400, publicCorsHeaders);
+      }
+    }
+
+    console.log("Form submission received:", { businessId, projectId, siteId, formId, intent, keys: Object.keys(data).length });
 
     // Get client info
     const ipAddress = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
@@ -80,10 +202,23 @@ Deno.serve(async (req) => {
     const { data: submission, error: submitError } = await supabase
       .from("crm_form_submissions")
       .insert({
+        business_id: businessId,
+        project_id: projectId,
+        site_id: siteId,
+        snapshot_id: snapshotId ?? null,
         form_id: formId,
         form_name: formName,
+        intent,
+        page_id: pageId ?? null,
+        component_id: componentId ?? null,
         data,
         source_url: sourceUrl,
+        referrer: referrer ?? null,
+        utm_source: utmSource ?? null,
+        utm_medium: utmMedium ?? null,
+        utm_campaign: utmCampaign ?? null,
+        consent_metadata: consentMetadata,
+        idempotency_key: idempotencyKey,
         ip_address: ipAddress,
         user_agent: userAgent,
       })
@@ -116,6 +251,7 @@ Deno.serve(async (req) => {
         .from("crm_contacts")
         .select("id")
         .eq("email", email.toLowerCase())
+        .eq("business_id", businessId)
         .maybeSingle();
 
       if (existingContact) {
@@ -144,6 +280,8 @@ Deno.serve(async (req) => {
         const { data: newContact, error: contactError } = await supabase
           .from("crm_contacts")
           .insert({
+            business_id: businessId,
+            project_id: projectId,
             email: email.toLowerCase(),
             first_name: (getStr("firstName") || getStr("first_name") || nameFromFull(getStr("name")).first || "").slice(0, 120) || null,
             last_name: (getStr("lastName") || getStr("last_name") || nameFromFull(getStr("name")).last || "").slice(0, 120) || null,
@@ -162,10 +300,39 @@ Deno.serve(async (req) => {
       }
     }
 
+    let leadId = null;
+    if (contactId) {
+      const leadTitle = getStr("name")?.trim() || String(email || formName || formId);
+      const { data: createdLead, error: leadError } = await supabase
+        .from("crm_leads")
+        .insert({
+          business_id: businessId,
+          project_id: projectId,
+          contact_id: contactId,
+          title: leadTitle.slice(0, 240),
+          status: "new",
+          source: `form:${formId}`,
+          notes: getStr("message")?.slice(0, 2_000) || null,
+        })
+        .select("id")
+        .single();
+      if (leadError) {
+        console.error("Failed to create CRM lead:", leadError);
+      } else {
+        leadId = createdLead?.id ?? null;
+      }
+    }
+
+    await supabase
+      .from("crm_form_submissions")
+      .update({ contact_id: contactId, lead_id: leadId })
+      .eq("id", submission.id);
+
     // Check for workflows triggered by this form
     const { data: workflows } = await supabase
       .from("crm_workflows")
       .select("*")
+      .eq("business_id", businessId)
       .eq("is_active", true)
       .eq("trigger_type", "form_submit");
 
@@ -191,6 +358,11 @@ Deno.serve(async (req) => {
             form_name: formName,
             submission_id: submission.id,
             contact_id: contactId,
+            lead_id: leadId,
+            business_id: businessId,
+            project_id: projectId,
+            site_id: siteId,
+            intent,
              form_data: data,
           },
         })
@@ -249,6 +421,7 @@ Deno.serve(async (req) => {
     const { data: automations } = await supabase
       .from("crm_automations")
       .select("*")
+      .eq("business_id", businessId)
       .eq("is_active", true)
       .eq("trigger_event", "form_submitted");
 
@@ -260,8 +433,10 @@ Deno.serve(async (req) => {
           await supabase.from("crm_activities").insert({
             activity_type: "note",
             title: `Form submission: ${formName || formId}`,
-             description: `Contact submitted form with data keys: ${Object.keys(data).join(", ")}`,
+            description: `Contact submitted form with data keys: ${Object.keys(data).join(",")}`,
+            business_id: businessId,
             contact_id: contactId,
+            lead_id: leadId,
           });
         }
       }
@@ -272,6 +447,7 @@ Deno.serve(async (req) => {
         success: true,
         submissionId: submission.id,
         contactId,
+        leadId,
         triggeredWorkflows,
         message: "Form submitted successfully",
       },

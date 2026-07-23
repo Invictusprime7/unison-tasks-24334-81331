@@ -117,6 +117,7 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     'Use semantic Stage 4b Tailwind tokens; do not overwrite /src/index.css.',
     'Use @/unison/ui/icons for Lucide icons and provide accessible labels for icon-only actions.',
     'Use responsive Tailwind variants and preserve data-ut-intent attributes on actionable controls.',
+    'For @/unison/ui/motion, use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe.',
   ];
 
   if (options.needsBooking) requirements.push('Include an intent-bound booking CTA or form.');
@@ -184,7 +185,35 @@ export function cn(...inputs: ClassValue[]) {
 }
 `,
     '/src/unison/ui/animation.ts': `${marker}
+import * as React from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
+
 export * from 'framer-motion';
+
+type StaggerProps = { children: React.ReactNode; className?: string };
+
+/** Compatibility aliases for pre-foundation generated pages. */
+export function StaggerContainer({ children, className }: StaggerProps) {
+  const reduceMotion = useReducedMotion();
+  return React.createElement(motion.div, {
+    className,
+    initial: 'hidden',
+    whileInView: 'show',
+    viewport: { once: true, amount: 0.12 },
+    variants: { hidden: {}, show: { transition: { staggerChildren: reduceMotion ? 0 : 0.09 } } },
+  }, children);
+}
+
+export function StaggerChild({ children, className }: StaggerProps) {
+  const reduceMotion = useReducedMotion();
+  return React.createElement(motion.div, {
+    className,
+    variants: { hidden: { opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 }, show: { opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' } } },
+  }, children);
+}
+
+export const Stagger = StaggerContainer;
+export const StaggerItem = StaggerChild;
 `,
     '/src/unison/ui/icons.ts': `${marker}
 export * from 'lucide-react';
@@ -251,7 +280,7 @@ export { FieldLabel, Input, Textarea } from './form-fields';
 export { useForm, zodResolver, z } from './forms';
 export { Icon } from './icon';
 export { ImageLightbox } from './media';
-export { Reveal, Stagger, StaggerItem } from './motion';
+export { Reveal, RevealGroup, Stagger, StaggerItem } from './motion';
 export { FloatingNavbar } from './navigation';
 export { BentoFeatureGrid, FeatureCard } from './recipes';
 export { colorStyles, componentStyles, motionStyles, styles, typography } from './styles';
@@ -301,8 +330,24 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return <div className={cn('group rounded-[var(--radius)] border border-border bg-card text-card-foreground shadow-sm transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg', className)} {...props} />;
 }
 
+export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('flex flex-col gap-1.5 p-5 sm:p-6', className)} {...props} />;
+}
+
+export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return <h3 className={cn('text-xl font-semibold leading-none tracking-tight', className)} {...props} />;
+}
+
+export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn('text-sm text-muted-foreground', className)} {...props} />;
+}
+
 export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('p-5 sm:p-6', className)} {...props} />;
+}
+
+export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('flex items-center p-5 pt-0 sm:p-6 sm:pt-0', className)} {...props} />;
 }
 `,
     '/src/unison/ui/form-fields.tsx': `${marker}
@@ -364,6 +409,10 @@ export function Reveal({ children, className, recipe = 'editorial-reveal' }: { c
 export function Stagger({ children, className }: { children: React.ReactNode; className?: string }) {
   const reduceMotion = useReducedMotion();
   return <motion.div className={cn(className)} initial="hidden" whileInView="show" viewport={{ once: true, amount: 0.12 }} variants={{ hidden: {}, show: { transition: { staggerChildren: reduceMotion ? 0 : 0.09 } } }}>{children}</motion.div>;
+}
+
+export function RevealGroup({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <Stagger className={className}>{children}</Stagger>;
 }
 
 export function StaggerItem({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -468,6 +517,8 @@ export function validateGeneratedUiContract(
     return /\.(tsx|jsx)$/i.test(path) && !normalizedPath.startsWith('/src/unison/ui/');
   });
   const importPattern = /(?:\bimport\s+(?:type\s+)?(?:[\s\S]*?)\s+from\s*|\bexport\s+(?:[\s\S]*?)\s+from\s*|\bimport\s*)['"]([^'"]+)['"]/g;
+  const motionImportPattern = /\bimport\s+(?:type\s+)?\{([^}]+)\}\s+from\s*['"]@\/unison\/ui\/motion['"];?/g;
+  const supportedMotionExports = new Set(['Reveal', 'RevealGroup', 'Stagger', 'StaggerItem', 'MotionRecipe']);
 
   for (const [path, source] of generatedSources) {
     if (source.includes('dangerouslySetInnerHTML')) {
@@ -494,6 +545,19 @@ export function validateGeneratedUiContract(
         continue;
       }
       violations.push(`${path} imports unsupported module "${specifier}".`);
+    }
+
+    for (const match of source.matchAll(motionImportPattern)) {
+      const unsupported = match[1]
+        .split(',')
+        .map((part) => part.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0].trim())
+        .filter((exportName) => exportName && !supportedMotionExports.has(exportName));
+      if (unsupported.length > 0) {
+        violations.push(
+          `${path} imports unsupported motion facade export(s): ${unsupported.join(', ')}. ` +
+          'Use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe from @/unison/ui/motion.',
+        );
+      }
     }
   }
 

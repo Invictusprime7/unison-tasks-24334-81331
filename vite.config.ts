@@ -163,6 +163,8 @@ export default defineConfig(({ mode }) => ({
       // Core libraries that should be pre-bundled
       'react',
       'react-dom',
+      'react-dom/client',
+      'react/jsx-dev-runtime',
       'react-router-dom',
       'lucide-react',
       'clsx',

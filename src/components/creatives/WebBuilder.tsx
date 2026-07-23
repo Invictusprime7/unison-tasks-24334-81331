@@ -5516,9 +5516,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   console.log('[WebBuilder] About to return JSX...');
 
+  const builderRuntimeContext =
+    effectiveRouteState?.runtimeManifest?.appContext?.runtimeContext ??
+    effectiveRouteState?.siteBundleSnapshot?.appContext?.runtimeContext ??
+    launch?.runtimeManifest?.appContext?.runtimeContext;
+
   return (
     <BuilderSessionProvider
       value={{
+        runtimeContext: builderRuntimeContext
+          ? { ...builderRuntimeContext, environment: 'builder' }
+          : undefined,
         projectId: resolvedProjectId || projectId || undefined,
         businessId: businessId || undefined,
         currentUserId,

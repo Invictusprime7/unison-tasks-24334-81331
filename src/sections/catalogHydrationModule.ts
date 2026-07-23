@@ -19,6 +19,7 @@ export const CATALOG_HYDRATION_MODULE = `import { useEffect, useRef, useState } 
 export type SectionHydrationState = {
   loading: boolean;
   rows: any[] | null;
+  cardBinding: any | null;
   fallback: 'ok' | 'empty_state' | 'hide_section' | 'show_placeholder' | null;
   error: string | null;
 };
@@ -39,6 +40,7 @@ export function useSectionData(
   const [state, setState] = useState<SectionHydrationState>({
     loading: true,
     rows: null,
+    cardBinding: null,
     fallback: null,
     error: null,
   });
@@ -49,7 +51,7 @@ export function useSectionData(
   useEffect(() => {
     mounted.current = true;
     if (typeof window === 'undefined' || window.parent === window) {
-      setState({ loading: false, rows: null, fallback: null, error: null });
+      setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
       return () => { mounted.current = false; };
     }
 
@@ -74,6 +76,7 @@ export function useSectionData(
       setState({
         loading: false,
         rows: Array.isArray(data.rows) ? data.rows : null,
+        cardBinding: data.cardBinding ?? null,
         fallback: data.fallback ?? null,
         error: data.error ?? null,
       });
@@ -94,13 +97,13 @@ export function useSectionData(
         '*',
       );
     } catch (err) {
-      setState({ loading: false, rows: null, fallback: null, error: String(err) });
+      setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: String(err) });
     }
 
     // Give the host ~1.5s; if nothing arrives, resolve to null so seeds render.
     const timer = window.setTimeout(() => {
       if (!mounted.current) return;
-      setState((prev) => (prev.loading ? { loading: false, rows: null, fallback: null, error: null } : prev));
+      setState((prev) => (prev.loading ? { loading: false, rows: null, cardBinding: null, fallback: null, error: null } : prev));
     }, 1500);
 
     return () => {

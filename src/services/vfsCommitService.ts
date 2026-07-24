@@ -137,6 +137,64 @@ export class CommitRejectedError extends Error {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Guard 1 — Preview artifact leakage
+// ----------------------------------------------------------------------------
+//
+// `sandpackFilePrep.ts` (the ephemeral VFS → Sandpack preview compiler)
+// rewrites `import { MapPin } from 'lucide-react'` into namespace lookups
+// like `const MapPin = __LucideIcons['MapPin'] || __LucideFallback;` for
+// preview-runtime safety. That transformed source must never become
+// canonical VFS content — if it does, a later preview preparation pass can
+// reintroduce the original named import (e.g. via a catalog binding
+// regenerating a section from a template) and produce a duplicate top-level
+// declaration.
+//
+// Rollout policy (per architecture review): Phase 1 detects + logs + heals
+// known Lucide preview artifacts back to plain imports rather than hard
+// rejecting the commit, so in-flight projects aren't interrupted. A future
+// Phase 2 can upgrade this to a hard rejection once callers are audited.
+const PREVIEW_ONLY_ARTIFACT_PATTERNS: RegExp[] = [
+  /\b__LucideIcons\b/,
+  /\b__LucideFallback\b/,
+  /\b__FramerMotion\b/,
+  /\b__motionFallback\b/,
+  /\b__AnimatePresenceFallback\b/,
+];
+
+function detectPreviewArtifacts(contents: string): string[] {
+  const hits: string[] = [];
+  for (const pattern of PREVIEW_ONLY_ARTIFACT_PATTERNS) {
+    if (pattern.test(contents)) hits.push(pattern.source);
+  }
+  return hits;
+}
+
+/**
+ * Heal known preview-only Lucide fallback declarations back into a plain
+ * `import { ... } from 'lucide-react'` statement. Non-Lucide preview
+ * artifacts (framer-motion fallbacks, etc.) are left untouched — they are
+ * only detected/logged in Phase 1, since a safe general rewrite isn't
+ * available for every fallback shape yet.
+ */
+function sanitizePreviewArtifacts(contents: string): string {
+  const recoveredIcons: string[] = [];
+  let sanitized = contents.replace(
+    /^const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:__LucideIcons\[[^\]]+\]\s*\|\|\s*)+__LucideFallback;\s*$/gm,
+    (_match, alias: string) => {
+      recoveredIcons.push(alias);
+      return '';
+    },
+  );
+
+  if (recoveredIcons.length === 0) return contents;
+
+  sanitized = sanitized.replace(/^import \* as __LucideIcons from ['"]lucide-react['"];?\s*$/gm, '');
+  sanitized = sanitized.replace(/^const __LucideFallback\s*=.*$/gm, '');
+  sanitized = `import { ${recoveredIcons.join(', ')} } from 'lucide-react';\n${sanitized.replace(/^\n+/, '')}`;
+  return sanitized.replace(/\n{3,}/g, '\n\n');
+}
+
 /**
  * Returns true if the feature flag enables the commit service.
  * Defaults to ON now that Moves 1–6 are wired end-to-end; set
@@ -176,6 +234,20 @@ export async function commitMutation(
   for (const op of patch.fileOps) {
     if (op.type === 'delete') {
       delete workingFiles[op.path];
+      continue;
+    }
+
+    const artifactHits = detectPreviewArtifacts(op.contents);
+    if (artifactHits.length > 0) {
+      const sanitized = sanitizePreviewArtifacts(op.contents);
+      const healed = sanitized !== op.contents;
+      log(
+        'fileOps',
+        'warn',
+        `preview-only artifact(s) detected in ${op.path} (${artifactHits.join(', ')})${healed ? ' — sanitized before canonical commit' : ' — left as-is, no known-safe rewrite'}`,
+        { path: op.path, artifactHits, healed },
+      );
+      workingFiles[op.path] = sanitized;
     } else {
       workingFiles[op.path] = op.contents;
     }

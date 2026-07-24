@@ -3943,10 +3943,21 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
       // ── nav.goto: resolve via RouteNavigationService ──
       if (intent === 'nav.goto') {
-        const path = (payload as any)?.path;
+        let path = (payload as any)?.path;
         if (path && path.startsWith('#')) {
-          sendResultToIframe({ success: true });
-          return;
+          // Hardened hash-route normalization: generated pages sometimes
+          // carry hash-style page links (`#services`) for what is actually
+          // a real, separate page. A bare `#` (no fragment) is a genuine
+          // placeholder — leave that as a no-op. Anything else gets
+          // normalized to an absolute route and resolved the same way as
+          // a plain path, instead of silently acknowledging without
+          // navigating.
+          const fragment = path.replace(/^#\/?/, '');
+          if (!fragment) {
+            sendResultToIframe({ success: true });
+            return;
+          }
+          path = `/${fragment}`;
         }
         if (path) {
           const vfsFiles = virtualFS.getSandpackFiles();

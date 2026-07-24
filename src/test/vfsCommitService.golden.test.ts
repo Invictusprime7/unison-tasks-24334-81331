@@ -270,6 +270,59 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
   });
 });
 
+describe('Guard 1 — preview artifact leakage', () => {
+  it('sanitizes a preview-only Lucide fallback declaration back to a plain import before canonical commit', async () => {
+    const contactWithPreviewArtifact = [
+      "import * as __LucideIcons from 'lucide-react';",
+      "const __LucideFallback = (props) => React.createElement('svg', props);",
+      "const MapPin = __LucideIcons['MapPin'] || __LucideFallback;",
+      'export default function Contact(){',
+      '  return <main><MapPin /></main>;',
+      '}',
+    ].join('\n');
+    const files = { '/src/pages/Contact.tsx': contactWithPreviewArtifact };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents();
+
+    const result = await commitMutation({
+      source: 'catalog-binding' as never,
+      identity: IDENTITY,
+      current: { vfsFiles: {}, playground: {} as never },
+      patch: legacyFilesToPatchPlan(files, 'catalog binding regenerated Contact section'),
+    });
+
+    expect(result.status).toBe('committed');
+    const passedFiles = (commitToPipeline as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0][0].existingVfsFiles as Record<string, string>;
+    const committedContact = passedFiles['/src/pages/Contact.tsx'];
+    expect(committedContact).not.toContain('__LucideIcons');
+    expect(committedContact).not.toContain('__LucideFallback');
+    expect(committedContact).toContain("import { MapPin } from 'lucide-react';");
+    expect(
+      result.diagnostics.some((d) => d.stage === 'fileOps' && d.level === 'warn' && /preview-only artifact/i.test(d.message)),
+    ).toBe(true);
+  });
+
+  it('leaves canonical files without preview artifacts untouched', async () => {
+    const files = { '/src/pages/Contact.tsx': "import { MapPin } from 'lucide-react'; export default function Contact(){ return <MapPin />; }" };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents();
+
+    await commitMutation({
+      source: 'ai-builder',
+      identity: IDENTITY,
+      current: { vfsFiles: {}, playground: {} as never },
+      patch: legacyFilesToPatchPlan(files, 'plain edit'),
+    });
+
+    const passedFiles = (commitToPipeline as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0][0].existingVfsFiles as Record<string, string>;
+    expect(passedFiles['/src/pages/Contact.tsx']).toBe(files['/src/pages/Contact.tsx']);
+  });
+});
+
 describe('VFS commit Stage 4b handoff', () => {
   it('forwards the original snapshot tokens for a non-wizard recompile', async () => {
     const themeTokens = {

@@ -566,14 +566,23 @@ export function getCurrentPath(): string {
  * Handle nav.goto - Internal route navigation
  */
 function handleNavGoto(payload: IntentPayload): IntentResult {
-  const path = payload.path as string;
-  if (!path) {
+  const rawPath = payload.path as string;
+  if (!rawPath) {
     return { success: false, error: "nav.goto requires a 'path' payload" };
   }
-  
+
+  // Hardened hash-route normalization: generated pages across every industry
+  // sometimes carry hash-style page links (`#services`, `#/pricing`) for
+  // what is actually a real, separate page rather than an in-page scroll
+  // anchor. Without this, these always failed with "Page not found" here
+  // because they don't start with `/` and rarely match a slug verbatim.
+  // Normalize the hash away before resolving so nav.goto never hard-fails
+  // on a route that simply needed its leading `#`/`#/` stripped.
+  const path = rawPath.startsWith('#') ? `/${rawPath.replace(/^#\/?/, '')}` : rawPath;
+
   // In preview mode: update preview router state
   // In published mode: navigate to real route
-  const page = currentPageMap.find(p => p.slug === path);
+  const page = currentPageMap.find(p => p.slug === path || `/${p.slug}` === path || p.slug === path.replace(/^\//, ''));
   
   if (page || path.startsWith('/')) {
     setCurrentPath(path);

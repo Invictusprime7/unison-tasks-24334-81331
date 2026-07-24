@@ -210,10 +210,37 @@ function resolvePageForElement(
 ): BuilderPage | null {
   // 1. href / to
   const href = getAttrValue(info.attrs, 'href') ?? getAttrValue(info.attrs, 'to');
-  if (href && !/^(https?:|mailto:|tel:|#)/i.test(href)) {
-    const route = normalizeRoute(href.replace(/^#\/?/, '/'));
-    const page = index.byRoute.get(route) || index.byRoute.get(route.replace(/^\//, ''));
-    if (page && page.pageId !== currentPageId) return page;
+  if (href && !/^(https?:|mailto:|tel:)/i.test(href)) {
+    if (href.startsWith('#')) {
+      // Hash-style "page route" links. AI templates and legacy scaffolds
+      // frequently generate `href="#services"` / `to="#/pricing"` for what
+      // is actually a real, separate page rather than an in-page scroll
+      // anchor — treating a multi-page site like a single-page site. A bare
+      // `#` (placeholder, no fragment) is never a route.
+      const fragment = href.replace(/^#\/?/, '').trim();
+      if (!fragment) return null;
+
+      // Try resolving the fragment as a route path first (`#/services` →
+      // `/services`), then fall back to label matching against the
+      // fragment itself (`#book-now` → "book now").
+      const route = normalizeRoute(`/${fragment}`);
+      const byRoute = index.byRoute.get(route) || index.byRoute.get(route.replace(/^\//, ''));
+      if (byRoute && byRoute.pageId !== currentPageId) return byRoute;
+
+      const fragmentLabel = normalizeText(fragment.replace(/[-_]+/g, ' '));
+      const byFragmentLabel = fragmentLabel ? index.byLabel.get(fragmentLabel) : undefined;
+      if (byFragmentLabel && byFragmentLabel.pageId !== currentPageId) return byFragmentLabel;
+
+      // No page matches this hash fragment — it's most likely a genuine
+      // same-page scroll anchor (e.g. `#pricing-table` with no separate
+      // Pricing page). Leave it alone; fall through to label matching below
+      // only continues to consider the element's visible text, not the
+      // hash itself, so we don't accidentally hijack real anchor scrolling.
+    } else {
+      const route = normalizeRoute(href);
+      const page = index.byRoute.get(route) || index.byRoute.get(route.replace(/^\//, ''));
+      if (page && page.pageId !== currentPageId) return page;
+    }
   }
 
   // 2. label

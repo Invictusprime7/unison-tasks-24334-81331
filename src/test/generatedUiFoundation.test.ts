@@ -325,4 +325,47 @@ export default function Experience(){ const form = useForm({ resolver: zodResolv
       code: false,
     })).not.toThrow();
   });
+
+  it('is idempotent when a Live Business Data operation reintroduces a raw lucide-react import', () => {
+    // Simulates the exact Unison sequence: prepareSandpackFiles() already
+    // rewrote `import { MapPin, Phone } from 'lucide-react'` into namespace
+    // lookups, then a catalog binding / AI patch / Playground recompile
+    // reintroduces the plain named import into the ALREADY-prepared source
+    // (e.g. because the binding operation regenerated the section from a
+    // template that still uses raw lucide-react imports). Re-running
+    // prepareSandpackFiles() on that file must not emit a second
+    // `const MapPin = ...` declaration.
+    const contactWithLucide = [
+      "import { MapPin, Phone } from 'lucide-react';",
+      'export default function Contact(){',
+      '  return <main><MapPin /><Phone /></main>;',
+      '}',
+    ].join('\n');
+
+    const once = prepareSandpackFiles({
+      ...foundation.files,
+      '/src/App.tsx': "import Contact from './pages/Contact'; export default function App(){ return <Contact />; }",
+      '/src/pages/Contact.tsx': contactWithLucide,
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    const onceContact = once['/pages/Contact.tsx'];
+    const mapPinDeclCount = (onceContact.match(/const MapPin\s*=/g) || []).length;
+    expect(mapPinDeclCount).toBe(1);
+
+    // Reintroduce the raw named import into the already-prepared file, as a
+    // catalog binding / AI patch regenerating the section would.
+    const reintroduced = `import { MapPin } from 'lucide-react';\n${onceContact}`;
+
+    const twice = prepareSandpackFiles({
+      ...foundation.files,
+      '/src/App.tsx': "import Contact from './pages/Contact'; export default function App(){ return <Contact />; }",
+      '/src/pages/Contact.tsx': reintroduced,
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    const twiceContact = twice['/pages/Contact.tsx'];
+    expect((twiceContact.match(/const MapPin\s*=/g) || []).length).toBe(1);
+    expect(twiceContact).not.toMatch(/import\s*\{\s*MapPin\s*\}\s*from\s*['"]lucide-react['"]/);
+  });
 });

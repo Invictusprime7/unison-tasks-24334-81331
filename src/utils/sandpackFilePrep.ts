@@ -4562,6 +4562,42 @@ function findSafeImportInsertionPoint(code: string): number {
 }
 
 /**
+ * Collect the local names of every top-level binding already present in
+ * `code`: named/default/namespace imports, `const`/`let`/`var` declarations,
+ * function declarations, and class declarations. Used to make repair passes
+ * (e.g. the Lucide icon fallback injector) idempotent — a binding must never
+ * be declared twice, whether it came from a real import or a previously
+ * generated fallback declaration.
+ */
+function collectTopLevelBindingNames(code: string): Set<string> {
+  const bindings = new Set<string>();
+
+  const namedImportRe = /^import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"][^'"]+['"];?/gm;
+  let m: RegExpExecArray | null;
+  while ((m = namedImportRe.exec(code)) !== null) {
+    for (const spec of m[1].split(',')) {
+      const parts = spec.trim().split(/\s+as\s+/);
+      const local = (parts[1] || parts[0]).trim();
+      if (local) bindings.add(local);
+    }
+  }
+
+  const defaultOrNamespaceImportRe = /^import\s+(?:\*\s+as\s+([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*))\s*(?:,\s*\{[^}]*\})?\s+from\s+['"][^'"]+['"];?/gm;
+  while ((m = defaultOrNamespaceImportRe.exec(code)) !== null) {
+    const name = m[1] || m[2];
+    if (name) bindings.add(name);
+  }
+
+  const declarationRe = /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=|^(?:export\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(|^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)\b/gm;
+  while ((m = declarationRe.exec(code)) !== null) {
+    const name = m[1] || m[2] || m[3];
+    if (name) bindings.add(name);
+  }
+
+  return bindings;
+}
+
+/**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
  */
@@ -4703,19 +4739,43 @@ export function processCode(code: string, filePath: string): string {
   }
 
   if (__allLucideIcons.length > 0) {
+    // ── Idempotency guard ──────────────────────────────────────────────
+    // A Live Business Data operation (catalog binding, AI patch, Playground
+    // recompile) can reintroduce a plain `import { MapPin } from
+    // 'lucide-react'` into a file that a PRIOR prepareSandpackFiles() pass
+    // already rewrote into `const MapPin = __LucideIcons['MapPin'] ||
+    // __LucideFallback;`. Emitting a second `const MapPin = ...` declaration
+    // produces "Identifier 'MapPin' has already been declared". Check every
+    // existing top-level binding (imports, consts, functions, classes —
+    // including previously generated Lucide aliases) BEFORE emitting a new
+    // fallback declaration for that alias, so repeated preparation passes
+    // are idempotent. The stale named import is always removed regardless.
+    const existingBindings = collectTopLevelBindingNames(code.replace(lucideImportRe, ''));
+
     code = code.replace(lucideImportRe, (_match) => {
       if (__lucideImportDone) return '/* lucide import merged above */';
       __lucideImportDone = true;
 
+      const iconLines: string[] = [];
+      for (const { original, alias } of __allLucideIcons) {
+        if (existingBindings.has(alias)) continue;
+        const candidates = getLucideLookupCandidates(original);
+        const lookup = `${candidates.map((name) => `__LucideIcons['${name}']`).join(' || ')} || __LucideFallback`;
+        iconLines.push(`const ${alias} = ${lookup};`);
+      }
+
+      if (iconLines.length === 0) {
+        // Every requested icon already has a binding somewhere in the file
+        // (typically from a prior preparation pass). Nothing new to emit —
+        // still drop the stale named import so it isn't left dangling.
+        return '/* lucide import already satisfied by existing bindings */';
+      }
+
       const lines: string[] = [
         `import * as __LucideIcons from 'lucide-react';`,
         `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`,
+        ...iconLines,
       ];
-      for (const { original, alias } of __allLucideIcons) {
-        const candidates = getLucideLookupCandidates(original);
-        const lookup = `${candidates.map((name) => `__LucideIcons['${name}']`).join(' || ')} || __LucideFallback`;
-        lines.push(`const ${alias} = ${lookup};`);
-      }
       return lines.join('\n');
     });
   }

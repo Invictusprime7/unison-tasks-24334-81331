@@ -161,4 +161,63 @@ describe('preflightNavWiring', () => {
     expect(out).toContain('data-ut-target-page-id="pricing"');
     expect(out).toContain('data-ut-target-page-id="about"');
   });
+
+  it('resolves hash-style page route hrefs (#services) to a real page even when the label does not match any alias', () => {
+    const result = preflightNavWiring(
+      {
+        '/src/sections/SiteNavbar.tsx':
+          'export default function Nav() { return <a href="#services">Learn More</a>; }',
+      },
+      snapshot({
+        home: { title: 'Home', path: '/', isHome: true },
+        services: { title: 'Services', path: '/services', pageRole: 'services' },
+      }),
+    );
+    expect(result.wired).toBe(1);
+    const out = result.files['/src/sections/SiteNavbar.tsx'];
+    expect(out).toContain('data-ut-intent="nav.goto"');
+    expect(out).toContain('data-ut-path="/services"');
+    expect(out).toContain('data-ut-target-page-id="services"');
+  });
+
+  it('resolves hash-style page route hrefs with a leading slash (#/pricing)', () => {
+    const result = preflightNavWiring(
+      {
+        '/src/sections/SiteNavbar.tsx':
+          'export default function Nav() { return <a href="#/pricing">See Plans</a>; }',
+      },
+      snapshot({
+        home: { title: 'Home', path: '/', isHome: true },
+        pricing: { title: 'Pricing', path: '/pricing', pageRole: 'pricing' },
+      }),
+    );
+    expect(result.wired).toBe(1);
+    expect(result.files['/src/sections/SiteNavbar.tsx']).toContain('data-ut-target-page-id="pricing"');
+  });
+
+  it('leaves genuine same-page anchors (no matching page) unwired', () => {
+    const src = 'export default function P() { return <a href="#newsletter-signup">Learn More</a>; }';
+    const result = preflightNavWiring(
+      { '/src/App.tsx': src },
+      snapshot({
+        home: { title: 'Home', path: '/', isHome: true },
+        services: { title: 'Services', path: '/services', pageRole: 'services' },
+      }),
+    );
+    expect(result.wired).toBe(0);
+    expect(result.files['/src/App.tsx']).toBe(src);
+  });
+
+  it('leaves a bare "#" placeholder href untouched', () => {
+    const src = 'export default function P() { return <a href="#">Learn More</a>; }';
+    const result = preflightNavWiring(
+      { '/src/App.tsx': src },
+      snapshot({
+        home: { title: 'Home', path: '/', isHome: true },
+        services: { title: 'Services', path: '/services', pageRole: 'services' },
+      }),
+    );
+    expect(result.wired).toBe(0);
+    expect(result.files['/src/App.tsx']).toBe(src);
+  });
 });

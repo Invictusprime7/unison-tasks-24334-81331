@@ -32,6 +32,61 @@ import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedCh
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 
+const FOUNDATION_MARKER_TEXT = 'UNISON GENERATED UI FOUNDATION';
+const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
+
+/**
+ * Single source of truth for re-materializing the Unison UI foundation into a
+ * VFS. Every runtime module, the root barrel, the CSS bridge, and the manifest
+ * are refreshed together so parents, children, and tokens can never drift out
+ * of sync between the VFS, the preview, and the Playground.
+ */
+export function syncGeneratedUiFoundationFiles(
+  files: Record<string, string>,
+  themePresetId?: string | null,
+): void {
+  const foundation = buildGeneratedUiFoundation({
+    themePresetId: themePresetId || 'snapshot-recovery',
+  });
+
+  for (const [path, content] of Object.entries(foundation.files)) {
+    if (path === UI_MANIFEST_PATH) continue;
+    // Foundation-owned files are always regenerated; user/AI files are never
+    // clobbered (they simply never carry the foundation marker).
+    if (!files[path] || files[path].includes(FOUNDATION_MARKER_TEXT)) {
+      files[path] = content;
+    }
+  }
+
+  // Keep the manifest in lockstep with the runtime files we just wrote. A
+  // stale-version manifest reads back as `null` and makes downstream contract
+  // checks treat a healthy snapshot as invalid.
+  const existingManifest = files[UI_MANIFEST_PATH];
+  if (!existingManifest) {
+    files[UI_MANIFEST_PATH] = foundation.files[UI_MANIFEST_PATH];
+    return;
+  }
+  try {
+    const parsed = JSON.parse(existingManifest) as Record<string, unknown>;
+    if (parsed.version === foundation.manifest.version) return;
+    const extraRequirements = Array.isArray(parsed.requirements)
+      ? (parsed.requirements as string[]).filter(
+          (requirement) => !foundation.manifest.requirements.includes(requirement),
+        )
+      : [];
+    files[UI_MANIFEST_PATH] = JSON.stringify(
+      {
+        ...foundation.manifest,
+        requirements: [...foundation.manifest.requirements, ...extraRequirements],
+      },
+      null,
+      2,
+    );
+  } catch {
+    files[UI_MANIFEST_PATH] = foundation.files[UI_MANIFEST_PATH];
+  }
+}
+
 const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 
 /**

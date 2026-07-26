@@ -201,9 +201,20 @@ export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): Capa
   const requestedCapabilities = interpretation.resolved;
   const operationalCapabilityIds = resolveOperationalCapabilities(requestedCapabilities);
   const operationalCapabilities = operationalCapabilityIds.map((id) => CAPABILITY_REGISTRY[id]);
+
+  // Full-stack pack contracts, dependency-first (Milestone 5 / Step 2).
+  const { order: packs, unsupported } = resolveCapabilityPacks(requestedCapabilities);
+  const bindableSlots = packSlots(packs);
+
   const intentBindings = bindingsForCapabilities(requestedCapabilities, interpretation.uiTargets);
-  const dataAffected = unique(operationalCapabilities.flatMap((capability) => capability.database.requiredTables));
-  const readinessAssertions = unique(operationalCapabilities.flatMap((capability) => capability.readiness.assertions));
+  const dataAffected = unique([
+    ...operationalCapabilities.flatMap((capability) => capability.database.requiredTables),
+    ...packTables(packs),
+  ]);
+  const readinessAssertions = unique([
+    ...operationalCapabilities.flatMap((capability) => capability.readiness.assertions),
+    ...packAssertions(packs).map((assertion) => assertion.id),
+  ]);
 
   return {
     envelope,
@@ -211,6 +222,8 @@ export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): Capa
     interpretationSource: interpretation.source,
     requestedCapabilities,
     operationalCapabilities,
+    packs,
+    bindableSlots,
     proposal: {
       status: 'proposed',
       requiresApproval: true,
@@ -219,9 +232,14 @@ export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): Capa
       operationalCapabilities: operationalCapabilityIds,
       intentBindings,
       readinessAssertions,
+      packs: packs.map((pack) => pack.id),
+      edgeFunctions: packFunctions(packs),
+      settingsRequired: packSettings(packs),
+      unsupportedCapabilities: unsupported,
     },
   };
 }
+
 
 
 /** Stamps a review decision; callers must provide the identity and time. */

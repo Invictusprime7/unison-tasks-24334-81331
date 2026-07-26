@@ -342,16 +342,21 @@ export function styles(...classNames: Array<string | false | null | undefined>) 
 /* Stage 4b owns the global Tailwind layers and theme tokens in /src/index.css. */
 ${UNISON_VFS_STYLE_BRIDGE}`,
   '/src/unison/ui/index.ts': `${marker}
-export { Button } from './button';
-export { Card, CardContent } from './card';
+// Root barrel: MUST re-export the full public surface of every foundation
+// module. A partial barrel resolves to \`undefined\` at runtime and surfaces as
+// "Element type is invalid" in the preview.
+export { Button, type ButtonProps } from './button';
+export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
+export { cn } from './cn';
 export { FieldLabel, Input, Textarea } from './form-fields';
-export { useForm, zodResolver, z } from './forms';
+export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
 export { ImageLightbox } from './media';
-export { Reveal, RevealGroup, Stagger, StaggerItem } from './motion';
-export { FloatingNavbar } from './navigation';
+export { Reveal, RevealGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';
+export { FloatingNavbar, type NavigationLink } from './navigation';
 export { BentoFeatureGrid, FeatureCard } from './recipes';
 export { colorStyles, componentStyles, motionStyles, styles, typography } from './styles';
+export { Slot, Slottable } from './radix/slot';
 // Compatibility surface for generated pages that import Lucide components
 // from the UI root instead of the dedicated /icons facade.
 export * from './icons';

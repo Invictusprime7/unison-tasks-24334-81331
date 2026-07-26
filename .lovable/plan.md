@@ -1,49 +1,81 @@
-## Diagnosis (verified)
+## Where Unison already matches your architecture
 
-- Console shows: `Wizard Lane B generation failed; minimal fallback is blocked. Failed to send a request to the Edge Function`.
-- `Failed to send a request to the Edge Function` is the supabase-js `FunctionsFetchError` — the `fetch` to the edge function failed before any response came back (network hiccup, CORS preflight failure, or cold-start crash). It is NOT a Lane B contract failure and NOT an AI-provider failure.
-- Direct curl to `/ai-code-assistant` returns `401 Invalid or expired token` — the function itself is deployed and reachable; the crash log window for `ai-code-assistant` was empty because the request never reached it.
-- `runBuilderTurn` (`src/services/builderBrainClient.ts`) calls `supabase.functions.invoke("ai-code-assistant", …)` once with no retry. `SystemLauncher.tsx` treats any error as a terminal Lane B failure and hard-blocks with "minimal fallback is blocked".
-- Payload sizing is not the cause: `buildWizardVfsPayload` caps at 24k chars, `buildWizardCurrentCodeContext` at 18k, `siteElementsLibraryContext` at 12k, `previewSnapshot` at 2.9k — total well under the 4 MB body limit.
+A lot of the model you described is already in the codebase — it just isn't finished or surfaced:
 
-Net: a single transient transport failure kills the whole wizard even though the pipeline is otherwise healthy.
+- `src/platform/core/capabilityRegistry.ts` already defines the exact `BusinessCapability` union you listed, plus `CapabilityDefinition` with `database`, `requiredTables`, intents, and dependencies.
+- `src/services/businessCapabilityPlanner.ts` already produces a `CapabilityPlan` → `CapabilityProposal` with `requiresApproval: true`, `dataAffected`, `intentBindings`, `readinessAssertions`, and a `BuilderScope = 'website' | 'business-system' | 'developer'`.
+- `src/types/builderRequestEnvelope.ts` + `builder-request-interpreter` already give multi-label classification, domains, capabilities, and confidence (Phase 1 intelligence foundation).
+- `src/services/backendOpExecutor.ts` + `vfsCommitService.ts` + `site_revisions` already give a transactional commit path with rollback.
+- `ai_builder_proposals` table + `ai-builder-propose` already draft reviewable backend changes.
 
-## Fix (narrow, no policy change)
+So this is not a rewrite. It is closing five specific gaps.
 
-Keep the "no minimal fallback" contract exactly as-is. Only harden the transport path and improve error surfacing.
+## The five gaps
 
-### Pass 1 — Retry transport errors in `runBuilderTurn`
+1. **The planner is regex-driven, not interpreter-driven.** `businessCapabilityPlanner` matches `/\b(book|booking|appointment)\b/i` instead of reading the envelope. Abstract prompts ("make this operate like a real salon") fall through.
+2. **No approval gate surface.** `MigrationProposalPanel.tsx` exists but is mounted nowhere.
+3. **No executor for schema.** `ai-builder-apply` flips status to `approved` and hands SQL back. Nothing runs it. No GRANT/RLS lint enforcement.
+4. **No unified `BusinessSystemSnapshot`.** Site truth lives in `SiteBundleSnapshot`; capability truth lives in `BusinessSystemState`; data truth lives in catalog tables. Three readers, three shapes.
+5. **Verification is frontend-only.** `envelopeVerifier` checks files and intents, never asserts a table/policy actually landed.
 
-`src/services/builderBrainClient.ts`
-- Wrap the `supabase.functions.invoke` call in an internal retry helper.
-- Retry only on transport-class errors: `FunctionsFetchError`, `TypeError` from `fetch`, or an error whose message matches `/failed to send|failed to fetch|network|timeout|ECONNRESET|502|503|504/i`.
-- Do NOT retry on `FunctionsHttpError` (4xx/5xx with body) or when the function returned a structured `{ error }` payload — those are real AI/schema failures the launcher must see.
-- Max 2 retries, exponential backoff (750 ms → 1500 ms) with jitter. Respect `options.signal` if aborted.
-- Log each retry attempt with attempt number and error message.
+## Plan
 
-### Pass 2 — Classify transport failure in the launcher
+### Step 1 — Interpreter → capability planner (replace regex)
 
-`src/components/onboarding/SystemLauncher.tsx`
-- Extend `getFunctionErrorMessage` usage: when the underlying error is transport-class after retries are exhausted, surface a distinct message: *"Couldn't reach the AI generator (network/edge function transport error). Retry generation — no fallback will be substituted."*
-- Keep the "minimal fallback is blocked" contract wording only for true contract violations (empty structured payload, missing pages, quality gate). Transport errors get their own actionable copy so users know to retry rather than assume the AI misbehaved.
-- Same treatment at the two other Lane B call sites (repair turn at line ~2574, isolated page completion at ~2692).
+Rewrite `businessCapabilityPlanner` to consume the `BuilderRequestEnvelope` instead of raw prompt text. Map `envelope.domains` + `envelope.requestedCapabilities` + `envelope.goals` onto `BusinessCapability[]` via a declarative table, and expand through `CapabilityDefinition.dependencies` so `booking.appointments` automatically pulls `catalog.services`, `crm.contacts`, `notifications.email`. Keep the regexes only as hints when the interpreter is unavailable.
 
-### Pass 3 — Verify
+Add `resolveBuilderScope(envelope)` so one assistant routes internally to website / business-system / developer scope, and surface that scope as a chip in the AI panel (read-only badge — the user still types one prompt).
 
-- Unit sanity: manually invoke `ai-code-assistant` via `supabase--curl_edge_functions` with a signed test payload to confirm 200 path still returns; already confirmed function is deployed (401 on unauth).
-- Re-run the wizard for the failing industry; on transport hiccup the retry should absorb it silently, and on real Lane B contract failure the existing hard-fail path stays intact.
+### Step 2 — Complete the CapabilityDefinition contract
 
-## Files touched
+Extend the existing definitions to carry the full contract from your spec: `backend.functions/events/permissions`, `frontend.components/dataSources/supportedSlots`, `settings.accountFields/projectFields`, `readiness.assertions/fixtures`. Populate the Phase-2 four first: `business_profile`, `catalog.services`, `crm.leads`, `booking.appointments`.
 
-- `src/services/builderBrainClient.ts` — add transport-retry helper.
-- `src/components/onboarding/SystemLauncher.tsx` — classify transport error, update three error-surfacing sites.
+### Step 3 — Approval gate (mount the proposal surface)
 
-## Out of scope
+Mount `MigrationProposalPanel` in the WebBuilder right rail as a "Backend changes" tab, and emit a compact inline approval card in `AIBuilderPanel` when a `CapabilityProposal` is produced — showing the plain-English summary, the affected data, and the intent bindings, exactly as in your example. Approving triggers the transaction; rejecting logs and stops.
 
-- No changes to Lane B contract, no fallback synthesis, no scaffold backfill, no schema softening.
-- No prompt or provider changes.
-- No changes to `sanitizeVfsForAI` or payload sizing (verified within limits).
+### Step 4 — Gated executor with mandatory SQL linting
 
-## Risk
+- New `src/services/migrationSqlLint.ts` + a Deno twin under `supabase/functions/_shared/`: every `CREATE TABLE public.*` must be followed by GRANT, `ENABLE ROW LEVEL SECURITY`, and at least one policy. Missing any of those is a **blocker**, not a warning (today it's a warning). Deny-list stays for managed schemas, roles, and `ALTER DATABASE`.
+- New database function `public.apply_capability_migration(...)` (SECURITY DEFINER, authorization-checked, logged) that executes approved SQL inside a transaction, plus a `capability_migration_runs` audit table.
+- `ai-builder-apply` calls it only when: proposal is `approved`, lint is clean, and the caller is an owner/business admin. Any failure rolls back and marks the proposal `failed`.
 
-Very low. Retry is limited to transport-class errors and 2 attempts; every existing contract check remains. Worst case a real outage adds ~2 seconds before the same error surfaces — with a clearer message.
+Note: edge-function authoring stays proposal-only. Unison cannot deploy new Deno functions into its own hosted runtime from inside the app — proposals will write the source into the project VFS under `/supabase/functions/<name>/index.ts` for export, and say so honestly instead of pretending to deploy.
+
+### Step 5 — Transaction orchestrator
+
+New `src/services/capabilityProvisioner.ts` running your exact sequence, each step reversible:
+
+```text
+approve → apply migrations → verify RLS/GRANT → install functions
+  → register intents → update snapshot → generate UI bindings
+  → seed preview fixtures → compile → readiness checks → commit | rollback
+```
+
+It reuses `backendOpExecutor` for install/seed and `vfsCommitService` for the VFS half, so one approval commits both halves or neither.
+
+### Step 6 — BusinessSystemSnapshot
+
+New `src/platform/core/businessSystemSnapshot.ts` defining the contract you specified, built as a **projection** over existing sources (`SiteBundleSnapshot` → `site`, `BusinessSystemState` → `capabilities`, catalog registry → `data`, readiness evaluator → `readiness`). Nothing is duplicated; readers migrate to the projection one at a time (AI Builder first, then dashboard, then deployment).
+
+### Step 7 — Backend-aware verification
+
+Extend `envelopeVerifier` with schema assertions: after a capability provision, query `information_schema` / `pg_policies` through a read-only RPC and assert the declared `requiredTables`, `requiredColumns`, and `rlsPolicies` exist. A failed assertion feeds the same single targeted-repair turn already used for file misses.
+
+### Step 8 — Component capability declarations (Phase 3)
+
+Extend the component intelligence registry so each generated section declares `requiredData`, `requiredCapabilities`, `supportedIntents`, `emptyState`, `loadingState`. `ServiceGrid → catalog.services`, `BookingButton → booking.create`, `ContactForm → crm.leads`, etc. This is what lets "turn these static cards into real services" resolve deterministically.
+
+## Technical details
+
+- Migrations needed: `capability_migration_runs` (audit log), `public.apply_capability_migration(sql text, proposal_id uuid)`, and a read-only `public.describe_public_objects(names text[])` for verification.
+- The SQL executor is the only genuinely risky addition. Mitigations: lint-as-blocker, owner/admin-only authorization inside the SECURITY DEFINER function, statement deny-list re-checked server-side, full audit row per run, and no execution path that isn't preceded by an explicit user approval on a persisted proposal.
+- No changes to the wizard Lane A → Lane B → Stage 4b sequence, `SiteBundleSnapshot` authority, or theme injection.
+
+## Positioning
+
+Agreed on repositioning away from "AI full-stack app builder." I'll update the in-product copy (wizard headers, builder empty states) toward "Build your site, CRM, catalog, bookings, and workflows as one connected business system" as part of Step 3, since that's when the business-system surface first becomes visible.
+
+## Suggested order
+
+Steps 1–2 first (no infrastructure mutation, matches your Phase 1 constraint), then 3–5 as one shippable unit, then 6–8.

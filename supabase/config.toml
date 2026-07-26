@@ -152,3 +152,6 @@ verify_jwt = true
 
 [functions.ai-builder-apply]
 verify_jwt = true
+
+[functions.capability-migration-apply]
+verify_jwt = true

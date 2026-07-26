@@ -6,10 +6,10 @@ import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { SHADCN_LIBRARY_CSS_MARKER } from '@/components/onboarding/themePresetToIndexCss';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
+import { GENERATED_UI_FOUNDATION_VERSION } from '@/platform/core/generatedUiFoundation';
 import { getCompositionsBySystemType } from '@/sections/templates';
 import { buildTemplateLayoutContract } from '@/services/templateLayoutContract';
 import {
-import { GENERATED_UI_FOUNDATION_VERSION } from '@/platform/core/generatedUiFoundation';
   compileWizardInteractionManifest,
   createBaselineInteractionManifest,
 } from '@/services/wizardInteractionEnrichment';

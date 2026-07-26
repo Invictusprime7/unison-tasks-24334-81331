@@ -51,7 +51,10 @@ serve(async (req: Request) => {
       });
     }
 
-    const task = classifyTask({
+    const envelope = (parsed.data as { requestEnvelope?: Record<string, unknown> }).requestEnvelope;
+    const clientSkipResearch = (parsed.data as { skipResearch?: boolean }).skipResearch;
+
+    const baseTask = classifyTask({
       mode: parsed.data.mode ?? undefined,
       systemsBuildContext: parsed.data.systemsBuildContext,
       currentCode: parsed.data.currentCode ?? undefined,

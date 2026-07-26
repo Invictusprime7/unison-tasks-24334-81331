@@ -5275,48 +5275,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       path.startsWith('/src/unison/ui/') || /@\/unison\/ui(?:\/[^'"\s]+)?/.test(content)
     ))
   ) {
-    const foundation = buildGeneratedUiFoundation({
-      themePresetId: options?.themePresetId || 'snapshot-recovery',
-    });
-    for (const [path, content] of Object.entries(foundation.files)) {
-      if (path === '/.unison/ui-manifest.json') {
-        // Keep the manifest in lockstep with the runtime files we just wrote.
-        // A stale-version manifest reads back as `null` and makes every
-        // downstream contract check treat a healthy snapshot as invalid.
-        const existing = out[path];
-        if (!existing) {
-          out[path] = content;
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(existing) as Record<string, unknown>;
-          if (parsed.version === foundation.manifest.version) continue;
-          const extraRequirements = Array.isArray(parsed.requirements)
-            ? (parsed.requirements as string[]).filter(
-                (requirement) => !foundation.manifest.requirements.includes(requirement),
-              )
-            : [];
-          out[path] = JSON.stringify(
-            {
-              ...foundation.manifest,
-              requirements: [...foundation.manifest.requirements, ...extraRequirements],
-            },
-            null,
-            2,
-          );
-        } catch {
-          out[path] = content;
-        }
-        continue;
-      }
-      if (out[path]) {
-        if (out[path].includes('UNISON GENERATED UI FOUNDATION')) {
-          out[path] = content;
-        }
-        continue;
-      }
-      out[path] = content;
-    }
+    syncGeneratedUiFoundationFiles(out, options?.themePresetId);
 
     // Radix's raw Slot throws ("Slot failed to slot onto its children") whenever
     // `asChild` receives text, a fragment, or multiple children — a shape AI

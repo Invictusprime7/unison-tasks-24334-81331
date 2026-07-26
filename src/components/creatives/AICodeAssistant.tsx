@@ -903,8 +903,13 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
         envelope.requestKinds.includes('backend_configuration') ||
         envelope.requestKinds.includes('data_binding') ||
         envelope.domains.some((d) => ['booking', 'crm', 'auth', 'commerce', 'automation', 'database'].includes(d));
+      // A compound/mixed request must NOT be reduced to a single pack install —
+      // it continues into the code path so every requirement is honored.
+      const canShortCircuit =
+        builderActionHint.type === 'install_pack' ||
+        (envelope.complexity === 'simple' && envelope.executionMode !== 'mixed');
       const builderAction =
-        builderActionHint.type && envelopeWantsBackend && requiresApproval(envelope)
+        builderActionHint.type && envelopeWantsBackend && requiresApproval(envelope) && canShortCircuit
           ? builderActionHint
           : { type: null as null | 'install_pack' | 'wire_button' };
 

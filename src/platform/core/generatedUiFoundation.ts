@@ -464,8 +464,10 @@ export function Reveal({ children, className, recipe = 'editorial-reveal' }: { c
 }
 
 export function Stagger({ children, className }: { children: React.ReactNode; className?: string }) {
-  const reduceMotion = useReducedMotion();
-  return <motion.div className={cn(className)} initial="hidden" whileInView="show" viewport={{ once: true, amount: 0.12 }} variants={{ hidden: {}, show: { transition: { staggerChildren: reduceMotion ? 0 : 0.09 } } }}>{children}</motion.div>;
+  // Layout-transparent by default: a wrapper div here would collapse every card
+  // into the first cell of a parent grid/flex row (fragmented, left-glued pages).
+  if (!className) return <>{children}</>;
+  return <motion.div className={cn(className)} initial="hidden" whileInView="show" viewport={{ once: true, amount: 0.12 }} variants={{ hidden: {}, show: { transition: { staggerChildren: 0.09 } } }}>{children}</motion.div>;
 }
 
 export function RevealGroup({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -474,7 +476,8 @@ export function RevealGroup({ children, className }: { children: React.ReactNode
 
 export function StaggerItem({ children, className }: { children: React.ReactNode; className?: string }) {
   const reduceMotion = useReducedMotion();
-  return <motion.div className={cn(className)} variants={{ hidden: { opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 }, show: { opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' } } }}>{children}</motion.div>;
+  // Self-animating so items still reveal when Stagger is layout-transparent.
+  return <motion.div className={cn('h-full', className)} initial={{ opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.15 }} transition={{ duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' }} variants={{ hidden: { opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 }, show: { opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' } } }}>{children}</motion.div>;
 }
 `,
     '/src/unison/ui/navigation.tsx': `${marker}

@@ -97,6 +97,7 @@ import {
   planBusinessCapabilities,
   type CapabilityPlan,
 } from '@/services/businessCapabilityPlanner';
+import { previewCapabilityMigration } from '@/services/capabilityMigrationRunner';
 import { interpretBuilderRequest } from '@/services/builderRequestInterpreter';
 
 import {

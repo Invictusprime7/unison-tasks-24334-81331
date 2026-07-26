@@ -6658,6 +6658,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
                 const result = aiVFS.applyCode(files);
                 if (result.success) {
+                  markLiveEditedVfsPaths(Object.keys(files));
                   const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                   syncBuilderFromFiles(mergedFiles, activePagePath);
                   setViewMode('canvas');

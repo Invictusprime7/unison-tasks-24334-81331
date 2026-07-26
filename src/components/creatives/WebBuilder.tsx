@@ -523,6 +523,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       || (effectiveRouteState?.runtimeManifest?.appContext as { templateId?: string } | undefined)?.templateId
       || null
   );
+  // Live-edit protection is scoped to one project identity; drop it on switch.
+  useEffect(() => {
+    clearLiveEditedVfsPaths();
+  }, [currentDraftId]);
   const [currentManifestId, setCurrentManifestId] = useState<string | null>(
     effectiveRouteState?.manifestId || null
   );

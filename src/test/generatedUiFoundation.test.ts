@@ -29,7 +29,14 @@ describe('generated UI foundation', () => {
     expect(foundation.files['/src/unison/ui/motion.tsx']).toContain('export function RevealGroup');
     expect(foundation.files['/src/unison/ui/animation.ts']).toContain('export function StaggerContainer');
     expect(foundation.files['/src/unison/ui/animation.ts']).toContain('export function StaggerChild');
-    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Reveal, RevealGroup, Stagger, StaggerItem } from './motion';");
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Reveal, RevealGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';");
+    // Root barrel must expose the full surface of every foundation module, or
+    // a page importing e.g. CardHeader from '@/unison/ui' renders undefined.
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';");
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Slot, Slottable } from './radix/slot';");
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { cn } from './cn';");
+    // Animation aliases must stay layout-transparent like motion.tsx Stagger.
+    expect(foundation.files['/src/unison/ui/animation.ts']).toContain('if (!className) return React.createElement(React.Fragment, null, children);');
     expect(foundation.files['/src/unison/ui/icons.ts']).toContain("export * from 'lucide-react';");
     expect(foundation.files['/src/unison/ui/icons.ts']).toContain("export const Instagram = brandIcon('Instagram');");
     expect(foundation.files['/src/unison/ui/icons.ts']).toContain("export const Facebook = brandIcon('Facebook');");

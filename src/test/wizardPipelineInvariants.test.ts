@@ -9,6 +9,7 @@ import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { getCompositionsBySystemType } from '@/sections/templates';
 import { buildTemplateLayoutContract } from '@/services/templateLayoutContract';
 import {
+import { GENERATED_UI_FOUNDATION_VERSION } from '@/platform/core/generatedUiFoundation';
   compileWizardInteractionManifest,
   createBaselineInteractionManifest,
 } from '@/services/wizardInteractionEnrichment';
@@ -63,7 +64,7 @@ describe('wizard pipeline ownership invariants', () => {
       cssPath: '/src/index.css',
     });
     expect(artifacts.siteBundleSnapshot?.meta.uiFoundation).toEqual({
-      version: '1.0',
+      version: GENERATED_UI_FOUNDATION_VERSION,
       manifestPath: '/.unison/ui-manifest.json',
       importRoot: '@/unison/ui',
     });

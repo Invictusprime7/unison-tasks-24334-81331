@@ -1583,6 +1583,109 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
   const aiVFS = useAIVFS(virtualFS, livePreviewRef);
+
+  // Shared capability approval transaction: backend migration first, then the
+  // gated VFS commit. Mounted on BOTH the desktop and mobile AI panels so the
+  // full-stack approval UI is never missing on one of them.
+  const approveCapabilityPlanFromPanel = useCallback(async (
+    plan: Parameters<NonNullable<React.ComponentProps<typeof AIBuilderPanel>['onApproveCapabilityPlan']>>[0],
+    resolution: Parameters<NonNullable<React.ComponentProps<typeof AIBuilderPanel>['onApproveCapabilityPlan']>>[1],
+  ) => {
+                  if (!businessId || !currentDraftId) {
+                    return { success: false, error: 'A saved business project is required to install capabilities.' };
+                  }
+                  if (resolution.unresolved.length > 0) {
+                    return { success: false, error: 'Resolve every requested UI target before approval.' };
+                  }
+                  try {
+                    const { data: { user } } = await supabaseClient.auth.getUser();
+                    if (!user) return { success: false, error: 'Your session has expired. Sign in again.' };
+                    const approved = approveCapabilityPlan(plan, {
+                      approvedBy: user.id,
+                      approvedAt: new Date().toISOString(),
+                    });
+
+                    // Backend first: grants, RLS and policies are applied (in a
+                    // single transaction, server-side) before any frontend
+                    // patch lands, so the committed UI can never read or write
+                    // tables the database has not been prepared for.
+                    const migration = await applyCapabilityMigration({
+                      packs: plan.packs,
+                      businessId,
+                      projectId: resolvedProjectId || currentDraftId,
+                      summary: plan.proposal?.summary,
+                    });
+                    if (!migration.success) {
+                      return {
+                        success: false,
+                        error: migration.error
+                          ? `Backend setup failed, nothing was changed: ${migration.error}`
+                          : 'Backend setup failed, nothing was changed.',
+                      };
+                    }
+
+                    const patch = approvedCapabilityPlanToPatchPlan(approved);
+                    const beforeFiles = virtualFS.getSandpackFiles();
+                    for (const [path, contents] of Object.entries(resolution.files)) {
+                      if (beforeFiles[path] !== contents) patch.fileOps.push({ type: 'replace', path, contents });
+                    }
+                    const snapshot = effectiveRouteState?.siteBundleSnapshot ?? null;
+                    const commit = await commitMutation({
+                      source: 'ai-builder',
+                      identity: {
+                        userId: user.id,
+                        businessId,
+                        projectId: resolvedProjectId || currentDraftId,
+                        draftId: currentDraftId,
+                        revisionId: currentRevisionId,
+                        sessionId: `web-builder:${currentDraftId}`,
+                      },
+                      current: {
+                        vfsFiles: beforeFiles,
+                        siteBundleSnapshot: snapshot ?? undefined,
+                        playground: {
+                          pageRegistry: creatorPlayground.pageRegistry,
+                          creatorData: creatorPlayground.creatorData,
+                          calendars: snapshot?.calendars ?? {},
+                          popups: snapshot?.popups ?? {},
+                        } as never,
+                      },
+                      patch,
+                      options: {
+                        requirePreviewPass: true,
+                        requireReadinessPass: true,
+                        industry: snapshot?.industry,
+                        themePresetId: snapshot?.meta.themePresetId ?? undefined,
+                        themeTokens: snapshot?.themeTokens,
+                      },
+                    });
+                    virtualFS.importFiles(commit.vfsFiles);
+                    if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
+                    for (const binding of resolution.resolved) {
+                      const page = Object.values(creatorPlayground.pageRegistry.pages)
+                        .find((candidate) => candidate.filePath === binding.filePath);
+                      const bindingResult = await applyButtonBinding({
+                        businessId,
+                        projectId: resolvedProjectId || currentDraftId,
+                        pagePath: page?.path ?? '/',
+                        slot: binding.slot,
+                        intent: binding.intent,
+                      }, {
+                        pageRegistry: creatorPlayground.pageRegistry,
+                        slotExists: () => true,
+                      });
+                      if (!bindingResult.ok) {
+                        return {
+                          success: false,
+                          error: 'message' in bindingResult ? bindingResult.message : 'Unable to persist the intent binding.',
+                        };
+                      }
+                    }
+                    return { success: true };
+                  } catch (error) {
+                    return { success: false, error: error instanceof Error ? error.message : 'Capability transaction failed.' };
+                  }
+                  });
   
   // Site builder orchestrator — provides site graph navigation, brand system, and intent routing
   // Uses project/business IDs from location state; no-ops if unavailable
@@ -6108,102 +6211,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                 projectId={currentDraftId ?? null}
                 businessId={businessId ?? null}
                 layoutOps={layoutOpsForAI}
-                onApproveCapabilityPlan={async (plan, resolution) => {
-                  if (!businessId || !currentDraftId) {
-                    return { success: false, error: 'A saved business project is required to install capabilities.' };
-                  }
-                  if (resolution.unresolved.length > 0) {
-                    return { success: false, error: 'Resolve every requested UI target before approval.' };
-                  }
-                  try {
-                    const { data: { user } } = await supabaseClient.auth.getUser();
-                    if (!user) return { success: false, error: 'Your session has expired. Sign in again.' };
-                    const approved = approveCapabilityPlan(plan, {
-                      approvedBy: user.id,
-                      approvedAt: new Date().toISOString(),
-                    });
-
-                    // Backend first: grants, RLS and policies are applied (in a
-                    // single transaction, server-side) before any frontend
-                    // patch lands, so the committed UI can never read or write
-                    // tables the database has not been prepared for.
-                    const migration = await applyCapabilityMigration({
-                      packs: plan.packs,
-                      businessId,
-                      projectId: resolvedProjectId || currentDraftId,
-                      summary: plan.proposal?.summary,
-                    });
-                    if (!migration.success) {
-                      return {
-                        success: false,
-                        error: migration.error
-                          ? `Backend setup failed, nothing was changed: ${migration.error}`
-                          : 'Backend setup failed, nothing was changed.',
-                      };
-                    }
-
-                    const patch = approvedCapabilityPlanToPatchPlan(approved);
-                    const beforeFiles = virtualFS.getSandpackFiles();
-                    for (const [path, contents] of Object.entries(resolution.files)) {
-                      if (beforeFiles[path] !== contents) patch.fileOps.push({ type: 'replace', path, contents });
-                    }
-                    const snapshot = effectiveRouteState?.siteBundleSnapshot ?? null;
-                    const commit = await commitMutation({
-                      source: 'ai-builder',
-                      identity: {
-                        userId: user.id,
-                        businessId,
-                        projectId: resolvedProjectId || currentDraftId,
-                        draftId: currentDraftId,
-                        revisionId: currentRevisionId,
-                        sessionId: `web-builder:${currentDraftId}`,
-                      },
-                      current: {
-                        vfsFiles: beforeFiles,
-                        siteBundleSnapshot: snapshot ?? undefined,
-                        playground: {
-                          pageRegistry: creatorPlayground.pageRegistry,
-                          creatorData: creatorPlayground.creatorData,
-                          calendars: snapshot?.calendars ?? {},
-                          popups: snapshot?.popups ?? {},
-                        } as never,
-                      },
-                      patch,
-                      options: {
-                        requirePreviewPass: true,
-                        requireReadinessPass: true,
-                        industry: snapshot?.industry,
-                        themePresetId: snapshot?.meta.themePresetId ?? undefined,
-                        themeTokens: snapshot?.themeTokens,
-                      },
-                    });
-                    virtualFS.importFiles(commit.vfsFiles);
-                    if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
-                    for (const binding of resolution.resolved) {
-                      const page = Object.values(creatorPlayground.pageRegistry.pages)
-                        .find((candidate) => candidate.filePath === binding.filePath);
-                      const bindingResult = await applyButtonBinding({
-                        businessId,
-                        projectId: resolvedProjectId || currentDraftId,
-                        pagePath: page?.path ?? '/',
-                        slot: binding.slot,
-                        intent: binding.intent,
-                      }, {
-                        pageRegistry: creatorPlayground.pageRegistry,
-                        slotExists: () => true,
-                      });
-                      if (!bindingResult.ok) {
-                        return {
-                          success: false,
-                          error: 'message' in bindingResult ? bindingResult.message : 'Unable to persist the intent binding.',
-                        };
-                      }
-                    }
-                    return { success: true };
-                  } catch (error) {
-                    return { success: false, error: error instanceof Error ? error.message : 'Capability transaction failed.' };
-                  }
-                }}
+                onApproveCapabilityPlan={approveCapabilityPlanFromPanel}
                 onApplyToVFS={async (rawFiles, applyMeta) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(rawFiles));
                   // End-to-end preflight: syntax repair → nav-intent stamping →
@@ -6653,6 +6661,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               projectId={currentDraftId ?? null}
               businessId={businessId ?? null}
               layoutOps={layoutOpsForAI}
+              onApproveCapabilityPlan={approveCapabilityPlanFromPanel}
               onApplyToVFS={async (rawFiles, applyMeta) => {
                 const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
                 const files = runFullPreflight(rawFiles, {

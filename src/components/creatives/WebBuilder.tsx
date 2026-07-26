@@ -154,7 +154,7 @@ import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistenc
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
-import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
+import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot, markLiveEditedVfsPaths, clearLiveEditedVfsPaths } from '@/services/snapshotProjector';
 import { isPreviewPipelineError } from '@/services/previewPipelineError';
 import { ThemeSeedError } from '@/platform/core/themeSeedAssert';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';

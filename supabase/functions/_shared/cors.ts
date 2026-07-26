@@ -69,14 +69,17 @@ export function getCorsHeaders(req: Request): Record<string, string> {
     origin.startsWith("http://127.0.0.1:");
 
   const allowedOrigin =
-    allowedOrigins.includes(origin) || isUnisonTasksVercelDeployment(origin) || isLocalDev
+    allowedOrigins.includes(origin) ||
+    isUnisonTasksVercelDeployment(origin) ||
+    isLovableHostedOrigin(origin) ||
+    isLocalDev
       ? origin
       : "";
 
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type, x-request-id, x-dev-mode-user",
+      "authorization, x-client-info, x-supabase-api-version, apikey, content-type, x-request-id, x-dev-mode-user, x-session-id",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",

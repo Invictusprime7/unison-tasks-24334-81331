@@ -6221,6 +6221,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
                   if (result.success) {
+                    // Protect these paths from the snapshot projection until the
+                    // durable commit refreshes the snapshot with the same content.
+                    markLiveEditedVfsPaths(Object.keys(files));
                     const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                     const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
                     console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');

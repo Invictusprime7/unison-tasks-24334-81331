@@ -1,0 +1,145 @@
+/**
+ * builderPayloadBudget — hard client-side size budget for builder-brain requests.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * The edge gateway silently DROPS the connection for large request bodies
+ * (measured: ~200KB reliably OK, ~300KB+ intermittently killed with no HTTP
+ * response at all). The browser surfaces that as:
+ *
+ *   "Failed to send a request to the Edge Function"
+ *
+ * …which looks like a network/wall-clock failure but is really an oversized
+ * payload. Wizard Lane B turns carry the whole VFS + elements library +
+ * blueprint and blow straight past the limit, so the request never reaches the
+ * function handler (edge logs show the isolate booting with no request line).
+ *
+ * The shrinker below trims OPTIONAL context in priority order until the
+ * serialized body fits the budget. It never touches the contract-critical
+ * fields (messages intent, mode, wizardSeed, aesthetic, templateName,
+ * systemType, source) — Lane B stays authoritative, it just gets less padding.
+ */
+
+/** Safe serialized-body budget in bytes. Empirically well below the drop threshold. */
+export const BUILDER_BODY_BUDGET_BYTES = 190_000;
+
+/** Progressively tighter budgets used across transport retries. */
+export const BUILDER_BODY_RETRY_BUDGETS = [BUILDER_BODY_BUDGET_BYTES, 120_000, 70_000, 45_000];
+
+export interface ShrinkResult<T> {
+  payload: T;
+  originalBytes: number;
+  finalBytes: number;
+  trimmed: string[];
+}
+
+function byteLength(value: unknown): number {
+  try {
+    const json = JSON.stringify(value);
+    return json ? new TextEncoder().encode(json).length : 0;
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n/* …truncated for transport budget… */`;
+}
+
+/**
+ * Shrink a builder-turn payload so its JSON body fits `budgetBytes`.
+ * Returns a shallow clone — the caller's object is never mutated.
+ */
+export function shrinkBuilderTurnPayload<T extends Record<string, unknown>>(
+  input: T,
+  budgetBytes: number = BUILDER_BODY_BUDGET_BYTES,
+): ShrinkResult<T> {
+  const payload: Record<string, unknown> = { ...input };
+  const originalBytes = byteLength(payload);
+  const trimmed: string[] = [];
+  if (originalBytes <= budgetBytes) {
+    return { payload: payload as T, originalBytes, finalBytes: originalBytes, trimmed };
+  }
+
+  const fits = () => byteLength(payload) <= budgetBytes;
+
+  // 1. Attachments / diagnostics — pure extras.
+  for (const key of ['attachments', 'previewDiagnostics', 'previewSnapshot', 'componentBehaviorContext']) {
+    if (fits()) return done();
+    if (payload[key] !== undefined) {
+      delete payload[key];
+      trimmed.push(key);
+    }
+  }
+
+  // 2. Elements library / design profile / blueprint context — trim, then drop.
+  if (!fits() && typeof payload.siteElementsLibraryContext === 'string') {
+    payload.siteElementsLibraryContext = truncate(payload.siteElementsLibraryContext as string, 6_000);
+    trimmed.push('siteElementsLibraryContext(trimmed)');
+  }
+  if (!fits() && payload.systemsBuildContext !== undefined) {
+    const asJson = JSON.stringify(payload.systemsBuildContext ?? null) || '';
+    if (asJson.length > 8_000) {
+      payload.systemsBuildContext = { note: 'trimmed-for-transport', preview: asJson.slice(0, 8_000) };
+      trimmed.push('systemsBuildContext(trimmed)');
+    }
+  }
+  if (!fits() && payload.userDesignProfile !== undefined) {
+    const asJson = JSON.stringify(payload.userDesignProfile ?? null) || '';
+    if (asJson.length > 4_000) {
+      payload.userDesignProfile = { note: 'trimmed-for-transport', preview: asJson.slice(0, 4_000) };
+      trimmed.push('userDesignProfile(trimmed)');
+    }
+  }
+
+  // 3. VFS files — keep the files the turn is actually about, shrink the rest,
+  //    then drop the largest until we fit.
+  const vfs = payload.vfsFiles as Record<string, string> | undefined;
+  if (!fits() && vfs && typeof vfs === 'object') {
+    const priority = new Set<string>([
+      ...((payload.recentChangedFiles as string[] | undefined) || []),
+      ...(typeof payload.targetFile === 'string' ? [payload.targetFile as string] : []),
+    ]);
+    const next: Record<string, string> = {};
+    for (const [path, content] of Object.entries(vfs)) {
+      if (typeof content !== 'string') continue;
+      next[path] = priority.has(path) ? truncate(content, 12_000) : truncate(content, 3_000);
+    }
+    payload.vfsFiles = next;
+    trimmed.push('vfsFiles(trimmed)');
+
+    if (!fits()) {
+      const ordered = Object.entries(next)
+        .filter(([path]) => !priority.has(path))
+        .sort((a, b) => b[1].length - a[1].length);
+      for (const [path] of ordered) {
+        if (fits()) break;
+        delete next[path];
+        trimmed.push(`vfsFiles:${path}(dropped)`);
+      }
+      if (!fits()) {
+        delete payload.vfsFiles;
+        trimmed.push('vfsFiles(dropped)');
+      }
+    }
+  }
+
+  // 4. Current code snapshot.
+  if (!fits() && typeof payload.currentCode === 'string' && (payload.currentCode as string).length > 8_000) {
+    payload.currentCode = truncate(payload.currentCode as string, 8_000);
+    trimmed.push('currentCode(trimmed)');
+  }
+
+  // 5. Conversation history — always keep the final (current) user turn.
+  const messages = payload.messages as Array<{ role: string; content: unknown }> | undefined;
+  if (!fits() && Array.isArray(messages) && messages.length > 1) {
+    payload.messages = messages.slice(-1);
+    trimmed.push('messages(history-dropped)');
+  }
+
+  function done(): ShrinkResult<T> {
+    return { payload: payload as T, originalBytes, finalBytes: byteLength(payload), trimmed };
+  }
+  return done();
+}

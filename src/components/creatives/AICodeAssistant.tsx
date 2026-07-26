@@ -55,6 +55,13 @@ import { buildWebBuilderAIContext } from "@/utils/aiAssistantContext";
 import { buildCatalogContext, renderCatalogContextForPrompt, type SelectedSectionRef } from "@/utils/catalogContext";
 // Removed deprecated aiFileTags - functionality consolidated in aiResponseParser
 import { parseAIResponse, getPrimaryCodeBlock, type AIResponseParseResult } from "@/utils/aiResponseParser";
+import {
+  interpretBuilderRequest,
+  templateActionFromEnvelope,
+  requiresApproval,
+  envelopeBrief,
+} from "@/services/builderRequestInterpreter";
+import type { BuilderRequestEnvelope } from "@/types/builderRequestEnvelope";
 
 interface Message {
   role: "user" | "assistant";

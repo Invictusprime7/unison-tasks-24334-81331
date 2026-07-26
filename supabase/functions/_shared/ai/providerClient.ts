@@ -66,7 +66,7 @@ export async function fetchWithShortRateLimitRetry(
 }
 
 function readGeminiApiKey(readEnv: EnvReader = (name) => Deno.env.get(name)): string | undefined {
-  return readEnv("GEMINI_API_KEY") ?? readEnv("GOOGLE_API_KEY");
+  return readEnv("GEMINI_API_KEY") ?? readEnv("GOOGLE_API_KEY") ?? readEnv("UNISONGEMINI_API_KEY");
 }
 
 function requestedProvider(model?: string): Provider | undefined {

@@ -1584,6 +1584,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
   const aiVFS = useAIVFS(virtualFS, livePreviewRef);
 
+  // Mirror of the current revision id, declared before the capability approval
+  // callback so it can read the latest value without a TDZ reference to the
+  // state declared further down.
+  const currentRevisionIdRef = useRef<string>(effectiveRouteState?.revisionId || '');
+
+
   // Shared capability approval transaction: backend migration first, then the
   // gated VFS commit. Mounted on BOTH the desktop and mobile AI panels so the
   // full-stack approval UI is never missing on one of them.
@@ -1637,7 +1643,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         businessId,
                         projectId: resolvedProjectId || currentDraftId,
                         draftId: currentDraftId,
-                        revisionId: currentRevisionId,
+                        revisionId: currentRevisionIdRef.current,
                         sessionId: `web-builder:${currentDraftId}`,
                       },
                       current: {
@@ -1685,7 +1691,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   } catch (error) {
                     return { success: false, error: error instanceof Error ? error.message : 'Capability transaction failed.' };
                   }
-  }, [businessId, currentDraftId, resolvedProjectId, currentRevisionId, virtualFS, effectiveRouteState, creatorPlayground]);
+  }, [businessId, currentDraftId, resolvedProjectId, virtualFS, effectiveRouteState, creatorPlayground]);
   
   // Site builder orchestrator — provides site graph navigation, brand system, and intent routing
   // Uses project/business IDs from location state; no-ops if unavailable
@@ -2450,6 +2456,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [currentRevisionId, setCurrentRevisionId] = useState<string>(
     effectiveRouteState?.revisionId || ''
   );
+  currentRevisionIdRef.current = currentRevisionId;
+
   useEffect(() => {
     const revId = effectiveRouteState?.revisionId;
     if (!revId || hydratedRevisionRef.current === revId) return;

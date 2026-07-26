@@ -230,22 +230,29 @@ const BUSINESS_DOMAINS: BuilderDomain[] = [
 
 export function resolveBuilderScope(envelope?: InterpreterEnvelope | null): BuilderScope {
   if (!envelope) return 'website';
+  // Envelopes can arrive partially populated from a degraded interpreter run,
+  // so every field is read defensively.
+  const level = envelope.scope?.level;
+  const requestKinds = envelope.requestKinds ?? [];
+  const domains = envelope.domains ?? [];
+
   if (
-    envelope.scope.level === 'backend' ||
-    envelope.requestKinds.includes('deployment') ||
-    envelope.domains.some((d) => DEVELOPER_DOMAINS.includes(d))
+    level === 'backend' ||
+    requestKinds.includes('deployment') ||
+    domains.some((d) => DEVELOPER_DOMAINS.includes(d))
   ) {
     return 'developer';
   }
   if (
-    envelope.requestKinds.includes('backend_configuration') ||
-    envelope.requestKinds.includes('data_binding') ||
-    envelope.domains.some((d) => BUSINESS_DOMAINS.includes(d))
+    requestKinds.includes('backend_configuration') ||
+    requestKinds.includes('data_binding') ||
+    domains.some((d) => BUSINESS_DOMAINS.includes(d))
   ) {
     return 'business-system';
   }
   return 'website';
 }
+
 
 export const SCOPE_LABEL: Record<BuilderScope, string> = {
   website: 'Website',

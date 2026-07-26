@@ -40,7 +40,7 @@ import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { runBuilderTurn } from "@/services/builderBrainClient";
+import { runBuilderTurn, isTransportError } from "@/services/builderBrainClient";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -2136,6 +2136,89 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           `AI generation timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
         );
         aiError = result.error;
+
+        // ── Transport recovery: batched Lane B ───────────────────────────────
+        // A whole-site Lane B turn for many pages can exceed the edge runtime's
+        // wall-clock budget; the connection is dropped and supabase-js surfaces
+        // "Failed to send a request to the Edge Function". That is a transport
+        // failure, NOT a contract failure — so instead of blocking the launch we
+        // re-run the SAME Lane B brain over small page batches and merge the
+        // results. Minimal/default scaffolds are still never used.
+        if (aiError && isTransportError(aiError)) {
+          const batchTargets = canonicalPages
+            .map((page) => page.path)
+            .filter((path): path is string => Boolean(path));
+          const batches: string[][] = [];
+          for (let i = 0; i < batchTargets.length; i += 2) {
+            batches.push(batchTargets.slice(i, i + 2));
+          }
+          if (batches.length > 1) {
+            console.warn(
+              `[SystemLauncher] Lane B transport failure — retrying in ${batches.length} page batches`,
+            );
+            const mergedFiles: Record<string, string> = {};
+            let batchFailure: unknown = null;
+            for (let i = 0; i < batches.length; i++) {
+              const batch = batches[i];
+              setLaunchStatus(`Generating site… (${i + 1}/${batches.length})`);
+              const batchPrompt = [
+                aiUserPrompt,
+                '',
+                '── LANE B BATCH TURN ──',
+                `Generate ONLY these page files in this response: ${batch.join(', ')}.`,
+                'Emit the same multi-file JSON payload contract, with full production-quality sections for each listed page.',
+                'Do not emit /src/App.tsx, /src/index.css, SiteNavbar, SiteFooter, or any page outside the list.',
+              ].join('\n');
+              try {
+                const batchResult = await withTimeout(
+                  runBuilderTurn<any>({
+                    messages: [{ role: 'user', content: batchPrompt }],
+                    mode: 'wizard-seed',
+                    currentCode: wizardCurrentCode,
+                    editMode: false,
+                    templateName: effectiveTemplate?.label || system.name,
+                    aesthetic: resolvedPreset.id,
+                    source: resolvedIndustry,
+                    systemType: selectedSystem,
+                    systemsBuildContext: slimBlueprint,
+                    userDesignProfile: laneBDesignProfile,
+                    siteElementsLibraryContext,
+                    vfsFiles: wizardVfsPayload,
+                    previewSnapshot: wizardPreviewSnapshot,
+                    recentChangedFiles: batch,
+                    gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
+                    wizardSeed,
+                  }),
+                  WIZARD_AI_TIMEOUT_MS,
+                  `Lane B batch ${i + 1} timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+                );
+                if (batchResult.error) {
+                  batchFailure = batchResult.error;
+                  continue;
+                }
+                const { structured: batchStructured } = extractLaneBLauncherPayload(
+                  batchResult.data as Record<string, unknown> | null,
+                  `${brand} ${system.name}`,
+                );
+                for (const [path, content] of Object.entries(batchStructured?.files || {})) {
+                  if (typeof content === 'string' && content.trim()) mergedFiles[path] = content;
+                }
+              } catch (batchThrow) {
+                batchFailure = batchThrow;
+              }
+            }
+            if (Object.keys(mergedFiles).length > 0) {
+              console.info('[SystemLauncher] Batched Lane B recovered pages:', Object.keys(mergedFiles));
+              result.data = { files: mergedFiles } as any;
+              result.error = null;
+              aiError = null;
+              launchReliabilityMode = 'lane-b-degraded';
+            } else if (batchFailure) {
+              aiError = batchFailure;
+            }
+          }
+        }
+
         if (aiError) {
           const msg = await getFunctionErrorMessage(aiError);
           console.warn('[SystemLauncher] AI generation failed:', msg);
@@ -2561,8 +2644,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (aiError) {
         launchReliabilityMode = 'lane-b-blocked';
         const details = await getFunctionErrorMessage(aiError);
+        const transportHint = isTransportError(aiError)
+          ? ' This was a transport failure (the AI edge connection dropped, usually a long generation exceeding the runtime budget), not a contract violation — retrying the launch is safe.'
+          : '';
         throw new Error(
-          `Wizard Lane B generation failed; minimal fallback is blocked. ${details}`,
+          `Wizard Lane B generation failed; minimal fallback is blocked. ${details}${transportHint}`,
         );
       }
       if (!generationResult) {

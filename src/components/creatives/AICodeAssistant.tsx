@@ -1047,7 +1047,11 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
         // Design/review modes still benefit from system context
         enhancedPrompt = `${userMessage.content}${backendContext}`;
       }
-      
+
+      // The interpreted envelope leads the prompt so goals/constraints survive
+      // any downstream truncation.
+      enhancedPrompt = `${envelopeBrief(envelope)}\n\n${enhancedPrompt}`;
+
       console.log('[AICodeAssistant] Sending request - Mode:', mode, 'Template Action:', templateAction, 'Debug Mode:', mode === "debug");
 
       // The backend function enforces a hard 10k limit per message content. Keep a buffer.

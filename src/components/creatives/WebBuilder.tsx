@@ -1584,6 +1584,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // AI → VFS orchestrator — auto-resolves dependencies and syncs to preview
   const aiVFS = useAIVFS(virtualFS, livePreviewRef);
 
+  // Mirror of the current revision id, declared before the capability approval
+  // callback so it can read the latest value without a TDZ reference to the
+  // state declared further down.
+  const currentRevisionIdRef = useRef<string>(effectiveRouteState?.revisionId || '');
+
+
   // Shared capability approval transaction: backend migration first, then the
   // gated VFS commit. Mounted on BOTH the desktop and mobile AI panels so the
   // full-stack approval UI is never missing on one of them.

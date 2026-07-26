@@ -1155,6 +1155,35 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
       
       console.log('[AICodeAssistant] AI response received:', assistantContent.substring(0, 200) + '...');
 
+      // ── Milestone 3: envelope verification verdict from the server ────────
+      const verification = (data as {
+        envelopeVerification?: {
+          passed: boolean;
+          summary: string;
+          unmetCriteria: string[];
+          outOfScopeFiles: string[];
+          blockingMisses: string[];
+        };
+      })?.envelopeVerification;
+      if (verification) {
+        console.log('[AICodeAssistant] envelope verification', verification);
+        if (!verification.passed) {
+          const detail = [
+            verification.outOfScopeFiles.length
+              ? `Out of scope: ${verification.outOfScopeFiles.slice(0, 3).join(', ')}`
+              : '',
+            ...verification.unmetCriteria.slice(0, 2),
+          ].filter(Boolean).join(' • ');
+          toast({
+            title: verification.blockingMisses.length
+              ? 'Requires review — goals not fully met'
+              : 'Partial match to your request',
+            description: detail || verification.summary,
+            variant: verification.blockingMisses.length ? 'destructive' : 'default',
+          });
+        }
+      }
+
       // ========== COMPREHENSIVE AI RESPONSE PARSING ==========
       // Use the new parser to extract all structured content types
       const parsedResponse = parseAIResponse(assistantContent);

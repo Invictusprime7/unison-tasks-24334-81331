@@ -49,6 +49,7 @@ import { preprocessPrompt } from "./promptPreprocessor.ts";
 import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
 import { CATALOG_CHAT_TOOLS, renderCatalogToolDirective } from "../_shared/catalogTools.ts";
 import { buildEnvelopeDirective, type EnvelopeShape } from "./envelopeContext.ts";
+import { verifyAgainstEnvelope, buildRepairInstruction } from "./envelopeVerifier.ts";
 
 
 const BUILDER_EDIT_TASKS = new Set<string>([
@@ -530,29 +531,38 @@ async function runBuilderLane(
     );
   }
 
-  // ── 9. Post-process + review pass + response ────────────────────────────
-  const content = postProcessContent(providerResult.content);
+  // ── 9. Post-process + review pass + envelope verification + response ─────
+  let content = postProcessContent(providerResult.content);
 
-  // Run review pass on multi-file output
-  let reviewResult: ReturnType<typeof reviewPatch> | undefined;
-  let applyState: ApplyState | undefined;
-  try {
-    const jsonStr = content.trim().replace(/^```json?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
-    const parsed = JSON.parse(jsonStr);
-    if (parsed.files && typeof parsed.files === "object") {
-      const existingFiles = vfsFiles ? Object.keys(vfsFiles) : [];
-      reviewResult = reviewPatch({
-        files: parsed.files,
+  const requestEnvelope = (parsed as { requestEnvelope?: EnvelopeShape }).requestEnvelope;
+  const existingFiles = vfsFiles ? Object.keys(vfsFiles) : [];
+
+  type ReviewOutcome = {
+    reviewResult: ReturnType<typeof reviewPatch>;
+    files: Record<string, string>;
+    targetFile: string | null;
+  };
+
+  const runReviewPass = (raw: string): ReviewOutcome | undefined => {
+    try {
+      const jsonStr = raw.trim().replace(/^```json?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+      const payload = JSON.parse(jsonStr);
+      if (!payload.files || typeof payload.files !== "object") return undefined;
+
+      const reviewResult = reviewPatch({
+        files: payload.files,
         existingFiles,
         taskType: task.type,
         goalCategory: memory?.goalCategory,
       });
-      console.log(`[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`);
+      console.log(
+        `[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`,
+      );
 
       // ── Scope enforcement for scoped edits ──────────────────────────
       const scopeResult = checkEditScope({
         patchFiles: reviewResult.cleanedFiles,
-        targetFile: parsed.targetFile ?? editScope?.componentPath ?? null,
+        targetFile: payload.targetFile ?? editScope?.componentPath ?? null,
         taskType: task.type,
         existingFiles,
         editScope: editScope ?? null,
@@ -567,16 +577,108 @@ async function runBuilderLane(
         reviewResult.requiresApproval = true;
       }
 
-      applyState = buildApplyState({
-        actionType: reviewResult.removedFiles.length > 0 ? 'multi_patch' : 'patch',
-        touchedFiles: Object.keys(reviewResult.cleanedFiles),
-        applyStatus: reviewResult.approved ? 'proposed' : 'proposed',
-        requiredApproval: reviewResult.requiresApproval,
-        reviewWarnings: reviewResult.warnings.map(w => w.message),
+      return {
+        reviewResult,
+        files: reviewResult.cleanedFiles as Record<string, string>,
+        targetFile: payload.targetFile ?? null,
+      };
+    } catch {
+      // Not JSON multi-file output — skip review
+      return undefined;
+    }
+  };
+
+  let outcome = runReviewPass(content);
+  let verification = verifyAgainstEnvelope({
+    envelope: requestEnvelope,
+    files: outcome?.files ?? {},
+    existingFiles,
+  });
+
+  // ── Milestone 3: one targeted repair turn keyed to unmet goals ───────────
+  if (outcome && verification.checked && !verification.passed) {
+    const allowedTargets = Array.isArray(requestEnvelope?.scope?.targets)
+      ? (requestEnvelope!.scope!.targets as string[]).filter((t) => typeof t === 'string')
+      : [];
+    console.warn('[orchestrator] envelope verification failed — running targeted repair', {
+      unmet: verification.unmetCriteria.length,
+      outOfScope: verification.outOfScopeFiles.length,
+    });
+
+    try {
+      const repairResult = await runProviderLoop({
+        aiMessages: [
+          ...aiMessagesForCall,
+          { role: 'assistant', content: JSON.stringify({ files: outcome.files }) },
+          { role: 'user', content: buildRepairInstruction(verification, allowedTargets) },
+        ],
+        providerPlan,
+        navPageGen,
+        reasoningEffort: gatewayOptions?.reasoningEffort,
+        allowDirectFallbacks: true,
+      });
+
+      if (!repairResult.earlyError && repairResult.content) {
+        const repairedContent = postProcessContent(repairResult.content);
+        const repairedOutcome = runReviewPass(repairedContent);
+        if (repairedOutcome) {
+          const repairedVerification = verifyAgainstEnvelope({
+            envelope: requestEnvelope,
+            files: repairedOutcome.files,
+            existingFiles,
+          });
+          // Only accept the repair when it is strictly better.
+          const before = verification.unmetCriteria.length + verification.outOfScopeFiles.length;
+          const after = repairedVerification.unmetCriteria.length + repairedVerification.outOfScopeFiles.length;
+          if (after < before) {
+            content = repairedContent;
+            outcome = repairedOutcome;
+            verification = repairedVerification;
+            console.log('[orchestrator] targeted repair accepted', { before, after });
+          } else {
+            console.log('[orchestrator] targeted repair rejected (no improvement)', { before, after });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[orchestrator] targeted repair failed:', e);
+    }
+  }
+
+  const reviewResult = outcome?.reviewResult;
+
+  if (reviewResult && verification.checked && !verification.passed) {
+    if (verification.outOfScopeFiles.length > 0) {
+      reviewResult.warnings.push({
+        severity: "error",
+        message: `Out of declared scope: ${verification.outOfScopeFiles.join(', ')}`,
       });
     }
-  } catch {
-    // Not JSON multi-file output — skip review
+    for (const miss of verification.unmetCriteria.slice(0, 8)) {
+      reviewResult.warnings.push({ severity: "warning", message: `Unmet goal: ${miss}` });
+    }
+    // `must`-priority misses and scope violations can never auto-apply.
+    if (verification.blockingMisses.length > 0 || verification.outOfScopeFiles.length > 0) {
+      reviewResult.requiresApproval = true;
+    }
+  }
+
+  const applyState: ApplyState | undefined = reviewResult
+    ? buildApplyState({
+        actionType: reviewResult.removedFiles.length > 0 ? 'multi_patch' : 'patch',
+        touchedFiles: Object.keys(reviewResult.cleanedFiles),
+        applyStatus: 'proposed',
+        requiredApproval: reviewResult.requiresApproval,
+        reviewWarnings: reviewResult.warnings.map(w => w.message),
+      })
+    : undefined;
+
+  if (verification.checked) {
+    console.log('[orchestrator] envelope verification', {
+      passed: verification.passed,
+      summary: verification.summary,
+      blocking: verification.blockingMisses.length,
+    });
   }
 
   if (savePattern) saveLearningSession(parsed, content, userId);
@@ -596,7 +698,17 @@ async function runBuilderLane(
     reviewSummary: reviewResult?.reviewSummary,
     applyState: applyState as Record<string, unknown> | undefined,
     toolCalls: providerResult.toolCalls as unknown[] | undefined,
+    envelopeVerification: verification.checked
+      ? {
+          passed: verification.passed,
+          summary: verification.summary,
+          unmetCriteria: verification.unmetCriteria,
+          outOfScopeFiles: verification.outOfScopeFiles,
+          blockingMisses: verification.blockingMisses,
+        }
+      : undefined,
   });
+
 
   return new Response(
     JSON.stringify(responseBody),

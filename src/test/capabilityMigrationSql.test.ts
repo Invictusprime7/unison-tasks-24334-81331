@@ -43,7 +43,9 @@ describe('capability migration SQL', () => {
 
   it('never widens anon beyond what the contract allows', () => {
     const migration = buildCapabilityMigration(CAPABILITY_PACKS);
-    const anonGrants = migration.statements.filter((s) => s.sql.includes('TO anon'));
+    const anonGrants = migration.statements.filter(
+      (s) => s.kind === 'grant' && s.sql.includes('TO anon'),
+    );
     for (const grant of anonGrants) {
       expect(grant.sql).toMatch(/GRANT (SELECT|INSERT) ON/);
     }

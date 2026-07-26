@@ -1685,7 +1685,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   } catch (error) {
                     return { success: false, error: error instanceof Error ? error.message : 'Capability transaction failed.' };
                   }
-                  });
+  }, [businessId, currentDraftId, resolvedProjectId, currentRevisionId, virtualFS, effectiveRouteState, creatorPlayground]);
   
   // Site builder orchestrator — provides site graph navigation, brand system, and intent routing
   // Uses project/business IDs from location state; no-ops if unavailable

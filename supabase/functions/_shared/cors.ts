@@ -94,7 +94,7 @@ export function getCorsHeaders(req: Request): Record<string, string> {
 export const publicCorsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-request-id",
+    "authorization, x-client-info, x-supabase-api-version, apikey, content-type, x-request-id, x-session-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 

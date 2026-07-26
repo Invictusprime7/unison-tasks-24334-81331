@@ -55,6 +55,13 @@ import { buildWebBuilderAIContext } from "@/utils/aiAssistantContext";
 import { buildCatalogContext, renderCatalogContextForPrompt, type SelectedSectionRef } from "@/utils/catalogContext";
 // Removed deprecated aiFileTags - functionality consolidated in aiResponseParser
 import { parseAIResponse, getPrimaryCodeBlock, type AIResponseParseResult } from "@/utils/aiResponseParser";
+import {
+  interpretBuilderRequest,
+  templateActionFromEnvelope,
+  requiresApproval,
+  envelopeBrief,
+} from "@/services/builderRequestInterpreter";
+import type { BuilderRequestEnvelope } from "@/types/builderRequestEnvelope";
 
 interface Message {
   role: "user" | "assistant";
@@ -792,9 +799,34 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
       
       // Check if editing a selected element
       const isEditingSelectedElement = selectedElement && isEditingElement;
-      
-      // ========== BUILDER ACTIONS DETECTION ==========
-      // Detect if user wants to install packs or wire buttons
+
+      // ========== REQUEST INTERPRETER (authoritative classifier) ==========
+      // Every request is interpreted into a BuilderRequestEnvelope BEFORE any
+      // code path is chosen. Regexes below are demoted to advisory hints.
+      const interpretation = await interpretBuilderRequest(userMessage.content, {
+        projectMode: 'react',
+        runtimeEngine: 'vfs',
+        hasExistingTemplate: Boolean(hasExistingTemplate),
+        selectedElement: selectedElement
+          ? { selector: (selectedElement as { selector?: string })?.selector }
+          : null,
+        recentTurns: messages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
+      });
+      const envelope: BuilderRequestEnvelope = interpretation.envelope;
+      console.log('[AICodeAssistant] Request envelope:', {
+        kinds: envelope.requestKinds,
+        domains: envelope.domains,
+        scope: envelope.scope,
+        complexity: envelope.complexity,
+        executionMode: envelope.executionMode,
+        degraded: interpretation.degraded,
+        source: envelope.source,
+      });
+      // ========== END REQUEST INTERPRETER ==========
+
+      // ========== BUILDER ACTIONS DETECTION (hint layer only) ==========
+      // Deterministic extraction of pack/selector/intent details. It no longer
+      // decides *whether* this is a backend request — the envelope does.
       const detectBuilderAction = (message: string): { type: 'install_pack' | 'wire_button' | null; packs?: string[]; selector?: string; intent?: string } => {
         const lowerMessage = message.toLowerCase();
         
@@ -864,11 +896,26 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
         return { type: null };
       };
       
-      const builderAction = opts?.skipBuilderActions ? { type: null } : detectBuilderAction(userMessage.content);
-      
+      const builderActionHint = opts?.skipBuilderActions ? { type: null } : detectBuilderAction(userMessage.content);
+      // Envelope decides whether this is a backend/approval request; the hint
+      // only supplies the concrete pack/selector/intent details.
+      const envelopeWantsBackend =
+        envelope.requestKinds.includes('backend_configuration') ||
+        envelope.requestKinds.includes('data_binding') ||
+        envelope.domains.some((d) => ['booking', 'crm', 'auth', 'commerce', 'automation', 'database'].includes(d));
+      // A compound/mixed request must NOT be reduced to a single pack install —
+      // it continues into the code path so every requirement is honored.
+      const canShortCircuit =
+        builderActionHint.type === 'install_pack' ||
+        (envelope.complexity === 'simple' && envelope.executionMode !== 'mixed');
+      const builderAction =
+        builderActionHint.type && envelopeWantsBackend && requiresApproval(envelope) && canShortCircuit
+          ? builderActionHint
+          : { type: null as null | 'install_pack' | 'wire_button' };
+
       // Handle builder actions (install packs / wire buttons) - propose+approve
       if (builderAction.type) {
-        console.log('[AICodeAssistant] Builder action detected:', builderAction);
+        console.log('[AICodeAssistant] Builder action approved by envelope:', builderAction);
 
         // If this is a "build the whole thing" style request, store the original prompt
         // so we can continue with template generation after the user approves pack install.
@@ -887,49 +934,9 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
       }
       // ========== END BUILDER ACTIONS ==========
       
-      // Detect template action from user message
-      const detectTemplateAction = (message: string): string | undefined => {
-        const lowerMessage = message.toLowerCase();
-        
-        // Check for full control mode first (highest priority)
-        if (lowerMessage.match(/\b(full control|full reign|ai decide|you decide|your choice|go wild|do whatever|improve everything|make it better|optimize everything|enhance everything|fix everything|revamp|overhaul|transform|reimagine)\b/)) {
-          return 'full-control';
-        }
-        // E-commerce/checkout flow requests
-        if (lowerMessage.match(/\b(add|create|implement|build)\b.*\b(cart|checkout|ecommerce|e-commerce|shopping|payment|buy now|add to cart)\b/)) {
-          return 'full-control';
-        }
-        // Dynamic/interactive element requests
-        if (lowerMessage.match(/\b(make|add)\b.*\b(dynamic|interactive|animated|live|real-time)\b/)) {
-          return 'full-control';
-        }
-        // Auth/login flow requests — these are modify actions (wire existing elements)
-        if (lowerMessage.match(/\b(add|wire|connect|implement|enable)\b.*\b(sign\s*in|sign\s*up|login|logout|auth|authentication)\b/)) {
-          return 'modify';
-        }
-        // Routing/navigation requests
-        if (lowerMessage.match(/\b(add|wire|implement)\b.*\b(navigation|routing|redirect|page\s*link)\b/)) {
-          return 'modify';
-        }
-        if (lowerMessage.match(/\b(add|insert|include|create new|put|place)\b.*\b(section|element|component|button|image|form|card|hero|footer|header|nav)/)) {
-          return 'add';
-        }
-        if (lowerMessage.match(/\b(remove|delete|hide|get rid of|take out)\b/)) {
-          return 'remove';
-        }
-        if (lowerMessage.match(/\b(change|modify|update|edit|adjust|tweak|fix)\b/)) {
-          return 'modify';
-        }
-        if (lowerMessage.match(/\b(suggest|improve|recommend|enhance|optimize|better|upgrade)\b/)) {
-          return 'suggest';
-        }
-        if (lowerMessage.match(/\b(restyle|redesign|new look|change color|change style|theme|recolor)\b/)) {
-          return 'restyle';
-        }
-        return hasExistingTemplate ? 'modify' : undefined;
-      };
-      
-      const templateAction = hasExistingTemplate ? detectTemplateAction(userMessage.content) : undefined;
+      // Template action is DERIVED from the interpreted envelope — no keyword
+      // routing. (Multi-label, scope- and complexity-aware.)
+      const templateAction = templateActionFromEnvelope(envelope, Boolean(hasExistingTemplate));
       
       // Add image slot context for AI with taste
       let slotContext = '';
@@ -1040,7 +1047,11 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
         // Design/review modes still benefit from system context
         enhancedPrompt = `${userMessage.content}${backendContext}`;
       }
-      
+
+      // The interpreted envelope leads the prompt so goals/constraints survive
+      // any downstream truncation.
+      enhancedPrompt = `${envelopeBrief(envelope)}\n\n${enhancedPrompt}`;
+
       console.log('[AICodeAssistant] Sending request - Mode:', mode, 'Template Action:', templateAction, 'Debug Mode:', mode === "debug");
 
       // The backend function enforces a hard 10k limit per message content. Keep a buffer.
@@ -1073,6 +1084,10 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
               editMode: hasExistingTemplate || mode === "debug",
               debugMode: mode === "debug",
               templateAction,
+              // Structured interpretation — authoritative routing signal.
+              requestEnvelope: envelope,
+              // Research only runs when the interpreter says it's needed.
+              skipResearch: !envelope.needsExternalResearch,
               // Pass user design profile for personalized AI generation
               userDesignProfile: userDesignProfile || undefined,
             },

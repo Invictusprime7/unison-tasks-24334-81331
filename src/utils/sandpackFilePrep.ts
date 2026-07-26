@@ -61,11 +61,10 @@ export function syncGeneratedUiFoundationFiles(
   // Keep the manifest in lockstep with the runtime files we just wrote. A
   // stale-version manifest reads back as `null` and makes downstream contract
   // checks treat a healthy snapshot as invalid.
+  // Only refresh an existing manifest — non-wizard drafts intentionally have
+  // none, and fabricating one would make them look snapshot-owned.
   const existingManifest = files[UI_MANIFEST_PATH];
-  if (!existingManifest) {
-    files[UI_MANIFEST_PATH] = foundation.files[UI_MANIFEST_PATH];
-    return;
-  }
+  if (!existingManifest) return;
   try {
     const parsed = JSON.parse(existingManifest) as Record<string, unknown>;
     if (parsed.version === foundation.manifest.version) return;

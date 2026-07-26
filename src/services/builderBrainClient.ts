@@ -130,14 +130,29 @@ export async function runBuilderTurn<TResponse = any>(
   const maxAttempts = 4;
   const baseDelays = [600, 1400, 2800];
   let lastError: unknown = null;
+  let sentPayload: Record<string, unknown> = input as unknown as Record<string, unknown>;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (options.signal?.aborted) {
       return { data: null as TResponse, error: new DOMException("Aborted", "AbortError") };
     }
+
+    // Hard transport budget: the edge gateway silently drops oversized bodies
+    // (no HTTP response at all → "Failed to send a request to the Edge
+    // Function"). Shrink optional context to fit, tightening on each retry.
+    const budget = BUILDER_BODY_RETRY_BUDGETS[Math.min(attempt - 1, BUILDER_BODY_RETRY_BUDGETS.length - 1)];
+    const shrunk = shrinkBuilderTurnPayload(input as unknown as Record<string, unknown>, budget);
+    sentPayload = shrunk.payload;
+    if (shrunk.trimmed.length > 0) {
+      console.warn(
+        `[builderBrainClient] payload ${shrunk.originalBytes}B > budget ${budget}B — trimmed to ${shrunk.finalBytes}B`,
+        shrunk.trimmed,
+      );
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke<TResponse>("ai-code-assistant", {
-        body: input as unknown as Record<string, unknown>,
+        body: sentPayload,
       });
 
       if (error && isTransportError(error) && attempt < maxAttempts) {
@@ -151,6 +166,7 @@ export async function runBuilderTurn<TResponse = any>(
         await sleep(delay, options.signal);
         continue;
       }
+
 
       return { data: data as TResponse, error };
     } catch (thrown) {

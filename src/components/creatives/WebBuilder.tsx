@@ -154,7 +154,7 @@ import { loadCanonicalComponentGraph } from '@/services/componentGraphPersistenc
 import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegistry';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
-import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
+import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot, markLiveEditedVfsPaths, clearLiveEditedVfsPaths } from '@/services/snapshotProjector';
 import { isPreviewPipelineError } from '@/services/previewPipelineError';
 import { ThemeSeedError } from '@/platform/core/themeSeedAssert';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
@@ -523,6 +523,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       || (effectiveRouteState?.runtimeManifest?.appContext as { templateId?: string } | undefined)?.templateId
       || null
   );
+  // Live-edit protection is scoped to one project identity; drop it on switch.
+  useEffect(() => {
+    clearLiveEditedVfsPaths();
+  }, [currentDraftId]);
   const [currentManifestId, setCurrentManifestId] = useState<string | null>(
     effectiveRouteState?.manifestId || null
   );
@@ -6221,6 +6225,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   const result = aiVFS.applyCode(files);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
                   if (result.success) {
+                    // Protect these paths from the snapshot projection until the
+                    // durable commit refreshes the snapshot with the same content.
+                    markLiveEditedVfsPaths(Object.keys(files));
                     const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                     const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
                     console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
@@ -6655,6 +6662,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
                 const result = aiVFS.applyCode(files);
                 if (result.success) {
+                  markLiveEditedVfsPaths(Object.keys(files));
                   const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
                   syncBuilderFromFiles(mergedFiles, activePagePath);
                   setViewMode('canvas');

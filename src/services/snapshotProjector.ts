@@ -249,12 +249,51 @@ export function assertNoMinimalFallbackPreview(
 }
 
 /**
+ * Live-edit registry — paths written by the AI Builder (or any in-builder edit)
+ * after the current snapshot was produced. The snapshot stays authoritative for
+ * every other path, but it must never resurrect the pre-edit version of a file
+ * the user just changed while the durable commit is still in flight (or was
+ * skipped because business/draft context wasn't set).
+ */
+const liveEditedPaths = new Map<string, number>();
+
+function normalizeVfsPath(path: string): string {
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+/** Mark paths as edited in the live VFS ahead of the next snapshot commit. */
+export function markLiveEditedVfsPaths(paths: string[]): void {
+  const now = Date.now();
+  for (const path of paths) {
+    if (!path) continue;
+    liveEditedPaths.set(normalizeVfsPath(path), now);
+  }
+}
+
+/**
+ * Clear live-edit protection once a refreshed snapshot has been persisted
+ * (or when the builder switches project identity).
+ */
+export function clearLiveEditedVfsPaths(paths?: string[]): void {
+  if (!paths) {
+    liveEditedPaths.clear();
+    return;
+  }
+  for (const path of paths) liveEditedPaths.delete(normalizeVfsPath(path));
+}
+
+export function getLiveEditedVfsPaths(): string[] {
+  return [...liveEditedPaths.keys()];
+}
+
+/**
  * Snapshot-as-primary projection bridge. A wizard SiteBundleSnapshot owns the
  * entire executable VFS, not only files that resemble a minimal placeholder.
  * A legacy template preset is valid React and therefore cannot be detected by
  * a fallback-content heuristic; preserving it lets a template silently render
  * over the deterministic snapshot manifest. Snapshot files must win every
- * overlapping path before any preview compiler sees them.
+ * overlapping path — EXCEPT paths with a newer live edit that the snapshot has
+ * not absorbed yet.
  */
 export function projectSnapshotVfsFiles(
   files: Record<string, string>,
@@ -265,15 +304,34 @@ export function projectSnapshotVfsFiles(
   const snapshotFiles = (resolution.snapshot as { vfsFiles?: Record<string, string> }).vfsFiles || {};
   if (Object.keys(snapshotFiles).length === 0) return files;
 
-  // Keep non-overlapping host/editor metadata, but the snapshot always wins
-  // every executable path it declares. The snapshot is emitted after Lane B,
-  // so this does not discard AI work; it prevents stale preset files from
-  // becoming a second rendering authority.
-  const next = { ...files, ...snapshotFiles };
+  const next = { ...files };
+  const preserved: string[] = [];
+
+  for (const [rawPath, content] of Object.entries(snapshotFiles)) {
+    const path = normalizeVfsPath(rawPath);
+    const live = files[path] ?? files[rawPath];
+    const isLiveEdited = liveEditedPaths.has(path);
+
+    // A live edit wins only while it differs from the snapshot copy. Once the
+    // durable commit lands, contents match and the protection is dropped.
+    if (isLiveEdited && typeof live === 'string' && live !== content) {
+      preserved.push(path);
+      continue;
+    }
+    if (isLiveEdited) liveEditedPaths.delete(path);
+
+    next[rawPath] = content;
+  }
+
+  if (preserved.length > 0) {
+    console.info('[snapshotProjector] Preserved live builder edits over snapshot:', preserved);
+  }
+
   next[SNAPSHOT_VFS_PATH] = JSON.stringify(resolution.snapshot, null, 2);
 
   return next;
 }
+
 
 function tryParseRecord(raw: string | undefined): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'string') return null;

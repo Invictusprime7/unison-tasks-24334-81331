@@ -1,6 +1,6 @@
 ---
 name: Builder Intelligence Pipeline
-description: BuilderRequestEnvelope drives routing (M1), generation prompt (M2), and post-generation verification/repair (M3) in the AI builder.
+description: BuilderRequestEnvelope drives routing (M1), generation prompt (M2), and post-generation verification/repair (M3), and durable per-draft run logging (M4) in the AI builder.
 type: feature
 ---
 
@@ -16,3 +16,5 @@ The `BuilderRequestEnvelope` produced by the `builder-request-interpreter` edge 
   Failure triggers exactly ONE targeted repair turn (`buildRepairInstruction`) restating only the failures; the repair is accepted only if strictly fewer misses. `must`-priority misses and scope violations force `requiresApproval`. The verdict ships to the client as `envelopeVerification` and is surfaced as a toast.
 
 Prose summaries from the model are never trusted as evidence that a goal was implemented.
+
+- **Milestone 4 — persistence (learning/replay)**: every turn carrying an envelope is logged to `public.builder_envelope_runs`, scoped to `draft_id` (never the abstract project). The edge module `ai-code-assistant/envelopeRunLog.ts` inserts the envelope, request kinds/domains/confidence, the M3 verdict, repair attempted/accepted, touched files, and model/provider; the row id ships back as `envelopeRunId`. Clients send `runContext: { draftId, projectId, businessId, prompt }` and close the loop via `src/services/builderEnvelopeRuns.ts#recordRunOutcome` (`applied` | `rejected` | `failed`). `listBuilderRuns`, `getBuilderRun`, `buildReplayEnvelope` (source `replay`) and `summarizeRuns` (applied/verified/repaired + weak domains) provide the learning surface. Logging is best-effort and must never break a generation turn.

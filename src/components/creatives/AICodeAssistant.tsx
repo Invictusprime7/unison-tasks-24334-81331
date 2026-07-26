@@ -1084,6 +1084,10 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
               editMode: hasExistingTemplate || mode === "debug",
               debugMode: mode === "debug",
               templateAction,
+              // Structured interpretation — authoritative routing signal.
+              requestEnvelope: envelope,
+              // Research only runs when the interpreter says it's needed.
+              skipResearch: !envelope.needsExternalResearch,
               // Pass user design profile for personalized AI generation
               userDesignProfile: userDesignProfile || undefined,
             },

@@ -2644,8 +2644,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (aiError) {
         launchReliabilityMode = 'lane-b-blocked';
         const details = await getFunctionErrorMessage(aiError);
+        const transportHint = isTransportError(aiError)
+          ? ' This was a transport failure (the AI edge connection dropped, usually a long generation exceeding the runtime budget), not a contract violation — retrying the launch is safe.'
+          : '';
         throw new Error(
-          `Wizard Lane B generation failed; minimal fallback is blocked. ${details}`,
+          `Wizard Lane B generation failed; minimal fallback is blocked. ${details}${transportHint}`,
         );
       }
       if (!generationResult) {

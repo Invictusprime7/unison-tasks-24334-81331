@@ -62,6 +62,14 @@ export interface CapabilityProposal {
   operationalCapabilities: CapabilityId[];
   intentBindings: CapabilityIntentBinding[];
   readinessAssertions: string[];
+  /** Full-stack packs to install, dependency-first. */
+  packs: BusinessCapability[];
+  /** Edge functions the packs require. */
+  edgeFunctions: string[];
+  /** Configuration the owner must supply before the packs are usable. */
+  settingsRequired: { accountFields: string[]; projectFields: string[] };
+  /** Requested capabilities that have no pack contract yet. */
+  unsupportedCapabilities: BusinessCapability[];
 }
 
 export interface CapabilityPlan {
@@ -72,8 +80,13 @@ export interface CapabilityPlan {
   interpretationSource: 'envelope' | 'vertical-recipe' | 'hint' | 'none';
   requestedCapabilities: BusinessCapability[];
   operationalCapabilities: CapabilityDefinition[];
+  /** Resolved full-stack pack contracts in dependency-first install order. */
+  packs: CapabilityPack[];
+  /** Slots the packs allow the AI to bind — nothing else may be wired. */
+  bindableSlots: string[];
   proposal: CapabilityProposal;
 }
+
 
 export interface ApprovedCapabilityPlan extends CapabilityPlan {
   proposal: CapabilityProposal & {

@@ -79,8 +79,11 @@ function unique<T>(values: T[]): T[] {
 
 const OPERATIONAL_PACKS: Record<BusinessCapability, CapabilityId[]> = {
   business_profile: [],
-  'catalog.services': ['booking'],
-  'catalog.products': ['commerce'],
+  // A services catalog on its own is read-only content — it must NOT drag the
+  // booking pack in. `booking.appointments` pulls services via the business
+  // dependency closure instead.
+  'catalog.services': [],
+  'catalog.products': [],
   'catalog.menu': [],
   'crm.leads': ['lead-capture'],
   'crm.contacts': ['contact'],
@@ -112,48 +115,83 @@ function resolveOperationalCapabilities(requested: BusinessCapability[]): Capabi
   return [...selected];
 }
 
+// ---------------------------------------------------------------------------
+// Plain-English proposal copy
+// ---------------------------------------------------------------------------
+
+const CAPABILITY_PHRASE: Record<BusinessCapability, string> = {
+  business_profile: 'business profile details',
+  'catalog.services': 'a live service catalog',
+  'catalog.products': 'a live product catalog',
+  'catalog.menu': 'a live menu',
+  'crm.leads': 'lead records',
+  'crm.contacts': 'customer records',
+  'booking.appointments': 'appointment booking and availability',
+  'commerce.cart': 'a shopping cart',
+  'commerce.checkout': 'checkout and orders',
+  'forms.contact': 'contact form handling',
+  'forms.quote': 'quote request handling',
+  'auth.customer': 'customer accounts',
+  'portal.customer': 'a customer portal',
+  'automation.follow_up': 'automated follow-ups',
+  'notifications.email': 'email notifications',
+};
+
+function buildSummary(
+  capabilities: BusinessCapability[],
+  bindingCount: number,
+  tables: string[],
+): string {
+  if (capabilities.length === 0) return 'No business capability changes are required for this request.';
+  const phrases = capabilities.map((cap) => CAPABILITY_PHRASE[cap]);
+  const head = phrases.length === 1
+    ? phrases[0]
+    : `${phrases.slice(0, -1).join(', ')} and ${phrases[phrases.length - 1]}`;
+  const parts = [`This will set up ${head}.`];
+  if (bindingCount > 0) {
+    parts.push(`It will connect ${bindingCount} button${bindingCount === 1 ? '' : 's'} on your site to the new actions.`);
+  }
+  if (tables.length > 0) {
+    parts.push(`Data affected: ${tables.join(', ')}.`);
+  }
+  return parts.join(' ');
+}
+
 /**
  * Converts a business request into a reviewable plan. This function is pure:
  * it neither applies migrations nor invokes Edge Functions.
+ *
+ * Classification is envelope-driven (Milestone 5, Step 1). Prompt regexes are
+ * consulted only when no interpreter envelope is supplied.
  */
 export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): CapabilityPlan {
-  const prompt = envelope.prompt;
-  const isBookingRequest = BOOKING_REQUEST.test(prompt);
-  const requested = new Set<BusinessCapability>();
+  const interpretation = interpretCapabilities({
+    prompt: envelope.prompt,
+    envelope: envelope.interpretation ?? null,
+    industry: envelope.context.industry,
+  });
 
-  if (isBookingRequest) {
-    requested.add('business_profile');
-    requested.add('catalog.services');
-    requested.add('booking.appointments');
-    requested.add('crm.contacts');
-    requested.add('notifications.email');
-  }
-  if (SERVICE_REQUEST.test(prompt)) requested.add('catalog.services');
-  if (CONTACT_REQUEST.test(prompt)) {
-    requested.add('crm.contacts');
-    requested.add('forms.contact');
-  }
+  const scope = envelope.interpretation
+    ? resolveBuilderScope(envelope.interpretation)
+    : (envelope.scope ?? interpretation.scope);
 
-  const requestedCapabilities = [...requested];
+  const requestedCapabilities = interpretation.resolved;
   const operationalCapabilityIds = resolveOperationalCapabilities(requestedCapabilities);
   const operationalCapabilities = operationalCapabilityIds.map((id) => CAPABILITY_REGISTRY[id]);
-  const isSalonBooking = isBookingRequest && /\b(salon|spa|stylist|beauty)\b/i.test(prompt + ` ${envelope.context.industry ?? ''}`);
-  const intentBindings = isBookingRequest
-    ? [{ target: 'service-card.primary-action', intent: 'booking.create' }]
-    : [];
+  const intentBindings = bindingsForCapabilities(requestedCapabilities, interpretation.uiTargets);
   const dataAffected = unique(operationalCapabilities.flatMap((capability) => capability.database.requiredTables));
   const readinessAssertions = unique(operationalCapabilities.flatMap((capability) => capability.readiness.assertions));
 
   return {
     envelope,
+    scope,
+    interpretationSource: interpretation.source,
     requestedCapabilities,
     operationalCapabilities,
     proposal: {
       status: 'proposed',
       requiresApproval: true,
-      summary: isSalonBooking
-        ? 'Booking system required for this salon. It will configure services, staff availability, customer records, booking confirmations, and service booking actions.'
-        : `Business capability changes required: ${requestedCapabilities.join(', ') || 'none detected'}.`,
+      summary: buildSummary(requestedCapabilities, intentBindings.length, dataAffected),
       dataAffected,
       operationalCapabilities: operationalCapabilityIds,
       intentBindings,
@@ -161,6 +199,7 @@ export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): Capa
     },
   };
 }
+
 
 /** Stamps a review decision; callers must provide the identity and time. */
 export function approveCapabilityPlan(

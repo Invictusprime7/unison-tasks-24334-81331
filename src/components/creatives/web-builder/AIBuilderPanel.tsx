@@ -97,6 +97,8 @@ import {
   planBusinessCapabilities,
   type CapabilityPlan,
 } from '@/services/businessCapabilityPlanner';
+import { interpretBuilderRequest } from '@/services/builderRequestInterpreter';
+
 import {
   resolveCapabilityIntentBindings,
   type CapabilityIntentBindingResolution,

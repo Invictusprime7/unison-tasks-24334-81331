@@ -89,6 +89,14 @@ import {
   applyAIBuilderFiles,
   type AIBuilderApplyCallback,
 } from '@/services/aiBuilderApply';
+import {
+  planBusinessCapabilities,
+  type CapabilityPlan,
+} from '@/services/businessCapabilityPlanner';
+import {
+  resolveCapabilityIntentBindings,
+  type CapabilityIntentBindingResolution,
+} from '@/services/capabilityIntentBindingResolver';
 
 // ============================================================================
 /**
@@ -447,6 +455,11 @@ interface AIBuilderPanelProps {
   projectId?: string | null;
   /** Active business id — required for GHL fast-path bindings. */
   businessId?: string | null;
+  /** Executes an explicitly approved, fully resolved business capability plan. */
+  onApproveCapabilityPlan?: (
+    plan: CapabilityPlan,
+    resolution: CapabilityIntentBindingResolution,
+  ) => Promise<{ success: boolean; error?: string }>;
   /**
    * Layout-intent fast path. When provided, the panel will pre-flight every
    * prompt through the deterministic layout intent engine (center / move /
@@ -531,6 +544,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   previewRef,
   projectId,
   businessId,
+  onApproveCapabilityPlan,
   layoutOps,
 }) => {
   // Hydrate persisted messages synchronously so a refresh never wipes history.
@@ -556,6 +570,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | undefined>(undefined);
+  const [pendingCapabilityProposal, setPendingCapabilityProposal] = useState<{
+    plan: CapabilityPlan;
+    resolution: CapabilityIntentBindingResolution;
+    isApplying: boolean;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPromptRef = useRef<string | null>(null);
@@ -757,6 +776,32 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     setInput('');
     setDroppedFiles([]);
     setIsLoading(true);
+
+    const capabilityPlan = planBusinessCapabilities({
+      requestId: generateId(),
+      prompt: userContent,
+      scope: 'business-system',
+      context: {
+        businessId: businessId ?? undefined,
+        projectId: projectId ?? undefined,
+        industry: systemType ?? undefined,
+      },
+    });
+    if (capabilityPlan.requestedCapabilities.length > 0) {
+      const resolution = resolveCapabilityIntentBindings(
+        capabilityPlan.proposal.intentBindings,
+        vfsFiles ?? {},
+      );
+      setPendingCapabilityProposal({ plan: capabilityPlan, resolution, isApplying: false });
+      setMessages((prev) => [...prev, {
+        id: generateId(),
+        role: 'assistant',
+        content: capabilityPlan.proposal.summary,
+        timestamp: new Date(),
+      }]);
+      setIsLoading(false);
+      return;
+    }
 
     // ── Icon Wire Fast Path ──────────────────────────────────────────────
     // Deterministic NL → data-ut-* stamp on the named Lucide icon in the
@@ -2425,6 +2470,46 @@ export default function App() {
           <ScrollArea className="flex-1" ref={scrollRef}>
             <div className="py-3 px-3">
               <LaunchReadinessCard vfsFiles={vfsFiles} className="-mx-3" />
+              {pendingCapabilityProposal && (
+                <div className="mb-3 border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+                  <div className="flex items-center gap-2 font-semibold text-foreground">
+                    <Database className="h-4 w-4 text-amber-500" />
+                    Business system change required
+                  </div>
+                  <p className="mt-2 text-muted-foreground">{pendingCapabilityProposal.plan.proposal.summary}</p>
+                  <p className="mt-2 text-muted-foreground">Data affected: {pendingCapabilityProposal.plan.proposal.dataAffected.join(', ')}</p>
+                  <p className="mt-1 text-muted-foreground">Resolved bindings: {pendingCapabilityProposal.resolution.resolved.map((binding) => `${binding.filePath}#${binding.slot}`).join(', ') || 'none'}</p>
+                  {pendingCapabilityProposal.resolution.unresolved.length > 0 && (
+                    <p className="mt-2 text-destructive">Cannot approve until these targets exist: {pendingCapabilityProposal.resolution.unresolved.map((binding) => binding.target).join(', ')}</p>
+                  )}
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={pendingCapabilityProposal.isApplying || pendingCapabilityProposal.resolution.unresolved.length > 0 || !onApproveCapabilityPlan}
+                      onClick={async () => {
+                        if (!onApproveCapabilityPlan) return;
+                        setPendingCapabilityProposal((current) => current ? { ...current, isApplying: true } : current);
+                        const outcome = await onApproveCapabilityPlan(
+                          pendingCapabilityProposal.plan,
+                          pendingCapabilityProposal.resolution,
+                        );
+                        if (outcome.success) {
+                          toast.success('Business capability plan applied');
+                          setPendingCapabilityProposal(null);
+                        } else {
+                          toast.error('Business capability plan was not applied', { description: outcome.error });
+                          setPendingCapabilityProposal((current) => current ? { ...current, isApplying: false } : current);
+                        }
+                      }}
+                    >
+                      {pendingCapabilityProposal.isApplying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Approve and apply'}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={pendingCapabilityProposal.isApplying} onClick={() => setPendingCapabilityProposal(null)}>
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              )}
               {!hasConversation ? (
                 <AIConversationWelcome
                   onSelectPrompt={(prompt) => {

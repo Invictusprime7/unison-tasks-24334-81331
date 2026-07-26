@@ -228,6 +228,7 @@ function serializeSiteBundleSnapshot(siteBundleSnapshot?: SiteBundleSnapshot) {
     createdAt: siteBundleSnapshot.createdAt,
     appContext: siteBundleSnapshot.appContext,
     themeTokens: siteBundleSnapshot.themeTokens,
+    businessSystem: siteBundleSnapshot.businessSystem,
     // CRITICAL: persist `meta` (themePresetId, templateId, systemId,
     // verticalContractId, wizardSeedId). Downstream recompile + readiness
     // surfaces read `snap.meta.themePresetId` to recover the wizard preset

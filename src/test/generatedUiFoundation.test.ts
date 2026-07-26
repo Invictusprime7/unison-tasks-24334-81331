@@ -24,12 +24,15 @@ describe('generated UI foundation', () => {
     expect(foundation.files['/src/unison/ui/navigation.tsx']).toContain("from './radix/dialog'");
     expect(foundation.files['/src/unison/ui/radix/dialog.ts']).toContain("@radix-ui/react-dialog");
     expect(foundation.files['/src/unison/ui/icon.tsx']).toContain('LucideIcon');
+    expect(foundation.files['/src/unison/ui/button.tsx']).toContain('React.isValidElement(child) && !child.type ? null : child');
     expect(foundation.files['/src/unison/ui/motion.tsx']).toContain('useReducedMotion');
     expect(foundation.files['/src/unison/ui/motion.tsx']).toContain('export function RevealGroup');
     expect(foundation.files['/src/unison/ui/animation.ts']).toContain('export function StaggerContainer');
     expect(foundation.files['/src/unison/ui/animation.ts']).toContain('export function StaggerChild');
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Reveal, RevealGroup, Stagger, StaggerItem } from './motion';");
     expect(foundation.files['/src/unison/ui/icons.ts']).toContain("export * from 'lucide-react';");
+    expect(foundation.files['/src/unison/ui/icons.ts']).toContain("export const Instagram = brandIcon('Instagram');");
+    expect(foundation.files['/src/unison/ui/icons.ts']).toContain("export const Facebook = brandIcon('Facebook');");
     expect(foundation.files['/src/unison/ui/zod.ts']).toContain("export * from 'zod';");
     expect(foundation.files['/src/unison/ui/forms.ts']).toContain("zodResolver");
     expect(foundation.files['/src/unison/ui/styles.ts']).toContain('export const typography');

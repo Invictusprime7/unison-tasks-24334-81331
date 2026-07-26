@@ -45,6 +45,7 @@ import {
 } from '@/components/onboarding/themePresetToIndexCss';
 import type { ThemeTokens } from '@/sections/types';
 import type { GeneratedSitePlan } from './siteTopologyPlanner';
+import type { BusinessSystemState } from './capabilityRegistry';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
 import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
@@ -127,6 +128,8 @@ export interface SiteBundleSnapshot {
   /** Shared app context propagated at launch/save time */
   appContext?: RuntimeAppContext;
   themeTokens?: ThemeTokens;
+  /** Approved capability state; persisted with the revision, never inferred from prompt text. */
+  businessSystem?: BusinessSystemState;
 
   /**
    * Durable snapshot identity — the single source of truth for downstream

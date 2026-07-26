@@ -10,6 +10,8 @@
  * remains the single legal writer.
  */
 
+import type { BusinessSystemState } from '@/platform/core/capabilityRegistry';
+
 export type PatchSource =
   | 'wizard-launch'
   | 'ai-builder'
@@ -61,6 +63,8 @@ export interface PatchPlan {
   playgroundOps: PlaygroundOp[];
   bindingOps: BindingOp[];
   backendOps: BackendOp[];
+  /** Approved capability state to stamp into the resulting SiteBundleSnapshot. */
+  businessSystem?: BusinessSystemState;
 }
 
 export function emptyPatchPlan(summary = ''): PatchPlan {

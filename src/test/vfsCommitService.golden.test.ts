@@ -32,6 +32,10 @@ vi.mock('@/services/playgroundControlPlaneResolver', () => ({
   resolvePlaygroundControlPlane: vi.fn(),
 }));
 
+vi.mock('@/services/backendOpExecutor', () => ({
+  executeBackendOps: vi.fn(),
+}));
+
 vi.mock('@/platform/core/gates', () => ({
   PreviewGate: { evaluate: vi.fn(() => ({ ok: true, reasons: [] })) },
   PublishGate: { evaluate: vi.fn(() => ({ ok: true, reasons: [] })) },
@@ -119,6 +123,7 @@ import {
 import { commitToPipeline } from '@/platform/core/commitToPipeline';
 import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
+import { executeBackendOps } from '@/services/backendOpExecutor';
 import type { BuilderIdentity } from '@/types/builderIdentity';
 import { emptyPatchPlan, legacyFilesToPatchPlan } from '@/types/patchPlan';
 
@@ -267,6 +272,86 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
 
     // Rejected revisions are still persisted for forensics.
     expect(revisionStore[revisionStore.length - 1]?.status).toBe('rejected');
+  });
+
+  it('does not execute backend operations when pre-execution gates reject the commit', async () => {
+    const files = { '/src/App.tsx': 'x' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents(3, 3);
+    const patch = emptyPatchPlan('rejected booking install');
+    patch.backendOps.push({ type: 'requireCapability', capability: 'booking' });
+
+    await expect(
+      commitMutation({
+        source: 'ai-builder',
+        identity: IDENTITY,
+        current: { vfsFiles: files, playground: { pages: [] } as never },
+        patch,
+      }),
+    ).rejects.toThrow(/rejected/i);
+
+    expect(executeBackendOps).not.toHaveBeenCalled();
+  });
+
+  it('rejects the revision when a backend operation fails', async () => {
+    const files = { '/src/App.tsx': 'x' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents(0, 0);
+    (executeBackendOps as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      failedCount: 1,
+      results: [{
+        op: { type: 'requireCapability', capability: 'booking' },
+        status: 'failed',
+      }],
+    });
+    const patch = emptyPatchPlan('failed booking install');
+    patch.backendOps.push({ type: 'requireCapability', capability: 'booking' });
+
+    await expect(
+      commitMutation({
+        source: 'ai-builder',
+        identity: IDENTITY,
+        current: { vfsFiles: files, playground: { pages: [] } as never },
+        patch,
+      }),
+    ).rejects.toThrow(/rejected/i);
+
+    expect(revisionStore[revisionStore.length - 1]?.status).toBe('rejected');
+  });
+
+  it('persists provisioned capability state on a successful approved transaction', async () => {
+    const files = { '/src/App.tsx': 'x' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents(0, 0);
+    (executeBackendOps as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      failedCount: 0,
+      results: [{ op: { type: 'requireCapability', capability: 'booking' }, status: 'ok' }],
+    });
+    const patch = emptyPatchPlan('approved booking install');
+    patch.backendOps.push({ type: 'requireCapability', capability: 'booking' });
+    patch.businessSystem = {
+      version: '1.0',
+      requestedCapabilities: ['booking.appointments'],
+      capabilities: [{
+        id: 'booking',
+        provides: ['booking.appointments'],
+        status: 'approved',
+        approval: { approvedBy: 'user-123', approvedAt: '2026-07-25T23:00:00.000Z' },
+      }],
+    };
+
+    const result = await commitMutation({
+      source: 'ai-builder',
+      identity: IDENTITY,
+      current: { vfsFiles: files, playground: { pages: [] } as never },
+      patch,
+    });
+
+    expect((result.siteBundleSnapshot as { businessSystem?: { capabilities: Array<{ status: string }> } })
+      .businessSystem?.capabilities[0]?.status).toBe('provisioned');
   });
 });
 

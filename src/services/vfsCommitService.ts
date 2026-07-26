@@ -45,7 +45,7 @@ import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlane
 import { evaluateElementReadiness, type ElementReadinessReport } from '@/services/elementReadinessEvaluator';
 import { executeBackendOps, type BackendOpExecutionReport } from '@/services/backendOpExecutor';
 import type { PlaygroundControlPlaneModel } from '@/types/playground';
-import type { CapabilityId } from '@/platform/core/capabilityRegistry';
+import type { BusinessSystemState, CapabilityId } from '@/platform/core/capabilityRegistry';
 import {
   assertBuilderIdentity,
   type BuilderIdentity,
@@ -296,6 +296,11 @@ export async function commitMutation(
   let snapshotForPersistence = input.source === 'wizard-launch'
     ? mergeWizardLaunchSnapshot((snapshot as SiteBundleSnapshot | null) ?? null, files)
     : snapshot;
+  snapshotForPersistence = stampBusinessSystemState(
+    snapshotForPersistence as SiteBundleSnapshot | null,
+    input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined,
+    input.patch.businessSystem,
+  );
 
   const requirePreview = input.options?.requirePreviewPass !== false;
   const requireReadiness = input.options?.requireReadinessPass !== false;
@@ -401,35 +406,18 @@ export async function commitMutation(
     log('elementReadiness', 'warn', 'element readiness evaluation threw', String(err));
   }
 
-  // Move C: execute transactional backend ops (capability provisioning +
-  // seeding) declared on the patch plan. Runs after all gates so a
-  // rejected commit never mutates the backend.
-  let backendOpsReport: BackendOpExecutionReport | null = null;
-  const backendOps = input.patch.backendOps ?? [];
-  if (backendOps.length > 0) {
-    try {
-      backendOpsReport = await executeBackendOps(backendOps, input.identity);
-      log(
-        'backendOps',
-        backendOpsReport.failedCount === 0 ? 'info' : 'warn',
-        `executed ${backendOpsReport.results.length} ops (failed=${backendOpsReport.failedCount})`,
-        backendOpsReport.results.map((r) => ({ type: r.op.type, cap: r.op.capability, status: r.status })),
-      );
-    } catch (err) {
-      log('backendOps', 'error', 'backend op execution threw', String(err));
-    }
-  }
-
   const readinessOk =
     (!gate || gate.previewReady) &&
     (!previewVerdict || previewVerdict.ok) &&
     intentPreviewBlocked === 0 &&
     elementPreviewBlocked === 0;
 
+  let backendOpsReport: BackendOpExecutionReport | null = null;
 
 
   // 6. Auto-repair-then-hard-reject -----------------------------------------
   let status: 'committed' | 'rejected' = 'committed';
+  let preExecutionReady = previewOk && readinessOk;
   if ((requirePreview && !previewOk) || (requireReadiness && !readinessOk)) {
     log('repair', 'warn', 'running single auto-repair pass');
     try {
@@ -465,8 +453,39 @@ export async function commitMutation(
         backendOpsFailed: backendOpsReport?.failedCount ?? 0,
       });
     } else {
+      preExecutionReady = previewOk2 && readinessOk2;
       log('repair', 'info', 'auto-repair recovered the commit');
     }
+  }
+
+  // Move C: execute transactional backend ops only after the candidate VFS
+  // has survived preview and readiness checks. This is intentionally after
+  // the auto-repair decision: a rejected revision must never provision or
+  // seed backend data.
+  const backendOps = input.patch.backendOps ?? [];
+  if (status === 'committed' && preExecutionReady && backendOps.length > 0) {
+    try {
+      backendOpsReport = await executeBackendOps(backendOps, input.identity);
+      log(
+        'backendOps',
+        backendOpsReport.failedCount === 0 ? 'info' : 'warn',
+        `executed ${backendOpsReport.results.length} ops (failed=${backendOpsReport.failedCount})`,
+        backendOpsReport.results.map((r) => ({ type: r.op.type, cap: r.op.capability, status: r.status })),
+      );
+      if (backendOpsReport.failedCount > 0) {
+        status = 'rejected';
+        log('backendOps', 'error', 'backend operation failure rejected the commit');
+      }
+      snapshotForPersistence = finalizeBusinessSystemState(
+        snapshotForPersistence as SiteBundleSnapshot | null,
+        backendOpsReport.failedCount === 0 ? 'provisioned' : 'failed',
+      );
+    } catch (err) {
+      status = 'rejected';
+      log('backendOps', 'error', 'backend op execution threw', String(err));
+    }
+  } else if (backendOps.length > 0) {
+    log('backendOps', 'warn', 'skipped backend operations because pre-execution gates failed');
   }
 
   // Move D — compute publish readiness + blockers aggregate.
@@ -544,7 +563,7 @@ export async function commitMutation(
     parentRevisionId: input.identity.revisionId || null,
     rejectMessage:
       status === 'rejected'
-        ? 'commit rejected by preview/readiness gate after auto-repair'
+        ? 'commit rejected by preview/readiness gate or backend operation failure'
         : null,
   });
 }
@@ -630,6 +649,30 @@ function mergeWizardLaunchSnapshot(
     routerFile: {
       path: routerPath,
       content: files[routerPath] || files['/src/App.tsx'] || snapshot.routerFile?.content || '',
+    },
+  };
+}
+
+function stampBusinessSystemState(
+  snapshot: SiteBundleSnapshot | null,
+  previousSnapshot: SiteBundleSnapshot | null | undefined,
+  requestedState: BusinessSystemState | undefined,
+): SiteBundleSnapshot | null {
+  if (!snapshot) return null;
+  const businessSystem = requestedState ?? previousSnapshot?.businessSystem;
+  return businessSystem ? { ...snapshot, businessSystem } : snapshot;
+}
+
+function finalizeBusinessSystemState(
+  snapshot: SiteBundleSnapshot | null,
+  status: 'provisioned' | 'failed',
+): SiteBundleSnapshot | null {
+  if (!snapshot?.businessSystem) return snapshot;
+  return {
+    ...snapshot,
+    businessSystem: {
+      ...snapshot.businessSystem,
+      capabilities: snapshot.businessSystem.capabilities.map((capability) => ({ ...capability, status })),
     },
   };
 }

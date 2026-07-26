@@ -22,6 +22,7 @@ export * from './intentSurfaceRegistry';
 // Blueprint & capabilities
 export * from './blueprintSchema';
 export * from './capabilityRegistry';
+export * from '@/services/businessCapabilityPlanner';
 export * from './routePolicy';
 export * from './provisioningValidator';
 export * from './intentNormalizer';

@@ -86,6 +86,11 @@ import {
 import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
+import {
+  approveCapabilityPlan,
+  approvedCapabilityPlanToPatchPlan,
+} from '@/services/businessCapabilityPlanner';
+import { applyButtonBinding } from '@/services/aiBindingTool';
 
 // Helpers extracted to web-builder/*
 import {
@@ -151,6 +156,7 @@ import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
 import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
 import { isPreviewPipelineError } from '@/services/previewPipelineError';
+import { ThemeSeedError } from '@/platform/core/themeSeedAssert';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
 import PreviewCartDrawer from '@/components/preview/PreviewCartDrawer';
 import {
@@ -374,6 +380,24 @@ const mergeRouteStatePreservingFiles = (
 ): WebBuilderRouteState | null =>
   mergeRouteStatePreservingFilesGeneric<WebBuilderRouteState>(...states);
 
+/**
+ * True when a buildSavePayload()/commitToPipeline() failure means the
+ * *recompile* step lacks inputs it needs (e.g. an older/recovered draft that
+ * never carried a themePresetId or wizard themeTokens) rather than a real
+ * data-corruption or infra failure. These are recoverable: the caller should
+ * persist the existing VFS files as-is instead of rejecting the save/update,
+ * since the source-of-truth content itself is fine — only re-derivation is
+ * blocked. Broadens the existing isPreviewPipelineError() check, which only
+ * recognized PreviewPipelineError and silently let ThemeSeedError (and the
+ * plain "requires the original wizard themeTokens" Error) escape as hard
+ * failures, breaking autosave AND the manual Update button for such drafts.
+ */
+function isRecompileInputError(error: unknown): boolean {
+  if (isPreviewPipelineError(error)) return true;
+  if (error instanceof ThemeSeedError) return true;
+  if (error instanceof Error && /wizard themeTokens/i.test(error.message)) return true;
+  return false;
+}
 
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
   const location = useLocation();
@@ -1224,12 +1248,42 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const projectId = effectiveRouteState?.projectId;
   const systemType = effectiveRouteState?.systemType;
   const systemName = effectiveRouteState?.systemName;
-  const businessId = effectiveRouteState?.businessId;
+  const routeBusinessId = effectiveRouteState?.businessId;
   const manifestIdFromState = effectiveRouteState?.manifestId;
   const projectSlug = effectiveRouteState?.projectSlug;
   const projectNameFromState = effectiveRouteState?.projectName;
   const publishStatusFromState = effectiveRouteState?.publishStatus;
   const customDomainFromState = effectiveRouteState?.customDomain;
+
+  // Self-healing businessId recovery. Some entry paths into the Web Builder
+  // (e.g. resuming a project by projectId only, without the full launcher
+  // route state) never populate effectiveRouteState.businessId. Every save/
+  // commit path and the cloud-state loader below are gated on businessId
+  // being truthy, so a missing value here silently "disconnects" the
+  // session from its cloud workspace — autosave/commits no-op with no
+  // user-facing error, and cloud settings never load, even though the
+  // project's real business_id is one lookup away via projectId.
+  const [recoveredBusinessId, setRecoveredBusinessId] = useState<string | null>(null);
+  useEffect(() => {
+    if (routeBusinessId || !projectId || recoveredBusinessId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await getProjectByIdCompat(projectId);
+        if (!cancelled && data?.business_id) {
+          console.warn(
+            '[WebBuilder] businessId missing from route state — recovered from project record:',
+            data.business_id,
+          );
+          setRecoveredBusinessId(data.business_id);
+        }
+      } catch (err) {
+        console.warn('[WebBuilder] Failed to recover businessId from project record:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [routeBusinessId, projectId, recoveredBusinessId]);
+  const businessId = routeBusinessId || recoveredBusinessId || undefined;
 
   // Local editable project name. Seeded from route state, kept in sync if the
   // user (or another tab) renames the project via CloudProjects.
@@ -3262,6 +3316,33 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     resolvedThemePresetId,
     routeStateHasStructuredProject,
   ]);
+
+  /**
+   * Non-throwing wrapper around buildSavePayload(). Older/recovered drafts
+   * can lack the wizard themePresetId/themeTokens the canonical recompile
+   * step requires — that used to escape as an unhandled ThemeSeedError and
+   * fail the ENTIRE save/update/autosave (not just skip the recompile).
+   * Persist the existing VFS files as-is in that case; the content itself
+   * is fine, only re-derivation of the compiled artifacts is blocked.
+   */
+  const buildSavePayloadOrFallback = useCallback((fallbackVfsFiles: Record<string, string>) => {
+    try {
+      return buildSavePayload();
+    } catch (error) {
+      if (!isRecompileInputError(error)) throw error;
+      console.warn(
+        '[WebBuilder] Canonical recompile deferred — persisting existing VFS files as-is:',
+        error instanceof Error ? error.message : error,
+      );
+      return {
+        vfsFiles: fallbackVfsFiles,
+        entryPoint: launchEntryPoint,
+        activePagePath,
+        businessId: businessId ?? null,
+        projectId: projectId ?? null,
+      };
+    }
+  }, [buildSavePayload, launchEntryPoint, activePagePath, businessId, projectId]);
 
   const ensureLauncherDraftSaved = useCallback(async (
     reason: 'launcher_import' | 'interval_autosave',
@@ -6018,6 +6099,82 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                 projectId={currentDraftId ?? null}
                 businessId={businessId ?? null}
                 layoutOps={layoutOpsForAI}
+                onApproveCapabilityPlan={async (plan, resolution) => {
+                  if (!businessId || !currentDraftId) {
+                    return { success: false, error: 'A saved business project is required to install capabilities.' };
+                  }
+                  if (resolution.unresolved.length > 0) {
+                    return { success: false, error: 'Resolve every requested UI target before approval.' };
+                  }
+                  try {
+                    const { data: { user } } = await supabaseClient.auth.getUser();
+                    if (!user) return { success: false, error: 'Your session has expired. Sign in again.' };
+                    const approved = approveCapabilityPlan(plan, {
+                      approvedBy: user.id,
+                      approvedAt: new Date().toISOString(),
+                    });
+                    const patch = approvedCapabilityPlanToPatchPlan(approved);
+                    const beforeFiles = virtualFS.getSandpackFiles();
+                    for (const [path, contents] of Object.entries(resolution.files)) {
+                      if (beforeFiles[path] !== contents) patch.fileOps.push({ type: 'replace', path, contents });
+                    }
+                    const snapshot = effectiveRouteState?.siteBundleSnapshot ?? null;
+                    const commit = await commitMutation({
+                      source: 'ai-builder',
+                      identity: {
+                        userId: user.id,
+                        businessId,
+                        projectId: resolvedProjectId || currentDraftId,
+                        draftId: currentDraftId,
+                        revisionId: currentRevisionId,
+                        sessionId: `web-builder:${currentDraftId}`,
+                      },
+                      current: {
+                        vfsFiles: beforeFiles,
+                        siteBundleSnapshot: snapshot ?? undefined,
+                        playground: {
+                          pageRegistry: creatorPlayground.pageRegistry,
+                          creatorData: creatorPlayground.creatorData,
+                          calendars: snapshot?.calendars ?? {},
+                          popups: snapshot?.popups ?? {},
+                        } as never,
+                      },
+                      patch,
+                      options: {
+                        requirePreviewPass: true,
+                        requireReadinessPass: true,
+                        industry: snapshot?.industry,
+                        themePresetId: snapshot?.meta.themePresetId ?? undefined,
+                        themeTokens: snapshot?.themeTokens,
+                      },
+                    });
+                    virtualFS.importFiles(commit.vfsFiles);
+                    if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
+                    for (const binding of resolution.resolved) {
+                      const page = Object.values(creatorPlayground.pageRegistry.pages)
+                        .find((candidate) => candidate.filePath === binding.filePath);
+                      const bindingResult = await applyButtonBinding({
+                        businessId,
+                        projectId: resolvedProjectId || currentDraftId,
+                        pagePath: page?.path ?? '/',
+                        slot: binding.slot,
+                        intent: binding.intent,
+                      }, {
+                        pageRegistry: creatorPlayground.pageRegistry,
+                        slotExists: () => true,
+                      });
+                      if (!bindingResult.ok) {
+                        return {
+                          success: false,
+                          error: 'message' in bindingResult ? bindingResult.message : 'Unable to persist the intent binding.',
+                        };
+                      }
+                    }
+                    return { success: true };
+                  } catch (error) {
+                    return { success: false, error: error instanceof Error ? error.message : 'Capability transaction failed.' };
+                  }
+                }}
                 onApplyToVFS={async (rawFiles, applyMeta) => {
                   console.log('[WebBuilder] onApplyToVFS called with files:', Object.keys(rawFiles));
                   // End-to-end preflight: syntax repair → nav-intent stamping →

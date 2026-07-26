@@ -216,7 +216,27 @@ export const Stagger = StaggerContainer;
 export const StaggerItem = StaggerChild;
 `,
     '/src/unison/ui/icons.ts': `${marker}
+import * as React from 'react';
+import * as Lucide from 'lucide-react';
+
 export * from 'lucide-react';
+
+type IconComponent = React.ComponentType<React.SVGProps<SVGSVGElement>>;
+
+const MissingBrandIcon: IconComponent = (props) => React.createElement(
+  'svg',
+  { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, ...props },
+  React.createElement('circle', { cx: 12, cy: 12, r: 9 }),
+  React.createElement('path', { d: 'M8 12h8M12 8v8' }),
+);
+
+const brandIcon = (name: string): IconComponent => (
+  (Lucide as Record<string, IconComponent | undefined>)[name] || MissingBrandIcon
+);
+
+// Sandpack's Lucide runtime omits brand marks; generated social links must still render.
+export const Instagram = brandIcon('Instagram');
+export const Facebook = brandIcon('Facebook');
 `,
     '/src/unison/ui/zod.ts': `${marker}
 export * from 'zod';
@@ -315,9 +335,12 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, children, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
-    return <Comp ref={ref} className={cn(buttonVariants({ variant, size }), className)} {...props} />;
+    const safeChildren = React.Children.map(children, (child) => (
+      React.isValidElement(child) && !child.type ? null : child
+    ));
+    return <Comp ref={ref} className={cn(buttonVariants({ variant, size }), className)} {...props}>{safeChildren}</Comp>;
   },
 );
 Button.displayName = 'Button';

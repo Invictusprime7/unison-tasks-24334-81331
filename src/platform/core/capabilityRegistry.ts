@@ -18,6 +18,33 @@ import type { CoreIntent, ActionIntent } from './coreIntents';
 // Capability Definition
 // ============================================================================
 
+/**
+ * Business-facing capabilities understood by the request planner. These stay
+ * more precise than the operational packs below, which preserves the existing
+ * compiler and runtime contracts while giving the AI a safe vocabulary.
+ */
+export type BusinessCapability =
+  | 'business_profile'
+  | 'catalog.services'
+  | 'catalog.products'
+  | 'catalog.menu'
+  | 'crm.leads'
+  | 'crm.contacts'
+  | 'booking.appointments'
+  | 'commerce.cart'
+  | 'commerce.checkout'
+  | 'forms.contact'
+  | 'forms.quote'
+  | 'auth.customer'
+  | 'portal.customer'
+  | 'automation.follow_up'
+  | 'notifications.email';
+
+export interface CapabilityApprovalRecord {
+  approvedBy: string;
+  approvedAt: string;
+}
+
 export type CapabilityId =
   | 'booking'
   | 'quoting'
@@ -28,10 +55,28 @@ export type CapabilityId =
   | 'lead-capture'
   | 'donation';
 
+export interface InstalledCapability {
+  id: CapabilityId;
+  provides: BusinessCapability[];
+  status: 'approved' | 'provisioned' | 'failed';
+  approval: CapabilityApprovalRecord;
+}
+
+export interface BusinessSystemState {
+  version: '1.0';
+  requestedCapabilities: BusinessCapability[];
+  capabilities: InstalledCapability[];
+}
+
 export interface CapabilityDefinition {
   id: CapabilityId;
   name: string;
   description: string;
+
+  /** Business-facing capabilities this operational pack provides. */
+  provides: BusinessCapability[];
+  /** Other operational packs that must be installed first. */
+  dependencies: CapabilityId[];
 
   /** Canonical intents this capability exposes (from coreIntents.ts) */
   primaryIntent: CoreIntent;
@@ -40,6 +85,40 @@ export interface CapabilityDefinition {
 
   /** Database tables required for this capability */
   requiredTables: string[];
+
+  database: {
+    migrations: string[];
+    requiredTables: string[];
+    requiredColumns: string[];
+    rlsPolicies: string[];
+  };
+
+  backend: {
+    functions: string[];
+    events: string[];
+    permissions: string[];
+  };
+
+  frontend: {
+    components: string[];
+    dataSources: string[];
+    supportedSlots: string[];
+  };
+
+  intents: {
+    provided: CoreIntent[];
+    required: CoreIntent[];
+  };
+
+  settings: {
+    accountFields: string[];
+    projectFields: string[];
+  };
+
+  readiness: {
+    assertions: string[];
+    fixtures: string[];
+  };
 
   /** Workflows that should be provisioned */
   requiredWorkflows: WorkflowSpec[];
@@ -77,9 +156,30 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'booking',
     name: 'Booking & Scheduling',
     description: 'Online appointment booking with confirmation and reminders',
+    provides: ['business_profile', 'catalog.services', 'crm.contacts', 'booking.appointments', 'notifications.email'],
+    dependencies: ['contact'],
     primaryIntent: 'booking.create',
     supportingIntents: ['booking.reschedule', 'booking.cancel', 'contact.submit'],
     requiredTables: ['services', 'availability_slots', 'bookings'],
+    database: {
+      migrations: ['businesses', 'services', 'staff', 'availability_slots', 'bookings', 'crm_contacts'],
+      requiredTables: ['services', 'staff', 'availability_slots', 'bookings', 'crm_contacts'],
+      requiredColumns: ['services.duration_minutes', 'services.price_cents', 'availability_slots.starts_at', 'availability_slots.ends_at', 'bookings.customer_id'],
+      rlsPolicies: ['services_read_public', 'booking_owner_access', 'booking_customer_access'],
+    },
+    backend: {
+      functions: ['create-booking', 'intent-exec', 'automation-event'],
+      events: ['booking.created', 'booking.confirmed'],
+      permissions: ['business.booking.manage', 'customer.booking.create'],
+    },
+    frontend: {
+      components: ['ServiceGrid', 'BookingButton', 'BookingForm', 'BookingConfirmation'],
+      dataSources: ['catalog.services', 'booking.availability'],
+      supportedSlots: ['service-card.primary-action', 'hero.primary-cta', 'navbar.primary-action'],
+    },
+    intents: { provided: ['booking.create', 'booking.reschedule', 'booking.cancel'], required: ['contact.submit'] },
+    settings: { accountFields: ['business.timezone', 'business.notificationEmail'], projectFields: ['booking.minimumNotice', 'booking.staffSelection'] },
+    readiness: { assertions: ['active-service-exists', 'availability-exists', 'booking-handler-installed', 'booking-rls-verified'], fixtures: ['service', 'staff-member', 'availability-window', 'customer'] },
     requiredWorkflows: [
       {
         id: 'booking-confirmation',
@@ -107,9 +207,17 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'quoting',
     name: 'Quote Requests',
     description: 'Structured quote/estimate request forms with pipeline tracking',
+    provides: ['forms.quote', 'crm.leads', 'notifications.email'],
+    dependencies: ['contact'],
     primaryIntent: 'quote.request',
     supportingIntents: ['contact.submit', 'lead.capture', 'proposal.request'],
     requiredTables: ['leads', 'crm_leads'],
+    database: { migrations: ['leads', 'crm_leads'], requiredTables: ['leads', 'crm_leads'], requiredColumns: ['leads.email', 'crm_leads.stage'], rlsPolicies: ['leads_insert_public', 'crm_leads_owner_access'] },
+    backend: { functions: ['create-lead', 'automation-event'], events: ['quote.requested'], permissions: ['business.crm.manage', 'visitor.quote.create'] },
+    frontend: { components: ['QuoteForm'], dataSources: ['crm.leads'], supportedSlots: ['hero.primary-cta', 'service-card.primary-action'] },
+    intents: { provided: ['quote.request'], required: ['contact.submit'] },
+    settings: { accountFields: ['business.notificationEmail'], projectFields: ['crm.defaultPipeline'] },
+    readiness: { assertions: ['quote-handler-installed', 'crm-stage-exists'], fixtures: ['lead'] },
     requiredWorkflows: [
       {
         id: 'quote-notification',
@@ -130,9 +238,17 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'contact',
     name: 'Contact Forms',
     description: 'General contact/inquiry forms with CRM integration',
+    provides: ['forms.contact', 'crm.leads', 'crm.contacts', 'notifications.email'],
+    dependencies: [],
     primaryIntent: 'contact.submit',
     supportingIntents: ['contact.call', 'contact.email', 'contact.sms', 'location.directions', 'lead.capture'],
     requiredTables: ['leads'],
+    database: { migrations: ['leads', 'crm_contacts'], requiredTables: ['leads', 'crm_contacts'], requiredColumns: ['leads.email', 'crm_contacts.email'], rlsPolicies: ['leads_insert_public', 'crm_contacts_owner_access'] },
+    backend: { functions: ['create-lead', 'intent-exec'], events: ['contact.submitted'], permissions: ['business.crm.manage', 'visitor.contact.create'] },
+    frontend: { components: ['ContactForm'], dataSources: ['business.profile'], supportedSlots: ['hero.primary-cta', 'contact-form.submit'] },
+    intents: { provided: ['contact.submit', 'lead.capture'], required: [] },
+    settings: { accountFields: ['business.notificationEmail'], projectFields: ['crm.defaultPipeline'] },
+    readiness: { assertions: ['contact-handler-installed', 'crm-contact-create-enabled'], fixtures: ['lead', 'contact'] },
     requiredWorkflows: [
       {
         id: 'contact-notification',
@@ -156,9 +272,17 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'newsletter',
     name: 'Newsletter & Waitlist',
     description: 'Email collection for newsletters, waitlists, and updates',
+    provides: ['notifications.email', 'automation.follow_up'],
+    dependencies: ['contact'],
     primaryIntent: 'newsletter.subscribe',
     supportingIntents: ['coupon.claim'],
     requiredTables: ['leads'],
+    database: { migrations: ['leads'], requiredTables: ['leads'], requiredColumns: ['leads.email'], rlsPolicies: ['leads_insert_public'] },
+    backend: { functions: ['create-lead', 'automation-event'], events: ['newsletter.subscribed'], permissions: ['visitor.newsletter.subscribe'] },
+    frontend: { components: ['NewsletterForm'], dataSources: [], supportedSlots: ['footer.newsletter'] },
+    intents: { provided: ['newsletter.subscribe'], required: [] },
+    settings: { accountFields: ['business.notificationEmail'], projectFields: ['newsletter.senderName'] },
+    readiness: { assertions: ['newsletter-handler-installed'], fixtures: ['subscriber'] },
     requiredWorkflows: [
       {
         id: 'newsletter-welcome',
@@ -181,6 +305,8 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'commerce',
     name: 'E-Commerce',
     description: 'Product catalog, cart, and checkout',
+    provides: ['catalog.products', 'commerce.cart', 'commerce.checkout', 'crm.contacts', 'notifications.email'],
+    dependencies: ['contact'],
     primaryIntent: 'cart.add',
     supportingIntents: [
       'product.view',
@@ -193,6 +319,12 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
       'contact.submit',
     ],
     requiredTables: ['products', 'cart_items', 'orders'],
+    database: { migrations: ['products', 'cart_items', 'orders'], requiredTables: ['products', 'cart_items', 'orders'], requiredColumns: ['products.price_cents', 'orders.customer_id'], rlsPolicies: ['products_read_public', 'orders_customer_access', 'orders_business_access'] },
+    backend: { functions: ['create-checkout', 'intent-exec', 'automation-event'], events: ['order.created', 'cart.abandoned'], permissions: ['business.orders.manage', 'visitor.checkout.create'] },
+    frontend: { components: ['ProductGrid', 'CartButton', 'CheckoutForm'], dataSources: ['catalog.products', 'commerce.cart'], supportedSlots: ['product-card.primary-action', 'navbar.cart-action'] },
+    intents: { provided: ['cart.add', 'cart.checkout', 'pay.checkout'], required: ['contact.submit'] },
+    settings: { accountFields: ['business.notificationEmail'], projectFields: ['commerce.currency', 'commerce.paymentProvider'] },
+    readiness: { assertions: ['product-exists', 'checkout-handler-installed', 'order-rls-verified'], fixtures: ['product', 'customer'] },
     requiredWorkflows: [
       {
         id: 'order-confirmation',
@@ -220,9 +352,17 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'auth',
     name: 'Authentication',
     description: 'User signup and login',
+    provides: ['auth.customer', 'portal.customer'],
+    dependencies: [],
     primaryIntent: 'auth.register',
     supportingIntents: ['auth.login', 'auth.logout', 'account.open'],
     requiredTables: ['profiles'],
+    database: { migrations: ['profiles'], requiredTables: ['profiles'], requiredColumns: ['profiles.user_id'], rlsPolicies: ['profiles_owner_access'] },
+    backend: { functions: ['intent-exec'], events: ['customer.registered'], permissions: ['customer.portal.access'] },
+    frontend: { components: ['AuthModal', 'CustomerPortal'], dataSources: ['auth.customer'], supportedSlots: ['navbar.account-action'] },
+    intents: { provided: ['auth.login', 'auth.register', 'auth.logout'], required: [] },
+    settings: { accountFields: [], projectFields: ['auth.allowCustomerSignup'] },
+    readiness: { assertions: ['auth-provider-configured'], fixtures: ['customer'] },
     requiredWorkflows: [],
     requiredOverlays: ['auth-modal'],
     supportedIndustries: [
@@ -237,6 +377,8 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'lead-capture',
     name: 'Lead Capture',
     description: 'Structured lead capture with pipeline integration',
+    provides: ['crm.leads', 'crm.contacts', 'automation.follow_up', 'notifications.email'],
+    dependencies: ['contact'],
     primaryIntent: 'lead.capture',
     supportingIntents: [
       'contact.submit',
@@ -246,6 +388,12 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
       'volunteer.signup',
     ],
     requiredTables: ['leads', 'crm_leads', 'crm_contacts'],
+    database: { migrations: ['leads', 'crm_leads', 'crm_contacts'], requiredTables: ['leads', 'crm_leads', 'crm_contacts'], requiredColumns: ['leads.email', 'crm_leads.stage', 'crm_contacts.email'], rlsPolicies: ['leads_insert_public', 'crm_owner_access'] },
+    backend: { functions: ['create-lead', 'automation-event'], events: ['lead.captured'], permissions: ['business.crm.manage', 'visitor.lead.create'] },
+    frontend: { components: ['LeadForm'], dataSources: ['crm.leads'], supportedSlots: ['hero.primary-cta', 'cta-banner.primary-action'] },
+    intents: { provided: ['lead.capture'], required: ['contact.submit'] },
+    settings: { accountFields: ['business.notificationEmail'], projectFields: ['crm.defaultPipeline', 'automation.followUpEnabled'] },
+    readiness: { assertions: ['lead-handler-installed', 'crm-stage-exists'], fixtures: ['lead', 'contact'] },
     requiredWorkflows: [
       {
         id: 'lead-qualification',
@@ -266,9 +414,17 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     id: 'donation',
     name: 'Donations',
     description: 'Accept donations with acknowledgment workflows',
+    provides: ['commerce.checkout', 'crm.contacts', 'notifications.email'],
+    dependencies: ['contact'],
     primaryIntent: 'donation.start',
     supportingIntents: ['pay.checkout', 'contact.submit', 'newsletter.subscribe'],
     requiredTables: ['orders'],
+    database: { migrations: ['orders'], requiredTables: ['orders'], requiredColumns: ['orders.customer_id', 'orders.total_cents'], rlsPolicies: ['orders_customer_access', 'orders_business_access'] },
+    backend: { functions: ['create-checkout', 'automation-event'], events: ['donation.created'], permissions: ['visitor.donation.create', 'business.donations.manage'] },
+    frontend: { components: ['DonationForm'], dataSources: ['commerce.checkout'], supportedSlots: ['hero.primary-cta', 'cta-banner.primary-action'] },
+    intents: { provided: ['donation.start', 'pay.checkout'], required: [] },
+    settings: { accountFields: ['business.notificationEmail'], projectFields: ['donation.currency'] },
+    readiness: { assertions: ['checkout-handler-installed'], fixtures: ['donation'] },
     requiredWorkflows: [
       {
         id: 'donation-thanks',

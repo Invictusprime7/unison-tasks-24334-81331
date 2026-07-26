@@ -48,6 +48,8 @@ import { buildApplyState, type ApplyState } from "./applyState.ts";
 import { preprocessPrompt } from "./promptPreprocessor.ts";
 import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
 import { CATALOG_CHAT_TOOLS, renderCatalogToolDirective } from "../_shared/catalogTools.ts";
+import { buildEnvelopeDirective, type EnvelopeShape } from "./envelopeContext.ts";
+
 
 const BUILDER_EDIT_TASKS = new Set<string>([
   'surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit',
@@ -431,6 +433,23 @@ async function runBuilderLane(
   if (preprocessed.intentSummary) {
     finalSystemPrompt += preprocessed.intentSummary;
   }
+
+  // Milestone 2: goal-aware generation. The interpreter envelope is authoritative
+  // for WHAT must be built, not just how the request was routed.
+  const envelopeDirective = buildEnvelopeDirective(
+    (parsed as { requestEnvelope?: EnvelopeShape }).requestEnvelope,
+  );
+  if (envelopeDirective) {
+    finalSystemPrompt += envelopeDirective;
+    const env = (parsed as { requestEnvelope?: EnvelopeShape }).requestEnvelope;
+    console.log('[orchestrator] envelope directive injected', {
+      kinds: env?.requestKinds ?? [],
+      domains: env?.domains ?? [],
+      goals: (env?.goals ?? []).length,
+      scope: env?.scope?.level,
+    });
+  }
+
 
   // Inject live preview DOM snapshot for context awareness
   if (previewSnapshot) {

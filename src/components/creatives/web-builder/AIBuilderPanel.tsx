@@ -80,6 +80,10 @@ import { parseIconWireIntent, stampIconIntentInSource } from '@/utils/iconWireIn
 import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
 import { runBuilderTurn } from '@/services/builderBrainClient';
+import {
+  envelopeRunIdFromResponse,
+  recordRunOutcome,
+} from '@/services/builderEnvelopeRuns';
 import { buildCatalogContext, renderCatalogContextForPrompt } from '@/utils/catalogContext';
 import { executeCatalogToolCalls, type RawToolCall } from '@/services/catalogToolExecutor';
 import type { GeneratedUiManifest } from '@/platform/core/generatedUiFoundation';
@@ -1438,6 +1442,13 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
           response = await runBuilderTurn<any>({
             messages: conversationHistory,
+            // Milestone 4: durable envelope + verdict log, scoped to this draft.
+            runContext: {
+              draftId: projectId ?? null,
+              projectId: projectId ?? null,
+              businessId: businessId ?? null,
+              prompt: _userContent.slice(0, 8000),
+            },
             // Always use template-react for React projects (even surgical edits)
             // to ensure the AI generates React/TSX output, not raw HTML.
             // The surgicalEdit flag tells the edge function to apply surgical constraints.
@@ -1543,6 +1554,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
       const isLaunchPlanningResponse = response.data?.mode === 'launch-desk' || !!response.data?.plan;
+      // Milestone 4: id of the persisted envelope/verification run for this turn.
+      const envelopeRunId = envelopeRunIdFromResponse(response.data);
+
       const responseMeta: Message['meta'] = {
         actionType: response.data?.actionType || (isLaunchPlanningResponse ? 'launch_planning' : undefined),
         modelUsed: response.data?.modelUsed,
@@ -1863,6 +1877,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           console.warn('[AIBuilderPanel] SCOPE BLOCK:', scopeBlockReason);
           toast.warning(`⚠️ Edit blocked: ${scopeBlockReason}`);
         } else if (shouldBlock) {
+          void recordRunOutcome(envelopeRunId, 'rejected', { note: 'requires-approval' });
           console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
           toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
           // Store files for manual apply later (user can use View Edits)
@@ -1879,6 +1894,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               requiresApproval: responseMeta?.requiresApproval,
               warnings: responseMeta?.warnings,
             });
+            void recordRunOutcome(
+              envelopeRunId,
+              applyOutcome.success ? 'applied' : 'failed',
+              {
+                appliedPaths: Object.keys(normalizedFiles),
+                error: applyOutcome.success ? undefined : applyOutcome.errors?.[0],
+                note: 'multi-file',
+              },
+            );
             if (applyOutcome.success) {
               liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
               vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
@@ -2024,6 +2048,7 @@ export default function App() {
             responseMeta.warnings?.some(w => w.severity === 'error');
 
           if (hasBlockingWarning) {
+            void recordRunOutcome(envelopeRunId, 'rejected', { note: 'single-file requires-approval' });
             console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
             toast.warning('⚠️ Patch flagged for review — check warnings');
           } else if (onApplyToVFS && !multiFileOutput) {
@@ -2038,6 +2063,15 @@ export default function App() {
               requiresApproval: responseMeta?.requiresApproval,
               warnings: responseMeta?.warnings,
             });
+            void recordRunOutcome(
+              envelopeRunId,
+              applyOutcome.success ? 'applied' : 'failed',
+              {
+                appliedPaths: [singleFilePath],
+                error: applyOutcome.success ? undefined : applyOutcome.errors?.[0],
+                note: 'single-file',
+              },
+            );
             if (applyOutcome.success) {
               advancePlanStep(taskPlan, 'refresh_preview', 'done');
               advancePlanStep(taskPlan, 'validate', 'done');

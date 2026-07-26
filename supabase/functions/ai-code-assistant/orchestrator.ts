@@ -49,6 +49,7 @@ import { preprocessPrompt } from "./promptPreprocessor.ts";
 import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
 import { CATALOG_CHAT_TOOLS, renderCatalogToolDirective } from "../_shared/catalogTools.ts";
 import { buildEnvelopeDirective, type EnvelopeShape } from "./envelopeContext.ts";
+import { verifyAgainstEnvelope, buildRepairInstruction } from "./envelopeVerifier.ts";
 
 
 const BUILDER_EDIT_TASKS = new Set<string>([

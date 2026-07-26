@@ -7,8 +7,16 @@ import {
   type CapabilityId,
 } from '@/platform/core/capabilityRegistry';
 import { emptyPatchPlan, type PatchPlan } from '@/types/patchPlan';
+import type { BuilderRequestEnvelope as InterpreterEnvelope } from '@/types/builderRequestEnvelope';
+import {
+  bindingsForCapabilities,
+  interpretCapabilities,
+  resolveBuilderScope,
+  type BuilderScope,
+} from '@/services/capabilityInterpretation';
 
-export type BuilderScope = 'website' | 'business-system' | 'developer';
+export type { BuilderScope };
+
 
 export interface BuilderRequestEnvelope {
   requestId: string;

@@ -267,6 +267,8 @@ export function buildResponseBody(opts: {
     // Tool-calls (catalog dispatcher on the client executes these)
     tool_calls: hasToolCalls ? opts.toolCalls : undefined,
     catalogToolCalls: hasToolCalls ? opts.toolCalls : undefined,
+    // Envelope-driven verification verdict (Milestone 3)
+    envelopeVerification: opts.envelopeVerification,
     // Rich metadata (new, optional — ignored by old callers)
     ...meta,
   };

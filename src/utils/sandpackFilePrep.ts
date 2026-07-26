@@ -5266,7 +5266,15 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   // Existing wizard snapshots can carry an earlier marker-owned UI facade.
   // Refresh those runtime modules before routing or preview compilation so
   // generated pages never import an API absent from their own foundation.
-  if (out['/.unison/ui-manifest.json']) {
+  // Non-wizard drafts have no ui-manifest, but AI-generated code is sanitized
+  // onto the `@/unison/ui/*` facade, so seed the foundation whenever anything
+  // references it — otherwise the edit "applies" and the preview fails to resolve.
+  if (
+    out['/.unison/ui-manifest.json'] ||
+    Object.entries(out).some(([path, content]) => (
+      path.startsWith('/src/unison/ui/') || /@\/unison\/ui(?:\/[^'"\s]+)?/.test(content)
+    ))
+  ) {
     const foundation = buildGeneratedUiFoundation({
       themePresetId: options?.themePresetId || 'snapshot-recovery',
     });

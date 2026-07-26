@@ -799,9 +799,34 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
       
       // Check if editing a selected element
       const isEditingSelectedElement = selectedElement && isEditingElement;
-      
-      // ========== BUILDER ACTIONS DETECTION ==========
-      // Detect if user wants to install packs or wire buttons
+
+      // ========== REQUEST INTERPRETER (authoritative classifier) ==========
+      // Every request is interpreted into a BuilderRequestEnvelope BEFORE any
+      // code path is chosen. Regexes below are demoted to advisory hints.
+      const interpretation = await interpretBuilderRequest(userMessage.content, {
+        projectMode: 'react',
+        runtimeEngine: 'vfs',
+        hasExistingTemplate: Boolean(hasExistingTemplate),
+        selectedElement: selectedElement
+          ? { selector: (selectedElement as { selector?: string })?.selector }
+          : null,
+        recentTurns: messages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
+      });
+      const envelope: BuilderRequestEnvelope = interpretation.envelope;
+      console.log('[AICodeAssistant] Request envelope:', {
+        kinds: envelope.requestKinds,
+        domains: envelope.domains,
+        scope: envelope.scope,
+        complexity: envelope.complexity,
+        executionMode: envelope.executionMode,
+        degraded: interpretation.degraded,
+        source: envelope.source,
+      });
+      // ========== END REQUEST INTERPRETER ==========
+
+      // ========== BUILDER ACTIONS DETECTION (hint layer only) ==========
+      // Deterministic extraction of pack/selector/intent details. It no longer
+      // decides *whether* this is a backend request — the envelope does.
       const detectBuilderAction = (message: string): { type: 'install_pack' | 'wire_button' | null; packs?: string[]; selector?: string; intent?: string } => {
         const lowerMessage = message.toLowerCase();
         

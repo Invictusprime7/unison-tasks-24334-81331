@@ -3519,6 +3519,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       effectiveRouteState?.returnToCloudTab === 'projects' || effectiveRouteState?.from === 'Workspace Settings';
 
     const navigateBack = () => {
+      // The launcher handoff is a one-shot recovery record. If it is left in
+      // session storage, LauncherHandoffRouteGuard immediately bounces the user
+      // back to /web-builder and the back arrow looks dead. Consume it here.
+      clearLauncherHandoff();
       // Always route to the home page from the web builder so users get a clean
       // entry point instead of reverting to a stale preview/history state.
       navigate('/home');

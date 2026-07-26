@@ -39,12 +39,18 @@ describe('resolveBuilderScope', () => {
     expect(resolveBuilderScope(null)).toBe('website');
   });
 
-  it('routes backend/data domains to the business-system scope', () => {
+  it('routes data-binding requests to the business-system scope', () => {
     expect(resolveBuilderScope({
-      domains: ['data'],
-      level: 'system',
+      requestKinds: ['data_binding'],
     } as never)).toBe('business-system');
   });
+
+  it('routes deployment requests to the developer scope', () => {
+    expect(resolveBuilderScope({
+      requestKinds: ['deployment'],
+    } as never)).toBe('developer');
+  });
+
 });
 
 describe('detectOperationalizeRequest', () => {

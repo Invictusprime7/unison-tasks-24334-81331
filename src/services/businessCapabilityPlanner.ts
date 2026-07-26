@@ -21,7 +21,13 @@ export type { BuilderScope };
 export interface BuilderRequestEnvelope {
   requestId: string;
   prompt: string;
-  scope: BuilderScope;
+  /**
+   * Optional caller hint. When `interpretation` is present the scope is
+   * re-derived from it, because the interpreter is authoritative.
+   */
+  scope?: BuilderScope;
+  /** Authoritative classification from `builder-request-interpreter`. */
+  interpretation?: InterpreterEnvelope | null;
   context: {
     businessId?: string;
     projectId?: string;
@@ -50,6 +56,10 @@ export interface CapabilityProposal {
 
 export interface CapabilityPlan {
   envelope: BuilderRequestEnvelope;
+  /** Internal routing scope: website | business-system | developer. */
+  scope: BuilderScope;
+  /** How the capability set was derived (envelope / recipe / hint / none). */
+  interpretationSource: 'envelope' | 'vertical-recipe' | 'hint' | 'none';
   requestedCapabilities: BusinessCapability[];
   operationalCapabilities: CapabilityDefinition[];
   proposal: CapabilityProposal;
@@ -62,13 +72,10 @@ export interface ApprovedCapabilityPlan extends CapabilityPlan {
   };
 }
 
-const BOOKING_REQUEST = /\b(book|booking|appointment|schedule|availability|calendar)\b/i;
-const SERVICE_REQUEST = /\b(service|services|treatment|treatments)\b/i;
-const CONTACT_REQUEST = /\b(contact|lead|inquiry|enquiry|crm|customer)\b/i;
-
 function unique<T>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
+
 
 const OPERATIONAL_PACKS: Record<BusinessCapability, CapabilityId[]> = {
   business_profile: [],

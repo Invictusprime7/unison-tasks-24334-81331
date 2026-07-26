@@ -90,6 +90,7 @@ import {
   approveCapabilityPlan,
   approvedCapabilityPlanToPatchPlan,
 } from '@/services/businessCapabilityPlanner';
+import { applyCapabilityMigration } from '@/services/capabilityMigrationRunner';
 import { applyButtonBinding } from '@/services/aiBindingTool';
 
 // Helpers extracted to web-builder/*
@@ -6117,6 +6118,26 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       approvedBy: user.id,
                       approvedAt: new Date().toISOString(),
                     });
+
+                    // Backend first: grants, RLS and policies are applied (in a
+                    // single transaction, server-side) before any frontend
+                    // patch lands, so the committed UI can never read or write
+                    // tables the database has not been prepared for.
+                    const migration = await applyCapabilityMigration({
+                      packs: plan.packs,
+                      businessId,
+                      projectId: resolvedProjectId || currentDraftId,
+                      summary: plan.proposal?.summary,
+                    });
+                    if (!migration.success) {
+                      return {
+                        success: false,
+                        error: migration.error
+                          ? `Backend setup failed, nothing was changed: ${migration.error}`
+                          : 'Backend setup failed, nothing was changed.',
+                      };
+                    }
+
                     const patch = approvedCapabilityPlanToPatchPlan(approved);
                     const beforeFiles = virtualFS.getSandpackFiles();
                     for (const [path, contents] of Object.entries(resolution.files)) {

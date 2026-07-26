@@ -97,6 +97,7 @@ import {
   planBusinessCapabilities,
   type CapabilityPlan,
 } from '@/services/businessCapabilityPlanner';
+import { previewCapabilityMigration } from '@/services/capabilityMigrationRunner';
 import { interpretBuilderRequest } from '@/services/builderRequestInterpreter';
 
 import {
@@ -2535,6 +2536,26 @@ export default function App() {
                     </p>
                   )}
                   <p className="mt-1 text-muted-foreground">Resolved bindings: {pendingCapabilityProposal.resolution.resolved.map((binding) => `${binding.filePath}#${binding.slot}`).join(', ') || 'none'}</p>
+                  {(() => {
+                    // Exactly what will run on the database if you approve.
+                    const migration = previewCapabilityMigration(pendingCapabilityProposal.plan.packs);
+                    if (migration.statements.length === 0) return null;
+                    return (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-muted-foreground">
+                          Backend changes on approval ({migration.statements.length} across {migration.tables.join(', ')})
+                        </summary>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">
+                          {migration.statements.map((statement) => (
+                            <li key={statement.id}>{statement.description}</li>
+                          ))}
+                        </ul>
+                        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap border border-border/50 bg-muted/40 p-2 text-[10px] text-muted-foreground">
+                          {migration.sql}
+                        </pre>
+                      </details>
+                    );
+                  })()}
                   {pendingCapabilityProposal.plan.proposal.unsupportedCapabilities.length > 0 && (
                     <p className="mt-1 text-amber-500">
                       Not covered by a pack yet: {pendingCapabilityProposal.plan.proposal.unsupportedCapabilities.join(', ')}

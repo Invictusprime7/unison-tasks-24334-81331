@@ -14,6 +14,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { shrinkBuilderTurnPayload, BUILDER_BODY_RETRY_BUDGETS } from "@/services/builderPayloadBudget";
 export type BuilderTurnResponse<T = unknown> = { data: T | null; error: unknown };
 
 export interface BuilderTurnInput {
@@ -205,7 +206,7 @@ export async function runBuilderTurn<TResponse = any>(
           apikey: anon,
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify(sentPayload),
         signal: options.signal,
       });
       const text = await res.text();

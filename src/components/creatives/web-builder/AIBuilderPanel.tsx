@@ -2523,8 +2523,24 @@ export default function App() {
                     Business system change required
                   </div>
                   <p className="mt-2 text-muted-foreground">{pendingCapabilityProposal.plan.proposal.summary}</p>
+                  {pendingCapabilityProposal.plan.packs.length > 0 && (
+                    <p className="mt-2 text-muted-foreground">
+                      Packs to install (in order): {pendingCapabilityProposal.plan.packs.map((pack) => pack.name).join(' → ')}
+                    </p>
+                  )}
                   <p className="mt-2 text-muted-foreground">Data affected: {pendingCapabilityProposal.plan.proposal.dataAffected.join(', ')}</p>
+                  {pendingCapabilityProposal.plan.proposal.settingsRequired.accountFields.length > 0 && (
+                    <p className="mt-1 text-muted-foreground">
+                      Settings needed: {pendingCapabilityProposal.plan.proposal.settingsRequired.accountFields.join(', ')}
+                    </p>
+                  )}
                   <p className="mt-1 text-muted-foreground">Resolved bindings: {pendingCapabilityProposal.resolution.resolved.map((binding) => `${binding.filePath}#${binding.slot}`).join(', ') || 'none'}</p>
+                  {pendingCapabilityProposal.plan.proposal.unsupportedCapabilities.length > 0 && (
+                    <p className="mt-1 text-amber-500">
+                      Not covered by a pack yet: {pendingCapabilityProposal.plan.proposal.unsupportedCapabilities.join(', ')}
+                    </p>
+                  )}
+
                   {pendingCapabilityProposal.resolution.unresolved.length > 0 && (
                     <p className="mt-2 text-destructive">Cannot approve until these targets exist: {pendingCapabilityProposal.resolution.unresolved.map((binding) => binding.target).join(', ')}</p>
                   )}

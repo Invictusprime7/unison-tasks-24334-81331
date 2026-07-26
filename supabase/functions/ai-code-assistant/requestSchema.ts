@@ -44,6 +44,13 @@ export const AIRequestSchema = z.object({
     summary: z.string().max(2_000).optional(),
     source: z.string().max(30).optional(),
   }).passthrough().optional(),
+  /** Milestone 4: identity for the durable envelope/verification run log */
+  runContext: z.object({
+    draftId: z.string().max(64).nullish(),
+    projectId: z.string().max(64).nullish(),
+    businessId: z.string().max(64).nullish(),
+    prompt: z.string().max(8_000).nullish(),
+  }).optional(),
   skipResearch: z.boolean().optional(),
   templateAnalysis: z.string().max(20_000).optional(),
   systemType: z.string().max(50).nullish(),

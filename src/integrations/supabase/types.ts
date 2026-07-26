@@ -839,6 +839,96 @@ export type Database = {
           },
         ]
       }
+      builder_envelope_runs: {
+        Row: {
+          blocking_count: number
+          business_id: string | null
+          confidence: number | null
+          created_at: string
+          domains: string[]
+          draft_id: string | null
+          envelope: Json
+          envelope_source: string | null
+          id: string
+          mode: string | null
+          model_used: string | null
+          out_of_scope_count: number
+          outcome: string
+          outcome_detail: Json | null
+          project_id: string | null
+          prompt: string | null
+          provider_used: string | null
+          repair_accepted: boolean
+          repair_attempted: boolean
+          request_kinds: string[]
+          touched_files: string[]
+          unmet_count: number
+          updated_at: string
+          user_id: string | null
+          verification: Json
+          verification_checked: boolean
+          verification_passed: boolean | null
+        }
+        Insert: {
+          blocking_count?: number
+          business_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          domains?: string[]
+          draft_id?: string | null
+          envelope?: Json
+          envelope_source?: string | null
+          id?: string
+          mode?: string | null
+          model_used?: string | null
+          out_of_scope_count?: number
+          outcome?: string
+          outcome_detail?: Json | null
+          project_id?: string | null
+          prompt?: string | null
+          provider_used?: string | null
+          repair_accepted?: boolean
+          repair_attempted?: boolean
+          request_kinds?: string[]
+          touched_files?: string[]
+          unmet_count?: number
+          updated_at?: string
+          user_id?: string | null
+          verification?: Json
+          verification_checked?: boolean
+          verification_passed?: boolean | null
+        }
+        Update: {
+          blocking_count?: number
+          business_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          domains?: string[]
+          draft_id?: string | null
+          envelope?: Json
+          envelope_source?: string | null
+          id?: string
+          mode?: string | null
+          model_used?: string | null
+          out_of_scope_count?: number
+          outcome?: string
+          outcome_detail?: Json | null
+          project_id?: string | null
+          prompt?: string | null
+          provider_used?: string | null
+          repair_accepted?: boolean
+          repair_attempted?: boolean
+          request_kinds?: string[]
+          touched_files?: string[]
+          unmet_count?: number
+          updated_at?: string
+          user_id?: string | null
+          verification?: Json
+          verification_checked?: boolean
+          verification_passed?: boolean | null
+        }
+        Relationships: []
+      }
       business_automation_settings: {
         Row: {
           automations_enabled: boolean | null

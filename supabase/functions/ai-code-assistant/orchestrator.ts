@@ -50,6 +50,7 @@ import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./promp
 import { CATALOG_CHAT_TOOLS, renderCatalogToolDirective } from "../_shared/catalogTools.ts";
 import { buildEnvelopeDirective, type EnvelopeShape } from "./envelopeContext.ts";
 import { verifyAgainstEnvelope, buildRepairInstruction } from "./envelopeVerifier.ts";
+import { recordEnvelopeRun, type EnvelopeRunContext } from "./envelopeRunLog.ts";
 
 
 const BUILDER_EDIT_TASKS = new Set<string>([
@@ -596,7 +597,10 @@ async function runBuilderLane(
   });
 
   // ── Milestone 3: one targeted repair turn keyed to unmet goals ───────────
+  let repairAttempted = false;
+  let repairAccepted = false;
   if (outcome && verification.checked && !verification.passed) {
+    repairAttempted = true;
     const allowedTargets = Array.isArray(requestEnvelope?.scope?.targets)
       ? (requestEnvelope!.scope!.targets as string[]).filter((t) => typeof t === 'string')
       : [];
@@ -634,6 +638,7 @@ async function runBuilderLane(
             content = repairedContent;
             outcome = repairedOutcome;
             verification = repairedVerification;
+            repairAccepted = true;
             console.log('[orchestrator] targeted repair accepted', { before, after });
           } else {
             console.log('[orchestrator] targeted repair rejected (no improvement)', { before, after });
@@ -683,6 +688,27 @@ async function runBuilderLane(
 
   if (savePattern) saveLearningSession(parsed, content, userId);
 
+  // ── Milestone 4: durable envelope + verdict log (learning / replay) ───────
+  const envelopeRunId = await recordEnvelopeRun({
+    userId,
+    runContext: (parsed as { runContext?: EnvelopeRunContext }).runContext ?? null,
+    envelope: requestEnvelope as Record<string, unknown> | undefined,
+    verification: {
+      checked: verification.checked,
+      passed: verification.passed,
+      summary: verification.summary,
+      unmetCriteria: verification.unmetCriteria,
+      outOfScopeFiles: verification.outOfScopeFiles,
+      blockingMisses: verification.blockingMisses,
+    },
+    repairAttempted,
+    repairAccepted,
+    touchedFiles: reviewResult ? Object.keys(reviewResult.cleanedFiles) : Object.keys(outcome?.files ?? {}),
+    modelUsed: providerResult.modelUsed,
+    providerUsed: providerResult.providerUsed,
+    mode: mode ?? null,
+  });
+
   const responseBody = buildResponseBody({
     content: reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content,
     reasoning: providerResult.reasoning,
@@ -709,6 +735,9 @@ async function runBuilderLane(
       : undefined,
   });
 
+  if (envelopeRunId) {
+    (responseBody as Record<string, unknown>).envelopeRunId = envelopeRunId;
+  }
 
   return new Response(
     JSON.stringify(responseBody),

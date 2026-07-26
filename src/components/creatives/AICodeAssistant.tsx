@@ -62,6 +62,7 @@ import {
   envelopeBrief,
 } from "@/services/builderRequestInterpreter";
 import type { BuilderRequestEnvelope } from "@/types/builderRequestEnvelope";
+import { envelopeRunIdFromResponse, recordRunOutcome } from "@/services/builderEnvelopeRuns";
 
 interface Message {
   role: "user" | "assistant";
@@ -318,6 +319,8 @@ interface AICodeAssistantProps {
   /** Identity for AI Builder catalog awareness (M5–M7). */
   businessId?: string | null;
   projectId?: string | null;
+  /** Builder draft this conversation belongs to (Milestone 4 run log scope). */
+  draftId?: string | null;
   industry?: string | null;
   selectedSectionRef?: SelectedSectionRef | null;
   selectedElement?: {
@@ -357,6 +360,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
   businessDataContext,
   businessId,
   projectId,
+  draftId,
   industry,
   selectedSectionRef,
   selectedElement,
@@ -420,6 +424,7 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
     return AI_THEMES.find(t => t.id === savedThemeId) || AI_THEMES[0];
   });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastEnvelopeRunIdRef = useRef<string | null>(null);
   const { toast } = useToast();
   
   // Image slot system for AI with taste
@@ -1086,6 +1091,13 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
               templateAction,
               // Structured interpretation — authoritative routing signal.
               requestEnvelope: envelope,
+              // Milestone 4: durable envelope + verdict log for learning/replay.
+              runContext: {
+                draftId: draftId ?? null,
+                projectId: projectId ?? null,
+                businessId: businessId ?? null,
+                prompt: userMessage.content.slice(0, 8000),
+              },
               // Research only runs when the interpreter says it's needed.
               skipResearch: !envelope.needsExternalResearch,
               // Pass user design profile for personalized AI generation
@@ -1183,6 +1195,9 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
           });
         }
       }
+
+      // Milestone 4: remember the run id so the apply/cancel decision is logged.
+      lastEnvelopeRunIdRef.current = envelopeRunIdFromResponse(data);
 
       // ========== COMPREHENSIVE AI RESPONSE PARSING ==========
       // Use the new parser to extract all structured content types
@@ -1829,6 +1844,11 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
                 if (!pendingFiles || Object.keys(pendingFiles).length === 0) return;
 
                 const ok = onFilesPatch ? onFilesPatch(pendingFiles) : false;
+                void recordRunOutcome(
+                  lastEnvelopeRunIdRef.current,
+                  ok ? 'applied' : 'failed',
+                  { appliedPaths: Object.keys(pendingFiles), note: 'file-plan dialog' },
+                );
                 if (!ok && onCodeGenerated) {
                   // Fallback: if caller didn't provide file patch handling, try best-effort
                   // by applying main entry file if present.

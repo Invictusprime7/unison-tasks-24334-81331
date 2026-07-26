@@ -14,8 +14,18 @@ import {
   resolveBuilderScope,
   type BuilderScope,
 } from '@/services/capabilityInterpretation';
+import {
+  packAssertions,
+  packFunctions,
+  packSettings,
+  packSlots,
+  packTables,
+  resolveCapabilityPacks,
+  type CapabilityPack,
+} from '@/platform/core/capabilityPacks';
 
 export type { BuilderScope };
+
 
 
 export interface BuilderRequestEnvelope {

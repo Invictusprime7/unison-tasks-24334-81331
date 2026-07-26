@@ -41,6 +41,7 @@ import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { runBuilderTurn, isTransportError } from "@/services/builderBrainClient";
+import { planLaneBBatches, measurePayloadBytes } from "@/services/laneBBatchPlanner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -2148,13 +2149,30 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           const batchTargets = canonicalPages
             .map((page) => page.path)
             .filter((path): path is string => Boolean(path));
-          const batches: string[][] = [];
-          for (let i = 0; i < batchTargets.length; i += 2) {
-            batches.push(batchTargets.slice(i, i + 2));
-          }
+          // Size the split from the real page count and the real measured
+          // request context — not a hard-coded batch size — so small sites
+          // stay a single turn and heavy sites split exactly as much as the
+          // transport and wall-clock ceilings require.
+          const laneBBasePayloadBytes = measurePayloadBytes({
+            currentCode: wizardCurrentCode,
+            systemsBuildContext: slimBlueprint,
+            userDesignProfile: laneBDesignProfile,
+            siteElementsLibraryContext,
+            vfsFiles: wizardVfsPayload,
+            previewSnapshot: wizardPreviewSnapshot,
+            wizardSeed,
+            prompt: aiUserPrompt,
+          });
+          const batchPlan = planLaneBBatches({
+            pages: batchTargets,
+            basePayloadBytes: laneBBasePayloadBytes,
+          });
+          const batches = batchPlan.batches;
           if (batches.length > 1) {
             console.warn(
-              `[SystemLauncher] Lane B transport failure — retrying in ${batches.length} page batches`,
+              `[SystemLauncher] Lane B transport failure — retrying in ${batches.length} batches of ${batchPlan.pagesPerBatch} page(s) ` +
+                `(limited by ${batchPlan.limitedBy}; base context ${laneBBasePayloadBytes}B, ` +
+                `~${Math.round(batchPlan.estimatedMsPerBatch / 1000)}s/batch)`,
             );
             const mergedFiles: Record<string, string> = {};
             let batchFailure: unknown = null;

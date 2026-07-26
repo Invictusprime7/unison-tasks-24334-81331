@@ -166,11 +166,16 @@ function buildFoundationFiles(manifest: GeneratedUiManifest): Record<string, str
   const radixFiles = Object.fromEntries(
     RADIX_VFS_PRIMITIVES.map((primitive) => [
       `/src/unison/ui/radix/${primitive}.ts`,
-      `${marker}
+      primitive === 'slot'
+        ? `${marker}
+export { Slot, Slottable } from './slot-safe';
+`
+        : `${marker}
 export * from '@radix-ui/react-${primitive}';
 `,
     ]),
   );
+
   const radixIndex = RADIX_VFS_PRIMITIVES
     .map((primitive) => `export * as ${toPascalCase(primitive)} from './${primitive}';`)
     .join('\n');
@@ -246,9 +251,38 @@ export * from 'react-hook-form';
 export { zodResolver } from '@hookform/resolvers/zod';
 export { z } from './zod';
 `,
+    '/src/unison/ui/radix/slot-safe.tsx': `${marker}
+import * as React from 'react';
+import { Slot as RadixSlot, Slottable } from '@radix-ui/react-slot';
+
+export { Slottable };
+
+/**
+ * Radix's Slot throws when \`asChild\` receives text, fragments, or multiple
+ * children (a very common shape in generated pages: icon + label).
+ * This wrapper degrades to a plain <span> instead of crashing the preview.
+ */
+export const Slot = React.forwardRef<HTMLElement, React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }>(
+  ({ children, ...props }, ref) => {
+    const list = React.Children.toArray(children).filter((child) => child !== null && child !== undefined && child !== false && child !== '');
+    const only = list.length === 1 ? list[0] : null;
+    const slottable = list.some(
+      (child) => React.isValidElement(child) && (child.type as { displayName?: string } | undefined)?.displayName === 'Slottable',
+    );
+
+    if (slottable || (React.isValidElement(only) && only.type !== React.Fragment)) {
+      return <RadixSlot ref={ref as never} {...props}>{children}</RadixSlot>;
+    }
+
+    return <span ref={ref as React.Ref<HTMLSpanElement>} {...props}>{children}</span>;
+  },
+);
+Slot.displayName = 'Slot';
+`,
     '/src/unison/ui/radix/index.ts': `${marker}
 ${radixIndex}
 `,
+
     ...radixFiles,
     '/src/unison/ui/styles.ts': `${marker}
 import { cn } from './cn';

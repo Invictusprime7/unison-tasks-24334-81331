@@ -5288,6 +5288,20 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       }
       out[path] = content;
     }
+
+    // Radix's raw Slot throws ("Slot failed to slot onto its children") whenever
+    // `asChild` receives text, a fragment, or multiple children — a shape AI
+    // pages produce constantly (icon + label). Route every direct import onto
+    // the tolerant foundation slot so the preview degrades instead of crashing.
+    for (const [path, content] of Object.entries(out)) {
+      if (!path.startsWith('/src/') || path.startsWith('/src/unison/ui/radix/')) continue;
+      if (!content.includes('@radix-ui/react-slot')) continue;
+      out[path] = content.replace(
+        /(["'])@radix-ui\/react-slot\1/g,
+        "'@/unison/ui/radix/slot'",
+      );
+    }
+
   }
 
   if (

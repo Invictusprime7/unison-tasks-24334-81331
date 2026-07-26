@@ -98,6 +98,8 @@ import {
   type CapabilityPlan,
 } from '@/services/businessCapabilityPlanner';
 import { previewCapabilityMigration } from '@/services/capabilityMigrationRunner';
+import { MigrationProposalPanel } from '@/components/ai-builder/MigrationProposalPanel';
+import { LayoutSnapshotCard } from '@/components/creatives/web-builder/ai-chat/LayoutSnapshotCard';
 import { interpretBuilderRequest } from '@/services/builderRequestInterpreter';
 
 import {
@@ -573,7 +575,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'code' | 'debug'>('code');
+  const [activeTab, setActiveTab] = useState<'code' | 'debug' | 'backend'>('code');
+  // Files the auto-apply guard held back. Without this the AI "resolved" a
+  // rewrite that never materialized anywhere — now the user can still apply it.
+  const [heldFiles, setHeldFiles] = useState<{ files: Record<string, string>; reason: string } | null>(null);
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | undefined>(undefined);
@@ -1888,12 +1893,17 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
         if (scopeBlockReason) {
           console.warn('[AIBuilderPanel] SCOPE BLOCK:', scopeBlockReason);
-          toast.warning(`⚠️ Edit blocked: ${scopeBlockReason}`);
+          setHeldFiles({ files: normalizedFiles, reason: `Edit held back: ${scopeBlockReason}` });
+          toast.warning(`⚠️ Edit held for review: ${scopeBlockReason}`);
         } else if (shouldBlock) {
           void recordRunOutcome(envelopeRunId, 'rejected', { note: 'requires-approval' });
           console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
-          toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
-          // Store files for manual apply later (user can use View Edits)
+          setHeldFiles({
+            files: normalizedFiles,
+            reason: responseMeta?.warnings?.map((warning) => warning.message).filter(Boolean).join('; ')
+              || 'The reviewer flagged this patch. Review the warnings, then apply.',
+          });
+          toast.warning('⚠️ AI patch flagged for review — apply it from the review card when ready');
         } else {
           if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
@@ -2488,8 +2498,8 @@ export default function App() {
       </div>
 
       {/* Tab bar */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'code' | 'debug')} className="flex-1 flex flex-col min-h-0">
-        <TabsList className="w-full grid grid-cols-2 rounded-none h-9 bg-card/30 border-b border-border px-1">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'code' | 'debug' | 'backend')} className="flex-1 flex flex-col min-h-0">
+        <TabsList className="w-full grid grid-cols-3 rounded-none h-9 bg-card/30 border-b border-border px-1">
           <TabsTrigger
             value="code"
             className="text-xs gap-1.5 rounded-lg h-7 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground transition-all"
@@ -2509,6 +2519,13 @@ export default function App() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger
+            value="backend"
+            className="text-xs gap-1.5 rounded-lg h-7 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground transition-all"
+          >
+            <Database className="w-3.5 h-3.5" />
+            Backend
+          </TabsTrigger>
         </TabsList>
 
         {/* Chat Tab */}
@@ -2517,6 +2534,39 @@ export default function App() {
           <ScrollArea className="flex-1" ref={scrollRef}>
             <div className="py-3 px-3">
               <LaunchReadinessCard vfsFiles={vfsFiles} className="-mx-3" />
+              <LayoutSnapshotCard vfsFiles={vfsFiles} />
+              {heldFiles && (
+                <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+                  <div className="font-semibold text-foreground">Changes ready but not applied</div>
+                  <p className="mt-1 text-muted-foreground">{heldFiles.reason}</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {Object.keys(heldFiles.files).join(', ')}
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={!onApplyToVFS}
+                      onClick={async () => {
+                        if (!onApplyToVFS) return;
+                        const pending = heldFiles.files;
+                        setHeldFiles(null);
+                        const outcome = await applyAIBuilderFiles(onApplyToVFS, pending, { origin: 'held-review' });
+                        if (outcome.success) {
+                          toast.success('Held changes applied to your project');
+                        } else {
+                          toast.error('Apply failed', { description: outcome.errors?.[0] });
+                          setHeldFiles({ files: pending, reason: outcome.errors?.[0] ?? 'Apply failed.' });
+                        }
+                      }}
+                    >
+                      Apply anyway
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setHeldFiles(null)}>
+                      Discard
+                    </Button>
+                  </div>
+                </div>
+              )}
               {pendingCapabilityProposal && (
                 <div className="mb-3 border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
                   <div className="flex items-center gap-2 font-semibold text-foreground">
@@ -2637,6 +2687,15 @@ export default function App() {
             onAddFiles={addFiles}
             onRemoveFile={removeFile}
             previewRef={previewRef}
+          />
+        </TabsContent>
+
+        {/* Backend Tab — full-stack proposal review + approval surface */}
+        <TabsContent value="backend" className="flex-1 flex flex-col m-0 min-h-0 data-[state=inactive]:hidden">
+          <MigrationProposalPanel
+            projectId={projectId ?? undefined}
+            businessId={businessId ?? undefined}
+            className="flex-1 min-h-0"
           />
         </TabsContent>
 

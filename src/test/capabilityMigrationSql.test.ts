@@ -27,7 +27,7 @@ describe('capability migration SQL', () => {
     });
 
     expect(statements.map((s) => s.kind)).toEqual([
-      'grant', 'grant', 'rls', 'policy', 'policy', 'policy',
+      'grant', 'grant', 'rls', 'policy', 'policy', 'policy', 'policy',
     ]);
     expect(statements[0].sql).toBe('GRANT SELECT ON public.services TO anon;');
     expect(statements[1].sql).toBe('GRANT ALL ON public.services TO service_role;');

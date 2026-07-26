@@ -23,7 +23,8 @@ describe('planBusinessCapabilities', () => {
       'crm.contacts',
       'notifications.email',
     ]));
-    expect(plan.proposal.operationalCapabilities).toEqual(['booking', 'contact']);
+    // Dependency-first install order: `contact` is a dependency of `booking`.
+    expect(plan.proposal.operationalCapabilities).toEqual(['contact', 'booking']);
     expect(plan.proposal.intentBindings).toContainEqual({
       target: 'service-card.primary-action',
       intent: 'booking.create',
@@ -51,10 +52,10 @@ describe('planBusinessCapabilities', () => {
     const patch = approvedCapabilityPlanToPatchPlan(approved);
 
     expect(patch.backendOps).toEqual([
-      { type: 'requireCapability', capability: 'booking', payload: { approval: approved.proposal.approval } },
       { type: 'requireCapability', capability: 'contact', payload: { approval: approved.proposal.approval } },
-      { type: 'seedCapability', capability: 'booking', payload: { approval: approved.proposal.approval } },
+      { type: 'requireCapability', capability: 'booking', payload: { approval: approved.proposal.approval } },
       { type: 'seedCapability', capability: 'contact', payload: { approval: approved.proposal.approval } },
+      { type: 'seedCapability', capability: 'booking', payload: { approval: approved.proposal.approval } },
     ]);
   });
 });

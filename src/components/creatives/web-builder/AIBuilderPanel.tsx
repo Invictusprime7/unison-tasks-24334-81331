@@ -97,6 +97,8 @@ import {
   planBusinessCapabilities,
   type CapabilityPlan,
 } from '@/services/businessCapabilityPlanner';
+import { interpretBuilderRequest } from '@/services/builderRequestInterpreter';
+
 import {
   resolveCapabilityIntentBindings,
   type CapabilityIntentBindingResolution,
@@ -781,10 +783,20 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     setDroppedFiles([]);
     setIsLoading(true);
 
+    // Milestone 5 / Step 1: classification is envelope-driven. The interpreter
+    // is authoritative; local hints are only used when it is unavailable.
+    const capabilityInterpretation = await interpretBuilderRequest(userContent, {
+      vertical: systemType ?? undefined,
+      filePaths: Object.keys(vfsFiles ?? {}),
+      hasExistingTemplate: Object.keys(vfsFiles ?? {}).length > 0,
+    });
+
     const capabilityPlan = planBusinessCapabilities({
       requestId: generateId(),
       prompt: userContent,
+      interpretation: capabilityInterpretation.degraded ? null : capabilityInterpretation.envelope,
       scope: 'business-system',
+
       context: {
         businessId: businessId ?? undefined,
         projectId: projectId ?? undefined,

@@ -896,11 +896,21 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
         return { type: null };
       };
       
-      const builderAction = opts?.skipBuilderActions ? { type: null } : detectBuilderAction(userMessage.content);
-      
+      const builderActionHint = opts?.skipBuilderActions ? { type: null } : detectBuilderAction(userMessage.content);
+      // Envelope decides whether this is a backend/approval request; the hint
+      // only supplies the concrete pack/selector/intent details.
+      const envelopeWantsBackend =
+        envelope.requestKinds.includes('backend_configuration') ||
+        envelope.requestKinds.includes('data_binding') ||
+        envelope.domains.some((d) => ['booking', 'crm', 'auth', 'commerce', 'automation', 'database'].includes(d));
+      const builderAction =
+        builderActionHint.type && envelopeWantsBackend && requiresApproval(envelope)
+          ? builderActionHint
+          : { type: null as null | 'install_pack' | 'wire_button' };
+
       // Handle builder actions (install packs / wire buttons) - propose+approve
       if (builderAction.type) {
-        console.log('[AICodeAssistant] Builder action detected:', builderAction);
+        console.log('[AICodeAssistant] Builder action approved by envelope:', builderAction);
 
         // If this is a "build the whole thing" style request, store the original prompt
         // so we can continue with template generation after the user approves pack install.

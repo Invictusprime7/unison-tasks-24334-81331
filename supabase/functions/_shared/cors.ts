@@ -28,6 +28,29 @@ function isUnisonTasksVercelDeployment(origin: string): boolean {
 }
 
 /**
+ * Lovable-hosted surfaces for this project: the in-editor preview, the
+ * shareable preview and the published app. These are first-party origins the
+ * builder itself runs from — without them every browser call from the preview
+ * fails CORS preflight and surfaces as "Failed to send a request to the Edge
+ * Function", which looks like a transport/timeout failure but never reaches
+ * the handler.
+ */
+function isLovableHostedOrigin(origin: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(origin);
+    if (protocol !== "https:") return false;
+    return (
+      hostname.endsWith(".lovableproject.com") ||
+      hostname.endsWith(".lovable.app") ||
+      hostname.endsWith(".lovable.dev")
+    );
+  } catch {
+    return false;
+  }
+}
+
+
+/**
  * Build CORS headers based on the request origin.
  * - In production: only allows registered origins
  * - Falls back to ALLOWED_ORIGINS env var (comma-separated)

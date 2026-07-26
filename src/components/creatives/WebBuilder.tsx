@@ -2456,6 +2456,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [currentRevisionId, setCurrentRevisionId] = useState<string>(
     effectiveRouteState?.revisionId || ''
   );
+  currentRevisionIdRef.current = currentRevisionId;
+
   useEffect(() => {
     const revId = effectiveRouteState?.revisionId;
     if (!revId || hydratedRevisionRef.current === revId) return;

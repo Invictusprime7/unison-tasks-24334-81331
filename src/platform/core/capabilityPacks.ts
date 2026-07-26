@@ -224,7 +224,7 @@ const CATALOG_SERVICES_PACK: CapabilityPack = {
       'pricing-section.list',
     ],
   },
-  intents: { provided: ['service.view'], required: [] },
+  intents: { provided: ['nav.goto'], required: [] },
   settings: {
     accountFields: [],
     projectFields: ['catalog.servicesSectionId', 'catalog.currency'],
